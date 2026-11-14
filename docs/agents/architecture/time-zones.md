@@ -89,7 +89,7 @@ signed `BIGINT` or milliseconds.
 | Second factor, trust, reset and backup codes | 16 | Implemented |
 | Notifications, preferences, deliveries and push, including keyset anchors | 10 | Implemented |
 | People, access log, deletion, photo, rename and merge | 9 | Implemented |
-| Legal acceptances and both export queues; preserve the finished file's IANA-zone snapshot | 7 | (not in the code yet — HIL-1925) |
+| Legal acceptances and both export queues; preserve the finished file's IANA-zone snapshot | 7 | Implemented |
 | Files and variants | 2 | Implemented |
 | Analytics: already milliseconds, change the sign; leave IDs, foreign keys and counters alone | 35 | Implemented |
 | Status: already milliseconds, change the sign; corrected census includes `hilos_status_incident_update.at`. A new signed-ms moment is not old unsigned debt. | 21 | Implemented |
@@ -502,12 +502,12 @@ zone's IANA name is stored in `time_zone` of `hilos_data_export` and
 file ready, and it stays null while the file is preparing or failed.
 
 [DataExportTime](../../../framework/backend/DataExport/DataExportTime.php)
-writes every moment as ISO 8601 with its numeric offset, `+00:00` in `utc`
-mode: SQL moments to the second (`Y-m-d\TH:i:sP`), analytics events to the
-millisecond (`Y-m-d\TH:i:s.vP`). The absolute moment never changes, only its
-notation. The archive's README names the zone. A revision's calendar dates
-(`publishedOn`, `effectiveOn`) are not moments and are not converted;
-`finishedAt` and `expiresAt` in the database stay UTC.
+writes every stored moment as ISO 8601 to the millisecond with its numeric
+offset (`Y-m-d\TH:i:s.vP`), `+00:00` in `utc` mode. The absolute moment never
+changes, only its notation. The archive's README names the zone. A revision's
+calendar dates (`publishedOn`, `effectiveOn`) are not moments and are not
+converted. `finishedAt` and `expiresAt` are stored as epoch milliseconds, UTC by
+the definition of the epoch; the file's date in its name comes from `dateMs`.
 
 The download names the file by `finishedAt` in the stored zone, not in the
 zone the settings or the person have now. A ready file with a null
@@ -916,7 +916,7 @@ mixed formats, not a prerequisite for reading or applying this rule.
 | Sessions and devices | `HIL-1586` done: Chat/Polls session lists carry the stored `browserTimeZone` and UTC epoch-ms `createdAt`, `lastSeenAt` and nullable `expiresAt`; Chat device lists carry epoch-ms `createdAt` and nullable `goneAt`; framework passkey credentials carry epoch-ms `createdAt`. RT `connectedAt`, live tabs and self-connection payloads retain milliseconds. Profile dates and passkey subtitles delegate to `formatMoment()`; Vue and React mirror the reader-zone signal to refresh session dates while keeping open controls and show the stored browser zone beside the device. |
 | Notifications and deliveries | `HIL-1587` done: numeric wire moments in UTC epoch ms for notification created/snapshot signals and delivery table rows/anchors; Vue uses the reader zone. |
 | Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
-| Acceptances | `HIL-1591` done: numeric wire moments in UTC epoch ms for legal acceptances table browser rows; internal SQL row in UTC string; Vue uses the reader zone. Migration of that internal stored source follows [Transition Owners](#transition-owners) (not in the code yet — HIL-1925). |
+| Acceptances | `HIL-1591` done: numeric wire moments in UTC epoch ms for legal acceptances table browser rows; Vue uses the reader zone. The internal stored row is UTC epoch ms as well, migrated under [Transition Owners](#transition-owners). |
 | React | `HIL-1594` done: the Profile Time zone row opens the picker immediately; previews load only while it is open, and the selection indicator follows the authoritative session echo. Session dates follow the reader zone while the stored browser zone remains descriptive and expanded tabs and confirmation dialogs stay open. The user detail shows the read-only account zone (exact, Automatic, or Hidden); activity moments in user detail, lists and merge candidates follow the reader zone. Reader-zone changes refresh notification-bell and Legal Accepted dates, delivery moments, Logs batch labels, undo deadlines and overview moments, Backup and Maintenance moments, and Cron run times. Cron expressions still use the project zone; the shared Daemon node head's Silent since follows its own reader subscription. Core-formatted strings are not reparsed, and durations and ETA are unchanged. Component tests and focused profile/Cron/accessibility e2e cover these paths. |
 | Angular | `HIL-1595` done: profile, session/device, notification, acceptance, Logs, Backup, Maintenance and Cron readers use shared presentation paths in the reader zone; Cron also shows the project zone and all seven Daemon silent-time readers follow the reader zone. No direct date-format bypass was found in the Angular SDK or the Polls and Online-testing Angular apps. |
 

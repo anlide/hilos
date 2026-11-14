@@ -66,7 +66,6 @@ use Hilos\Tables\Legal\HilosLegalRevisionTableRow;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\Tables\Legal\HilosLegalSettingsTableRow;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\TimeHelper;
 use JsonException;
 
 /**
@@ -86,7 +85,7 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
 
     private const string TERMS_DOCUMENT = LegalDocument::TERMS->value;
     private const string TEST_REVISION_ID = '2026-10-01';
-    private const string TEST_TIMESTAMP = '2026-10-01 12:00:00';
+    private const int TEST_TIMESTAMP = 1790856000000;
     private const string TEST_USER_NAME = 'Olena Kovalenko';
     private const string TEST_USER_EMAIL = 'olena.kovalenko@example.com';
     private const string TEST_PASSWORD = 'a long enough passphrase';
@@ -439,7 +438,7 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
             self::assertSame(self::TEST_REVISION_ID, $acc[HilosLegalAcceptanceTableRow::revisionId]);
             self::assertIsInt($acc[HilosLegalAcceptanceTableRow::acceptedAt]);
             self::assertSame(1790856000000, $acc[HilosLegalAcceptanceTableRow::acceptedAt]);
-            self::assertSame(TimeHelper::sqlToMs(self::TEST_TIMESTAMP), $acc[HilosLegalAcceptanceTableRow::acceptedAt]);
+            self::assertSame(self::TEST_TIMESTAMP, $acc[HilosLegalAcceptanceTableRow::acceptedAt]);
             self::assertTrue($acc[HilosLegalAcceptanceTableRow::declared]);
             self::assertTrue(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::name]));
             self::assertTrue(HiddenValue::isMark($acc[HilosLegalAcceptanceTableRow::email]));
@@ -551,10 +550,10 @@ final class AdminViewModeLegalTest extends IntegrationTestCase
     /**
      * @param int $userId Person giving the acceptance
      * @param string $revisionId Exact recorded revision
-     * @param string $acceptedAt SQL acceptance timestamp
+     * @param int $acceptedAt Moment of the acceptance in epoch milliseconds
      * @return int Id of the recorded acceptance
      */
-    private function record(int $userId, string $revisionId, string $acceptedAt): int
+    private function record(int $userId, string $revisionId, int $acceptedAt): int
     {
         Database::sql(
             'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',

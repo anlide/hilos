@@ -235,7 +235,7 @@ final class FrameworkDataExportSections
             $rows[] = [
                 'document' => $acceptance->document,
                 'revisionId' => $acceptance->revisionId,
-                'acceptedAt' => DataExportTime::iso($acceptance->acceptedAt, $timeZone),
+                'acceptedAt' => DataExportTime::isoMs($acceptance->acceptedAt, $timeZone),
                 'inCode' => $revision !== null,
                 'publishedOn' => $revision?->publishedOn,
                 'effectiveOn' => $revision?->effectiveOn,

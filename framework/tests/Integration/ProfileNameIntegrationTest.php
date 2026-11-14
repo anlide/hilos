@@ -460,7 +460,7 @@ final class ProfileNameIntegrationTest extends ProfileIntegrationTestCase
     {
         ProfileNameFrozenHilos::initBrowser(new ProfileNameTestBrowser());
         Database::sqlRun('INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
-            [self::USER_ID, LegalDocument::TERMS->value, 'first', '2026-01-01 00:00:00']);
+            [self::USER_ID, LegalDocument::TERMS->value, 'first', 1767225600000]);
         AccountStandingResolver::forgetAll();
         self::assertTrue(AccountStandingResolver::isFrozen(self::USER_ID));
         $this->dispatchName('Grace');

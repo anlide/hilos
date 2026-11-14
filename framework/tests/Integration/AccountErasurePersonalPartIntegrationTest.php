@@ -128,7 +128,7 @@ final class AccountErasurePersonalPartIntegrationTest extends HilosSessionIntegr
     private const int FUTURE = 2082758400000;
 
     /** The legal acceptances keep a timestamp column. */
-    private const string ACCEPTED_AT = '2026-09-26 10:00:00';
+    private const int ACCEPTED_AT = 1790416800000;
 
     /** Saved key of a letter delivery: the second of the channel's four senders owns it. */
     private const int ROUTING_KEY = 5;

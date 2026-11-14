@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Constants\TimeConstants;
 use Hilos\DataExport\DataExportState;
 use Hilos\Database\Database;
 use Hilos\Database\Object\Collection\DataExports as ObjectDataExports;
@@ -16,6 +17,12 @@ use Hilos\HilosException;
 /** Durable queue semantics, including a replaced request's late completion. */
 final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    /** 2026-09-01T00:00:00Z in epoch milliseconds. */
+    private const int SEPTEMBER_FIRST = 1788220800000;
+    private const int MINUTE = TimeConstants::SECONDS_PER_MINUTE * TimeConstants::MS_PER_SECOND;
+    private const int DAY = TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+    private const int WEEK = 7 * self::DAY;
+
     /**
      * @throws HilosException When the person fixtures cannot be inserted
      */
@@ -33,26 +40,36 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
      */
     public function testReplacementKeepsOneRequestAndOldBuilderCannotCompleteIt(): void
     {
-        $old = Hilos::$db->dataExports->actions->order(7, '2026-09-01 00:00:00');
-        $new = Hilos::$db->dataExports->actions->order(7, '2026-09-02 00:00:00');
+        $old = Hilos::$db->dataExports->actions->order(7, self::SEPTEMBER_FIRST);
+        $new = Hilos::$db->dataExports->actions->order(7, self::SEPTEMBER_FIRST + self::DAY);
 
         self::assertNotSame($old->id, $new->id);
         self::assertSame($new->id, Hilos::$db->dataExports->ofUser(7)?->id);
         self::assertSame(DataExportState::PREPARING, $new->state);
         self::assertNull($new->timeZone);
-        self::assertFalse($old->actions->finishReady('stale.zip', 123, '2026-09-02 00:01:00', '2026-09-09 00:01:00', 'Asia/Tokyo'));
+        $staleAt = self::SEPTEMBER_FIRST + self::DAY + self::MINUTE;
+        self::assertFalse($old->actions->finishReady('stale.zip', 123, $staleAt, $staleAt + self::WEEK, 'Asia/Tokyo'));
         self::assertNull($old->timeZone);
         self::assertNull($old->storedName);
-        self::assertTrue($new->actions->finishReady('current.zip', 456, '2026-09-02 00:02:00', '2026-09-09 00:02:00', 'America/New_York'));
-        self::assertFalse($new->actions->finishFailed('2026-09-02 00:03:00', '2026-09-09 00:03:00'));
+        $readyAt = self::SEPTEMBER_FIRST + self::DAY + 2 * self::MINUTE;
+        self::assertTrue($new->actions->finishReady('current.zip', 456, $readyAt, $readyAt + self::WEEK, 'America/New_York'));
+        self::assertFalse($new->actions->finishFailed($readyAt + self::MINUTE, $readyAt + self::MINUTE + self::WEEK));
         self::assertSame(DataExportState::READY, $new->state);
+        self::assertSame(self::SEPTEMBER_FIRST + self::DAY, $new->requestedAt);
+        self::assertSame($readyAt, $new->finishedAt);
+        self::assertSame($readyAt + self::WEEK, $new->expiresAt);
         self::assertSame('current.zip', $new->storedName);
         self::assertSame(456, $new->sizeBytes);
         self::assertSame('America/New_York', $new->timeZone);
-        Database::sql('SELECT COUNT(*) AS count, MAX(`time_zone`) AS time_zone FROM hilos_data_export WHERE user_id = 7');
+        Database::sql(
+            'SELECT COUNT(*) AS count, MAX(`time_zone`) AS time_zone, MAX(`finished_at`) AS finished_at, MAX(`expires_at`) AS expires_at '
+                . 'FROM hilos_data_export WHERE user_id = 7',
+        );
         $row = Database::row();
         self::assertSame(1, (int)$row['count']);
         self::assertSame('America/New_York', $row['time_zone']);
+        self::assertSame($readyAt, (int)$row['finished_at']);
+        self::assertSame($readyAt + self::WEEK, (int)$row['expires_at']);
     }
 
     /**
@@ -60,11 +77,11 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
      */
     public function testQueueOrderIgnoresFinishedRequestsAndBreaksTiesById(): void
     {
-        $late = Hilos::$db->dataExports->actions->order(1, '2026-09-02 00:00:00');
-        $first = Hilos::$db->dataExports->actions->order(2, '2026-09-01 00:00:00');
-        $second = Hilos::$db->dataExports->actions->order(3, '2026-09-01 00:00:00');
+        $late = Hilos::$db->dataExports->actions->order(1, self::SEPTEMBER_FIRST + self::DAY);
+        $first = Hilos::$db->dataExports->actions->order(2, self::SEPTEMBER_FIRST);
+        $second = Hilos::$db->dataExports->actions->order(3, self::SEPTEMBER_FIRST);
         self::assertSame($first->id, Hilos::$db->dataExports->nextPreparing()?->id);
-        self::assertTrue($first->actions->finishFailed('2026-09-01 00:01:00', '2026-09-08 00:01:00'));
+        self::assertTrue($first->actions->finishFailed(self::SEPTEMBER_FIRST + self::MINUTE, self::SEPTEMBER_FIRST + self::MINUTE + self::WEEK));
         self::assertNull($first->timeZone);
         Database::sql('SELECT `state`, `time_zone` FROM hilos_data_export WHERE user_id = 2');
         self::assertSame(['state' => DataExportState::FAILED, 'time_zone' => null], Database::row());
@@ -82,9 +99,9 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
      */
     public function testReadyAndExpiryQueriesAndForgetting(): void
     {
-        $ready = Hilos::$db->dataExports->actions->order(7, '2026-09-01 00:00:00');
-        $failed = Hilos::$db->dataExports->actions->order(8, '2026-09-01 00:00:00');
-        $pending = Hilos::$db->dataExports->actions->order(9, '2026-09-01 00:00:00');
+        $ready = Hilos::$db->dataExports->actions->order(7, self::SEPTEMBER_FIRST);
+        $failed = Hilos::$db->dataExports->actions->order(8, self::SEPTEMBER_FIRST);
+        $pending = Hilos::$db->dataExports->actions->order(9, self::SEPTEMBER_FIRST);
 
         $readyId = $ready->id;
         $failedId = $failed->id;
@@ -109,8 +126,9 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         self::assertInstanceOf(ObjectDataExport::class, $failedObject);
         self::assertInstanceOf(ObjectDataExport::class, $pendingObject);
 
-        self::assertTrue($ready->actions->finishReady('ready.zip', 3, '2026-09-01 00:00:00', '2026-09-08 00:00:00', 'UTC'));
-        self::assertTrue($failed->actions->finishFailed('2026-09-01 00:00:00', '2026-09-08 00:00:00'));
+        $expiresAt = self::SEPTEMBER_FIRST + self::WEEK;
+        self::assertTrue($ready->actions->finishReady('ready.zip', 3, self::SEPTEMBER_FIRST, $expiresAt, 'UTC'));
+        self::assertTrue($failed->actions->finishFailed(self::SEPTEMBER_FIRST, $expiresAt));
 
         $viewAllReady = Hilos::$db->dataExports->allReady();
         self::assertInstanceOf(ViewDataExports::class, $viewAllReady);
@@ -132,7 +150,8 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         self::assertSame($readyId, $objectAllReady[$readyId]->id);
         self::assertSame($readyObject, $objectAllReady->first());
 
-        $emptyViewExpired = Hilos::$db->dataExports->expiredBy('2026-09-07 23:59:59');
+        // One millisecond before the boundary nothing has expired yet; at the boundary itself both have.
+        $emptyViewExpired = Hilos::$db->dataExports->expiredBy($expiresAt - 1);
         self::assertInstanceOf(ViewDataExports::class, $emptyViewExpired);
         self::assertCount(0, $emptyViewExpired);
         self::assertSame(0, count($emptyViewExpired));
@@ -144,7 +163,7 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         self::assertFalse($viewExpiredYielded);
         self::assertNull($emptyViewExpired[$readyId] ?? null);
 
-        $emptyObjectExpired = $objectCollection->expiredBy('2026-09-07 23:59:59');
+        $emptyObjectExpired = $objectCollection->expiredBy($expiresAt - 1);
         self::assertInstanceOf(ObjectDataExports::class, $emptyObjectExpired);
         self::assertCount(0, $emptyObjectExpired);
         self::assertSame(0, count($emptyObjectExpired));
@@ -156,7 +175,7 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         self::assertFalse($objectExpiredYielded);
         self::assertNull($emptyObjectExpired[$readyId] ?? null);
 
-        $viewExpired = Hilos::$db->dataExports->expiredBy('2026-09-08 00:00:00');
+        $viewExpired = Hilos::$db->dataExports->expiredBy($expiresAt);
         self::assertInstanceOf(ViewDataExports::class, $viewExpired);
         self::assertCount(2, $viewExpired);
         self::assertArrayHasKey($readyId, $viewExpired);
@@ -167,7 +186,7 @@ final class DataExportQueueIntegrationTest extends HilosSessionIntegrationTestCa
         self::assertSame($readyId, $viewExpired[$readyId]->id);
         self::assertSame($failedId, $viewExpired[$failedId]->id);
 
-        $objectExpired = $objectCollection->expiredBy('2026-09-08 00:00:00');
+        $objectExpired = $objectCollection->expiredBy($expiresAt);
         self::assertInstanceOf(ObjectDataExports::class, $objectExpired);
         self::assertCount(2, $objectExpired);
         self::assertTrue(isset($objectExpired[$readyId]));

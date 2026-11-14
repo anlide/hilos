@@ -64,8 +64,12 @@ final class AccountErasureDataExportParticipantIntegrationTest extends HilosSess
         'hilos_account_operation_result',
     ];
 
-    /** 2036-01-01 00:00:00: no copy of a case expires while it runs. */
-    private const string EXPIRES_AT = '2036-01-01 00:00:00';
+    /** 2026-01-01T00:00:00Z in epoch milliseconds, when the copies of a case are ordered. */
+    private const int ORDERED_AT = 1767225600000;
+    /** 2026-01-01T00:01:00Z in epoch milliseconds, when they are finished. */
+    private const int FINISHED_AT = 1767225660000;
+    /** 2036-01-01T00:00:00Z in epoch milliseconds: no copy of a case expires while it runs. */
+    private const int EXPIRES_AT = 2082758400000;
 
     private const string PERSON_COPY = 'person.zip';
     private const string INTERRUPTED_BUILD = 'person.building.zip';
@@ -315,19 +319,19 @@ final class AccountErasureDataExportParticipantIntegrationTest extends HilosSess
      */
     private function seedPersonOrder(string $state): void
     {
-        $order = Hilos::$db->dataExports->actions->order(self::USER_ID, '2026-01-01 00:00:00');
+        $order = Hilos::$db->dataExports->actions->order(self::USER_ID, self::ORDERED_AT);
         if ($state === DataExportState::READY) {
             self::assertTrue($order->actions->finishReady(
                 self::PERSON_COPY,
                 13,
-                '2026-01-01 00:01:00',
+                self::FINISHED_AT,
                 self::EXPIRES_AT,
                 TimeConstants::UTC_TIME_ZONE,
             ));
             file_put_contents($this->directory . '/' . self::PERSON_COPY, 'person bytes');
         }
         if ($state === DataExportState::FAILED) {
-            self::assertTrue($order->actions->finishFailed('2026-01-01 00:01:00', self::EXPIRES_AT));
+            self::assertTrue($order->actions->finishFailed(self::FINISHED_AT, self::EXPIRES_AT));
         }
         self::assertSame($state, Hilos::$db->dataExports->ofUser(self::USER_ID)?->state);
     }
@@ -339,10 +343,10 @@ final class AccountErasureDataExportParticipantIntegrationTest extends HilosSess
      */
     private function seedNeighbourCopy(): void
     {
-        Hilos::$db->dataExports->actions->order(self::NEIGHBOUR_ID, '2026-01-01 00:00:00')->actions->finishReady(
+        Hilos::$db->dataExports->actions->order(self::NEIGHBOUR_ID, self::ORDERED_AT)->actions->finishReady(
             self::NEIGHBOUR_COPY,
             15,
-            '2026-01-01 00:01:00',
+            self::FINISHED_AT,
             self::EXPIRES_AT,
             TimeConstants::UTC_TIME_ZONE,
         );

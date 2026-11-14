@@ -390,7 +390,7 @@ final class LegalReconsentIntegrationTest extends ProfileIntegrationTestCase
     {
         Database::sqlRun(
             'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
-            [$userId, $document, $revisionId, '2026-01-02 00:00:00'],
+            [$userId, $document, $revisionId, 1767312000000],
         );
     }
 }

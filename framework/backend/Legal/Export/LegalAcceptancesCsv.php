@@ -73,7 +73,7 @@ final class LegalAcceptancesCsv
                 false => self::IN_CODE_NO,
                 null => null,
             },
-            DataExportTime::iso($row->acceptedAt, $timeZone),
+            DataExportTime::isoMs($row->acceptedAt, $timeZone),
         ]);
     }
 

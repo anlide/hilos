@@ -23,9 +23,9 @@ use Hilos\Legal\Export\LegalAcceptancesExportState;
  * @property ?string $document
  * @property ?string $revisionId
  * @property ?string $search
- * @property string $requestedAt
- * @property ?string $finishedAt
- * @property ?string $expiresAt
+ * @property int $requestedAt Moment of the request in epoch milliseconds
+ * @property ?int $finishedAt Moment the order ended in epoch milliseconds; null while preparing
+ * @property ?int $expiresAt Moment the file or failure expires in epoch milliseconds; null while preparing
  * @property ?string $storedName
  * @property ?int $sizeBytes
  * @property ?string $timeZone IANA zone the ready file was written in; null while preparing, after failure, and on an older ready file (UTC)
@@ -89,7 +89,7 @@ class LegalAcceptanceExport extends Object_
             self::document => $this->entity->document = $value === null ? null : (string)$value,
             self::revisionId => $this->entity->revision_id = $value === null ? null : (string)$value,
             self::search => $this->entity->search = $value === null ? null : (string)$value,
-            self::requestedAt => $this->entity->requested_at = (string)$value,
+            self::requestedAt => $this->entity->requested_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }
@@ -98,8 +98,8 @@ class LegalAcceptanceExport extends Object_
      * @param string $storedName Finished file basename
      * @param int $sizeBytes File size
      * @param int $records Acceptance records written
-     * @param string $finishedAt Completion time in SQL UTC
-     * @param string $expiresAt Expiry time in SQL UTC
+     * @param int $finishedAt Completion moment in epoch milliseconds
+     * @param int $expiresAt Expiry moment in epoch milliseconds
      * @param string $timeZone IANA name of the time zone the file was written in
      * @return bool Whether this order still existed and was completed by this call
      * @throws HilosException When the conditional write or its announcement fails
@@ -108,20 +108,20 @@ class LegalAcceptanceExport extends Object_
         string $storedName,
         int $sizeBytes,
         int $records,
-        string $finishedAt,
-        string $expiresAt,
+        int $finishedAt,
+        int $expiresAt,
         string $timeZone,
     ): bool {
         return $this->finish(LegalAcceptancesExportState::READY, $storedName, $sizeBytes, $records, $finishedAt, $expiresAt, $timeZone);
     }
 
     /**
-     * @param string $finishedAt Failure time in SQL UTC
-     * @param string $expiresAt Expiry time in SQL UTC
+     * @param int $finishedAt Failure moment in epoch milliseconds
+     * @param int $expiresAt Expiry moment in epoch milliseconds
      * @return bool Whether this order still existed and was ended by this call
      * @throws HilosException When the conditional write or its announcement fails
      */
-    public function finishFailed(string $finishedAt, string $expiresAt): bool
+    public function finishFailed(int $finishedAt, int $expiresAt): bool
     {
         return $this->finish(LegalAcceptancesExportState::FAILED, null, null, null, $finishedAt, $expiresAt, null);
     }
@@ -153,8 +153,8 @@ class LegalAcceptanceExport extends Object_
      * @param ?string $storedName Ready file basename
      * @param ?int $sizeBytes Ready file size
      * @param ?int $records Ready record count
-     * @param string $finishedAt Completion time in SQL UTC
-     * @param string $expiresAt Expiry time in SQL UTC
+     * @param int $finishedAt Completion moment in epoch milliseconds
+     * @param int $expiresAt Expiry moment in epoch milliseconds
      * @param ?string $timeZone Ready file time zone name
      * @return bool Whether this call won completion of the original order
      * @throws HilosException When the conditional write or its announcement fails
@@ -164,8 +164,8 @@ class LegalAcceptanceExport extends Object_
         ?string $storedName,
         ?int $sizeBytes,
         ?int $records,
-        string $finishedAt,
-        string $expiresAt,
+        int $finishedAt,
+        int $expiresAt,
         ?string $timeZone,
     ): bool {
         if ($this->entity->id === null) {

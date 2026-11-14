@@ -163,7 +163,7 @@ final class LegalRevisionPagesTest extends IntegrationTestCase
         // The public accept() API deliberately refuses undeclared revisions; this fixture models a historical record.
         Database::sqlRun(
             'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
-            [$this->userIds[0], 'privacy', 'removed', '2026-09-17 12:00:00'],
+            [$this->userIds[0], 'privacy', 'removed', 1789646400000],
         );
         LegalAdminAudience::reset();
         $overview = $this->subscribe(LegalRevisionPage::class, ['documentKey' => 'privacy', 'revisionId' => 'removed']);

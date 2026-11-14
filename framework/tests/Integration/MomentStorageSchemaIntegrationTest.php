@@ -11,7 +11,6 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\ChangeLogReceipt;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\Entity\Item\LegalAcceptance;
 use Hilos\Database\Migration;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Database\Schema\EntitySchemaAudit;
@@ -187,12 +186,14 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
         }
     }
 
-    /** Repairing one real historical column retires precisely its record within partial coverage. */
+    /** Repairing one historical column retires precisely its record within partial coverage. */
     public function testPhysicalRepairRequiresDeletingOnlyItsHistoricalRecord(): void
     {
-        $subject = self::subject(LegalAcceptance::class, LegalAcceptance::_table, 'accepted_at');
-        self::assertSame([], EntitySchemaAudit::auditMoments([LegalAcceptance::class]));
-        $json = file_get_contents(self::BASELINE);
+        $subject = self::subject(MomentSchemaEntity::class, MomentSchemaEntity::_table, 'occurred_at');
+        self::assertSame([], EntitySchemaAudit::auditMoments([MomentSchemaEntity::class]));
+        $json = self::json(['version' => 1, 'records' => [
+            ['rule' => 'MOMENT-TYPE', 'subject' => $subject, 'actual' => 'timestamp', 'count' => 1, 'owner' => 'HIL-1925'],
+        ]]);
         $key = self::json(['MOMENT-TYPE', $subject, 'timestamp']);
         self::assertSame([
             'moment storage baseline record ' . $key . ' (HIL-1925) is paid off — delete the record',
@@ -325,7 +326,7 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
         } elseif ($this->name() === 'testMissingRequiredTableFailsBeforeBaselineReconciliation') {
             Database::sqlRun('DROP TABLE hilos_analytics_loss');
         } elseif ($this->name() === 'testPhysicalRepairRequiresDeletingOnlyItsHistoricalRecord') {
-            Database::sqlRun('ALTER TABLE hilos_legal_acceptance MODIFY accepted_at BIGINT NOT NULL');
+            Database::sqlRun('CREATE TABLE moment_schema_fixture (occurred_at BIGINT NULL)');
         } elseif (in_array($this->name(), [
             'testNamedSchemaIdentityAndProviderConnectionStayIsolated', 'testAuditErrorRestoresCurrentConnection',
         ], true)) {

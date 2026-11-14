@@ -16,7 +16,7 @@ use Hilos\Database\Object\Collection\LegalAcceptances as ObjectLegalAcceptances;
  * @property int $userId
  * @property string $document
  * @property string $revisionId
- * @property string $acceptedAt
+ * @property int $acceptedAt
  */
 class LegalAcceptance extends Object_
 {
@@ -61,7 +61,7 @@ class LegalAcceptance extends Object_
             self::userId => $this->entity->user_id = (int)$value,
             self::document => $this->entity->document = (string)$value,
             self::revisionId => $this->entity->revision_id = (string)$value,
-            self::acceptedAt => $this->entity->accepted_at = (string)$value,
+            self::acceptedAt => $this->entity->accepted_at = (int)$value,
             default => parent::__set($property, $value),
         };
     }

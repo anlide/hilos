@@ -47,7 +47,7 @@ class LegalAcceptances extends Objects
      * @param int $userId Person accepting
      * @param LegalDocument $document Declared document
      * @param string $revisionId Exact revision accepted
-     * @param string $acceptedAt Server timestamp, SQL format
+     * @param int $acceptedAt Moment of the acceptance in epoch milliseconds
      * @return ObjectLegalAcceptance New record
      * @throws DatabaseException When the insert fails
      * @throws CreateNotAllowedException When this process cannot create the row
@@ -56,7 +56,7 @@ class LegalAcceptances extends Objects
      * @throws InvalidArgumentException When the DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException When the inserted row has no primary key
      */
-    public function record(int $userId, LegalDocument $document, string $revisionId, string $acceptedAt): ObjectLegalAcceptance
+    public function record(int $userId, LegalDocument $document, string $revisionId, int $acceptedAt): ObjectLegalAcceptance
     {
         $acceptance = static::OBJECT_CLASS::create();
         $acceptance->userId = $userId;

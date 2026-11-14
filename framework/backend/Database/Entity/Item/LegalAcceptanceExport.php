@@ -56,9 +56,9 @@ class LegalAcceptanceExport extends Entity
         self::document => PhpType::STRING->value,
         self::revision_id => PhpType::STRING->value,
         self::search => PhpType::STRING->value,
-        self::requested_at => PhpType::DATETIME->value,
-        self::finished_at => PhpType::DATETIME->value,
-        self::expires_at => PhpType::DATETIME->value,
+        self::requested_at => PhpType::INTEGER->value,
+        self::finished_at => PhpType::INTEGER->value,
+        self::expires_at => PhpType::INTEGER->value,
         self::stored_name => PhpType::STRING->value,
         self::size_bytes => PhpType::INTEGER->value,
         self::time_zone => PhpType::STRING->value,
@@ -85,9 +85,9 @@ class LegalAcceptanceExport extends Entity
     public ?string $document = null;
     public ?string $revision_id = null;
     public ?string $search = null;
-    public string $requested_at;
-    public ?string $finished_at = null;
-    public ?string $expires_at = null;
+    public int $requested_at;
+    public ?int $finished_at = null;
+    public ?int $expires_at = null;
     public ?string $stored_name = null;
     public ?int $size_bytes = null;
     public ?string $time_zone = null;

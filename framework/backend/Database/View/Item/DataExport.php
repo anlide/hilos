@@ -16,9 +16,9 @@ use Hilos\HilosException;
  * @property-read ?int $id
  * @property-read int $userId
  * @property-read string $state
- * @property-read string $requestedAt
- * @property-read ?string $finishedAt
- * @property-read ?string $expiresAt
+ * @property-read int $requestedAt Moment of the request in epoch milliseconds
+ * @property-read ?int $finishedAt Moment the request ended in epoch milliseconds; null while preparing
+ * @property-read ?int $expiresAt Moment the archive or failure expires in epoch milliseconds; null while preparing
  * @property-read ?string $storedName
  * @property-read ?int $sizeBytes
  * @property-read ?string $timeZone IANA zone the ready archive was written in; null reads as UTC on a ready archive

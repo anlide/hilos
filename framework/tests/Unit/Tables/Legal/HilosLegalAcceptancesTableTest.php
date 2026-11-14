@@ -15,7 +15,6 @@ use Hilos\Core\Table\TableSortWhitelist;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Tables\Legal\AbstractHilosLegalAcceptancesTable;
 use Hilos\Tables\Legal\HilosLegalAcceptanceTableRow;
-use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\TestCase;
 
 /** The SQL window's sort, filters and live-row positions share one set definition. */
@@ -56,44 +55,51 @@ final class HilosLegalAcceptancesTableTest extends TestCase
     public function testLivePositionsUseSqlColumnsAndNumericIdTies(): void
     {
         $table = new LegalAcceptancesTableProbe();
-        $row = new HilosLegalAcceptanceTableRow(10, 42, 'Person', null, 'terms', 'gone', null, '2026-09-27 12:00:00');
+        $row = new HilosLegalAcceptanceTableRow(10, 42, 'Person', null, 'terms', 'gone', null, 1790510400000);
         $query = new TableQueryDTO(sort: TableSortOrderDTO::of(new TableSortDTO('acceptedAt', TableConstants::ORDER_DESC, 'accepted_at')));
-        self::assertSame(['accepted_at' => '2026-09-27 12:00:00', 'id' => 10], $table->anchorForRow($row, $query)->values);
+        self::assertSame(['accepted_at' => 1790510400000, 'id' => 10], $table->anchorForRow($row, $query)->values);
         self::assertLessThan(0, $table->placeRowAgainst($row, new TableAnchorDTO([
-            'accepted_at' => '2026-09-27 12:00:00', 'id' => '9',
+            'accepted_at' => '1790510400000', 'id' => '9',
         ]), $query));
         self::assertGreaterThan(0, $table->placeRowAgainst($row, new TableAnchorDTO([
-            'accepted_at' => '2026-09-27 12:00:00', 'id' => '11',
+            'accepted_at' => '1790510400000', 'id' => '11',
         ]), $query));
         self::assertSame(0, $table->placeRowAgainst($row, new TableAnchorDTO([
-            'accepted_at' => '2026-09-27 12:00:00', 'id' => '10',
+            'accepted_at' => '1790510400000', 'id' => '10',
         ]), $query));
 
         $queryAsc = new TableQueryDTO(sort: TableSortOrderDTO::of(new TableSortDTO('acceptedAt', TableConstants::ORDER_ASC, 'accepted_at')));
-        self::assertSame(['accepted_at' => '2026-09-27 12:00:00', 'id' => 10], $table->anchorForRow($row, $queryAsc)->values);
+        self::assertSame(['accepted_at' => 1790510400000, 'id' => 10], $table->anchorForRow($row, $queryAsc)->values);
         self::assertGreaterThan(0, $table->placeRowAgainst($row, new TableAnchorDTO([
-            'accepted_at' => '2026-09-27 12:00:00', 'id' => '9',
+            'accepted_at' => '1790510400000', 'id' => '9',
         ]), $queryAsc));
         self::assertLessThan(0, $table->placeRowAgainst($row, new TableAnchorDTO([
-            'accepted_at' => '2026-09-27 12:00:00', 'id' => '11',
+            'accepted_at' => '1790510400000', 'id' => '11',
         ]), $queryAsc));
 
         $browserRow = $table->browserRow($row);
-        $expectedMs = 1790510400000;
-        self::assertSame($expectedMs, TimeHelper::sqlToMs('2026-09-27 12:00:00'));
         self::assertIsInt($browserRow['sources']['acceptance']['acceptedAt']);
-        self::assertSame($expectedMs, $browserRow['sources']['acceptance']['acceptedAt']);
-
-        $expectedSources = $row->toArray();
-        $expectedSources['acceptedAt'] = $expectedMs;
-        self::assertSame(['acceptance' => $expectedSources], $browserRow['sources']);
-        self::assertSame('2026-09-27 12:00:00', $row->acceptedAt);
-        self::assertSame('2026-09-27 12:00:00', $row->toArray()['acceptedAt']);
+        self::assertSame(['acceptance' => $row->toArray()], $browserRow['sources']);
+        self::assertSame(1790510400000, $row->toArray()['acceptedAt']);
 
         foreach ([true, false, null] as $declared) {
             $row->declared = $declared;
             self::assertSame($row->toArray(), HilosLegalAcceptanceTableRow::fromArray($row->toArray())->toArray());
         }
+    }
+
+    public function testANegativeMomentIsPlacedBeforeAPositiveOne(): void
+    {
+        $table = new LegalAcceptancesTableProbe();
+        $row = new HilosLegalAcceptanceTableRow(10, 42, 'Person', null, 'terms', 'gone', null, -5000);
+        $anchor = new TableAnchorDTO(['accepted_at' => '1000', 'id' => '9']);
+        $queryAsc = new TableQueryDTO(sort: TableSortOrderDTO::of(new TableSortDTO('acceptedAt', TableConstants::ORDER_ASC, 'accepted_at')));
+        $queryDesc = new TableQueryDTO(sort: TableSortOrderDTO::of(new TableSortDTO('acceptedAt', TableConstants::ORDER_DESC, 'accepted_at')));
+        self::assertSame(['accepted_at' => -5000, 'id' => 10], $table->anchorForRow($row, $queryAsc)->values);
+        self::assertLessThan(0, $table->placeRowAgainst($row, $anchor, $queryAsc));
+        self::assertGreaterThan(0, $table->placeRowAgainst($row, $anchor, $queryDesc));
+        self::assertSame(0, $table->placeRowAgainst($row, new TableAnchorDTO(['accepted_at' => '-5000', 'id' => '10']), $queryAsc));
+        self::assertSame(-5000, HilosLegalAcceptanceTableRow::fromArray($row->toArray())->acceptedAt);
     }
 
     public function testDeletionNeedsNoSqlAndOtherSourcesAreIgnored(): void

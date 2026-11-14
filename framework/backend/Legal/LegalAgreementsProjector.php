@@ -10,7 +10,6 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\DTO\LegalAgreementsStateSignalData;
 use Hilos\Legal\Exception\LegalException;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /** Builds the acceptance, document text and revision-history wire sections (HIL-498). */
 final class LegalAgreementsProjector
@@ -41,14 +40,14 @@ final class LegalAgreementsProjector
             $accepted = [];
             foreach (LegalCatalogResolver::revisions($document) as $revision) {
                 if (isset($records[$revision->id])) {
-                    $accepted[] = ['revisionId' => $revision->id, 'acceptedAt' => TimeHelper::sqlToMs($records[$revision->id]->acceptedAt)];
+                    $accepted[] = ['revisionId' => $revision->id, 'acceptedAt' => $records[$revision->id]->acceptedAt];
                 }
             }
             $state[] = [
                 'document' => $document->value,
                 'current' => LegalWire::revision(LegalCatalogResolver::latestRevision($document)),
                 'held' => $standing->held === null ? null : LegalWire::revision($standing->held),
-                'acceptedAt' => $standing->held === null ? null : TimeHelper::sqlToMs($records[$standing->held->id]->acceptedAt),
+                'acceptedAt' => $standing->held === null ? null : $records[$standing->held->id]->acceptedAt,
                 'accepted' => $accepted,
                 'standing' => $standing->standing->value,
                 'deadline' => $standing->deadline,

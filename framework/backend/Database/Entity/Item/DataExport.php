@@ -45,9 +45,9 @@ class DataExport extends Entity
         self::id => PhpType::INTEGER->value,
         self::user_id => PhpType::INTEGER->value,
         self::state => PhpType::STRING->value,
-        self::requested_at => PhpType::DATETIME->value,
-        self::finished_at => PhpType::DATETIME->value,
-        self::expires_at => PhpType::DATETIME->value,
+        self::requested_at => PhpType::INTEGER->value,
+        self::finished_at => PhpType::INTEGER->value,
+        self::expires_at => PhpType::INTEGER->value,
         self::stored_name => PhpType::STRING->value,
         self::size_bytes => PhpType::INTEGER->value,
         self::time_zone => PhpType::STRING->value,
@@ -68,9 +68,9 @@ class DataExport extends Entity
     public ?int $id = null;
     public int $user_id;
     public string $state;
-    public string $requested_at;
-    public ?string $finished_at = null;
-    public ?string $expires_at = null;
+    public int $requested_at;
+    public ?int $finished_at = null;
+    public ?int $expires_at = null;
     public ?string $stored_name = null;
     public ?int $size_bytes = null;
     public ?string $time_zone = null;

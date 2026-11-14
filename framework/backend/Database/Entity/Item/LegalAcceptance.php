@@ -31,7 +31,7 @@ class LegalAcceptance extends Entity
         self::user_id => PhpType::INTEGER->value,
         self::document => PhpType::STRING->value,
         self::revision_id => PhpType::STRING->value,
-        self::accepted_at => PhpType::DATETIME->value,
+        self::accepted_at => PhpType::INTEGER->value,
     ];
     public const array _foreign = [
         self::user_id => User::_table,
@@ -60,5 +60,5 @@ class LegalAcceptance extends Entity
     public int $user_id;
     public string $document;
     public string $revision_id;
-    public string $accepted_at;
+    public int $accepted_at;
 }

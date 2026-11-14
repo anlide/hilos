@@ -367,7 +367,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         }
         $export = Hilos::$db->dataExports->ofUser($person);
         if ($export?->state !== DataExportState::READY || $export->storedName === null || $export->finishedAt === null
-            || $export->expiresAt === null || $export->expiresAt <= TimeHelper::getSqlDateTime()
+            || $export->expiresAt === null || $export->expiresAt <= TimeHelper::nowMs()
         ) {
             return HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND);
         }
@@ -428,7 +428,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
         if ($previous?->storedName !== null) {
             $this->directory[$previous->storedName]->unlink();
         }
-        Hilos::$db->dataExports->actions->order($person, TimeHelper::getSqlDateTime());
+        Hilos::$db->dataExports->actions->order($person, TimeHelper::nowMs());
         $this->orderReplyPending = true;
         $this->preparingMayWait = true;
         $this->publishState($person);
@@ -489,8 +489,8 @@ abstract class AbstractDataExportAgent extends AbstractAgent
                 return;
             }
             FsPath::move($buildingPath, $finalPath);
-            $finishedAt = TimeHelper::getSqlDateTime();
-            $expiresAt = date('Y-m-d H:i:s', time() + self::LIFETIME_DAYS * TimeConstants::SECONDS_PER_DAY);
+            $finishedAt = TimeHelper::nowMs();
+            $expiresAt = $finishedAt + self::LIFETIME_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
             if (!$export->actions->finishReady($storedName, $size, $finishedAt, $expiresAt, $timeZone->getName())) {
                 FsPath::delete($finalPath);
 
@@ -511,9 +511,10 @@ abstract class AbstractDataExportAgent extends AbstractAgent
                 return;
             }
             $this->logAgentError("Cannot prepare the data export of user {$export->userId}: {$e->getMessage()}");
+            $finishedAt = TimeHelper::nowMs();
             if (!$export->actions->finishFailed(
-                TimeHelper::getSqlDateTime(),
-                date('Y-m-d H:i:s', time() + self::LIFETIME_DAYS * TimeConstants::SECONDS_PER_DAY),
+                $finishedAt,
+                $finishedAt + self::LIFETIME_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
             )) {
                 return;
             }
@@ -563,7 +564,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
      */
     private function expireCopies(): void
     {
-        foreach (Hilos::$db->dataExports->expiredBy(TimeHelper::getSqlDateTime()) as $export) {
+        foreach (Hilos::$db->dataExports->expiredBy(TimeHelper::nowMs()) as $export) {
             $this->removeExport($export);
             $this->publishState($export->userId);
         }
@@ -602,7 +603,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
      */
     private function readme(DateTimeZone $timeZone): string
     {
-        return 'Your data copy, prepared at ' . DataExportTime::iso(TimeHelper::getSqlDateTime(), $timeZone) . ".\n\n"
+        return 'Your data copy, prepared at ' . DataExportTime::isoMs(TimeHelper::nowMs(), $timeZone) . ".\n\n"
             . "JSON files contain your account's records. Dates are ISO 8601 in the time zone {$timeZone->getName()}, "
             . "each with its UTC offset written explicitly.\n"
             . "account: account number and the first sign-in method's creation date.\n"

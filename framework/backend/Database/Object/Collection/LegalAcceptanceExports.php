@@ -35,11 +35,11 @@ class LegalAcceptanceExports extends Objects
      * @param ?string $document Document filter of the order, or null for every document
      * @param ?string $revisionId Revision filter of the order, or null for every revision
      * @param ?string $search Search of the order, or null for none
-     * @param string $requestedAt Request time in SQL UTC
+     * @param int $requestedAt Request moment in epoch milliseconds
      * @return ObjectLegalAcceptanceExport Inserted order
      * @throws HilosException When the insert or announcement fails
      */
-    public function order(int $userId, ?string $document, ?string $revisionId, ?string $search, string $requestedAt): ObjectLegalAcceptanceExport
+    public function order(int $userId, ?string $document, ?string $revisionId, ?string $search, int $requestedAt): ObjectLegalAcceptanceExport
     {
         $order = static::OBJECT_CLASS::create();
         $order->userId = $userId;
@@ -83,13 +83,13 @@ class LegalAcceptanceExports extends Objects
     }
 
     /**
-     * @param string $now Expiry boundary in SQL UTC
+     * @param int $nowMs Inclusive expiry boundary in epoch milliseconds
      * @return static Rows for the expiry sweep
      * @throws HilosException When the query fails
      */
-    public function expiredBy(string $now): static
+    public function expiredBy(int $nowMs): static
     {
-        return $this->hydrateAll(static::entityClass()::get('`expires_at` <= ?', [$now]));
+        return $this->hydrateAll(static::entityClass()::get('`expires_at` <= ?', [$nowMs]));
     }
 
     /**

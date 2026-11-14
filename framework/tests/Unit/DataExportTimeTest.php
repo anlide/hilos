@@ -55,6 +55,33 @@ final class DataExportTimeTest extends TestCase
         ];
     }
 
+    /**
+     * @param int $milliseconds Stored moment in epoch milliseconds
+     * @param string $timeZone Zone of the file
+     * @param string $date Expected calendar date for the file name
+     */
+    #[DataProvider('days')]
+    public function testNamesTheFileByTheDayOfTheMomentInTheZoneOfTheFile(int $milliseconds, string $timeZone, string $date): void
+    {
+        self::assertSame($date, DataExportTime::dateMs($milliseconds, new DateTimeZone($timeZone)));
+    }
+
+    /**
+     * @return iterable<string, array{int, string, string}> The moments of the notation cases, the last millisecond of a day
+     *     and the millisecond before 1970
+     */
+    public static function days(): iterable
+    {
+        yield 'utc keeps its day' => [1790504130000, 'UTC', '2026-09-27'];
+        yield 'before midnight, positive offset moves to the next day' => [1773531000000, 'Asia/Kathmandu', '2026-03-15'];
+        yield 'before midnight in utc stays on its day' => [1773531000000, 'UTC', '2026-03-14'];
+        yield 'after midnight, negative offset moves to the previous day' => [1773534600000, 'America/New_York', '2026-03-14'];
+        yield 'first of the repeated hour in Warsaw' => [1792888200000, 'Europe/Warsaw', '2026-10-25'];
+        yield 'second of the repeated hour in Warsaw' => [1792891800000, 'Europe/Warsaw', '2026-10-25'];
+        yield 'the last millisecond of a day in the zone of the file stays on that day' => [1773547199999, 'America/New_York', '2026-03-14'];
+        yield 'one millisecond before 1970 is the last day of 1969' => [-1, 'UTC', '1969-12-31'];
+    }
+
     /** An optional moment nobody recorded stays absent instead of becoming a date. */
     public function testAbsentMomentStaysAbsent(): void
     {

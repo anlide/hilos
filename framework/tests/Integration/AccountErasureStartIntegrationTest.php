@@ -526,8 +526,8 @@ final class AccountErasureStartIntegrationTest extends HilosSessionIntegrationTe
         $gone = self::seedPushDevice($userId, 'https://push.example.test/gone');
         $released = self::seedPushDevice($userId, 'https://push.example.test/released');
         Database::sqlRun(
-            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, NOW())',
-            [$userId, LegalDocument::TERMS->value, 'second'],
+            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
+            [$userId, LegalDocument::TERMS->value, 'second', $now],
         );
         Database::sql('INSERT INTO `hilos_second_factor_trust_restriction` (`saved_at`, `term_days`) VALUES (?, 0)', [$now]);
         $restrictionId = Database::lastInsertId();

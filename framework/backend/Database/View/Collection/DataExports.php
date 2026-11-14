@@ -45,16 +45,16 @@ class DataExports extends DbCollection
     }
 
     /**
-     * @param string $now Expiry boundary in SQL UTC
+     * @param int $nowMs Inclusive expiry boundary in epoch milliseconds
      * @return static Matching queue rows for the agent's file sweep
      * @throws HilosException When the query or wrapper creation fails
      * @throws ObjectGetIdStringNotImplementedException If DbItem's Object does not implement getIdString()
      * @throws CollectionNotManualException When add() rejects the item on a non-manual collection
      */
-    public function expiredBy(string $now): static
+    public function expiredBy(int $nowMs): static
     {
         $result = static::initEmpty();
-        foreach ($this->objectCollection->expiredBy($now) as $object) {
+        foreach ($this->objectCollection->expiredBy($nowMs) as $object) {
             $item = $this->itemFor($object);
             if ($item !== null) {
                 $result->add($item);

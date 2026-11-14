@@ -60,10 +60,10 @@ final class DataExportDownloadResponseTest extends TestCase
         file_put_contents($this->file->getPath(), "PK\x00\xff");
         $names = [];
         foreach ([
-            ['2026-10-22 23:30:00', 'Europe/Warsaw'],
-            ['2026-10-22 23:30:00', 'UTC'],
-            ['2026-10-23 03:00:00', 'America/Los_Angeles'],
-            ['2026-10-23 03:00:00', 'UTC'],
+            [1792711800000, 'Europe/Warsaw'], // 2026-10-22T23:30:00Z
+            [1792711800000, 'UTC'],
+            [1792724400000, 'America/Los_Angeles'], // 2026-10-23T03:00:00Z
+            [1792724400000, 'UTC'],
         ] as [$finishedAt, $timeZone]) {
             $names[] = $this->response('', finishedAt: $finishedAt, timeZone: $timeZone)->reply->headers['Content-Disposition'];
         }
@@ -79,13 +79,13 @@ final class DataExportDownloadResponseTest extends TestCase
     public function testZoneDoesNotChangeTransportRefusals(): void
     {
         file_put_contents($this->file->getPath(), str_repeat('x', FileDownloadResponse::DIRECT_MAX_BYTES + 1));
-        $tooLarge = $this->response('', finishedAt: '2026-10-22 23:30:00', timeZone: 'Europe/Warsaw');
+        $tooLarge = $this->response('', finishedAt: 1792711800000, timeZone: 'Europe/Warsaw');
         self::assertSame(500, $tooLarge->reply->status);
         self::assertTrue($tooLarge->tooLarge);
         self::assertSame('no-store', $tooLarge->reply->headers['Cache-Control']);
         file_put_contents($this->file->getPath(), "PK\x00\xff");
         clearstatcache(true, $this->file->getPath());
-        $elsewhere = $this->response('', 'node-b', 'node-a', '2026-10-22 23:30:00', 'Europe/Warsaw');
+        $elsewhere = $this->response('', 'node-b', 'node-a', 1792711800000, 'Europe/Warsaw');
         self::assertSame(500, $elsewhere->reply->status);
         self::assertTrue($elsewhere->onAnotherNode);
         self::assertSame('no-store', $elsewhere->reply->headers['Cache-Control']);
@@ -137,7 +137,7 @@ final class DataExportDownloadResponseTest extends TestCase
      * @param string $location Optional nginx location
      * @param ?string $originNodeId Node holding the browser's connection, null off a cluster
      * @param ?string $localNodeId Node the export agent runs on, null off a cluster
-     * @param string $finishedAt Stored UTC readiness date of the archive
+     * @param int $finishedAt Stored readiness moment of the archive in epoch milliseconds, 2026-09-27T12:00:00Z by default
      * @param string $timeZone IANA zone the archive was written in
      * @return DataExportDownloadResponse Response under test
      */
@@ -145,7 +145,7 @@ final class DataExportDownloadResponseTest extends TestCase
         string $location,
         ?string $originNodeId = null,
         ?string $localNodeId = null,
-        string $finishedAt = '2026-09-27 12:00:00',
+        int $finishedAt = 1790510400000,
         string $timeZone = 'UTC',
     ): DataExportDownloadResponse {
         return DataExportDownloadResponse::forFile(

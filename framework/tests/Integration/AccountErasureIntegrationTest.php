@@ -84,10 +84,11 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     private const int DEEPEST_ID = 305;
     private const int PHOTO_FILE_ID = 9001;
 
-    private const string CREATED_AT = '2026-09-26 10:00:00';
+    /** 2026-09-26T10:00:00Z in epoch milliseconds, the moment the other fixture rows were written. */
+    private const int CREATED_AT = 1790416800000;
     private const int PAST = 1767225600000;
 
-    /** The session rows keep epoch milliseconds, unlike the datetime columns the other fixtures fill. */
+    /** The moment the session rows were opened, in epoch milliseconds. */
     private const int SESSION_CREATED_AT = 1790416800000;
 
     private const int SECOND_FACTOR_WAIT_UNTIL = 2082758400000;

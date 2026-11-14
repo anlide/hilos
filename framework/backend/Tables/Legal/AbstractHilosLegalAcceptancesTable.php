@@ -41,7 +41,6 @@ use Hilos\HilosException;
 use Hilos\Legal\Exception\LegalException;
 use Hilos\Legal\LegalCatalogResolver;
 use Hilos\Legal\LegalDocument;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Immutable acceptance history served as SQL windows, with project-owned person names.
@@ -71,6 +70,7 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
     ];
     private const int DEFAULT_LIMIT = 50;
     private const array FACETED_FILTERS = [self::FILTER_DOCUMENT, self::FILTER_REVISION];
+    private const string SQL_INTEGER_PATTERN = '/\A-?\d+\z/';
 
     /** @return int Number of rows in the initial window */
     public function windowSize(): int
@@ -116,14 +116,9 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
      */
     public function browserRow(AbstractTableRow $row): array
     {
-        $sources = $row->toArray();
-        if (isset($sources[HilosLegalAcceptanceTableRow::acceptedAt]) && is_string($sources[HilosLegalAcceptanceTableRow::acceptedAt])) {
-            $sources[HilosLegalAcceptanceTableRow::acceptedAt] = TimeHelper::sqlToMs($sources[HilosLegalAcceptanceTableRow::acceptedAt]);
-        }
-
         return [
             BrowserPageSignalData::rowKey => $row->requireRowKey(),
-            BrowserPageSignalData::sources => [self::ROW_SLOT => $sources],
+            BrowserPageSignalData::sources => [self::ROW_SLOT => $row->toArray()],
         ];
     }
 
@@ -245,7 +240,9 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
                 return null;
             }
             $value = $anchor->values[$column];
-            $against[$field] = $field === $keyField && is_string($value) && ctype_digit($value) ? (int) $value : $value;
+            // Both anchor columns, the acceptance moment and the id, are integers that SQL hands back as text; the
+            // moment may be negative, and a text comparison would place it after a positive one.
+            $against[$field] = is_string($value) && preg_match(self::SQL_INTEGER_PATTERN, $value) === 1 ? (int) $value : $value;
         }
 
         return InMemoryTableFilter::compare($row->toArray(), $against, $query->sort, $keyField);
@@ -516,7 +513,7 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
             document: $document,
             revisionId: $revisionId,
             declared: $declared,
-            acceptedAt: (string) $row[EntityLegalAcceptance::accepted_at],
+            acceptedAt: (int) $row[EntityLegalAcceptance::accepted_at],
         );
     }
 

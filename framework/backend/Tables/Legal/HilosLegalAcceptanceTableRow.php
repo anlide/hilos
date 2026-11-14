@@ -29,7 +29,7 @@ final class HilosLegalAcceptanceTableRow extends AbstractTableRow
      * @param string $document Document
      * @param string $revisionId RevisionId
      * @param ?bool $declared Whether the revision is declared, unknown when the catalog is invalid
-     * @param string $acceptedAt AcceptedAt
+     * @param int $acceptedAt Moment of the acceptance in epoch milliseconds
      */
     public function __construct(
         public int $rowKey,
@@ -39,7 +39,7 @@ final class HilosLegalAcceptanceTableRow extends AbstractTableRow
         public string $document,
         public string $revisionId,
         public ?bool $declared,
-        public string $acceptedAt,
+        public int $acceptedAt,
     ) {
     }
 
@@ -85,7 +85,7 @@ final class HilosLegalAcceptanceTableRow extends AbstractTableRow
             document: self::requireString($data, self::document),
             revisionId: self::requireString($data, self::revisionId),
             declared: self::optionalBool($data, self::declared),
-            acceptedAt: self::requireString($data, self::acceptedAt),
+            acceptedAt: self::requireInt($data, self::acceptedAt),
         );
     }
 }

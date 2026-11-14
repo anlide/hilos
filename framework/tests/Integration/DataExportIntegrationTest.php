@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\DataExport\DataExportHttp;
 use Hilos\DataExport\DataExportNotificationType;
@@ -46,8 +47,14 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
 {
     private const int PHOTO_FILE_ID = 9001;
 
-    /** The session rows keep epoch milliseconds, unlike the datetime columns the other fixtures fill. */
+    /** 2026-01-01T00:00:00Z in epoch milliseconds, when the sessions of the fixtures begin. */
     private const int SESSION_CREATED_AT = 1767225600000;
+    /** 2026-01-01T00:00:00Z in epoch milliseconds, when the fixtures order their copies. */
+    private const int ORDERED_AT = 1767225600000;
+    /** 2026-10-22T23:00:00Z in epoch milliseconds, half an hour before the moments the zone cases carry. */
+    private const int OCTOBER_ORDERED_AT = 1792710000000;
+    private const int MINUTE = TimeConstants::SECONDS_PER_MINUTE * TimeConstants::MS_PER_SECOND;
+    private const int DAY = TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
 
     private const array EXTRA_TABLES = [
         'hilos_passkey_credential', 'hilos_push_subscription', 'hilos_notification', 'hilos_notification_preference',
@@ -147,7 +154,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             . "VALUES (?, 7, 'export-passkey', 'PUBLIC_KEY', ?, 'user-handle', 'My key', 1735689600123, ?)",
             [$identityId, PasskeyAlgorithm::Es256->value, $lastUsedAt],
         );
-        $request = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $request = Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->onStart();
         $agent->onTick();
@@ -209,22 +216,22 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Database::sqlRun("INSERT INTO hilos_user_rename (user_id, renamed_by_user_id, old_name, new_name, renamed_at) VALUES "
             . "(7, 8, 'Old me', 'New me', 1767398400123), (8, 7, 'Foreign old', 'Foreign new', 1767398400123)");
         Database::sqlRun("INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES "
-            . "(7, 'terms', '2026-01-05', '2026-01-05 00:00:00'), "
-            . "(7, 'terms', '2026-09-17', '2026-09-20 10:00:00'), "
-            . "(7, 'privacy', '2026-09-17', '2026-09-20 10:00:01'), "
-            . "(8, 'terms', '2026-09-17', '2026-09-21 00:00:00')");
+            . "(7, 'terms', '2026-01-05', 1767571200000), "
+            . "(7, 'terms', '2026-09-17', 1789898400000), "
+            . "(7, 'privacy', '2026-09-17', 1789898401000), "
+            . "(8, 'terms', '2026-09-17', 1789948800000)");
         Database::sql('UPDATE hilos_notification SET read_at = ? WHERE user_id = 7', [$optionalMoment]);
         Database::sql('UPDATE hilos_push_subscription SET last_seen_at = ?, gone_at = ? WHERE user_id = 7',
             [$optionalMoment, $optionalMoment]);
-        $first = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
-        Hilos::$db->dataExports->actions->order(8, '2026-01-02 00:00:00');
+        $first = Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
+        Hilos::$db->dataExports->actions->order(8, self::ORDERED_AT + self::DAY);
         $agent = new DataExportTestAgent();
         $agent->onStart();
         $agent->onTick();
 
         self::assertSame(DataExportState::READY, $first->state);
         self::assertSame(DataExportState::PREPARING, Hilos::$db->dataExports->ofUser(8)?->state);
-        self::assertSame(7 * 86400, strtotime($first->expiresAt) - strtotime($first->finishedAt));
+        self::assertSame(7 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND, $first->expiresAt - $first->finishedAt);
         $archive = new PharData($this->directory . '/' . $first->storedName);
         self::assertFalse(isset($archive['analytics_person.json']));
         self::assertSame(['id' => 7, 'since' => '2025-01-01T00:00:00.000+00:00'], self::section($archive, 'account'));
@@ -267,7 +274,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame([
             'document' => 'terms',
             'revisionId' => '2026-01-05',
-            'acceptedAt' => '2026-01-05T00:00:00+00:00',
+            'acceptedAt' => '2026-01-05T00:00:00.000+00:00',
             'inCode' => false,
             'publishedOn' => null,
             'effectiveOn' => null,
@@ -277,7 +284,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame([
             'document' => 'terms',
             'revisionId' => '2026-09-17',
-            'acceptedAt' => '2026-09-20T10:00:00+00:00',
+            'acceptedAt' => '2026-09-20T10:00:00.000+00:00',
             'inCode' => true,
             'publishedOn' => '2026-09-17',
             'effectiveOn' => '2026-09-17',
@@ -298,7 +305,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::assertSame([
             'document' => 'privacy',
             'revisionId' => '2026-09-17',
-            'acceptedAt' => '2026-09-20T10:00:01+00:00',
+            'acceptedAt' => '2026-09-20T10:00:01.000+00:00',
             'inCode' => false,
             'publishedOn' => null,
             'effectiveOn' => null,
@@ -338,7 +345,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             'INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at, last_used_at, created_at) '
             . "VALUES (7, 'Unconfirmed', 'TOTP_SECRET', NULL, NULL, 1767225600123)",
         );
-        $absent = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $absent = Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->onStart();
         $agent->onTick();
@@ -356,7 +363,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             'INSERT INTO hilos_second_factor (user_id, label, secret, confirmed_at, last_used_at, created_at) '
             . 'VALUES (8, \'Epoch\', \'TOTP_SECRET\', 0, 0, 1767225600123)',
         );
-        $epoch = Hilos::$db->dataExports->actions->order(8, '2026-01-02 00:00:00');
+        $epoch = Hilos::$db->dataExports->actions->order(8, self::ORDERED_AT + self::DAY);
         $agent->onTick();
 
         self::assertSame(DataExportState::READY, $epoch->state);
@@ -393,7 +400,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Database::sqlRun("INSERT INTO hilos_user_rename (user_id, renamed_by_user_id, old_name, new_name, renamed_at) VALUES "
             . "(7, 8, 'Old me', 'New me', 1792711800123)");
         $this->withZoneEnvironment($mode, 'Pacific/Auckland', function () use ($zone, $renamedAt): void {
-            $export = Hilos::$db->dataExports->actions->order(7, '2026-10-22 23:00:00');
+            $export = Hilos::$db->dataExports->actions->order(7, self::OCTOBER_ORDERED_AT);
             $agent = new DataExportTestAgent();
             $agent->onStart();
             $agent->onTick();
@@ -410,9 +417,9 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
                 $readme,
             );
             self::assertSame(1, preg_match('/^Your data copy, prepared at (\S+)\.\n/', $readme, $prepared));
-            $preparedAt = DateTimeImmutable::createFromFormat('Y-m-d\TH:i:sP', $prepared[1]);
+            $preparedAt = DateTimeImmutable::createFromFormat('Y-m-d\TH:i:s.vP', $prepared[1]);
             self::assertNotFalse($preparedAt);
-            self::assertSame($preparedAt->setTimezone(new DateTimeZone($zone))->format('Y-m-d\TH:i:sP'), $prepared[1]);
+            self::assertSame($preparedAt->setTimezone(new DateTimeZone($zone))->format('Y-m-d\TH:i:s.vP'), $prepared[1]);
         });
     }
 
@@ -424,7 +431,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             [7, 1792711800123, 1792798200456],
         );
         $this->withZoneEnvironment('utc', 'UTC', function (): void {
-            $order = Hilos::$db->dataExports->actions->order(7, '2026-10-22 23:00:00');
+            $order = Hilos::$db->dataExports->actions->order(7, self::OCTOBER_ORDERED_AT);
             $agent = new DataExportTestAgent();
             $agent->onStart();
             $agent->onTick();
@@ -438,6 +445,80 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         });
     }
 
+    /** An acceptance exports its exact milliseconds, turned into the zone of the file once. */
+    public function testLegalAcceptanceExportsItsMillisecondsOnce(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
+            [7, 'terms', '2026-09-17', 1792711800123],
+        );
+        $this->withZoneEnvironment('project', 'Pacific/Auckland', function (): void {
+            $order = Hilos::$db->dataExports->actions->order(7, self::OCTOBER_ORDERED_AT);
+            $agent = new DataExportTestAgent();
+            $agent->onStart();
+            $agent->onTick();
+            $archive = new PharData($this->directory . '/' . $order->storedName);
+
+            self::assertSame(
+                ['2026-10-23T12:30:00.123+13:00'],
+                array_column(self::section($archive, 'legal_acceptances'), 'acceptedAt'),
+            );
+        });
+    }
+
+    /**
+     * The README names the moment the copy was prepared with its milliseconds, turned into the zone of
+     * the file once: read back, it falls inside the tick that built the archive.
+     */
+    public function testReadmeWritesThePreparedMomentWithItsMillisecondsOnce(): void
+    {
+        $this->withZoneEnvironment('project', 'Pacific/Auckland', function (): void {
+            $order = Hilos::$db->dataExports->actions->order(7, self::OCTOBER_ORDERED_AT);
+            $agent = new DataExportTestAgent();
+            $agent->onStart();
+            $before = TimeHelper::nowMs();
+            $agent->onTick();
+            $after = TimeHelper::nowMs();
+            $readme = new PharData($this->directory . '/' . $order->storedName)['README.txt']->getContent();
+
+            self::assertSame(1, preg_match('/^Your data copy, prepared at (\S+)\.\n/', $readme, $prepared));
+            $preparedAt = DateTimeImmutable::createFromFormat('Y-m-d\TH:i:s.vP', $prepared[1]);
+            self::assertNotFalse($preparedAt);
+            self::assertSame($preparedAt->setTimezone(new DateTimeZone('Pacific/Auckland'))->format('Y-m-d\TH:i:s.vP'), $prepared[1]);
+            $preparedMs = $preparedAt->getTimestamp() * TimeConstants::MS_PER_SECOND + (int)$preparedAt->format('v');
+            self::assertGreaterThanOrEqual($before, $preparedMs);
+            self::assertLessThanOrEqual($after, $preparedMs);
+        });
+    }
+
+    /**
+     * A preparing copy has neither an end nor an expiry yet, and the state says null; a ready one
+     * carries both moments as the stored numbers, without a second conversion.
+     *
+     * @throws HilosException When the fixture or the queue write fails
+     */
+    public function testStateIsNullWhilePreparingAndMillisecondsOnceReady(): void
+    {
+        $order = Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
+        self::assertSame([
+            'state' => DataExportState::PREPARING,
+            'requestedAt' => self::ORDERED_AT,
+            'finishedAt' => null,
+            'expiresAt' => null,
+            'sizeBytes' => null,
+        ], DataExportStateProjector::stateFor(7)->dataExport);
+
+        $finishedAt = self::ORDERED_AT + self::MINUTE + 123;
+        self::assertTrue($order->actions->finishReady('ready.zip', 4, $finishedAt, $finishedAt + self::DAY, 'UTC'));
+        self::assertSame([
+            'state' => DataExportState::READY,
+            'requestedAt' => self::ORDERED_AT,
+            'finishedAt' => $finishedAt,
+            'expiresAt' => $finishedAt + self::DAY,
+            'sizeBytes' => 4,
+        ], DataExportStateProjector::stateFor(7)->dataExport);
+    }
+
     /**
      * The download is named by the zone saved with the ready file, never by the person's or the
      * policy's zone of the moment, and a ready file older than the saved zone is named in UTC.
@@ -446,18 +527,18 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
      */
     public function testDownloadNameKeepsTheZoneSavedWithTheReadyFile(): void
     {
-        $expiresAt = date('Y-m-d H:i:s', time() + 86400);
+        $expiresAt = TimeHelper::nowMs() + self::DAY;
         Database::sqlRun("UPDATE hilos_user SET time_zone = 'America/Los_Angeles' WHERE id = 7");
         Database::sqlRun("UPDATE hilos_user SET time_zone = 'Europe/Warsaw' WHERE id = 8");
         Database::sqlRun(
             'INSERT INTO hilos_data_export (user_id, state, requested_at, finished_at, expires_at, stored_name, size_bytes, time_zone) '
-            . "VALUES (8, 'ready', '2026-10-22 23:00:00', '2026-10-22 23:30:00', ?, 'older.zip', 4, NULL)",
-            [$expiresAt],
+            . "VALUES (8, 'ready', ?, ?, ?, 'older.zip', 4, NULL)",
+            [self::OCTOBER_ORDERED_AT, self::OCTOBER_ORDERED_AT + 30 * self::MINUTE, $expiresAt],
         );
         self::seedSession('owner', 7, self::SESSION_CREATED_AT, null);
         self::seedSession('older', 8, self::SESSION_CREATED_AT, null);
-        Hilos::$db->dataExports->actions->order(7, '2026-10-22 23:00:00')->actions->finishReady(
-            'snapshot.zip', 4, '2026-10-22 23:30:00', $expiresAt, 'Europe/Warsaw',
+        Hilos::$db->dataExports->actions->order(7, self::OCTOBER_ORDERED_AT)->actions->finishReady(
+            'snapshot.zip', 4, self::OCTOBER_ORDERED_AT + 30 * self::MINUTE, $expiresAt, 'Europe/Warsaw',
         );
         mkdir($this->directory);
         file_put_contents($this->directory . '/snapshot.zip', 'PK..');
@@ -503,7 +584,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
                 'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',
                 [7, self::PHOTO_FILE_ID, 1767398400123],
             );
-            $order = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+            $order = Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
             $agent = new DataExportTestAgent();
             $agent->onStart();
             $agent->onTick();
@@ -526,7 +607,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     {
         DataExportPhotoTestHilos::initBrowser();
         self::assertArrayNotHasKey(7, Hilos::$db->userPhotos);
-        $order = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $order = Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->onStart();
         $agent->onTick();
@@ -554,7 +635,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
                 'INSERT INTO `hilos_user_photo` (`user_id`, `file_id`, `set_at`) VALUES (?, ?, ?)',
                 [7, self::PHOTO_FILE_ID, 1767398400123],
             );
-            $order = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+            $order = Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
             $agent = new DataExportTestAgent();
             $agent->onStart();
             $agent->onTick();
@@ -581,7 +662,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::seedSession('other', 8, self::SESSION_CREATED_AT, null);
         self::seedSession('impersonated', 7, self::SESSION_CREATED_AT, null, 8);
         self::seedSession('expired', 7, self::SESSION_CREATED_AT, 1767225660000);
-        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->onStart();
         $agent->onTick();
@@ -599,8 +680,8 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
             new HttpRequestDTO('request', 'GET', DataExportHttp::DOWNLOAD_PATH, ['token' => 'owner'], null, null), '', '',
         );
         self::assertSame(401, $agent->httpReply?->status, 'A query-string token is never an identity');
-        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00')->actions->finishReady(
-            'expired.zip', 10, '2026-01-01 00:01:00', '2026-01-02 00:01:00', 'UTC',
+        Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT)->actions->finishReady(
+            'expired.zip', 10, self::ORDERED_AT + self::MINUTE, self::ORDERED_AT + self::MINUTE + self::DAY, 'UTC',
         );
         file_put_contents($this->directory . '/expired.zip', 'expired bytes');
         $agent->onSignalHttpRequest(new HttpRequestDTO('request', 'GET', DataExportHttp::DOWNLOAD_PATH, [], 'owner', null), '', '');
@@ -619,7 +700,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         self::seedSession('blocked', null, self::SESSION_CREATED_AT, null);
         Hilos::$db->sessions->findByToken('blocked')->actions->holdBlockedNotice(7, true);
         self::seedSession('other', 8, self::SESSION_CREATED_AT, null);
-        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->onStart();
         $agent->onTick();
@@ -641,7 +722,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     public function testHttpDownloadToABrowserOnAnotherNodeNeedsNginx(): void
     {
         self::seedSession('owner', 7, self::SESSION_CREATED_AT, null);
-        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->onStart();
         $agent->onTick();
@@ -676,7 +757,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         Database::sqlRun('DROP TABLE hilos_notification');
         Schema::reset();
         Schema::initialize();
-        $export = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $export = Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->onStart();
         $agent->onTick();
@@ -700,15 +781,15 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
     public function testStartupCleansOrphansMissingFilesAndExpiredCopies(): void
     {
         mkdir($this->directory);
-        $future = date('Y-m-d H:i:s', time() + 86400);
+        $future = TimeHelper::nowMs() + self::DAY;
         foreach ([7 => 'kept.zip', 8 => 'missing.zip', 9 => 'expired.zip'] as $userId => $name) {
-            $row = Hilos::$db->dataExports->actions->order($userId, '2026-01-01 00:00:00');
-            $row->actions->finishReady($name, 4, '2026-01-01 00:01:00', $userId === 9 ? '2026-01-02 00:00:00' : $future, 'UTC');
+            $row = Hilos::$db->dataExports->actions->order($userId, self::ORDERED_AT);
+            $row->actions->finishReady($name, 4, self::ORDERED_AT + self::MINUTE, $userId === 9 ? self::ORDERED_AT + self::DAY : $future, 'UTC');
         }
-        Hilos::$db->dataExports->actions->order(10, '2026-01-01 00:00:00')->actions->finishFailed(
-            '2026-01-01 00:01:00', '2026-01-02 00:00:00',
+        Hilos::$db->dataExports->actions->order(10, self::ORDERED_AT)->actions->finishFailed(
+            self::ORDERED_AT + self::MINUTE, self::ORDERED_AT + self::DAY,
         );
-        Hilos::$db->dataExports->actions->order(11, '2026-01-01 00:00:00');
+        Hilos::$db->dataExports->actions->order(11, self::ORDERED_AT);
         foreach (['kept.zip', 'expired.zip', 'abandoned.building.zip', 'orphan.zip', ClusterDirectoryMarker::FILE_NAME] as $name) {
             file_put_contents($this->directory . '/' . $name, 'file');
         }
@@ -737,7 +818,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
         $agent = new DataExportTestAgent();
         $agent->onStart();
         $agent->onTick();
-        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent->onTick();
         $agent->onTick();
         self::assertSame(DataExportState::PREPARING, Hilos::$db->dataExports->ofUser(7)?->state);
@@ -755,7 +836,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
      */
     public function testErasureDuringBuildDiscardsEverythingWithoutPublication(): void
     {
-        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->duringExport = static function (): void {
             Database::sqlRun("INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at, completed_at) "
@@ -776,7 +857,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
      */
     public function testErasureBegunBeforeBuildDiscardsTheOrderUnbuilt(): void
     {
-        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         self::beginErasure(7);
         $agent = new DataExportTestAgent();
         $agent->duringExport = static function (): void {
@@ -797,7 +878,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
      */
     public function testErasureBegunDuringBuildDiscardsEverythingWithoutPublication(): void
     {
-        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->duringExport = static function (): void {
             self::beginErasure(7);
@@ -817,14 +898,14 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
      */
     public function testReplacedRequestCannotPublishLateCompletion(): void
     {
-        Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->duringExport = static function (): void {
-            Hilos::$db->dataExports->actions->order(7, '2026-01-02 00:00:00');
+            Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT + self::DAY);
         };
         $agent->onStart();
         $agent->onTick();
-        self::assertSame('2026-01-02 00:00:00', Hilos::$db->dataExports->ofUser(7)?->requestedAt);
+        self::assertSame(self::ORDERED_AT + self::DAY, Hilos::$db->dataExports->ofUser(7)?->requestedAt);
         self::assertSame(DataExportState::PREPARING, Hilos::$db->dataExports->ofUser(7)?->state);
         self::assertSame([], glob($this->directory . '/*'));
         self::assertSame([], $agent->published);
@@ -838,7 +919,7 @@ final class DataExportIntegrationTest extends HilosSessionIntegrationTestCase
      */
     public function testFailureDoesNotRetryItself(): void
     {
-        $export = Hilos::$db->dataExports->actions->order(7, '2026-01-01 00:00:00');
+        $export = Hilos::$db->dataExports->actions->order(7, self::ORDERED_AT);
         $agent = new DataExportTestAgent();
         $agent->duringExport = static function (): void { throw new FsException('Missing project attachment'); };
         $agent->onStart();

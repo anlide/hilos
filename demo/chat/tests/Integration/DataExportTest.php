@@ -39,6 +39,8 @@ final class DataExportTest extends IntegrationTestCase
 
     /** 2026-10-22T23:30:00Z: a moment whose date in Warsaw or Auckland is already the next day. */
     private const int EVENT_MOMENT_MS = 1792711800000;
+    /** 2026-01-01T00:00:00Z in epoch milliseconds, when the cases order their copies. */
+    private const int ORDERED_AT = 1767225600000;
 
     private string $directory;
     private ?FsContext $previousFs;
@@ -132,7 +134,7 @@ final class DataExportTest extends IntegrationTestCase
         $agent = $this->agent = new DataExportAgent();
         $this->startAgent($agent);
         ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static function () use ($agent, $personId): void {
-            Hilos::$db->dataExports->actions->order($personId, '2026-01-01 00:00:00');
+            Hilos::$db->dataExports->actions->order($personId, self::ORDERED_AT);
             $agent->onTick();
         });
 
@@ -218,8 +220,8 @@ final class DataExportTest extends IntegrationTestCase
         $this->startAgent($agent);
         $this->withZoneEnvironment($mode, 'Pacific/Auckland', static function () use ($agent, $aliceId, $bobId): void {
             ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static function () use ($agent, $aliceId, $bobId): void {
-                Hilos::$db->dataExports->actions->order($aliceId, '2026-01-01 00:00:00');
-                Hilos::$db->dataExports->actions->order($bobId, '2026-01-01 00:00:00');
+                Hilos::$db->dataExports->actions->order($aliceId, self::ORDERED_AT);
+                Hilos::$db->dataExports->actions->order($bobId, self::ORDERED_AT);
                 $agent->onTick();
                 $agent->onTick();
             });

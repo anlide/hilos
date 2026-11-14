@@ -26,7 +26,6 @@ use Hilos\Legal\LegalSignificance;
 use Hilos\Legal\LegalTally;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Tables\Legal\AbstractHilosLegalAcceptancesTable;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /** Acceptance writes use the real users-library entry and database, with its group frames captured. */
 final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
@@ -66,15 +65,15 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
     {
         Database::sqlRun(
             'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
-            [self::USER_ID, 'terms', 'old', '2026-01-02 03:04:05'],
+            [self::USER_ID, 'terms', 'old', 1767323045000],
         );
         $this->library->legalAcceptanceCommands()->accept(self::USER_ID, ['terms' => 'old']);
         $first = Hilos::$db->legalAcceptances->findOne(self::USER_ID, LegalDocument::TERMS, 'old');
         $this->library->legalAcceptanceCommands()->accept(self::USER_ID, ['terms' => 'old']);
         self::assertCount(1, Hilos::$db->legalAcceptances->ofUser(self::USER_ID));
-        self::assertSame('2026-01-02 03:04:05', $first?->acceptedAt);
+        self::assertSame(1767323045000, $first?->acceptedAt);
         self::assertSame($first?->id, Hilos::$db->legalAcceptances->findOne(self::USER_ID, LegalDocument::TERMS, 'old')?->id);
-        self::assertSame(TimeHelper::sqlToMs('2026-01-02 03:04:05'), $this->states()[0]->documents[0]['acceptedAt']);
+        self::assertSame(1767323045000, $this->states()[0]->documents[0]['acceptedAt']);
     }
 
     public function testAnUnknownSecondRevisionRefusesTheWholeBatchAndPublishesNothing(): void
@@ -105,16 +104,16 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
 
     public function testUndeclaredRowsAreHiddenAndAcceptedHistoryUsesDeclarationOrder(): void
     {
-        foreach ([['wording', '2026-02-02'], ['unknown', '2026-02-03'], ['old', '2026-02-04']] as [$id, $date]) {
+        foreach ([['wording', 1769990400000], ['unknown', 1770076800000], ['old', 1770163200000]] as [$id, $acceptedAt]) {
             Database::sqlRun(
                 'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
-                [self::USER_ID, 'terms', $id, $date . ' 00:00:00'],
+                [self::USER_ID, 'terms', $id, $acceptedAt],
             );
         }
         $state = LegalAgreementsProjector::stateFor(self::USER_ID, '2026-09-27');
         self::assertSame(['old', 'wording'], array_column($state->documents[0]['accepted'], 'revisionId'));
         self::assertSame('wording', $state->documents[0]['held']['revisionId']);
-        self::assertSame(TimeHelper::sqlToMs('2026-02-02 00:00:00'), $state->documents[0]['acceptedAt']);
+        self::assertSame(1769990400000, $state->documents[0]['acceptedAt']);
         self::assertSame('none', $state->documents[1]['standing']);
         $texts = LegalAgreementsProjector::textsFor(self::USER_ID, '2026-09-27');
         self::assertNull($texts['documents'][0]['held']);
@@ -136,13 +135,13 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
     public function testAdminReadsIncludeUncachedAndUndeclaredRowsWithoutWriting(): void
     {
         foreach ([
-            [self::USER_ID, 'terms', 'wording', '2026-02-01 00:00:00'],
-            [self::USER_ID, 'terms', 'old', '2026-02-02 00:00:00'],
-            [self::USER_ID, 'terms', 'gone', '2026-02-03 00:00:00'],
-            [self::USER_ID, 'retired', 'older', '2026-02-03 00:00:00'],
-            [self::OTHER_USER_ID, 'terms', 'gone', '2026-02-03 00:00:00'],
-            [self::OTHER_USER_ID, 'privacy', 'privacy', '2026-02-03 00:00:00'],
-            [self::ADMIN_USER_ID, 'terms', 'old', '2026-02-03 00:00:00'],
+            [self::USER_ID, 'terms', 'wording', 1769904000000],
+            [self::USER_ID, 'terms', 'old', 1769990400000],
+            [self::USER_ID, 'terms', 'gone', 1770076800000],
+            [self::USER_ID, 'retired', 'older', 1770076800000],
+            [self::OTHER_USER_ID, 'terms', 'gone', 1770076800000],
+            [self::OTHER_USER_ID, 'privacy', 'privacy', 1770076800000],
+            [self::ADMIN_USER_ID, 'terms', 'old', 1770076800000],
         ] as [$userId, $document, $revision, $acceptedAt]) {
             Database::sqlRun(
                 'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
@@ -184,12 +183,12 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
     public function testAcceptanceWindowsFilterAndPageByTimestampThenNumericId(): void
     {
         foreach ([
-            [self::USER_ID, 'terms', 'old', '2026-02-01 00:00:00'],
-            [self::OTHER_USER_ID, 'terms', 'old', '2026-02-02 00:00:00'],
-            [self::ADMIN_USER_ID, 'terms', 'old', '2026-02-02 00:00:00'],
-            [self::USER_ID, 'terms', 'wording', '2026-02-03 00:00:00'],
-            [self::USER_ID, 'terms', 'gone', '2026-02-04 00:00:00'],
-            [self::USER_ID, 'privacy', 'privacy', '2026-02-03 00:00:00'],
+            [self::USER_ID, 'terms', 'old', 1769904000000],
+            [self::OTHER_USER_ID, 'terms', 'old', 1769990400000],
+            [self::ADMIN_USER_ID, 'terms', 'old', 1769990400000],
+            [self::USER_ID, 'terms', 'wording', 1770076800000],
+            [self::USER_ID, 'terms', 'gone', 1770163200000],
+            [self::USER_ID, 'privacy', 'privacy', 1770076800000],
         ] as $values) {
             Database::sqlRun(
                 'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
@@ -233,7 +232,7 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
     {
         Database::sqlRun(
             'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
-            [self::USER_ID, 'terms', 'gone', '2026-02-01 00:00:00'],
+            [self::USER_ID, 'terms', 'gone', 1769904000000],
         );
         AcceptanceBrokenCatalogHilos::initBrowser();
         $window = new LegalAcceptanceIntegrationTable()->getPage(new TableQueryDTO(limit: 25));
@@ -254,12 +253,12 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
             );
             Database::sqlRun(
                 'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
-                [10000 + $index, 'terms', 'wording', '2026-02-03 00:00:00'],
+                [10000 + $index, 'terms', 'wording', 1770076800000],
             );
         }
         Database::sqlRun(
             'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
-            [self::USER_ID, 'terms', 'gone', '2026-02-01 00:00:00'],
+            [self::USER_ID, 'terms', 'gone', 1769904000000],
         );
         $window = new LegalAcceptanceIntegrationTable()->getPage(new TableQueryDTO(limit: 25));
         self::assertCount(25, $window->rows);
@@ -277,25 +276,25 @@ final class LegalAcceptanceIntegrationTest extends ProfileIntegrationTestCase
     {
         Database::sql(
             'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
-            [self::USER_ID, 'terms', 'old', '2026-02-01 10:00:00'],
+            [self::USER_ID, 'terms', 'old', 1769940000000],
         );
         $firstId = Database::lastInsertId();
 
         Database::sql(
             'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
-            [self::USER_ID, 'terms', 'wording', '2026-02-02 12:00:00'],
+            [self::USER_ID, 'terms', 'wording', 1770033600000],
         );
         $secondId = Database::lastInsertId();
 
         Database::sql(
             'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
-            [self::USER_ID, 'privacy', 'privacy', '2026-02-02 12:00:00'],
+            [self::USER_ID, 'privacy', 'privacy', 1770033600000],
         );
         $thirdId = Database::lastInsertId();
 
         Database::sql(
             'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
-            [self::OTHER_USER_ID, 'terms', 'old', '2026-02-01 09:00:00'],
+            [self::OTHER_USER_ID, 'terms', 'old', 1769936400000],
         );
 
         $viewCollection = Hilos::$db->legalAcceptances->ofUser(self::USER_ID);

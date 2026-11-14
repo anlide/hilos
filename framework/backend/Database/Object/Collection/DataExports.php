@@ -32,11 +32,11 @@ class DataExports extends Objects
 
     /**
      * @param int $userId Owner of the new request
-     * @param string $requestedAt Request time in SQL UTC
+     * @param int $requestedAt Request moment in epoch milliseconds
      * @return ObjectDataExport Inserted request
      * @throws HilosException When the insert or announcement fails
      */
-    public function order(int $userId, string $requestedAt): ObjectDataExport
+    public function order(int $userId, int $requestedAt): ObjectDataExport
     {
         $request = static::OBJECT_CLASS::create();
         $request->userId = $userId;
@@ -77,13 +77,13 @@ class DataExports extends Objects
     }
 
     /**
-     * @param string $now Expiry boundary in SQL UTC
+     * @param int $nowMs Inclusive expiry boundary in epoch milliseconds
      * @return static Rows for the expiry sweep
      * @throws HilosException When the query fails
      */
-    public function expiredBy(string $now): static
+    public function expiredBy(int $nowMs): static
     {
-        return $this->hydrateAll(static::entityClass()::get('`expires_at` <= ?', [$now]));
+        return $this->hydrateAll(static::entityClass()::get('`expires_at` <= ?', [$nowMs]));
     }
 
     /**

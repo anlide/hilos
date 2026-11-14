@@ -22,8 +22,8 @@ class LegalAcceptanceExportActions extends DbActions
      * @param string $storedName Finished file basename
      * @param int $sizeBytes File size
      * @param int $records Acceptance records written
-     * @param string $finishedAt Completion time in SQL UTC
-     * @param string $expiresAt Expiry time in SQL UTC
+     * @param int $finishedAt Completion moment in epoch milliseconds
+     * @param int $expiresAt Expiry moment in epoch milliseconds
      * @param string $timeZone IANA name of the time zone the file was written in
      * @return bool Whether this call completed the still-preparing order
      * @throws HilosException When ownership, storage, or announcement fails
@@ -32,8 +32,8 @@ class LegalAcceptanceExportActions extends DbActions
         string $storedName,
         int $sizeBytes,
         int $records,
-        string $finishedAt,
-        string $expiresAt,
+        int $finishedAt,
+        int $expiresAt,
         string $timeZone,
     ): bool {
         $this->ensureCanWrite();
@@ -42,12 +42,12 @@ class LegalAcceptanceExportActions extends DbActions
     }
 
     /**
-     * @param string $finishedAt Failure time in SQL UTC
-     * @param string $expiresAt Expiry time in SQL UTC
+     * @param int $finishedAt Failure moment in epoch milliseconds
+     * @param int $expiresAt Expiry moment in epoch milliseconds
      * @return bool Whether this call ended the still-preparing order
      * @throws HilosException When ownership, storage, or announcement fails
      */
-    public function finishFailed(string $finishedAt, string $expiresAt): bool
+    public function finishFailed(int $finishedAt, int $expiresAt): bool
     {
         $this->ensureCanWrite();
 

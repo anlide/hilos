@@ -20,9 +20,9 @@ use Hilos\HilosException;
  * @property ?int $id
  * @property int $userId
  * @property string $state
- * @property string $requestedAt
- * @property ?string $finishedAt
- * @property ?string $expiresAt
+ * @property int $requestedAt Moment of the request in epoch milliseconds
+ * @property ?int $finishedAt Moment the request ended in epoch milliseconds; null while preparing
+ * @property ?int $expiresAt Moment the archive or failure expires in epoch milliseconds; null while preparing
  * @property ?string $storedName
  * @property ?int $sizeBytes
  * @property ?string $timeZone IANA zone the ready archive was written in; null while preparing, after failure, and on an older ready archive (UTC)
@@ -73,7 +73,7 @@ class DataExport extends Object_
     {
         match ($property) {
             self::userId => $this->entity->user_id = (int)$value,
-            self::requestedAt => $this->entity->requested_at = (string)$value,
+            self::requestedAt => $this->entity->requested_at = (int)$value,
             self::state => $this->entity->state = (string)$value,
             default => parent::__set($property, $value),
         };
@@ -82,24 +82,24 @@ class DataExport extends Object_
     /**
      * @param string $storedName Finished archive basename
      * @param int $sizeBytes Archive size
-     * @param string $finishedAt Completion time in SQL UTC
-     * @param string $expiresAt Expiry time in SQL UTC
+     * @param int $finishedAt Completion moment in epoch milliseconds
+     * @param int $expiresAt Expiry moment in epoch milliseconds
      * @param string $timeZone IANA name of the time zone the archive was written in
      * @return bool Whether this request still existed and was completed by this call
      * @throws HilosException When the conditional write or its announcement fails
      */
-    public function finishReady(string $storedName, int $sizeBytes, string $finishedAt, string $expiresAt, string $timeZone): bool
+    public function finishReady(string $storedName, int $sizeBytes, int $finishedAt, int $expiresAt, string $timeZone): bool
     {
         return $this->finish(DataExportState::READY, $storedName, $sizeBytes, $finishedAt, $expiresAt, $timeZone);
     }
 
     /**
-     * @param string $finishedAt Failure time in SQL UTC
-     * @param string $expiresAt Expiry time in SQL UTC
+     * @param int $finishedAt Failure moment in epoch milliseconds
+     * @param int $expiresAt Expiry moment in epoch milliseconds
      * @return bool Whether this request still existed and was ended by this call
      * @throws HilosException When the conditional write or its announcement fails
      */
-    public function finishFailed(string $finishedAt, string $expiresAt): bool
+    public function finishFailed(int $finishedAt, int $expiresAt): bool
     {
         return $this->finish(DataExportState::FAILED, null, null, $finishedAt, $expiresAt, null);
     }
@@ -126,8 +126,8 @@ class DataExport extends Object_
      * @param string $state Finished state
      * @param ?string $storedName Ready archive basename
      * @param ?int $sizeBytes Ready archive size
-     * @param string $finishedAt Completion time in SQL UTC
-     * @param string $expiresAt Expiry time in SQL UTC
+     * @param int $finishedAt Completion moment in epoch milliseconds
+     * @param int $expiresAt Expiry moment in epoch milliseconds
      * @param ?string $timeZone Ready archive time zone name
      * @return bool Whether this call won completion of the original request
      * @throws HilosException When the conditional write or its announcement fails
@@ -136,8 +136,8 @@ class DataExport extends Object_
         string $state,
         ?string $storedName,
         ?int $sizeBytes,
-        string $finishedAt,
-        string $expiresAt,
+        int $finishedAt,
+        int $expiresAt,
         ?string $timeZone,
     ): bool {
         if ($this->entity->id === null) {

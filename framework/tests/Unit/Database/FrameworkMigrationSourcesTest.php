@@ -290,6 +290,48 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $catalog->verifyCurrentStubs(['second_factor_trust', 'second_factor_trust_restriction']);
     }
 
+    /** Guards the legal and export moment parts; the acceptance part is the first its unit has had. */
+    public function testRealExportLegalMomentsCarryTheirPartsWithCurrentStubHashes(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $change = '20261114014747194725_HIL-1925_export_legal_moments';
+        $timeZones = '20261101093551800031_HIL-1579_export_time_zones';
+        $acceptance = $catalog->part($change, 'legal_acceptance');
+        $export = $catalog->part($change, 'data_export');
+        $acceptanceExport = $catalog->part($change, 'legal_acceptance_export');
+
+        $this->assertSame([], $acceptance->requires);
+        $this->assertSame([$timeZones . '/data_export'], $export->requires);
+        $this->assertSame([$timeZones . '/legal_acceptance_export'], $acceptanceExport->requires);
+        $this->assertSame([
+            $timeZones . '/data_export',
+            $timeZones . '/legal_acceptance_export',
+            $change . '/data_export',
+            $change . '/legal_acceptance',
+            $change . '/legal_acceptance_export',
+        ], array_map(
+            static fn (FrameworkMigrationPart $part): string => $part->key(),
+            $catalog->partsForUnits(['legal_acceptance', 'data_export', 'legal_acceptance_export']),
+        ));
+        foreach ([$acceptance, $export, $acceptanceExport] as $part) {
+            $this->assertFalse($part->introducesUnit);
+            $unit = $schema->unit($part->unit);
+            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+            $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
+        }
+        // The HIL-1579 parts keep the stubs they were published with; the chains go on in this change.
+        $this->assertSame(
+            '64665403b18e5a3d033acf755b83dcc9f623fa4b145fe09598ba7d408b7d72d4',
+            $catalog->part($timeZones, 'data_export')->afterStubUpSha256,
+        );
+        $this->assertSame(
+            '04b06818065ecbfc93024ef3963aebfc64bd4a11dbe1905b88c4c541028f01ac',
+            $catalog->part($timeZones, 'legal_acceptance_export')->afterStubUpSha256,
+        );
+        $catalog->verifyCurrentStubs(['legal_acceptance', 'data_export', 'legal_acceptance_export']);
+    }
+
     public function testErasureStorageUnitsAreIntroducedOnceInDependencyOrder(): void
     {
         $schema = new FrameworkSchemaCatalog();

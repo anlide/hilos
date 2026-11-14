@@ -29,7 +29,7 @@ final readonly class DataExportDownloadResponse
      *
      * @param HttpRequestDTO $request Request being answered
      * @param FsFile $file Authorized archive on disk
-     * @param string $finishedAt Archive readiness date in SQL form
+     * @param int $finishedAt Archive readiness moment in epoch milliseconds
      * @param string $xAccelLocation Internal nginx location, or empty for direct transport
      * @param ?string $localNodeId This node's effective id (`standalone` off a cluster), null without a cluster context
      * @param DateTimeZone $timeZone Zone the archive was written in, which dates its name
@@ -39,7 +39,7 @@ final readonly class DataExportDownloadResponse
     public static function forFile(
         HttpRequestDTO $request,
         FsFile $file,
-        string $finishedAt,
+        int $finishedAt,
         string $xAccelLocation,
         ?string $localNodeId,
         DateTimeZone $timeZone,
@@ -48,7 +48,7 @@ final readonly class DataExportDownloadResponse
             $request,
             $file,
             'application/zip',
-            'your-data-' . DataExportTime::date($finishedAt, $timeZone) . '.zip',
+            'your-data-' . DataExportTime::dateMs($finishedAt, $timeZone) . '.zip',
             $xAccelLocation,
             $localNodeId,
         );

@@ -525,7 +525,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
         foreach ([[$this->personId, 'first'], [$other, 'first'], [$other, 'second']] as [$userId, $revision]) {
             Database::sqlRun(
                 'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
-                [$userId, LegalDocument::TERMS->value, $revision, '2026-01-02 00:00:00'],
+                [$userId, LegalDocument::TERMS->value, $revision, 1767312000000],
             );
         }
         AccountStandingCardCatalogHilos::initBrowser();

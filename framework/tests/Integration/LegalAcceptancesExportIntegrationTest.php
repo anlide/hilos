@@ -124,7 +124,8 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     private const string PERSON_KEY = 'accept-legal-export-person';
     private const string IMPERSONATED_KEY = 'accept-legal-export-impersonated';
     private const int CREATED_AT = 1767225600000;
-    private const string PAST = '2026-01-01 00:00:00';
+    /** 2026-01-01T00:00:00Z in epoch milliseconds. */
+    private const int PAST = 1767225600000;
     private const int CONFIRMATION_PAST = 1767225600000;
 
     /** The person every refusal and erasure case is about: no administrator. */
@@ -171,7 +172,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
 
     /** Acceptance records seeded: two parts of 500 and a short third one. */
     private const int RECORDS = 1201;
-    private const string FIRST_ACCEPTANCE = '2026-03-01 00:00:00';
+    private const int FIRST_ACCEPTANCE = 1772323200000;
 
     /** Distinct minutes the records are spread over, so most moments are shared by three records. */
     private const int MINUTES = 401;
@@ -198,8 +199,8 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     /** The zone the administrator and the project move to while a file is being built. */
     private const string LATER_ZONE = 'Pacific/Auckland';
 
-    /** A readiness moment whose UTC day is the day before its Warsaw day. */
-    private const string LATE_EVENING = '2026-10-22 23:30:00';
+    /** A readiness moment whose UTC day is the day before its Warsaw day: 2026-10-22T23:30:00Z in epoch milliseconds. */
+    private const int LATE_EVENING = 1792711800000;
     private const string SAVED_ZONE = 'Europe/Warsaw';
 
     private string $directory;
@@ -336,7 +337,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         self::assertSame(self::expectedLines(static fn (): bool => true, self::utc()), $lines);
         self::assertSame(self::RECORDS, $export->records);
         self::assertSame(filesize($path), $export->sizeBytes);
-        self::assertSame(self::SECONDS_PER_DAY, strtotime((string) $export->expiresAt) - strtotime((string) $export->finishedAt));
+        self::assertSame(self::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND, $export->expiresAt - $export->finishedAt);
         self::assertWindowMatches($lines, null, null, null, self::utc());
         $toasts = self::toasts();
         self::assertCount(1, $toasts);
@@ -407,9 +408,67 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
             self::assertSame(self::ADMIN_ZONE, $export->timeZone);
             self::assertSame(self::BOM . self::HEADER_LINE, file_get_contents($this->directory . '/' . $export->storedName));
             self::assertSame(strlen(self::BOM . self::HEADER_LINE), $export->sizeBytes);
-            $day = new DateTimeImmutable((string) $export->finishedAt, self::utc())->setTimezone(new DateTimeZone(self::ADMIN_ZONE))->format('Y-m-d');
+            $day = self::dayOf($export->finishedAt, new DateTimeZone(self::ADMIN_ZONE));
             self::assertSame(self::attachment($day), self::download($agent, self::ADMIN_TOKEN)->headers['Content-Disposition']);
         });
+    }
+
+    /**
+     * The cell of a moment keeps its milliseconds, turned into the zone of the file once.
+     *
+     * @throws HilosException When a fixture, the order or a tick fails
+     */
+    public function testTheAcceptedAtCellKeepsTheMillisecondsOfItsMoment(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES (?, ?, ?, ?)',
+            [self::PERSON_ID, 'terms', 'old', 1772364600047],
+        );
+        Database::sqlRun('UPDATE `hilos_user` SET `time_zone` = ? WHERE `id` = ?', [self::ADMIN_ZONE, self::ADMIN_ID]);
+        $this->withZoneEnvironment('recipient', self::PROJECT_ZONE, function (): void {
+            $agent = self::startedAgent();
+            self::confirm(self::ADMIN_TOKEN, self::ADMIN_ID);
+            self::order($agent, self::ADMIN_KEY);
+            $this->finish($agent, self::ADMIN_ID);
+        });
+
+        $export = self::exportOf(self::ADMIN_ID);
+        self::assertSame(LegalAcceptancesExportState::READY, $export?->state);
+        self::assertSame(
+            ['101,Alice Kovalenko,alice@example.test,terms,old,yes,2026-03-01T03:30:00.047-08:00'],
+            self::linesOf($this->directory . '/' . $export->storedName),
+        );
+    }
+
+    /**
+     * A part that ends inside a moment several records share goes on by the id, with no record skipped or repeated.
+     *
+     * @throws HilosException When a fixture or a part cannot be read
+     */
+    public function testPartsGoOnByTheIdThroughAMomentSeveralRecordsShare(): void
+    {
+        $values = [];
+        $params = [];
+        foreach ([self::FIRST_ACCEPTANCE + 1, ...array_fill(0, 5, self::FIRST_ACCEPTANCE), self::FIRST_ACCEPTANCE - 1] as $index => $acceptedAt) {
+            $values[] = '(?, ?, ?, ?)';
+            array_push($params, self::PERSON_ID, 'terms', sprintf('r%03d', $index), $acceptedAt);
+        }
+        Database::sqlRun(
+            'INSERT INTO `hilos_legal_acceptance` (`user_id`, `document`, `revision_id`, `accepted_at`) VALUES ' . implode(', ', $values),
+            $params,
+        );
+        $table = new LegalExportIntegrationTable();
+        [$where, $whereParams] = $table->exportScope(null, null, null);
+
+        $read = [];
+        $part = $table->exportChunk($where, $whereParams, null, 2);
+        while ($part !== []) {
+            array_push($read, ...array_map(static fn (HilosLegalAcceptanceTableRow $row): int => $row->rowKey, $part));
+            $part = $table->exportChunk($where, $whereParams, $part[array_key_last($part)], 2);
+        }
+
+        Database::sql('SELECT `id` FROM `hilos_legal_acceptance` ORDER BY `accepted_at` DESC, `id` DESC');
+        self::assertSame(array_map(intval(...), array_column(Database::rows(), 'id')), $read);
     }
 
     /**
@@ -534,7 +593,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         $reply = self::download($agent, self::ADMIN_TOKEN);
         self::assertSame('text/csv; charset=utf-8', $reply->headers['Content-Type']);
         self::assertStringStartsWith(
-            'attachment; filename="legal-acceptances-' . substr((string) $export->finishedAt, 0, 10) . '.csv"',
+            'attachment; filename="legal-acceptances-' . self::dayOf($export->finishedAt, self::utc()) . '.csv"',
             $reply->headers['Content-Disposition'],
         );
         self::assertSame(file_get_contents($this->directory . '/' . $export->storedName), $reply->body);
@@ -548,7 +607,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         self::assertSame(401, $agent->httpReply?->status, 'A query-string token is never an identity');
 
         Hilos::$db->legalAcceptanceExports->actions->order(self::OTHER_ADMIN_ID, null, null, null, self::PAST)
-            ->actions->finishReady('expired.csv', 3, 0, self::PAST, '2026-01-02 00:00:00', 'UTC');
+            ->actions->finishReady('expired.csv', 3, 0, self::PAST, self::PAST + self::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND, 'UTC');
         file_put_contents($this->directory . '/expired.csv', self::BOM);
         self::assertSame(404, self::download($agent, self::OTHER_ADMIN_TOKEN)->status, 'An expired file is not served before the sweep');
 
@@ -618,7 +677,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     public function testTheDownloadIsNamedInTheZoneSavedWithTheReadyFile(): void
     {
         mkdir($this->directory);
-        $future = date('Y-m-d H:i:s', time() + self::SECONDS_PER_DAY);
+        $future = TimeHelper::nowMs() + self::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         Database::sqlRun(
             'INSERT INTO `hilos_legal_acceptance_export` (`user_id`, `state`, `requested_at`, `finished_at`, `expires_at`, `stored_name`, '
             . "`size_bytes`, `time_zone`, `records`) VALUES (?, 'ready', ?, ?, ?, 'older.csv', 3, NULL, 0)",
@@ -657,7 +716,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     public function testStartupSweepsExpiredOrdersAndOrphanFilesButKeepsTheMarker(): void
     {
         mkdir($this->directory);
-        $future = date('Y-m-d H:i:s', time() + self::SECONDS_PER_DAY);
+        $future = TimeHelper::nowMs() + self::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $exports = Hilos::$db->legalAcceptanceExports->actions;
         $exports->order(self::ADMIN_ID, null, null, null, self::PAST)->actions->finishReady('kept.csv', 4, 0, self::PAST, $future, 'UTC');
         $exports->order(self::OTHER_ADMIN_ID, null, null, null, self::PAST)->actions->finishReady('expired.csv', 4, 0, self::PAST, self::PAST, 'UTC');
@@ -685,7 +744,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     public function testStartupRemovesAReadyOrderWhoseFileIsGone(): void
     {
         mkdir($this->directory);
-        $future = date('Y-m-d H:i:s', time() + self::SECONDS_PER_DAY);
+        $future = TimeHelper::nowMs() + self::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $exports = Hilos::$db->legalAcceptanceExports->actions;
         $exports->order(self::ADMIN_ID, null, null, null, self::PAST)->actions->finishReady('missing.csv', 4, 0, self::PAST, $future, 'UTC');
         $exports->order(self::OTHER_ADMIN_ID, null, null, null, self::PAST)->actions->finishReady('present.csv', 4, 0, self::PAST, $future, 'UTC');
@@ -708,7 +767,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     {
         self::seedAcceptances();
         mkdir($this->directory);
-        $future = date('Y-m-d H:i:s', time() + self::SECONDS_PER_DAY);
+        $future = TimeHelper::nowMs() + self::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $exports = Hilos::$db->legalAcceptanceExports->actions;
         $exports->order(self::OTHER_ADMIN_ID, null, null, null, self::PAST)->actions->finishReady('other.csv', 4, 1, self::PAST, $future, 'UTC');
         $exports->order(self::THIRD_ADMIN_ID, null, null, null, self::PAST)->actions->finishFailed(self::PAST, $future);
@@ -1194,9 +1253,11 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
     public function testCollectionsReturnStaticSubsetsWithoutPublishingSourceChanges(): void
     {
         mkdir($this->directory);
-        $past = '2026-01-01 00:00:00';
-        $now = '2026-06-01 00:00:00';
-        $future = '2026-12-01 00:00:00';
+        $past = self::PAST;
+        // 2026-06-01, 2026-12-01 and 2026-04-01, each 00:00:00Z, in epoch milliseconds.
+        $now = 1780272000000;
+        $future = 1796083200000;
+        $failedExpiresAt = 1775001600000;
 
         $exports = Hilos::$db->legalAcceptanceExports->actions;
 
@@ -1206,9 +1267,9 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         self::assertIsInt($preparingId);
         self::assertNull($preparing->timeZone);
 
-        // 2. READY order, expired (expiresAt <= $now)
+        // 2. READY order, expired (expiresAt <= $now): it expires exactly at $now, the boundary itself
         $readyExpired = $exports->order(self::OTHER_ADMIN_ID, null, null, null, $past);
-        $readyExpired->actions->finishReady('ready-expired.csv', 10, 100, $past, '2026-05-01 00:00:00', 'Europe/Warsaw');
+        $readyExpired->actions->finishReady('ready-expired.csv', 10, 100, $past, $now, 'Europe/Warsaw');
         self::assertSame('Europe/Warsaw', $readyExpired->timeZone);
         $readyExpiredId = $readyExpired->id;
         self::assertIsInt($readyExpiredId);
@@ -1222,7 +1283,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
 
         // 4. FAILED order, expired (expiresAt <= $now)
         $failedExpired = $exports->order(self::PERSON_ID, null, null, null, $past);
-        $failedExpired->actions->finishFailed($past, '2026-04-01 00:00:00');
+        $failedExpired->actions->finishFailed($past, $failedExpiresAt);
         self::assertNull($failedExpired->timeZone);
         $failedExpiredId = $failedExpired->id;
         self::assertIsInt($failedExpiredId);
@@ -1320,8 +1381,8 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         self::assertSame($heldReadyActiveObj, $objectFinished[$readyActiveId]);
         self::assertSame($heldFailedExpiredObj, $objectFinished[$failedExpiredId]);
 
-        // Test empty result
-        $viewEmpty = Hilos::$db->legalAcceptanceExports->expiredBy('2000-01-01 00:00:00');
+        // Test empty result: one millisecond before the earliest expiry nothing has expired yet
+        $viewEmpty = Hilos::$db->legalAcceptanceExports->expiredBy($failedExpiresAt - 1);
         self::assertInstanceOf(ViewLegalAcceptanceExports::class, $viewEmpty);
         self::assertCount(0, $viewEmpty);
         self::assertNull($viewEmpty->first());
@@ -1331,7 +1392,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         }
         self::assertFalse($viewEmptyYielded);
 
-        $objectEmpty = $objectCollection->expiredBy('2000-01-01 00:00:00');
+        $objectEmpty = $objectCollection->expiredBy($failedExpiresAt - 1);
         self::assertInstanceOf(ObjectLegalAcceptanceExports::class, $objectEmpty);
         self::assertCount(0, $objectEmpty);
         self::assertNull($objectEmpty->first());
@@ -1367,7 +1428,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
      */
     private function seedFinished(int $userId, ?string $storedName): void
     {
-        $future = date('Y-m-d H:i:s', time() + self::SECONDS_PER_DAY);
+        $future = TimeHelper::nowMs() + self::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
         $order = Hilos::$db->legalAcceptanceExports->actions->order($userId, null, null, null, self::PAST);
         if ($storedName === null) {
             self::assertTrue($order->actions->finishFailed(self::PAST, $future));
@@ -1705,15 +1766,38 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
             Database::sql('SELECT `id`, `user_id`, `document`, `revision_id`, `accepted_at` FROM `hilos_legal_acceptance`')->rows(),
             $keep,
         ));
-        usort($rows, static fn (array $a, array $b): int => [$b['accepted_at'], (int) $b['id']] <=> [$a['accepted_at'], (int) $a['id']]);
+        usort($rows, static fn (array $a, array $b): int
+            => [(int) $b['accepted_at'], (int) $b['id']] <=> [(int) $a['accepted_at'], (int) $a['id']]);
 
         return array_map(static fn (array $row): string => implode(',', [
             self::PERSON_CELLS[(int) $row['user_id']],
             $row['document'],
             $row['revision_id'],
             in_array($row['revision_id'], self::DECLARED[$row['document']], true) ? 'yes' : 'no',
-            new DateTimeImmutable((string) $row['accepted_at'], self::utc())->setTimezone($timeZone)->format('Y-m-d\TH:i:sP'),
+            self::cellOf((int) $row['accepted_at'], $timeZone),
         ]), $rows);
+    }
+
+    /**
+     * @param int $acceptedAt Moment of an acceptance in epoch milliseconds
+     * @param DateTimeZone $timeZone Zone the file is written in
+     * @return string The cell the moment must have in the file
+     */
+    private static function cellOf(int $acceptedAt, DateTimeZone $timeZone): string
+    {
+        $seconds = sprintf('%d.%03d', intdiv($acceptedAt, TimeConstants::MS_PER_SECOND), $acceptedAt % TimeConstants::MS_PER_SECOND);
+
+        return DateTimeImmutable::createFromFormat('U.v', $seconds)->setTimezone($timeZone)->format('Y-m-d\TH:i:s.vP');
+    }
+
+    /**
+     * @param int $finishedAt Moment a file finished, in epoch milliseconds after 1970
+     * @param DateTimeZone $timeZone Zone the file is named in
+     * @return string Its calendar day in that zone, as the download name carries it
+     */
+    private static function dayOf(int $finishedAt, DateTimeZone $timeZone): string
+    {
+        return new DateTimeImmutable('@' . intdiv($finishedAt, TimeConstants::MS_PER_SECOND))->setTimezone($timeZone)->format('Y-m-d');
     }
 
     /**
@@ -1802,7 +1886,7 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         $params = [];
         for ($index = 0; $index < self::RECORDS; $index++) {
             $round = intdiv($index, count($people));
-            $values[] = '(?, ?, ?, DATE_ADD(?, INTERVAL ? MINUTE))';
+            $values[] = '(?, ?, ?, ?)';
             array_push(
                 $params,
                 $people[$index % count($people)],
@@ -1813,8 +1897,8 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
                     2 => 'wording',
                     default => sprintf('r%03d', intdiv($round, 2)),
                 },
-                self::FIRST_ACCEPTANCE,
-                ($index * self::MINUTE_STRIDE) % self::MINUTES,
+                self::FIRST_ACCEPTANCE
+                    + ($index * self::MINUTE_STRIDE) % self::MINUTES * TimeConstants::SECONDS_PER_MINUTE * TimeConstants::MS_PER_SECOND,
             );
         }
         Database::sqlRun(

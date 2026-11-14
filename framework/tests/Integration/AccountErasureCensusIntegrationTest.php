@@ -777,7 +777,7 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
     private static function seedDataExport(int $userId): void
     {
         Database::sqlRun(
-            "INSERT INTO `hilos_data_export` (`user_id`, `state`, `requested_at`) VALUES (?, ?, '2026-11-12 08:00:00')",
+            "INSERT INTO `hilos_data_export` (`user_id`, `state`, `requested_at`) VALUES (?, ?, 1794470400000)",
             [$userId, DataExportState::PREPARING],
         );
     }

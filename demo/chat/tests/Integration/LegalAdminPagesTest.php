@@ -63,7 +63,6 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Legal\HilosLegalAcceptanceTableRow;
 use Hilos\Tables\Legal\HilosLegalRevisionsTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\TimeHelper;
 use ReflectionMethod;
 
 /** Real demo bindings answer read-only legal pages and supply options beyond the first SQL window. */
@@ -111,7 +110,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         $this->record($this->userId, '2026-09-17');
         Database::sqlRun(
             'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
-            [$this->userId, 'privacy', '2026-09-17', '2026-09-27 12:00:00'],
+            [$this->userId, 'privacy', '2026-09-17', 1790510400000],
         );
         $root = $this->response($this->subscribe(LegalPage::class));
         self::assertNull($root->payload->data['legalCatalogRefusal']);
@@ -438,7 +437,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
             $user = Hilos::$db->users->actions->createWithName('Legal acceptor ' . $index);
             $this->record((int) $user->id, '2026-09-27');
         }
-        $this->record($this->userId, 'removed', '2026-01-01 00:00:00');
+        $this->record($this->userId, 'removed', 1767225600000);
         $sort = TableSortOrderDTO::of(new TableSortDTO(HilosLegalAcceptanceTableRow::acceptedAt, TableConstants::ORDER_DESC));
         $frames = $this->subscribe(LegalAcceptancesPage::class, [], [
             ChatTableContext::hilosLegalAcceptances => new TableWindowDescriptorDTO(sort: $sort, limit: 25),
@@ -460,7 +459,6 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         $firstRowSlot = reset($firstWindow['rows'][0][PagePayload::slots]);
         self::assertIsInt($firstRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
         self::assertSame(1790510400000, $firstRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
-        self::assertSame(TimeHelper::sqlToMs('2026-09-27 12:00:00'), $firstRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
 
         $firstRowKey = $firstWindow['rows'][0]['rowKey'];
         Database::sqlRun('UPDATE hilos_legal_acceptance SET revision_id = ? WHERE id = ?', ['live-updated', $firstRowKey]);
@@ -482,7 +480,6 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         self::assertSame('live-updated', $deltaSlot[HilosLegalAcceptanceTableRow::revisionId]);
         self::assertIsInt($deltaSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
         self::assertSame(1790510400000, $deltaSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
-        self::assertSame(TimeHelper::sqlToMs('2026-09-27 12:00:00'), $deltaSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
 
         $nextViewport = new TableViewportSubscription(tableKey: ChatTableContext::hilosLegalAcceptances, sort: $sort, limit: 25, pageIndex: 1);
         Hilos::$sr->setTableViewport(self::ACCEPT_KEY, $nextViewport);
@@ -507,15 +504,14 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         self::assertSame('removed', $lastRowSlot[HilosLegalAcceptanceTableRow::revisionId]);
         self::assertIsInt($lastRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
         self::assertSame(1767225600000, $lastRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
-        self::assertSame(TimeHelper::sqlToMs('2026-01-01 00:00:00'), $lastRowSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
 
-        $this->record($this->userId, 'live-created', '2025-12-15 10:00:00');
+        $this->record($this->userId, 'live-created', 1765792800000);
         $liveId = (int) Database::sql('SELECT LAST_INSERT_ID() AS id')->firstRow()['id'];
         $createdChange = SourceChange::dbCreated(HilosDbContext::legalAcceptances, (string) $liveId, [
             'user_id' => $this->userId,
             'document' => 'terms',
             'revision_id' => 'live-created',
-            'accepted_at' => '2025-12-15 10:00:00',
+            'accepted_at' => 1765792800000,
         ]);
         Hilos::$browser?->record($createdChange);
         Hilos::$browser?->flushToSignalRouter();
@@ -534,7 +530,6 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         self::assertSame('live-created', $appendSlot[HilosLegalAcceptanceTableRow::revisionId]);
         self::assertIsInt($appendSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
         self::assertSame(1765792800000, $appendSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
-        self::assertSame(TimeHelper::sqlToMs('2025-12-15 10:00:00'), $appendSlot[HilosLegalAcceptanceTableRow::acceptedAt]);
 
         $snapshot = Hilos::$table->hilosLegalAcceptances->getPage(new TableQueryDTO(limit: 25));
         self::assertSame(28, $snapshot->totalCount);
@@ -580,14 +575,15 @@ final class LegalAdminPagesTest extends IntegrationTestCase
         self::assertSame([LegalAcceptancesExportProjector::SECTION => null], $this->exportSection());
 
         $other = Hilos::$db->users->actions->createWithName('Another administrator');
+        // Moments are epoch milliseconds: 2026-09-27T12:00:00Z, five seconds later, a day after that, and 13:00:00Z.
         Database::sqlRun(
             'INSERT INTO hilos_legal_acceptance_export (user_id, state, document, revision_id, search, requested_at, finished_at,'
             . ' expires_at, stored_name, size_bytes, records) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?), (?, ?, NULL, NULL, NULL, ?,'
             . ' NULL, NULL, NULL, NULL, NULL)',
             [
-                $this->userId, LegalAcceptancesExportState::READY, 'terms', 'olena', '2026-09-27 12:00:00', '2026-09-27 12:00:05',
-                '2026-09-28 12:00:05', 'a.csv', 2048, 12,
-                (int) $other->id, LegalAcceptancesExportState::PREPARING, '2026-09-27 13:00:00',
+                $this->userId, LegalAcceptancesExportState::READY, 'terms', 'olena', 1790510400000, 1790510405000,
+                1790596805000, 'a.csv', 2048, 12,
+                (int) $other->id, LegalAcceptancesExportState::PREPARING, 1790514000000,
             ],
         );
 
@@ -596,9 +592,9 @@ final class LegalAdminPagesTest extends IntegrationTestCase
             'document' => 'terms',
             'revisionId' => null,
             'search' => 'olena',
-            'requestedAt' => TimeHelper::sqlToMs('2026-09-27 12:00:00'),
-            'finishedAt' => TimeHelper::sqlToMs('2026-09-27 12:00:05'),
-            'expiresAt' => TimeHelper::sqlToMs('2026-09-28 12:00:05'),
+            'requestedAt' => 1790510400000,
+            'finishedAt' => 1790510405000,
+            'expiresAt' => 1790596805000,
             'sizeBytes' => 2048,
             'records' => 12,
         ]], $this->exportSection());
@@ -667,7 +663,7 @@ final class LegalAdminPagesTest extends IntegrationTestCase
     {
         Database::sqlRun(
             'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
-            [$this->userId, 'retired', 'old', '2026-09-27 12:00:00'],
+            [$this->userId, 'retired', 'old', 1790510400000],
         );
         foreach ([LegalDocumentPage::class, LegalDocumentSetPage::class,
             LegalDocumentDeviationsPage::class, LegalDocumentRevisionsPage::class] as $page) {
@@ -755,9 +751,9 @@ final class LegalAdminPagesTest extends IntegrationTestCase
     /**
      * @param int $userId Person giving the acceptance
      * @param string $revisionId Exact recorded revision
-     * @param string $acceptedAt SQL acceptance timestamp
+     * @param int $acceptedAt Moment of the acceptance in epoch milliseconds
      */
-    private function record(int $userId, string $revisionId, string $acceptedAt = '2026-09-27 12:00:00'): void
+    private function record(int $userId, string $revisionId, int $acceptedAt = 1790510400000): void
     {
         Database::sqlRun(
             'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',

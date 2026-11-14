@@ -31,6 +31,30 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
 
     private const string ACCOUNT_ERASURE_FINAL_REFUSALS_CHANGE = '20261113230943441275_HIL-1942_account_erasure_final_refusals';
 
+    private const string EXPORT_LEGAL_MOMENTS_CHANGE = '20261114014747194725_HIL-1925_export_legal_moments';
+
+    /** Copy queue stub snapshot the HIL-1579 part was published with; the HIL-1925 part declares the current one. */
+    private const string DATA_EXPORT_TIME_ZONE_UP_SHA256 = '64665403b18e5a3d033acf755b83dcc9f623fa4b145fe09598ba7d408b7d72d4';
+
+    /** Acceptance file queue stub snapshot the HIL-1579 part was published with; the HIL-1925 part declares the current one. */
+    private const string LEGAL_ACCEPTANCE_EXPORT_TIME_ZONE_UP_SHA256 = '04b06818065ecbfc93024ef3963aebfc64bd4a11dbe1905b88c4c541028f01ac';
+
+    /** Pairs of the HIL-1925 change by unit: the hash in the pair's file name and the parts its source requires. */
+    private const array EXPORT_LEGAL_MOMENT_PAIRS = [
+        'legal_acceptance' => [
+            'file' => 'a2a556b6f288e2e70c1d2165a95e786413bc3641acbb6b29176699984a971b73',
+            'requires' => [],
+        ],
+        'data_export' => [
+            'file' => 'd193702850d3e92f4a88e50b56a574f3ead2929d8db1b1343bf352c916e33786',
+            'requires' => ['20261101093551800031_HIL-1579_export_time_zones/data_export'],
+        ],
+        'legal_acceptance_export' => [
+            'file' => '17a5426b509d73460a8deb5e17c03bae1aea3b5e317314098cf6f50e942b1073',
+            'requires' => ['20261101093551800031_HIL-1579_export_time_zones/legal_acceptance_export'],
+        ],
+    ];
+
     private const array GENESIS_UNITS = [
         'access_log', 'account_deletion', 'admin_view_mode_latch', 'analytics', 'auth_block', 'change_log',
         'country', 'country_name', 'data_export', 'database_marker', 'file', 'file_variant', 'i18n_reflow',
@@ -297,6 +321,15 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $finalRefusals = $this->assertAccountErasureFinalRefusalsPair($project->root, 22, $catalog, $schema);
                 $origins[] = $finalRefusals;
                 $coveredParts[] = $finalRefusals->parts[0];
+                $acceptanceMoment = $this->assertExportLegalMomentPair($project->root, 23, 'legal_acceptance', $catalog, $schema);
+                $origins[] = $acceptanceMoment;
+                $coveredParts[] = $acceptanceMoment->parts[0];
+                $exportMoment = $this->assertExportLegalMomentPair($project->root, 24, 'data_export', $catalog, $schema);
+                $origins[] = $exportMoment;
+                $coveredParts[] = $exportMoment->parts[0];
+                $acceptanceExportMoment = $this->assertExportLegalMomentPair($project->root, 25, 'legal_acceptance_export', $catalog, $schema);
+                $origins[] = $acceptanceExportMoment;
+                $coveredParts[] = $acceptanceExportMoment->parts[0];
                 $selectedUnits = array_column($schema->selectedUnits($project->facade), 'key');
                 self::assertSame(
                     $this->partRecords($catalog->partsForUnits($selectedUnits)),
@@ -482,7 +515,10 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $source = $catalog->part($change->parts[0]->changeId, $unit);
                 self::assertFalse($source->introducesUnit);
                 self::assertSame([], $source->requires);
-                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($unit)->upPath)), $source->afterStubUpSha256);
+                self::assertSame($unit === 'data_export'
+                    ? self::DATA_EXPORT_TIME_ZONE_UP_SHA256
+                    : self::LEGAL_ACCEPTANCE_EXPORT_TIME_ZONE_UP_SHA256,
+                    $source->afterStubUpSha256);
                 self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($unit)->downPath)), $source->afterStubDownSha256);
                 $origins[] = $change;
             }
@@ -906,6 +942,16 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $origins[] = $this->assertAccountDeletionStartPair($project->root, $startIndices[$index], $catalog, $schema);
             $finalRefusalsIndices = [168, 125, 125, 106, 106, 108];
             $origins[] = $this->assertAccountErasureFinalRefusalsPair($project->root, $finalRefusalsIndices[$index], $catalog, $schema);
+            $acceptanceMomentIndices = [169, 126, 126, 107, 107, 109];
+            $origins[] = $this->assertExportLegalMomentPair(
+                $project->root, $acceptanceMomentIndices[$index], 'legal_acceptance', $catalog, $schema,
+            );
+            $exportMomentIndices = [170, 127, 127, 108, 108, 110];
+            $origins[] = $this->assertExportLegalMomentPair($project->root, $exportMomentIndices[$index], 'data_export', $catalog, $schema);
+            $acceptanceExportMomentIndices = [171, 128, 128, 109, 109, 111];
+            $origins[] = $this->assertExportLegalMomentPair(
+                $project->root, $acceptanceExportMomentIndices[$index], 'legal_acceptance_export', $catalog, $schema,
+            );
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);
@@ -1076,6 +1122,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         array_push($momentChanges, ...$this->assertTrustRestrictionPairs($root, 8, $catalog, $schema));
         $momentChanges[] = $this->assertAccountDeletionStartPair($root, 10, $catalog, $schema);
         $momentChanges[] = $this->assertAccountErasureFinalRefusalsPair($root, 11, $catalog, $schema);
+        $momentChanges[] = $this->assertExportLegalMomentPair($root, 12, 'legal_acceptance', $catalog, $schema);
+        $momentChanges[] = $this->assertExportLegalMomentPair($root, 13, 'data_export', $catalog, $schema);
+        $momentChanges[] = $this->assertExportLegalMomentPair($root, 14, 'legal_acceptance_export', $catalog, $schema);
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
@@ -1085,6 +1134,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             ...$this->trustRestrictionFiles($root, 8),
             ...$this->accountDeletionStartFiles($root, 10),
             ...$this->accountErasureFinalRefusalsFiles($root, 11),
+            ...$this->exportLegalMomentFiles($root, 12, 'legal_acceptance'),
+            ...$this->exportLegalMomentFiles($root, 13, 'data_export'),
+            ...$this->exportLegalMomentFiles($root, 14, 'legal_acceptance_export'),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1102,7 +1154,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
     /**
      * Baseline projects whose tracks are not enumerated pair by pair still receive the five parts,
      * and after them the trust restriction's install and the grant moment's change (HIL-1900), the
-     * deletion start's change (HIL-1939) and the erasure final refusals' change (HIL-1942).
+     * deletion start's change (HIL-1939), the erasure final refusals' change (HIL-1942) and the
+     * acceptance moment's change (HIL-1925).
      *
      * @param list<object> $projects Registered projects in registry order
      */
@@ -1115,6 +1168,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $restrictionStarts = [7 => 21, 9 => 12, 10 => 8];
         $deletionStarts = [7 => 23, 9 => 14, 10 => 10];
         $finalRefusalsStarts = [7 => 24, 9 => 15, 10 => 12];
+        $acceptanceMomentStarts = [7 => 25, 9 => 16, 10 => 13];
+        $exportMomentStarts = [7 => 26, 9 => 17, 10 => 14];
+        $acceptanceExportMomentStarts = [7 => 27, 9 => 18, 10 => 15];
         $parts = [
             'second_factor' => 'd387464f16783b3b26bc52ebfa8b58854d4fac281f71c95c06777b3ac2d71601',
             'second_factor_backup_code' => '97fb53ec00e51e213c862962f7bd493a885a3a467f4d176dced9ea1c84cbf362',
@@ -1142,6 +1198,13 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             array_push($seen, ...$this->assertTrustRestrictionPairs($project->root, $restrictionStarts[$index], $catalog, $schema));
             $seen[] = $this->assertAccountDeletionStartPair($project->root, $deletionStarts[$index], $catalog, $schema);
             $seen[] = $this->assertAccountErasureFinalRefusalsPair($project->root, $finalRefusalsStarts[$index], $catalog, $schema);
+            $seen[] = $this->assertExportLegalMomentPair(
+                $project->root, $acceptanceMomentStarts[$index], 'legal_acceptance', $catalog, $schema,
+            );
+            $seen[] = $this->assertExportLegalMomentPair($project->root, $exportMomentStarts[$index], 'data_export', $catalog, $schema);
+            $seen[] = $this->assertExportLegalMomentPair(
+                $project->root, $acceptanceExportMomentStarts[$index], 'legal_acceptance_export', $catalog, $schema,
+            );
             $selected = array_column($schema->selectedUnits($project->facade), 'key');
             $onDisk = [];
             foreach (glob($project->root . '/*_down.sql') as $down) {
@@ -1306,6 +1369,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         array_push($momentChanges, ...$this->assertTrustRestrictionPairs($root, 7, $catalog, $schema));
         $momentChanges[] = $this->assertAccountDeletionStartPair($root, 9, $catalog, $schema);
         $momentChanges[] = $this->assertAccountErasureFinalRefusalsPair($root, 10, $catalog, $schema);
+        $momentChanges[] = $this->assertExportLegalMomentPair($root, 11, 'legal_acceptance', $catalog, $schema);
+        $momentChanges[] = $this->assertExportLegalMomentPair($root, 12, 'data_export', $catalog, $schema);
+        $momentChanges[] = $this->assertExportLegalMomentPair($root, 13, 'legal_acceptance_export', $catalog, $schema);
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
@@ -1313,6 +1379,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             ...$this->trustRestrictionFiles($root, 7),
             ...$this->accountDeletionStartFiles($root, 9),
             ...$this->accountErasureFinalRefusalsFiles($root, 10),
+            ...$this->exportLegalMomentFiles($root, 11, 'legal_acceptance'),
+            ...$this->exportLegalMomentFiles($root, 12, 'data_export'),
+            ...$this->exportLegalMomentFiles($root, 13, 'legal_acceptance_export'),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1526,6 +1595,63 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
     {
         return $root . '/' . sprintf('%03d', $number)
             . '_framework_change_6fbbc48d92c100f9276836cca48647259d8ae4870b36acfc6e76c3c603b09980';
+    }
+
+    /**
+     * A legal or export moment arrives as a change of its unit, and its part declares the stubs current now (HIL-1925).
+     *
+     * @param string $root Migration track of the project
+     * @param int $number Number of the change pair
+     * @param string $unit Unit the part changes, a key of {@see self::EXPORT_LEGAL_MOMENT_PAIRS}
+     * @param FrameworkMigrationCatalog $catalog Framework change catalog
+     * @param FrameworkSchemaCatalog $schema Framework schema catalog
+     * @return FrameworkMigrationOrigin The change origin
+     */
+    private function assertExportLegalMomentPair(
+        string $root,
+        int $number,
+        string $unit,
+        FrameworkMigrationCatalog $catalog,
+        FrameworkSchemaCatalog $schema,
+    ): FrameworkMigrationOrigin {
+        $base = $this->exportLegalMomentBase($root, $number, $unit);
+        $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+        self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+        self::assertSame([$unit], $change->units);
+        self::assertCount(1, $change->parts);
+        self::assertSame(self::EXPORT_LEGAL_MOMENTS_CHANGE . '/' . $unit, $change->parts[0]->key());
+        $source = $catalog->part(self::EXPORT_LEGAL_MOMENTS_CHANGE, $unit);
+        self::assertSame([$source->toArray()], $this->partRecords($change->parts));
+        self::assertFalse($source->introducesUnit);
+        self::assertSame(self::EXPORT_LEGAL_MOMENT_PAIRS[$unit]['requires'], $source->requires);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($unit)->upPath)), $source->afterStubUpSha256);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($unit)->downPath)), $source->afterStubDownSha256);
+
+        return $change;
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $number Number of the change pair
+     * @param string $unit Unit the part changes
+     * @return list<string> Its two files in the order glob() lists them
+     */
+    private function exportLegalMomentFiles(string $root, int $number, string $unit): array
+    {
+        $base = $this->exportLegalMomentBase($root, $number, $unit);
+
+        return [$base . '.sql', $base . '_down.sql'];
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $number Number of the change pair
+     * @param string $unit Unit the part changes
+     * @return string Its base path, without extension
+     */
+    private function exportLegalMomentBase(string $root, int $number, string $unit): string
+    {
+        return $root . '/' . sprintf('%03d', $number) . '_framework_change_' . self::EXPORT_LEGAL_MOMENT_PAIRS[$unit]['file'];
     }
 
     /**

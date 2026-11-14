@@ -26,11 +26,11 @@ class LegalAcceptanceExportsActions extends DbActions
      * @param ?string $document Document filter of the order, or null for every document
      * @param ?string $revisionId Revision filter of the order, or null for every revision
      * @param ?string $search Search of the order, or null for none
-     * @param string $requestedAt Request time in SQL UTC
+     * @param int $requestedAt Request moment in epoch milliseconds
      * @return LegalAcceptanceExport New preparing order
      * @throws HilosException When ownership, transaction, insertion, or wrapping fails
      */
-    public function order(int $userId, ?string $document, ?string $revisionId, ?string $search, string $requestedAt): LegalAcceptanceExport
+    public function order(int $userId, ?string $document, ?string $revisionId, ?string $search, int $requestedAt): LegalAcceptanceExport
     {
         $this->ensureCanCreateInSet((string)$userId);
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);

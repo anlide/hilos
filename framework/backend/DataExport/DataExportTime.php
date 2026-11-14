@@ -52,6 +52,16 @@ final class DataExportTime
     }
 
     /**
+     * @param int $milliseconds Moment in epoch milliseconds
+     * @param DateTimeZone $timeZone Zone of the file being named
+     * @return string Calendar date of the moment in that zone, for a file name
+     */
+    public static function dateMs(int $milliseconds, DateTimeZone $timeZone): string
+    {
+        return self::moment($milliseconds, $timeZone)->format(self::FILE_NAME_DATE_FORMAT);
+    }
+
+    /**
      * @param int $milliseconds Moment in epoch milliseconds, negative before 1970
      * @param DateTimeZone $timeZone Zone the moment is shown in
      * @return DateTimeImmutable The same moment, carried in that zone

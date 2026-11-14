@@ -29,6 +29,12 @@ final class ProfileDataPageTest extends IntegrationTestCase
 {
     private const string ACCEPT_KEY = 'profile-data-test';
     private const string OWNER = 'profile-data-test-agent';
+    /** 2026-09-27T10:00:00Z in epoch milliseconds, when both copies are ordered. */
+    private const int ORDERED_AT = 1790503200000;
+    /** 2026-09-27T10:01:00Z in epoch milliseconds, when the own copy is ready. */
+    private const int FINISHED_AT = 1790503260000;
+    /** 2026-10-04T10:01:00Z in epoch milliseconds, a week later, when it expires. */
+    private const int EXPIRES_AT = 1791108060000;
 
     private ?SignalRouter $previousRouter;
 
@@ -73,7 +79,7 @@ final class ProfileDataPageTest extends IntegrationTestCase
         Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, $userId);
         $foreignUserId = (int)Hilos::$db->users->actions->createWithName('Foreign copy owner')->id;
         $this->userIds[] = $foreignUserId;
-        Hilos::$db->dataExports->actions->order($foreignUserId, '2026-09-27 10:00:00');
+        Hilos::$db->dataExports->actions->order($foreignUserId, self::ORDERED_AT);
 
         foreach ([ProfileDataPage::class, ProfilePage::class] as $pageClass) {
             $payload = $this->subscribe($pageClass);
@@ -90,8 +96,8 @@ final class ProfileDataPageTest extends IntegrationTestCase
             );
         }
 
-        $export = Hilos::$db->dataExports->actions->order($userId, '2026-09-27 10:00:00');
-        $export->actions->finishReady('own.zip', 123, '2026-09-27 10:01:00', '2026-10-04 10:01:00', 'UTC');
+        $export = Hilos::$db->dataExports->actions->order($userId, self::ORDERED_AT);
+        $export->actions->finishReady('own.zip', 123, self::FINISHED_AT, self::EXPIRES_AT, 'UTC');
         foreach ([ProfileDataPage::class, ProfilePage::class] as $pageClass) {
             if ($pageClass === ProfilePage::class) {
                 self::assertArrayNotHasKey(DataExportStateProjector::SECTION, $this->subscribe($pageClass)[PagePayload::data]);

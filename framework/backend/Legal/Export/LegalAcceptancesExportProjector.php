@@ -6,7 +6,6 @@ namespace Hilos\Legal\Export;
 
 use Hilos\Database\View\Item\LegalAcceptanceExport;
 use Hilos\Legal\Export\DTO\LegalAcceptancesExportStateSignalData;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /** The same export node for the page response of the acceptances page and for the state signal after it. */
 final class LegalAcceptancesExportProjector
@@ -34,9 +33,9 @@ final class LegalAcceptancesExportProjector
             LegalAcceptancesExportStateSignalData::document => $export->document,
             LegalAcceptancesExportStateSignalData::revisionId => $export->revisionId,
             LegalAcceptancesExportStateSignalData::search => $export->search,
-            LegalAcceptancesExportStateSignalData::requestedAt => TimeHelper::sqlToMs($export->requestedAt),
-            LegalAcceptancesExportStateSignalData::finishedAt => $export->finishedAt === null ? null : TimeHelper::sqlToMs($export->finishedAt),
-            LegalAcceptancesExportStateSignalData::expiresAt => $export->expiresAt === null ? null : TimeHelper::sqlToMs($export->expiresAt),
+            LegalAcceptancesExportStateSignalData::requestedAt => $export->requestedAt,
+            LegalAcceptancesExportStateSignalData::finishedAt => $export->finishedAt,
+            LegalAcceptancesExportStateSignalData::expiresAt => $export->expiresAt,
             LegalAcceptancesExportStateSignalData::sizeBytes => $export->sizeBytes,
             LegalAcceptancesExportStateSignalData::records => $export->records,
         ];

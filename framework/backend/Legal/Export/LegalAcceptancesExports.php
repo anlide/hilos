@@ -196,7 +196,7 @@ final class LegalAcceptancesExports
             $dto->document,
             $dto->revisionId,
             $dto->search,
-            TimeHelper::getSqlDateTime(),
+            TimeHelper::nowMs(),
         );
         $sessionToken = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->sessionToken;
         if ($export->id !== null && $sessionToken !== null) {
@@ -335,7 +335,7 @@ final class LegalAcceptancesExports
         }
         $export = Hilos::$db->legalAcceptanceExports->ofUser($session->userId);
         if ($export?->state !== LegalAcceptancesExportState::READY || $export->storedName === null || $export->finishedAt === null
-            || $export->expiresAt === null || $export->expiresAt <= TimeHelper::getSqlDateTime()
+            || $export->expiresAt === null || $export->expiresAt <= TimeHelper::nowMs()
         ) {
             return HttpReplyDTO::refusal($request, HttpConstants::HTTP_NOT_FOUND);
         }
@@ -345,7 +345,7 @@ final class LegalAcceptancesExports
                 self::directory()[$export->storedName],
                 self::CONTENT_TYPE,
                 self::FILENAME_PREFIX
-                    . DataExportTime::date($export->finishedAt, new DateTimeZone($export->timeZone ?? TimeConstants::UTC_TIME_ZONE))
+                    . DataExportTime::dateMs($export->finishedAt, new DateTimeZone($export->timeZone ?? TimeConstants::UTC_TIME_ZONE))
                     . self::CSV_EXTENSION,
                 Hilos::$env[EnvConstants::HILOS_LEGAL_EXPORT_XACCEL_LOCATION]->string(),
                 Hilos::$cluster?->localNodeId(),
@@ -485,12 +485,13 @@ final class LegalAcceptancesExports
         FsPath::move(self::directory()[$build->buildingName]->getPath(), $finalPath);
         self::$build = null;
         $export = Hilos::$db->legalAcceptanceExports->ofUser($build->userId);
+        $now = TimeHelper::nowMs();
         if ($export?->id !== $build->exportId || !$export->actions->finishReady(
             $build->storedName,
             FsPath::size($finalPath),
             $build->records,
-            TimeHelper::getSqlDateTime(),
-            self::expiresAt(),
+            $now,
+            self::expiresAt($now),
             $build->timeZone->getName(),
         )) {
             FsPath::delete($finalPath);
@@ -523,7 +524,8 @@ final class LegalAcceptancesExports
         }
         Logger::logAgentError($agent->getId(), "Cannot prepare the export of legal acceptances {$exportId}: {$e->getMessage()}");
         $export = Hilos::$db->legalAcceptanceExports->ofUser($userId);
-        if ($export?->id !== $exportId || !$export->actions->finishFailed(TimeHelper::getSqlDateTime(), self::expiresAt())) {
+        $now = TimeHelper::nowMs();
+        if ($export?->id !== $exportId || !$export->actions->finishFailed($now, self::expiresAt($now))) {
             return;
         }
         self::sendState($agent, $userId);
@@ -554,7 +556,7 @@ final class LegalAcceptancesExports
      */
     private static function expire(PageAgentInterface $agent): void
     {
-        foreach (Hilos::$db->legalAcceptanceExports->expiredBy(TimeHelper::getSqlDateTime()) as $export) {
+        foreach (Hilos::$db->legalAcceptanceExports->expiredBy(TimeHelper::nowMs()) as $export) {
             self::remove($export);
             self::sendState($agent, $export->userId);
         }
@@ -711,10 +713,11 @@ final class LegalAcceptancesExports
     }
 
     /**
-     * @return string The moment a file finished now stops being kept, in SQL form
+     * @param int $finishedAt Moment the file finished, in epoch milliseconds
+     * @return int The moment that file stops being kept, in epoch milliseconds
      */
-    private static function expiresAt(): string
+    private static function expiresAt(int $finishedAt): int
     {
-        return date('Y-m-d H:i:s', time() + self::LIFETIME_SECONDS);
+        return $finishedAt + self::LIFETIME_SECONDS * TimeConstants::MS_PER_SECOND;
     }
 }

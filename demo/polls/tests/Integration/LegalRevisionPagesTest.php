@@ -96,7 +96,7 @@ final class LegalRevisionPagesTest extends IntegrationTestCase
         // The public accept action admits declarations only; this fixture represents a removed declaration.
         Database::sqlRun(
             'INSERT INTO hilos_legal_acceptance (user_id, document, revision_id, accepted_at) VALUES (?, ?, ?, ?)',
-            [$this->adminId, LegalDocument::TERMS->value, self::RECORDED_REVISION, '2026-10-01 12:00:00'],
+            [$this->adminId, LegalDocument::TERMS->value, self::RECORDED_REVISION, 1790856000000],
         );
         $response = $this->subscribe(LegalRevisionPage::PAGE, self::RECORDED_REVISION);
 

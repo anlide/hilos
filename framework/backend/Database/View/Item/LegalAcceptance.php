@@ -16,7 +16,7 @@ use Hilos\HilosException;
  * @property-read int $userId
  * @property-read string $document
  * @property-read string $revisionId
- * @property-read string $acceptedAt
+ * @property-read int $acceptedAt Moment of the acceptance in epoch milliseconds
  */
 class LegalAcceptance extends DbItem
 {

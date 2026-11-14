@@ -42,7 +42,6 @@ use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Testing\IntegrationTest;
 use Hilos\Testing\RollbackIntegrationTestCase;
 use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
 
@@ -142,7 +141,7 @@ final class PrivacyPageTest extends PrivacyPageIntegrationEnvironment
         self::assertSame('covered', $documents[1]['standing']);
         self::assertSame($privacy['current'], $documents[1]['current']);
         self::assertSame($privacy['current'], $documents[1]['held']);
-        self::assertSame(TimeHelper::sqlToMs($acceptance->acceptedAt), $documents[1]['acceptedAt']);
+        self::assertSame($acceptance->acceptedAt, $documents[1]['acceptedAt']);
         self::assertGreaterThan(1_000_000_000_000, $documents[1]['acceptedAt']);
         self::assertSame([
             ['revisionId' => '2026-10-05', 'acceptedAt' => $documents[1]['acceptedAt']],

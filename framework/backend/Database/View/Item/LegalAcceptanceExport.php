@@ -19,9 +19,9 @@ use Hilos\HilosException;
  * @property-read ?string $document
  * @property-read ?string $revisionId
  * @property-read ?string $search
- * @property-read string $requestedAt
- * @property-read ?string $finishedAt
- * @property-read ?string $expiresAt
+ * @property-read int $requestedAt Moment of the request in epoch milliseconds
+ * @property-read ?int $finishedAt Moment the order ended in epoch milliseconds; null while preparing
+ * @property-read ?int $expiresAt Moment the file or failure expires in epoch milliseconds; null while preparing
  * @property-read ?string $storedName
  * @property-read ?int $sizeBytes
  * @property-read ?string $timeZone IANA zone the ready file was written in; null reads as UTC on a ready file

@@ -1,0 +1,40 @@
+{
+    "format": 1,
+    "id": "20261114014747194725_HIL-1925_export_legal_moments",
+    "parts": [
+        {
+            "unit": "legal_acceptance",
+            "up": "legal_acceptance.sql",
+            "down": "legal_acceptance_down.sql",
+            "requires": [],
+            "afterStubUpSha256": "8de04c5197765bf5c3cf22574a3e40d9df38c14105bb5d27d1ecf9dcef46f91b",
+            "afterStubDownSha256": "8a0ae2af4e594f95fe18fd47ca422e1d863173ede780aeb30b2836ec63175ddd"
+        },
+        {
+            "unit": "data_export",
+            "up": "data_export.sql",
+            "down": "data_export_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261101093551800031_HIL-1579_export_time_zones",
+                    "unit": "data_export"
+                }
+            ],
+            "afterStubUpSha256": "d443ac8590d4bae1f3d8ba054560fd726003e4e242d8062ad52a3dc99c3d37c3",
+            "afterStubDownSha256": "ae85831c32a4e031fc2659d042a1d62bcdcfc0510a0ad3ffc032ae9d840a2aea"
+        },
+        {
+            "unit": "legal_acceptance_export",
+            "up": "legal_acceptance_export.sql",
+            "down": "legal_acceptance_export_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261101093551800031_HIL-1579_export_time_zones",
+                    "unit": "legal_acceptance_export"
+                }
+            ],
+            "afterStubUpSha256": "9e8e4c7907f55728deaa1f4c77c80c357c0ce66c4f9af08bc7291b54a7032932",
+            "afterStubDownSha256": "91e01bc5e4644b68fd947865690013329b2838beb59fdb54521fef732884bd5a"
+        }
+    ]
+}

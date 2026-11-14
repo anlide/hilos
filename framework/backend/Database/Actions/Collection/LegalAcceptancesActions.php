@@ -40,7 +40,7 @@ class LegalAcceptancesActions extends DbActions
         $this->ensureCanCreateInSet((string)$userId);
 
         return $this->createDbItemFromObject($this->objectCollection->record(
-            $userId, $document, $revisionId, TimeHelper::getSqlDateTime(),
+            $userId, $document, $revisionId, TimeHelper::nowMs(),
         ));
     }
 

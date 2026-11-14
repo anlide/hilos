@@ -8,7 +8,7 @@ CREATE TABLE `hilos_legal_acceptance` (
     `user_id` INT UNSIGNED NOT NULL,
     `document` VARCHAR(16) NOT NULL,
     `revision_id` VARCHAR(32) NOT NULL,
-    `accepted_at` TIMESTAMP NOT NULL,
+    `accepted_at` BIGINT NOT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_legal_acceptance_user_document_revision` (`user_id`, `document`, `revision_id`),
     KEY `idx_legal_acceptance_document_revision` (`document`, `revision_id`, `accepted_at`),

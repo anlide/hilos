@@ -23,11 +23,11 @@ class DataExportsActions extends DbActions
 {
     /**
      * @param int $userId Person requesting a copy
-     * @param string $requestedAt Request time in SQL UTC
+     * @param int $requestedAt Request moment in epoch milliseconds
      * @return DataExport New preparing request
      * @throws HilosException When ownership, transaction, insertion, or wrapping fails
      */
-    public function order(int $userId, string $requestedAt): DataExport
+    public function order(int $userId, int $requestedAt): DataExport
     {
         $this->ensureCanCreateInSet((string)$userId);
         $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);

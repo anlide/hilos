@@ -8,7 +8,6 @@ use Hilos\DataExport\DTO\DataExportStateSignalData;
 use Hilos\Database\View\Item\DataExport;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /** The same archive node for initial payloads and subsequent state signals. */
 final class DataExportStateProjector
@@ -23,9 +22,9 @@ final class DataExportStateProjector
     {
         return $export === null ? null : [
             DataExportStateSignalData::state => $export->state,
-            DataExportStateSignalData::requestedAt => TimeHelper::sqlToMs($export->requestedAt),
-            DataExportStateSignalData::finishedAt => $export->finishedAt === null ? null : TimeHelper::sqlToMs($export->finishedAt),
-            DataExportStateSignalData::expiresAt => $export->expiresAt === null ? null : TimeHelper::sqlToMs($export->expiresAt),
+            DataExportStateSignalData::requestedAt => $export->requestedAt,
+            DataExportStateSignalData::finishedAt => $export->finishedAt,
+            DataExportStateSignalData::expiresAt => $export->expiresAt,
             DataExportStateSignalData::sizeBytes => $export->sizeBytes,
         ];
     }
