@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Closure;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
@@ -221,6 +222,11 @@ final class RestartTestMesh implements PlacementMesh
     {
         return array_keys($this->capabilities);
     }
+
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        $then();
+    }
 }
 
 /** Local executor used only for capability and cost reads. */
@@ -246,8 +252,9 @@ final class RestartTestExecutor implements PlacementExecutor
         return 1;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
     {
+        $stopped?->__invoke();
     }
 }
 

@@ -4637,6 +4637,11 @@ final class DaemonManagerRtSyncPeerTestPlacementMesh implements PlacementMesh
     {
         return [DaemonManagerRtSyncPeerTest::LOCAL_NODE, DaemonManagerRtSyncPeerTest::REMOTE_NODE];
     }
+
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        $then();
+    }
 }
 
 /** Placement executor stand-in: every agent fits and lands on worker 1. */
@@ -4662,7 +4667,8 @@ final class DaemonManagerRtSyncPeerTestPlacementExecutor implements PlacementExe
         return 1;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
     {
+        $stopped?->__invoke();
     }
 }

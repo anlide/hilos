@@ -599,8 +599,10 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      *
      * Removes agent daemon and calls onStop(). The cluster's placement hears of the stop only behind
      * the writes the workers streamed before the report, once the dispatch has handed them to the
-     * peers ({@see self::afterStreamedWrites()}): the report is read as soon as those writes are
-     * queued here ({@see WorkerClient::waitsForRtSyncStream()}), ahead of their delivery.
+     * peers and every peer answered them before the placement acts ({@see self::afterStreamedWrites()}):
+     * the report is read as soon as those writes are queued here ({@see WorkerClient::waitsForRtSyncStream()}),
+     * ahead of their delivery. A worker that dies without the report is answered the same way
+     * ({@see self::forgetAgentsOfWorker()}).
      *
      * @param WorkerAgentStoppedDTO $dto DTO with agent stopped data
      * @throws InvalidFormatException When the start sink cannot resolve a pending page recovery
@@ -1125,10 +1127,16 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Runs work behind every write the workers of this node streamed before now: at once when each
      * of them has settled, otherwise when the last of them does ({@see self::settleStreamedWrite()}).
      * The dispatch settles a write once it applied it here and handed it to the peers
-     * ({@see DaemonManager::broadcastRtSyncToPeers()}), in the order the writes came. Besides this
-     * manager's own placement note and release, the worker server holds a start that waited for the
-     * report of its agent's stop here, read or never to come from a link that left
-     * ({@see WorkerServer::noteWorkerStopReport()}, {@see WorkerServer::removeClient()}).
+     * ({@see DaemonManager::broadcastRtSyncToPeers()}), in the order the writes came. Held here are this
+     * manager's own placement note, which the placement then holds until every peer answered those
+     * writes before it acts, and its release of an agent's claim - for a stop the worker reported
+     * ({@see self::handleAgentStopped()}, {@see self::handleRtSourceReleased()}) and for the agents of
+     * a worker whose link closed ({@see self::forgetAgentsOfWorker()}, {@see self::releaseRtSourcesOfWorker()}).
+     * Besides them, the worker server holds a start that waited for the report of its agent's stop
+     * here, and tells a revoke's caller that the stopped instance is gone ({@see WorkerServer::$stopCompletions}),
+     * on a report read or never to come from a link that left ({@see WorkerServer::noteWorkerStopReport()},
+     * {@see WorkerServer::removeClient()}). It holds the next start of an agent that stopped unasked here
+     * as well, and of one lost with a worker whose link closed ({@see WorkerServer::holdStartsOfLostAgents()}).
      *
      * @param Closure(): void $work Work that must not go ahead of those writes
      */
@@ -1357,16 +1365,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      */
     public function handleRtSourceReleased(WorkerRtSourceReleasedDTO $dto): void
     {
-        $agentId = $dto->agentId;
-        $release = ++$this->rtSourceReleases;
-        $this->releasesBehindStreamedWrites[$agentId] = $release;
-        $this->afterStreamedWrites(function () use ($agentId, $release): void {
-            if (($this->releasesBehindStreamedWrites[$agentId] ?? null) !== $release) {
-                return;
-            }
-            unset($this->releasesBehindStreamedWrites[$agentId]);
-            $this->rtNodeSourceMap()->release($agentId);
-        });
+        $this->releaseRtSourceBehindStreamedWrites($dto->agentId);
     }
 
     /**
@@ -1377,6 +1376,14 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * for a collection nobody here writes any more. The same reason a dead worker is taken off
      * the re-hydrate barrier rather than waited for.
      *
+     * It goes the way a release the worker sent does - behind the writes the workers streamed
+     * before now, once the dispatch has handed them to the peers ({@see self::afterStreamedWrites()}),
+     * and dropped when the agent claims anew before then ({@see self::handleRtSourceRegistered()}).
+     * The master read those writes from the worker before its link closed: dropped at once, the
+     * claim would be gone when the dispatch asks whether they are this node's to announce
+     * ({@see DaemonManager::broadcastRtSyncToPeers()}), and the other nodes would never get them.
+     * The agents are named now, while the roster still binds them to this worker.
+     *
      * @param int $workerIndex Index of the worker whose link closed
      * @param bool $isMonopolistic Whether that worker was the monopolistic one
      */
@@ -1385,9 +1392,29 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $workerId = $this->calculateWorkerId($workerIndex, $isMonopolistic);
         foreach ($this->agentToWorker as $agentId => $agentWorkerId) {
             if ($agentWorkerId === $workerId) {
-                $this->rtNodeSourceMap()->release((string)$agentId);
+                $this->releaseRtSourceBehindStreamedWrites((string)$agentId);
             }
         }
+    }
+
+    /**
+     * Lets go of what an agent owned here behind the writes the workers streamed before now
+     * ({@see self::afterStreamedWrites()}), unless the agent claims anew before then
+     * ({@see self::handleRtSourceRegistered()}) or a later release of it takes this one's place.
+     *
+     * @param string $agentId Agent whose claim goes
+     */
+    private function releaseRtSourceBehindStreamedWrites(string $agentId): void
+    {
+        $release = ++$this->rtSourceReleases;
+        $this->releasesBehindStreamedWrites[$agentId] = $release;
+        $this->afterStreamedWrites(function () use ($agentId, $release): void {
+            if (($this->releasesBehindStreamedWrites[$agentId] ?? null) !== $release) {
+                return;
+            }
+            unset($this->releasesBehindStreamedWrites[$agentId]);
+            $this->rtNodeSourceMap()->release($agentId);
+        });
     }
 
     /**
@@ -1412,7 +1439,12 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * hook, the roster, the freeze's stop sink and the placement map. Dropping any of them would
      * move the silence rather than end it - the freeze watchdog is counting on hearing that an
      * initiator stopped (HIL-482), and the placement map would keep naming a host that no longer
-     * runs the agent.
+     * runs the agent. The first three take effect at once; the placement hears of the stop the
+     * way it does of a reported one ({@see handleAgentStopped()}), behind the writes the workers
+     * streamed before now - those the master read from this worker before its link closed among
+     * them - once the dispatch has handed them to the peers and every peer answered them before
+     * the placement acts: the leader places the agent anew on that word, and the old instance's
+     * last write must not be overtaken.
      *
      * A failing stop hook is contained per agent so one bad hook never strands the rest of the
      * roster, mirroring the worker-side cleanup this is the daemon's answer to.
@@ -1450,7 +1482,9 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
             $this->agentStopSink?->onAgentStopped($agentId);
 
             $stopped = AgentId::fromId($agentId);
-            Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
+            $this->afterStreamedWrites(static function () use ($stopped): void {
+                Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
+            });
         }
 
         // Told once for the worker rather than once per agent: what a reader can act on is that a

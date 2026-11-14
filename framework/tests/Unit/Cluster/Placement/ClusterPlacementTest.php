@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Closure;
 use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\Exception\PlacementCapabilityException;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
@@ -976,6 +977,185 @@ final class ClusterPlacementTest extends TestCase
 
         $placement->tick(1000.6);
         $this->assertSame([['render', '9']], $executor->revoked, 'The slave stops its placed agents once isolated past the grace');
+    }
+
+    /** @return iterable<string, array{bool, bool}> Which wait a stop is overtaken in: the instance's, or the peers' */
+    public static function stopWaits(): iterable
+    {
+        yield 'the stopped instance is still going' => [true, false];
+        yield 'the peers are still answering' => [false, true];
+    }
+
+    /**
+     * A leader's stop is confirmed only once the stopped instance is gone and then every active
+     * link to a peer answered the RT writes handed it before (HIL-2108). With nothing held, as on
+     * a node without peers, the answer leaves on the stop's own stack.
+     */
+    public function testAStopIsConfirmedOnlyBehindTheGoneInstanceAndThePeersAnswers(): void
+    {
+        $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $executor->holdStopped = true;
+        $mesh->holdRtWritesAnswered = true;
+
+        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '9'));
+        $this->assertSame([['render', '9']], $executor->revoked);
+        $this->assertSame([], $mesh->heldRtWritesAnswered, 'The peers are waited for only once the instance is gone');
+        $this->assertSame([], $this->stoppedStatuses($mesh));
+
+        $executor->releaseStopped();
+        $this->assertCount(1, $mesh->heldRtWritesAnswered);
+        $this->assertSame([], $this->stoppedStatuses($mesh), 'A gone instance alone does not confirm the stop');
+
+        $mesh->releaseRtWritesAnswered();
+        $this->assertSame([['leader', '9']], $this->stoppedStatuses($mesh));
+
+        $executor->holdStopped = false;
+        $mesh->holdRtWritesAnswered = false;
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '9'));
+        $this->assertSame([['leader', '9'], ['leader', '9']], $this->stoppedStatuses($mesh), 'Nothing held: answered on the same stack');
+    }
+
+    /**
+     * A stop overtaken by a new placement of the same agent while it waits owes the leader no answer.
+     *
+     * @param bool $holdStopped Whether the stopped instance is still going when the placement comes
+     * @param bool $holdAnswers Whether the peers are still answering when the placement comes
+     */
+    #[DataProvider('stopWaits')]
+    public function testAStopOvertakenByANewPlacementWhileItWaitsSendsNoAnswer(bool $holdStopped, bool $holdAnswers): void
+    {
+        $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $executor->holdStopped = $holdStopped;
+        $mesh->holdRtWritesAnswered = $holdAnswers;
+
+        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $executor->releaseStopped();
+        $mesh->releaseRtWritesAnswered();
+
+        $this->assertSame([], $this->stoppedStatuses($mesh));
+        [$nodeId, $frame] = $mesh->sent[array_key_last($mesh->sent)];
+        $this->assertSame('leader', $nodeId);
+        $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
+        $this->assertSame(PlacementState::Started, $frame->state, 'The newer placement is answered');
+    }
+
+    /**
+     * A node's note that its agent stopped reaches the leader only behind the peers' RT answers,
+     * and the agent placed here again meanwhile silences the note.
+     */
+    public function testAStoppedNoteWaitsForThePeersAndAnAgentTakenBackSilencesIt(): void
+    {
+        $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
+        $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(workerId: 5));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $mesh->holdRtWritesAnswered = true;
+
+        $placement->noteAgentStopped('render', '9');
+        $this->assertSame([], $this->stoppedStatuses($mesh));
+        $mesh->releaseRtWritesAnswered();
+        $this->assertSame([['leader', '9']], $this->stoppedStatuses($mesh));
+
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->noteAgentStopped('render', '9');
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $mesh->releaseRtWritesAnswered();
+        $this->assertSame([['leader', '9']], $this->stoppedStatuses($mesh), 'The agent taken back silences the earlier note');
+    }
+
+    /** A leader hosting its own placement forgets the record of a stopped agent only once the peers answered. */
+    public function testALeaderForgetsItsOwnStoppedAgentOnlyOnceThePeersAnswered(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS]]);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader(1000.0);
+        $placement->placeAgentOnNode('render', '9', self::SELF);
+        $mesh->holdRtWritesAnswered = true;
+
+        $placement->noteAgentStopped('render', '9');
+        $this->assertSame(PlacementState::Started, $placement->registry()->get('render:9')?->state);
+
+        $mesh->releaseRtWritesAnswered();
+        $this->assertNull($placement->registry()->get('render:9'));
+    }
+
+    /**
+     * A self-fenced node reports its emptied set only once every revoked instance is gone and then
+     * every active link to a peer answered the RT writes handed it before (HIL-2108).
+     */
+    public function testASelfFenceReportsTheEmptiedSetOnlyBehindEveryStopAndThePeersAnswers(): void
+    {
+        $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '10'));
+        $executor->holdStopped = true;
+        $mesh->holdRtWritesAnswered = true;
+
+        $placement->noteNodeOffline('leader', 1000.0);
+        $placement->tick(1000.6);
+        $this->assertSame([['render', '9'], ['render', '10']], $executor->revoked);
+        $this->assertSame([], $this->placementReports($mesh));
+
+        $first = array_shift($executor->heldStopped);
+        $this->assertNotNull($first);
+        $first();
+        $this->assertSame([], $mesh->heldRtWritesAnswered, 'One stop of two does not release the report');
+
+        $executor->releaseStopped();
+        $this->assertCount(1, $mesh->heldRtWritesAnswered);
+        $this->assertSame([], $this->placementReports($mesh), 'Gone instances alone do not release the report');
+
+        $mesh->releaseRtWritesAnswered();
+        $reports = $this->placementReports($mesh);
+        $this->assertCount(1, $reports);
+        $this->assertSame([], $reports[0]->agents);
+    }
+
+    /**
+     * On this node as the host, a restart elsewhere and an explicit stop are confirmed only once
+     * the stopped instance is gone and then every active link to a peer answered (HIL-2108).
+     */
+    public function testARestartElsewhereAndAStopHereConfirmOnlyBehindTheGoneInstanceAndThePeersAnswers(): void
+    {
+        $mesh = new FakePlacementMesh(
+            [self::SELF => [self::SLOTS], 'node-b' => [self::SLOTS]], linked: ['node-b'], online: [self::SELF, 'node-b'],
+        );
+        $executor = new FakePlacementExecutor();
+        $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
+        $placement->onBecameLeader(1000.0);
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        $placement->tick(1000.0);
+        $placement->placeAgentOnNode('render', '9', self::SELF);
+        $placement->placeAgentOnNode('render', '10', self::SELF);
+        $executor->holdStopped = true;
+        $mesh->holdRtWritesAnswered = true;
+
+        $placement->restartElsewhere('render', '9', self::SELF, 'node-b');
+        $placement->stopAgentOnNode('render', '10', self::SELF);
+        $executor->releaseStopped();
+        $this->assertSame([], $this->placeFrames($mesh), 'A gone instance alone does not let the restart move on');
+        $this->assertSame(self::SELF, $placement->registry()->get('render:9')?->nodeId);
+        $this->assertEquals(
+            new PlacementRecord('render', '10', self::SELF, PlacementState::Stopped),
+            $placement->registry()->get('render:10'),
+            'A gone instance alone does not confirm the stop',
+        );
+
+        $mesh->releaseRtWritesAnswered();
+        $this->assertSame([['node-b', 'render', '9']], $this->placeFrames($mesh));
+        $this->assertEquals(
+            new PlacementRecord('render', '10', null, PlacementState::Stopped),
+            $placement->registry()->get('render:10'),
+        );
     }
 
     /**
@@ -2964,6 +3144,50 @@ final class ClusterPlacementTest extends TestCase
     }
 
     /**
+     * @param FakePlacementMesh $mesh Mesh the coordinator sent through
+     * @return list<array{0: string, 1: ?string}> Stopped statuses sent so far, as [node id, agent index]
+     */
+    private function stoppedStatuses(FakePlacementMesh $mesh): array
+    {
+        $statuses = [];
+        foreach ($mesh->sent as [$nodeId, $frame]) {
+            if ($frame instanceof PeerAgentStatusDTO && $frame->state === PlacementState::Stopped) {
+                $statuses[] = [$nodeId, $frame->agentIndex];
+            }
+        }
+
+        return $statuses;
+    }
+
+    /**
+     * @param FakePlacementMesh $mesh Mesh the coordinator sent through
+     * @return list<array{0: string, 1: string, 2: ?string}> Place frames sent so far, as [node id, type, index]
+     */
+    private function placeFrames(FakePlacementMesh $mesh): array
+    {
+        $frames = [];
+        foreach ($mesh->sent as [$nodeId, $frame]) {
+            if ($frame instanceof PeerPlaceAgentDTO) {
+                $frames[] = [$nodeId, $frame->agentType, $frame->agentIndex];
+            }
+        }
+
+        return $frames;
+    }
+
+    /**
+     * @param FakePlacementMesh $mesh Mesh the coordinator broadcast through
+     * @return list<PeerPlacementReportDTO> Placement reports broadcast so far
+     */
+    private function placementReports(FakePlacementMesh $mesh): array
+    {
+        return array_values(array_filter(
+            $mesh->broadcast,
+            static fn(PeerDTO $frame): bool => $frame instanceof PeerPlacementReportDTO,
+        ));
+    }
+
+    /**
      * Points the main log at a fresh temporary file; tearDown points it back.
      *
      * @return string Path of the temporary log file
@@ -3022,6 +3246,12 @@ final class FakePlacementMesh implements PlacementMesh
     /** @var list<string> Currently-online node ids */
     public array $online;
 
+    /** Whether a wait for RT answers is held until {@see self::releaseRtWritesAnswered()} instead of ending at once */
+    public bool $holdRtWritesAnswered = false;
+
+    /** @var list<Closure(): void> Waits for RT answers held so far, in the order asked */
+    public array $heldRtWritesAnswered = [];
+
     /**
      * @param array<string, list<string>> $capabilities Advertised capabilities keyed by node id
      * @param list<string> $linked Node ids a link exists to (sendToNode succeeds)
@@ -3055,6 +3285,26 @@ final class FakePlacementMesh implements PlacementMesh
     {
         return $this->online;
     }
+
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        if (!$this->holdRtWritesAnswered) {
+            $then();
+
+            return;
+        }
+        $this->heldRtWritesAnswered[] = $then;
+    }
+
+    /** Ends the waits for RT answers held so far, in the order asked; a wait asked meanwhile stays held */
+    public function releaseRtWritesAnswered(): void
+    {
+        $held = $this->heldRtWritesAnswered;
+        $this->heldRtWritesAnswered = [];
+        foreach ($held as $then) {
+            $then();
+        }
+    }
 }
 
 /**
@@ -3072,8 +3322,8 @@ final class FakePlacementObserver implements PlacementObserver
 }
 
 /**
- * Fake executor that records placements and revokes, and can be told to fail or to report
- * a fixed required-capability set and worker id.
+ * Fake executor that records placements and revokes, and can be told to fail, to report
+ * a fixed required-capability set and worker id, or to hold what it tells a revoke's caller.
  */
 final class FakePlacementExecutor implements PlacementExecutor
 {
@@ -3091,6 +3341,12 @@ final class FakePlacementExecutor implements PlacementExecutor
 
     /** @var ?int Worker a waiting agent was seated on, or null while it still waits */
     public ?int $seatedWorkerId = null;
+
+    /** Whether a revoke's "stopped" is held until {@see self::releaseStopped()} instead of told at once */
+    public bool $holdStopped = false;
+
+    /** @var list<Closure(): void> Revokes' "stopped" held so far, in the order asked */
+    public array $heldStopped = [];
 
     /** @var ResourceProfile Resource profile every agent type reports */
     private readonly ResourceProfile $profile;
@@ -3134,9 +3390,28 @@ final class FakePlacementExecutor implements PlacementExecutor
         return $this->waitsForWorker ? $this->seatedWorkerId : $this->workerId;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
     {
         $this->revoked[] = [$agentType, $agentIndex];
+        if ($stopped === null) {
+            return;
+        }
+        if (!$this->holdStopped) {
+            $stopped();
+
+            return;
+        }
+        $this->heldStopped[] = $stopped;
+    }
+
+    /** Tells the revokes' "stopped" held so far, in the order asked; one asked meanwhile stays held */
+    public function releaseStopped(): void
+    {
+        $held = $this->heldStopped;
+        $this->heldStopped = [];
+        foreach ($held as $stopped) {
+            $stopped();
+        }
     }
 }
 

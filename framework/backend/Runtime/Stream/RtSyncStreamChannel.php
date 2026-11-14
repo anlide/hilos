@@ -37,6 +37,14 @@ use Throwable;
  * the other end between the write's parts, or ahead of its first one while the pass had no time
  * to cut it. The channel's own parts and answers are written at once.
  *
+ * The host may wait for the answers ({@see self::afterAnswered()}). A wait counts the operations
+ * taken before it, whatever their kind - they share one revision - and holds until each of them is
+ * answered: `applied`, `refused` or `gap`, before its end or to its final part; one closed with an
+ * empty final part counts once that part is answered, and one dropped before its first part counts
+ * at once. Writing a part is no answer, and an operation taken after the wait holds nothing. A link
+ * that brings no more answers ends every wait at once ({@see self::endAnswerWaits()}); the channel
+ * keeps no timer of its own - the link's liveness bounds a wait.
+ *
  * Receiving: only the expected part of the expected sequence moves the position. An old
  * generation (another stream id), a repeated or earlier part, a part from ahead and an answer
  * nobody waits for leave it where it is; a repeated final is never applied again. A part that
@@ -53,8 +61,8 @@ use Throwable;
  * or through the host where others read this end's copy: a master tells the workers that read it.
  *
  * Framework-first: the positions, credit and queues - the frames of another kind waiting for their
- * turn among them - are process-local state of this channel instance, as a socket's write buffer
- * is - not a Hilos::$rt collection. Nothing but the two ends of this one channel reads them, and
+ * turn and the waits for answers among them - are process-local state of this channel instance, as
+ * a socket's write buffer is - not a Hilos::$rt collection. Nothing but the two ends of this one channel reads them, and
  * they end with it, as the write buffer of a dropped connection does; the stream id is minted per instance, so
  * a replaced channel is a new epoch. The id only has to not collide with the previous epoch of the
  * same link - nobody gains anything by guessing it - so it is drawn from the tolerant random axis.
@@ -86,6 +94,13 @@ final class RtSyncStreamChannel
     private bool $awaitingNext = false;
     /** @var array<int, int> Final part of each operation sent whole, by sequence, until it is answered */
     private array $awaiting = [];
+    /** @var array<int, int> Revision of each operation sent whole, by sequence, until it is answered */
+    private array $awaitingRevisions = [];
+    /**
+     * @var SplQueue<array{int, Closure(): void}> Waits for answers, each with the revision of the last operation taken
+     *      before it, in the order the host asked
+     */
+    private SplQueue $answerWaits;
 
     private ?string $incomingStreamId = null;
     private int $expectedSequence = 1;
@@ -137,6 +152,7 @@ final class RtSyncStreamChannel
         $this->streamId = RandomHelper::hex(RtSyncStreamFrame::STREAM_ID_BYTES);
         $this->outbox = new SplQueue();
         $this->behind = new SplQueue();
+        $this->answerWaits = new SplQueue();
         $this->incoming = new SplQueue();
     }
 
@@ -190,6 +206,45 @@ final class RtSyncStreamChannel
         while (!$this->behind->isEmpty()) {
             [, $write] = $this->behind->dequeue();
             $write();
+        }
+    }
+
+    /**
+     * Tells the host once every operation this channel took before the call is answered - `applied`,
+     * `refused` or `gap` - or dropped before its first part, at once when none is left. Operations
+     * taken after the call hold nothing. Waits end in the order the host asked for them. $then may
+     * raise: what it raises reaches whoever ended the wait - this call when nothing is left, the
+     * answer read, or the end of every wait ({@see self::endAnswerWaits()}) - once the other waits ready
+     * on that same answer or at that end are told all the same.
+     *
+     * @param Closure(): void $then Told the operations are answered
+     */
+    public function afterAnswered(Closure $then): void
+    {
+        $this->answerWaits->enqueue([$this->revision, $then]);
+        $this->endAnswered();
+    }
+
+    /**
+     * Ends every wait for answers now, in the order the host asked for them: the host's link brings
+     * no more answers or carries no more parts - a closed or draining peer link - so what they wait
+     * for would never come. Unlike {@see self::releaseWaiting()} it writes no frame. A wait that
+     * raises does not keep the others from being told, nor those asked from inside: the first
+     * failure is raised once the queue is empty, to whoever ended the waits.
+     */
+    public function endAnswerWaits(): void
+    {
+        $failure = null;
+        while (!$this->answerWaits->isEmpty()) {
+            [, $then] = $this->answerWaits->dequeue();
+            try {
+                $then();
+            } catch (Throwable $raised) {
+                $failure ??= $raised;
+            }
+        }
+        if ($failure !== null) {
+            throw $failure;
         }
     }
 
@@ -332,6 +387,7 @@ final class RtSyncStreamChannel
             if ($status !== RtSyncStreamStatus::Next) {
                 $this->encoder = null;
                 Logger::warning("An RT stream operation was answered {$status->value} before its end [sequence={$answer->sequence}]");
+                $this->endAnswered();
             }
             $this->wakeUp();
 
@@ -339,10 +395,11 @@ final class RtSyncStreamChannel
         }
         if ($answer->streamId === $this->streamId && ($this->awaiting[$answer->sequence] ?? null) === $answer->part
             && $status !== RtSyncStreamStatus::Next) {
-            unset($this->awaiting[$answer->sequence]);
+            unset($this->awaiting[$answer->sequence], $this->awaitingRevisions[$answer->sequence]);
             if ($status !== RtSyncStreamStatus::Applied) {
                 Logger::warning("An RT stream operation was not applied: {$status->value} [sequence={$answer->sequence}]");
             }
+            $this->endAnswered();
             $this->wakeUp();
 
             return;
@@ -451,6 +508,7 @@ final class RtSyncStreamChannel
                 if ($this->sentPart < 0) {
                     Logger::warning('An RT stream operation cannot be written and is dropped before its first part: '
                         . $unwritable->getMessage());
+                    $this->endAnswered();
                     continue;
                 }
                 Logger::warning("An RT stream operation cannot be written past part {$this->sentPart}; its sequence"
@@ -482,6 +540,7 @@ final class RtSyncStreamChannel
         $this->emit(RtSyncStreamFrame::part($this->streamId, $this->sendingSequence, $part, $final, $bytes));
         if ($final) {
             $this->awaiting[$this->sendingSequence] = $part;
+            $this->awaitingRevisions[$this->sendingSequence] = $this->sendingRevision;
             $this->encoder = null;
         } else {
             $this->awaitingNext = true;
@@ -519,6 +578,40 @@ final class RtSyncStreamChannel
             [, $write] = $this->behind->dequeue();
             $write();
         }
+    }
+
+    /**
+     * Ends the waits for answers whose operations are all answered, in the order the host asked for
+     * them. Each leaves the queue before it is told, so a host that asks again from inside, or takes
+     * or answers through this channel, never meets it a second time. A wait that raises does not
+     * keep the ready ones behind it from being told on this same answer: the first failure is
+     * raised once none is ready.
+     */
+    private function endAnswered(): void
+    {
+        $failure = null;
+        while (!$this->answerWaits->isEmpty() && $this->answerWaits->bottom()[0] < $this->unansweredRevision()) {
+            [, $then] = $this->answerWaits->dequeue();
+            try {
+                $then();
+            } catch (Throwable $raised) {
+                $failure ??= $raised;
+            }
+        }
+        if ($failure !== null) {
+            throw $failure;
+        }
+    }
+
+    /** @return int Revision of the earliest operation taken and not answered, or the next one when none is left */
+    private function unansweredRevision(): int
+    {
+        return match (true) {
+            $this->awaitingRevisions !== [] => min($this->awaitingRevisions),
+            $this->encoder !== null => $this->sendingRevision,
+            !$this->outbox->isEmpty() => $this->outbox->bottom()->revision,
+            default => $this->revision + 1,
+        };
     }
 
     /**

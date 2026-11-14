@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Closure;
+use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
@@ -86,10 +88,17 @@ interface PlacementExecutor
     /**
      * Stops a placed agent on this node; a no-op when it is not running.
      *
+     * $stopped runs once the stopped instance is gone: at once when nothing ran or the agent only waited for a worker;
+     * otherwise once its worker's report of the stop - or the departure of the link it was awaited on - is behind the
+     * writes the workers streamed before it ({@see AgentManagerDaemon::afterStreamedWrites()}). $stopped may raise: what
+     * it raises reaches whoever ended the wait - this call, the report read or the link's departure, or the write
+     * that settled - and the other callers waiting for the same instance are told all the same.
+     *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?Closure(): void $stopped Told that the stopped instance is gone, or null when nobody waits for it
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function revokePlacement(string $agentType, ?string $agentIndex): void;
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void;
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Closure;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
@@ -581,6 +582,11 @@ final class PlacementViewTestMesh implements PlacementMesh
     {
         return [];
     }
+
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        $then();
+    }
 }
 
 /**
@@ -632,9 +638,11 @@ final class PlacementViewTestExecutor implements PlacementExecutor
     /**
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?Closure(): void $stopped Told at once: this fake runs nothing to wait for
      */
-    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
     {
+        $stopped?->__invoke();
     }
 }
 

@@ -459,27 +459,38 @@ the report that it stopped, once the writes of its `onStop()` are handed to the
 stream (`WorkerManager::notifyAgentStopped()`) and once a cleanup its FIFO still
 owes (`applyDiffAsCleanup()`, above) is paid or no longer owed - the agent keeps its
 RT claim until then, and a worker leaving lets such a release and report go with
-the debt unpaid. The master reads the report behind the old instance's writes, so
-never reads a write of that instance after it. On a report it awaits - it stopped
+the debt unpaid. A worker that dies sends neither: the master lets go of what its
+agents owned, and the placement hears they stopped, behind the writes the link has
+already handed the dispatch (`WorkerClient::onClose()`); what the stream took and
+had not read through by the close is refused, not handed on. The master reads the
+report behind the old instance's writes, so never reads a write of that instance
+after it. On a report it awaits - it stopped
 the agent itself - it starts the agent on another worker only once its dispatch has
 handed the writes it read before the report to the workers' streams
 (`WorkerServer::noteWorkerStopReport()`): the start then goes on that worker's link
 behind the old instance's last write, and a start asked for meanwhile waits for them
 too. A link that closes lets the starts it held go the same way, behind the writes
 read from it, whether its worker reported the stop or left without the report
-(`WorkerServer::removeClient()`). A stop the master did not ask for - the agent
-stopped itself or went idle - holds no start, and neither does a link already gone:
-a start asked for then stays behind those writes only by the order of the master's
-effect queue, where they were queued first. The master drops the agent's claim, and
-the cluster's placement hears of the stop - and may start the agent on another node -
-behind the same writes: only once the master's dispatch has handed the writes it read
-before them to the peers
+(`WorkerServer::removeClient()`). A link that leaves holds the start of every agent
+lost with it the same way, behind the writes read from it
+(`WorkerServer::holdStartsOfLostAgents()`): the node starts some of them at once,
+with no one asking - its per-node agents, the leader's singletons. A stop the master
+did not ask for - the agent stopped itself or went idle - holds its start the same
+way. The master drops the agent's claim, and the cluster's placement hears of the
+stop - and may start the agent on another node - behind the same writes: only once
+the master's dispatch has handed the writes it read before them to the peers
 (`AgentManagerDaemon::handleRtSourceReleased()`, `handleAgentStopped()`) - a write
 is announced to the peers only while an agent of its node owns the collection, so a
 claim dropped ahead of the agent's last writes would keep them from the other
-nodes. A claim the agent reports anew meanwhile stands. Each link keeps its own
-order only: nothing orders a node's link to the leader against its link to the node
-the leader picks next.
+nodes. A claim the agent reports anew meanwhile stands. A node's word that an agent
+stopped - its status to the leader, the leader's own note of an agent it hosted, the
+report of a node that fenced itself - leaves only once every active link to a peer
+has answered the RT operations the node handed it before
+(`PlacementMesh::afterRtWritesAnswered()`, `RtSyncStreamChannel::afterAnswered()`), so
+the node the leader picks next has the old instance's last write before it starts the
+agent. Any answer, a close or a drain of the link ends the wait; no timer does. On the
+leader's order the answer first waits for the worker's report of the stop
+(`PlacementExecutor::revokePlacement()`).
 
 A row's freshness travels with the writes it depends on. The master lifts its own
 mark at once, and writes the thaw to the workers that read the row only once the write

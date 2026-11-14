@@ -312,6 +312,26 @@ abstract class WorkerServer extends AbstractServer implements
      */
     private int $stopReports = 0;
 
+    /**
+     * @var array<int, array<string, list<Closure(): void>>> Callers waiting for a stopped instance to be gone
+     *      ({@see self::revokePlacement()}), by the exact connection whose report of the stop - or departure - they
+     *      wait on and by agent, in the order they asked. They run and leave once that report or departure is behind
+     *      the writes the workers streamed before it ({@see self::settleStopReport()}); a departed connection keeps
+     *      them until then. Framework-first: the same process-local bookkeeping of this master's stops as the waits
+     *      beside it; nothing else reads it and nothing replicates it.
+     */
+    private array $stopCompletions = [];
+
+    /**
+     * @var array<string, WorkerClient> Agents lost with their worker, by the link that left with them, while the
+     *      writes read from that link before it left are not handed on yet: the next start of such an agent waits
+     *      behind them ({@see self::holdStartsOfLostAgents()}), a link gone from the clients being one the start would
+     *      not find otherwise. An agent leaves once its mark settles ({@see self::settleStopReport()}). Framework-first:
+     *      the same process-local bookkeeping of this master's starts as the waits beside it; nothing else reads it and
+     *      nothing replicates it.
+     */
+    private array $lostAgentLinks = [];
+
     private bool $queuesStopping = false;
 
     private ?ReadyWork $secondStopWork = null;
@@ -1188,11 +1208,12 @@ abstract class WorkerServer extends AbstractServer implements
      * ({@see AgentManagerDaemon::afterStreamedWrites()}): the link reads the report as soon as those writes are queued
      * here ({@see WorkerClient::waitsForRtSyncStream()}), and a start sent to another worker ahead of them would find
      * nothing of the old instance's last write on that worker's link to wait behind. Until then the report still holds
-     * the start ({@see self::stopReportHolds()}), one asked for meanwhile as well. The second stop wave hears of the
+     * the start ({@see self::stopReportHolds()}), one asked for meanwhile as well. A report of a stop nobody asked for -
+     * the agent stopped itself or went idle - holds the next start the same way. The second stop wave hears of the
      * report at once.
      *
      * @param WorkerClient $client Reporting connection
-     * @param string $agentId Agent actually reported stopped
+     * @param string $agentId Agent actually reported stopped, asked to or not
      */
     public function noteWorkerStopReport(WorkerClient $client, string $agentId): void
     {
@@ -1203,10 +1224,32 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
+     * Holds the next start of every agent lost with the worker of a link that left behind the writes the link handed
+     * the dispatch before it left, as a start that waited for the report of a stop is held ({@see self::settleStopReport()}):
+     * the new instance would reach another worker ahead of the old instance's last write. The node starts some of them
+     * at once, with nobody asking - its per-node agents ({@see self::removeClient()}), the leader's singletons - so the
+     * hold is set as the link closes, before the first of those starts. The link is noted for each agent first: with no
+     * write left to hand on the mark settles at once and takes the note with it.
+     *
+     * @param WorkerClient $client Link that left
+     * @param list<string> $agentIds Agents lost with its worker
+     */
+    public function holdStartsOfLostAgents(WorkerClient $client, array $agentIds): void
+    {
+        foreach ($agentIds as $agentId) {
+            $this->lostAgentLinks[$agentId] = $client;
+            $this->settleStopReport($client, $agentId);
+        }
+    }
+
+    /**
      * Holds the start of the agent waiting on this exact connection behind the writes the workers streamed before now,
      * and releases it once the dispatch has handed them on ({@see AgentManagerDaemon::afterStreamedWrites()}) - at once
-     * when nothing is left to hand on. A later mark of the same agent on the connection replaces this one. The work
-     * holds the connection itself, so its number is not handed to another connection before the mark is gone.
+     * when nothing is left to hand on. The callers waiting on the connection for the stopped instance to be gone are
+     * told then too, in the order they asked ({@see self::$stopCompletions}) - every one, even behind one that raises,
+     * whose failure goes on to whoever ended the wait once all are told. A later mark of the same agent on the
+     * connection replaces this one. The work holds the connection itself, so its number is not handed to another
+     * connection before the mark is gone.
      *
      * @param WorkerClient $client Connection the report was read on, or that left
      * @param string $agentId Agent whose start waits
@@ -1229,6 +1272,26 @@ abstract class WorkerServer extends AbstractServer implements
                 $this->stopReportPending[$agentId] = $awaiting;
                 $this->stopReportWork?->markReady();
             }
+            // Taken before they run: one may stop the agent again, and that stop waits for its own report.
+            $completions = $this->stopCompletions[$link][$agentId] ?? [];
+            unset($this->stopCompletions[$link][$agentId]);
+            if (($this->stopCompletions[$link] ?? null) === []) {
+                unset($this->stopCompletions[$link]);
+            }
+            if (($this->lostAgentLinks[$agentId] ?? null) === $client) {
+                unset($this->lostAgentLinks[$agentId]);
+            }
+            $failure = null;
+            foreach ($completions as $stopped) {
+                try {
+                    $stopped();
+                } catch (Throwable $raised) {
+                    $failure ??= $raised;
+                }
+            }
+            if ($failure !== null) {
+                throw $failure;
+            }
         });
     }
 
@@ -1245,6 +1308,30 @@ abstract class WorkerServer extends AbstractServer implements
     {
         return isset($this->settlingStopReports[spl_object_id($client)][$agentId])
             || ($client->awaitsStopReport($agentId) && in_array($client, $this->clients, true));
+    }
+
+    /**
+     * The connection a stopped instance of the agent is still awaited on: a connected one whose worker owes the report
+     * of the stop it was sent, or one - connected or gone - whose report or departure is not behind the writes the
+     * workers streamed before it yet ({@see self::settleStopReport()}).
+     *
+     * @param string $agentId Agent just stopped
+     * @return ?int Exact connection, or null when no stopped instance of the agent is awaited
+     */
+    private function stoppedInstanceLink(string $agentId): ?int
+    {
+        foreach ($this->clients as $client) {
+            if ($client instanceof WorkerClient && $client->awaitsStopReport($agentId)) {
+                return spl_object_id($client);
+            }
+        }
+        foreach ($this->settlingStopReports as $link => $agentIds) {
+            if (isset($agentIds[$agentId])) {
+                return $link;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1361,9 +1448,13 @@ abstract class WorkerServer extends AbstractServer implements
      * stop never ends - and nothing is started for a client that never registered as a worker,
      * which carried no agents to lose.
      *
-     * A start that waited on this connection for the report of its agent's stop goes once the writes read from it are
-     * handed on, whether the worker reported the stop or left without it ({@see self::settleStopReport()}): those
-     * writes still wait in the dispatch, and the start would reach another worker ahead of them.
+     * A start that waited on this connection for the report of its agent's stop, or of an agent that was lost with its
+     * worker, goes once the writes read from it are handed on, whether the worker reported the stop or left without it
+     * ({@see self::settleStopReport()}): those writes still wait in the dispatch, and the start would reach another
+     * worker ahead of them. The per-node starts below are such starts: the close has already held them
+     * ({@see self::holdStartsOfLostAgents()}). A caller waiting on this connection for a stopped instance to be gone is
+     * told the same way ({@see self::revokePlacement()}). Every agent of the connection is settled and all of the above
+     * is done even behind one that raises, whose failure goes on to whoever removed the client once all is done.
      *
      * @param ClientInterface $client Client to remove
      */
@@ -1372,11 +1463,46 @@ abstract class WorkerServer extends AbstractServer implements
         $link = spl_object_id($client);
         unset($this->registeredClients[$link]);
         parent::removeClient($client);
+        $failure = null;
         foreach ($this->stopReportWaiters[$link] ?? [] as $agentId => $awaiting) {
             if (!isset($this->settlingStopReports[$link][$agentId])) {
-                $this->settleStopReport($awaiting->awaitedWorker, $agentId);
+                try {
+                    $this->settleStopReport($awaiting->awaitedWorker, $agentId);
+                } catch (Throwable $raised) {
+                    $failure ??= $raised;
+                }
             }
         }
+        if ($client instanceof WorkerClient) {
+            foreach (array_keys($this->stopCompletions[$link] ?? []) as $agentId) {
+                if (!isset($this->settlingStopReports[$link][$agentId])) {
+                    try {
+                        $this->settleStopReport($client, $agentId);
+                    } catch (Throwable $raised) {
+                        $failure ??= $raised;
+                    }
+                }
+            }
+        }
+        try {
+            $this->endRemovedClient($client);
+        } catch (Throwable $raised) {
+            $failure ??= $raised;
+        }
+        if ($failure !== null) {
+            throw $failure;
+        }
+    }
+
+    /**
+     * What a removed client leaves to do once the starts and callers that waited on it are told: the capacity, the
+     * stop wave, the upload buffers and, while the node is not leaving, the per-node agents a lost worker took
+     * ({@see self::removeClient()}).
+     *
+     * @param ClientInterface $client Client removed
+     */
+    private function endRemovedClient(ClientInterface $client): void
+    {
         $this->noteWorkerCapacityChanged();
         if ($this->secondStopWave !== []) {
             $this->secondStopWork?->markReady();
@@ -2282,10 +2408,18 @@ abstract class WorkerServer extends AbstractServer implements
         // A worker handles stop before a later start on its link, but an agent placed on a
         // different worker could report its old stop after the new instance was registered.
         // Keep the start out of the roster until that report or the link's departure, and the
-        // writes read before it are handed on. Once recorded, only the advance pass ends this
-        // wait: it reports a gate's quiet refusal.
+        // writes read before it are handed on. The same holds for an agent that stopped unasked,
+        // and for one that was lost with its worker, whose link - gone from the clients by then -
+        // is the one noted for it. Once recorded, only the advance pass ends this wait: it
+        // reports a gate's quiet refusal.
         $awaiting = $this->agentsAwaitingStopReport[$agentId] ?? null;
         $awaitedWorker = $awaiting?->awaitedWorker;
+        if ($awaitedWorker === null) {
+            $lost = $this->lostAgentLinks[$agentId] ?? null;
+            if ($lost !== null && $this->stopReportHolds($lost, $agentId)) {
+                $awaitedWorker = $lost;
+            }
+        }
         if ($awaitedWorker === null) {
             foreach ($this->clients as $client) {
                 if ($client instanceof WorkerClient && $this->stopReportHolds($client, $agentId)) {
@@ -4035,14 +4169,34 @@ abstract class WorkerServer extends AbstractServer implements
      * Stops a placed agent on this node ({@see PlacementExecutor}); a no-op when it is not
      * running.
      *
+     * $stopped waits on the connection the stopped instance is still awaited on - the one just sent its stop, or the
+     * one whose earlier report a start waited for - until the report, or the connection's departure, is behind the
+     * writes the workers streamed before it ({@see self::stoppedInstanceLink()}, {@see self::settleStopReport()}). With
+     * no such connection - nothing ran, or the agent only waited for a worker - it runs at once. $stopped may raise: what
+     * it raises reaches whoever ended the wait - this call, the report read or the connection's departure, or the
+     * write that settled - and the other callers waiting on the connection for the same instance are told all the same.
+     *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
+     * @param ?Closure(): void $stopped Told that the stopped instance is gone, or null when nobody waits for it
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
     {
         $this->stopAgent($agentType, $agentIndex);
+        if ($stopped === null) {
+            return;
+        }
+
+        $agentId = $this->buildAgentId($agentType, $agentIndex);
+        $link = $this->stoppedInstanceLink($agentId);
+        if ($link === null) {
+            $stopped();
+
+            return;
+        }
+        $this->stopCompletions[$link][$agentId][] = $stopped;
     }
 
     /**

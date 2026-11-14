@@ -27,6 +27,8 @@ use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -35,6 +37,7 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\PageAgentRestarts;
 use Hilos\Core\Daemon\PageAgentRestartWaiter;
 use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Page\DTO\PageAccessReassessConnectionsSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessSessionSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -48,6 +51,7 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalTypeInterface;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\DaemonSection\DTO\DaemonAgentRestartRequestSignalData;
@@ -60,6 +64,7 @@ use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSettle;
 use Hilos\Runtime\Stream\RtSyncStreamStatus;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Client\WorkerClient;
@@ -103,6 +108,9 @@ use Socket;
 final class RtSyncStreamTransportTest extends TestCase
 {
     private const string COLLECTION = 'streamRows';
+
+    /** Agent on the worker whose link a case closes, the one owner of the collection on this node */
+    private const string WRITER = 'stream_writer';
 
     private ?SignalRouter $previousRouter;
     private ?ClusterContext $previousCluster;
@@ -664,24 +672,30 @@ final class RtSyncStreamTransportTest extends TestCase
         }
     }
 
-    /** @return iterable<string, array{bool}> Whether the start was asked for before the report or after it */
+    /**
+     * @return iterable<string, array{bool, bool}> Whether the master asked for the stop, and whether the start was asked
+     *     for before the report or after it
+     */
     public static function startsHeldForAStopReport(): iterable
     {
-        yield 'asked before the report' => [true];
-        yield 'asked while the write read before the report settles' => [false];
+        yield 'asked before the report' => [true, true];
+        yield 'asked while the write read before the report settles' => [true, false];
+        yield 'stopped unasked, the start asked while the write read before the report settles' => [false, false];
     }
 
     /**
-     * An agent stopped on one worker wrote a row too long for one part, and the master read the report of its stop
-     * while that write still waited in its router: the start it held for the report, or one asked for while the write
-     * still waits, goes to another worker only once the dispatch has handed the write to that worker's stream, so it
-     * reaches the worker behind the write's last part - the new instance never reads the row without what the old one
-     * wrote.
+     * An agent stopped on one worker - by the master, or by itself with nobody asking - wrote a row too long for one
+     * part, and the master read the report of its stop while that write still waited in its router: the start it held
+     * for the report, or one asked for while the write still waits, goes to another worker only once the dispatch has
+     * handed the write to that worker's stream, so it reaches the worker behind the write's last part - the new
+     * instance never reads the row without what the old one wrote.
      *
+     * @param bool $stopAsked Whether the master asked for the stop
      * @param bool $askedBeforeReport Whether the start was asked for before the master read the report
      */
     #[DataProvider('startsHeldForAStopReport')]
     public function testAStartHeldForAStopReportReachesAnotherWorkerOnlyBehindTheLastPartOfTheOldInstancesWrite(
+        bool $stopAsked,
         bool $askedBeforeReport,
     ): void {
         $loop = new EventLoop();
@@ -696,7 +710,9 @@ final class RtSyncStreamTransportTest extends TestCase
                 $agent->setWorkerClient($sourceLink);
                 $agents->addAgent($agentId, $agent, 1, false);
             }
-            $this->master->worker->stopHere(RtSyncStreamTransportTestAgent::AGENT_TYPE);
+            if ($stopAsked) {
+                $this->master->worker->stopHere(RtSyncStreamTransportTestAgent::AGENT_TYPE);
+            }
             if ($askedBeforeReport) {
                 $this->master->worker->startHere(RtSyncStreamTransportTestAgent::AGENT_TYPE);
                 $this->assertTrue($this->master->worker->isAgentAwaitingStopReport(RtSyncStreamTransportTestAgent::AGENT_TYPE));
@@ -706,12 +722,18 @@ final class RtSyncStreamTransportTest extends TestCase
             $this->streamTwoPartWrite($source, $sourceLink);
             $source->send(new WorkerAgentStoppedDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE));
             $sourceLink->read();
-            $this->assertTrue($sourceLink->awaitsStopReport(RtSyncStreamTransportTestAgent::AGENT_TYPE),
-                'The report waits behind the last part the master has not read');
+            $this->assertSame([$stopAsked, !$stopAsked], [
+                $sourceLink->awaitsStopReport(RtSyncStreamTransportTestAgent::AGENT_TYPE),
+                $agents->hasAgent(RtSyncStreamTransportTestAgent::AGENT_TYPE),
+            ], 'The report waits behind the last part the master has not read: a stop asked for is still awaited, and an'
+                . ' agent that stopped unasked is still on the roster');
             $this->drain($sourceLink->rtSyncStream());
             $sourceLink->read();
 
-            $this->assertFalse($sourceLink->awaitsStopReport(RtSyncStreamTransportTestAgent::AGENT_TYPE), 'The master read the report');
+            $this->assertSame([false, false], [
+                $sourceLink->awaitsStopReport(RtSyncStreamTransportTestAgent::AGENT_TYPE),
+                $agents->hasAgent(RtSyncStreamTransportTestAgent::AGENT_TYPE),
+            ], 'The master read the report');
             $this->assertTrue(Hilos::$sr->hasQueuedSignals(), 'with the write still in its router');
             if (!$askedBeforeReport) {
                 $this->master->worker->startHere(RtSyncStreamTransportTestAgent::AGENT_TYPE);
@@ -813,6 +835,389 @@ final class RtSyncStreamTransportTest extends TestCase
             $this->assertCount(1, array_filter($this->reader->received, static fn (string $frame): bool => $frame === AgentStartDTO::class),
                 'The worker is started once: a second start after the first would ask it for the same agent twice');
             $this->assertSame(2, $agents->getAgentWorkerInfo(RtSyncStreamTransportTestAgent::AGENT_TYPE)?->workerIndex);
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
+    }
+
+    /**
+     * @return iterable<string, array{?bool, bool, list<class-string<WorkerDTO>>}> Whether the dispatch applies the write
+     *     read from the link that left or refuses it, null with no write read; whether the node starts the agent itself,
+     *     as one declared for every node, rather than being asked; and what the reading worker gets, in order
+     */
+    public static function startsOfAnAgentLostWithItsWorker(): iterable
+    {
+        yield 'a write waits in the router' => [true, false, [WorkerRtSyncStreamDTO::class, WorkerRtSyncStreamDTO::class, AgentStartDTO::class]];
+        yield 'no write waits' => [null, false, [AgentStartDTO::class]];
+        yield 'the dispatch refuses the write' => [false, false, [WorkerRtStalenessMessageDTO::class, AgentStartDTO::class]];
+        yield 'a per-node agent the node starts itself' => [true, true,
+            [WorkerRtSyncStreamDTO::class, WorkerRtSyncStreamDTO::class, AgentStartDTO::class]];
+    }
+
+    /**
+     * An agent running on one worker wrote a row too long for one part, and the worker's link closes while that write
+     * still waits in the master's router, with no stop asked for or reported: the next start of the agent lost with
+     * the worker goes to another worker only once the dispatch has handed the write on - applied or refused - so it
+     * reaches the worker behind the write's last part, as a start held for a stop report does. A per-node agent, which
+     * the node starts again by itself as the link is removed, waits the same way. With no write read from the link the
+     * start goes at once.
+     *
+     * @param ?bool $applied Whether the dispatch applies the write or refuses it, null with no write read
+     * @param bool $perNode Whether the node starts the agent itself, as one declared for every node
+     * @param list<class-string<WorkerDTO>> $frames What the reading worker gets, in order
+     */
+    #[DataProvider('startsOfAnAgentLostWithItsWorker')]
+    public function testAStartOfAnAgentLostWithItsWorkerReachesAnotherWorkerOnlyBehindTheLastPartOfTheOldInstancesWrite(
+        ?bool $applied,
+        bool $perNode,
+        array $frames,
+    ): void {
+        $previousAppClass = Hilos::appClass();
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            if ($perNode) {
+                new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, RtSyncStreamTransportTestHilos::class);
+            }
+            [$source, $sourceLink] = $this->link(1);
+            $agents = $this->master->getAgentManagerDaemon();
+            $agent = new RtSyncStreamTransportTestAgent();
+            $agent->setWorkerClient($sourceLink);
+            $agents->addAgent(RtSyncStreamTransportTestAgent::AGENT_TYPE, $agent, 1, false);
+            $this->reader->received = [];
+
+            if ($applied !== null) {
+                $this->streamTwoPartWrite($source, $sourceLink);
+                $sourceLink->read();
+                $this->drain($sourceLink->rtSyncStream());
+                $sourceLink->read();
+                $this->assertTrue($this->routerHolds(SignalTypeConstants::RT_SYNC_CREATED), 'The write waits in the master\'s router');
+            }
+
+            $closed = $sourceLink->getSocket();
+            $this->master->worker->dropClient($sourceLink);
+            $this->sockets = array_values(array_filter($this->sockets, static fn (Socket $socket): bool => $socket !== $closed));
+            if (!$perNode) {
+                $this->assertFalse($agents->hasAgent(RtSyncStreamTransportTestAgent::AGENT_TYPE), 'The roster lets the agent go with its worker');
+                $this->master->worker->startHere(RtSyncStreamTransportTestAgent::AGENT_TYPE);
+            }
+            $this->assertSame($applied !== null, $this->master->worker->isAgentAwaitingStopReport(RtSyncStreamTransportTestAgent::AGENT_TYPE),
+                'The start waits for the write read from the link that left, and only for it');
+            if ($applied === false) {
+                // The dispatch takes the write and answers it refused, as it answers every write it does not apply.
+                $refused = Hilos::$sr->getNextQueuedSignal()?->data;
+                $this->assertInstanceOf(RtSyncCreatedSignalData::class, $refused);
+                RtSyncStreamSettle::settle($refused, false);
+            }
+
+            $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignalsWithinBudget');
+            for ($pass = 0; $pass < 64 && count($this->reader->received) < count($frames); $pass++) {
+                $this->master->worker->advanceStartsAwaitingStopReport();
+                $dispatch->invoke($this->master);
+                $this->deliverToReader();
+            }
+
+            $this->assertSame($frames, $this->reader->received, 'The start goes behind the last part of the write read from the link that left');
+            for ($pass = 0; $pass < 8; $pass++) {
+                $this->master->worker->advanceStartsAwaitingStopReport();
+                $dispatch->invoke($this->master);
+                $this->deliverToReader();
+            }
+            $this->assertCount(1, array_filter($this->reader->received, static fn (string $frame): bool => $frame === AgentStartDTO::class),
+                'The worker is started once: a second start after the first would ask it for the same agent twice');
+            $this->assertSame(2, $agents->getAgentWorkerInfo(RtSyncStreamTransportTestAgent::AGENT_TYPE)?->workerIndex);
+        } finally {
+            new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $previousAppClass);
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
+    }
+
+    /**
+     * @return iterable<string, array{bool, bool}> Whether the agent ran on a worker when it was revoked, and whether that
+     *     worker reported the stop before its link closed
+     */
+    public static function revokedInstances(): iterable
+    {
+        yield 'the worker reported the stop' => [true, true];
+        yield 'the link closed without the report' => [true, false];
+        yield 'nothing ran' => [false, false];
+    }
+
+    /**
+     * An agent revoked on one worker wrote a row too long for one part, and the master read the report of its stop -
+     * or saw its link close without it - while that write still waited in its router: the revoke's caller hears that
+     * the stopped instance is gone once, and only after the dispatch has handed the write on, so word of the stop
+     * never leaves this node ahead of the old instance's last write. With nothing running it hears so at once.
+     *
+     * @param bool $ran Whether the agent ran on a worker when it was revoked
+     * @param bool $reported Whether the worker reported the stop before its link closed
+     */
+    #[DataProvider('revokedInstances')]
+    public function testARevokedInstanceIsGoneOnlyBehindTheWriteItsWorkerStreamedBeforeTheStop(bool $ran, bool $reported): void
+    {
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            // Each time the caller hears the instance is gone: whether the write still waited in the router.
+            $toldWithWriteQueued = [];
+            $stopped = function () use (&$toldWithWriteQueued): void {
+                $toldWithWriteQueued[] = $this->routerHolds(SignalTypeConstants::RT_SYNC_CREATED);
+            };
+            if (!$ran) {
+                $this->master->worker->revokePlacement(RtSyncStreamTransportTestAgent::AGENT_TYPE, null, $stopped);
+                $this->assertSame([false], $toldWithWriteQueued, 'Nothing ran, so nothing is left to wait for');
+
+                return;
+            }
+
+            [$source, $sourceLink] = $this->link(1);
+            $agent = new RtSyncStreamTransportTestAgent();
+            $agent->setWorkerClient($sourceLink);
+            $this->master->getAgentManagerDaemon()->addAgent(RtSyncStreamTransportTestAgent::AGENT_TYPE, $agent, 1, false);
+            $this->master->worker->revokePlacement(RtSyncStreamTransportTestAgent::AGENT_TYPE, null, $stopped);
+            $this->assertTrue($sourceLink->awaitsStopReport(RtSyncStreamTransportTestAgent::AGENT_TYPE));
+            $this->assertSame([], $toldWithWriteQueued, 'The stop is sent, and its worker has not reported it');
+            $this->reader->received = [];
+
+            $this->streamTwoPartWrite($source, $sourceLink);
+            if ($reported) {
+                $source->send(new WorkerAgentStoppedDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE));
+            }
+            $sourceLink->read();
+            $this->drain($sourceLink->rtSyncStream());
+            $sourceLink->read();
+            $this->assertSame(!$reported, $sourceLink->awaitsStopReport(RtSyncStreamTransportTestAgent::AGENT_TYPE));
+            $this->assertTrue(Hilos::$sr->hasQueuedSignals(), 'The write waits in the master\'s router');
+            if (!$reported) {
+                $closed = $sourceLink->getSocket();
+                $this->master->worker->dropClient($sourceLink);
+                $this->sockets = array_values(array_filter($this->sockets, static fn (Socket $socket): bool => $socket !== $closed));
+            }
+            $this->assertSame([], $toldWithWriteQueued, 'The report, or the link\'s departure, came ahead of the write it follows');
+
+            $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignalsWithinBudget');
+            for ($pass = 0; $pass < 64 && $toldWithWriteQueued === []; $pass++) {
+                $dispatch->invoke($this->master);
+                $this->deliverToReader();
+            }
+            for ($pass = 0; $pass < 8; $pass++) {
+                $dispatch->invoke($this->master);
+                $this->deliverToReader();
+            }
+
+            $this->assertSame([false], $toldWithWriteQueued, 'Told once, after the dispatch handed the write on');
+            $this->assertSame([WorkerRtSyncStreamDTO::class, WorkerRtSyncStreamDTO::class], $this->reader->received,
+                'The write reached the other worker');
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
+    }
+
+    /**
+     * Two callers revoked the same agent on its worker, and the first told that the stopped instance is gone raises:
+     * the second is told all the same, behind it, and the failure reaches the dispatch that handed the write on.
+     */
+    public function testACallerTheRevokedInstanceIsGoneToThatRaisesDoesNotKeepTheNextOneUntold(): void
+    {
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            $failure = new EventLoopException('The first caller failed');
+            $told = [];
+            [$source, $sourceLink] = $this->link(1);
+            $agent = new RtSyncStreamTransportTestAgent();
+            $agent->setWorkerClient($sourceLink);
+            $this->master->getAgentManagerDaemon()->addAgent(RtSyncStreamTransportTestAgent::AGENT_TYPE, $agent, 1, false);
+            $this->master->worker->revokePlacement(RtSyncStreamTransportTestAgent::AGENT_TYPE, null,
+                static function () use ($failure, &$told): void {
+                    $told[] = 'first';
+                    throw $failure;
+                });
+            $this->master->worker->revokePlacement(RtSyncStreamTransportTestAgent::AGENT_TYPE, null,
+                static function () use (&$told): void {
+                    $told[] = 'second';
+                });
+            $this->assertSame([], $told, 'Both wait for the report of the stop sent on the agent\'s connection');
+            $this->reader->received = [];
+
+            $this->streamTwoPartWrite($source, $sourceLink);
+            $source->send(new WorkerAgentStoppedDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE));
+            $sourceLink->read();
+            $this->drain($sourceLink->rtSyncStream());
+            $sourceLink->read();
+            $this->assertSame([], $told, 'The report came ahead of the write it follows');
+
+            $raised = null;
+            $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignalsWithinBudget');
+            for ($pass = 0; $pass < 64 && $told === []; $pass++) {
+                try {
+                    $dispatch->invoke($this->master);
+                } catch (EventLoopException $caught) {
+                    $raised = $caught;
+                }
+                $this->deliverToReader();
+            }
+
+            $this->assertSame(['first', 'second'], $told, 'The second caller is told behind the first that raised');
+            $this->assertSame($failure, $raised, 'The failure reaches the dispatch that handed the write on');
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
+    }
+
+    /**
+     * Two agents revoked on one worker, each with a caller waiting for its stopped instance to be gone, and the worker's
+     * link closes with no report and no write left to hand on: the caller of the first agent raises, the caller of the
+     * other agent is told all the same, the node still starts again the per-node agent the close took - the last step of
+     * the removal - and the failure reaches whoever dropped the link.
+     */
+    public function testACallerOfOneAgentRevokedOnALinkThatClosesRaisingDoesNotKeepTheNeighbourOrTheRestOfTheRemovalUndone(): void
+    {
+        $previousAppClass = Hilos::appClass();
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, RtSyncStreamTransportTestHilos::class);
+            $failure = new EventLoopException('The first agent\'s caller failed');
+            $told = [];
+            [, $sourceLink] = $this->link(1);
+            $agents = $this->master->getAgentManagerDaemon();
+            foreach ([RtSyncStreamTransportTestAgent::AGENT_TYPE, self::WRITER] as $agentType) {
+                $agent = new RtSyncStreamTransportTestAgent();
+                $agent->setWorkerClient($sourceLink);
+                $agents->addAgent($agentType, $agent, 1, false);
+            }
+            $this->master->worker->revokePlacement(RtSyncStreamTransportTestAgent::AGENT_TYPE, null,
+                static function () use ($failure, &$told): void {
+                    $told[] = 'first agent';
+                    throw $failure;
+                });
+            $this->master->worker->revokePlacement(self::WRITER, null,
+                static function () use (&$told): void {
+                    $told[] = 'second agent';
+                });
+            $this->assertSame([], $told, 'Both wait for the report of the stop sent on the agents\' connection');
+            $this->reader->received = [];
+
+            $closed = $sourceLink->getSocket();
+            $raised = null;
+            try {
+                $this->master->worker->dropClient($sourceLink);
+            } catch (EventLoopException $caught) {
+                $raised = $caught;
+            }
+            $this->sockets = array_values(array_filter($this->sockets, static fn (Socket $socket): bool => $socket !== $closed));
+
+            $this->assertSame(['first agent', 'second agent'], $told, 'The other agent\'s caller is told behind the one that raised, once');
+            $this->assertSame($failure, $raised, 'The failure reaches whoever dropped the link');
+            $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignalsWithinBudget');
+            for ($pass = 0; $pass < 8; $pass++) {
+                $dispatch->invoke($this->master);
+                $this->deliverToReader();
+            }
+            $this->assertSame([AgentStartDTO::class], $this->reader->received, 'The node started its per-node agent again, once');
+            $this->assertSame(2, $agents->getAgentWorkerInfo(RtSyncStreamTransportTestAgent::AGENT_TYPE)?->workerIndex);
+        } finally {
+            new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $previousAppClass);
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
+    }
+
+    /**
+     * The agent that alone owns a collection on this node writes a row, and its worker's link closes while the
+     * write the master read from that worker still waits in the master's router: the roster lets the agent go at
+     * once, and what it owned stays this node's until the dispatch has handed the write on, so the write still
+     * goes out to the node that reads the collection, and the claim goes behind it.
+     */
+    public function testAWriteTheMasterReadFromAWorkerBeforeItsLinkClosedGoesOutToThePeer(): void
+    {
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            [$here, $there, , , $peer] = $this->peerLinks();
+            // Node B reads the collection, over an active link of this node's peer server.
+            new ReflectionMethod(AbstractServer::class, 'addClient')->invoke($peer, $here);
+            new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($peer, ['node-b' => $here]);
+            new ReflectionProperty(PeerServer::class, 'nodeReaderMap')->getValue($peer)
+                ->note('node-b', SourceChange::KIND_RT, [self::COLLECTION]);
+            [$source, $sourceLink] = $this->link(1);
+            $agents = $this->master->getAgentManagerDaemon();
+            $writer = new RtSyncStreamTransportTestAgent();
+            $writer->setWorkerClient($sourceLink);
+            $agents->addAgent(self::WRITER, $writer, 1, false);
+            $agents->handleRtSourceRegistered(new WorkerRtSourceRegisteredDTO(self::WRITER, [self::COLLECTION]));
+            $here->write();
+            $this->wireDtos($there->getSocket());
+
+            $source->stream->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]));
+            $sourceLink->read();
+            $this->drain($sourceLink->rtSyncStream());
+            $this->assertTrue($this->routerHolds(SignalTypeConstants::RT_SYNC_CREATED), 'The write waits in the master\'s router');
+
+            $closed = $sourceLink->getSocket();
+            $this->master->worker->dropClient($sourceLink);
+            $this->sockets = array_values(array_filter($this->sockets, static fn (Socket $socket): bool => $socket !== $closed));
+            $this->assertFalse($agents->hasAgent(self::WRITER), 'The roster lets the agent go at once');
+            $this->assertTrue($agents->rtNodeSourceMap()->owns(self::COLLECTION), 'The claim waits for the write read before the close');
+
+            $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignalsWithinBudget');
+            for ($pass = 0; $pass < 8; $pass++) {
+                $dispatch->invoke($this->master);
+                $this->deliverToReader();
+                $here->write();
+            }
+
+            $this->assertSame([PeerRtSyncStreamDTO::class], $this->wireFrames($there->getSocket()), 'The write goes out to node B');
+            $this->assertFalse($agents->rtNodeSourceMap()->owns(self::COLLECTION), 'The claim goes behind the write');
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
+    }
+
+    /**
+     * A worker's link closes while the master has taken the part of a write from it and not read it through: the
+     * write is refused, as any write the master does not apply - the dispatch is handed nothing of it, and the
+     * workers that read the row are told it is frozen - so what waits behind the writes a link handed over before
+     * its close is exactly those writes.
+     */
+    public function testAPartTakenAndNotReadThroughWhenALinkClosesIsNotHandedToTheDispatch(): void
+    {
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            [$source, $sourceLink] = $this->link(1);
+            $this->reader->received = [];
+
+            $source->stream->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]));
+            $sourceLink->read();
+            $this->assertTrue($sourceLink->rtSyncStream()->isReading(), 'The master took the part and has not read it through');
+
+            $closed = $sourceLink->getSocket();
+            $this->master->worker->dropClient($sourceLink);
+            $this->sockets = array_values(array_filter($this->sockets, static fn (Socket $socket): bool => $socket !== $closed));
+            $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignalsWithinBudget');
+            for ($pass = 0; $pass < 8; $pass++) {
+                $dispatch->invoke($this->master);
+                $this->deliverToReader();
+            }
+
+            $this->assertFalse($sourceLink->rtSyncStream()->isReading(), 'The stream is through with the part');
+            $this->assertNotContains(SignalTypeConstants::RT_SYNC_CREATED, $this->master->router->queued,
+                'Nothing of the part reaches the dispatch');
+            $this->assertSame([WorkerRtStalenessMessageDTO::class], $this->reader->received,
+                'The reading worker gets no part of it, only the freeze of the row the refused write leaves');
         } finally {
             new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
             $loop->close();
@@ -1412,11 +1817,130 @@ final class RtSyncStreamTransportTest extends TestCase
     }
 
     /**
+     * A node waiting for its RT writes to be answered on every link to a peer - here three, one of
+     * whose answers is held - is told only once the held link answered too, and once.
+     */
+    public function testAWaitForRtAnswersEndsOnlyOnceTheLastOfThreeLinksAnswered(): void
+    {
+        [$remote, $links] = $this->threePeerLinks();
+        $answered = 0;
+        $remote->afterRtWritesAnswered(static function () use (&$answered): void {
+            ++$answered;
+        });
+
+        $this->assertSame(0, $answered, 'Every link carries a write not answered yet');
+        $this->answerRtWrite($links['node-a']);
+        $this->answerRtWrite($links['node-c']);
+        $this->assertSame(0, $answered, 'The held link has not answered yet');
+
+        $this->answerRtWrite($links['node-d']);
+        $this->assertSame(1, $answered, 'The last link answered, and the wait is told once');
+    }
+
+    /** A link that closes brings no more answers, so the wait for its writes ends with it. */
+    public function testAClosedLinkEndsTheWaitForItsRtAnswers(): void
+    {
+        [$remote, $links] = $this->threePeerLinks();
+        $answered = 0;
+        $remote->afterRtWritesAnswered(static function () use (&$answered): void {
+            ++$answered;
+        });
+        $this->answerRtWrite($links['node-a']);
+        $this->answerRtWrite($links['node-c']);
+
+        $links['node-d']->close();
+        $this->assertSame(1, $answered, 'The closed link no longer holds the wait');
+    }
+
+    /**
+     * A wait on a closing link raises - the fact behind it failed: the link still leaves the server's active links,
+     * the link's other waits are told all the same, and the failure reaches the one who closed it.
+     */
+    public function testAWaitThatRaisesAsItsLinkClosesLeavesTheLinkGoneFromTheServer(): void
+    {
+        [$remote, $links] = $this->threePeerLinks();
+        $failure = new EventLoopException('The fact behind the wait failed');
+        $told = [];
+        $links['node-d']->afterRtWritesAnswered(static function () use ($failure, &$told): void {
+            $told[] = 'raises';
+            throw $failure;
+        });
+        $remote->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'every link';
+        });
+        $this->answerRtWrite($links['node-a']);
+        $this->answerRtWrite($links['node-c']);
+
+        try {
+            $links['node-d']->close();
+            $this->fail('The failure of the wait is not silenced');
+        } catch (EventLoopException $raised) {
+            $this->assertSame($failure, $raised, 'The failure reaches the one who closed the link');
+        }
+        $this->assertSame(['raises', 'every link'], $told, 'The closed link\'s other wait is told all the same');
+
+        $remote->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'after the close';
+        });
+        $this->assertSame(['raises', 'every link', 'after the close'], $told,
+            'The closed link is gone from the active links, so a later wait does not hold on its write never answered');
+    }
+
+    /** A draining link writes no more parts of its stream, so the wait for its writes ends as it begins to drain. */
+    public function testADrainingLinkEndsTheWaitForItsRtAnswers(): void
+    {
+        [$remote, $links] = $this->threePeerLinks();
+        $answered = 0;
+        $remote->afterRtWritesAnswered(static function () use (&$answered): void {
+            ++$answered;
+        });
+        $this->answerRtWrite($links['node-a']);
+        $this->answerRtWrite($links['node-c']);
+
+        $links['node-d']->beginDrain();
+        $this->assertSame(1, $answered, 'The draining link no longer holds the wait');
+    }
+
+    /**
+     * A wait on a link beginning to drain raises - the fact behind it failed: the drain still goes on, so the
+     * linked node is told the route ends, the link's other waits are told all the same, and the failure reaches
+     * the one who began the drain.
+     */
+    public function testAWaitThatRaisesAsItsLinkBeginsToDrainStillTellsTheLinkedNode(): void
+    {
+        [$remote, $links] = $this->threePeerLinks();
+        $linkedNodeEnd = $this->sockets[array_key_last($this->sockets)];
+        $failure = new EventLoopException('The fact behind the wait failed');
+        $told = [];
+        $links['node-d']->afterRtWritesAnswered(static function () use ($failure, &$told): void {
+            $told[] = 'raises';
+            throw $failure;
+        });
+        $remote->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'every link';
+        });
+        $this->answerRtWrite($links['node-a']);
+        $this->answerRtWrite($links['node-c']);
+
+        try {
+            $links['node-d']->beginDrain();
+            $this->fail('The failure of the wait is not silenced');
+        } catch (EventLoopException $raised) {
+            $this->assertSame($failure, $raised, 'The failure reaches the one who began the drain');
+        }
+        $this->assertSame(['raises', 'every link'], $told, 'The draining link\'s other wait is told all the same');
+
+        $links['node-d']->write();
+        $this->assertSame([PeerRtSyncStreamDTO::class, PeerDrainDTO::class], $this->wireFrames($linkedNodeEnd),
+            'The linked node is told the route ends all the same, behind the write already out');
+    }
+
+    /**
      * This node's master end of a peer link to node B, and node B's end of it, over a real socket
      * pair; the worker that reads the stream's collection hosts the agent the node signals.
      *
-     * @return array{PeerLink, PeerLink, Socket, PeerServer} This node's link, node B's link, this node's socket
-     *         and node B's peer server
+     * @return array{PeerLink, PeerLink, Socket, PeerServer, PeerServer} This node's link, node B's link, this node's
+     *         socket, node B's peer server and this node's
      */
     private function peerLinks(): array
     {
@@ -1443,7 +1967,43 @@ final class RtSyncStreamTransportTest extends TestCase
 
         $this->hostOnReader();
 
-        return [$here, $there, $pair[0], $remote];
+        return [$here, $there, $pair[0], $remote, $peer];
+    }
+
+    /**
+     * Node B's peer server with an active link to each of three nodes over real socket pairs, and a
+     * write of node B on each link's stream, out whole and waiting for the answer the case gives by
+     * hand. A link's own end of its pair is the link's to close: a case may close it.
+     *
+     * @return array{PeerServer, array<string, PeerLink>} Node B's peer server and its links, by the node each reaches
+     */
+    private function threePeerLinks(): array
+    {
+        $remote = new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-b', 'Node B', NodeRole::Master, []),
+            [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        $links = [];
+        foreach (['node-a' => 'Node A', 'node-c' => 'Node C', 'node-d' => 'Node D'] as $nodeId => $nodeName) {
+            $pair = [];
+            $this->assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
+            foreach ($pair as $socket) {
+                $this->assertTrue(socket_set_nonblock($socket));
+            }
+            $this->sockets[] = $pair[0];
+            $link = new PeerLink($pair[1], $remote, NodeIdentity::of('node-b', 'Node B', NodeRole::Master, []), true,
+                new PlainSocketTransport($pair[1]));
+            new ReflectionProperty(PeerLink::class, 'remoteIdentity')->setValue($link, NodeIdentity::of($nodeId, $nodeName, NodeRole::Master, []));
+            $link->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]), 'node-b');
+            $links[$nodeId] = $link;
+        }
+        new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($remote, $links);
+
+        return [$remote, $links];
+    }
+
+    /** @param PeerLink $link Link whose linked node answers the write on its stream applied */
+    private function answerRtWrite(PeerLink $link): void
+    {
+        $link->rtSyncStream()->receive(RtSyncStreamFrame::ack($link->rtSyncStream()->streamId, 1, 0, RtSyncStreamStatus::Applied));
     }
 
     /** Starts the probe agent on the reading worker, in the roster of the worker server the master built. */
@@ -1499,8 +2059,8 @@ final class RtSyncStreamTransportTest extends TestCase
     }
 
     /**
-     * @param Socket $socket This node's end of the pair
-     * @return list<class-string<PeerDTO>> Frames node B wrote so far, in order
+     * @param Socket $socket One end of the pair, this node's unless a case reads what this node wrote
+     * @return list<class-string<PeerDTO>> Frames the other end wrote so far, in order
      */
     private function wireFrames(Socket $socket): array
     {
@@ -1508,8 +2068,8 @@ final class RtSyncStreamTransportTest extends TestCase
     }
 
     /**
-     * @param Socket $socket This node's end of the pair
-     * @return list<PeerDTO> Frames node B wrote so far, in order
+     * @param Socket $socket One end of the pair, this node's unless a case reads what this node wrote
+     * @return list<PeerDTO> Frames the other end wrote so far, in order
      */
     private function wireDtos(Socket $socket): array
     {
@@ -1875,4 +2435,15 @@ final class RtSyncStreamTransportTestAgent extends AbstractAgentDaemon
     {
         return false;
     }
+}
+
+/**
+ * The project facade of the case whose probe agent is declared for every node, so the node starts it again by itself
+ * once the worker hosting it is gone.
+ */
+abstract class RtSyncStreamTransportTestHilos extends Hilos
+{
+    public const array AGENTS = [
+        RtSyncStreamTransportTestAgent::AGENT_TYPE => [AgentRegistryKey::SCOPE => AgentScope::NODE],
+    ];
 }

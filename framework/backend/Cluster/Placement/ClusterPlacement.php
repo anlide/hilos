@@ -402,6 +402,20 @@ final class ClusterPlacement implements WorkerPlacement
     /** @var array<string, int> Exact in-flight placement/stop incarnations across synchronous ports */
     private array $placementAttempts = [];
 
+    /**
+     * Number of the last stop note this node handed to the wait for its peers' RT answers
+     * ({@see self::noteAgentStopped()}). Framework-first: process-local bookkeeping of this node's
+     * placement, as the attempts beside it; nothing else reads it and nothing replicates it.
+     */
+    private int $stopNoteSequence = 0;
+
+    /**
+     * @var array<string, int> Stop notes waiting for the peers' RT answers, by agent: the number of
+     *      the latest one. Taking the agent back silences its note. Framework-first: the same
+     *      process-local bookkeeping as {@see self::$stopNoteSequence}.
+     */
+    private array $stopNotes = [];
+
     private ?WeakReference $observedLeadership = null;
 
     private ?int $observedTerm = null;
@@ -1012,7 +1026,8 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Cancels the existing intent and answers its waiters before revoking a real host.
      * A Stopped tombstone survives the acknowledgement; new explicit demand waits for it.
-     * Null cancels work with no addressee without sending a stop frame.
+     * Null cancels work with no addressee without sending a stop frame. A stop on this node is
+     * confirmed once the stopped instance is gone and the peers answered its RT writes (HIL-2108).
      *
      * @param string $agentType Agent type to stop
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -1055,14 +1070,22 @@ final class ClusterPlacement implements WorkerPlacement
         if ($nodeId === null) {
             return;
         }
-        $this->revokeOnNode($agentType, $agentIndex, $nodeId);
-        if ($nodeId === $this->selfNodeId) {
-            $this->confirmCanceledStop($agentId, $nodeId);
+        if ($nodeId !== $this->selfNodeId) {
+            $this->revokeOnNode($agentType, $agentIndex, $nodeId);
+
+            return;
         }
+        $this->revokeOnNode($agentType, $agentIndex, $nodeId, $this->afterStopAnswered(
+            function () use ($agentId, $nodeId): void {
+                $this->confirmCanceledStop($agentId, $nodeId);
+            },
+        ));
     }
 
     /**
      * Revokes a POLICY agent but retains its old record until the host confirms the stop.
+     * This node, as the host, confirms once the stopped instance is gone and the peers answered
+     * its RT writes (HIL-2108), the moment a peer host answers {@see onStopAgent()} in.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index
@@ -1080,8 +1103,14 @@ final class ClusterPlacement implements WorkerPlacement
     ): void {
         $agentId = $this->agentId($agentType, $agentIndex);
         $this->restartsElsewhere[$agentId] = ['host' => $hostNodeId, 'target' => $targetNodeId, 'placing' => false];
+        // A peer host answers with its own stopped status; this node answers for itself the same way.
+        $stopped = $hostNodeId === $this->selfNodeId
+            ? $this->afterStopAnswered(function () use ($hostNodeId, $agentType, $agentIndex): void {
+                $this->onAgentStatus($hostNodeId, PeerAgentStatusDTO::stopped($agentType, $agentIndex));
+            })
+            : null;
         try {
-            $sent = $this->revokeOnNode($agentType, $agentIndex, $hostNodeId);
+            $sent = $this->revokeOnNode($agentType, $agentIndex, $hostNodeId, $stopped);
         } catch (Throwable $failure) {
             unset($this->restartsElsewhere[$agentId]);
             throw $failure;
@@ -1089,10 +1118,6 @@ final class ClusterPlacement implements WorkerPlacement
         if (!$sent) {
             unset($this->restartsElsewhere[$agentId]);
             $this->restartSink->onRestartNotPlaced($agentType, $agentIndex, "node {$hostNodeId} is silent");
-            return;
-        }
-        if ($hostNodeId === $this->selfNodeId) {
-            $this->onAgentStatus($hostNodeId, PeerAgentStatusDTO::stopped($agentType, $agentIndex));
         }
     }
 
@@ -1170,9 +1195,11 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type to stop
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $nodeId Id of the node the agent is placed on
+     * @param ?Closure(): void $stopped Told once the local stopped instance is gone, or null when nobody waits
+     *     for it; a peer host answers for its own stop, so the stop frame carries no such wait
      * @return bool Whether the local stop ran or a peer link carried it
      */
-    private function revokeOnNode(string $agentType, ?string $agentIndex, string $nodeId): bool
+    private function revokeOnNode(string $agentType, ?string $agentIndex, string $nodeId, ?Closure $stopped = null): bool
     {
         if ($nodeId === $this->selfNodeId) {
             $agentId = $this->agentId($agentType, $agentIndex);
@@ -1180,7 +1207,7 @@ final class ClusterPlacement implements WorkerPlacement
             // start failed on this same stack, and that callback must not rewrite this record.
             $hosted = $this->hosted[$agentId] ?? null;
             unset($this->deferredPlacementAnswers[$agentId]);
-            $this->executor->revokePlacement($agentType, $agentIndex);
+            $this->executor->revokePlacement($agentType, $agentIndex, $stopped);
             if (($this->hosted[$agentId] ?? null) === $hosted) {
                 unset($this->hosted[$agentId]);
             }
@@ -1189,6 +1216,22 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         return $this->mesh->sendToNode($nodeId, new PeerStopAgentDTO($agentType, $agentIndex));
+    }
+
+    /**
+     * Wraps a stop's fact so it leaves only behind the stopped instance and the peers' RT answers
+     * (HIL-2108): the closure handed to the executor as `$stopped` waits, once called, for every
+     * active link to a peer to answer what this node handed it before. With nothing to wait for
+     * the fact leaves on the same stack.
+     *
+     * @param Closure(): void $fact Sends or records the stop's fact, checking what may have changed meanwhile
+     * @return Closure(): void The executor's `$stopped` for that stop
+     */
+    private function afterStopAnswered(Closure $fact): Closure
+    {
+        return function () use ($fact): void {
+            $this->mesh->afterRtWritesAnswered($fact);
+        };
     }
 
     /**
@@ -1214,6 +1257,12 @@ final class ClusterPlacement implements WorkerPlacement
      * from a deposed leader overtaking the new one's on another link; the next query of the new
      * leader corrects it.
      *
+     * The hosted set lets go at once; the fact itself - the report, or the leader forgetting its
+     * own record - waits until every active link to a peer answered the RT operations this node
+     * handed it before (HIL-2108), so a start elsewhere cannot overtake the agent's last writes.
+     * Who leads and whom this node answers to are read when the answers are in, and taking the
+     * agent back meanwhile silences the note.
+     *
      * @param string $agentType Agent type that stopped
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      */
@@ -1228,24 +1277,32 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         unset($this->hosted[$agentId]);
-
-        if ($this->isLeader) {
-            if ($this->registry->get($agentId)?->state === PlacementState::Stopped) {
-                // A synchronous revoke callback must leave explicit cancellation in place.
+        $note = ++$this->stopNoteSequence;
+        $this->stopNotes[$agentId] = $note;
+        $this->mesh->afterRtWritesAnswered(function () use ($agentId, $agentType, $agentIndex, $note): void {
+            if (($this->stopNotes[$agentId] ?? null) !== $note) {
                 return;
             }
-            $this->registry->forget($agentId);
-            unset($this->lastPlacementRefusals[$agentId]);
-            unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
+            unset($this->stopNotes[$agentId]);
 
-            return;
-        }
+            if ($this->isLeader) {
+                if ($this->registry->get($agentId)?->state === PlacementState::Stopped) {
+                    // A synchronous revoke callback must leave explicit cancellation in place.
+                    return;
+                }
+                $this->registry->forget($agentId);
+                unset($this->lastPlacementRefusals[$agentId]);
+                unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
 
-        if ($this->placingLeaderId === null) {
-            return;
-        }
+                return;
+            }
 
-        $this->mesh->sendToNode($this->placingLeaderId, PeerAgentStatusDTO::stopped($agentType, $agentIndex));
+            if ($this->placingLeaderId === null) {
+                return;
+            }
+
+            $this->mesh->sendToNode($this->placingLeaderId, PeerAgentStatusDTO::stopped($agentType, $agentIndex));
+        });
     }
 
     /**
@@ -1293,6 +1350,7 @@ final class ClusterPlacement implements WorkerPlacement
 
         $record = new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Started);
         $this->hosted[$agentId] = $record;
+        unset($this->stopNotes[$agentId]);
         if (!$this->isLeader) {
             return;
         }
@@ -1437,12 +1495,14 @@ final class ClusterPlacement implements WorkerPlacement
      */
     private function answerPlacementStarted(string $fromNodeId, string $agentType, ?string $agentIndex, int $workerId): void
     {
-        $this->hosted[$this->agentId($agentType, $agentIndex)] = new PlacementRecord(
+        $agentId = $this->agentId($agentType, $agentIndex);
+        $this->hosted[$agentId] = new PlacementRecord(
             $agentType,
             $agentIndex,
             $this->selfNodeId,
             PlacementState::Started,
         );
+        unset($this->stopNotes[$agentId]);
         // Remember which leader placed our work so its loss triggers the self-fence.
         $this->answerTo($fromNodeId);
         $this->mesh->sendToNode($fromNodeId, PeerAgentStatusDTO::started($agentType, $agentIndex, $workerId));
@@ -1476,6 +1536,11 @@ final class ClusterPlacement implements WorkerPlacement
     /**
      * Node side: stops a leader-requested agent locally and confirms with a stopped status.
      *
+     * The confirmation leaves once the stopped instance is gone and every active link to a peer
+     * answered the RT operations this node handed it before (HIL-2108), so the leader cannot start
+     * the agent elsewhere ahead of its last writes. A stop whose attempt or authority changed
+     * during that wait owes no answer any more.
+     *
      * @param string $fromNodeId Id of the leader node that requested the stop
      * @param PeerStopAgentDTO $frame Received stop-agent frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
@@ -1491,14 +1556,17 @@ final class ClusterPlacement implements WorkerPlacement
         $this->placementAttempts[$agentId] = $attempt;
         $generation = $this->authorityGeneration;
         unset($this->deferredPlacementAnswers[$agentId]);
-        $this->executor->revokePlacement($frame->agentType, $frame->agentIndex);
+        $this->executor->revokePlacement($frame->agentType, $frame->agentIndex, $this->afterStopAnswered(
+            function () use ($fromNodeId, $frame, $agentId, $attempt, $generation): void {
+                if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
+                    return;
+                }
+                $this->mesh->sendToNode($fromNodeId, PeerAgentStatusDTO::stopped($frame->agentType, $frame->agentIndex));
+            },
+        ));
         if (($this->hosted[$agentId] ?? null) === $hosted) {
             unset($this->hosted[$agentId]);
         }
-        if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
-            return;
-        }
-        $this->mesh->sendToNode($fromNodeId, PeerAgentStatusDTO::stopped($frame->agentType, $frame->agentIndex));
     }
 
     /**
@@ -3916,6 +3984,9 @@ final class ClusterPlacement implements WorkerPlacement
      * report on the new link. Without the snapshot it would keep calling the stopped agents
      * started; with it, it places them again ({@see reconcileMissingAgents()}).
      * The empty hosted set still carries this node's retained complete registry separately.
+     * It leaves once every revoked instance is gone and every active link to a peer answered the
+     * RT operations this node handed it before (HIL-2108), and only if no newer authority decision
+     * or placed work came meanwhile: a node adopting the work cannot start it ahead of its last writes.
      *
      * @param ?string $cause Consumed fence reason, independent of reentrant authority
      * @throws PeerTransportException When the leader's snapshot metadata is invalid
@@ -3933,22 +4004,35 @@ final class ClusterPlacement implements WorkerPlacement
         $this->deferredPlacementAnswers = [];
         $this->placingLeaderId = null;
         $generation = ++$this->authorityGeneration;
-        // Logical revocation is atomic. The existing executor API queues the worker's stop;
-        // a later worker stop report remains a separate fact, never a new fence barrier.
+        // The report waits for every revoked instance to be gone, then for the peers' RT answers
+        // (HIL-2108). The fence holds one share of the count itself until every revoke is asked,
+        // so a stop told on the revoke's own stack cannot release the report early.
+        $pending = 1;
+        $report = $this->afterStopAnswered(function () use ($generation): void {
+            if ($this->isCurrentPass($generation) && !$this->hostsPlacedWork()) {
+                $this->mesh->broadcastToNodes(new PeerPlacementReportDTO([], $this->placementSnapshot()));
+            }
+        });
+        $stopped = static function () use (&$pending, $report): void {
+            if (--$pending === 0) {
+                $report();
+            }
+        };
+        // Logical revocation is atomic. The existing executor API queues the worker's stop; its
+        // report holds back only this node's report, never the fence itself.
         foreach ($hosted as $agentId => $record) {
             if (!isset($this->hosted[$agentId]) && !isset($this->deferredPlacementAnswers[$agentId])) {
-                $this->executor->revokePlacement($record->agentType, $record->agentIndex);
+                ++$pending;
+                $this->executor->revokePlacement($record->agentType, $record->agentIndex, $stopped);
             }
         }
         foreach ($deferredAnswers as $agentId => $deferred) {
             if (!isset($hosted[$agentId]) && !isset($this->hosted[$agentId]) && !isset($this->deferredPlacementAnswers[$agentId])) {
-                $this->executor->revokePlacement($deferred['agentType'], $deferred['agentIndex']);
+                ++$pending;
+                $this->executor->revokePlacement($deferred['agentType'], $deferred['agentIndex'], $stopped);
             }
         }
-
-        if ($this->isCurrentPass($generation) && !$this->hostsPlacedWork()) {
-            $this->mesh->broadcastToNodes(new PeerPlacementReportDTO([], $this->placementSnapshot()));
-        }
+        $stopped();
     }
 
     /**
@@ -4373,6 +4457,7 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         $this->hosted[$record->agentId()] = $record;
+        unset($this->stopNotes[$agentId]);
         $this->registry->put($record);
         $this->placementStarted($record->agentId(), $this->selfNodeId);
     }

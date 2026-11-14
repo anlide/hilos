@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster;
 
+use Closure;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\NodeIdentity;
@@ -412,7 +413,8 @@ final class FakeSeamPlacementExecutor implements PlacementExecutor
         return 1;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
     {
+        $stopped?->__invoke();
     }
 }

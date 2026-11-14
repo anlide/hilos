@@ -506,6 +506,11 @@ final class CancellationMesh implements PlacementMesh
         return array_keys($this->capabilities);
     }
 
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        $then();
+    }
+
     /**
      * @template T of PeerDTO
      * @param class-string<T> $class Frame class to select
@@ -557,12 +562,13 @@ final class CancellationExecutor implements PlacementExecutor
         return $this->waiting ? null : 1;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
     {
         $this->revoked[] = [$agentType, $agentIndex];
         if ($this->onRevoke !== null) {
             ($this->onRevoke)();
         }
+        $stopped?->__invoke();
     }
 }
 

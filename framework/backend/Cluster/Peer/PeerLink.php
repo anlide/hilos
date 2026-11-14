@@ -102,6 +102,7 @@ use Hilos\Socket\Transport\SocketTransportInterface;
 use Hilos\TruthSource\RtReplicaConfirmation;
 use Hilos\Utils\Logger;
 use SplQueue;
+use Throwable;
 use WeakReference;
 
 /**
@@ -590,7 +591,10 @@ final class PeerLink extends AbstractClient
      * Queues the old route's end marker after all application frames already queued there. The
      * frames still waiting for their turn behind the RT stream's writes ({@see self::readsBehindRtWrites()})
      * go out first: a draining link writes no more parts of its stream, so the writes they wait for would
-     * never go out here.
+     * never go out here. For the same reason the waits for the stream's answers end
+     * ({@see self::afterRtWritesAnswered()}) - once the link drains, so a frame a wait sends takes the
+     * draining route. The marker goes out and the deadline is armed even when a wait raised, and what the
+     * wait raised goes on to the caller.
      *
      * @throws EventLoopException When the remaining silence deadline cannot be armed
      */
@@ -599,11 +603,24 @@ final class PeerLink extends AbstractClient
         $this->rtSyncStream?->releaseWaiting();
         $this->peerDrainAllowed = true;
         $this->draining = true;
+        $failure = null;
+        try {
+            $this->rtSyncStream?->endAnswerWaits();
+        } catch (Throwable $raised) {
+            $failure = $raised;
+        }
         $this->sendEncodedFrame((new PeerDrainDTO())->toJson());
         if ($this->peerDrained) {
             $this->closeOnceWritten();
         }
-        $this->armLiveness();
+        try {
+            $this->armLiveness();
+        } catch (Throwable $raised) {
+            $failure ??= $raised;
+        }
+        if ($failure !== null) {
+            throw $failure;
+        }
     }
 
     /**
@@ -744,7 +761,9 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Notifies the server so it can mark the peer offline.
+     * Ends the waits for the RT stream's answers - a closed link brings no more
+     * ({@see self::afterRtWritesAnswered()}) - and notifies the server so it can mark the peer offline.
+     * The server is notified even when a wait raised, and what the wait raised goes on to the closer.
      *
      * @throws HilosException When unused upload peer capacity cannot be canceled
      */
@@ -753,7 +772,11 @@ final class PeerLink extends AbstractClient
         $this->shouldClose = true;
         $this->readBuffer = '';
         $this->discardOutbound();
-        $this->server->onLinkClosed($this);
+        try {
+            $this->rtSyncStream?->endAnswerWaits();
+        } finally {
+            $this->server->onLinkClosed($this);
+        }
     }
 
     /** @return int All pending ordinary bytes; upload spans remain charged to the existing raw pool */
@@ -1388,6 +1411,26 @@ final class PeerLink extends AbstractClient
     public function recoverRtSyncStream(string $collectionKey): void
     {
         $this->rtSyncStream?->recover($collectionKey);
+    }
+
+    /**
+     * Tells the caller once this link's RT stream answered every operation it took before the call
+     * ({@see RtSyncStreamChannel::afterAnswered()}), or the link closed or began to drain and so brings
+     * no more answers. At once when the stream never opened - nothing was handed to it, and it is not
+     * opened here - or the link drains already. $then may raise: what it raises reaches whoever ended
+     * the wait - this call, the answer read, the link's close or drain - and a close or drain tells the
+     * link's other waits all the same.
+     *
+     * @param Closure(): void $then Told the writes are answered
+     */
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        if ($this->rtSyncStream === null || $this->draining) {
+            $then();
+
+            return;
+        }
+        $this->rtSyncStream->afterAnswered($then);
     }
 
     /**

@@ -4289,6 +4289,32 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
+     * Tells $then once every active link - the route {@see self::walkRtSyncFanout()} hands each
+     * linked node its operations on - answered every RT operation its stream took before the call,
+     * or closed or began draining; at once without a link. No timer: each link's liveness bounds
+     * its wait. $then may raise: what it raises reaches whoever ended the last link's wait - this
+     * call, an answer, a close or drain - and a closing or draining link tells its other waits all the same.
+     *
+     * @param Closure(): void $then Told the RT writes are answered
+     */
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        $waiting = count($this->activeLinks);
+        if ($waiting === 0) {
+            $then();
+
+            return;
+        }
+        foreach ($this->activeLinks as $link) {
+            $link->afterRtWritesAnswered(static function () use (&$waiting, $then): void {
+                if (--$waiting === 0) {
+                    $then();
+                }
+            });
+        }
+    }
+
+    /**
      * Returns the ids of the nodes this one currently holds a handshaked link to.
      *
      * The question an addressed frame asks: where will it arrive right now. Online in the registry

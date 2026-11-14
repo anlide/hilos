@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Closure;
 use Hilos\Cluster\Consensus\ConsensusMesh;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 
@@ -63,4 +64,15 @@ interface PlacementMesh
      * @return list<string> Online node ids
      */
     public function onlineNodeIds(): array;
+
+    /**
+     * $then once every active link to a peer answered every RT operation this node handed its
+     * stream before the call, or closed or began draining; at once when nobody is awaited. No
+     * timer: link liveness bounds the wait. $then may raise: what it raises reaches whoever ended the
+     * wait - this call, an answer, a link's close or drain - and a closing or draining link tells its
+     * other waits all the same.
+     *
+     * @param Closure(): void $then Told the RT writes are answered
+     */
+    public function afterRtWritesAnswered(Closure $then): void;
 }

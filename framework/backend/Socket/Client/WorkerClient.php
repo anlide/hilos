@@ -118,6 +118,13 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /** @var bool Whether worker is registered */
     private bool $isRegistered = false;
 
+    /**
+     * Whether this link has closed: from then on its stream hands the dispatch nothing, and an operation whose parts it
+     * took and had not read through by then is refused ({@see self::rtSyncStream()}). Framework-first: process-local
+     * state of this link instance; nothing else reads it, and it ends with the link.
+     */
+    private bool $linkClosed = false;
+
     /** @var AgentManagerDaemon Agent manager daemon instance */
     private AgentManagerDaemon $agentManager;
 
@@ -675,6 +682,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /**
      * Confirm an awaited stop even when its roster entry was already removed.
      * Reports still on the roster are logged by the manager; a consumed wait cannot log twice.
+     * A stop nobody asked for - the agent stopped itself or went idle - holds the next start
+     * behind the writes read before its report all the same ({@see WorkerServer::noteWorkerStopReport()}).
      *
      * @param WorkerAgentStoppedDTO $dto Stop reported by this worker connection
      * @throws InvalidFormatException When the start sink cannot resolve a pending page recovery
@@ -684,9 +693,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     {
         $awaited = $this->awaitsStopReport($dto->agentId);
         unset($this->stopsAwaitingReport[$dto->agentId]);
-        if ($awaited) {
-            $this->workerServer->noteWorkerStopReport($this, $dto->agentId);
-        }
+        $this->workerServer->noteWorkerStopReport($this, $dto->agentId);
         if ($awaited && !$this->agentManager->hasAgent($dto->agentId)) {
             Logger::info("Agent '{$dto->agentId}' stopped on worker #{$this->workerIndex}");
         }
@@ -832,7 +839,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * Once it has read every part it took, the frames set aside behind them go back to the head of the
      * buffer and are parsed again, in their order, ahead of what arrived after them. A row it holds
      * after refusing the worker's write is marked by the master, which tells the other workers that
-     * read the row; without a master's mark it is marked in this process alone.
+     * read the row; without a master's mark it is marked in this process alone. Once the link has closed, an
+     * operation the stream had not read through is refused instead of handed to the dispatch ({@see self::onClose()}).
      *
      * @return RtSyncStreamChannel Stream of this link
      */
@@ -847,7 +855,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
                 },
                 static function (RtSyncStreamOperation $operation, Closure $settled) use ($link): void {
                     $client = $link->get();
-                    if ($client === null) {
+                    if ($client === null || $client->linkClosed) {
                         $settled(false);
 
                         return;
@@ -1392,6 +1400,19 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * counts from one, so an unregistered client must not match agents by a zero it shares
      * with nobody.
      *
+     * The release and the placement's word of the stop both go behind the writes this link has
+     * already handed the dispatch ({@see AgentManagerDaemon::afterStreamedWrites()}), while the
+     * roster lets the agents go at once. The master read those writes before the close: dropped
+     * at once, the claim would be gone when the dispatch asks whether they are this node's to
+     * announce, so this node would apply them and the others never get them, and the leader
+     * would place an agent anew ahead of its old instance's last write. The link is marked
+     * closed first, so what waits is exactly what was handed over: an operation the stream took
+     * and had not read through by then is refused rather than handed on behind the release.
+     * The next start of an agent lost with this worker waits behind those same writes, as a start
+     * that waited for the report of a stop does ({@see WorkerServer::holdStartsOfLostAgents()}).
+     * Held here and not where the client is removed: the roster is empty by then, and the
+     * per-node start pass there is the first start the hold has to find in place.
+     *
      * Forgetting them also answers whoever was waiting on one of them mid-start, which is what
      * the raise below is about: a page or a command owed a refusal that cannot be named.
      *
@@ -1402,6 +1423,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     protected function onClose(): void
     {
+        $this->linkClosed = true;
         $this->workerServer->testOrmForgetDoor()?->ormForgetWorkerGone($this);
         $this->workerServer->cronFireTestDoor()?->cronFireWorkerGone($this);
         $this->workerServer->daemonNodeReportTestDoor()?->nodeReportWorkerGone($this);
@@ -1423,6 +1445,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         if ($this->workerIndex > 0) {
             $lost = $this->agentManager->forgetAgentsOfWorker($this->workerIndex, $this->isMonopolistic);
             if ($lost !== []) {
+                $this->workerServer->holdStartsOfLostAgents($this, $lost);
                 Logger::info(
                     "Worker #{$this->workerIndex} died hosting " . count($lost) . ' agent(s): '
                     . implode(', ', $lost),

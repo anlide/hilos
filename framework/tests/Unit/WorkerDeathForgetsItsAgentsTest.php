@@ -4,6 +4,16 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
+use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
+use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Cluster\Placement\PlacementState;
+use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -12,9 +22,14 @@ use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Hilos;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSettle;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
@@ -41,6 +56,12 @@ final class WorkerDeathForgetsItsAgentsTest extends TestCase
 
     /** Index of the worker these tests kill. */
     private const int HOST_WORKER = 3;
+
+    /** Node the worker ran on, in the case about the cluster's placement. */
+    private const string THIS_NODE = 'node-a';
+
+    /** Node that placed the agent on it, and is told of the stop. */
+    private const string LEADER_NODE = 'node-b';
 
     /** @var class-string<Hilos> App class bound before this test touched it */
     private string $boundAppClass;
@@ -69,6 +90,51 @@ final class WorkerDeathForgetsItsAgentsTest extends TestCase
         $this->assertSame([$this->agentId('1'), $this->agentId('2')], $lost);
         $this->assertFalse($manager->hasAgent($this->agentId('1')));
         $this->assertFalse($manager->hasAgent($this->agentId('2')));
+    }
+
+    /**
+     * The master read a write from the worker before it died, and the dispatch has not answered it yet: the roster
+     * lets the worker's agent go at once, and the cluster's placement hears of its stop only once the write is
+     * answered. The leader places the agent anew on that word, so the word must not go ahead of the old instance's
+     * last write.
+     */
+    public function testTheRosterLetsADeadWorkersAgentGoAtOnceAndThePlacementHearsBehindAnUnansweredWrite(): void
+    {
+        $previousRouter = Hilos::$sr;
+        $previousCluster = Hilos::$cluster;
+        $mesh = new WorkerDeathTestPlacementMesh();
+        $placement = new ClusterPlacement(self::THIS_NODE, $mesh, new WorkerDeathTestPlacementExecutor());
+        $placement->onPlaceAgent(self::LEADER_NODE, new PeerPlaceAgentDTO(self::AGENT_TYPE, '1'));
+        $mesh->told = [];
+        $manager = new WorkerDeathTestAgentManagerDaemon();
+        $manager->addAgent($this->agentId('1'), new WorkerDeathTestAgentDaemon('1'), self::HOST_WORKER, false);
+
+        try {
+            Hilos::$cluster = new ClusterContext();
+            Hilos::$cluster->registerPlacement($placement);
+            Hilos::$sr = new SignalRouter();
+            $manager->handleWorkerRtSyncStream(
+                RtSyncStreamOperation::fromSignalData(new RtSyncCreatedSignalData('workerDeathRows', '1', ['name' => 'Ada']), 1),
+                static function (bool $applied): void {
+                },
+            );
+            $write = Hilos::$sr->getNextQueuedSignal()?->data;
+            $this->assertInstanceOf(RtSyncSignalDataInterface::class, $write);
+
+            $lost = $manager->forgetAgentsOfWorker(self::HOST_WORKER, false);
+
+            $this->assertSame([$this->agentId('1')], $lost);
+            $this->assertFalse($manager->hasAgent($this->agentId('1')), 'The roster lets the agent go at once');
+            $this->assertSame([], $mesh->told, 'The leader hears nothing while the write read from the worker is unanswered');
+
+            RtSyncStreamSettle::settle($write, true);
+        } finally {
+            Hilos::$sr = $previousRouter;
+            Hilos::$cluster = $previousCluster;
+        }
+
+        $this->assertSame([[self::LEADER_NODE, PlacementState::Stopped]], $mesh->told,
+            'The leader is told of the stop once the write is answered');
     }
 
     public function testAnAgentOnAnotherWorkerIsUntouched(): void
@@ -404,6 +470,73 @@ final class WorkerDeathTestLossSink implements AgentLossSink
         if ($this->manager !== null && $this->watchedAgentId !== null) {
             $this->rosterStillNamedIt = $this->manager->hasAgent($this->watchedAgentId);
         }
+    }
+}
+
+/**
+ * Placement mesh that writes down what the node tells the nodes it reaches; every link has answered every write.
+ */
+final class WorkerDeathTestPlacementMesh implements PlacementMesh
+{
+    /** @var list<array{string, ?PlacementState}> Node told, and the agent state it was told, in order */
+    public array $told = [];
+
+    public function sendToNode(string $nodeId, PeerDTO $frame): bool
+    {
+        $this->told[] = [$nodeId, $frame instanceof PeerAgentStatusDTO ? $frame->state : null];
+
+        return true;
+    }
+
+    public function broadcastToNodes(PeerDTO $frame): void
+    {
+        // Not used in this test
+    }
+
+    public function nodeCapabilities(string $nodeId): ?array
+    {
+        return ['slots=10'];
+    }
+
+    public function onlineNodeIds(): array
+    {
+        return ['node-a', 'node-b'];
+    }
+
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        $then();
+    }
+}
+
+/**
+ * Placement executor that seats every agent on the worker these tests kill.
+ */
+final class WorkerDeathTestPlacementExecutor implements PlacementExecutor
+{
+    public function requiredCapabilities(string $agentType, ?string $agentIndex): array
+    {
+        return [];
+    }
+
+    public function placementProfile(string $agentType, ?string $agentIndex): ResourceProfile
+    {
+        return ResourceProfile::none();
+    }
+
+    public function executePlacement(string $agentType, ?string $agentIndex): ?int
+    {
+        return 3;
+    }
+
+    public function placedWorkerId(string $agentType, ?string $agentIndex): ?int
+    {
+        return 3;
+    }
+
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
+    {
+        $stopped?->__invoke();
     }
 }
 

@@ -11,9 +11,15 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\DTO\AgentMessageDTOInterface;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
+use Hilos\Hilos;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSettle;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -44,8 +50,19 @@ final class RtNodeSourceMapTest extends TestCase
     /** @var string Collection the agent above owns */
     private const string COLLECTION = 'unitRtNodeSourceRows';
 
+    /** Router bound before this case, which a case that streams a write replaces with its own */
+    private ?SignalRouter $previousRouter;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->previousRouter = Hilos::$sr;
+    }
+
     protected function tearDown(): void
     {
+        Hilos::$sr = $this->previousRouter;
         RtTruthSourceRegistry::unregisterAgent(self::AGENT);
         RtTruthSourceRegistry::unregisterAgent(self::OTHER_AGENT);
 
@@ -265,6 +282,44 @@ final class RtNodeSourceMapTest extends TestCase
             $agentManager->rtNodeSourceMap()->owns('unitRtNodeSourceOther'),
             'Only the dead worker gives its collections back',
         );
+    }
+
+    /**
+     * The master read a write from a worker before the worker died, and the dispatch has not answered it yet: what
+     * the worker's agent owned stays its own until the write is answered, so the dispatch still finds the write this
+     * node's to announce, and goes only then.
+     */
+    public function testWhatADeadWorkerOwnedStaysUntilTheWriteItStreamedBeforeIsAnswered(): void
+    {
+        $agentManager = new RtNodeSourceMapTestAgentManagerDaemon();
+        $agentManager->addAgent(self::AGENT, new RtNodeSourceMapTestAgentDaemon(), 3, false);
+        $agentManager->handleRtSourceRegistered(new WorkerRtSourceRegisteredDTO(self::AGENT, [self::COLLECTION]));
+        $write = $this->streamUnansweredWrite($agentManager);
+
+        $agentManager->releaseRtSourcesOfWorker(3, isMonopolistic: false);
+        $this->assertTrue($agentManager->rtNodeSourceMap()->owns(self::COLLECTION), 'The claim stands while the write is unanswered');
+
+        RtSyncStreamSettle::settle($write, true);
+        $this->assertFalse($agentManager->rtNodeSourceMap()->owns(self::COLLECTION), 'The claim goes once the write is answered');
+    }
+
+    /**
+     * The agent of a dead worker claims the collection anew - started again on this node - while the release of the
+     * old instance still waits behind a write read from the dead worker: the new claim stands, as it does over a
+     * release the worker sent itself.
+     */
+    public function testAClaimNotedAnewCancelsTheReleaseOfADeadWorkerStillWaitingBehindAWrite(): void
+    {
+        $agentManager = new RtNodeSourceMapTestAgentManagerDaemon();
+        $agentManager->addAgent(self::AGENT, new RtNodeSourceMapTestAgentDaemon(), 3, false);
+        $agentManager->handleRtSourceRegistered(new WorkerRtSourceRegisteredDTO(self::AGENT, [self::COLLECTION]));
+        $write = $this->streamUnansweredWrite($agentManager);
+
+        $agentManager->releaseRtSourcesOfWorker(3, isMonopolistic: false);
+        $agentManager->handleRtSourceRegistered(new WorkerRtSourceRegisteredDTO(self::AGENT, [self::COLLECTION]));
+        RtSyncStreamSettle::settle($write, true);
+
+        $this->assertTrue($agentManager->rtNodeSourceMap()->owns(self::COLLECTION), 'The claim of the agent started anew stands');
     }
 
     public function testAReportWithoutACollectionListIsRefused(): void
@@ -614,6 +669,26 @@ final class RtNodeSourceMapTest extends TestCase
         $this->assertTrue($map->ownsFully(self::COLLECTION, '7'));
         $this->assertFalse($map->ownsFully(self::COLLECTION, '9'));
         $this->assertFalse($map->ownsFully(self::COLLECTION));
+    }
+
+    /**
+     * A write a worker of this node streamed, handed by the master to its dispatch and not answered yet.
+     *
+     * @param AgentManagerDaemon $agentManager Master that reads the write
+     * @return RtSyncSignalDataInterface The write's carrier, which the case answers by hand
+     */
+    private function streamUnansweredWrite(AgentManagerDaemon $agentManager): RtSyncSignalDataInterface
+    {
+        Hilos::$sr = new SignalRouter();
+        $agentManager->handleWorkerRtSyncStream(
+            RtSyncStreamOperation::fromSignalData(new RtSyncCreatedSignalData(self::COLLECTION, '1', ['name' => 'Ada']), 1),
+            static function (bool $applied): void {
+            },
+        );
+        $write = Hilos::$sr->getNextQueuedSignal()?->data;
+        $this->assertInstanceOf(RtSyncSignalDataInterface::class, $write);
+
+        return $write;
     }
 }
 

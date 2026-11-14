@@ -1089,6 +1089,11 @@ final class AgentRestartsTestMesh implements PlacementMesh
     {
         return array_keys($this->capabilities);
     }
+
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        $then();
+    }
 }
 
 /** Policy cost and worker lookup for restart placement. */
@@ -1114,8 +1119,9 @@ final class AgentRestartsTestExecutor implements PlacementExecutor
         return 1;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
     {
+        $stopped?->__invoke();
     }
 }
 

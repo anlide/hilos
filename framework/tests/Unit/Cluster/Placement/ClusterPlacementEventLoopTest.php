@@ -805,6 +805,11 @@ final class NativePlacementMesh implements PlacementMesh
     {
         return $this->online;
     }
+
+    public function afterRtWritesAnswered(Closure $then): void
+    {
+        $then();
+    }
 }
 
 /** Executor facts remain distinct from physical worker stop acknowledgements. */
@@ -845,9 +850,10 @@ final class NativePlacementExecutor implements PlacementExecutor
         return $this->waitsForWorker ? null : 1;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex): void
+    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
     {
         $this->revoked[] = [$agentType, $agentIndex];
         $this->revoking?->__invoke($agentType, $agentIndex);
+        $stopped?->__invoke();
     }
 }
