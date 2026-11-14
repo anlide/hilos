@@ -13,7 +13,10 @@ import {
   type HilosRouter,
   type PageRouteMatch,
 } from '@hilos/core/base'
-import type { HilosLogNodeRow } from '@hilos/core/admin/logs'
+import {
+  formatLogsOverviewRotationAt,
+  type HilosLogNodeRow,
+} from '@hilos/core/admin/logs'
 import { describe, expect, it, vi } from 'vitest'
 
 import { HilosLogsPage } from '../src/admin/logs/HilosLogsPage.js'
@@ -539,14 +542,9 @@ describe('HilosLogsPage', () => {
       pushPageWindow([tableNode()])
       fixture.detectChanges()
       const root = fixture.nativeElement as HTMLElement
-      const label = (timeZone: string) =>
-        new Intl.DateTimeFormat(undefined, {
-          dateStyle: 'medium',
-          timeStyle: 'medium',
-          timeZone,
-        }).format(new Date(ROTATION_MOMENT))
+      // The table prints the instant in the overview tile's own format.
       expect(textOf(fixture, 'hilos-logs-node-rotation-node-1').trim()).toBe(
-        label('UTC'),
+        formatLogsOverviewRotationAt(ROTATION_MOMENT),
       )
       const cell = root.querySelector(
         'table [data-id="hilos-logs-node-rotation-node-1"]',
@@ -555,7 +553,7 @@ describe('HilosLogsPage', () => {
       zone.receive('America/Los_Angeles')
       fixture.detectChanges()
       expect(textOf(fixture, 'hilos-logs-node-rotation-node-1').trim()).toBe(
-        label('America/Los_Angeles'),
+        formatLogsOverviewRotationAt(ROTATION_MOMENT),
       )
       expect(
         root.querySelector('table [data-id="hilos-logs-node-rotation-node-1"]'),

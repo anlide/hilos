@@ -2,6 +2,7 @@ import {
   formatProfileDateTime,
   hilosProfileDeviceKind,
   hilosPushSubscription,
+  hilosTimeZone,
   type HilosConnection,
   type HilosProfileDevice,
   type HilosProfileDeviceActions,
@@ -47,6 +48,7 @@ export function HilosProfileDevices({
   pushChannel,
   pushStore = hilosPushSubscription,
 }: HilosProfileDevicesProps) {
+  useSignal(hilosTimeZone)
   const [target, setTarget] = useState<RemoveTarget | null>(null)
   const supported = useSignal(pushStore.supported)
   const refreshed = useSignal(pushStore.refreshed)

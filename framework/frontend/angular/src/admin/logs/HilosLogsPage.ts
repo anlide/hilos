@@ -48,12 +48,7 @@ import {
   RECENT_TAB_ERRORS,
   RECENT_TAB_WARNINGS,
 } from '@hilos/core/admin/logs'
-import {
-  formatMoment,
-  HilosPages,
-  hilosTimeZone,
-  subscribeSignal,
-} from '@hilos/core/base'
+import { HilosPages, hilosTimeZone, subscribeSignal } from '@hilos/core/base'
 import type {
   HilosLogsOverview,
   HilosLogsOverviewRecentEntry,
@@ -480,9 +475,7 @@ export class HilosLogsPage {
   }
   protected readonly formatNodeRotationAt = (moment: number | null): string => {
     this.timeZone()
-    return moment === null
-      ? '—'
-      : (formatMoment(moment, { kind: 'dateTime' }) ?? '—')
+    return formatLogsOverviewRotationAt(moment)
   }
 
   private readonly logs = computed(() =>

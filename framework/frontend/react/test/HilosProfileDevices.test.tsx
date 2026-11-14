@@ -14,6 +14,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosProfileDevices } from '../src/profile/HilosProfileDevices.js'
+import { readerTimeZone } from './readerTimeZone.js'
 import {
   registerProfileDeviceRemoveCases,
   type ProfileDeviceMountFn,
@@ -23,8 +24,11 @@ import {
   type PushPermissionDeviceMount,
 } from '../../test/pushPermissionCases.js'
 
+const readerTimeZoneReleases: Array<() => void> = []
+
 afterEach(() => {
   cleanup()
+  for (const release of readerTimeZoneReleases.splice(0)) release()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
   vi.restoreAllMocks()
@@ -38,6 +42,63 @@ function createStubConnection(): HilosConnection {
 }
 
 describe('HilosProfileDevices (React)', () => {
+  it('reformats a device moment in the reader zone without replacing its row', async () => {
+    const zone = readerTimeZone()
+    readerTimeZoneReleases.push(zone.release)
+    await act(async () => {
+      zone.choose('Asia/Tokyo')
+    })
+
+    const createdAt = 0
+    const pushStore: HilosPushSubscriptionStore = {
+      supported: createSignal(false),
+      permission: createSignal<HilosPushPermission>('denied'),
+      subscribed: createSignal(false),
+      endpointHash: createSignal<string | null>(null),
+      refreshed: createSignal(true),
+      busy: createSignal(false),
+      refresh: vi.fn(async () => {}),
+      enable: vi.fn(async () => true),
+      disable: vi.fn(async () => true),
+      clear: vi.fn(),
+    }
+    const { container } = render(
+      <HilosProfileDevices
+        devices={[
+          {
+            id: 1,
+            deviceName: 'Test browser',
+            createdAt,
+            current: false,
+            expired: false,
+          },
+        ]}
+        actions={{ removeDevice: vi.fn() }}
+        connection={createStubConnection()}
+        pushChannel={null}
+        pushStore={pushStore}
+      />,
+    )
+    const row = container.querySelector('[data-id="profile-device-row"]')!
+    const addedLabel = row.querySelector('div.small.text-body-secondary')!
+    const removeButton = row.querySelector('[data-id="profile-device-remove"]')!
+    const tokyoLabel = addedLabel.textContent
+    expect(tokyoLabel).toContain(`added ${formatProfileDateTime(createdAt)}`)
+
+    await act(async () => {
+      zone.choose('America/Los_Angeles')
+    })
+
+    expect(addedLabel.textContent).not.toBe(tokyoLabel)
+    expect(addedLabel.textContent).toContain(
+      `added ${formatProfileDateTime(createdAt)}`,
+    )
+    expect(container.querySelector('[data-id="profile-device-row"]')).toBe(row)
+    expect(row.querySelector('[data-id="profile-device-remove"]')).toBe(
+      removeButton,
+    )
+  })
+
   it('renders flat rows with Bootstrap Icons, heading h3, and proper statuses', async () => {
     const connection = createStubConnection()
     const subscription: HilosPushSubscriptionSnapshot = {

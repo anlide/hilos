@@ -4,9 +4,8 @@ Read this before carrying, storing, interpreting or formatting a moment,
 selecting a time zone, or writing cron and retention boundaries.
 
 This holds the canonical time-zone rule of HIL-1528 and database storage norm
-of HIL-1915. The database storage migration is complete. The
-[wire migration table](#remaining-migration) remains for payload and screen
-work.
+of HIL-1915. The database, wire and screen migrations are complete. The
+[migration history](#wire-and-screen-migration) records the completed work.
 
 ## Database Moment Storage
 
@@ -872,11 +871,10 @@ accepts only an exact IANA identifier, validates it before fixture writes, and
 stores it through
 [`UserActions::setTimeZone()`](../../../framework/backend/Database/Actions/Item/UserActions.php).
 
-## Remaining Migration
+## Wire And Screen Migration
 
-The wire norm applies to new work; existing payloads and screens still need
-the migrations below. Each row names the leaf that completes that payload or
-screen migration, not a prerequisite for reading or applying this rule.
+The wire norm applies to every payload. The rows below record which leaf
+completed each payload or screen migration.
 
 | Surface | Migration owner and status |
 |---|---|
@@ -884,8 +882,8 @@ screen migration, not a prerequisite for reading or applying this rule.
 | Notifications and deliveries | `HIL-1587` done: numeric wire moments in UTC epoch ms for notification created/snapshot signals and delivery table rows/anchors; Vue uses the reader zone. |
 | Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
 | Acceptances | `HIL-1591` done: numeric wire moments in UTC epoch ms for legal acceptances table browser rows; Vue uses the reader zone. The internal stored row is UTC epoch ms as well, migrated under [Database Moment Storage](#database-moment-storage). |
-| React | `HIL-1594` done: the Profile Time zone row opens the picker immediately; previews load only while it is open, and the selection indicator follows the authoritative session echo. Session dates follow the reader zone while the stored browser zone remains descriptive and expanded tabs and confirmation dialogs stay open. The user detail shows the read-only account zone (exact, Automatic, or Hidden); activity moments in user detail, lists and merge candidates follow the reader zone. Reader-zone changes refresh notification-bell and Legal Accepted dates, delivery moments, Logs batch labels, undo deadlines and overview moments, Backup and Maintenance moments, and Cron run times. Cron expressions still use the project zone; the shared Daemon node head's Silent since follows its own reader subscription. Core-formatted strings are not reparsed, and durations and ETA are unchanged. Component tests and focused profile/Cron/accessibility e2e cover these paths. |
-| Angular | `HIL-1595` done: profile, session/device, notification, acceptance, Logs, Backup, Maintenance and Cron readers use shared presentation paths in the reader zone; Cron also shows the project zone and all seven Daemon silent-time readers follow the reader zone. No direct date-format bypass was found in the Angular SDK or the Polls and Online-testing Angular apps. |
+| React | `HIL-1594` done: the Profile Time zone row opens the picker immediately; previews load only while it is open, and the selection indicator follows the authoritative session echo. Session dates follow the reader zone while the stored browser zone remains descriptive and expanded tabs and confirmation dialogs stay open. The user detail shows the read-only account zone (exact, Automatic, or Hidden); activity moments in user detail, lists and merge candidates follow the reader zone. Reader-zone changes refresh notification-bell and Legal Accepted dates, delivery moments, Logs batch labels, undo deadlines and overview moments, Backup and Maintenance moments, and Cron run times. Cron expressions still use the project zone; the shared Daemon node head's Silent since follows its own reader subscription. Device dates in the profile list follow the reader zone (`HIL-1932`). Core-formatted strings are not reparsed, and durations and ETA are unchanged. Component tests and focused profile/Cron/accessibility e2e cover these paths. |
+| Angular | `HIL-1595` done: profile, session/device, notification, acceptance, Logs, Backup, Maintenance and Cron readers use shared presentation paths in the reader zone; Cron also shows the project zone and all seven Daemon silent-time readers follow the reader zone. The Logs By node table prints the last rotation in the overview tile's format (`HIL-1932`). No direct date-format bypass was found in the Angular SDK or the Polls and Online-testing Angular apps. |
 
 The leaf that lands a mechanism or migration removes its markers in the same
 commit, following [A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule-written-ahead-of-its-code).
