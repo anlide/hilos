@@ -56,7 +56,6 @@ const NARROW_LOOP_DARK = ` — width below 1024, width loop, dark outside theme 
  * exact list is what the rule promises.
  */
 const THEME_SPECS = [
-  'demo/binance-btc-tracker/tests/e2e/cluster/live/theme.spec.ts',
   'demo/binance-btc-tracker/tests/e2e/tests/theme-smoke.spec.ts',
   'demo/chat/tests/e2e/tests/theme-first-frame.spec.ts',
   'demo/ecommerce-shop/tests/e2e/tests/theme-first-frame.spec.ts',
@@ -67,6 +66,7 @@ const THEME_SPECS = [
   'demo/preferans/tests/e2e/tests/appearance.spec.ts',
   'demo/preferans/tests/e2e/tests/theme-account.spec.ts',
   'demo/preferans/tests/e2e/tests/theme-guest.spec.ts',
+  'demo/roblox-game-server/tests/e2e/cluster/live/theme.spec.ts',
   'demo/roblox-game-server/tests/e2e/tests/theme-account.spec.ts',
   'demo/roblox-game-server/tests/e2e/tests/theme-guest.spec.ts',
   'demo/solar-system-model/tests/e2e/tests/theme-account.spec.ts',

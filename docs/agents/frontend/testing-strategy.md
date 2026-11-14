@@ -609,14 +609,16 @@ Here `donor/live/{a,b}` means
 | Target / view | Whole areas and current source specs | Transfer owner |
 |---|---|---|
 | `roblox-game-server` / Vue | **Daemon:** `binance-btc-tracker/daemon/daemon`, `binance-btc-tracker/live/{daemon-clock,daemon-env-mismatch,daemon-env-orphans,daemon-section}`. | HIL-2030 |
-| `roblox-game-server` / Vue | **Sessions, theme, i18n, protected mode:** `binance-btc-tracker/live/{sessions,theme,i18n,protected-mode}`. | (not in the code yet — HIL-2031) |
+| `roblox-game-server` / Vue | **Sessions, theme, protected mode:** `binance-btc-tracker/live/{sessions,theme,protected-mode}`. | HIL-2031 |
 | `concert-tickets` / Angular | **Moderation:** `online-testing/live/moderation`, with five rotations of three distinct roles instead of three; F-060 stays on its identified variant. | (not in the code yet — HIL-2033) |
 
 Binance keeps `live/{backup,logs,change-log}` and `after-loss/{backup,logs}`:
 these need an archive holder and journal writer on a slave, which Roblox's
 mixed roles do not guarantee. Its `live/delivery-window` remains on Binance:
 the coalescing test reads Status hints, and Roblox declares no Status (HIL-2017),
-by the owner's decision of 2026-11-13 (HIL-2030). Online-testing keeps
+by the owner's decision of 2026-11-13 (HIL-2030). Its `live/i18n` remains on
+Binance too: Roblox declares no I18N (HIL-2017), by the owner's decision of
+2026-11-13 (HIL-2031). Online-testing keeps
 `live/analytics` with its three source/viewer rotations.
 
 React's cluster-browser corpus begins with Gallery's
@@ -644,8 +646,8 @@ polls (Angular) → online-testing (Angular).
 | Backup | roblox-game-server: backup, backup-reopen | roblox-game-server | HIL-1220, HIL-2017 |
 | Protected mode and maintenance | binance-btc-tracker: protected-mode; roblox-game-server: maintenance-restore, maintenance-words | binance-btc-tracker, roblox-game-server | HIL-1221, HIL-2017 |
 | Logs | roblox-game-server: logs, logs-rotation | roblox-game-server | HIL-1222, HIL-2017 |
-| Cluster browser — backup, logs, protected mode, one person's tabs, theme settings/choices/reset, Change Log, live i18n edits and delivery windows across nodes | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465, HIL-1505 |
-| Cluster browser — Daemon: foreign node pages and leader loss (parked, F-023), clock gap, environment mismatch and orphans, section navigation | roblox-game-server: tests/e2e/cluster (daemon, live), playwright.cluster.config.ts | roblox-game-server | HIL-2030 |
+| Cluster browser — backup, logs, Change Log, live i18n edits and delivery windows across nodes | binance-btc-tracker: tests/e2e/cluster (live, after-loss), playwright.cluster.config.ts | binance-btc-tracker | HIL-1232, HIL-1443, HIL-1465, HIL-1505 |
+| Cluster browser — Daemon: foreign node pages and leader loss (parked, F-023), clock gap, environment mismatch and orphans, section navigation; one person's tabs and rights, theme settings/choices/reset, protected mode and manual maintenance across masters | roblox-game-server: tests/e2e/cluster (daemon, live), playwright.cluster.config.ts | roblox-game-server | HIL-2030, HIL-2031 |
 | Cluster browser — Analytics and Moderation across all three masters | online-testing: tests/e2e/cluster/live/analytics.spec.ts, tests/e2e/cluster/live/moderation.spec.ts, playwright.cluster.config.ts | online-testing | HIL-1423, HIL-1639 |
 | Tables | binance-btc-tracker: table-lag, table-refusal | binance-btc-tracker | HIL-1223 |
 | Notifications and communications | binance-btc-tracker: notifications, communications | binance-btc-tracker | HIL-1224 |
@@ -767,7 +769,7 @@ probes, product shell smoke and cluster proofs keep the owners below:
 | Both Appearance editors, live viewer rows, Save/Enter refusal, default and Off/On delivery, discard, keyboard/focus | appearance | binance-btc-tracker (Vue), tasks (React), preferans (Angular) |
 | Built head: remembered Dark and fresh System dark on `/` and `/about`, HTML attribute and painted background with application JS blocked | theme-first-frame | chat (Vue/Vite), ecommerce-shop (React/Vite), online-testing (Angular build/SSG) |
 | Product shell account header/reload/reset; also guest choices and the Appearance card with its two live rows in the React and Angular shells | theme-smoke | binance-btc-tracker, ecommerce-shop, online-testing |
-| Three masters: live settings, independent account choices and reset, new tabs and stale Dark reconnect without adoption | cluster/live/theme | binance-btc-tracker |
+| Three masters: live settings, independent account choices and reset, new tabs and stale Dark reconnect without adoption | cluster/live/theme | roblox-game-server |
 
 Only the shell smoke carries `spec-owner: demo`. The guest/account, Appearance
 and first-frame specs are framework proofs. Profile Off/On stays within each

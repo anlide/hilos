@@ -4522,7 +4522,7 @@ def scenario_23_verifier_circle_on_every_master():
 
     Headless, so what is proved is the photograph on the rows, not a browser walking in: a
     signed-in tab let in through a node that does not host the initiator is checked by
-    demo/binance-btc-tracker/tests/e2e/cluster/live/protected-mode.spec.ts. Slaves carry the
+    demo/roblox-game-server/tests/e2e/cluster/live/protected-mode.spec.ts. Slaves carry the
     same single photograph as masters.
 
     The drive commands go to the leader because that is where the index agent runs and the

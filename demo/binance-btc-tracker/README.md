@@ -248,7 +248,7 @@ production the rows are carried and nothing is run.
 | `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
 | `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
 | `composer run test:cluster:scenarios` | the stand's scenario matrix on a fresh stand; `-- 17 20` runs only the ones named |
-| `composer run test:cluster:e2e` | fresh browser suite: live, after-loss; build first with `test:e2e-build`; `-- --grep circle` points it |
+| `composer run test:cluster:e2e` | fresh browser suite: live, after-loss; build first with `test:e2e-build`; `-- --grep 'cluster change log:'` points it |
 | `composer run test:cluster:down-volumes` | take the stand down, database included |
 | `composer run test:cluster:down` | stop the stand, retaining database data and protected-mode stores |
 
@@ -276,23 +276,10 @@ composer -d demo/binance-btc-tracker run test:cluster:scenarios -- 5 7 8 44
 
 The e2e profile adds Mailpit and a Playwright runner. The browser enters through
 one stand entry; every context selects a master with `hilos_stand_master` before
-its first navigation. Browsers, including the protected-mode operator, start
-on a follower master. In `tests/e2e/cluster/live`, backup checks a completed
-archive, logs checks the overview and a slave's live file, protected-mode checks
-the stub, the verifier circle and admission across masters, and sessions checks
-sign-in, sign-out and access re-decisions across masters. Manual maintenance closes
-through the UI on follower F; another administrator enters by code and opens it on
-master T. Visitors on every master see the closure, while the operator and circle
-member keep their documents. All six pages reload themselves on opening. Actual
-WebSocket upgrades prove each master's address, and inspect snapshots plus marked
-daemon log tails prove there was no freeze. Point that case with
-`composer run test:cluster:e2e -- --grep 'cluster manual maintenance:'`.
-The three tests in `cluster/live/theme.spec.ts` check live theme settings on
-every master, choices and reset between independent account sessions, new tabs
-with personal Dark and after reset, and stale Dark reconnect without adoption.
-They inspect complete theme frames and actual WebSocket upstreams; live updates
-keep documents and sockets, and the leader and term stay unchanged. Point them
-with `composer run test:cluster:e2e -- --grep 'cluster theme'`.
+its first navigation. Browsers start on a follower master. In
+`tests/e2e/cluster/live`, backup checks a completed archive, logs checks the
+overview and a slave's live file, delivery-window checks coalescing across
+masters and i18n checks live language and country edits.
 Change Log in `cluster/live/change-log.spec.ts` checks one remote writer and one
 receipt through every master. The person's `started` owner is observed on a
 slave before and after the block, away from the leader serving the card. Fresh

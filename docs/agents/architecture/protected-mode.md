@@ -1784,7 +1784,7 @@ Refuse loudly and before any trace of entry, as above.
   `demo/online-testing/tests/e2e/tests/maintenance.spec.ts` use
   `expectMaintenanceWatchdogThresholds()` from `framework/frontend/e2e/maintenance.ts`;
   the cluster browser check is in
-  `demo/binance-btc-tracker/tests/e2e/cluster/live/protected-mode.spec.ts`.
+  `demo/roblox-game-server/tests/e2e/cluster/live/protected-mode.spec.ts`.
 - `composer run test:framework:integration` — covers the carry-over across a real
   database swap (`SessionCarrierIntegrationTest`, `SessionsActionsCarryOverTest`)
   and the analytics collector held by the freeze, forgetting the swapped schema,
@@ -1843,7 +1843,7 @@ Refuse loudly and before any trace of entry, as above.
   and deduplication behavior have profile unit coverage. This slice adds no
   real restore on a cluster stand and no new live scenario for leader failure
   or peer link loss.
-- `demo/binance-btc-tracker` cluster/live `protected-mode.spec.ts` — keeps its
+- `demo/roblox-game-server` cluster/live `protected-mode.spec.ts` — keeps its
   existing assertions and parked F-016 cases; circle setup and cleanup use the
   Circle address and return to Overview before manual or document marks. Scenario
   38 is the active manual cluster check; F-016 remains parked and unverified.

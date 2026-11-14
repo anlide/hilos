@@ -396,7 +396,7 @@ its names into this file in the same commit that clears its marker.
 - Use the shared `theme.ts` and `appearance.ts` toolbox checks, with the spec's
   `expect` first; scenarios and navigation stay in their demo specs. The API
   and coverage map are in [testing-strategy.md](../frontend/testing-strategy.md).
-- `demo/binance-btc-tracker/tests/e2e/cluster/live/theme.spec.ts` proves three
+- `demo/roblox-game-server/tests/e2e/cluster/live/theme.spec.ts` proves three
   paths on the existing three-master browser stand: live settings delivery to
   every master, account choices and reset between independent sessions in both
   directions, and a stale Dark session reconnecting after a remote reset without

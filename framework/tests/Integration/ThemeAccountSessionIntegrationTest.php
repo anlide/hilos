@@ -66,7 +66,7 @@ use Throwable;
  * queued frames through the ordinary declarative router, with serialization at every agent hop.
  * Its minimal project host uses the framework's identity builder and stamped send, never a
  * hand-built handshake. This proves local delivery; peer transport is covered by
- * demo/binance-btc-tracker/tests/e2e/cluster/live/theme.spec.ts (HIL-1443).
+ * demo/roblox-game-server/tests/e2e/cluster/live/theme.spec.ts (HIL-1443).
  */
 final class ThemeAccountSessionIntegrationTest extends HilosSessionIntegrationTestCase
 {

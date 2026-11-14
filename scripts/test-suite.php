@@ -416,10 +416,12 @@ $steps = array_merge($steps, [
         'seconds' => 90,
         'downsStand' => true,
     ],
-    // Daemon clock, environment mismatch and orphans, and section navigation;
-    // the daemon phase stays disabled by F-023. The single-node e2e finishes using
-    // the shared dist, node_modules and reports before this starts; the cluster
-    // group keeps the scenario matrix from resetting the browser stand.
+    // Daemon clock, environment mismatch and orphans, and section navigation; one
+    // person's tabs and rights, theme delivery and protected mode with manual
+    // maintenance across masters; the daemon phase stays disabled by F-023. The
+    // single-node e2e finishes using the shared dist, node_modules and reports
+    // before this starts; the cluster group keeps the scenario matrix from
+    // resetting the browser stand.
     [
         'id' => 'roblox-game-server-cluster-e2e',
         'command' => 'composer run test:cluster:e2e',
@@ -429,7 +431,7 @@ $steps = array_merge($steps, [
         'group' => 'roblox-game-server-cluster',
         'tags' => ['cluster', 'e2e'],
         // An estimate; HIL-2043 measures it.
-        'seconds' => 150,
+        'seconds' => 250,
         'downsStand' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five

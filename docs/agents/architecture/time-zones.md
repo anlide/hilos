@@ -225,7 +225,7 @@ binance-btc-tracker cluster stand ([../testing.md](../testing.md)).
 **On a cluster.** A person's time-zone choice reaches tabs connected to other
 masters through the same session-restatement frame used for theme changes; the
 live cluster proof is
-[`theme.spec.ts`](../../../demo/binance-btc-tracker/tests/e2e/cluster/live/theme.spec.ts).
+[`theme.spec.ts`](../../../demo/roblox-game-server/tests/e2e/cluster/live/theme.spec.ts).
 Cron rules read the project zone on each master from the environment, so the
 leader and a leader elected later calculate schedules in the same zone. The
 session library is one per cluster and writes to the shared database, so the

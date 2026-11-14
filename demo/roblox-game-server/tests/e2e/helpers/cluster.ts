@@ -9,6 +9,7 @@ import {
   inspectClusterNode,
   newClusterMasterPage,
   readClusterBrowserStand,
+  setClusterMaster,
   type ClusterInspection,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { expect } from '../test.js'
@@ -34,6 +35,16 @@ export function nodeHost(node: string): string {
  */
 export function newMasterPage(browser: Browser, node: string): Promise<Page> {
   return newClusterMasterPage(browser, stand, node)
+}
+
+/**
+ * Steer the next socket of every tab in this context; open sockets stay put.
+ *
+ * @param page Page whose context carries the shared cookie.
+ * @param node Master to receive the next connection.
+ */
+export function onMaster(page: Page, node: string): Promise<void> {
+  return setClusterMaster(page, stand, node)
 }
 
 /** @param node Node whose command server reports its cluster view. */

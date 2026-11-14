@@ -1387,11 +1387,11 @@ whose `frontend/dist` its entry serves, and `binance-btc-tracker-check`, which
 installs `tests/e2e/node_modules`. The demo's main Playwright run keeps its output
 in `test-results/main` and `playwright-report/main`, so it clears neither the
 `cluster-*` folders nor `quarantine/*`. The browser enters through the stand's one nginx entry, where each context's
-`hilos_stand_master` cookie selects a master (HIL-1304). By default browsers and
-the protected-mode operator sit on a follower master, away from the page holder
+`hilos_stand_master` cookie selects a master (HIL-1304). By default browsers
+sit on a follower master, away from the page holder
 on the leader and the policy-placed agents on slaves. The live phase checks
-backup, logs, protected mode, one person's tabs, theme delivery, Change Log and
-i18n across masters. `cluster/live/change-log.spec.ts` first observes a known
+backup, logs, Change Log, delivery windows and i18n across masters.
+`cluster/live/change-log.spec.ts` first observes a known
 leader Workers roster and its started monopolistic `hilos_change_log` worker
 before opening Change Log. If the first roster was unknown, it makes one fresh
 Workers navigation after the known node report, then applies the full roster
@@ -1411,9 +1411,6 @@ F-016 remains quarantined: its tag, 2026-10-18 date and original failure
 observation stay in the spec, and this pass does not settle the earlier flake.
 Point the scenario with `-- --grep 'cluster change log:'` (HIL-1465).
 This pointed run stays in the live phase, with no fault request.
-The theme spec checks settings on all three masters, choices and reset between
-independent account sessions, new tabs, and stale Dark reconnect without adoption;
-`-- --grep 'cluster theme'` runs its three tests.
 
 `cluster/live/i18n.spec.ts` adds five live tests (HIL-1505):
 
@@ -1552,8 +1549,13 @@ missing-source rules as binance. It never substitutes `data/logs-test` for these
 journals. Save direct-run logs before another fresh stand empties them.
 
 The `roblox-game-server-cluster-e2e` step carries Daemon clock, environment
-mismatch and orphan cases plus section navigation. It runs after
-`roblox-game-server-e2e`, sharing `frontend/dist`, `tests/e2e/node_modules` and
+mismatch and orphan cases plus section navigation, one person's tabs and rights,
+theme delivery and protected mode with manual maintenance across masters. The
+theme spec checks settings on all three masters, choices and reset between
+independent account sessions, new tabs, and stale Dark reconnect without adoption;
+`-- --grep 'cluster theme'` runs its three tests. Its quarantine tail runs
+protected-mode (F-016) and theme (F-069, F-072) after the main verdict. The step
+runs after `roblox-game-server-e2e`, sharing `frontend/dist`, `tests/e2e/node_modules` and
 reports. The cluster-browser step shares the `roblox-game-server-cluster` group
 and stand with the cluster scenarios because both reset the same compose project;
 the ordinary e2e step uses its own stand and group. After

@@ -283,7 +283,7 @@ run has a step of its own, `roblox-game-server-cluster`.
 | `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
 | `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
 | `composer run test:cluster:scenarios` | scenarios 26 and 49 on a fresh stand; `-- 49` runs only the one named |
-| `composer run test:cluster:e2e` | fresh browser suite: Daemon on live masters, the daemon phase is parked (F-023); build first with `test:e2e-build`; `-- --grep 'env mismatch'` points it |
+| `composer run test:cluster:e2e` | fresh browser suite: Daemon, one person's tabs, theme and protected mode on live masters, the daemon phase is parked (F-023); build first with `test:e2e-build`; `-- --grep 'cluster theme'` points it |
 | `composer run test:cluster:e2e-time-zone` | draw an explicit browser zone for a new cluster spec |
 | `composer run test:cluster:down-volumes` | take the stand down, database included |
 | `composer run test:cluster:down` | stop the stand, retaining the database data |
@@ -291,6 +291,21 @@ run has a step of its own, `roblox-game-server-cluster`.
 The e2e profile adds Mailpit and a Playwright runner. The browser enters through
 one stand entry; every context selects a master with `hilos_stand_master` before
 its first navigation. Browsers start on a follower master.
+In `tests/e2e/cluster/live`, protected-mode checks
+the stub, the verifier circle and admission across masters, and sessions checks
+sign-in, sign-out and access re-decisions across masters. Manual maintenance closes
+through the UI on follower F; another administrator enters by code and opens it on
+master T. Visitors on every master see the closure, while the operator and circle
+member keep their documents. All six pages reload themselves on opening. Actual
+WebSocket upgrades prove each master's address, and inspect snapshots plus marked
+daemon log tails prove there was no freeze. Point that case with
+`composer run test:cluster:e2e -- --grep 'cluster manual maintenance:'`.
+The three tests in `cluster/live/theme.spec.ts` check live theme settings on
+every master, choices and reset between independent account sessions, new tabs
+with personal Dark and after reset, and stale Dark reconnect without adoption.
+They inspect complete theme frames and actual WebSocket upstreams; live updates
+keep documents and sockets, and the leader and term stay unchanged. Point them
+with `composer run test:cluster:e2e -- --grep 'cluster theme'`.
 
 The harness commands — `kill`, `inspect` and the rest — use the shell entry
 point from this demo directory; see the
