@@ -420,29 +420,32 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
         switch ($name) {
             case HilosSignalConstants::MAINTENANCE_ENABLE_DONE:
             case HilosSignalConstants::MAINTENANCE_DISABLE_DONE:
-                if (!$data->data instanceof HandoverAnswerSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $data->data);
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
                 }
 
-                $this->answerHandover($data->data);
+                $this->answerHandover($answer);
 
                 break;
 
             case HilosSignalConstants::MAINTENANCE_PASS_DONE:
-                if (!$data->data instanceof ManualMaintenancePassDoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ManualMaintenancePassDoneSignalData::class, $data->data);
+                $passDone = $data->data;
+                if (!$passDone instanceof ManualMaintenancePassDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ManualMaintenancePassDoneSignalData::class, $passDone);
                 }
 
-                $this->handlePassDone($data->data);
+                $this->handlePassDone($passDone);
 
                 break;
 
             case HilosSignalConstants::MAINTENANCE_RESTORE_CONTROL_DONE:
-                if (!$data->data instanceof MaintenanceRestoreControlDoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, MaintenanceRestoreControlDoneSignalData::class, $data->data);
+                $restoreDone = $data->data;
+                if (!$restoreDone instanceof MaintenanceRestoreControlDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, MaintenanceRestoreControlDoneSignalData::class, $restoreDone);
                 }
 
-                $this->handleRestoreControlDone($data->data);
+                $this->handleRestoreControlDone($restoreDone);
 
                 break;
 

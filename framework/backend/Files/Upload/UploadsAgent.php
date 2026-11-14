@@ -281,19 +281,21 @@ final class UploadsAgent extends AbstractAgent
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_UPLOAD_PUBLISH:
-                if (!$data->data instanceof UploadPublishSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UploadPublishSignalData::class, $data->data);
+                $publish = $data->data;
+                if (!$publish instanceof UploadPublishSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UploadPublishSignalData::class, $publish);
                 }
-                $this->handOver($data->data);
+                $this->handOver($publish);
 
                 return;
 
             case HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE:
-                if (!$data->data instanceof UploadHoldSettleSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UploadHoldSettleSignalData::class, $data->data);
+                $settle = $data->data;
+                if (!$settle instanceof UploadHoldSettleSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UploadHoldSettleSignalData::class, $settle);
                 }
 
-                $this->settleHold($data->data);
+                $this->settleHold($settle);
 
                 return;
 

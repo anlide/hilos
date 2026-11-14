@@ -173,10 +173,11 @@ abstract class AbstractHilosStatusPage extends AbstractHilosPage
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_STATUS_WRITE_DONE:
-                if (!$data->data instanceof HandoverAnswerSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $data->data);
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
                 }
-                $this->answerHandover($data->data);
+                $this->answerHandover($answer);
 
                 break;
 

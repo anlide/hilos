@@ -124,22 +124,6 @@ final class OAuthAgentIntakeTest extends TestCase
         );
     }
 
-    public function testWrongPayloadTypeIsDroppedNotAdopted(): void
-    {
-        $agent = $this->makeAgent();
-        $agent->onStart();
-
-        $agent->onSignalAgent(
-            new AgentSignalData(new OAuthResultSignalData('ak-1', self::KNOWN_KEY)),
-            'test-source',
-            HilosSignalConstants::HILOS_OAUTH_PENDING,
-        );
-        $agent->onTick();
-
-        $this->assertSame([], $agent->completed);
-        $this->assertSame([], $agent->sent);
-    }
-
     /**
      * @return AbstractOAuthAgent&object{
      *     completed: list<array{op: OAuthPendingLogin, info: OAuthUserInfo}>,

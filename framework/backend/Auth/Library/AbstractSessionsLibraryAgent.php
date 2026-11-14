@@ -4271,179 +4271,159 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_AUTH_SESSION_GRANT:
-                if (!$data->data instanceof AuthSessionGrantSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthSessionGrantSignalData::class, $data->data);
+                $grant = $data->data;
+                if (!$grant instanceof AuthSessionGrantSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSessionGrantSignalData::class, $grant);
                 }
 
-                $this->grantSessionToUser($data->data);
+                $this->grantSessionToUser($grant);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_REGISTRATION_LANDED:
-                if (!$data->data instanceof AuthRegistrationLandedSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthRegistrationLandedSignalData::class,
-                        $data->data,
-                    );
+                $landed = $data->data;
+                if (!$landed instanceof AuthRegistrationLandedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationLandedSignalData::class, $landed);
                 }
 
-                $this->settleLandedRegistration($data->data);
+                $this->settleLandedRegistration($landed);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_REGISTRATION_PROVEN:
-                if (!$data->data instanceof AuthRegistrationProvenSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthRegistrationProvenSignalData::class,
-                        $data->data,
-                    );
+                $proven = $data->data;
+                if (!$proven instanceof AuthRegistrationProvenSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationProvenSignalData::class, $proven);
                 }
 
-                $this->openRegistrationPasswordStep($data->data);
+                $this->openRegistrationPasswordStep($proven);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_RECOVERY_GRANTED:
-                if (!$data->data instanceof AuthRecoveryGrantedSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthRecoveryGrantedSignalData::class,
-                        $data->data,
-                    );
+                $recovery = $data->data;
+                if (!$recovery instanceof AuthRecoveryGrantedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRecoveryGrantedSignalData::class, $recovery);
                 }
 
-                $this->openRecoveryPasswordStep($data->data);
+                $this->openRecoveryPasswordStep($recovery);
 
                 return;
 
             case HilosSignalConstants::HILOS_PROFILE_NAME_BEGIN:
-                if (!$data->data instanceof ProfileNameBeginSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ProfileNameBeginSignalData::class, $data->data);
+                $begin = $data->data;
+                if (!$begin instanceof ProfileNameBeginSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ProfileNameBeginSignalData::class, $begin);
                 }
-                $this->beginProfileNameChange($data->data);
+                $this->beginProfileNameChange($begin);
 
                 return;
 
             case HilosSignalConstants::HILOS_PROFILE_NAME_ADVANCE:
-                if (!$data->data instanceof ProfileNameAdvanceSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ProfileNameAdvanceSignalData::class, $data->data);
+                $advance = $data->data;
+                if (!$advance instanceof ProfileNameAdvanceSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ProfileNameAdvanceSignalData::class, $advance);
                 }
-                $this->advanceProfileNameChange($data->data);
+                $this->advanceProfileNameChange($advance);
 
                 return;
 
             case HilosSignalConstants::HILOS_PROFILE_FLOW_STEP:
-                if (!$data->data instanceof ProfileFlowStepSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ProfileFlowStepSignalData::class, $data->data);
+                $step = $data->data;
+                if (!$step instanceof ProfileFlowStepSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ProfileFlowStepSignalData::class, $step);
                 }
 
-                $this->applyProfileFlowStep($data->data);
+                $this->applyProfileFlowStep($step);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_SESSIONS_RESTATE:
-                if (!$data->data instanceof UserSessionsRestateSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserSessionsRestateSignalData::class, $data->data);
+                $restate = $data->data;
+                if (!$restate instanceof UserSessionsRestateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSessionsRestateSignalData::class, $restate);
                 }
-                $this->restateSessionsOf($data->data->userId);
+                $this->restateSessionsOf($restate->userId);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_PASSWORD_CHANGED:
-                if (!$data->data instanceof AuthPasswordChangedSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthPasswordChangedSignalData::class,
-                        $data->data,
-                    );
+                $changed = $data->data;
+                if (!$changed instanceof AuthPasswordChangedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthPasswordChangedSignalData::class, $changed);
                 }
 
-                $this->settleChangedPassword($data->data);
+                $this->settleChangedPassword($changed);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_REGISTRATION_CANCELED:
-                if (!$data->data instanceof AuthRegistrationCanceledSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthRegistrationCanceledSignalData::class,
-                        $data->data,
-                    );
+                $canceled = $data->data;
+                if (!$canceled instanceof AuthRegistrationCanceledSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationCanceledSignalData::class, $canceled);
                 }
 
-                $this->dropCanceledRegistration($data->data);
+                $this->dropCanceledRegistration($canceled);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_MOVED:
-                if (!$data->data instanceof AuthRegistrationWaitMovedSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthRegistrationWaitMovedSignalData::class,
-                        $data->data,
-                    );
+                $registrationMoved = $data->data;
+                if (!$registrationMoved instanceof AuthRegistrationWaitMovedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationWaitMovedSignalData::class, $registrationMoved);
                 }
 
-                $this->moveRegistrationWait($data->data);
+                $this->moveRegistrationWait($registrationMoved);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED:
-                if (!$data->data instanceof AuthRecoveryWaitMovedSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthRecoveryWaitMovedSignalData::class,
-                        $data->data,
-                    );
+                $recoveryMoved = $data->data;
+                if (!$recoveryMoved instanceof AuthRecoveryWaitMovedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRecoveryWaitMovedSignalData::class, $recoveryMoved);
                 }
 
-                $this->moveRecoveryWait($data->data);
+                $this->moveRecoveryWait($recoveryMoved);
 
                 return;
 
             case HilosSignalConstants::HILOS_SESSION_REBIND:
-                if (!$data->data instanceof SessionRebindSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, SessionRebindSignalData::class, $data->data);
+                $rebind = $data->data;
+                if (!$rebind instanceof SessionRebindSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, SessionRebindSignalData::class, $rebind);
                 }
 
-                $this->rebindSession($data->data);
+                $this->rebindSession($rebind);
 
                 return;
 
             case HilosSignalConstants::HILOS_ACCOUNT_BLOCK_CHANGED:
-                if (!$data->data instanceof AccountBlockChangedSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AccountBlockChangedSignalData::class,
-                        $data->data,
-                    );
+                $blockChanged = $data->data;
+                if (!$blockChanged instanceof AccountBlockChangedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountBlockChangedSignalData::class, $blockChanged);
                 }
 
-                $this->enforceAccountBlock($data->data->userId);
+                $this->enforceAccountBlock($blockChanged->userId);
 
                 return;
 
             case HilosSignalConstants::HILOS_SESSION_CARRYOVER_HANDOVER:
-                if (!$data->data instanceof DeferredSessionCarryoverHandoverSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        DeferredSessionCarryoverHandoverSignalData::class,
-                        $data->data,
-                    );
+                $handover = $data->data;
+                if (!$handover instanceof DeferredSessionCarryoverHandoverSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DeferredSessionCarryoverHandoverSignalData::class, $handover);
                 }
 
-                $this->carryOverHandedOverSessions($data->data);
+                $this->carryOverHandedOverSessions($handover);
 
                 return;
 
             case HilosSignalConstants::HILOS_ACCOUNT_MERGE:
-                if (!$data->data instanceof AccountMergeSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AccountMergeSignalData::class, $data->data);
+                $merge = $data->data;
+                if (!$merge instanceof AccountMergeSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountMergeSignalData::class, $merge);
                 }
 
-                $this->handleAccountMergeRequest($data->data);
+                $this->handleAccountMergeRequest($merge);
 
                 return;
 
@@ -4457,56 +4437,62 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET:
-                if (!$data->data instanceof AccountAdminSetSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AccountAdminSetSignalData::class, $data->data);
+                $adminSet = $data->data;
+                if (!$adminSet instanceof AccountAdminSetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountAdminSetSignalData::class, $adminSet);
                 }
 
-                $this->handleAdminSetRequest($data->data);
+                $this->handleAdminSetRequest($adminSet);
 
                 return;
 
             case HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET:
-                if (!$data->data instanceof AccountBlockSetSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AccountBlockSetSignalData::class, $data->data);
+                $blockSet = $data->data;
+                if (!$blockSet instanceof AccountBlockSetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountBlockSetSignalData::class, $blockSet);
                 }
 
-                $this->handleBlockSetRequest($data->data);
+                $this->handleBlockSetRequest($blockSet);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_ADMIN_WRITE_DONE:
-                if (!$data->data instanceof UserAdminWriteDoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserAdminWriteDoneSignalData::class, $data->data);
+                $adminWritten = $data->data;
+                if (!$adminWritten instanceof UserAdminWriteDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAdminWriteDoneSignalData::class, $adminWritten);
                 }
 
-                $this->finishAdminWrite($data->data);
+                $this->finishAdminWrite($adminWritten);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_ADMIN_CREATE_DONE:
-                if (!$data->data instanceof UserAdminCreateDoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserAdminCreateDoneSignalData::class, $data->data);
+                $created = $data->data;
+                if (!$created instanceof UserAdminCreateDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAdminCreateDoneSignalData::class, $created);
                 }
 
-                $this->finishAdminCreate($data->data);
+                $this->finishAdminCreate($created);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_ADMIN_COMMAND_DONE:
-                if (!$data->data instanceof UserAdminCommandDoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserAdminCommandDoneSignalData::class, $data->data);
+                $commandDone = $data->data;
+                if (!$commandDone instanceof UserAdminCommandDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAdminCommandDoneSignalData::class, $commandDone);
                 }
 
-                $this->finishAdminCommand($data->data);
+                $this->finishAdminCommand($commandDone);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_BLOCK_WRITE_DONE:
-                if (!$data->data instanceof UserBlockWriteDoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserBlockWriteDoneSignalData::class, $data->data);
+                $blockWritten = $data->data;
+                if (!$blockWritten instanceof UserBlockWriteDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserBlockWriteDoneSignalData::class, $blockWritten);
                 }
 
-                $this->finishBlockWrite($data->data);
+                $this->finishBlockWrite($blockWritten);
 
                 return;
 
@@ -4562,202 +4548,175 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_IMPERSONATE_REQUEST:
-                if (!$data->data instanceof ImpersonateRequestSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        ImpersonateRequestSignalData::class,
-                        $data->data,
-                    );
+                $impersonation = $data->data;
+                if (!$impersonation instanceof ImpersonateRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ImpersonateRequestSignalData::class, $impersonation);
                 }
 
-                $this->handleImpersonateRequest($data->data);
+                $this->handleImpersonateRequest($impersonation);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_SESSIONS_END_REQUEST:
-                if (!$data->data instanceof UserSessionsEndRequestSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        UserSessionsEndRequestSignalData::class,
-                        $data->data,
-                    );
+                $endRequest = $data->data;
+                if (!$endRequest instanceof UserSessionsEndRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSessionsEndRequestSignalData::class, $endRequest);
                 }
 
-                $this->handleUserSessionsEndRequest($data->data);
+                $this->handleUserSessionsEndRequest($endRequest);
 
                 return;
 
             case HilosSignalConstants::HILOS_SESSION_TOAST_RAISE:
-                if (!$data->data instanceof RaiseSessionToastSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        RaiseSessionToastSignalData::class,
-                        $data->data,
-                    );
+                $toast = $data->data;
+                if (!$toast instanceof RaiseSessionToastSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, RaiseSessionToastSignalData::class, $toast);
                 }
 
-                $this->raiseSessionToast($data->data);
+                $this->raiseSessionToast($toast);
 
                 return;
 
             case HilosSignalConstants::HILOS_CODE_SEND_STEP:
-                if (!$data->data instanceof CodeSendStepSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        CodeSendStepSignalData::class,
-                        $data->data,
-                    );
+                $sendStep = $data->data;
+                if (!$sendStep instanceof CodeSendStepSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, CodeSendStepSignalData::class, $sendStep);
                 }
 
-                $this->applyCodeSendStep($data->data);
+                $this->applyCodeSendStep($sendStep);
 
                 return;
 
             case HilosSignalConstants::HILOS_OAUTH_TRIP_OPENED:
-                if (!$data->data instanceof OAuthTripOpenedSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        OAuthTripOpenedSignalData::class,
-                        $data->data,
-                    );
+                $tripOpened = $data->data;
+                if (!$tripOpened instanceof OAuthTripOpenedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, OAuthTripOpenedSignalData::class, $tripOpened);
                 }
 
-                $this->openOAuthTrip($data->data);
+                $this->openOAuthTrip($tripOpened);
 
                 return;
 
             case HilosSignalConstants::HILOS_OAUTH_TRIP_ENDED:
-                if (!$data->data instanceof OAuthTripEndedSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        OAuthTripEndedSignalData::class,
-                        $data->data,
-                    );
+                $tripEnded = $data->data;
+                if (!$tripEnded instanceof OAuthTripEndedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, OAuthTripEndedSignalData::class, $tripEnded);
                 }
 
-                $this->endOAuthTrip($data->data);
+                $this->endOAuthTrip($tripEnded);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_EXPIRED:
-                if (!$data->data instanceof AuthRegistrationHoldExpiredSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationHoldExpiredSignalData::class, $data->data);
+                $holdExpired = $data->data;
+                if (!$holdExpired instanceof AuthRegistrationHoldExpiredSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationHoldExpiredSignalData::class, $holdExpired);
                 }
 
-                $this->rollBackRegistrationWaiters($data->data->sessionToken, $data->data->identifier);
+                $this->rollBackRegistrationWaiters($holdExpired->sessionToken, $holdExpired->identifier);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_REGISTRATION_WAIT_HELD:
-                if (!$data->data instanceof AuthRegistrationWaitHeldSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthRegistrationWaitHeldSignalData::class,
-                        $data->data,
-                    );
+                $waitHeld = $data->data;
+                if (!$waitHeld instanceof AuthRegistrationWaitHeldSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationWaitHeldSignalData::class, $waitHeld);
                 }
 
-                $this->holdRegistrationWait($data->data);
+                $this->holdRegistrationWait($waitHeld);
 
                 return;
 
             case HilosSignalConstants::HILOS_AGENTS_GONE:
-                if (!$data->data instanceof AgentsGoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AgentsGoneSignalData::class, $data->data);
+                $gone = $data->data;
+                if (!$gone instanceof AgentsGoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AgentsGoneSignalData::class, $gone);
                 }
 
                 if ($this->hasSignInSurface()) {
-                    $this->endOpenSignIns($this->agentTypesOf($data->data->agentIds));
-                    $this->trustRestrictionSweep()->gone($data->data);
+                    $this->endOpenSignIns($this->agentTypesOf($gone->agentIds));
+                    $this->trustRestrictionSweep()->gone($gone);
                 }
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_MISSED:
-                if (!$data->data instanceof AuthSecondFactorMissedSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorMissedSignalData::class, $data->data);
+                $missed = $data->data;
+                if (!$missed instanceof AuthSecondFactorMissedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorMissedSignalData::class, $missed);
                 }
 
-                $this->countSecondFactorMiss($data->data->sessionToken);
+                $this->countSecondFactorMiss($missed->sessionToken);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_SETUP_PROVEN:
-                if (!$data->data instanceof AuthSecondFactorSetupProvenSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthSecondFactorSetupProvenSignalData::class,
-                        $data->data,
-                    );
+                $setupProven = $data->data;
+                if (!$setupProven instanceof AuthSecondFactorSetupProvenSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorSetupProvenSignalData::class, $setupProven);
                 }
 
-                Hilos::$db->sessions->findByToken($data->data->sessionToken)?->actions->markSecondFactorSetupProven();
+                Hilos::$db->sessions->findByToken($setupProven->sessionToken)?->actions->markSecondFactorSetupProven();
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_OFF:
-                if (!$data->data instanceof AuthSecondFactorOffSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorOffSignalData::class, $data->data);
+                $secondFactorOff = $data->data;
+                if (!$secondFactorOff instanceof AuthSecondFactorOffSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorOffSignalData::class, $secondFactorOff);
                 }
 
-                $this->forgetSecondFactor($data->data->userId);
+                $this->forgetSecondFactor($secondFactorOff->userId);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_TRUST_DAYS_APPLY:
-                if (!$data->data instanceof AuthSecondFactorTrustDaysApplySignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthSecondFactorTrustDaysApplySignalData::class,
-                        $data->data,
-                    );
+                $trustDays = $data->data;
+                if (!$trustDays instanceof AuthSecondFactorTrustDaysApplySignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorTrustDaysApplySignalData::class, $trustDays);
                 }
 
-                $this->applyTrustDays($data->data);
+                $this->applyTrustDays($trustDays);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_DISABLE_APPLY:
-                if (!$data->data instanceof AuthSecondFactorDisableApplySignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthSecondFactorDisableApplySignalData::class,
-                        $data->data,
-                    );
+                $disable = $data->data;
+                if (!$disable instanceof AuthSecondFactorDisableApplySignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorDisableApplySignalData::class, $disable);
                 }
 
-                $this->applySecondFactorDisable($data->data);
+                $this->applySecondFactorDisable($disable);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_IMPERSONATION_OFF_APPLY:
-                if (!$data->data instanceof AuthImpersonationOffApplySignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        AuthImpersonationOffApplySignalData::class,
-                        $data->data,
-                    );
+                $impersonationOff = $data->data;
+                if (!$impersonationOff instanceof AuthImpersonationOffApplySignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthImpersonationOffApplySignalData::class, $impersonationOff);
                 }
 
-                $this->applyImpersonationOff($data->data);
+                $this->applyImpersonationOff($impersonationOff);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_OTHER_SESSIONS_END:
-                if (!$data->data instanceof AuthOtherSessionsEndSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthOtherSessionsEndSignalData::class, $data->data);
+                $othersEnd = $data->data;
+                if (!$othersEnd instanceof AuthOtherSessionsEndSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthOtherSessionsEndSignalData::class, $othersEnd);
                 }
 
-                $this->deauthenticateOtherSessions($data->data->userId, $data->data->sessionToken, SessionAccessLossReason::PASSWORD_CHANGED);
+                $this->deauthenticateOtherSessions($othersEnd->userId, $othersEnd->sessionToken, SessionAccessLossReason::PASSWORD_CHANGED);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_SECOND_FACTOR_CANCEL:
-                if (!$data->data instanceof AuthSecondFactorCancelSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorCancelSignalData::class, $data->data);
+                $cancel = $data->data;
+                if (!$cancel instanceof AuthSecondFactorCancelSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthSecondFactorCancelSignalData::class, $cancel);
                 }
 
-                $this->cancelSecondFactorWait($data->data);
+                $this->cancelSecondFactorWait($cancel);
 
                 return;
 

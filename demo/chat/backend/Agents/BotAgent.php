@@ -211,7 +211,7 @@ final class BotAgent extends AbstractLlmChatAgent
      * @param string $sender Sender in full, unused
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When the signal name is not one this agent declares
-     * @throws InvalidAgentSignalPayloadException When the answer-now payload is not a bot signal payload
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -221,10 +221,12 @@ final class BotAgent extends AbstractLlmChatAgent
                 return;
 
             case ChatSignalConstants::BOT_ANSWER_NOW:
-                if (!$data->data instanceof BotAgentSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, BotAgentSignalData::class, $data->data);
+                $answer = $data->data;
+                if (!$answer instanceof BotAgentSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BotAgentSignalData::class, $answer);
                 }
-                $this->scheduleAnswerNow($data->data);
+
+                $this->scheduleAnswerNow($answer);
 
                 return;
 

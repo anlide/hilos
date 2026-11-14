@@ -76,7 +76,7 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
      * @param string $sender Full sender address, unused
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When the signal is not this agent's
-     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When a table-window signal cannot be named
      * @throws TableRowKeyMissingException When a windowed Daemon table row has no key
      * @throws HilosException When a Daemon table picture or its window cannot be served
@@ -86,12 +86,13 @@ abstract class AbstractHilosDaemonAgent extends AbstractHilosAgent
     {
         switch ($name) {
             case HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION:
-                if (!$data->data instanceof DaemonClusterPicturePortionSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, DaemonClusterPicturePortionSignalData::class, $data->data);
+                $portion = $data->data;
+                if (!$portion instanceof DaemonClusterPicturePortionSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonClusterPicturePortionSignalData::class, $portion);
                 }
 
                 $before = ClusterDaemonPictureMirror::picture();
-                ClusterDaemonPictureMirror::applyPortion($data->data);
+                ClusterDaemonPictureMirror::applyPortion($portion);
                 AbstractHilosDaemonAgentsPage::onPictureChanged($before);
                 AbstractHilosDaemonCronPage::onPictureChanged($before);
                 AbstractHilosDaemonHttpServerPage::onPictureChanged($before);

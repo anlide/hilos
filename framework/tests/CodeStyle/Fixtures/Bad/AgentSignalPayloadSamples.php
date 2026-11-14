@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\CodeStyle\Fixtures\Bad;
 
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalData;
 
@@ -18,6 +20,16 @@ final class AgentSignalPayloadSamples
 
     public function onSignalAgent(AgentSignalData $packet, string $sender, string $name): void
     {
+        // Outside the switch: a positive check that hands any other payload on, and a negated one that logs and leaves.
+        if ($packet->data instanceof SignalData) {
+            $this->receive($packet->data);
+            return;
+        }
+        if (!$packet->data instanceof SignalData) {
+            $this->logAgentWarning($name);
+            return;
+        }
+
         switch ($name) {
             case 'direct':
                 $this->receive($packet->data);
@@ -93,6 +105,64 @@ final class AgentSignalPayloadSamples
                 if ($payload instanceof SignalData) {
                     $payload = $packet->data;
                     $this->receive($payload);
+                }
+                return;
+
+            case 'other-exception':
+                if (!$packet->data instanceof SignalData) {
+                    throw new LogicException($name);
+                }
+                return;
+
+            case 'silent-return':
+                $payload = $packet->data;
+                if (!$payload instanceof SignalData) {
+                    return;
+                }
+                $this->receive($payload);
+                return;
+
+            case 'logged-return':
+                if (!$packet->data instanceof SignalData) {
+                    $this->logAgentWarning($name);
+                    return;
+                }
+                return;
+
+            case 'chain-without-else':
+                if ($packet->data instanceof SignalData) {
+                    $this->receive($packet->data);
+                } elseif ($sender === $name) {
+                    return;
+                }
+                return;
+
+            case 'else-other-exception':
+                $payload = $packet->data;
+                if ($payload instanceof SignalData) {
+                    $this->receive($payload);
+                } else {
+                    throw new LogicException($name);
+                }
+                return;
+
+            case 'negated-group':
+                if (!($packet->data instanceof SignalData)) {
+                    throw new InvalidAgentSignalPayloadException($name, SignalData::class, $packet->data);
+                }
+                return;
+
+            case 'outside-a-condition':
+                $kind = $packet->data instanceof SignalData ? $name : $sender;
+                $this->receive($kind);
+                return;
+
+            case 'nested-switch':
+                switch ($sender) {
+                    case 'inner':
+                        if (!$packet->data instanceof SignalData) {
+                            return;
+                        }
                 }
                 return;
         }

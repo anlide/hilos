@@ -502,10 +502,10 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
-     * @throws InvalidAgentSignalPayloadException When an unlink answer or account operation ask differs from its declaration
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When a signal of the session-state answer cannot be named
      * @throws HilosException On bot message publish failure, or on database or runtime failure
-     * @throws LogicException On payload type mismatch, or if event id is null after sync
+     * @throws LogicException If event id is null after sync
      * @throws NativeLogicException When the runtime item factory rejects a state row
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
@@ -527,26 +527,35 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
                 return;
 
             case HilosSignalConstants::HILOS_MODERATION_VERDICT:
-                if (!$data->data instanceof ModerationVerdictSignalData) {
-                    throw new LogicException('Moderation verdict payload must be ' . ModerationVerdictSignalData::class);
+                $verdict = $data->data;
+                if (!$verdict instanceof ModerationVerdictSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationVerdictSignalData::class, $verdict);
                 }
-                $this->handleMessageModerationVerdict($data->data);
+
+                $this->handleMessageModerationVerdict($verdict);
+
                 return;
+
             case ChatSignalConstants::ATTACHMENTS_PUBLISHED:
-                if (!$data->data instanceof FilesPublishedSignalData) {
-                    throw new LogicException('Publication payload must be ' . FilesPublishedSignalData::class);
+                $published = $data->data;
+                if (!$published instanceof FilesPublishedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, FilesPublishedSignalData::class, $published);
                 }
-                $this->handleAttachmentsPublished($data->data);
+
+                $this->handleAttachmentsPublished($published);
+
                 return;
+
             case HilosSignalConstants::HILOS_SESSION_STATE:
-                if (!$data->data instanceof SessionStateSignalData) {
-                    throw new LogicException(
-                        HilosSignalConstants::HILOS_SESSION_STATE . ' payload must be '
-                        . SessionStateSignalData::class,
-                    );
+                $state = $data->data;
+                if (!$state instanceof SessionStateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, SessionStateSignalData::class, $state);
                 }
-                $this->applySessionState($data->data);
+
+                $this->applySessionState($state);
+
                 return;
+
             case ChatSignalConstants::USER_RENAME_FEED_UNLINKED:
                 $answer = $data->data;
                 if (!$answer instanceof UserRenameFeedUnlinkedSignalData) {
@@ -557,13 +566,15 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
                 return;
 
             case ChatSignalConstants::BOT_MESSAGE:
-                if (!$data->data instanceof BotMessageSignalData) {
-                    throw new LogicException(
-                        ChatSignalConstants::BOT_MESSAGE . ' payload must be ' . BotMessageSignalData::class,
-                    );
+                $message = $data->data;
+                if (!$message instanceof BotMessageSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BotMessageSignalData::class, $message);
                 }
-                $this->handleBotMessage($data->data);
+
+                $this->handleBotMessage($message);
+
                 return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }

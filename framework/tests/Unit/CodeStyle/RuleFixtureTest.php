@@ -69,39 +69,78 @@ final class RuleFixtureTest extends TestCase
     {
         $this->assertSame(
             [
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:23 — $packet->data is passed without '
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:24 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:28 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:35 — $packet->data is passed without '
                     . 'a preceding instanceof in this case; narrow the inner payload first '
                     . '(see docs/agents/code-style/signal-handlers.md)',
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:28 — $payload is passed without '
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:40 — $payload is passed without '
                     . 'a preceding instanceof in this case; narrow the inner payload first '
                     . '(see docs/agents/code-style/signal-handlers.md)',
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:38 — $packet->data is passed without '
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:44 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:50 — $packet->data is passed without '
                     . 'a preceding instanceof in this case; narrow the inner payload first '
                     . '(see docs/agents/code-style/signal-handlers.md)',
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:46 — $payload is passed without '
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:58 — $payload is passed without '
                     . 'a preceding instanceof in this case; narrow the inner payload first '
                     . '(see docs/agents/code-style/signal-handlers.md)',
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:51 — $packet->data is passed without '
-                    . 'a preceding instanceof in this case; narrow the inner payload first '
-                    . '(see docs/agents/code-style/signal-handlers.md)',
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:57 — $packet->data is passed without '
-                    . 'a preceding instanceof in this case; narrow the inner payload first '
-                    . '(see docs/agents/code-style/signal-handlers.md)',
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:64 — $packet->data is passed without '
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:63 — $packet->data is passed without '
                     . 'a preceding instanceof in this case; narrow the inner payload first '
                     . '(see docs/agents/code-style/signal-handlers.md)',
                 'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:69 — $packet->data is passed without '
                     . 'a preceding instanceof in this case; narrow the inner payload first '
                     . '(see docs/agents/code-style/signal-handlers.md)',
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:73 — $packet->data is passed without '
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:76 — $packet->data is passed without '
                     . 'a preceding instanceof in this case; narrow the inner payload first '
                     . '(see docs/agents/code-style/signal-handlers.md)',
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:88 — $payload is passed without '
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:81 — $packet->data is passed without '
                     . 'a preceding instanceof in this case; narrow the inner payload first '
                     . '(see docs/agents/code-style/signal-handlers.md)',
-                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:95 — $payload is passed without '
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:85 — $packet->data is passed without '
                     . 'a preceding instanceof in this case; narrow the inner payload first '
                     . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:86 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:93 — $payload instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:100 — $payload is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:107 — $payload is passed without '
+                    . 'a preceding instanceof in this case; narrow the inner payload first '
+                    . '(see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:112 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:119 — $payload instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:126 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:133 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:142 — $payload instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:150 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:156 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
+                'AGENT-SIGNAL-PAYLOAD Bad/AgentSignalPayloadSamples.php:163 — $packet->data instanceof must refuse '
+                    . 'a mismatch with throw new InvalidAgentSignalPayloadException first; another exception, '
+                    . 'a return or a skip is not the refusal (see docs/agents/code-style/signal-handlers.md)',
                 'CODE-FQN Bad/BlockingResolutionSamples.php:30 — \dns_get_mx is written out in code; a global '
                     . 'function or constant takes the short name and no import '
                     . '(see docs/agents/code-style/qualified-names.md)',

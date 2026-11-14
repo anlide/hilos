@@ -10,9 +10,9 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageReach;
@@ -76,17 +76,18 @@ abstract class AbstractHilosLegalSettingsPage extends AbstractHilosPage
      * @param string $sender Signal origin, unused
      * @param string $name Routed signal name
      * @throws AgentUnknownSignalException When the signal is unsupported
-     * @throws LogicException When the declared answer type is missing
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the action acknowledgement cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_LEGAL_SETTING_WRITE_DONE:
-                if (!$data->data instanceof HandoverAnswerSignalData) {
-                    throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
                 }
-                $this->answerHandover($data->data);
+                $this->answerHandover($answer);
                 return;
 
             default:

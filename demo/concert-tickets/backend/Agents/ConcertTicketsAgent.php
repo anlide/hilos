@@ -15,8 +15,8 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use LogicException as NativeLogicException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
@@ -60,8 +60,8 @@ final class ConcertTicketsAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When a signal of the answer cannot be named
-     * @throws LogicException On payload type mismatch
      * @throws NativeLogicException When the runtime item factory rejects a connection
      * @throws HilosException On database or runtime failure
      */
@@ -69,13 +69,12 @@ final class ConcertTicketsAgent extends AbstractAgent
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_SESSION_STATE:
-                if (!$data->data instanceof SessionStateSignalData) {
-                    throw new LogicException(
-                        HilosSignalConstants::HILOS_SESSION_STATE . ' payload must be ' . SessionStateSignalData::class,
-                    );
+                $state = $data->data;
+                if (!$state instanceof SessionStateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, SessionStateSignalData::class, $state);
                 }
 
-                $this->applySessionState($data->data);
+                $this->applySessionState($state);
 
                 return;
 

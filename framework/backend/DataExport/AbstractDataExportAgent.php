@@ -219,6 +219,7 @@ abstract class AbstractDataExportAgent extends AbstractAgent
      * @param AgentSignalData $data Typed erasure frame
      * @param string $sender Sending agent identity
      * @param string $name Declared signal name
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When the frame is unknown, malformed, or the copy cannot be removed
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
@@ -239,10 +240,11 @@ abstract class AbstractDataExportAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER:
-                if (!$data->data instanceof DataExportForgetUserSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, DataExportForgetUserSignalData::class, $data->data);
+                $forget = $data->data;
+                if (!$forget instanceof DataExportForgetUserSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DataExportForgetUserSignalData::class, $forget);
                 }
-                $this->forgetUser($data->data->userId);
+                $this->forgetUser($forget->userId);
 
                 return;
 

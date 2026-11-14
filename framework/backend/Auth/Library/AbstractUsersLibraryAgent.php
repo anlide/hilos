@@ -1240,8 +1240,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this library declared
-     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
-     * @throws ValidationException When the payload is not the one its name promises
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the failure frame cannot be named or queued
      * @throws FramePopOrderException When a resumed action leaves the execution frame stack imbalanced
      * @throws HilosException Whatever a project library that takes frames of its own raises on them
@@ -1264,28 +1263,31 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE:
-                if (!$data->data instanceof ProfileNameContinueSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ProfileNameContinueSignalData::class, $data->data);
+                $continuation = $data->data;
+                if (!$continuation instanceof ProfileNameContinueSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ProfileNameContinueSignalData::class, $continuation);
                 }
-                $this->profileNameCommands()->continueChange($data->data);
+                $this->profileNameCommands()->continueChange($continuation);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_CODE_MINT:
-                if (!$data->data instanceof AuthCodeMintSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthCodeMintSignalData::class, $data->data);
+                $mint = $data->data;
+                if (!$mint instanceof AuthCodeMintSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthCodeMintSignalData::class, $mint);
                 }
 
-                $this->phoneCodeCommands()->mintForSend($data->data);
+                $this->phoneCodeCommands()->mintForSend($mint);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_REGISTRATION_HOLD_RELEASE:
-                if (!$data->data instanceof AuthRegistrationHoldReleaseSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationHoldReleaseSignalData::class, $data->data);
+                $release = $data->data;
+                if (!$release instanceof AuthRegistrationHoldReleaseSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthRegistrationHoldReleaseSignalData::class, $release);
                 }
 
-                new RegistrationReservationService()->release($data->data->sessionToken);
+                new RegistrationReservationService()->release($release->sessionToken);
 
                 return;
 
@@ -1293,64 +1295,66 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET:
-                if (!$data->data instanceof AccountDeletionSetSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AccountDeletionSetSignalData::class, $data->data);
+                $deletion = $data->data;
+                if (!$deletion instanceof AccountDeletionSetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountDeletionSetSignalData::class, $deletion);
                 }
 
-                $this->handleDeletionSetRequest($data->data);
+                $this->handleDeletionSetRequest($deletion);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_ADMIN_CREATE:
-                if (!$data->data instanceof UserAdminCreateSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserAdminCreateSignalData::class, $data->data);
+                $creation = $data->data;
+                if (!$creation instanceof UserAdminCreateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserAdminCreateSignalData::class, $creation);
                 }
 
-                $this->handleAdminCreate($data->data);
+                $this->handleAdminCreate($creation);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_ADMIN_RENAME:
-                if (!$data->data instanceof AdminRenameSignalData) {
-                    throw new ValidationException(
-                        HilosSignalConstants::HILOS_USER_ADMIN_RENAME . ' payload must be ' . AdminRenameSignalData::class,
-                    );
+                $rename = $data->data;
+                if (!$rename instanceof AdminRenameSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AdminRenameSignalData::class, $rename);
                 }
-                $this->handleAdminRename($data->data);
+                $this->handleAdminRename($rename);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_RENAME_DONE:
-                if (!$data->data instanceof UserRenameDoneSignalData) {
-                    throw new ValidationException(
-                        HilosSignalConstants::HILOS_USER_RENAME_DONE . ' payload must be ' . UserRenameDoneSignalData::class,
-                    );
+                $renamed = $data->data;
+                if (!$renamed instanceof UserRenameDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserRenameDoneSignalData::class, $renamed);
                 }
-                $this->finishRename($data->data);
+                $this->finishRename($renamed);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_THEME_PICK_ADOPT_DONE:
             case HilosSignalConstants::HILOS_USER_THEME_PICK_DONE:
-                if (!$data->data instanceof UserThemePickWriteDoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserThemePickWriteDoneSignalData::class, $data->data);
+                $picked = $data->data;
+                if (!$picked instanceof UserThemePickWriteDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserThemePickWriteDoneSignalData::class, $picked);
                 }
-                $this->resumeAction($data->data->ask, $data->data->error, static fn () => null);
+                $this->resumeAction($picked->ask, $picked->error, static fn () => null);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_TIME_ZONE_WRITE_DONE:
-                if (!$data->data instanceof UserTimeZoneWriteDoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserTimeZoneWriteDoneSignalData::class, $data->data);
+                $zoneWritten = $data->data;
+                if (!$zoneWritten instanceof UserTimeZoneWriteDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserTimeZoneWriteDoneSignalData::class, $zoneWritten);
                 }
-                $this->resumeAction($data->data->ask, $data->data->error, static fn () => null);
+                $this->resumeAction($zoneWritten->ask, $zoneWritten->error, static fn () => null);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_PASSWORD_REHASH_DONE:
                 $rehashed = $data->data;
                 if (!$rehashed instanceof UserPasswordRehashDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserPasswordRehashDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserPasswordRehashDoneSignalData::class, $rehashed);
                 }
                 $this->resumeAction(
                     $rehashed->ask,
@@ -1363,7 +1367,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE:
                 $verified = $data->data;
                 if (!$verified instanceof UserAddressVerifyDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserAddressVerifyDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserAddressVerifyDoneSignalData::class, $verified);
                 }
                 $this->resumeAction(
                     $verified->ask,
@@ -1376,7 +1380,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE:
                 $used = $data->data;
                 if (!$used instanceof UserPasskeyUseDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserPasskeyUseDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserPasskeyUseDoneSignalData::class, $used);
                 }
                 if ($used->ask->operation === null) {
                     $this->resumeAction(
@@ -1398,7 +1402,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE:
                 $reset = $data->data;
                 if (!$reset instanceof UserPasswordResetDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserPasswordResetDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserPasswordResetDoneSignalData::class, $reset);
                 }
                 $this->resumeAction(
                     $reset->ask,
@@ -1411,7 +1415,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE:
                 $changed = $data->data;
                 if (!$changed instanceof UserPasswordChangeDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserPasswordChangeDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserPasswordChangeDoneSignalData::class, $changed);
                 }
                 $this->resumeAction(
                     $changed->ask,
@@ -1424,7 +1428,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE:
                 $moved = $data->data;
                 if (!$moved instanceof UserEmailChangeDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserEmailChangeDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserEmailChangeDoneSignalData::class, $moved);
                 }
                 $this->resumeAction(
                     $moved->ask,
@@ -1437,7 +1441,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE:
                 $unlinked = $data->data;
                 if (!$unlinked instanceof UserIdentityUnlinkDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserIdentityUnlinkDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserIdentityUnlinkDoneSignalData::class, $unlinked);
                 }
                 $this->resumeAction(
                     $unlinked->ask,
@@ -1450,7 +1454,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_PROVE_DONE:
                 $proven = $data->data;
                 if (!$proven instanceof UserSecondFactorProveDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorProveDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorProveDoneSignalData::class, $proven);
                 }
                 $this->secondFactorCommands()->afterProof($proven);
                 $this->resumeAction(
@@ -1466,7 +1470,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_CONFIRM_DONE:
                 $enrolled = $data->data;
                 if (!$enrolled instanceof UserSecondFactorEnrollConfirmDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorEnrollConfirmDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorEnrollConfirmDoneSignalData::class, $enrolled);
                 }
                 $this->secondFactorCommands()->afterEnrollConfirm($enrolled);
                 $this->resumeAction(
@@ -1480,7 +1484,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE:
                 $removed = $data->data;
                 if (!$removed instanceof UserSecondFactorRemoveDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorRemoveDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorRemoveDoneSignalData::class, $removed);
                 }
                 $this->secondFactorCommands()->afterRemove($removed);
                 $this->resumeAction(
@@ -1494,7 +1498,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE:
                 $canceled = $data->data;
                 if (!$canceled instanceof UserSecondFactorResetCancelDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorResetCancelDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorResetCancelDoneSignalData::class, $canceled);
                 }
                 // A link that canceled nothing named a removal no longer standing; the profile is
                 // answered the same either way, as it always was.
@@ -1510,7 +1514,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE:
                 $waitWritten = $data->data;
                 if (!$waitWritten instanceof UserSecondFactorWaitWriteDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorWaitWriteDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorWaitWriteDoneSignalData::class, $waitWritten);
                 }
                 $this->resumeAction(
                     $waitWritten->ask,
@@ -1523,7 +1527,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE:
                 $dropped = $data->data;
                 if (!$dropped instanceof UserSecondFactorEnrollDropDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorEnrollDropDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorEnrollDropDoneSignalData::class, $dropped);
                 }
                 // An unfinished enrolment standing after the agent dropped the person's was started
                 // by another press in between; that press holds the screen, and this one is refused.
@@ -1540,7 +1544,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE:
                 $codesDropped = $data->data;
                 if (!$codesDropped instanceof UserSecondFactorCodesDropDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorCodesDropDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorCodesDropDoneSignalData::class, $codesDropped);
                 }
                 $this->resumeAction(
                     $codesDropped->ask,
@@ -1553,7 +1557,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE:
                 $due = $data->data;
                 if (!$due instanceof UserSecondFactorResetDueDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorResetDueDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorResetDueDoneSignalData::class, $due);
                 }
                 $this->secondFactorCommands()->finishResetDue($due);
 
@@ -1562,7 +1566,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE:
                 $reminded = $data->data;
                 if (!$reminded instanceof UserSecondFactorResetRemindDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorResetRemindDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorResetRemindDoneSignalData::class, $reminded);
                 }
                 $this->secondFactorCommands()->finishResetRemind($reminded);
 
@@ -1571,7 +1575,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE:
                 $unlocked = $data->data;
                 if (!$unlocked instanceof UserSecondFactorUnlockDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserSecondFactorUnlockDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorUnlockDoneSignalData::class, $unlocked);
                 }
                 $this->finishSecondFactorUnlock($unlocked);
 
@@ -1589,7 +1593,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_STEP_UP_RECORD_DONE:
                 $recorded = $data->data;
                 if (!$recorded instanceof UserStepUpRecordDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserStepUpRecordDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserStepUpRecordDoneSignalData::class, $recorded);
                 }
                 $this->resumeAction($recorded->ask, $recorded->error, static fn () => null);
 
@@ -1598,7 +1602,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL_DONE:
                 $deletionDone = $data->data;
                 if (!$deletionDone instanceof UserAccountDeletionCancelDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserAccountDeletionCancelDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserAccountDeletionCancelDoneSignalData::class, $deletionDone);
                 }
                 if ($deletionDone->ask->answerSignal === null) {
                     $this->resumeAction(
@@ -1621,7 +1625,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_PHOTO_PUT_DONE:
                 $photoPut = $data->data;
                 if (!$photoPut instanceof UserPhotoPutDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserPhotoPutDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserPhotoPutDoneSignalData::class, $photoPut);
                 }
                 $this->profilePhotoCommands()->afterPut($photoPut);
 
@@ -1630,7 +1634,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
             case HilosSignalConstants::HILOS_USER_PHOTO_REMOVE_DONE:
                 $photoRemoved = $data->data;
                 if (!$photoRemoved instanceof UserPhotoRemoveDoneSignalData) {
-                    throw new ValidationException($name . ' payload must be ' . UserPhotoRemoveDoneSignalData::class);
+                    throw new InvalidAgentSignalPayloadException($name, UserPhotoRemoveDoneSignalData::class, $photoRemoved);
                 }
                 $this->resumeAction(
                     $photoRemoved->ask,
@@ -1641,32 +1645,29 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_MODERATION_VERDICT:
-                if (!$data->data instanceof ModerationVerdictSignalData) {
-                    throw new ValidationException(
-                        HilosSignalConstants::HILOS_MODERATION_VERDICT . ' payload must be ' . ModerationVerdictSignalData::class,
-                    );
+                $verdict = $data->data;
+                if (!$verdict instanceof ModerationVerdictSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationVerdictSignalData::class, $verdict);
                 }
-                $this->applyModerationVerdict($data->data);
+                $this->applyModerationVerdict($verdict);
 
                 return;
 
             case HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED:
-                if (!$data->data instanceof FilesPublishedSignalData) {
-                    throw new ValidationException(
-                        HilosSignalConstants::HILOS_PROFILE_PHOTO_PUBLISHED . ' payload must be ' . FilesPublishedSignalData::class,
-                    );
+                $published = $data->data;
+                if (!$published instanceof FilesPublishedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, FilesPublishedSignalData::class, $published);
                 }
-                $this->profilePhotoCommands()->published($data->data);
+                $this->profilePhotoCommands()->published($published);
 
                 return;
 
             case HilosSignalConstants::HILOS_OAUTH_LOGIN_READY:
-                if (!$data->data instanceof OAuthLoginReadySignalData) {
-                    throw new ValidationException(
-                        HilosSignalConstants::HILOS_OAUTH_LOGIN_READY . ' payload must be ' . OAuthLoginReadySignalData::class,
-                    );
+                $ready = $data->data;
+                if (!$ready instanceof OAuthLoginReadySignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, OAuthLoginReadySignalData::class, $ready);
                 }
-                $this->handleOAuthLoginReady($data->data);
+                $this->handleOAuthLoginReady($ready);
 
                 return;
 

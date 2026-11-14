@@ -9,6 +9,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -389,21 +390,26 @@ abstract class AbstractHilosSettingPresetsPage extends AbstractHilosPage
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not the one this section declares
-     * @throws LogicException When the page names no reply signal, or the payload is not the one
-     *     its name promises
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
+     * @throws LogicException When the page names no reply signal
      * @throws InvalidArgumentException When the ack cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name !== static::replySignalName()) {
-            throw new AgentUnknownSignalException($name);
-        }
+        switch ($name) {
+            case static::replySignalName():
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
+                }
 
-        if (!$data->data instanceof HandoverAnswerSignalData) {
-            throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
-        }
+                $this->answerHandover($answer);
 
-        $this->answerHandover($data->data);
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
     }
 
     /**

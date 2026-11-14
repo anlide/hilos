@@ -81,7 +81,7 @@ class ImagesAgent extends AbstractAgent
      * @param string $sender Source agent identity
      * @param string $name Signal name
      * @throws AgentUnknownSignalException When this agent owns no signal with that name
-     * @throws InvalidAgentSignalPayloadException When the signal carries a different payload
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the variant declaration or outbound signal name is invalid
      * @throws InvalidFormatException When a result cannot carry the request's identity
      */
@@ -89,10 +89,11 @@ class ImagesAgent extends AbstractAgent
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_IMAGE_RENDER:
-                if (!$data->data instanceof ImageRenderSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ImageRenderSignalData::class, $data->data);
+                $render = $data->data;
+                if (!$render instanceof ImageRenderSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ImageRenderSignalData::class, $render);
                 }
-                $this->enqueue($data->data);
+                $this->enqueue($render);
                 return;
 
             default:

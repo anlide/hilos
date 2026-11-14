@@ -1635,83 +1635,78 @@ final class BackupAgent extends AbstractAgent implements DeferredQueueHandoverSi
     {
         switch ($name) {
             case HilosSignalConstants::BACKUP_AGENT_CREATE:
-                if (!$data->data instanceof BackupCreateSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, BackupCreateSignalData::class, $data->data);
+                $create = $data->data;
+                if (!$create instanceof BackupCreateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupCreateSignalData::class, $create);
                 }
 
-                $this->handleCreateRequest($data->data);
+                $this->handleCreateRequest($create);
 
                 return;
 
             case HilosSignalConstants::BACKUP_AGENT_DELETE:
-                if (!$data->data instanceof BackupDeleteSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, BackupDeleteSignalData::class, $data->data);
+                $delete = $data->data;
+                if (!$delete instanceof BackupDeleteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupDeleteSignalData::class, $delete);
                 }
 
-                $this->handleDeleteRequest($data->data);
+                $this->handleDeleteRequest($delete);
 
                 return;
 
             case HilosSignalConstants::BACKUP_AGENT_SET_KEEP:
-                if (!$data->data instanceof BackupSetKeepSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, BackupSetKeepSignalData::class, $data->data);
+                $keep = $data->data;
+                if (!$keep instanceof BackupSetKeepSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupSetKeepSignalData::class, $keep);
                 }
 
-                $this->handleSetKeepRequest($data->data);
+                $this->handleSetKeepRequest($keep);
 
                 return;
 
             case HilosSignalConstants::BACKUP_AGENT_RESTORE:
-                if (!$data->data instanceof BackupRestoreSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, BackupRestoreSignalData::class, $data->data);
+                $restore = $data->data;
+                if (!$restore instanceof BackupRestoreSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupRestoreSignalData::class, $restore);
                 }
 
-                $this->handleRestoreSignal($data->data);
+                $this->handleRestoreSignal($restore);
 
                 return;
 
             case HilosSignalConstants::MAINTENANCE_AGENT_RESTORE_CONTROL:
-                if (!$data->data instanceof MaintenanceRestoreControlSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        MaintenanceRestoreControlSignalData::class,
-                        $data->data,
-                    );
+                $control = $data->data;
+                if (!$control instanceof MaintenanceRestoreControlSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, MaintenanceRestoreControlSignalData::class, $control);
                 }
 
-                $this->handleMaintenanceRestoreControl($data->data);
+                $this->handleMaintenanceRestoreControl($control);
 
                 return;
 
             case HilosSignalConstants::BACKUP_AGENT_SESSIONS_CARRIED:
-                if (!$data->data instanceof DeferredSessionsCarriedSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        DeferredSessionsCarriedSignalData::class,
-                        $data->data,
-                    );
+                $sessions = $data->data;
+                if (!$sessions instanceof DeferredSessionsCarriedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DeferredSessionsCarriedSignalData::class, $sessions);
                 }
 
-                $this->deferredQueueHandover?->onSessionsCarried($data->data);
+                $this->deferredQueueHandover?->onSessionsCarried($sessions);
                 $this->restoreReleaseGate->noteSessionsCarriedOver(
-                    $data->data->carried,
-                    $data->data->dropped,
-                    $data->data->kept,
+                    $sessions->carried,
+                    $sessions->dropped,
+                    $sessions->kept,
                 );
                 $this->releaseProtectedModeIfDue();
 
                 return;
 
             case HilosSignalConstants::BACKUP_AGENT_NOTICES_SENT:
-                if (!$data->data instanceof DeferredNoticesSentSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        DeferredNoticesSentSignalData::class,
-                        $data->data,
-                    );
+                $notices = $data->data;
+                if (!$notices instanceof DeferredNoticesSentSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DeferredNoticesSentSignalData::class, $notices);
                 }
 
-                $this->deferredQueueHandover?->onNoticesSent($data->data);
+                $this->deferredQueueHandover?->onNoticesSent($notices);
 
                 return;
 

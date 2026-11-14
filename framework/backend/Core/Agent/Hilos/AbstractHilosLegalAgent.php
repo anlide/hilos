@@ -138,6 +138,7 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
      * @param AgentSignalData $data Typed erasure frame
      * @param string $sender Sending agent identity
      * @param string $name Declared signal name
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When the frame is unknown or malformed, or the exports cannot be removed
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
@@ -159,10 +160,11 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
                 return;
 
             case HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET:
-                if (!$data->data instanceof LegalAcceptancesExportForgetSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, LegalAcceptancesExportForgetSignalData::class, $data->data);
+                $forget = $data->data;
+                if (!$forget instanceof LegalAcceptancesExportForgetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, LegalAcceptancesExportForgetSignalData::class, $forget);
                 }
-                LegalAcceptancesExports::forget($this, $data->data->userId);
+                LegalAcceptancesExports::forget($this, $forget->userId);
 
                 return;
 

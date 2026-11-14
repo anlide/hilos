@@ -232,34 +232,38 @@ abstract class AbstractFilesLibraryAgent extends AbstractAgent
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_FILE_BIND:
-                if (!$data->data instanceof FileBindSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, FileBindSignalData::class, $data->data);
+                $bind = $data->data;
+                if (!$bind instanceof FileBindSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, FileBindSignalData::class, $bind);
                 }
-                $this->markBound($data->data->fileIds);
+                $this->markBound($bind->fileIds);
 
                 return;
 
             case HilosSignalConstants::HILOS_FILE_REMOVE:
-                if (!$data->data instanceof FileRemoveSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, FileRemoveSignalData::class, $data->data);
+                $remove = $data->data;
+                if (!$remove instanceof FileRemoveSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, FileRemoveSignalData::class, $remove);
                 }
-                $this->removeFiles($data->data->fileIds);
+                $this->removeFiles($remove->fileIds);
 
                 return;
 
             case HilosSignalConstants::HILOS_FILE_PUBLISH:
-                if (!$data->data instanceof FilePublishSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, FilePublishSignalData::class, $data->data);
+                $publish = $data->data;
+                if (!$publish instanceof FilePublishSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, FilePublishSignalData::class, $publish);
                 }
-                $this->publish($data->data);
+                $this->publish($publish);
 
                 return;
 
             case HilosSignalConstants::HILOS_IMAGE_RENDERED:
-                if (!$data->data instanceof ImageRenderedSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ImageRenderedSignalData::class, $data->data);
+                $rendered = $data->data;
+                if (!$rendered instanceof ImageRenderedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ImageRenderedSignalData::class, $rendered);
                 }
-                $this->onImageRendered($data->data);
+                $this->onImageRendered($rendered);
 
                 return;
 

@@ -290,62 +290,47 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_NOTIFICATION_EMIT:
-                if (!$data->data instanceof NotificationEmitSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        NotificationEmitSignalData::class,
-                        $data->data,
-                    );
+                $notice = $data->data;
+                if (!$notice instanceof NotificationEmitSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, NotificationEmitSignalData::class, $notice);
                 }
-                $this->emit($data->data->toDraft());
+                $this->emit($notice->toDraft());
 
                 return;
 
             case HilosSignalConstants::HILOS_NOTIFICATION_HANDOVER:
-                if (!$data->data instanceof DeferredNotificationHandoverSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        DeferredNotificationHandoverSignalData::class,
-                        $data->data,
-                    );
+                $handover = $data->data;
+                if (!$handover instanceof DeferredNotificationHandoverSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DeferredNotificationHandoverSignalData::class, $handover);
                 }
-                $this->emitHandedOverNotices($data->data);
+                $this->emitHandedOverNotices($handover);
 
                 return;
 
             case HilosSignalConstants::HILOS_DELIVERY_RETRY:
-                if (!$data->data instanceof DeliveryRetrySignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        DeliveryRetrySignalData::class,
-                        $data->data,
-                    );
+                $retry = $data->data;
+                if (!$retry instanceof DeliveryRetrySignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DeliveryRetrySignalData::class, $retry);
                 }
-                $this->retryDelivery($data->data);
+                $this->retryDelivery($retry);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE:
-                if (!$data->data instanceof HandoverAnswerSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        HandoverAnswerSignalData::class,
-                        $data->data,
-                    );
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
                 }
-                $this->answerHandover($data->data);
+                $this->answerHandover($answer);
 
                 return;
 
             case HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE:
-                if (!$data->data instanceof UserPushReleaseDoneSignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        UserPushReleaseDoneSignalData::class,
-                        $data->data,
-                    );
+                $done = $data->data;
+                if (!$done instanceof UserPushReleaseDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserPushReleaseDoneSignalData::class, $done);
                 }
-                $this->resumeRelease($data->data);
+                $this->resumeRelease($done);
 
                 return;
 

@@ -68,33 +68,36 @@ final class ModerationRulesLibraryAgent extends AbstractHilosAgent
      * @param string $sender Sending agent identity (unused)
      * @param string $name Declared write signal
      * @throws AgentUnknownSignalException When the signal name is unknown
-     * @throws InvalidAgentSignalPayloadException When the ask has the wrong DTO
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the answer cannot be queued
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::MODERATION_RULE_ADD:
-                if (!$data->data instanceof ModerationRuleAddSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ModerationRuleAddSignalData::class, $data->data);
+                $add = $data->data;
+                if (!$add instanceof ModerationRuleAddSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationRuleAddSignalData::class, $add);
                 }
-                $this->handleAdd($data->data);
+                $this->handleAdd($add);
 
                 break;
 
             case HilosSignalConstants::MODERATION_RULE_DELETE:
-                if (!$data->data instanceof ModerationRuleDeleteSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ModerationRuleDeleteSignalData::class, $data->data);
+                $delete = $data->data;
+                if (!$delete instanceof ModerationRuleDeleteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationRuleDeleteSignalData::class, $delete);
                 }
-                $this->handleDelete($data->data);
+                $this->handleDelete($delete);
 
                 break;
 
             case HilosSignalConstants::MODERATION_RULE_UPDATE:
-                if (!$data->data instanceof ModerationRuleUpdateSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ModerationRuleUpdateSignalData::class, $data->data);
+                $update = $data->data;
+                if (!$update instanceof ModerationRuleUpdateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ModerationRuleUpdateSignalData::class, $update);
                 }
-                $this->handleUpdate($data->data);
+                $this->handleUpdate($update);
 
                 break;
 

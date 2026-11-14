@@ -134,7 +134,7 @@ final class AuthThrottleAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is neither of the two it answers
-     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the verdict signal cannot be named or queued
      * @throws HilosException Whatever preparing the RT write's immutable operation raises
      * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
@@ -145,20 +145,22 @@ final class AuthThrottleAgent extends AbstractAgent
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_AUTH_THROTTLE_CHECK:
-                if (!$data->data instanceof ThrottleCheckSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ThrottleCheckSignalData::class, $data->data);
+                $check = $data->data;
+                if (!$check instanceof ThrottleCheckSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ThrottleCheckSignalData::class, $check);
                 }
 
-                $this->judge($data->data);
+                $this->judge($check);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_THROTTLE_SUCCEEDED:
-                if (!$data->data instanceof ThrottleSuccessSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ThrottleSuccessSignalData::class, $data->data);
+                $success = $data->data;
+                if (!$success instanceof ThrottleSuccessSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ThrottleSuccessSignalData::class, $success);
                 }
 
-                $this->forgive($data->data);
+                $this->forgive($success);
 
                 return;
 

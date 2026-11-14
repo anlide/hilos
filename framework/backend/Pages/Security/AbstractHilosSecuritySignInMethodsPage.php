@@ -15,10 +15,10 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\CLI\Commands\AdminCreateCommand;
 use Hilos\Core\Exception\InvalidArgumentException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageReach;
@@ -144,20 +144,25 @@ abstract class AbstractHilosSecuritySignInMethodsPage extends AbstractHilosPage
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this page declares
-     * @throws LogicException When the payload is not the one its name promises
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the ack cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name !== HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE) {
-            throw new AgentUnknownSignalException($name);
-        }
+        switch ($name) {
+            case HilosSignalConstants::HILOS_SIGN_IN_METHODS_WRITE_DONE:
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
+                }
 
-        if (!$data->data instanceof HandoverAnswerSignalData) {
-            throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
-        }
+                $this->answerHandover($answer);
 
-        $this->answerHandover($data->data);
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
     }
 
     /**

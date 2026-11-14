@@ -12,6 +12,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\Config\AgentSignalConfigKey;
 use Hilos\Core\Agent\Exception\AgentIndexRequiredException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
@@ -148,25 +149,33 @@ class MailDeliveryChannelAgent extends AbstractDeliveryChannelAgent
     }
 
     /**
-     * Routes a raw send to the in-memory pool; everything else to the delivery pipeline.
+     * Routes a raw send by its signal name to the in-memory pool; every other name to the delivery pipeline.
      *
-     * Input B ({@see MailSendSignalData}) is queued here without a delivery row; any other
-     * payload (input A) is handed to the base intake unchanged.
+     * The raw-send name ({@see HilosSignalConstants::HILOS_MAIL_SEND}) carries {@see MailSendSignalData}, queued here
+     * without a delivery row; any other name is handed to the base intake unchanged.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When fresh durable delivery coordinates cannot be read
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($data->data instanceof MailSendSignalData) {
-            $this->enqueueRawSend($data->data);
+        switch ($name) {
+            case HilosSignalConstants::HILOS_MAIL_SEND:
+                $send = $data->data;
+                if (!$send instanceof MailSendSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, MailSendSignalData::class, $send);
+                }
 
-            return;
+                $this->enqueueRawSend($send);
+
+                return;
+
+            default:
+                parent::onSignalAgent($data, $sender, $name);
         }
-
-        parent::onSignalAgent($data, $sender, $name);
     }
 
     /**

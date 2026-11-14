@@ -22,6 +22,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -137,6 +138,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is not the pending-login handoff
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws InvalidArgumentException When a retirement allowance of the pool's snapshot selector is invalid
      * @throws InvalidFormatException When the pool's row values cannot be held by its snapshot selector
@@ -144,20 +146,22 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name !== HilosSignalConstants::HILOS_OAUTH_PENDING) {
-            throw new AgentUnknownSignalException($name);
-        }
-        if (!$data->data instanceof OAuthPendingLoginSignalData) {
-            $this->logAgentWarning(
-                HilosSignalConstants::HILOS_OAUTH_PENDING . ' payload must be ' . OAuthPendingLoginSignalData::class,
-            );
+        switch ($name) {
+            case HilosSignalConstants::HILOS_OAUTH_PENDING:
+                $pending = $data->data;
+                if (!$pending instanceof OAuthPendingLoginSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, OAuthPendingLoginSignalData::class, $pending);
+                }
 
-            return;
-        }
+                $op = $pending->toPendingLogin();
+                $this->pending->add($op);
+                $this->logAgentInfo("adopted OAuth {$op->mode} handoff {$op->getId()} (provider={$op->provider})");
 
-        $op = $data->data->toPendingLogin();
-        $this->pending->add($op);
-        $this->logAgentInfo("adopted OAuth {$op->mode} handoff {$op->getId()} (provider={$op->provider})");
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
+        }
     }
 
     /**

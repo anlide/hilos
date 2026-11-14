@@ -239,10 +239,11 @@ final class SettingsLibraryAgent extends AbstractAgent
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         if ($name === HilosSignalConstants::HILOS_SETTING_COMMAND_DONE) {
-            if (!$data->data instanceof HandoverAnswerSignalData) {
-                throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $data->data);
-            }
             $answer = $data->data;
+            if (!$answer instanceof HandoverAnswerSignalData) {
+                throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
+            }
+
             $requestId = $answer->requestId;
             if ($requestId === null) {
                 Logger::logAgentError($this->getId(), 'Setting command done reply has no requestId');
@@ -266,12 +267,13 @@ final class SettingsLibraryAgent extends AbstractAgent
 
         switch ($name) {
             case HilosSignalConstants::HILOS_SETTING_WRITE:
-                if (!$data->data instanceof SettingWriteSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, SettingWriteSignalData::class, $data->data);
+                $write = $data->data;
+                if (!$write instanceof SettingWriteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, SettingWriteSignalData::class, $write);
                 }
                 $this->settle(
-                    $data->data,
-                    $this->storeValue($data->data, $policyBefore),
+                    $write,
+                    $this->storeValue($write, $policyBefore),
                     $methodsBefore,
                     $policyBefore,
                     $deliveryBefore,
@@ -282,12 +284,13 @@ final class SettingsLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_SETTING_RESET:
-                if (!$data->data instanceof SettingResetSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, SettingResetSignalData::class, $data->data);
+                $reset = $data->data;
+                if (!$reset instanceof SettingResetSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, SettingResetSignalData::class, $reset);
                 }
                 $this->settle(
-                    $data->data,
-                    $this->resetToDefault($data->data, $policyBefore),
+                    $reset,
+                    $this->resetToDefault($reset, $policyBefore),
                     $methodsBefore,
                     $policyBefore,
                     $deliveryBefore,
@@ -298,12 +301,13 @@ final class SettingsLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_SETTING_DELETE:
-                if (!$data->data instanceof SettingDeleteSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, SettingDeleteSignalData::class, $data->data);
+                $delete = $data->data;
+                if (!$delete instanceof SettingDeleteSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, SettingDeleteSignalData::class, $delete);
                 }
                 $this->settle(
-                    $data->data,
-                    $this->dropOrphan($data->data, $policyBefore),
+                    $delete,
+                    $this->dropOrphan($delete, $policyBefore),
                     $methodsBefore,
                     $policyBefore,
                     $deliveryBefore,
@@ -314,16 +318,13 @@ final class SettingsLibraryAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::HILOS_SETTING_PRESET_APPLY:
-                if (!$data->data instanceof SettingPresetApplySignalData) {
-                    throw new InvalidAgentSignalPayloadException(
-                        $name,
-                        SettingPresetApplySignalData::class,
-                        $data->data,
-                    );
+                $preset = $data->data;
+                if (!$preset instanceof SettingPresetApplySignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, SettingPresetApplySignalData::class, $preset);
                 }
                 $this->settle(
-                    $data->data,
-                    $this->applyPreset($data->data, $policyBefore),
+                    $preset,
+                    $this->applyPreset($preset, $policyBefore),
                     $methodsBefore,
                     $policyBefore,
                     $deliveryBefore,

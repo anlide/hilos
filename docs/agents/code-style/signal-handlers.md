@@ -54,22 +54,49 @@ If a signal case consumes no typed inner content, do not invent a DTO or a
 guard for it.
 
 Checked automatically: `AGENT-SIGNAL-PAYLOAD`, for a limited lexical form in
-production roots. In `onSignalAgent()` with a parameter spelled
-`AgentSignalData $anyName`, the check reads brace-form switches directly in the
-method body. It reports a whole `$anyName->data` or a simple local alias passed
-as a positional call argument without an earlier `instanceof` of that same
-expression in the case. An alias is one assignment from the wrapper, inside
-that case; a wrapper check before the assignment also covers the alias.
-Consecutive case labels share one body. Comments, strings, other methods,
-nested functions and other cases cannot supply the check.
+production roots, as two checks under one id. Both read `onSignalAgent()` with
+a parameter spelled `AgentSignalData $anyName`; an alias is one assignment of
+`$anyName->data` to a local variable. Comments, strings, other methods and
+nested functions cannot supply or trigger either check.
 
-This is narrower than the rule above: it does not verify the expected DTO,
-the exception, the guard's branch or control flow. It does not judge field
-reads, named or compound arguments, alias chains, aliases established outside
-the case, nested switches, alternative switch syntax, or an imported alias
-for the `AgentSignalData` type. It does not track mutation of the wrapper or
-infer callee types. A green report is not proof of safe handling; the direct
-runtime refusal test and review still answer for those parts.
+The argument check reads the brace-form switches directly in the method body.
+It reports a whole `$anyName->data` or a simple local alias passed as a
+positional call argument without an earlier `instanceof` of that same
+expression in the case. The alias is assigned inside that case; a wrapper
+check before the assignment also covers the alias. Consecutive case labels
+share one body, and other cases cannot supply the check.
+
+The refusal check reads every `instanceof` whose left side is
+`$anyName->data` or an alias, in the cases of those switches and in the method
+body outside them, nested blocks included; any other switch is read as
+ordinary code. An alias counts in the case that assigns it, or, outside the
+switches, after its assignment there. Two shapes pass:
+
+- `if (!$payload instanceof ExpectedSignalData) {` whose block opens with
+  `throw new InvalidAgentSignalPayloadException(`;
+- `if ($payload instanceof ExpectedSignalData) {`, any `elseif` branches, and
+  a final `else {` that opens with that same throw.
+
+An `elseif` condition counts as an `if` condition, and a comment before the
+throw is not a statement. Anything else is reported: another exception, a
+`return`, a `break`, a log call before the throw, a chain without `else`,
+`!($payload instanceof ...)`, a compound condition, or an `instanceof` outside
+an `if` condition.
+
+This is narrower than the rule above. It checks the class of the throw and
+that the throw is the first statement of the refusing branch; it does not
+verify the expected DTO, the arguments of the throw or control flow after it.
+The exception is read by the short name it is written with, the way
+[qualified-names.md](qualified-names.md) writes a class: imports are not
+resolved, so a qualified spelling or an import alias of it is reported and
+another class imported under that name passes. The argument check does not
+judge field reads, named or compound arguments, nested switches, or
+alternative switch syntax. Neither check judges alias chains, an alias carried
+between a case and the body outside the switches, an `instanceof` of anything
+but the payload, or an imported alias for the `AgentSignalData` type. They do
+not track mutation of the wrapper or infer callee types. A green report is not
+proof of safe handling; the direct runtime refusal test and review still
+answer for those parts.
 
 ## Shape
 

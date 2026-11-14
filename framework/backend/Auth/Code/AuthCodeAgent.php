@@ -97,26 +97,28 @@ class AuthCodeAgent extends AbstractAgent
      * @param string $sender Sender description (unused)
      * @param string $name Routed signal name
      * @throws AgentUnknownSignalException When the name is not declared by this agent
-     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_AUTH_CODE_SEND:
-                if (!$data->data instanceof AuthCodeSendSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthCodeSendSignalData::class, $data->data);
+                $send = $data->data;
+                if (!$send instanceof AuthCodeSendSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthCodeSendSignalData::class, $send);
                 }
 
-                $this->adoptRequest($data->data);
+                $this->adoptRequest($send);
 
                 return;
 
             case HilosSignalConstants::HILOS_AUTH_CODE_MINTED:
-                if (!$data->data instanceof AuthCodeMintedSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, AuthCodeMintedSignalData::class, $data->data);
+                $minted = $data->data;
+                if (!$minted instanceof AuthCodeMintedSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AuthCodeMintedSignalData::class, $minted);
                 }
 
-                $this->adoptMinted($data->data);
+                $this->adoptMinted($minted);
 
                 return;
 

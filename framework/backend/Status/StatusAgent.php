@@ -449,7 +449,7 @@ final class StatusAgent extends AbstractHilosAgent
      * @param string $sender Collector or gatekeeper address, unused
      * @param string $name Owned signal name
      * @throws AgentUnknownSignalException When the signal is not owned by Status
-     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When source access or answer delivery is refused
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
@@ -460,39 +460,44 @@ final class StatusAgent extends AbstractHilosAgent
                 return;
 
             case HilosSignalConstants::STATUS_DAEMON_PICTURE_PORTION:
-                if (!$data->data instanceof DaemonClusterPicturePortionSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, DaemonClusterPicturePortionSignalData::class, $data->data);
+                $portion = $data->data;
+                if (!$portion instanceof DaemonClusterPicturePortionSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, DaemonClusterPicturePortionSignalData::class, $portion);
                 }
 
-                $this->applyPicturePortion($data->data, TimeHelper::nowMs());
+                $this->applyPicturePortion($portion, TimeHelper::nowMs());
                 return;
 
             case HilosSignalConstants::STATUS_REMOVE_SUBSCRIBER:
-                if (!$data->data instanceof StatusRemoveSubscriberSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, StatusRemoveSubscriberSignalData::class, $data->data);
+                $removeSubscriber = $data->data;
+                if (!$removeSubscriber instanceof StatusRemoveSubscriberSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusRemoveSubscriberSignalData::class, $removeSubscriber);
                 }
-                $this->answerSubscriberRemoval($data->data);
+                $this->answerSubscriberRemoval($removeSubscriber);
                 return;
 
             case HilosSignalConstants::STATUS_SCHEDULE_WORK:
-                if (!$data->data instanceof StatusScheduleWorkSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, StatusScheduleWorkSignalData::class, $data->data);
+                $scheduleWork = $data->data;
+                if (!$scheduleWork instanceof StatusScheduleWorkSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusScheduleWorkSignalData::class, $scheduleWork);
                 }
-                $this->answerWorkWrite($data->data);
+                $this->answerWorkWrite($scheduleWork);
                 return;
 
             case HilosSignalConstants::STATUS_CHANGE_WORK:
-                if (!$data->data instanceof StatusChangeWorkSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, StatusChangeWorkSignalData::class, $data->data);
+                $changeWork = $data->data;
+                if (!$changeWork instanceof StatusChangeWorkSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusChangeWorkSignalData::class, $changeWork);
                 }
-                $this->answerWorkWrite($data->data);
+                $this->answerWorkWrite($changeWork);
                 return;
 
             case HilosSignalConstants::STATUS_CANCEL_WORK:
-                if (!$data->data instanceof StatusCancelWorkSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, StatusCancelWorkSignalData::class, $data->data);
+                $cancelWork = $data->data;
+                if (!$cancelWork instanceof StatusCancelWorkSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusCancelWorkSignalData::class, $cancelWork);
                 }
-                $this->answerWorkWrite($data->data);
+                $this->answerWorkWrite($cancelWork);
                 return;
 
             case HilosSignalConstants::STATUS_CANCEL_PUBLICATION:
@@ -514,11 +519,12 @@ final class StatusAgent extends AbstractHilosAgent
                 return;
 
             case HilosSignalConstants::STATUS_ADD_UPDATE:
-                if (!$data->data instanceof StatusAddUpdateSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, StatusAddUpdateSignalData::class, $data->data);
+                $addUpdate = $data->data;
+                if (!$addUpdate instanceof StatusAddUpdateSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, StatusAddUpdateSignalData::class, $addUpdate);
                 }
 
-                $this->answerIncidentWrite($data->data);
+                $this->answerIncidentWrite($addUpdate);
                 return;
 
             default:

@@ -8,7 +8,8 @@ use Hilos\Tests\CodeStyle\CodeStyleRule;
 use Hilos\Tests\CodeStyle\Violation;
 
 /**
- * Checks lexical narrowing before a whole inner payload is passed as an argument.
+ * Checks lexical narrowing of the inner payload in onSignalAgent(): a whole payload passed as an argument needs an
+ * earlier instanceof of it, and every instanceof of it must open the refusal.
  * This is deliberately not a control-flow or callee-type analysis.
  */
 final class AgentSignalPayloadRule implements CodeStyleRule
@@ -16,6 +17,12 @@ final class AgentSignalPayloadRule implements CodeStyleRule
     public const string ID = 'AGENT-SIGNAL-PAYLOAD';
 
     private const string DOC = 'docs/agents/code-style/signal-handlers.md';
+
+    /** Exception a refusing branch throws first, read by the short name it is written with. */
+    private const string REFUSAL = 'InvalidAgentSignalPayloadException';
+
+    /** Tokens that spell a class name after instanceof. */
+    private const array CLASS_NAME = [T_STRING, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED, T_NAME_RELATIVE];
 
     /** @return string Rule id */
     public function id(): string
@@ -32,7 +39,7 @@ final class AgentSignalPayloadRule implements CodeStyleRule
     /**
      * @param string $relativePath File path relative to the scanned root
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output
-     * @return iterable<Violation> One hit per unguarded payload argument
+     * @return iterable<Violation> Unguarded payload arguments and payload checks that do not refuse, in line order
      */
     public function check(string $relativePath, array $tokens): iterable
     {
@@ -69,18 +76,25 @@ final class AgentSignalPayloadRule implements CodeStyleRule
             }
 
             $end = $this->closing($tokens, $body);
+            $hits = [];
+            $outside = [];
             for ($cursor = $body + 1; $cursor < $end; $cursor++) {
                 if ($tokens[$cursor][0] === T_SWITCH && ($tokens[$cursor + 1][1] ?? null) === '(') {
                     $switchBody = $this->closing($tokens, $cursor + 1) + 1;
                     if (($tokens[$switchBody][1] ?? null) === '{') {
-                        yield from $this->checkSwitch($relativePath, $tokens, $switchBody, $wrapper);
+                        array_push($hits, ...$this->checkSwitch($relativePath, $tokens, $switchBody, $wrapper));
                         $cursor = $this->closing($tokens, $switchBody);
+                        continue;
                     }
-                } elseif ($tokens[$cursor][1] === '{') {
-                    // Only switches directly in the handler body belong to this small check.
-                    $cursor = $this->closing($tokens, $cursor);
                 }
+                // Only switches directly in the handler body are read case by case; a nested block is outside code.
+                $last = $tokens[$cursor][1] === '{' ? $this->closing($tokens, $cursor) : $cursor;
+                array_push($outside, ...array_slice($tokens, $cursor, $last - $cursor + 1));
+                $cursor = $last;
             }
+            array_push($hits, ...$this->checkRefusals($relativePath, $outside, $wrapper));
+            usort($hits, static fn(Violation $left, Violation $right): int => $left->line <=> $right->line);
+            yield from $hits;
         }
     }
 
@@ -100,7 +114,9 @@ final class AgentSignalPayloadRule implements CodeStyleRule
         for ($cursor = $start + 1; $cursor <= $end; $cursor++) {
             if ($cursor === $end || in_array($tokens[$cursor][0], [T_CASE, T_DEFAULT], true)) {
                 if ($case !== null) {
-                    yield from $this->checkCase($path, array_slice($tokens, $case, $cursor - $case), $wrapper);
+                    $caseTokens = array_slice($tokens, $case, $cursor - $case);
+                    yield from $this->checkCase($path, $caseTokens, $wrapper);
+                    yield from $this->checkRefusals($path, $caseTokens, $wrapper);
                 }
                 $case = $cursor + 1;
             } elseif ($tokens[$cursor][1] === '{') {
@@ -182,6 +198,120 @@ final class AgentSignalPayloadRule implements CodeStyleRule
                 );
             }
         }
+    }
+
+    /**
+     * An alias is one assignment from the wrapper earlier in the same tokens; nested functions are skipped, and a
+     * nested switch is read as ordinary code.
+     *
+     * @param string $path File path relative to the scanned root
+     * @param list<array{int, string, int}> $tokens One case without its keyword, or the body outside direct switches
+     * @param string $wrapper AgentSignalData parameter name
+     * @return iterable<Violation> One hit per instanceof of the payload or its alias that does not open the refusal
+     */
+    private function checkRefusals(string $path, array $tokens, string $wrapper): iterable
+    {
+        $aliases = [];
+        $skipUntil = -1;
+        foreach ($tokens as $index => $token) {
+            if ($index <= $skipUntil) {
+                continue;
+            }
+            if (in_array($token[0], [T_FUNCTION, T_FN], true)) {
+                $skipUntil = $this->scopeEnd($tokens, $index);
+                continue;
+            }
+
+            if ($token[0] === T_VARIABLE && ($tokens[$index + 1][1] ?? null) === '=') {
+                unset($aliases[$token[1]]);
+                if ($this->isInnerPayload($tokens, $index + 2, $wrapper) && ($tokens[$index + 5][1] ?? null) === ';') {
+                    $aliases[$token[1]] = true;
+                }
+            }
+            if ($token[0] !== T_INSTANCEOF) {
+                continue;
+            }
+
+            if ($this->isInnerPayload($tokens, $index - 3, $wrapper)) {
+                $value = $wrapper . '->data';
+                $start = $index - 3;
+            } elseif (($tokens[$index - 1][0] ?? null) === T_VARIABLE && isset($aliases[$tokens[$index - 1][1]])) {
+                $value = $tokens[$index - 1][1];
+                $start = $index - 1;
+            } else {
+                continue;
+            }
+
+            if (!$this->opensRefusal($tokens, $start, $index)) {
+                yield new Violation(
+                    self::ID,
+                    $path,
+                    $token[2],
+                    $value . ' instanceof must refuse a mismatch with throw new ' . self::REFUSAL
+                        . ' first; another exception, a return or a skip is not the refusal',
+                );
+            }
+        }
+    }
+
+    /**
+     * Two shapes refuse: a negated check whose own block throws first, and a positive check whose if/elseif chain
+     * ends in an else that throws first. An elseif condition counts as an if condition.
+     *
+     * @param list<array{int, string, int}> $tokens Significant code tokens
+     * @param int $start First token of the checked expression
+     * @param int $instanceof The instanceof keyword after that expression
+     * @return bool Whether this instanceof is the whole condition of a branch that leads to the refusal
+     */
+    private function opensRefusal(array $tokens, int $start, int $instanceof): bool
+    {
+        $negated = ($tokens[$start - 1][1] ?? null) === '!';
+        $condition = $negated ? $start - 2 : $start - 1;
+        $block = $instanceof + 3;
+        if (!in_array($tokens[$condition - 1][0] ?? null, [T_IF, T_ELSEIF], true)
+            || ($tokens[$condition][1] ?? null) !== '('
+            || !in_array($tokens[$instanceof + 1][0] ?? null, self::CLASS_NAME, true)
+            || ($tokens[$instanceof + 2][1] ?? null) !== ')'
+            || ($tokens[$block][1] ?? null) !== '{'
+        ) {
+            return false;
+        }
+
+        return $negated ? $this->throwsRefusal($tokens, $block) : $this->elseRefuses($tokens, $block);
+    }
+
+    /**
+     * @param list<array{int, string, int}> $tokens Significant code tokens
+     * @param int $brace Opening brace of the positive branch
+     * @return bool Whether the if/elseif chain this branch opens ends in an else that throws the refusal first
+     */
+    private function elseRefuses(array $tokens, int $brace): bool
+    {
+        $cursor = $this->closing($tokens, $brace) + 1;
+        while (($tokens[$cursor][0] ?? null) === T_ELSEIF && ($tokens[$cursor + 1][1] ?? null) === '(') {
+            $branch = $this->closing($tokens, $cursor + 1) + 1;
+            if (($tokens[$branch][1] ?? null) !== '{') {
+                return false;
+            }
+            $cursor = $this->closing($tokens, $branch) + 1;
+        }
+
+        return ($tokens[$cursor][0] ?? null) === T_ELSE && $this->throwsRefusal($tokens, $cursor + 1);
+    }
+
+    /**
+     * @param list<array{int, string, int}> $tokens Significant code tokens
+     * @param int $brace Expected opening brace of the refusing branch
+     * @return bool Whether that branch is a block whose first statement throws a new refusal
+     */
+    private function throwsRefusal(array $tokens, int $brace): bool
+    {
+        return ($tokens[$brace][1] ?? null) === '{'
+            && ($tokens[$brace + 1][0] ?? null) === T_THROW
+            && ($tokens[$brace + 2][0] ?? null) === T_NEW
+            && ($tokens[$brace + 3][0] ?? null) === T_STRING
+            && $tokens[$brace + 3][1] === self::REFUSAL
+            && ($tokens[$brace + 4][1] ?? null) === '(';
     }
 
     /**

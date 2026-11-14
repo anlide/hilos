@@ -194,27 +194,29 @@ final class LogAggregatorAgent extends AbstractAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
-     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the answering frame cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::LOGS_NODE_INDEX_REPORT:
-                if (!$data->data instanceof NodeLogIndexSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, NodeLogIndexSignalData::class, $data->data);
+                $report = $data->data;
+                if (!$report instanceof NodeLogIndexSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, NodeLogIndexSignalData::class, $report);
                 }
 
-                $this->applyNodeIndex($data->data->toIndex());
+                $this->applyNodeIndex($report->toIndex());
 
                 return;
 
             case HilosSignalConstants::LOGS_INDEX_WATCH:
-                if (!$data->data instanceof LogsIndexWatchSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, LogsIndexWatchSignalData::class, $data->data);
+                $watch = $data->data;
+                if (!$watch instanceof LogsIndexWatchSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, LogsIndexWatchSignalData::class, $watch);
                 }
 
-                $this->applyWatch($sender, $data->data->viewers, microtime(true));
+                $this->applyWatch($sender, $watch->viewers, microtime(true));
 
                 return;
 

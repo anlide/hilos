@@ -157,17 +157,18 @@ abstract class AbstractHilosLogsAgent extends AbstractHilosAgent
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the agent is reached by a signal it does not own
-     * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION:
-                if (!$data->data instanceof ClusterLogIndexPortionSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, ClusterLogIndexPortionSignalData::class, $data->data);
+                $portion = $data->data;
+                if (!$portion instanceof ClusterLogIndexPortionSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, ClusterLogIndexPortionSignalData::class, $portion);
                 }
 
-                ClusterLogIndexMirror::applyPortion($data->data);
+                ClusterLogIndexMirror::applyPortion($portion);
 
                 return;
 

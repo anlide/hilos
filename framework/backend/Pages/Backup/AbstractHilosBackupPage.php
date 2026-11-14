@@ -21,6 +21,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Page\AbstractHilosPage;
 use Hilos\Core\Page\DTO\PagePayload;
@@ -52,7 +53,6 @@ use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
-use Hilos\Core\Exception\LogicException;
 
 /**
  * AbstractHilosBackupPage - Abstract base for the Hilos backup list page.
@@ -226,25 +226,29 @@ abstract class AbstractHilosBackupPage extends AbstractHilosPage
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this page declares
-     * @throws LogicException When the payload is not the one its name promises
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws HilosException When the page was never handed its router
      * @throws InvalidArgumentException When a frame of the run cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        if ($name !== HilosSignalConstants::HILOS_BACKUP_DELETE_DONE) {
-            throw new AgentUnknownSignalException($name);
-        }
+        switch ($name) {
+            case HilosSignalConstants::HILOS_BACKUP_DELETE_DONE:
+                $done = $data->data;
+                if (!$done instanceof BackupDeleteDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, BackupDeleteDoneSignalData::class, $done);
+                }
 
-        $done = $data->data;
-        if (!$done instanceof BackupDeleteDoneSignalData) {
-            throw new LogicException($name . ' payload must be ' . BackupDeleteDoneSignalData::class);
-        }
+                if ($done->reason === null) {
+                    $this->bulkRowTouched($done->progressKey, $done->backupId);
+                } else {
+                    $this->bulkRowUntouched($done->progressKey, $done->backupId, $done->reason);
+                }
 
-        if ($done->reason === null) {
-            $this->bulkRowTouched($done->progressKey, $done->backupId);
-        } else {
-            $this->bulkRowUntouched($done->progressKey, $done->backupId, $done->reason);
+                return;
+
+            default:
+                throw new AgentUnknownSignalException($name);
         }
     }
 

@@ -14,6 +14,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
+use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserGuardKey;
 use Hilos\Core\Browser\Config\BrowserGuardType;
@@ -24,7 +25,6 @@ use Hilos\Core\Browser\Config\BrowserRefType;
 use Hilos\Core\Browser\Config\BrowserSubscriptionError;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -146,18 +146,19 @@ abstract class AbstractHilosUserSessionsPage extends AbstractHilosUserPage
      * @param string $sender Sender in full, as {@see SignalSource::describe()} spells it (unused)
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one this page declares
-     * @throws LogicException When the payload is not the one its name promises
+     * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
      * @throws InvalidArgumentException When the browser ack cannot be named
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
             case HilosSignalConstants::HILOS_USER_SESSIONS_END_DONE:
-                if (!$data->data instanceof HandoverAnswerSignalData) {
-                    throw new LogicException($name . ' payload must be ' . HandoverAnswerSignalData::class);
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
                 }
 
-                $this->answerHandover($data->data);
+                $this->answerHandover($answer);
 
                 return;
 

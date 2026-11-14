@@ -124,10 +124,11 @@ abstract class AbstractHilosDaemonAgentsPage extends AbstractHilosDaemonNodePage
     {
         switch ($name) {
             case HilosSignalConstants::DAEMON_AGENT_RESTART_DONE:
-                if (!$data->data instanceof HandoverAnswerSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $data->data);
+                $answer = $data->data;
+                if (!$answer instanceof HandoverAnswerSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, HandoverAnswerSignalData::class, $answer);
                 }
-                $this->answerHandover($data->data);
+                $this->answerHandover($answer);
 
                 return;
 
