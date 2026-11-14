@@ -594,20 +594,20 @@ The React/Angular parity pass that followed these moves is HIL-2022.
 #### Approved cluster-browser target — HIL-1985
 
 The [six cluster carriers and their shapes](../testing.md#the-cluster-stands--six-demos-six-shapes)
-are cataloged in the testing guide. This matrix is the approved **target**,
-not a completed transfer; each marker names the leaf that moves the area.
-Names identify whole areas, including additions before execution. Transfers
-stay within their view framework and carry their quarantine status unchanged
-(F-016, F-023, F-036, F-060); moving a spec does not heal a flake. Use shared
-helpers from `framework/frontend/e2e/`, fixed browser time zones and the
-existing behavior assertions; do not bring back decorative checks.
+are cataloged in the testing guide. This matrix is the approved target, and
+its transfers are complete; each row names the leaf that moved the area.
+Names identify whole areas. Transfers stayed within their view framework and
+carried their quarantine status unchanged (F-016, F-023, F-060, F-069,
+F-072); moving a spec does not heal a flake. Use shared helpers from
+`framework/frontend/e2e/`, fixed browser time zones and the existing behavior
+assertions; do not bring back decorative checks.
 
 Here `donor/live/{a,b}` means
 `demo/<donor>/tests/e2e/cluster/live/a.spec.ts` and `b.spec.ts`; `daemon` and
 `after-loss` use the same path convention. The destination is
 `demo/<target>/tests/e2e/cluster/`.
 
-| Target / view | Whole areas and current source specs | Transfer owner |
+| Target / view | Whole areas and the source specs they moved from | Transfer owner |
 |---|---|---|
 | `roblox-game-server` / Vue | **Daemon:** `binance-btc-tracker/daemon/daemon`, `binance-btc-tracker/live/{daemon-clock,daemon-env-mismatch,daemon-env-orphans,daemon-section}`. | HIL-2030 |
 | `roblox-game-server` / Vue | **Sessions, theme, protected mode:** `binance-btc-tracker/live/{sessions,theme,protected-mode}`. | HIL-2031 |
@@ -625,11 +625,10 @@ Binance too: Roblox declares no I18N (HIL-2017), by the owner's decision of
 React's cluster-browser corpus begins with Gallery's
 [`entry.spec.ts`](../../../demo/file-gallery-manager/tests/e2e/cluster/live/entry.spec.ts):
 it signs in through the non-leader master and opens `/hilos`.
-HIL-2034 grows this entry test with cross-node sign-in, sign-out and
-grant/revoke proofs. Browser phases and fixtures are chosen from the stand
-declaration and native plan.
-After the transfers each source file exists exactly once
-(not in the code yet — HIL-2035).
+Browser phases and fixtures are chosen from the stand declaration and native
+plan. After the transfers each of the 17 source files exists exactly once:
+binance-btc-tracker 7, roblox-game-server 8, online-testing 1,
+concert-tickets 1 (HIL-2035).
 
 #### Current owners during activation
 

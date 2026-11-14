@@ -290,7 +290,7 @@ header, with the leader and term unchanged. Point it with
 The backup spec asks
 the harness to stop the slave holding its archive; after placement moves,
 `cluster/after-loss` checks the archive's out-of-reach row and offline log refusal.
-Which suites stay here and which move to roblox-game-server is specified in the
+Which suites stayed here and which moved to roblox-game-server is recorded in the
 [approved cluster-browser target](../../docs/agents/frontend/testing-strategy.md#approved-cluster-browser-target--hil-1985).
 The stand remains up after this command, as it does after `test:cluster:scenarios`.
 Every browser run starts with empty node log directories, rotation archives

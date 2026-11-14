@@ -768,12 +768,12 @@ the accessibility specs of chat, tasks and polls walk it too, and chat proves
 in its message moderation spec that the section lists its two message kinds
 (HIL-1638); where the specs live and what each kit adds is in
 [testing-strategy.md](../frontend/testing-strategy.md), "Which demo carries a
-spec". Online-testing also carries live cluster browser coverage: an admin's
-name rule reaches another admin without reload, governs a person's own-name
-change through one model request using the rule's model key, and is removed from
-the writer's view after the standard Apply action. The cluster spec checks the
-moderator and rules library placements and journal agents across all three
-masters while the leader and term stay unchanged.
+spec". Concert-tickets also carries live cluster browser coverage, moved from
+online-testing (HIL-2033): an admin's name rule reaches another admin without
+reload, governs a person's own-name change through one model request using the
+rule's model key, and is removed from the writer's view after the standard Apply
+action. The cluster spec checks the moderator and rules library placements and
+journal agents across all five masters while the leader and term stay unchanged.
 
 This document does not replace the root `agents.md` contract gate. Each
 implementation leaf must obtain its own exact approval before changing DB

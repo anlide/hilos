@@ -473,7 +473,7 @@ test('Status Works schedule, change and cancel reach live windows, public files 
   }
 })
 
-// FIXME(F-098, 2026-11-14): Post-lift open predicate times out at :605; on base the announcement form stays open at :553 · чужой · попытка 1 · HIL-2035
+// FIXME(F-098, 2026-11-14): The opened-period poll under the freeze times out before the lift; on base the first announcement form stays open · чужой · попытка 1 · HIL-2035
 test(
   'Status Works uses the published announcement during an actual freeze and completes once after lift before its planned end',
   { tag: '@quarantine:F-098' },

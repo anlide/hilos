@@ -804,7 +804,7 @@ specialized MariaDB topologies, journals across the database topology,
 fault/recovery proofs and cluster-browser transfers belong to HIL-1985. The
 phase-two matrix is in [The cluster stands](#the-cluster-stands--six-demos-six-shapes).
 The three existing stands retain their proofs except for cluster-browser areas
-that move within their view framework under the
+that moved within their view framework under the
 [approved target](frontend/testing-strategy.md#approved-cluster-browser-target--hil-1985).
 
 The remaining ordinary carrier activations do not build their products. PMD
