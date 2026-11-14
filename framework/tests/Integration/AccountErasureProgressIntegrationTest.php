@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\AccountOperation\AccountErasureFinal;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
@@ -155,10 +156,54 @@ final class AccountErasureProgressIntegrationTest extends FrameworkIntegrationTe
                 ['participant' => 'users_library', 'owner' => HilosAgentType::HILOS_USERS_LIBRARY, 'userId' => 43, 'done' => false],
             ],
             'waits' => [['participant' => 'delivery:mail', 'userId' => 41]],
+            'refusals' => [],
         ];
         self::assertSame($expected, AccountErasureProgressResolver::of(self::ROOT_ID)?->toArray());
         self::assertSame($expected, AccountErasureProgressResolver::of(self::FOLDED_ID)?->toArray());
         self::assertNull(AccountErasureProgressResolver::of(self::OUTSIDER_ID));
+    }
+
+    public function testRefusedFinalsStandInCircleOrderUntilTheAccountHasItsFinalResult(): void
+    {
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, 1790416800000)',
+            [self::FOLDED_ID, self::ROOT_ID],
+        );
+        $request = self::requestDeletion();
+        $operation = self::open($request);
+        self::assertTrue($this->asPerson(self::ROOT_ID, static fn (): bool => $request->actions->start()));
+        self::assertSame([], AccountErasureProgressResolver::of(self::ROOT_ID)?->refusals);
+
+        foreach ([self::ROOT_ID => 'hilos_access_log', self::FOLDED_ID => null] as $userId => $table) {
+            Database::transaction(
+                DatabaseNames::PRIMARY,
+                static fn (): bool => $operation->actions->noteFinalRefusal($userId, $table),
+            );
+        }
+        $standing = [
+            [AccountErasureProgress::userId => self::FOLDED_ID, AccountErasureProgress::table => null],
+            [AccountErasureProgress::userId => self::ROOT_ID, AccountErasureProgress::table => 'hilos_access_log'],
+        ];
+        self::assertSame($standing, AccountErasureProgressResolver::of(self::ROOT_ID)?->refusals);
+        self::assertSame($standing, AccountErasureProgressResolver::of(self::FOLDED_ID)?->toArray()[AccountErasureProgress::refusals]);
+
+        $finals = AccountErasureFinal::recordMissing($operation);
+        self::assertSame($standing, AccountErasureProgressResolver::of(self::ROOT_ID)?->refusals);
+        $folded = array_values(array_filter(
+            $finals,
+            static fn (AccountOperationAssignment $final): bool => $final->userId === self::FOLDED_ID,
+        ));
+        self::assertCount(1, $folded);
+        $this->asPerson(self::FOLDED_ID, static function () use ($folded): void {
+            Database::transaction(DatabaseNames::PRIMARY, static function () use ($folded): void {
+                Hilos::$db->accountOperationResults->actions->record($folded[0], AccountOperationResultPayload::fromJson('{}'));
+            });
+        });
+
+        self::assertSame(
+            [[AccountErasureProgress::userId => self::ROOT_ID, AccountErasureProgress::table => 'hilos_access_log']],
+            AccountErasureProgressResolver::of(self::ROOT_ID)?->refusals,
+        );
     }
 
     public function testAssignmentsAcrossStagesAndReconciliationDoNotDuplicatePartsOrWaits(): void

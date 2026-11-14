@@ -9,6 +9,7 @@ use Hilos\Database\Object\Item\AccountOperation as ObjectAccountOperation;
 use Hilos\Database\Object\Collection\AccountOperations as ObjectAccountOperations;
 use Hilos\Database\View\Item\AccountOperation;
 use Hilos\HilosException;
+use JsonException;
 
 /**
  * Persistence CAS only; a business driver must prove the stage transition and terminal outcome.
@@ -43,5 +44,21 @@ class AccountOperationActions extends DbActions
         $this->ensureCanWrite();
 
         return $this->getObjectCollection()->finish($this->object, $expectedStage, $outcome);
+    }
+
+    /**
+     * Keeps the safe reason an account's final was refused; a repeat for the same account replaces it.
+     *
+     * @param int $userId Account of the operation whose final was refused
+     * @param ?string $table Table still referencing the person, or null when the refusal named none
+     * @return bool Whether this statement kept the reason on the still open operation
+     * @throws HilosException When ownership, validation, storage or synchronization fails
+     * @throws JsonException When the table name is not valid UTF-8
+     */
+    public function noteFinalRefusal(int $userId, ?string $table): bool
+    {
+        $this->ensureCanWrite();
+
+        return $this->getObjectCollection()->noteFinalRefusal($this->object, $userId, $table);
     }
 }

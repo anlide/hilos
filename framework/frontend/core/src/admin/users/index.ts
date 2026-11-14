@@ -50,6 +50,7 @@ export {
   type HilosUserStanding,
   type HilosAccountErasure,
   type HilosAccountErasurePart,
+  type HilosAccountErasureRefusal,
   type HilosAccountErasureWait,
   type HilosUserCardStepUp,
   type HilosUserCardWindow,

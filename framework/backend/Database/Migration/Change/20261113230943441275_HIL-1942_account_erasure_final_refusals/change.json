@@ -1,0 +1,19 @@
+{
+    "format": 1,
+    "id": "20261113230943441275_HIL-1942_account_erasure_final_refusals",
+    "parts": [
+        {
+            "unit": "account_erasure_operation",
+            "up": "account_erasure_operation.sql",
+            "down": "account_erasure_operation_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261109072435317522_HIL-1987_drop_account_erasure_tables",
+                    "unit": "account_erasure_operation"
+                }
+            ],
+            "afterStubUpSha256": "1623d9d868531387f907bbf49391dfd96fcdbae6174b5b1c54092e570a82c6bc",
+            "afterStubDownSha256": "76829ea1906bd7a43c979d586f230a1bdc15c7a6aa697a7c42dc1e659efb1a80"
+        }
+    ]
+}

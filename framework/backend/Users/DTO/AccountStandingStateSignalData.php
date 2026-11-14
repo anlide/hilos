@@ -39,7 +39,8 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
      *     window: list<array{document: string, deadline: ?string}>,
      *     mergedInto: ?int, mergedIntoName: ?string} $accountStanding Their standing
      * @param ?array{startedAt: int, parts: list<array{participant: string, owner: string, userId: int, done: bool}>,
-     *     waits: list<array{participant: string, userId: int}>} $accountErasure Begun erasure progress, or null
+     *     waits: list<array{participant: string, userId: int}>, refusals: list<array{userId: int, table: ?string}>}
+     *     $accountErasure Begun erasure progress, or null
      * @throws InvalidFormatException When the id names no account (zero or negative)
      */
     public function __construct(

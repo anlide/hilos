@@ -29,15 +29,21 @@ transaction and rolls back with it, so a committed `completed_at` still means
 the whole circle succeeded. The detailed
 [erasure canon](account-operations.md#erasure) separates the conditional start
 at the request's personal owner from that owner's final completion after
-required results and the deletion of its person row (not in the code yet —
-HIL-1942). The start is built and inert (HIL-1939): the request carries
+required results and the deletion of its person row. The final is built and
+inert (HIL-1942): the personal owner's one transaction completes the request,
+deletes its merge row, rename journal, capture and person row and records
+`{"request":<id>|null}`, and a `RESTRICT` refusal rolls it back whole with a
+safe reason kept on the operation; it has no live caller until
+HIL-1950/HIL-1952 and its right to delete is not granted before the switch
+([*The erasure final*](account-operations.md#current-implementation)). The
+start is built and inert (HIL-1939): the request carries
 `started_at`, `start()` stamps it for the one winner against "Keep my account",
 and the person's agent and the sessions holder refuse the account from it, but
 nothing live calls it until HIL-1950/HIL-1952. HIL-1936 builds the separate,
 inert [operation and assignment carriers](account-operations.md#erasure); it
 adds no started field and does not change today's `completed_at` meaning.
 HIL-1937's participant result carrier and generic atomic step are built but
-inert; HIL-1942's final completion remains future physical work. The old writer, borrowed right
+inert. The old writer, borrowed right
 and current `completed_at` semantics remain until the live switch
 (not in the code yet — HIL-1952); the cancel/due race and the retained trace
 remain requirements.
@@ -158,8 +164,10 @@ result; it is built but has no live erasure consumer yet. After start, failure
 leaves an open operation to finish forward, without a common rollback
 (not in the code yet — HIL-1950). The fixed circle and folded-first ordering
 are prepared, with no live caller until HIL-1950/HIL-1952. The final personal
-delete follows required results and uses `RESTRICT` as the last safeguard
-(not in the code yet — HIL-1942). The canon names the personal, library,
+delete follows required results and uses `RESTRICT` as the last safeguard; it
+is built and inert (HIL-1942), and a refusal leaves the operation open with a
+safe reason, the account's number and the referencing table's name, kept on it.
+The canon names the personal, library,
 channel, export, sessions and project portions individually, including their
 saved anchors and post-commit limits. Preparation is inert: the due sweep above
 and force-purge below remain the only live producers until HIL-1952 enables the

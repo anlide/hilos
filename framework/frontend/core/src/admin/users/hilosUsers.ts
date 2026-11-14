@@ -1064,6 +1064,14 @@ export interface HilosAccountErasureWait {
   readonly userId: number
 }
 
+/** The safe reason an account's erasure final was refused, kept until it passes. */
+export interface HilosAccountErasureRefusal {
+  /** The person whose final was refused. */
+  readonly userId: number
+  /** The table still referencing the person, or `null` when the refusal named none. */
+  readonly table: string | null
+}
+
 /** The progress of a begun account erasure, as the card reads it. */
 export interface HilosAccountErasure {
   /** The operation request's start, in absolute server epoch milliseconds. */
@@ -1072,6 +1080,8 @@ export interface HilosAccountErasure {
   readonly parts: readonly HilosAccountErasurePart[]
   /** The participants whose work is still awaited. */
   readonly waits: readonly HilosAccountErasureWait[]
+  /** The reasons of refused finals, in the circle's order; empty when none stands. */
+  readonly refusals: readonly HilosAccountErasureRefusal[]
 }
 
 /** Erasure envelope; its entries are read independently below. */
@@ -1079,6 +1089,7 @@ const accountErasureSchema = z.looseObject({
   startedAt: z.number().int(),
   parts: z.array(z.unknown()),
   waits: z.array(z.unknown()),
+  refusals: z.array(z.unknown()).optional(),
 })
 
 /** One erasure part as the wire carries it. */
@@ -1095,9 +1106,16 @@ const accountErasureWaitSchema = z.looseObject({
   userId: z.number().int(),
 })
 
+/** One erasure refusal as the wire carries it. */
+const accountErasureRefusalSchema = z.looseObject({
+  userId: z.number().int(),
+  table: z.string().nullable(),
+})
+
 /**
  * Read erasure progress, or null when its envelope cannot be read. A malformed
- * or hidden part or wait drops out alone, preserving its readable neighbors.
+ * or hidden part, wait or refusal drops out alone, preserving its readable
+ * neighbors; an envelope without refusals has none.
  *
  * @param raw The progress as the page data or live frame carried it.
  */
@@ -1131,7 +1149,18 @@ export function readHilosAccountErasure(
     }
   }
 
-  return { startedAt: parsed.data.startedAt, parts, waits }
+  const refusals: HilosAccountErasureRefusal[] = []
+  for (const entry of parsed.data.refusals ?? []) {
+    const refusal = accountErasureRefusalSchema.safeParse(entry)
+    if (refusal.success) {
+      refusals.push({
+        userId: refusal.data.userId,
+        table: refusal.data.table,
+      })
+    }
+  }
+
+  return { startedAt: parsed.data.startedAt, parts, waits, refusals }
 }
 
 /** The standing and erasure of the person a card shows, and their mount lifecycle. */

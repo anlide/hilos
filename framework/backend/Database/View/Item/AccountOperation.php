@@ -32,6 +32,7 @@ use Hilos\Hilos;
  * @property-read int $updatedAt
  * @property-read ?int $finishedAt
  * @property-read ?string $outcome
+ * @property-read array<int, ?string> $finalRefusals Safe reason of each account's refused final by user id, [] before the first one
  * @property-read AccountOperationCircle $circle
  * @property-read AccountOperationActions $actions
  */
@@ -62,6 +63,7 @@ class AccountOperation extends DbItem
             ObjectAccountOperation::updatedAt => $this->_object->updatedAt,
             ObjectAccountOperation::finishedAt => $this->_object->finishedAt,
             ObjectAccountOperation::outcome => $this->_object->outcome,
+            ObjectAccountOperation::finalRefusals => $this->_object->finalRefusals,
             self::circle => $this->_object->circle(),
             default => parent::__get($name),
         };

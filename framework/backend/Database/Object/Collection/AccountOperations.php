@@ -28,6 +28,7 @@ use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlSortDirection;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
+use JsonException;
 
 /**
  * @extends Objects<ObjectAccountOperation>
@@ -344,6 +345,43 @@ class AccountOperations extends Objects
             . ' SET `outcome` = ?, `finished_at` = ?, `updated_at` = ?, `open_loser_user_id` = NULL'
             . ' WHERE `id` = ? AND `stage` = ? AND `finished_at` IS NULL',
             [$outcome->value, $now, $now, $operation->id, $expectedStage],
+            tryReconnect: false,
+            index: EntityAccountOperation::getDatabase()->connectionIndex,
+        );
+        $changed = Database::affectedRows(EntityAccountOperation::getDatabase()->connectionIndex) === 1;
+        $this->refresh($operation, $changed);
+
+        return $changed;
+    }
+
+    /**
+     * Keeps the safe reason an account's final was refused; a repeat for the same account replaces it.
+     *
+     * @param ObjectAccountOperation $operation Already issued object to synchronize
+     * @param int $userId Account of the operation whose final was refused
+     * @param ?string $table Table still referencing the person, or null when the refusal named none
+     * @return bool Whether this statement kept the reason on the still open operation
+     * @throws DatabaseException When storage or its binding fails
+     * @throws InvalidArgumentException When the query or sync signal is invalid
+     * @throws ValidationException When the stored refusals are malformed
+     * @throws JsonException When the table name is not valid UTF-8
+     * @throws WriteNotAllowedException When the current writer lacks the requested right
+     * @throws SourceChangeSubscriberException When a source subscriber fails
+     * @throws ObjectGetIdStringNotImplementedException When a saved row has no id
+     */
+    public function noteFinalRefusal(ObjectAccountOperation $operation, int $userId, ?string $table): bool
+    {
+        $this->guardUpdate($operation);
+        $refusals = $operation->finalRefusals;
+        $refusals[$userId] = $table;
+        Database::sql(
+            'UPDATE ' . static::entityClass()::getSqlTableName()
+            . ' SET `final_refusals` = ?, `updated_at` = ? WHERE `id` = ? AND `finished_at` IS NULL',
+            [
+                json_encode($refusals, JSON_THROW_ON_ERROR | JSON_FORCE_OBJECT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+                TimeHelper::nowMs(),
+                $operation->id,
+            ],
             tryReconnect: false,
             index: EntityAccountOperation::getDatabase()->connectionIndex,
         );

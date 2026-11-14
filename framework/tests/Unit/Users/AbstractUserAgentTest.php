@@ -193,7 +193,10 @@ final class AbstractUserAgentTest extends TestCase
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::stepUps]);
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::notificationPreferences]);
         self::assertSame(TruthSourceOperation::ALL, TestUserAgent::OWNS_DB_SET[HilosDbContext::userPhotos]);
-        self::assertSame([TruthSourceOperation::Add], TestUserAgent::OWNS_DB_SET[HilosDbContext::accountOperationResults]);
+        self::assertSame(
+            [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            TestUserAgent::OWNS_DB_SET[HilosDbContext::accountOperationResults],
+        );
         self::assertSame([], TestUserAgent::OWNS_DB);
         self::assertSame(
             [
@@ -229,6 +232,12 @@ final class AbstractUserAgentTest extends TestCase
         TruthSourceRegistry::checkCanCreate(HilosDbContext::stepUps, static fn (): array => ['42']);
         TruthSourceRegistry::checkCanCreate(HilosDbContext::notificationPreferences, static fn (): array => ['42']);
         TruthSourceRegistry::checkCanCreate(HilosDbContext::accountOperationResults, static fn (): array => ['hilos_user:42']);
+        TruthSourceRegistry::checkCanWriteItem(
+            HilosDbContext::accountOperationResults,
+            '1',
+            static fn (): array => ['hilos_user:42'],
+            TruthSourceOperation::Remove,
+        );
         foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
             TruthSourceRegistry::checkCanWriteItem(HilosDbContext::stepUps, '1', static fn (): array => ['42'], $operation);
         }
@@ -245,6 +254,18 @@ final class AbstractUserAgentTest extends TestCase
             static fn (): array => ['43'],
             TruthSourceOperation::Update,
         );
+    }
+
+    public function testThePersonsRowIsNotRemovedBeforeTheSwitch(): void
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $agent = new TestUserAgent('42');
+        OwnershipDeclaration::claimDbRows($agent);
+        OwnershipDeclaration::claimDbSet($agent);
+        ExecutionContext::setCurrentAgentId($agent->getId());
+
+        $this->expectException(WriteNotAllowedException::class);
+        TruthSourceRegistry::checkCanWriteItem(HilosDbContext::users, '42', static fn (): array => [], TruthSourceOperation::Remove);
     }
 
     public function testRenameJournalRowsOfAnotherPersonAreNotCreated(): void

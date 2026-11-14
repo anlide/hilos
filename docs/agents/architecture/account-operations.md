@@ -379,7 +379,10 @@ the operation (question 3). `AddressablePerson::require()`
 before the hop and the agent repeats the check; the service continuation of a
 future operation must not become a general way around that refusal. The begun
 request does not stop the agent: it goes on in the state *The closed account*
-describes, and stops only on the two facts above.
+describes, and stops only on the two facts above and, in an erasure, after its
+own final (*The erasure final*): `finishAccountErasure()` stops it once the final
+has committed or its saved result was returned, and a refusal or a wait leaves it
+running. The stop on the deleted row stays as the second line.
 
 **The write guard.** A claim over a set covers a write only when every set key
 the write touches is its own (`TruthSourceKeys::coversRow()`,
@@ -398,13 +401,17 @@ four the owner brings into being (`secondFactorSettings` with `Add`, `Update`
 and `Remove`, the last for its erasure part, `stepUps`,
 `notificationPreferences` and `userPhotos` whole), the rename journal with `Add`
 and `Update`, and the results of its own steps in an account operation
-(`accountOperationResults`) with `Add` alone, keyed by the agent's full id and
-not by the person's (HIL-1939; see *The participant result claim*). `READS_DB`
+(`accountOperationResults`) with `Add` and `Remove`, keyed by the agent's full id
+and not by the person's (HIL-1939; the `Remove` is for the one capture its final
+deletes, HIL-1942; see *The participant result claim*). `READS_DB`
 names the stored trust restrictions, the account operations and their
 assignments, and the notification deliveries, which its erasure part reads to
 see every delivery captured. Under these claims the agent deletes its child sets
 as its part of the erasure, `eraseAccountPersonalPart()` (prepared, no live
-caller until HIL-1950/HIL-1952). `renamePerson()` is the real atomic example
+caller until HIL-1950/HIL-1952). The claims do not yet reach what its final
+deletes: its `users` row, its rename journal and its merge row. A live agent's
+final is refused by the write guard until the switch grants them
+(not in the code yet — HIL-1952). `renamePerson()` is the real atomic example
 the target follows: the name and its journal row in one transaction of one
 owner, and what follows the commit is the library's, on the answer.
 
@@ -461,7 +468,8 @@ and refuses the start. `AbstractUserAgent::ownedDbSetKey()` returns the person's
 for its set collections, so a participant based on it branches on the results
 collection and uses the full agent id there, preserving the person id for its
 other sets. The person's agent is the first production participant
-(HIL-1939): `AbstractUserAgent` declares exactly that claim and those two
+(HIL-1939): `AbstractUserAgent` declares that claim, widened with `Remove` for
+the one capture its final deletes (HIL-1942, *The erasure final*), and those two
 readers, and its `ownedDbSetKey()` returns `getId()` (`hilos_user:<id>`) for the
 results and the person's id for every other set. The sessions holder is the
 second (HIL-1943): `AbstractSessionsLibraryAgent` declares the same claim, and
@@ -592,7 +600,8 @@ Apart from `erasureCircleOf()`, which the sessions library's `erasureOrderOf()`
 already calls, none of this has a live caller yet. The opening is called by the
 cutover (not in the code yet — HIL-1952). The reconciliation is called at the
 start and in the passes (not in the code yet — HIL-1951), after a `RESTRICT`
-refusal (not in the code yet — HIL-1942) and after a stage's failure
+refusal of a final, by `AccountErasureFinal::refused()` (*The erasure final*;
+prepared, no live caller until HIL-1950/HIL-1952), after a stage's failure
 (not in the code yet — HIL-1950), and after the start, before the notifications
 are deleted, by `AccountErasureCapture::recordAfterStart()`, which is written and
 waits for its caller (not in the code yet — HIL-1950).
@@ -912,7 +921,7 @@ A key starting with `capture:` is not part of the census:
 `AccountOperationExpectedSet` counts only `expect:` and `wait:`. No assignment,
 no other result and no log copies an address: the personal capture is the one
 record that holds them, and the person's final transaction deletes it
-(not in the code yet — HIL-1942).
+(*The erasure final*; prepared, no live caller until HIL-1950/HIL-1952).
 
 The readers and their predicates, none of them written yet:
 
@@ -950,6 +959,85 @@ that the capture did not keep stays a line without names, which is accepted, and
 a repeated link onto a captured event is harmless (the argument of HIL-1897).
 Everything above is prepared and has no live caller until the coordinator
 drives the capture (HIL-1950), live at the switch (HIL-1952).
+
+**The erasure final.** The last move of the person's agent in the erasure of its
+account (HIL-1942), after which the agent stops. The coordinator's side is
+`AccountErasureFinal` (`Auth/AccountOperation/AccountErasureFinal.php`), the
+agent's step `AccountErasurePersonalFinal::run()`, entered by
+`AbstractUserAgent::finishAccountErasure()`.
+
+- *The assignment.* `AccountErasureFinal::recordMissing($operation)` writes, for
+  every account of an open erasure's circle whose final is stored at no stage,
+  one assignment at the current stage, in circle order; a repeat writes only
+  what is missing. The key is `final:personal:<owner agent id>:<userId>`
+  (`AccountErasureFinal::personalKey()`, `final:personal:hilos_user:7:7` for the
+  account 7), the owner is
+  `new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$userId)`,
+  `user_id` is the account of the circle, and the payload is
+  `{"participant":"personal"}` (`AccountErasureParticipantCatalog::PERSONAL`),
+  as in the census. The key is no part of the census, like a `capture:` key.
+- *What is refused before any work, with nothing written.* A call on an
+  assignment that is not of an erasure, is not this person's final
+  (`personalKey()`) or names another account is a `ValidationException`; the
+  caller, the assignment and the stage are judged by the generic step
+  (`AccountOperationParticipantStep`), a closed stage included.
+- *The gate.* Read from the database in the step's transaction
+  (`AccountErasureFinal::missingPartsOf()`): every `expect:` part of the account
+  has a result, no `wait:` of the account is left unlifted, and no account is
+  folded into this one (`userMerges->foldedInto()`). Otherwise the agent answers
+  `AccountErasureFinalWaitsException`, whose `participants` name the parts and
+  `foldedUserIds` the folded accounts, and nothing is deleted. No person reads
+  its words; the coordinator tells the wait by its type and its two lists.
+- *The transaction.* One local transaction, in this order: the deletion request
+  is completed (at the operation's root the request the operation began, whose
+  `complete()` must hold; at a folded account the live request, if it has one),
+  then the account's own `userMerges` row, its rename journal
+  (`deleteByUser()`), its personal capture result
+  (`AccountOperationResultsActions::deleteForAssignment()`) and its `users` row.
+  The step records the result in the same transaction: exactly
+  `{"request":<id>}` for the request this final completed and
+  `{"request":null}` for an account with none (`AccountErasureFinalResult`).
+  `completed_at` of a request is written only together with the deletion.
+- *The refusal.* `RESTRICT` rolls the whole final back, the request included,
+  so nothing is half-deleted. Only the database's "row is referenced" refusal
+  (1451) is the final's refusal: `run()` asks it for the referencing table
+  (`ForeignKeyConstraintException::referencingTable()`), keeps the name only
+  when `Schema::getTable()` knows it (null otherwise) and throws
+  `AccountErasureFinalRefusedException`, which carries the account and the table
+  and never the engine's text, which stays on the previous exception for the
+  log. A refused child insert (1452) and every other failure are ordinary
+  failures of the step. The agent runs on, and the repeat is the same
+  assignment.
+- *The stop.* After a committed final, and after the saved result of an earlier
+  attempt, `finishAccountErasure()` calls `selfStop()`; a refusal or a wait
+  leaves the agent running. The stop on the deleted row stays as the second
+  line.
+- *The safe reason.* The coordinator answers the refusal with
+  `AccountErasureFinal::refused()`: it reconciles the census first, in its own
+  transaction, so that a part which appeared since the opening — the owner of
+  the row that refused — is expected as well, and then keeps the reason in a
+  second one. The column `hilos_account_operation.final_refusals` is NULL or an
+  object `{"<userId>": "<table>" | null}`; the operation's `finalRefusals`
+  reads it as a map, NULL as empty, and
+  `AccountOperationActions::noteFinalRefusal()` writes it, replacing the key of
+  the account on a repeat. A reason is the number of the account and the name of
+  a table, never the engine's text. It stands until a repeat of the final
+  passes: `refusalsOf()` lists the accounts of the circle with a reason and no
+  result of their final, in circle order, and the card's erasure block carries
+  them (*Erasure Cutover And Observation*).
+- *The end.* `AccountErasureFinal::end()` checks `hasFinal()` of every account
+  of the circle and, only when each has its result, finishes the operation as
+  completed, in one transaction; otherwise it writes nothing.
+  `missingPartsOf()` is the predicate the card's `parts[].done` will read
+  (not in the code yet — HIL-1950).
+
+All of it is prepared. The coordinator's calls — handing the finals out and the
+frames that carry them, answering a wait or a refusal, ending the operation —
+have no live caller until HIL-1950/HIL-1952, and the old path of the holder is
+unchanged. The person's agent receives the right to delete its `users` row, its
+rename journal and its merge row at the switch, in the commit that takes the
+holder's `Remove` away (not in the code yet — HIL-1952); until then the write
+guard refuses a live agent's final.
 
 **Creators.** `AbstractUsersLibraryAgent::OWNS_DB`
 (`Auth/Library/AbstractUsersLibraryAgent.php`) creates `users`,
@@ -1274,8 +1362,9 @@ path only at the [single cutover](#erasure-cutover-and-observation)
    sign-in, actions and late ordinary frames (*The closed account*; the fact is
    written by no live path yet). The personal agent, including that of a folded
    account, accepts only the internal continuation of its own operation and
-   stops after its own part (the stop after its last own write: not in the code
-   yet — HIL-1942). This finishing mode does not turn
+   stops after its own part: the stop follows its last own write, the final of
+   step 7, and is made by the agent itself (*The erasure final*; prepared, no
+   live caller until HIL-1950/HIL-1952). This finishing mode does not turn
    `AddressablePerson::require()` into a general bypass for a missing or folded
    account. The sessions holder's own
    participant step, `AbstractSessionsLibraryAgent::eraseAccountSessionsPart()`,
@@ -1397,26 +1486,35 @@ path only at the [single cutover](#erasure-cutover-and-observation)
      HIL-1950/HIL-1952.
 7. **The person row goes last, under `RESTRICT`.** After all required results
    for that account — holder, library, channels, export and project owners —
-   the personal owner deletes `userRenames`, its own capture — the one record
-   holding the addresses (the owner's decision of 2026-11-08) — and `users`,
-   and completes its existing request in one final local transaction. `RESTRICT` is the last
+   and when no wait for an owner stands and no account is folded into it, the
+   personal owner deletes its merge row, `userRenames`, its own capture — the
+   one record holding the addresses (the owner's decision of 2026-11-08) — and
+   `users`, and completes its existing request, in one final local transaction
+   (*The erasure final*). `RESTRICT` is the last
    safeguard, not the proof of completion: refusal rolls back only that final
-   transaction and leaves the operation open with a safe reason. A committed
+   transaction and leaves the operation open, and the coordinator keeps a safe
+   reason on it — the account's number and the name of the table that still
+   references it, never the engine's text. A committed
    `completed_at` means the actual end, never that erasure was queued. The
    request remains the trace it is today; an account without a request gains
-   none (not in the code yet — HIL-1942).
+   none, and its final's result says so (`{"request":null}`). The final is
+   built, prepared, with no live caller until HIL-1950/HIL-1952.
 8. **The circle finishes leaves first.** The fixed circle puts every folded
    account before its survivor (prepared, no live caller until
    HIL-1950/HIL-1952). Each folded
    account's owner removes its own `userMerges` row while the survivor still
-   exists, so erasure does not rely on the survivor key's `SET NULL`
-   (not in the code yet — HIL-1942). Stage assignments and answers carry the
+   exists, so erasure does not rely on the survivor key's `SET NULL`: the row
+   goes first in the folded account's final, and the survivor's final waits
+   while any account is still folded into it (*The erasure final*; prepared, no
+   live caller until HIL-1950/HIL-1952). Stage assignments and answers carry the
    same operation and stage throughout; duplicate, old or foreign answers
    advance nothing. Once started, the circle is completed forward without a
    transaction across frames (not in the code yet — HIL-1950).
 9. **The end follows the last result.** Each personal agent makes its last
-   own write before stopping; the coordinator records the end of the circle
-   only after the last required result (not in the code yet — HIL-1942).
+   own write before stopping, its final; the coordinator records the end of the
+   circle only after the final of every account of the circle
+   (`AccountErasureFinal::end()`; prepared, no live caller until
+   HIL-1950/HIL-1952).
    Coordinator start and subsequent passes over open work, and participant
    start or an operation frame, select the unfinished obligations from DB and
    continue them; a lost frame needs no new external event. There is no saved
@@ -1446,13 +1544,21 @@ switches neither live erasure entry:
   belongs to its implementing contract (not in the code yet — HIL-1953).
 - The card's first `page_response` and existing `hilos_account_standing_state`
   frame carry `accountErasure`: `null`, or `{startedAt, parts:
-  [{participant, owner, userId, done}], waits: [{participant, userId}]}`
-  (HIL-1954). The standing shows `erasing` after `merged` and before `blocked`.
+  [{participant, owner, userId, done}], waits: [{participant, userId}],
+  refusals: [{userId, table}]}` (HIL-1954, HIL-1942). The standing shows
+  `erasing` after `merged` and before `blocked`.
   Both carriers use the same viewer map: ids follow `users.id`, the other
   progress fields are not personal, and no names travel in the block. Existing
   admin view mode enables no mutation. The delivery is built and stays inert
-  until HIL-1952; `done` remains false (not in the code yet — HIL-1950), and
-  safe refusal is separate work (not in the code yet — HIL-1942).
+  until HIL-1952; `done` remains false (not in the code yet — HIL-1950).
+  `refusals` is the safe reason of the finals the database refused: the
+  accounts of the circle with a reason kept on the operation and no result of
+  their final yet, in circle order, `[]` when there are none
+  (`AccountErasureFinal::refusalsOf()`, read by the block's resolver; *The
+  erasure final*). The viewer sees the account's number and the name of the
+  table that still references it, never the engine's text. Nothing
+  writes a reason yet, so the list stays empty until the coordinator answers a
+  refusal (not in the code yet — HIL-1950). The live frame is unchanged.
 - The people list and card read durable erasure facts; ordinary rows keep
   Apply, and the people set gains no synthetic operation row
   (not in the code yet — HIL-1955).
@@ -1751,9 +1857,9 @@ coordinator and the participants keep are outside these rows, below.
 | `dataExports` | export agent `Add`/`Update`/`Remove` (`order()`, build, publish, forget); holder `Remove` in the erasure (`ofUser()->delete()`), then the post-commit `DataExportNotifier::forgetUser()` | export agent | the existing export executor, the cancellation and clean-up of the erased person's DB order included; the holder only hands over | the erasure's delete of the order; the forget frame becomes the obligation | the builder's check of the retained completed-erasure row stays ([data-export.md](data-export.md)). Price: the executor is a participant with a recorded result instead of a borrowed delete plus a fire-and-forget frame | No ordinary move remains. Owner DB erasure with result is prepared: `runErasurePart()` deletes the order and records `{"orders":<n>}`, the files leave after the commit through the existing sweep, and the publication checks also refuse an erasure that has begun (HIL-1946), with no live caller until HIL-1950/HIL-1952. Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 | `legalAcceptanceExports` | legal agent `Add`/`Update`/`Remove` (`order()` and the build); holder `Remove` in the erasure (`ofUser()->delete()`), then the post-commit `LegalAcceptancesExportNotifier::forgetUser()` | legal agent | the existing legal export executor, the orders to clean included; the clean-up of shared files touched by the person's acceptance — every ready and failed export removed with its file, the one being built started again — is not lost and not declared implemented by the new mechanism | the erasure's delete of the order; the forget frame becomes the obligation | a project may register no legal agent: the participant list says whether the table was never activated or holds data with no owner. Price: a participant with a recorded result; the file removal stays post-commit | No ordinary move remains. Owner DB erasure with result and existing shared-export fate is prepared: `eraseAccountPart()` deletes the account's order and every ready and failed export and records `{"ownOrders":<0|1>,"sharedExports":<n>}`, the files, the restart of the build and the sweep follow the commit, and an administrator whose erasure has begun orders no new export (HIL-1947), with no live caller until HIL-1950/HIL-1952. Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 | `userPhotos` | agent `Add`/`Update`/`Remove` (`put()`, `deleteForUser()`); holder `Remove` in the erasure, the file id joining the post-commit removal | the agent (born of the first photo) | the agent writes and deletes its row; the files library owns the registry row, not the photo row; no direct unlink of the disk inside the personal transaction | the erasure's `deleteForUser()` | the file id goes to `Hilos::$files->remove()` after the commit, as today ([files-registry.md](files-registry.md#removing)). Price: the file removal stays a post-commit step without automatic retry | No ordinary move remains. Personal child erasure with result: prepared, no live caller until HIL-1950/HIL-1952. Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
-| `userRenames` | agent `Add` (with the name, `renamePerson()`); agent `Update` (`linkEvent()` on a frame after the users library's `afterUserRenamed()` creates the feed event); agent `Update` (`unlinkEventsOf()` on ChatAgent's history-clear ask); holder `Remove` in the erasure (`deleteByUser()`; rows where the person was only the author stay, their author set null) | the agent | the agent of the renamed person, the link and unlink of the room event and the deletion of its journal included. The users library and `ChatAgent` hand it the change and do not write | the feed link after the event is written; the unlink before the room's history goes; the erasure's `deleteByUser()` | `UserRename.event_id` is a unique key onto the room's event. The HIL-1897 history-clear path obtains the unlink answer from the personal owner before deleting the event. Deleting the event clears the database column with `ON DELETE SET NULL`; readers may retain the deleted event id in memory, but no one reads it: feed lookup follows a live event, while history-clear and erasure selections read the table. A link frame received after unlink and before deletion is allowed, with no separate protection needed in HIL-1897. Price: two hand-overs between `ChatAgent` and the agent and an ordering obligation in the erasure | Owner feed link; owner-confirmed unlink before event deletion (implemented in HIL-1897). Event ids kept in the personal owner's capture, whose transaction takes the journal off them (`unlinkForErasure()`); no feed line for a person whose erasure has begun: prepared, no live caller until HIL-1950/HIL-1952. Final personal deletion after required results (not in the code yet — HIL-1942). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
-| `accountDeletions` | users library `Add` (`request()`, the admin card's `scheduleFor()`); agent `Update`/`Remove` (`cancel()` and `start()`, both conditional; nothing live calls `start()` yet); holder `Update` (`complete()`, conditional) | users library | the library creates; the agent cancels, starts and finishes. The conditional race of cancel against due stands, and "completed" is written only after the end; the trace of the request after the person is gone is allowed | the erasure's `complete()` | the started phase is the Entity's `started_at`, stamped by one conditional `UPDATE` that cancel also checks (HIL-1939); the minute sweep that finds due requests stays where sign-in exists and hands the start to the agent instead of erasing (not in the code yet — HIL-1952). Price: one conditional write more per request, one more indexed read in every `AddressablePerson::require()`, and the request's owner runs on in a finishing mode | No ordinary move remains. Conditional owner start against cancel is built (HIL-1939) and inert: no live caller until HIL-1950/HIL-1952. Owner completion only at the actual end (not in the code yet — HIL-1942). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
-| `users` | users library `Add` (registration and first administrator); agent `Update` by row (name, flag, block, theme, time zone); holder `Update`, `Remove` (the loser's block, the erased row); the chat's `Hilos::OWNS_DB`, laid by `TestOnlyCommand` for its seed commands, test-only | users library | The library creates; the agent changes and deletes its own row in the terminal operation (the loser's block, the erased row's final delete). The holder coordinates and is not a second `Update` or `Remove` | the loser's `setBlock()`, the erasure's `delete()` | every child with a hard key is gone before the row can go, and the row's deletion is what stops the agent today: the stop must follow the agent's own last write. Price: the agent's row claim gains `Remove` for one operation, and a finishing mode after the account is closed | Personal finishing mode built: it refuses the ordinary frames and lives until its last write (HIL-1939), inert with no live caller until HIL-1950/HIL-1952. Final personal delete after required results (not in the code yet — HIL-1942). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). Loser writes its own block after its merge row in the fact transaction (not in the code yet — HIL-1992). Old merge writer retires at its live switch (not in the code yet — HIL-1999). |
+| `userRenames` | agent `Add` (with the name, `renamePerson()`); agent `Update` (`linkEvent()` on a frame after the users library's `afterUserRenamed()` creates the feed event); agent `Update` (`unlinkEventsOf()` on ChatAgent's history-clear ask); holder `Remove` in the erasure (`deleteByUser()`; rows where the person was only the author stay, their author set null) | the agent | the agent of the renamed person, the link and unlink of the room event and the deletion of its journal included. The users library and `ChatAgent` hand it the change and do not write | the feed link after the event is written; the unlink before the room's history goes; the erasure's `deleteByUser()` | `UserRename.event_id` is a unique key onto the room's event. The HIL-1897 history-clear path obtains the unlink answer from the personal owner before deleting the event. Deleting the event clears the database column with `ON DELETE SET NULL`; readers may retain the deleted event id in memory, but no one reads it: feed lookup follows a live event, while history-clear and erasure selections read the table. A link frame received after unlink and before deletion is allowed, with no separate protection needed in HIL-1897. Price: two hand-overs between `ChatAgent` and the agent and an ordering obligation in the erasure | Owner feed link; owner-confirmed unlink before event deletion (implemented in HIL-1897). Event ids kept in the personal owner's capture, whose transaction takes the journal off them (`unlinkForErasure()`); no feed line for a person whose erasure has begun: prepared, no live caller until HIL-1950/HIL-1952. Final personal deletion after required results is built: the person's agent's final calls `deleteByUser()` after the merge row, prepared, with no live caller until HIL-1950/HIL-1952; the agent's right to delete (`Remove`) is not granted yet (not in the code yet — HIL-1952). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
+| `accountDeletions` | users library `Add` (`request()`, the admin card's `scheduleFor()`); agent `Update`/`Remove` (`cancel()` and `start()`, both conditional; nothing live calls `start()` yet); holder `Update` (`complete()`, conditional) | users library | the library creates; the agent cancels, starts and finishes. The conditional race of cancel against due stands, and "completed" is written only after the end; the trace of the request after the person is gone is allowed | the erasure's `complete()` | the started phase is the Entity's `started_at`, stamped by one conditional `UPDATE` that cancel also checks (HIL-1939); the minute sweep that finds due requests stays where sign-in exists and hands the start to the agent instead of erasing (not in the code yet — HIL-1952). Price: one conditional write more per request, one more indexed read in every `AddressablePerson::require()`, and the request's owner runs on in a finishing mode | No ordinary move remains. Conditional owner start against cancel is built (HIL-1939) and inert: no live caller until HIL-1950/HIL-1952. Owner completion only at the actual end is built: the person's agent's final calls `complete()` in the transaction that deletes the person row (its `Update`, HIL-1939), prepared, with no live caller until HIL-1950/HIL-1952. Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
+| `users` | users library `Add` (registration and first administrator); agent `Update` by row (name, flag, block, theme, time zone); holder `Update`, `Remove` (the loser's block, the erased row); the chat's `Hilos::OWNS_DB`, laid by `TestOnlyCommand` for its seed commands, test-only | users library | The library creates; the agent changes and deletes its own row in the terminal operation (the loser's block, the erased row's final delete). The holder coordinates and is not a second `Update` or `Remove` | the loser's `setBlock()`, the erasure's `delete()` | every child with a hard key is gone before the row can go, and the row's deletion is what stops the agent today: the stop must follow the agent's own last write. Price: the agent's row claim gains `Remove` for one operation, and a finishing mode after the account is closed | Personal finishing mode built: it refuses the ordinary frames and lives until its last write (HIL-1939), inert with no live caller until HIL-1950/HIL-1952. Final personal delete after required results is built in the person's agent's final, which stops the agent after its last write, prepared, with no live caller until HIL-1950/HIL-1952; the right to delete the row (`Remove`) is not granted yet (not in the code yet — HIL-1952). Old erasure writer retires at the live switch (not in the code yet — HIL-1952). Loser writes its own block after its merge row in the fact transaction (not in the code yet — HIL-1992). Old merge writer retires at its live switch (not in the code yet — HIL-1999). |
 | `verifications` | users library `Add`/`Update`/`Remove` (issue, spend, sweep; `deleteForUserOfType()` on a password change); holder `Remove` in the erasure (`deleteForIdentifiers()` on the current addresses, `deleteForUser()`) | users library | the users library stays the only owner — codes are outside the person's set (P-163) — and receives an obligation to erase by user id and by the current addresses, which it reads from the personal owner's capture. Runtime send attempts are not in this census | the erasure's `deleteForIdentifiers()` and `deleteForUser()` | the addresses are captured before the identities go, as `erasePerson()` does today; the obligation does not copy them, the library reads them from the personal owner's capture. Price: one obligation and one result at the library per erased account | No ordinary move remains. Library erasure by user id and captured addresses with result: prepared, no live caller until HIL-1950/HIL-1952. Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
 | `ChatDbContext::eventMessages` | `ChatAgent` `Add`/`Update`/`Remove` (`addMessage()` from the room page in its process, `deleteAll()`); chat holder `Update`/`Remove`, borrowed (`rePointAuthor()` in the merge, `deleteByAuthor()` in the erasure) | `ChatAgent` | `ChatAgent` itself moves the author or deletes the erased person's messages of every room in one transaction of its own, on the signal | `rePointAuthor()`, `deleteByAuthor()` | the attachments' file ids go to the files path after the commit. Price: one obligation and one result at `ChatAgent` per operation | No ordinary move remains. ChatAgent erasure part built (eraseAccountPart()), inert: no live caller until HIL-1950/HIL-1952. Old erasure writer retires at the live switch (not in the code yet — HIL-1952). Project merge participant declaration is ready: the directory's `chat` owner serves the merge too, and the merge step is built (`AccountMergeProjectStep`), with no live caller until HIL-2000 and HIL-1999. ChatAgent transfers authorship across all rooms in one transaction with result (not in the code yet — HIL-1997). Old merge writer retires at its live switch (not in the code yet — HIL-1999). |
 | `ChatDbContext::eventAttachments` | `ChatAgent` `Add`/`Update`/`Remove` (created with the message); chat holder `Remove`, borrowed (`deleteForMessages()`) | `ChatAgent` | `ChatAgent` deletes the DB links with the messages and hands the file ids to the current files path after the commit | `deleteForMessages()` | none beyond the messages' portion. Price: the file removal stays post-commit, with no new guarantee | No ordinary move remains. ChatAgent erasure part built (eraseAccountPart()), inert: no live caller until HIL-1950/HIL-1952. Old erasure writer retires at the live switch (not in the code yet — HIL-1952). |
@@ -1768,9 +1874,9 @@ moves.
 |---|---|---|---|
 | `sessions` | holder `Add`/`Update`/`Remove`: the anonymous row on the handshake, the bind at sign-in, the revert at sign-out, `killUserSessions()` in the merge and the erasure, the blocked notices released, the sweep `hilos_sessions_expire`; `SessionTestExpireCommand`, test-only | the holder, as today — a session has no instance owner ([Session Ownership](entity-libraries.md#session-ownership), HIL-1403). In the protocol the holder is a participant for its own rows: it releases every reference of a session to the person — the four `RESTRICT` columns, the waits, the cards — as its own step with a recorded result, before the person row can go | Created by the holder; `Add`/`Update`/`Remove` remain there. Release with an atomic participant result is prepared: `eraseAccountSessionsPart()` records `{"sessions":<n>,"accessLog":<m>}` and tells the tabs after the commit (HIL-1943), with no live caller until HIL-1950/HIL-1952. For merge, the holder ends loser sessions after the fact and survivor sessions after receipt when the loser's factor first protects it (not in the code yet — HIL-1995). Its own release work becomes a participant step at the erasure switch (not in the code yet — HIL-1952) and merge switch (not in the code yet — HIL-1999); no ordinary writer move. |
 | `accessLogEntries` | holder `Add`/`Update`/`Remove`: `record()`, the hourly sweep, `rePointToUser()` in the merge, `deleteForUser()` in the erasure | the same owner; it moves and deletes its own rows itself as a participant, on the signal | Created by the holder; `Add`/`Update`/`Remove` remain there. Erasure with an atomic participant result is prepared: `deleteForUser()` runs in the holder's `eraseAccountSessionsPart()` and its count is the result's `accessLog` (HIL-1943), with no live caller until HIL-1950/HIL-1952. Merge transfer commits with its own result; a repeat does not transfer twice (not in the code yet — HIL-1995). Its own delete/repoint become participant steps at erasure (not in the code yet — HIL-1952) and merge (not in the code yet — HIL-1999); no foreign writer is added. |
-| `userMerges` | holder `Add`/`Update`/`Remove`: `add()` in `foldAccount()`, `deleteForUser()` in the erasure | changes and deletion go with the personal life cycle to the personal owner: the loser's agent writes its own tombstone with its block in the transaction that gives its rows away, and the erasure of a folded account deletes its merge row with its own rows, leaves before survivors so the survivor's `SET NULL` does not run | Created by the holder today. Leaf-first personal erasure of the merge row is prepared separately (not in the code yet — HIL-1942). Loser tombstone creation, merge row before its own block, commits with the transfer result (not in the code yet — HIL-1992). Erasure deletion moves with the personal life cycle (not in the code yet — HIL-1952); tombstone creation moves to the loser with live merge (not in the code yet — HIL-1999). Keep the old holder rights required by merge after erasure switches. |
+| `userMerges` | holder `Add`/`Update`/`Remove`: `add()` in `foldAccount()`, `deleteForUser()` in the erasure | changes and deletion go with the personal life cycle to the personal owner: the loser's agent writes its own tombstone with its block in the transaction that gives its rows away, and the erasure of a folded account deletes its merge row with its own rows, leaves before survivors so the survivor's `SET NULL` does not run | Created by the holder today. Leaf-first personal erasure of the merge row is built: the folded account's final deletes it (`deleteForUser()`) before its own row, and the survivor's final waits while an account is folded into it, prepared, with no live caller until HIL-1950/HIL-1952. Loser tombstone creation, merge row before its own block, commits with the transfer result (not in the code yet — HIL-1992). Erasure deletion moves with the personal life cycle (not in the code yet — HIL-1952); tombstone creation moves to the loser with live merge (not in the code yet — HIL-1999). Keep the old holder rights required by merge after erasure switches. |
 | the operation record | The legacy `AccountDeletion` and `UserMerge` rows still carry the live request and tombstone. The common `AccountOperation*` carriers are built but inert on both live paths; the due erasure and force-purge paths and the existing merge remain the production producers. | The sessions holder owns operation creation/change and initial assignment creation; assignments are immutable. Each participant owns its future preparation and result records. | `AbstractSessionsLibraryAgent::OWNS_DB` declares operations `[Add, Update]` and assignments `[Add]`. The record actions preserve exact repeats and reject conflicts; `AccountMergeOpening::open()` atomically stores a merge, its two initial assignments and the project's expected composition, and `AccountMergeOpening::reconcile()` appends what is missing, but neither has a live caller. Stage advance/finish are low-level persistence only; they do not establish start, participant results, business transitions or live recovery/failover. The common tables, whole-table `PURGE` verdicts and migration are documented above. Merge stage correlation (not in the code yet — HIL-2000), merge end after receipt, results and copy absence (not in the code yet — HIL-1998), and the live merge and erasure switches (not in the code yet — HIL-1999/HIL-1952) remain future work. |
-| the participants' preparations and results | The immutable result carrier and generic atomic step exist. The person's agent (HIL-1939), the sessions holder (HIL-1943), the data export agent (HIL-1946), the legal agent (HIL-1947), the users library (HIL-1944) and ChatAgent (HIL-1949) declare the result claim, and their steps are prepared with no live caller until HIL-1950/HIL-1952. | Each participant owns its preparation or result, written in the same transaction as its work; the coordinator may create the initial assignment and never edits a recorded result. These durable records use `Hilos::$db` collections and actions, not agent memory or a runtime overlay. A result carrying rows given away — the merge's hand-over copy at the loser — is personal data with a bounded life: kept until the survivor's confirmation, then deleted by its one writer. The personal capture of an erasure is a result with personal data too, the one place the person's addresses are kept; the final transaction of the person's agent deletes it (not in the code yet — HIL-1942), see *The erasure captures*. | Participant results are stored in `hilos_account_operation_result`, at most one immutable JSON payload per assignment. `owner_agent_id` is the full participant agent id and the result set key; the assignment foreign key cascades. The table is `PURGE` under anonymization and is not journaled. `record()` requires the participant transaction and its `Add` set claim, returns an exact semantic repeat, and rejects a changed result. `AccountOperationParticipantStep::run()` checks the caller, assignment and owner, returns a saved result before new work, then runs work and records its result in one transaction; an equal-result refusal or duplicate insert may return the committed winner only after that transaction rolls back. `forOperationStage()` returns a typed `AccountOperationResults` collection in result-id order. The production participant claims are the person's agent's (HIL-1939), the sessions holder's (HIL-1943), the data export agent's (HIL-1946), the legal agent's (HIL-1947), the users library's (HIL-1944) and ChatAgent's (HIL-1949); no consumer of their results is wired until HIL-1950/HIL-1952. Merge reservations belong to each personal owner (not in the code yet — HIL-1988); each releases its own with result before the fact (not in the code yet — HIL-1990). Loser work/result and full copy (not in the code yet — HIL-1992); survivor work/receipt (not in the code yet — HIL-1994); holder work/result (not in the code yet — HIL-1995); project participants are built — `AccountMergeProjectStep` with its `{"rows":{…}}` result — with no live call; chat work/result (not in the code yet — HIL-1997). Only the loser cleans its copy after receipt and stops afterward (not in the code yet — HIL-1998). Live merge uses these records only at cutover (not in the code yet — HIL-1999). Live erasure uses them only at cutover (not in the code yet — HIL-1952). |
+| the participants' preparations and results | The immutable result carrier and generic atomic step exist. The person's agent (HIL-1939), the sessions holder (HIL-1943), the data export agent (HIL-1946), the legal agent (HIL-1947), the users library (HIL-1944) and ChatAgent (HIL-1949) declare the result claim, and their steps are prepared with no live caller until HIL-1950/HIL-1952. | Each participant owns its preparation or result, written in the same transaction as its work; the coordinator may create the initial assignment and never edits a recorded result. These durable records use `Hilos::$db` collections and actions, not agent memory or a runtime overlay. A result carrying rows given away — the merge's hand-over copy at the loser — is personal data with a bounded life: kept until the survivor's confirmation, then deleted by its one writer. The personal capture of an erasure is a result with personal data too, the one place the person's addresses are kept; the final transaction of the person's agent deletes it, with the person's own `Remove` over its set of results (`deleteForAssignment()`). The final is prepared, with no live caller until HIL-1950/HIL-1952, and its right over the other rows is not granted yet (not in the code yet — HIL-1952); see *The erasure captures* and *The erasure final*. The final's own result, exactly `{"request":<id>|null}`, is recorded in the same transaction (`AccountErasureFinalResult`). | Participant results are stored in `hilos_account_operation_result`, at most one immutable JSON payload per assignment. `owner_agent_id` is the full participant agent id and the result set key; the assignment foreign key cascades. The table is `PURGE` under anonymization and is not journaled. `record()` requires the participant transaction and its `Add` set claim, returns an exact semantic repeat, and rejects a changed result. `AccountOperationParticipantStep::run()` checks the caller, assignment and owner, returns a saved result before new work, then runs work and records its result in one transaction; an equal-result refusal or duplicate insert may return the committed winner only after that transaction rolls back. `forOperationStage()` returns a typed `AccountOperationResults` collection in result-id order. The production participant claims are the person's agent's (HIL-1939), the sessions holder's (HIL-1943), the data export agent's (HIL-1946), the legal agent's (HIL-1947), the users library's (HIL-1944) and ChatAgent's (HIL-1949); no consumer of their results is wired until HIL-1950/HIL-1952. Merge reservations belong to each personal owner (not in the code yet — HIL-1988); each releases its own with result before the fact (not in the code yet — HIL-1990). Loser work/result and full copy (not in the code yet — HIL-1992); survivor work/receipt (not in the code yet — HIL-1994); holder work/result (not in the code yet — HIL-1995); project participants are built — `AccountMergeProjectStep` with its `{"rows":{…}}` result — with no live call; chat work/result (not in the code yet — HIL-1997). Only the loser cleans its copy after receipt and stops afterward (not in the code yet — HIL-1998). Live merge uses these records only at cutover (not in the code yet — HIL-1999). Live erasure uses them only at cutover (not in the code yet — HIL-1952). |
 
 **Deltas against the first census.** The census of the research base listed
 the four chat tables as "`ChatAgent` owns, the holder borrows"; the chat users
@@ -1852,7 +1958,7 @@ page.
 | The survivor applied the rows and died before confirming, or an old frame arrives again | the survivor's own writes — the wait, the trusts — with its confirmation in one transaction, or none of them | the survivor, at start, reads its set and the obligation; the loser's agent sends again until the confirmation is recorded | the admission fence rejects stale DB_SYNC and hand-over rows independently of receipt; the confirmation names the operation and stage, so a frame already confirmed answers with it and a frame of a closed operation is refused | the restriction holds until the confirmation, then lifts |
 | An owner dies, stops idle or moves to another node in the middle | its results so far; its open assignments; its grants gone while it is down ([agent-lifecycle.md](agent-lifecycle.md#when-a-worker-dies)) | the owner, placed and started again by the next frame or by the coordinator's ask, on whichever node the placement names; it reads its records in its start and finishes | the address in the record is the agent's type and index, not a process or a node, so the new incarnation is the same owner; the old copy is stopped before the new one starts ([daemon-lifecycle.md](daemon-lifecycle.md#node-health-and-failover-hil-183)) | a longer wait; the operation stays open and names the participant |
 | A required owner is missing: a table with rows and no agent registered for it | the rows; the assignment the coordinator wrote; no result | nobody, until the project registers the owner again; there is no fallback writer, and taking away the last owner of rows that stay is a separate decision (question 4), not an administrator's act and not a way to close the obligation | no fallback writer takes the rows, so no row gets two writers and nothing is deleted by a process that does not own it (question 4) | an explicit open obligation, *waiting for an owner of …*; the account stays closed |
-| A child with a hard key was forgotten and no participant deleted it | the child row; the agent's final transaction rolled back, the person row and the journal still there | the agent, which retries the final step once the owner of the row has been added to the participants | `RESTRICT` refused the delete and the agent's transaction rolled back, so the request is not marked carried out and nothing is half-deleted | the operation stays open at the final step with the refusal named; no account comes back |
+| A child with a hard key was forgotten and no participant deleted it | the child row; the agent's final transaction rolled back, the person row and the journal still there; on the operation, the account's number and the referencing table's name, never the engine's text (`final_refusals`) | the coordinator, which reconciles the census after the refusal and keeps the reason (`AccountErasureFinal::refused()`), and the agent, which repeats the final on the same assignment once the owner of the row is a participant and has its result | `RESTRICT` refused the delete and the agent's transaction rolled back, so the request is not marked carried out and nothing is half-deleted; the next refusal of the same account replaces its reason, and a passed final ends it; prepared, with no live caller until HIL-1950/HIL-1952 | the operation stays open at the final step, and the card's erasure block names the refusal in `refusals`; no account comes back |
 | A soft reference stayed behind: a delivery whose notification is gone, a mention set null | the delivery rows under the channel's assignment; the rows meant to stay — the request, a rename whose author is set null, a merge whose survivor is set null | the channel, from the recipient and the ids in its assignment, recorded before the notifications went | a delete by recorded ids is the same delete twice; the rows meant to stay are part of no obligation | the channel is listed as expected until its result; the trace rows carry the deleted person's number, as the journal's receipts already do ([change-log.md](change-log.md#one-scheduled-attempt-across-parts)) |
 | The channel is switched off | its journal rows and its retention term; the assignment to delete the erased recipient's rows | the channel's own agent, which stays available for retention and erasure (question 4); the dispatcher only stops creating new deliveries | switching off writes nothing and deletes nothing; when the started fact exists, the built guard skips the send attempt and refuses an administrator retry in the channel's own words | the channel erasure part records `{"deliveries":<n>}`; prepared, with no live caller until HIL-1950/HIL-1952. History and term unchanged |
 | A backup is restored with an operation unfinished | whatever had committed when the archive was taken: a started fact, some results, a tombstone with its copy, rows half moved | the coordinator and every owner, at their start after the restore, exactly as after a death: open records are selected from the facts and finished | every step repeats from a recorded result or a conditional write; the archive carries the records because they are rows — which is why they are rows | the account is as closed as it was at the archive's moment, and the operation finishes; a restore into a lesser environment classifies the records with the rest ([backup-anonymization.md](backup-anonymization.md#core-rule)) |
@@ -1865,10 +1971,12 @@ operation.
 
 For erasure, missing owners leave an open obligation without a fallback
 (prepared, no live caller until HIL-1950/HIL-1952); a final `RESTRICT` refusal rolls back only
-the personal owner's final transaction and leaves the operation unfinished
-(not in the code yet — HIL-1942). The card's first page reply and live updates
-carry that wait (HIL-1954), built and inert until the cutover; safe refusal
-is not carried yet (not in the code yet — HIL-1942). These recovery
+the personal owner's final transaction and leaves the operation unfinished,
+with the account's number and the referencing table's name kept on it
+(*The erasure final*; prepared, no live caller until HIL-1950/HIL-1952).
+The card's first page reply and live updates
+carry that wait (HIL-1954) and that safe refusal, in the block's `refusals`,
+built and inert until the cutover. These recovery
 paths become live with the common erasure cutover
 (not in the code yet — HIL-1952). Their cluster/backup proof includes lost,
 duplicate and old frames, owner sleep/death/movement, missing owners and a
@@ -1940,10 +2048,13 @@ covers their failures and the absence of a second effect
 For erasure these are target guarantees with separate implementing owners:
 HIL-1939 built the closure and the internal finishing mode (*The erasure
 start*, *The closed account*), and HIL-1937 the generic step for atomic
-participant work/result; both are inert until the live path. The live
-participants, final personal delete and the coordinator's end after all
-results remain with later leaves (not in the code yet — HIL-1942), as does
-forward recovery from restored DB obligations
+participant work/result, and HIL-1942 the person's agent's final, the safe
+reason of its refusal and the coordinator's end after every final
+(*The erasure final*); all of them are inert until the live path. The
+coordinator that drives the participants and the finals remains with a later
+leaf (not in the code yet — HIL-1950), as does the right to delete the person
+row (not in the code yet — HIL-1952), and forward recovery from restored DB
+obligations
 (not in the code yet — HIL-1951). They take effect on due/force-purge at the
 single cutover (not in the code yet — HIL-1952), with failure and backup evidence
 in its own leaf (not in the code yet — HIL-1964). No timing bound, common

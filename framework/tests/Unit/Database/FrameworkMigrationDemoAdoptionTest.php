@@ -26,6 +26,11 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
 
     private const string ACCOUNT_DELETION_START_CHANGE = '20261112235132210121_HIL-1939_account_deletion_start';
 
+    /** Operation stub snapshot the HIL-1987 parts were published with; the HIL-1942 part declares the current one. */
+    private const string ACCOUNT_OPERATION_TABLES_UP_SHA256 = 'b45d411a90362b9cba870265e8071e4870dc3c69ff22ea7df450bedb44f1beba';
+
+    private const string ACCOUNT_ERASURE_FINAL_REFUSALS_CHANGE = '20261113230943441275_HIL-1942_account_erasure_final_refusals';
+
     private const array GENESIS_UNITS = [
         'access_log', 'account_deletion', 'admin_view_mode_latch', 'analytics', 'auth_block', 'change_log',
         'country', 'country_name', 'data_export', 'database_marker', 'file', 'file_variant', 'i18n_reflow',
@@ -289,6 +294,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $start = $this->assertAccountDeletionStartPair($project->root, 21, $catalog, $schema);
                 $origins[] = $start;
                 $coveredParts[] = $start->parts[0];
+                $finalRefusals = $this->assertAccountErasureFinalRefusalsPair($project->root, 22, $catalog, $schema);
+                $origins[] = $finalRefusals;
+                $coveredParts[] = $finalRefusals->parts[0];
                 $selectedUnits = array_column($schema->selectedUnits($project->facade), 'key');
                 self::assertSame(
                     $this->partRecords($catalog->partsForUnits($selectedUnits)),
@@ -606,7 +614,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame($partKey, $change->parts[0]->key());
                 $source = $catalog->part($changeId, $key);
                 self::assertFalse($source->introducesUnit);
-                self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
+                self::assertSame($key === 'account_erasure_operation'
+                    ? self::ACCOUNT_OPERATION_TABLES_UP_SHA256
+                    : FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->upPath)),
                     $source->afterStubUpSha256);
                 self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($key)->downPath)),
                     $source->afterStubDownSha256);
@@ -894,6 +904,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $origins[] = $install;
             $startIndices = [167, 124, 124, 105, 105, 107];
             $origins[] = $this->assertAccountDeletionStartPair($project->root, $startIndices[$index], $catalog, $schema);
+            $finalRefusalsIndices = [168, 125, 125, 106, 106, 108];
+            $origins[] = $this->assertAccountErasureFinalRefusalsPair($project->root, $finalRefusalsIndices[$index], $catalog, $schema);
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);
@@ -1063,6 +1075,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         }
         array_push($momentChanges, ...$this->assertTrustRestrictionPairs($root, 8, $catalog, $schema));
         $momentChanges[] = $this->assertAccountDeletionStartPair($root, 10, $catalog, $schema);
+        $momentChanges[] = $this->assertAccountErasureFinalRefusalsPair($root, 11, $catalog, $schema);
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
@@ -1071,6 +1084,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             ...$momentFiles,
             ...$this->trustRestrictionFiles($root, 8),
             ...$this->accountDeletionStartFiles($root, 10),
+            ...$this->accountErasureFinalRefusalsFiles($root, 11),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1087,8 +1101,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
 
     /**
      * Baseline projects whose tracks are not enumerated pair by pair still receive the five parts,
-     * and after them the trust restriction's install and the grant moment's change (HIL-1900), and
-     * the deletion start's change (HIL-1939).
+     * and after them the trust restriction's install and the grant moment's change (HIL-1900), the
+     * deletion start's change (HIL-1939) and the erasure final refusals' change (HIL-1942).
      *
      * @param list<object> $projects Registered projects in registry order
      */
@@ -1100,6 +1114,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $starts = [7 => 16, 9 => 7, 10 => 3];
         $restrictionStarts = [7 => 21, 9 => 12, 10 => 8];
         $deletionStarts = [7 => 23, 9 => 14, 10 => 10];
+        $finalRefusalsStarts = [7 => 24, 9 => 15, 10 => 12];
         $parts = [
             'second_factor' => 'd387464f16783b3b26bc52ebfa8b58854d4fac281f71c95c06777b3ac2d71601',
             'second_factor_backup_code' => '97fb53ec00e51e213c862962f7bd493a885a3a467f4d176dced9ea1c84cbf362',
@@ -1126,6 +1141,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             }
             array_push($seen, ...$this->assertTrustRestrictionPairs($project->root, $restrictionStarts[$index], $catalog, $schema));
             $seen[] = $this->assertAccountDeletionStartPair($project->root, $deletionStarts[$index], $catalog, $schema);
+            $seen[] = $this->assertAccountErasureFinalRefusalsPair($project->root, $finalRefusalsStarts[$index], $catalog, $schema);
             $selected = array_column($schema->selectedUnits($project->facade), 'key');
             $onDisk = [];
             foreach (glob($project->root . '/*_down.sql') as $down) {
@@ -1289,12 +1305,14 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         }
         array_push($momentChanges, ...$this->assertTrustRestrictionPairs($root, 7, $catalog, $schema));
         $momentChanges[] = $this->assertAccountDeletionStartPair($root, 9, $catalog, $schema);
+        $momentChanges[] = $this->assertAccountErasureFinalRefusalsPair($root, 10, $catalog, $schema);
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
             ...$momentFiles,
             ...$this->trustRestrictionFiles($root, 7),
             ...$this->accountDeletionStartFiles($root, 9),
+            ...$this->accountErasureFinalRefusalsFiles($root, 10),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1451,6 +1469,63 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
     {
         return $root . '/' . sprintf('%03d', $number)
             . '_framework_change_95dd7cd4dd466b6484d24c16ee42c65f7c2d8ef3d869640f4009d7678cfdbf5e';
+    }
+
+    /**
+     * The safe reasons of refused erasure finals arrive as a change continuing the operation chain past
+     * the HIL-1987 drop part, and declare the stubs current now (HIL-1942).
+     *
+     * @param string $root Migration track of the project
+     * @param int $number Number of the change pair
+     * @param FrameworkMigrationCatalog $catalog Framework change catalog
+     * @param FrameworkSchemaCatalog $schema Framework schema catalog
+     * @return FrameworkMigrationOrigin The change origin
+     */
+    private function assertAccountErasureFinalRefusalsPair(
+        string $root,
+        int $number,
+        FrameworkMigrationCatalog $catalog,
+        FrameworkSchemaCatalog $schema,
+    ): FrameworkMigrationOrigin {
+        $base = $this->accountErasureFinalRefusalsBase($root, $number);
+        $change = $catalog->verifyPair(FsPath::read($base . '.sql'), FsPath::read($base . '_down.sql'));
+        self::assertSame(FrameworkMigrationOrigin::CHANGE, $change->kind);
+        self::assertSame(['account_erasure_operation'], $change->units);
+        self::assertCount(1, $change->parts);
+        self::assertSame(self::ACCOUNT_ERASURE_FINAL_REFUSALS_CHANGE . '/account_erasure_operation', $change->parts[0]->key());
+        $source = $catalog->part(self::ACCOUNT_ERASURE_FINAL_REFUSALS_CHANGE, 'account_erasure_operation');
+        self::assertSame([$source->toArray()], $this->partRecords($change->parts));
+        self::assertFalse($source->introducesUnit);
+        self::assertSame(['20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_operation'], $source->requires);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('account_erasure_operation')->upPath)),
+            $source->afterStubUpSha256);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('account_erasure_operation')->downPath)),
+            $source->afterStubDownSha256);
+
+        return $change;
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $number Number of the erasure final refusals' change pair
+     * @return list<string> Its two files in the order glob() lists them
+     */
+    private function accountErasureFinalRefusalsFiles(string $root, int $number): array
+    {
+        $base = $this->accountErasureFinalRefusalsBase($root, $number);
+
+        return [$base . '.sql', $base . '_down.sql'];
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $number Number of the erasure final refusals' change pair
+     * @return string Its base path, without extension
+     */
+    private function accountErasureFinalRefusalsBase(string $root, int $number): string
+    {
+        return $root . '/' . sprintf('%03d', $number)
+            . '_framework_change_6fbbc48d92c100f9276836cca48647259d8ae4870b36acfc6e76c3c603b09980';
     }
 
     /**

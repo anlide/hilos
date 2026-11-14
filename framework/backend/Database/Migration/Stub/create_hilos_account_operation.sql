@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS `hilos_account_operation` (
     `finished_at` BIGINT NULL,
     `open_loser_user_id` INT UNSIGNED NULL,
     `outcome` VARCHAR(32) COLLATE utf8mb4_nopad_bin NULL,
+    `final_refusals` JSON DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uq_account_operation_request` (`request_id`),
     UNIQUE KEY `uq_account_operation_open_loser` (`open_loser_user_id`),

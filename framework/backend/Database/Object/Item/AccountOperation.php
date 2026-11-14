@@ -52,10 +52,22 @@ class AccountOperation extends Object_
     public const string updatedAt = 'updatedAt';
     public const string finishedAt = 'finishedAt';
     public const string outcome = 'outcome';
+    public const string finalRefusals = 'finalRefusals';
 
     /** @throws ValidationException When this is not a merge or its stored choices are malformed */
     public AccountMergeChoice $mergeChoice {
         get => $this->mergeChoice();
+    }
+
+    /**
+     * Safe reason of each account's refused final by user id: the table still referencing the person, or null
+     * when the refusal named none; empty before the first refusal.
+     *
+     * @var array<int, ?string>
+     * @throws ValidationException When the stored refusals are malformed
+     */
+    public array $finalRefusals {
+        get => $this->finalRefusals();
     }
 
     /**
@@ -98,6 +110,7 @@ class AccountOperation extends Object_
             self::updatedAt => $this->entity->updated_at,
             self::finishedAt => $this->entity->finished_at,
             self::outcome => $this->entity->outcome,
+            self::finalRefusals => $this->entity->final_refusals,
         ];
     }
 
@@ -181,5 +194,28 @@ class AccountOperation extends Object_
         if ($announce) {
             $this->broadcastDbSyncAfterSync(false, $diff, $previous);
         }
+    }
+
+    /**
+     * @return array<int, ?string> Safe reason of each account's refused final by user id; empty before the first refusal
+     * @throws ValidationException When the stored refusals are not an object of account ids to a table name or null
+     */
+    private function finalRefusals(): array
+    {
+        if ($this->entity->final_refusals === null) {
+            return [];
+        }
+        $refusals = JsonHelper::tryDecode($this->entity->final_refusals);
+        if ($refusals === null
+            || array_filter(
+                $refusals,
+                static fn (mixed $table, int|string $userId): bool => !is_int($userId) || $userId < 1
+                    || ($table !== null && !is_string($table)),
+                ARRAY_FILTER_USE_BOTH,
+            ) !== []) {
+            throw new ValidationException('The stored account operation final refusals are invalid.');
+        }
+
+        return $refusals;
     }
 }

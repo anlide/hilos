@@ -1423,6 +1423,7 @@ describe('account erasure on the user card (HIL-1954)', () => {
     startedAt: 1_800_000_000_000,
     parts: [{ participant: 'profile', owner: 'user', userId: 7, done: false }],
     waits: [{ participant: 'merge', userId: 8 }],
+    refusals: [],
   }
 
   it('reads page progress and live progress alongside an erasing standing', () => {
@@ -1531,6 +1532,7 @@ describe('account erasure on the user card (HIL-1954)', () => {
       startedAt: erasure.startedAt,
       parts: [...erasure.parts, nextPart],
       waits: [...erasure.waits, nextWait],
+      refusals: [],
     })
     expect(
       readHilosAccountErasure({ ...erasure, parts: [], waits: [] }),
@@ -1538,6 +1540,7 @@ describe('account erasure on the user card (HIL-1954)', () => {
       startedAt: erasure.startedAt,
       parts: [],
       waits: [],
+      refusals: [],
     })
     for (const raw of [
       null,
@@ -1549,6 +1552,64 @@ describe('account erasure on the user card (HIL-1954)', () => {
     ]) {
       expect(readHilosAccountErasure(raw)).toBeNull()
     }
+  })
+
+  it('reads the refusals of the finals from the page data and the live frame', () => {
+    const { scopes } = userStore()
+    const page = scopes.page()!
+    const { connection, emit } = frameConnection()
+    const card = createHilosUserStanding({ scopes, connection })
+    const refused = [
+      { userId: 8, table: 'hilos_access_log' },
+      { userId: 7, table: null },
+    ]
+    page.data.set(HILOS_USER_ERASURE_SECTION, { ...erasure, refusals: refused })
+    page.data.set(
+      HILOS_USER_STANDING_SECTION,
+      wireStanding({ shown: 'erasing' }),
+    )
+
+    card.start()
+    expect(card.erasure.get()?.refusals).toEqual(refused)
+
+    // A refusal that passed leaves the next frame, and the frame wins.
+    emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+      userId: 7,
+      accountStanding: wireStanding({ shown: 'erasing' }),
+      accountErasure: { ...erasure, refusals: [refused[1]] },
+    })
+    expect(card.erasure.get()?.refusals).toEqual([refused[1]])
+    emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+      userId: 7,
+      accountStanding: wireStanding({ shown: 'erasing' }),
+      accountErasure: { ...erasure, refusals: [] },
+    })
+    expect(card.erasure.get()).toEqual(erasure)
+    card.dispose()
+  })
+
+  it('drops malformed or hidden refusals one at a time and reads a missing member as none', () => {
+    const next = { userId: 9, table: 'hilos_access_log' }
+    const withoutRefusals = {
+      startedAt: erasure.startedAt,
+      parts: erasure.parts,
+      waits: erasure.waits,
+    }
+    expect(
+      readHilosAccountErasure({
+        ...erasure,
+        refusals: [
+          { userId: 7, table: null, future: true },
+          { userId: 8, table: 5 },
+          { userId: 8 },
+          { userId: HIDDEN_VALUE, table: 'hilos_access_log' },
+          null,
+          next,
+        ],
+      })?.refusals,
+    ).toEqual([{ userId: 7, table: null }, next])
+    expect(readHilosAccountErasure(withoutRefusals)).toEqual(erasure)
+    expect(readHilosAccountErasure({ ...erasure, refusals: {} })).toBeNull()
   })
 
   it('restarts without duplicate subscriptions and forgets both values on dispose', () => {

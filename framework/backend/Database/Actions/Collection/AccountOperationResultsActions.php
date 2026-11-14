@@ -7,6 +7,7 @@ namespace Hilos\Database\Actions\Collection;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationResultRepeatedException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Collection\AccountOperationResults as ObjectAccountOperationResults;
@@ -49,6 +50,34 @@ class AccountOperationResultsActions extends DbActions
     public function recordNew(AccountOperationAssignment $assignment, AccountOperationResultPayload $payload): AccountOperationResult
     {
         return $this->recordResult($assignment, $payload, allowRepeat: false);
+    }
+
+    /**
+     * Deletes the saved result of one assignment inside the participant transaction that ends what it kept -
+     * the personal capture of an erasure goes in the final of its own agent (HIL-1942).
+     *
+     * The row leaves through its object, so every reader hears the delete. An assignment with no saved
+     * result is not an error.
+     *
+     * @param int $assignmentId Assignment whose saved result goes
+     * @return bool Whether a saved result was deleted
+     * @throws DatabaseException When no transaction is open
+     * @throws HilosException When the remove right over the owner's set, the lookup or storage refuses the delete
+     */
+    public function deleteForAssignment(int $assignmentId): bool
+    {
+        if (!Database::hasOpenTransactions()) {
+            throw new DatabaseException('An account operation result must be deleted inside its participant transaction');
+        }
+        $result = $this->objectCollection->byAssignment($assignmentId);
+        if ($result === null) {
+            return false;
+        }
+        $this->ensureCanWriteSet($result->ownerAgentId, TruthSourceOperation::Remove);
+        $result->delete();
+        unset($this->objectCollection[$result->id]);
+
+        return true;
     }
 
     /**

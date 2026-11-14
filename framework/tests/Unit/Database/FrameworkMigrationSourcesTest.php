@@ -190,6 +190,29 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $catalog->verifyCurrentStubs(['account_deletion']);
     }
 
+    /**
+     * The operation stub has moved on past the HIL-1987 parts (HIL-1942): they keep the snapshot they were
+     * published with, and the chain goes on in the part that adds the safe reasons of refused finals.
+     */
+    public function testRealAccountErasureFinalRefusalsContinueTheOperationChainWithCurrentStubHashes(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $part = $catalog->part('20261113230943441275_HIL-1942_account_erasure_final_refusals', 'account_erasure_operation');
+
+        $this->assertSame(['20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_operation'], $part->requires);
+        $this->assertFalse($part->introducesUnit);
+        $unit = $schema->unit('account_erasure_operation');
+        $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+        $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
+        $this->assertSame(
+            'b45d411a90362b9cba870265e8071e4870dc3c69ff22ea7df450bedb44f1beba',
+            $catalog->part('20261109072435317522_HIL-1987_drop_account_erasure_tables', 'account_erasure_operation')->afterStubUpSha256,
+        );
+        // The operation chain crosses the assignment and result units, so the stubs are checked together.
+        $catalog->verifyCurrentStubs(['account_erasure_operation', 'account_erasure_assignment', 'account_erasure_result']);
+    }
+
     public function testRealPushSubscriptionRevisionCarriesPartWithCurrentStubHashesAndChain(): void
     {
         $schema = new FrameworkSchemaCatalog();
@@ -302,7 +325,10 @@ final class FrameworkMigrationSourcesTest extends TestCase
             '20261109072435317521_HIL-1987_account_operation_tables/account_erasure_operation',
             '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_assignment',
         ], $catalog->part('20261109072435317522_HIL-1987_drop_account_erasure_tables', 'account_erasure_operation')->requires);
-        self::assertCount(9, $parts);
+        self::assertSame([
+            '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_operation',
+        ], $catalog->part('20261113230943441275_HIL-1942_account_erasure_final_refusals', 'account_erasure_operation')->requires);
+        self::assertCount(10, $parts);
         $catalog->verifyCurrentStubs($units);
     }
 

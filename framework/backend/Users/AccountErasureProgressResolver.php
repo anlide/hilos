@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Users;
 
+use Hilos\Auth\AccountOperation\AccountErasureFinal;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationExpectedSet;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidJsonException;
+use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use JsonException;
@@ -29,6 +32,8 @@ final class AccountErasureProgressResolver
      * @return ?AccountErasureProgress Begun open erasure, or null when none covers the account
      * @throws HilosException When a DB reader, item wrapper or stored expectation refuses the lookup
      * @throws InvalidJsonException When a stored expectation payload cannot be decoded
+     * @throws EmptyValueException Never for the person's agent type; declared by the final key
+     * @throws ValueTooLongException Never for the person's agent type and an integer id; declared by the final key
      */
     public static function of(int $userId): ?AccountErasureProgress
     {
@@ -54,6 +59,8 @@ final class AccountErasureProgressResolver
      * @return ?AccountErasureProgress Begun open erasure, or null before its start or without a database
      * @throws HilosException When a DB reader, item wrapper or stored expectation refuses the lookup
      * @throws JsonException When a stored expectation payload cannot be decoded
+     * @throws EmptyValueException Never for the person's agent type; declared by the final key
+     * @throws ValueTooLongException Never for the person's agent type and an integer id; declared by the final key
      */
     private static function read(int $userId): ?AccountErasureProgress
     {
@@ -94,6 +101,11 @@ final class AccountErasureProgressResolver
             ];
         }
 
-        return new AccountErasureProgress($request->startedAt, array_values($parts), array_values($waits));
+        return new AccountErasureProgress(
+            $request->startedAt,
+            array_values($parts),
+            array_values($waits),
+            AccountErasureFinal::refusalsOf($operation),
+        );
     }
 }

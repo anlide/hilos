@@ -33,6 +33,7 @@ class AccountOperation extends Entity
     public const string finished_at = 'finished_at';
     public const string open_loser_user_id = 'open_loser_user_id';
     public const string outcome = 'outcome';
+    public const string final_refusals = 'final_refusals';
 
     public const string _table = 'hilos_account_operation';
     public const string _primary = self::id;
@@ -50,6 +51,7 @@ class AccountOperation extends Entity
         self::finished_at,
         self::open_loser_user_id,
         self::outcome,
+        self::final_refusals,
     ];
     public const array _types = [
         self::id => PhpType::INTEGER->value,
@@ -65,6 +67,7 @@ class AccountOperation extends Entity
         self::finished_at => PhpType::INTEGER->value,
         self::open_loser_user_id => PhpType::INTEGER->value,
         self::outcome => PhpType::STRING->value,
+        self::final_refusals => PhpType::JSON->value,
     ];
     public const array _moments = [self::created_at, self::updated_at, self::finished_at];
     public const array _indexes = [
@@ -91,4 +94,5 @@ class AccountOperation extends Entity
     public ?int $finished_at = null;
     public ?int $open_loser_user_id = null;
     public ?string $outcome = null;
+    public ?string $final_refusals = null;
 }

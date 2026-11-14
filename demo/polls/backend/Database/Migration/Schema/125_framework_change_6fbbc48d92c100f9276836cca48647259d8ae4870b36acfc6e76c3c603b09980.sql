@@ -1,0 +1,3 @@
+-- hilos-framework: {"format":1,"kind":"change","units":["account_erasure_operation"],"parts":[{"changeId":"20261113230943441275_HIL-1942_account_erasure_final_refusals","unit":"account_erasure_operation","upSha256":"d864361f6362daca09961cf9053dc493c5cce39d3129af4c00c2a7c7c51e0ceb","downSha256":"4da7f52c114afd9624811214fba79de3c9adbf9d10a180be0c03ed62f2607df3"}],"upSha256":"d864361f6362daca09961cf9053dc493c5cce39d3129af4c00c2a7c7c51e0ceb","downSha256":"4da7f52c114afd9624811214fba79de3c9adbf9d10a180be0c03ed62f2607df3"}
+ALTER TABLE `hilos_account_operation`
+    ADD COLUMN `final_refusals` JSON DEFAULT NULL AFTER `outcome`;

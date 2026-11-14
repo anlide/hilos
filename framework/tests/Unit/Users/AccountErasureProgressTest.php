@@ -32,7 +32,18 @@ final class AccountErasureProgressTest extends TestCase
                 'done' => false,
             ]],
             'waits' => [['participant' => 'delivery:mail', 'userId' => 42]],
+            'refusals' => [],
         ], self::progress()->toArray());
+    }
+
+    public function testRefusalsTravelInTheirOrderAndKeepAnUnnamedTable(): void
+    {
+        $refusals = [
+            [AccountErasureProgress::userId => 43, AccountErasureProgress::table => 'hilos_access_log'],
+            [AccountErasureProgress::userId => 42, AccountErasureProgress::table => null],
+        ];
+
+        self::assertSame($refusals, self::progress($refusals)->toArray()['refusals']);
     }
 
     public function testWireFieldsUseThePeopleIdVerdictAndOpenComputedFacts(): void
@@ -48,6 +59,10 @@ final class AccountErasureProgressTest extends TestCase
             'waits' => WireField::each([
                 'participant' => WireField::notPersonal(),
                 'userId' => WireField::column(HilosDbContext::users, ObjectUser::id),
+            ]),
+            'refusals' => WireField::each([
+                'userId' => WireField::column(HilosDbContext::users, ObjectUser::id),
+                'table' => WireField::notPersonal(),
             ]),
         ], AccountErasureProgress::wireFields());
     }
@@ -93,8 +108,11 @@ final class AccountErasureProgressTest extends TestCase
         }
     }
 
-    /** @return AccountErasureProgress One expected owner and one participant waiting for its owner */
-    private static function progress(): AccountErasureProgress
+    /**
+     * @param list<array{userId: int, table: ?string}> $refusals Standing refusals of the erasure's finals
+     * @return AccountErasureProgress One expected owner and one participant waiting for its owner
+     */
+    private static function progress(array $refusals = []): AccountErasureProgress
     {
         return new AccountErasureProgress(1790416800123, [[
             AccountErasureProgress::participant => AccountErasureParticipantCatalog::PERSONAL,
@@ -104,6 +122,6 @@ final class AccountErasureProgressTest extends TestCase
         ]], [[
             AccountErasureProgress::participant => 'delivery:mail',
             AccountErasureProgress::userId => 42,
-        ]]);
+        ]], $refusals);
     }
 }

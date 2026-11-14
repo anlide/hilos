@@ -9,6 +9,7 @@ use Hilos\Auth\AccountOperation\AccountErasureDeliveryCapture;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalCapture;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
+use Hilos\Auth\AccountOperation\AccountErasurePersonalFinal;
 use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\AccountOperation\AccountOperationActivation;
@@ -16,6 +17,8 @@ use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
+use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureUncapturedException;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
@@ -207,7 +210,10 @@ use Throwable;
  * account has closed, the agent captures the person's addresses and whatever the project asks for
  * before the ways in are deleted ({@see captureForErasure()}, HIL-1940). After the capture the
  * agent deletes its own child sets as its part of the erasure ({@see eraseAccountPersonalPart()},
- * HIL-1941).
+ * HIL-1941). Once every required part of the account has its result, the agent's final deletes its
+ * merge row, its rename journal, its capture and its own row, completes the deletion request, and
+ * the agent stops after this last write ({@see finishAccountErasure()}, HIL-1942); the right to
+ * delete the person's row, journal and merge row it receives at the switch (HIL-1952).
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -409,7 +415,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     claims that set whole (owner's decision, 2026-10-10, HIL-1409). A claim that may add is not
      *     borrowed, so the start does not wait for it. Legal acceptances are removed here only by the test hold command.
      *     The results of the agent's own steps in an account operation are added here and never
-     *     changed (HIL-1939): their set is keyed by the agent's full id, not by the person's.
+     *     changed (HIL-1939): their set is keyed by the agent's full id, not by the person's. The
+     *     capture of the ways in is removed here too, in the final's transaction (HIL-1942).
      *     The second-factor settings are also removed here, in the agent's part of the erasure (HIL-1941).
      */
     public const array OWNS_DB_SET = [
@@ -428,7 +435,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::notificationPreferences => TruthSourceOperation::ALL,
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update],
-        HilosDbContext::accountOperationResults => [TruthSourceOperation::Add],
+        HilosDbContext::accountOperationResults => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
     ];
 
     /**
@@ -600,6 +607,39 @@ abstract class AbstractUserAgent extends AbstractAgent
                 return AccountErasureProjectResult::payloadOf($erasure);
             },
         );
+    }
+
+    /**
+     * Ends the person's account as the agent's final in its erasure (HIL-1942), then stops the agent;
+     * a repeat answers the saved final and stops the agent again.
+     *
+     * Called by the agent in its own frame with the final assignment the coordinator wrote. Before any
+     * work the assignment must be an erasure's, the person's own final, and name this agent's account;
+     * every part of the account must have its result, no wait for an owner may stand, and no account
+     * may still be folded into this one. Each refusal writes nothing. Inside the step's transaction the
+     * final completes the deletion request and deletes the merge row, the rename journal, the capture
+     * and the person's row, and records which request it completed ({@see AccountErasurePersonalFinal}).
+     * The stop is asked after the step returned, outside its transaction, so it follows only a
+     * committed or saved final; a refusal leaves the agent running.
+     *
+     * SCAFFOLD: no live caller until the erasure coordinator delivers the final (HIL-1950), live at the switch (HIL-1952).
+     *
+     * @param int $assignmentId The person's final the coordinator gave this agent
+     * @return AccountOperationResult Committed final or the saved outcome of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
+     * @throws ValidationException When the operation is no erasure, the assignment is not this person's final, or the
+     *     deletion request cannot be completed
+     * @throws AccountErasureFinalWaitsException When a part of the account has no result, a wait for an owner stands,
+     *     or another account is still folded into this one
+     * @throws AccountErasureFinalRefusedException When a row of another table still references the person; nothing is written
+     * @throws Throwable When storage or a truth-source guard fails, preserving the original failure
+     */
+    public function finishAccountErasure(int $assignmentId): AccountOperationResult
+    {
+        $result = AccountErasurePersonalFinal::run($assignmentId, $this->userId);
+        $this->selfStop();
+
+        return $result;
     }
 
     /**

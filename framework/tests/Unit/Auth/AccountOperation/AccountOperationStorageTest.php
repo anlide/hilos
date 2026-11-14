@@ -428,10 +428,11 @@ final class AccountOperationStorageTest extends TestCase
     {
         self::assertSame([
             'id', 'kind', 'request_id', 'root_user_id', 'loser_user_id', 'merge_choice', 'circle_user_ids',
-            'stage', 'created_at', 'updated_at', 'finished_at', 'open_loser_user_id', 'outcome',
+            'stage', 'created_at', 'updated_at', 'finished_at', 'open_loser_user_id', 'outcome', 'final_refusals',
         ], EntityAccountOperation::_columns);
         self::assertSame(PhpType::STRING->value, EntityAccountOperation::_types[EntityAccountOperation::kind]);
         self::assertSame(PhpType::INTEGER->value, EntityAccountOperation::_types[EntityAccountOperation::open_loser_user_id]);
+        self::assertSame(PhpType::JSON->value, EntityAccountOperation::_types[EntityAccountOperation::final_refusals]);
         self::assertSame([
             Entity::INDEX_UNIQUE => true,
             Entity::INDEX_COLUMNS => ['open_loser_user_id'],

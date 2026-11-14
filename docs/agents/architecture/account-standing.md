@@ -235,14 +235,25 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   `{userId, accountStanding, accountErasure}`, `AccountStandingStateSignalData`)
   brings each change to either block (HIL-1954). `accountErasure` is `null`
   without a begun, open erasure, otherwise
-  `{startedAt, parts: [{participant, owner, userId, done}], waits: [{participant, userId}]}`.
+  `{startedAt, parts: [{participant, owner, userId, done}], waits: [{participant, userId}], refusals: [{userId, table}]}`.
   `startedAt` is the operation request's `started_at` in epoch milliseconds;
-  parts name expected owners and waits name participants without one. The
-  admin view mode uses `AccountErasureProgress::wireFields()` on both carriers:
-  both `userId` fields follow the `users.id` column verdict; `startedAt`,
-  `participant`, `owner` and `done` are not personal. Null stays null. No names
-  are carried. `done` stays false until HIL-1950; safe refusal is not in this
-  block yet (HIL-1942). The preparation stays inert until HIL-1952 opens erasure.
+  parts name expected owners and waits name participants without one.
+  `refusals` is the safe reason of the finals the database refused (HIL-1942):
+  one entry for each account of the circle that has a reason kept on the
+  operation and no result of its final yet, in circle order, `[]` when there is
+  none (`AccountErasureFinal::refusalsOf()`, read by
+  `AccountErasureProgressResolver::read()`). `userId` is the number of the
+  account and `table` the name of the table that still references it, or `null`
+  when the refusal named no table the schema knows; the engine's text never
+  travels. The admin view mode uses `AccountErasureProgress::wireFields()` on
+  both carriers: the `userId` of `parts`, `waits` and `refusals` follows the
+  `users.id` column verdict; `startedAt`, `participant`, `owner`, `done` and
+  `table` are not personal. Null stays null. No names are carried. The
+  frontend core reads the block as `HilosAccountErasure`
+  (`readHilosAccountErasure()`), `refusals` as `HilosAccountErasureRefusal[]`.
+  `done` stays false until HIL-1950, and `refusals` stays empty until the
+  coordinator answers a refusal (not in the code yet — HIL-1950). The
+  preparation stays inert until HIL-1952 opens erasure.
 - **Refusal.** `account_frozen` with status 403, as `errorCode` of
   `subscription_page_error` and of `action_error`. It is not a 401 and opens no
   sign-in.
