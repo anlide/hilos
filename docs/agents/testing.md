@@ -817,10 +817,10 @@ the future Visits/cubes/rebuild work of HIL-1402.
 ## The cluster stands — six demos, six shapes
 
 The six cluster carriers are separate from the twelve ordinary-demo target:
-four stands work today — the three phase-one stands and roblox-game-server —
-while file-gallery-manager and concert-tickets are approved targets under the
-owner's decision of 2026-11-04 (HIL-1985). The marked rows below name the
-leaves that will build them; neither of the two stands exists yet.
+five stands work today — the three phase-one stands, roblox-game-server and
+file-gallery-manager — while concert-tickets remains an approved target under
+the owner's decision of 2026-11-04 (HIL-1985). The concert-tickets row below
+names the remaining planned stand; it does not exist yet.
 See the [ordinary/cluster phase boundary](#ordinary-and-cluster-phases) for
 HIL-1984 and HIL-1985; it does not retire or unpark a scenario below.
 
@@ -841,7 +841,7 @@ carried every scenario on a single shape is retired (HIL-1218).
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes, 43 waiting ballast retries after a slave returns without another ask (cleanup checked with `composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18`) |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart, 48 daemon hang self-heal |
 | roblox-game-server | Vue | three masters and one slave: `m1` without capacity — it votes and hosts no placed work; `m2`, `m3` workers with `ram=10`, `slots=64`; slave `s1` worker with `ram=4`, `slots=64` | Galera of two data nodes and the `garbd` arbitrator, which votes and stores no data, behind HAProxy; the application uses both data nodes: HAProxy gives each node a data node of its own — `m1` and `m3` the first, `m2` and `s1` the second — so a row written by one node is always read by a node on the other data node, and a node whose data node is down is led to the living one | 26 database is one cluster, 49 a row written by one node is read by another through another data node, past the process copy, and after that connection is lost; role and placement proofs below (not in the code yet — HIL-2036); Galera fault proofs below (not in the code yet — HIL-2040) |
-| file-gallery-manager | React | two masters without capacity and three slave workers with `ram=10` / `6` / `4`, each with `slots=64` (not in the code yet — HIL-2032) | primary and one read-only replica behind one address that always leads to the primary, no automatic promotion (not in the code yet — HIL-2032) | 31 (not in the code yet — HIL-2032) |
+| file-gallery-manager | React | two masters without capacity and three slave workers with `ram=10` / `6` / `4`, each with `slots=64` | primary and one read-only replica behind one address that always leads to the primary, no automatic promotion | 31 |
 | concert-tickets | Angular | five equal master workers with `ram=10`, `slots=64`, no slaves (not in the code yet — HIL-2033) | Galera of three data nodes behind HAProxy; the application uses all three (not in the code yet — HIL-2033) | 26/27/28 (not in the code yet — HIL-2041) |
 
 `ram` means abstract units of declared placement capacity, not gigabytes of RAM
@@ -1070,7 +1070,7 @@ TLS on binance-btc-tracker; placement and failover with a stable leader on
 ecommerce-shop; shared database facts and simultaneous schema rollout on
 online-testing. Roblox adds roles with and without capacity and a Galera
 arbitrator. Gallery adds the even quorum of two masters that must stop safely,
-and primary/replica (not in the code yet — HIL-2032). Tickets adds a quorum of five masters and
+and primary/replica. Tickets adds a quorum of five masters and
 three-node Galera (not in the code yet — HIL-2033). The owner's decision of
 2026-11-04 (HIL-1985) chooses different shapes for meaningful tests.
 The former primary/replica and Galera database topologies were replaced by
@@ -1078,10 +1078,10 @@ one MariaDB on binance-btc-tracker, ecommerce-shop and online-testing by the
 owner's decision of 2026-10-14.
 Scenario **26** runs on roblox-game-server, whose database is one Galera
 cluster of two data nodes and the `garbd` arbitrator, and scenario **49** runs
-beside it. Scenarios **27/28/31 have no current carrier**: their
-implementations, registry entries and shape guards stay in the harness for
-future stands. They are not run or counted as passed by any current matrix.
-Scenario 31 belongs on file-gallery-manager (not in the code yet — HIL-2032).
+beside it. Scenarios **27/28 have no current carrier**: their implementations,
+registry entries and shape guards stay in the harness for future stands. They
+are not run or counted as passed by any current matrix. Scenario **31** is
+carried by file-gallery-manager.
 Scenarios 26/27/28 come to concert-tickets (not in the code yet — HIL-2041);
 their component model and preconditions count votes separately from data
 members. Scenarios 27/28 also take the two-data-node + `garbd` form on
@@ -1170,7 +1170,13 @@ nodes and entry: the exports, and the published files the entry serves from
 `/published` through an internal `/__hilos_files/` location once a node's files
 library has checked the reader (its nodes carry `HILOS_FILES_XACCEL_LOCATION`
 for it). Ecommerce-shop has no entry, cluster browser suite or additional export
-volume. Each cluster stand whose demo declares Status gives it a separate named
+volume. File-gallery-manager shares its named `data-export` volume among all
+five nodes and its entry; the entry serves React's `frontend/dist` at
+`/usr/share/nginx/html`. Its primary alone mounts the change-log initialization
+and provisioning scripts; the read-only replica receives the databases and
+grant through replication.
+
+Each cluster stand whose demo declares Status gives it a separate named
 volume over its root, suffixed with `${HILOS_STAND_SUFFIX:-}` and shared by all
 its nodes and the entry where one exists.
 
@@ -1303,8 +1309,11 @@ The nodes use one address leading to the writable database. A replica is
 declared by `MARIADB_MASTER_HOST` and has no `MYSQL_DATABASE`, `MYSQL_USER` or
 `MYSQL_PASSWORD` of its own: its schema and users arrive from the primary.
 The harness uses the database service's application credentials. Scenario 26
-asks every member of a multi-primary; scenario 31 asks every replica. A proxy
-is labeled `hilos.database.proxy: "true"`; scenario 28 reads its server states.
+asks every member of a multi-primary; scenario 31 asks every replica. Scenario 31
+first waits for each replica to answer as the application user, which a fresh
+replica does only once replication has brought that user, and only then judges
+its replication threads. A proxy is labeled `hilos.database.proxy: "true"`;
+scenario 28 reads its server states.
 A Galera arbitrator (`garbd`) votes and stores no data: it is declared apart
 from the data members, labeled `hilos.database.voter: "true"`, never labeled
 `hilos.database.member` and never asked SQL. Scenario 26 asks for the READ bit of

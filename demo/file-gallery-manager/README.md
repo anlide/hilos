@@ -185,6 +185,90 @@ For test selection and stand lifecycle details, see
 [`docs/agents/testing.md`](../../docs/agents/testing.md) and the
 [frontend testing strategy](../../docs/agents/frontend/testing-strategy.md).
 
+## Cluster stand
+
+`docker/docker-compose.cluster.yml` declares two masters, `m1` and `m2`, with
+no placement capacity, and three slave workers: `s1` with `ram=10`, `s2` with
+`ram=6`, and `s3` with `ram=4`; each worker has `slots=64`. Its scenario
+matrix contains only **31**, which checks that the replica keeps up with the
+primary.
+
+The five nodes and CLI use the `file-gallery-manager-cluster-mysql` database
+address, which always reaches the MariaDB primary. An asynchronous read-only
+replica receives the application database, the change-log journal and its
+grant through replication. Application connections do not read from the
+replica, and the stand has no automatic promotion.
+
+One nginx `entry` is the browser-facing endpoint. It serves the built React
+app from `frontend/dist` and sends HTTP and WebSocket traffic to the two master
+endpoints. The entry and all five nodes share the named `data-export` volume.
+The Mailpit service and Playwright runner are available in the `e2e` profile.
+
+From this demo directory:
+
+| Command | What it does |
+|---|---|
+| `composer run test:cluster:up` | start the cluster stand |
+| `composer run test:cluster:restart` | restart the stand with the current code |
+| `composer run test:cluster:status` | show container and node status |
+| `composer run test:cluster:inspect -- m1` | inspect a node as JSON |
+| `composer run test:cluster:logs -- m1` | follow a node's container logs |
+| `composer run test:cluster:client -- m1 test:cluster:inspect` | run a CLI command through a selected node |
+| `composer run test:cluster:scenarios` | run the declared matrix; `-- 31` selects its scenario |
+| `composer run test:cluster:e2e` | run the cluster browser phase |
+| `composer run test:cluster:e2e-time-zone` | prepare the cluster browser time-zone environment |
+| `composer run test:cluster:down` | stop the stand |
+| `composer run test:cluster:down-volumes` | stop the stand and remove its volumes |
+
+### Compose layout and journal replication
+
+The root compose file includes `docker/cluster/local.yml` and
+`docker/cluster/tooling.yml`. The local services extend the standalone parts
+in `docker/cluster/database.yml`, `docker/cluster/node.yml` and
+`docker/cluster/entry.yml`. `docker/cluster/tooling.yml` supplies the CLI and
+the e2e-only Mailpit and Playwright runner. The local nodes load `.env.example`,
+`common.env` and their fixed `nodes/<id>.env` file.
+
+The primary alone mounts `docker/mysql/init-change-log.sh` and
+`docker/mysql/provision-change-log.sh`. Initialization on a fresh primary, or an
+explicit provisioning run for an existing database, creates the change-log
+journal and grants the application user access. Binary-log replication carries
+the main database, journal, grants and trigger definitions to the replica; the
+replica does not run the initialization scripts. The application installs
+journal triggers through the primary, and row-based replication does not fire
+them again when applying row changes on the replica. With binary logging
+enabled, MariaDB requires
+`log_bin_trust_function_creators=1` for the application user to create those
+triggers; without it, MariaDB returns error 1419.
+
+### Standalone components
+
+`docker/cluster/standalone.env.example` shows the Compose interpolation values
+for running the database, a node or the nginx entry as separate components.
+Copy it outside the checkout, set reachable database and peer addresses, choose
+the node identity file, and provide matching TLS files and shared export
+storage. From this demo directory, resolve the component configurations with
+Compose 2.40.3 or newer:
+
+```bash
+docker compose --env-file /srv/hilos/file-gallery-manager.env -p gallery-db -f docker/cluster/database.yml config
+docker compose --env-file /srv/hilos/file-gallery-manager.env -p gallery-m1 -f docker/cluster/node.yml config
+docker compose --env-file /srv/hilos/file-gallery-manager.env -p gallery-entry -f docker/cluster/entry.yml config
+```
+
+`--env-file` supplies Compose interpolation. `HILOS_CLUSTER_NODE_ENV` selects
+the separate runtime environment file loaded after `common.env`; paths resolve
+from `docker/cluster`. These files describe components but do not provision
+remote hosts or shared storage.
+
+### TLS fixtures
+
+`docker/tls/` contains this stand's fixtures only. `ca.pem` is the CA
+certificate, with no private key. Each node fixture, `m1.pem`, `m2.pem`,
+`s1.pem`, `s2.pem` and `s3.pem`, contains a node certificate followed by its
+key for `CLUSTER_TLS_CERT_FILE`. Use certificates issued for the deployment
+when running components outside this local stand.
+
 ## Planned product
 
 Everything in this section describes the planned product, not what runs today:

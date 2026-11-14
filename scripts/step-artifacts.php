@@ -72,6 +72,7 @@ const STAND_LOG_DIR = 'data/logs-test';
 /** The browser steps whose evidence belongs to separate cluster nodes. */
 const CLUSTER_BROWSER_STEPS = [
     'binance-btc-tracker-cluster-e2e',
+    'file-gallery-manager-cluster-e2e',
     'online-testing-cluster-e2e',
     'roblox-game-server-cluster-e2e',
 ];

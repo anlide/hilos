@@ -295,7 +295,7 @@ registry of taken host ports:
 | solar-system-model test | 33078 | 8213/8214/8215 | — | http 8217 / https 8218 | — | 10.216 |
 | file-gallery-manager local | 33079 | 8230/8231/8232 | 8240 | https 8236 | 5182 | 10.207 |
 | file-gallery-manager test | 33080 | 8233/8234/8235 | — | http 8237 / https 8238 | — | 10.217 |
-| file-gallery-manager cluster (not in the code yet — HIL-2032) | — | — | — | — | — | 10.227 |
+| file-gallery-manager cluster | — | — | — | — | — | 10.227 |
 | preferans local | 33081 | 8250/8251/8252 | 8260 | https 8256 | 5183 | 10.208 |
 | preferans test | 33082 | 8253/8254/8255 | — | http 8257 / https 8258 | — | 10.218 |
 | concert-tickets local | 33083 | 8270/8271/8272 | 8280 | https 8276 | 5184 | 10.209 |

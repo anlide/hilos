@@ -619,10 +619,12 @@ the coalescing test reads Status hints, and Roblox declares no Status (HIL-2017)
 by the owner's decision of 2026-11-13 (HIL-2030). Online-testing keeps
 `live/analytics` with its three source/viewer rotations.
 
-React has no cluster-browser corpus to transfer. Cross-node sign-in, sign-out
-and grant/revoke on the new React and Angular carriers are new proofs
-(not in the code yet — HIL-2034). Browser phases and fixtures are chosen from
-the stand declaration and native plan.
+React's cluster-browser corpus begins with Gallery's
+[`entry.spec.ts`](../../../demo/file-gallery-manager/tests/e2e/cluster/live/entry.spec.ts):
+it signs in through the non-leader master and opens `/hilos`.
+HIL-2034 grows this entry test with cross-node sign-in, sign-out and
+grant/revoke proofs. Browser phases and fixtures are chosen from the stand
+declaration and native plan.
 After the transfers each source file exists exactly once
 (not in the code yet — HIL-2035).
 

@@ -1,0 +1,79 @@
+# Standalone primary and replica, also extended by the local stand; neither depends on a Hilos node.
+services:
+  database:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
+    labels:
+      hilos.role: database
+      hilos.database.member: "true"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${DB_DATABASE:-hilos-demo-file-gallery-manager-cluster}
+      MYSQL_USER: ${DB_USERNAME:-hilos}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-hilos_pass}
+      MARIADB_REPLICATION_USER: replicator
+      MARIADB_REPLICATION_PASSWORD: replicator_pass
+      TZ: UTC
+    volumes:
+      - ${HILOS_CLUSTER_DB_DATA_DIR:-/dev/shm/hilos-file-gallery-manager-cluster-mysql-data${HILOS_STAND_SUFFIX:-}}:/var/lib/mysql
+      - ../../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+      - ../mysql/init-change-log.sh:/docker-entrypoint-initdb.d/init-change-log.sh:ro
+      - ../mysql/provision-change-log.sh:/usr/local/bin/provision-change-log.sh:ro
+    # Log from image initialization so schema, accounts, journal and its grants reach
+    # the replica. ROW applies row changes without firing the replica's triggers.
+    # The application installs journal triggers with its own connection; trusting
+    # function creators permits that DDL with binary logging (otherwise error 1419).
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+      --log-bin=mariadb-bin
+      --server-id=1
+      --binlog-format=ROW
+      --log-bin-trust-function-creators=1
+    # --connect alone: it waits for the TCP listener the init-time server never opens and
+    # does not test the login, so neither the image's random healthcheck password (misread
+    # when it starts and ends with a double quote) nor the age of the data directory can
+    # keep this service unhealthy.
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    ports:
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_DB_PUBLISHED_PORT:-3306}:3306"
+
+  replica:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
+    labels:
+      hilos.database.member: "true"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MARIADB_MASTER_HOST: ${HILOS_CLUSTER_DB_PRIMARY_HOST:-127.0.0.1}
+      MARIADB_REPLICATION_USER: replicator
+      MARIADB_REPLICATION_PASSWORD: replicator_pass
+      TZ: UTC
+    # Accounts and both schemas arrive through replication, not local init scripts.
+    volumes:
+      - ${HILOS_CLUSTER_REPLICA_DATA_DIR:-/dev/shm/hilos-file-gallery-manager-cluster-replica-data${HILOS_STAND_SUFFIX:-}}:/var/lib/mysql
+      - ../../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+      --server-id=2
+      --read-only=1
+      --relay-log=replica-relay-bin
+    # --connect alone: it waits for the TCP listener the init-time server never opens and
+    # does not test the login, so neither the image's random healthcheck password (misread
+    # when it starts and ends with a double quote) nor the age of the data directory can
+    # keep this service unhealthy.
+    # Replication thread state is checked by scenario 31, not container health.
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    ports:
+      - "${HILOS_CLUSTER_BIND_ADDRESS:-127.0.0.1}:${HILOS_CLUSTER_REPLICA_PUBLISHED_PORT:-3307}:3306"

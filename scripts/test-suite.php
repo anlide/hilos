@@ -364,6 +364,39 @@ $steps = array_merge($steps, [
         'seconds' => 100,
         'downsStand' => true,
     ],
+    // The file-gallery-manager fleet: two masters without capacity and three slave workers,
+    // on a MariaDB primary with a read-only replica. Scenario 31 checks the replica only.
+    // The stand group keeps a browser step from running beneath the scenario matrix; takes
+    // its stand down at any outcome, for the reason binance-btc-tracker-cluster does.
+    // Seconds: a rough estimate after online-testing, allowing for five nodes and a replica;
+    // not a measurement (HIL-2043 measures it).
+    [
+        'id' => 'file-gallery-manager-cluster',
+        'command' => 'composer run test:cluster:scenarios',
+        'cwd' => 'demo/file-gallery-manager',
+        'stand' => 'file-gallery-manager-cluster',
+        'deps' => ['file-gallery-manager-deps'],
+        'group' => 'file-gallery-manager-cluster',
+        'tags' => ['cluster', 'backend'],
+        'seconds' => 60,
+        'downsStand' => true,
+    ],
+    // React sign-in and admin access through the non-leader master. The single-node e2e
+    // finishes using the shared dist, node_modules and reports before this starts;
+    // the cluster group keeps the scenario matrix from resetting the browser stand.
+    // Seconds: a rough estimate after online-testing, allowing for five nodes and a replica;
+    // not a measurement (HIL-2043 measures it).
+    [
+        'id' => 'file-gallery-manager-cluster-e2e',
+        'command' => 'composer run test:cluster:e2e',
+        'cwd' => 'demo/file-gallery-manager',
+        'stand' => 'file-gallery-manager-cluster',
+        'deps' => ['file-gallery-manager-e2e'],
+        'group' => 'file-gallery-manager-cluster',
+        'tags' => ['cluster', 'e2e'],
+        'seconds' => 70,
+        'downsStand' => true,
+    ],
     // The fleet of roblox-game-server (HIL-2029): three masters and one slave over a MariaDB
     // Galera cluster of two data members and an arbitrator behind HAProxy. Scenario 26 writes
     // through both data members, scenario 49 reads what one node wrote through the other one.

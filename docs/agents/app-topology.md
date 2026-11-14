@@ -271,7 +271,7 @@ What keeps each promise for each logical database name on each topology:
 | Topology | `ONE_LOGICAL_DATABASE` | `READ_AFTER_WRITE` |
 |---|---|---|
 | one server | kept | kept; the binance-btc-tracker, ecommerce-shop and online-testing cluster stands run this row (HIL-1453) |
-| primary + replica behind one address that always leads to the primary | kept | kept; the file-gallery-manager cluster stand runs this row (not in the code yet — HIL-2032) |
+| primary + replica behind one address that always leads to the primary | kept | kept; the file-gallery-manager cluster stand runs this row |
 | multi-primary, nodes on different servers | kept | only with the READ bit (1) of `wsrep_sync_wait` set in every application session, reconnects included, and `wsrep_dirty_reads` off (Galera) — the variable is a bitmask, and 2 or 4 pass a ≥ 1 comparison without causal reads; or `group_replication_consistency` `BEFORE` or stronger (MySQL); the concert-tickets cluster stand runs this row (not in the code yet — HIL-2033); so does roblox-game-server's, with two data nodes and an arbitrator |
 | a proxy that hands reads to replicas, or reads from an asynchronous replica | kept | **not kept — not supported** |
 

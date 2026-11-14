@@ -499,9 +499,15 @@ Galera follows this path: the journal database and its grant are created by the
 initialization of the first data node alone, and the second receives them with
 its full copy (SST); an existing catalog gets them from
 `provision-change-log.sh` run on one data node, which Galera replicates.
-File-gallery-manager's primary/replica follows it
-(not in the code yet — HIL-2032). Concert-tickets' three-data-node Galera
-follows it (not in the code yet — HIL-2033).
+File-gallery-manager's primary/replica follows it. Its primary alone runs
+`init-change-log.sh` on a fresh data directory and
+`provision-change-log.sh` for an existing catalog; the journal database and
+application grant replicate to the read-only replica. Concert-tickets'
+three-data-node Galera follows this path (not in the code yet — HIL-2033).
+
+When binary logging is enabled, the application user can install journal
+triggers only with `log_bin_trust_function_creators=1`; without it, MariaDB
+refuses `CREATE TRIGGER` with error 1419.
 
 An external MariaDB operator does the same two statements, with the actual
 main name, app user and host. Escape `_` and `%` in the database part of the
@@ -939,9 +945,10 @@ primary schema rollout claim.
 
 The roblox-game-server cluster stand runs a Galera of two data nodes: the
 journal is prepared on the first data node and reaches the second as a copy, as
-[Where The Journal Lives](#where-the-journal-lives) describes. The planned
-carriers, the primary/replica of file-gallery-manager and the Galera of
-concert-tickets, prepare the journal once through the same replicating path.
+[Where The Journal Lives](#where-the-journal-lives) describes. The
+file-gallery-manager primary/replica prepares the journal once through the
+same replicating path. Concert-tickets' three-data-node Galera remains planned
+and will prepare the journal once through that path.
 On this stand the Galera members set `log_bin_trust_function_creators=1`
 (`framework/docker/galera/galera.cnf`): a Galera member counts as a server with
 binary logging on and refuses `CREATE TRIGGER` to a user without SUPER (error

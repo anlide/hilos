@@ -112,6 +112,17 @@
             "@test:e2e",
             "@test:e2e-down @no_additional_args"
         ],
+        "test:cluster:up": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml up",
+        "test:cluster:down": "@php ../../scripts/down-stands.php file-gallery-manager-cluster",
+        "test:cluster:down-volumes": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml down --volumes",
+        "test:cluster:status": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml status",
+        "test:cluster:scenarios": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml scenarios",
+        "test:cluster:e2e": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml e2e",
+        "test:cluster:e2e-time-zone": "docker compose -f docker/docker-compose.cluster.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint php file-gallery-manager-cluster-m1 /hilos/framework/frontend/scripts/e2e-time-zone-env.php 'Demo\\FileGalleryManager\\Hilos' | docker compose -f docker/docker-compose.cluster.yml --profile e2e run --quiet-build --rm --no-deps -T --entrypoint node file-gallery-manager-cluster-e2e-runner /hilos/framework/frontend/scripts/e2e-time-zone.mjs",
+        "test:cluster:restart": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml restart",
+        "test:cluster:inspect": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml inspect",
+        "test:cluster:logs": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml logs",
+        "test:cluster:client": "../../framework/docker/cluster/run docker/docker-compose.cluster.yml client",
         "test:all": "composer run test:db-reset && composer run test:phpunit && composer run test:down && composer run test:e2e-full"
     }
 }

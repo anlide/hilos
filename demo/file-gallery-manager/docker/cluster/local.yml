@@ -1,0 +1,164 @@
+# Local bindings only. The canonical standalone services do not enter this aggregate.
+# Local ports and the per-node env selection replace standalone defaults explicitly.
+services:
+  file-gallery-manager-cluster-mysql:
+    extends: {file: ./database.yml, service: database}
+    container_name: file-gallery-manager-cluster-mysql${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER:-227}.0.10
+
+  file-gallery-manager-cluster-m1:
+    extends: {file: ./node.yml, service: node}
+    container_name: file-gallery-manager-cluster-m1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m1.env
+    labels:
+      hilos.role: app
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/m1:/var/log/hilos
+      - status:/app/data/status
+    depends_on:
+      file-gallery-manager-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER:-227}.0.11
+
+  file-gallery-manager-cluster-m2:
+    extends: {file: ./node.yml, service: node}
+    container_name: file-gallery-manager-cluster-m2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/m2.env
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/m2:/var/log/hilos
+      - status:/app/data/status
+    depends_on:
+      file-gallery-manager-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER:-227}.0.12
+
+  file-gallery-manager-cluster-s1:
+    extends: {file: ./node.yml, service: node}
+    container_name: file-gallery-manager-cluster-s1${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/s1.env
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/s1:/var/log/hilos
+      - status:/app/data/status
+    depends_on:
+      file-gallery-manager-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER:-227}.0.14
+
+  file-gallery-manager-cluster-s2:
+    extends: {file: ./node.yml, service: node}
+    container_name: file-gallery-manager-cluster-s2${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/s2.env
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/s2:/var/log/hilos
+      - status:/app/data/status
+    depends_on:
+      file-gallery-manager-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER:-227}.0.15
+
+  file-gallery-manager-cluster-s3:
+    extends: {file: ./node.yml, service: node}
+    container_name: file-gallery-manager-cluster-s3${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    env_file: !override
+      - ../../.env.example
+      - ./common.env
+      - ./nodes/s3.env
+    volumes:
+      - data:/app/data
+      - data-export:/app/data/data_export
+      - ../../data/logs-cluster/s3:/var/log/hilos
+      - status:/app/data/status
+    depends_on:
+      file-gallery-manager-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER:-227}.0.16
+
+  file-gallery-manager-cluster-replica:
+    extends: {file: ./database.yml, service: replica}
+    container_name: file-gallery-manager-cluster-replica${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    environment:
+      MARIADB_MASTER_HOST: file-gallery-manager-cluster-mysql
+    depends_on:
+      file-gallery-manager-cluster-mysql:
+        condition: service_healthy
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER:-227}.0.19
+
+  file-gallery-manager-cluster-entry:
+    extends: {file: ./entry.yml, service: entry}
+    container_name: file-gallery-manager-cluster-entry${HILOS_STAND_SUFFIX:-}
+    ports: !reset []
+    volumes:
+      - data-export:/data_export:ro
+      - status:/status:ro
+    networks:
+      cluster-net:
+        ipv4_address: 10.${HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER:-227}.0.30
+
+volumes:
+  # The stand's own data root: the export agent deletes files without ready rows in its
+  # own database at start and hourly, so the local installation's data/ must stay out of
+  # its sight. Every node and the CLI mount this volume at /app/data, and the harness's
+  # down --volumes clears it with the database each run.
+  data:
+    name: hilos-file-gallery-manager-cluster-data${HILOS_STAND_SUFFIX:-}
+
+  # Exports sit on a volume of their own over that root because the entry reads them at
+  # its own path, /data_export, and its part is shared with standalone and stays as is.
+  # All five nodes and the entry share this disk.
+  data-export:
+    name: hilos-file-gallery-manager-cluster-data-export${HILOS_STAND_SUFFIX:-}
+
+  # Independent test installations must not overwrite each other's Status files.
+  # Every node and the entry within this cluster share this one volume.
+  status:
+    name: hilos-file-gallery-manager-cluster-status${HILOS_STAND_SUFFIX:-}
+
+networks:
+  cluster-net:
+    name: hilos-file-gallery-manager-cluster-net${HILOS_STAND_SUFFIX:-}
+    driver: bridge
+    ipam:
+      config:
+        # Docker does not auto-assign 10/8, so these advertised addresses stay claimable.
+        - subnet: 10.${HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER:-227}.0.0/16

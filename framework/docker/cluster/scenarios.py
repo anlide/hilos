@@ -366,6 +366,8 @@ DB_MEMBER_DEATH_TIMEOUT = 60.0 * TIMEOUT_SCALE
 DB_MEMBER_RETURN_TIMEOUT = 120.0 * TIMEOUT_SCALE
 DB_VOTER_JOIN_TIMEOUT = 30.0 * TIMEOUT_SCALE
 # A replica must catch up to the primary's position after every preceding scenario wrote.
+# The same span covers a fresh replica that does not answer as the application user yet:
+# its own init, the image's temporary server, and the replication of that user.
 REPLICA_CATCH_UP_TIMEOUT = 30.0 * TIMEOUT_SCALE
 PRIMARY_POSITION_SQL = "SELECT @@GLOBAL.gtid_binlog_pos"
 REPLICA_POSITION_SQL = "SELECT @@GLOBAL.gtid_slave_pos"
@@ -896,6 +898,29 @@ def wait_db_value(node, key, expected, timeout, desc):
         time.sleep(POLL_INTERVAL)
     raise ScenarioTimeout(f"timed out after {timeout:.0f}s waiting for: {desc}\n"
                           f"last value {node} answered for {key}: {last!r}")
+
+
+def replication_log_reason(member):
+    """Prefer the replica's MariaDB error code to a later generic error line."""
+    lines = db_log(member).splitlines()
+    return next((line for mark in REPLICATION_ERROR_MARKS for line in reversed(lines)
+                 if mark in line), "its log names no error")
+
+
+def wait_replica_answers(member, timeout=REPLICA_CATCH_UP_TIMEOUT):
+    """Wait for a replica to answer as the application user; never retry a miss."""
+    started = time.monotonic()
+    deadline = started + timeout
+    while True:
+        outcome = control.execute(STAND, "db-sql", REPLICA_RUNNING_SQL, member)
+        if outcome.code == 0:
+            return outcome.out.strip(), time.monotonic() - started
+        if time.monotonic() >= deadline:
+            err = outcome.err.strip()
+            reason = replication_log_reason(member)
+            raise AssertionError(f"{member} does not replicate: no answer as {STAND.database.user} "
+                                 f"within {timeout:.0f} s: {err or 'no error text'}; {reason}")
+        time.sleep(POLL_INTERVAL)
 
 
 def converged(expected_nodes):
@@ -5556,7 +5581,9 @@ def scenario_31_replica_keeps_up_with_the_primary():
 
     A replica stopped on an early Hilos write, lagging behind, or accepting writes would leave
     every application scenario green: the application never connects to it. Run this last, after
-    all other writes, and ask each replica directly through the harness.
+    all other writes, and ask each replica directly through the harness. On a fresh stand such
+    as Gallery it may also run first or alone, so wait for each replica to answer as the
+    application user before judging its replication threads.
     """
     primary = STAND.database.service
     user = STAND.database.user
@@ -5569,16 +5596,12 @@ def scenario_31_replica_keeps_up_with_the_primary():
     passed = []
     for replica in STAND.database_replicas:
         member = replica.service
-        running_rows = db_sql(REPLICA_RUNNING_SQL, member)
+        running_rows, waited_ready = wait_replica_answers(member)
         running = next((value for name, _, value in
                         (row.partition("\t") for row in running_rows.splitlines())
                         if name == "Slaves_running"), "")
         if running != "1":
-            lines = db_log(member).splitlines()
-            # The server prints a generic [ERROR] after the specific warning. Prefer the
-            # diagnostic with its MariaDB error code, then fall back to the generic line.
-            reason = next((line for mark in REPLICATION_ERROR_MARKS for line in reversed(lines)
-                           if mark in line), "its log names no error")
+            reason = replication_log_reason(member)
             raise AssertionError(f"{member} does not replicate: Slaves_running={running or '?'}; {reason}")
 
         started = time.monotonic()
@@ -5604,7 +5627,8 @@ def scenario_31_replica_keeps_up_with_the_primary():
         assert count == 0, (f"{member} holds {count} connection(s) of {user}: the nodes' one "
                             "address leads past the primary, and nothing may read a replica "
                             "(docs/agents/app-topology.md, Database Guarantees)")
-        passed.append(f"{member} replicates {primary}: caught up to {position} within "
+        passed.append(f"{member} replicates {primary}: answered after {waited_ready:.1f} s, "
+                      f"caught up to {position} within "
                       f"{elapsed:.1f} s of asking, read-only, the same database marker, "
                       f"no connection of {user}")
     return "; ".join(passed)

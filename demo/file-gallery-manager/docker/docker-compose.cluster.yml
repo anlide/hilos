@@ -1,0 +1,31 @@
+# The file-gallery-manager cluster stand (HIL-1985): two masters without placed work
+# and three slave workers with ram=10/6/4 and slots=64, on one MariaDB primary
+# and an asynchronous read-only replica. Capacity units are abstract, not gigabytes.
+#
+# Nodes and CLI use one database address, which always leads to the primary. No
+# application connection reads the replica, and there is no automatic promotion.
+# Both the primary database and its derived change-log journal are replicated.
+# Five daemon nodes roll out the schema under the shared database claim, on a
+# dedicated bridge with static addresses and a long-lived CLI for the harness.
+# Node identity, role, room, peers and timeouts come from CLUSTER_* runtime values.
+#
+# This compose project is separate from the demo's local and ordinary test stacks:
+# an ordinary e2e teardown must not stop the cluster in the middle of its matrix.
+# The nodes run the whole demo; the harness reaches them through the CLI carrier.
+# Local services publish no host ports. Mailpit and Playwright are e2e-only.
+
+name: hilos-file-gallery-manager-cluster${HILOS_STAND_SUFFIX:-}
+
+# What the shared cluster harness (framework/docker/cluster/cluster.py) reads besides the services
+# below; the nodes, their addresses, roles, room and log directories it takes from the services.
+x-hilos-cluster:
+  cli: file-gallery-manager-cluster-cli
+  entry: file-gallery-manager-cluster-entry
+  scenarios: [31]
+  e2e:
+    runner: file-gallery-manager-cluster-e2e-runner
+
+include:
+  - path:
+      - ./cluster/local.yml
+      - ./cluster/tooling.yml
