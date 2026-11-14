@@ -31,6 +31,7 @@ import {
   watchDeliveryFrames,
   PAGE_READY,
   expectPageReady,
+  expectPageRefused,
   expectSelfReload,
   gotoAdmitted,
   gotoMaintenance,
@@ -574,7 +575,12 @@ test('a live window shows the maintenance stub while the mode is on', async ({
   expect(await leaveProtectedMode()).toBe('verifying')
   await expect(page.getByTestId('maintenance')).toBeVisible()
 
+  // The lift reloads this window, and a fresh document shows no stub before the
+  // application has booted, so it is answered before it is read.
+  await markDocument(page)
   expect(await openProtectedMode()).toBe('inactive')
+  await expectSelfReload(page, test.info().project.use.navigationTimeout)
+  await expectPageReady(expect, page)
 
   await expect(page.getByTestId('maintenance')).toBeHidden()
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
@@ -638,11 +644,20 @@ test('every tab of the browser that asked agrees, phase by phase', async ({
   await expect(page.getByTestId('maintenance')).toBeHidden()
   await expect(secondTab.getByTestId('maintenance')).toBeHidden()
 
+  await markDocument(page)
+  await markDocument(secondTab)
   expect(await openProtectedMode()).toBe('inactive')
 
   // Both tabs of the session are inside after the lift too — which is what a restore
-  // leaves behind, and the half SessionCarrier already answered for (HIL-479).
+  // leaves behind, and the half SessionCarrier already answered for (HIL-479). The
+  // lift reloads both tabs, and a fresh document shows no stub before the
+  // application has booted, so each is answered before it is read.
+  await expectSelfReload(page, test.info().project.use.navigationTimeout)
+  await expectSelfReload(secondTab, test.info().project.use.navigationTimeout)
+  await expectPageReady(expect, page)
   await expect(page.getByTestId('maintenance')).toBeHidden()
+  // The operator is a guest here; an administrative url reloads into its refusal.
+  await expectPageRefused(expect, secondTab)
   await expect(secondTab.getByTestId('maintenance')).toBeHidden()
   await secondTab.close()
 })
@@ -800,8 +815,7 @@ test('the code lets the whole browser in, and the tab that was waiting comes out
   await waiting.close()
 })
 
-// FIXME(F-102, 2026-11-14): The test exceeds its own timeout under load in two attempts, then passes in seconds · чужой · попытка 3 · HIL-2035
-test.fixme('the tabs the operator already had open are raised and lowered together', async ({
+test('the tabs the operator already had open are raised and lowered together', async ({
   page,
   context,
   browser,
@@ -847,8 +861,9 @@ test.fixme('the tabs the operator already had open are raised and lowered togeth
   await expect(page.getByTestId('maintenance')).toBeHidden()
   await expect(otherTab.getByTestId('maintenance')).toBeHidden()
   await strangerContext.close()
-
-  expect(await openProtectedMode()).toBe('inactive')
+  // Closed before the lift: it reloads every open tab, and a tab closed into
+  // that reload hung the close past the test's ceiling. The lift, and the wait
+  // for this page's reload, belong to the teardown.
   await otherTab.close()
 })
 
@@ -865,7 +880,13 @@ test('leaving the window takes the field and the sentence away together', async 
   await gotoMaintenance(expect, page, ADMIN_URL)
   await expect(page.getByTestId('maintenance-pass-form')).toBeVisible()
 
+  // The lift reloads this page, and a fresh document shows no stub before the
+  // application has booted, so it is answered before it is read. A guest on an
+  // administrative url reloads into its refusal.
+  await markDocument(page)
   expect(await openProtectedMode()).toBe('inactive')
+  await expectSelfReload(page, test.info().project.use.navigationTimeout)
+  await expectPageRefused(expect, page)
 
   await expect(page.getByTestId('maintenance')).toBeHidden()
   await expect(page.getByTestId('maintenance-pass-form')).toBeHidden()
@@ -1162,6 +1183,10 @@ test('the operator and the admitted verifier both see the verification banner, a
   const stranger = await strangerContext.newPage()
   await gotoMaintenance(expect, stranger, ADMIN_URL)
   await expect(stranger.getByTestId('protected-mode-banner')).toHaveCount(0)
+  // Closed before the lift: nothing is asserted on them after it, and the lift
+  // reloads every open tab - a tab closed into that reload hangs the close.
+  await secondTab.close()
+  await verifierContext.close()
 
   // The lift, and the banner goes with the mode it describes - for everybody at
   // once, including the browser that was let in early. Neither browser is
@@ -1183,8 +1208,6 @@ test('the operator and the admitted verifier both see the verification banner, a
   await gotoPage(expect, stranger, '/')
   await expect(stranger.getByTestId('protected-mode-banner')).toHaveCount(0)
 
-  await secondTab.close()
-  await verifierContext.close()
   await strangerContext.close()
 })
 
@@ -1308,6 +1331,10 @@ test('the named circle walks in with the tab it already had open, and nobody els
   expect(closed.circleAdmitted).toBe(0)
   await gotoMaintenance(expect, member, '/')
   await gotoMaintenance(expect, page, '/')
+  // Closed before the lift: nothing is asserted on them after it, and the lift
+  // reloads every open tab - a tab closed into that reload hangs the close.
+  await memberContext.close()
+  await strangerContext.close()
 
   // The membership outlived the freeze it was named for - a test drive replaces no
   // database, so the row is still the one the operator typed.
@@ -1322,9 +1349,6 @@ test('the named circle walks in with the tab it already had open, and nobody els
   await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH)
   await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
   await clearMaintenanceCircle(page)
-
-  await memberContext.close()
-  await strangerContext.close()
 })
 
 test('a circle member who was away when the node froze is named and still outside', async ({
