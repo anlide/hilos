@@ -31,6 +31,10 @@ The first tile counts the person's sessions — one per sign-in, whatever its
 tabs — and links the number to the Sessions tab when the page reads the list;
 a page that does not keeps the open connections it always showed, and a hidden
 count stays the hidden mark, never a zero (HIL-1662).
+An account whose erasure has begun (HIL-1957) is offered no action at all, as a
+merged one is not (hilosUserOffersActions): the card shows the erasure's progress
+instead — its parts, the owners it waits for and the refused finals — and when
+the erasure ends, the card ends in the common 404 of a deleted page.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
@@ -46,6 +50,7 @@ import {
 
 import {
   ACCOUNT_DELETION_TICK_MS,
+  computedSignal,
   focusInitial,
   HILOS_STEP_UP_COPY,
   type HilosStepUpOpenOutcome,
@@ -64,7 +69,9 @@ import {
   HILOS_USER_OVERVIEW_COPY,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
-  hilosUserMergedNotice,
+  hilosUserOffersActions,
+  HILOS_USER_ERASURE_COPY,
+  hilosUserErasureSection,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   hilosUserLifecyclePromptOffered,
@@ -168,9 +175,17 @@ const lifecycleUserId = useSignal(lifecycle.currentUserId)
 const userStanding = createHilosUserStanding(props.context)
 const standing = useSignal(userStanding.standing)
 const frozenRow = computed(() => hilosUserFrozenRow(standing.value))
-// A merged account (HIL-1292): the notice under the header stands in for every
-// action section, which the core leaves empty for it.
-const mergedNotice = computed(() => hilosUserMergedNotice(standing.value))
+// A merged account (HIL-1292) or one being erased (HIL-1957): the line under
+// the header stands in for every action, and the core leaves the action
+// sections empty for it.
+const offersActions = computed(() => hilosUserOffersActions(standing.value))
+// The progress of a begun erasure (HIL-1957); its start reads the reader's zone.
+const erasure = useSignal(
+  computedSignal(() =>
+    hilosUserErasureSection(userStanding.erasure.get(), userDetail.get()?.id),
+  ),
+)
+const erasureCopy = HILOS_USER_ERASURE_COPY
 const lifecycleNow = ref(Date.now())
 watch(
   [
@@ -604,11 +619,11 @@ function closeEdit(): void {
   editor.close()
 }
 
-// A merge that lands under an open window closes it (HIL-1292): there is nothing
-// left to do over the account. A window whose action is in flight stays, and the
-// server's answer comes as usual - a refusal.
-watch(mergedNotice, (notice) => {
-  if (notice === null) {
+// A merge (HIL-1292) or a begun erasure (HIL-1957) that lands under an open
+// window closes it: there is nothing left to do over the account. A window whose
+// action is in flight stays, and the server's answer comes as usual - a refusal.
+watch(offersActions, (offers) => {
+  if (offers) {
     return
   }
   if (!loading.value) closeEdit()
@@ -685,7 +700,7 @@ function submit(): void {
               </div>
             </div>
             <button
-              v-if="mergedNotice === null"
+              v-if="offersActions"
               type="button"
               class="btn btn-outline-primary btn-sm"
               data-id="hilos-user-edit"
@@ -800,6 +815,69 @@ function submit(): void {
           </div>
         </div>
       </section>
+      <section
+        v-if="erasure !== null"
+        class="mb-4"
+        data-id="hilos-user-erasure"
+      >
+        <h2 class="h5">{{ erasureCopy.title }}</h2>
+        <div class="card">
+          <div class="card-body">
+            <p class="fw-medium mb-1">{{ erasureCopy.inProgress }}</p>
+            <p
+              class="small text-body-secondary"
+              data-id="hilos-user-erasure-started"
+            >
+              {{ erasure.started }}
+            </p>
+            <template v-if="erasure.parts.length > 0">
+              <h3 class="h6">{{ erasureCopy.parts }}</h3>
+              <ul class="list-unstyled">
+                <li
+                  v-for="part in erasure.parts"
+                  :key="part.key"
+                  data-id="hilos-user-erasure-part"
+                >
+                  <code>{{ part.participant }}</code
+                  ><template v-if="part.account !== null">
+                    · #{{ part.account }}</template
+                  >
+                  — {{ part.state }}
+                </li>
+              </ul>
+            </template>
+            <template v-if="erasure.waits.length > 0">
+              <h3 class="h6">{{ erasureCopy.waits }}</h3>
+              <ul class="list-unstyled">
+                <li
+                  v-for="wait in erasure.waits"
+                  :key="wait.key"
+                  data-id="hilos-user-erasure-wait"
+                >
+                  <code>{{ wait.participant }}</code
+                  ><template v-if="wait.account !== null">
+                    · #{{ wait.account }}</template
+                  >
+                </li>
+              </ul>
+            </template>
+            <template v-if="erasure.refusals.length > 0">
+              <h3 class="h6">{{ erasureCopy.refusals }}</h3>
+              <ul class="list-unstyled mb-0">
+                <li
+                  v-for="refusal in erasure.refusals"
+                  :key="refusal.key"
+                  data-id="hilos-user-erasure-refusal"
+                >
+                  <template v-if="refusal.account !== null"
+                    >#{{ refusal.account }} · </template
+                  >{{ refusal.text }}
+                </li>
+              </ul>
+            </template>
+          </div>
+        </div>
+      </section>
       <section v-if="impersonation !== null" class="mb-4">
         <h2 class="h5">{{ overviewCopy.actingAs }}</h2>
         <div class="card">
@@ -845,7 +923,7 @@ function submit(): void {
         :detail="detail"
       />
       <section
-        v-if="context.accountMerge && mergedNotice === null"
+        v-if="context.accountMerge && offersActions"
         class="mb-4"
         data-id="hilos-user-merge-zone"
       >

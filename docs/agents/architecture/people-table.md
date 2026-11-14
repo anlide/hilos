@@ -354,7 +354,9 @@ or closes a loop ends nowhere, and the card says so without a link. Chains are
 allowed: a survivor may later be merged into a third account. The earlier
 tombstone row is not rewritten — it stays the record of who was folded into
 whom, and when — and readers follow the chain, up through `liveSurvivorOf()`
-and down through `foldedInto()`.
+and down through `foldedInto()`. An account whose erasure has begun is seen on
+the card by its `erasing` standing ([account-standing.md](account-standing.md),
+Who Draws What), with no action either (HIL-1957).
 
 ## Foreign Keys Onto The Person
 

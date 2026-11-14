@@ -1,4 +1,5 @@
-<!-- The shared user entity head and merged-account notice for every user tab.
+<!-- The shared user entity head for every user tab, with the line under it: the
+merged-account notice, or the line of an account being erased (HIL-1957).
 The page supplies its body and dialogs; the server identity supplies the owner,
 breadcrumb and eligible tabs. Only the current user page's permitted detail
 binds the live name. No mutation belongs in this head.
@@ -25,6 +26,7 @@ import {
   hilosStandingBadge,
   hilosUserAnalyticsEnabled,
   hilosUserAnalyticsPath,
+  hilosUserErasingNotice,
   hilosUserMergedNotice,
   type HilosUsersContext,
 } from '@hilos/core/admin/users'
@@ -90,6 +92,9 @@ const mergedNotice = computed(() =>
   detail.value === undefined ? null : hilosUserMergedNotice(standing.value),
 )
 const mergedCopy = HILOS_USER_MERGED_COPY
+const erasingNotice = computed(() =>
+  detail.value === undefined ? null : hilosUserErasingNotice(standing.value),
+)
 
 const router = inject(hilosRouterKey)
 if (!router) {
@@ -188,6 +193,13 @@ const headAction = computed<HilosPageHeadAction | undefined>(() =>
           :to="mergedNotice.path"
           >{{ mergedCopy.open }}</HilosLink
         >
+      </div>
+      <div
+        v-else-if="erasingNotice !== null"
+        class="alert alert-secondary mb-0 d-flex align-items-center gap-2"
+        data-id="hilos-user-erasing"
+      >
+        <span class="flex-grow-1 text-truncate">{{ erasingNotice }}</span>
       </div>
     </div>
     <slot />

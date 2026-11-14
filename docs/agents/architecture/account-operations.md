@@ -1567,8 +1567,11 @@ switches neither live erasure entry:
   shows the same facts as its block (HIL-1954). Both read durable erasure facts
   and stay inert until HIL-1952.
 - Vue's list shows progress (not in the code yet — HIL-1956). Vue's card shows
-  waiting and refusal (not in the code yet — HIL-1957). These display leaves
-  do not implement actions.
+  the "Being deleted" badge, the line "This account is being deleted." under the
+  header and the erasure's progress — the parts, the owners awaited and the
+  refusals — and offers no action (HIL-1957); after the end it is the live 404.
+  It stays inert until the live start (HIL-1952). These display leaves do not
+  implement actions.
 - Every "Keep my account" of the person — the profile window, the standing
   strip and the freeze screen — is the one action
   `hilos_account_deletion_cancel`. Before start it keeps the grace and the

@@ -466,6 +466,7 @@ describe('HilosUserPageShell', () => {
       ['frozen', 'Frozen', 'info', 'bi-snow'],
       ['blocked', 'Blocked', 'danger', 'bi-slash-circle'],
       ['merged', 'Merged', 'secondary', 'bi-sign-merge-left'],
+      ['erasing', 'Being deleted', 'danger', 'bi-trash'],
     ] as const) {
       t.frame({ ...CLEAR_STANDING, shown, blocked: true, frozen: true })
       await nextTick()
@@ -477,7 +478,9 @@ describe('HilosUserPageShell', () => {
     }
     t.frame(CLEAR_STANDING, 99)
     await nextTick()
-    expect(view.get('[data-id="user-standing-badge"]').text()).toBe('Merged')
+    expect(view.get('[data-id="user-standing-badge"]').text()).toBe(
+      'Being deleted',
+    )
     t.frame(CLEAR_STANDING)
     await nextTick()
     expect(view.find('[data-id="user-standing-badge"]').exists()).toBe(false)
@@ -547,6 +550,31 @@ describe('HilosUserPageShell', () => {
       expect(view.findAll('button')).toHaveLength(0)
     },
   )
+
+  it('says under the header that an erasing account is being deleted, in the notice room (HIL-1957)', async () => {
+    const t = harness()
+    t.answer({ standing: { ...CLEAR_STANDING, shown: 'erasing' } })
+    const view = t.mount()
+    await nextTick()
+    const room = view.get('.hilos-stack[role="status"]')
+    expect(room.get('[data-id="hilos-user-erasing"]').text()).toBe(
+      'This account is being deleted.',
+    )
+    expect(room.find('[data-id="hilos-user-merged"]').exists()).toBe(false)
+    expect(view.findAll('button')).toHaveLength(0)
+
+    t.frame({ ...CLEAR_STANDING, shown: 'merged' })
+    await nextTick()
+    expect(view.find('[data-id="hilos-user-erasing"]').exists()).toBe(false)
+    expect(view.get('[data-id="hilos-user-merged"]').text()).toBe(
+      'This account was merged into another one.',
+    )
+
+    t.frame(CLEAR_STANDING)
+    await nextTick()
+    expect(view.find('[data-id="hilos-user-erasing"]').exists()).toBe(false)
+    expect(view.find('[data-id="hilos-user-merged"]').exists()).toBe(false)
+  })
 
   it('provides admin view mode to both content and modal slots without requiring either', async () => {
     const t = harness({ viewer: true })

@@ -1282,11 +1282,14 @@ export function createHilosUserStanding(
 
 /**
  * The badge a card's header shows for the standing shown (HIL-945); the people
- * list shows the merged one beside the name (HIL-1292).
+ * list shows the merged one beside the name (HIL-1292). The ladder of what is
+ * shown runs merged → erasing → blocked → frozen → deletion scheduled; a begun
+ * erasure reads "Being deleted" (HIL-1957).
  */
 export interface HilosStandingBadge {
   /** The badge's word. */
-  readonly label: 'Merged' | 'Blocked' | 'Frozen' | 'Deletion scheduled'
+  readonly label:
+    'Merged' | 'Being deleted' | 'Blocked' | 'Frozen' | 'Deletion scheduled'
   /** The Bootstrap color of the badge, the one the shell uses for the same standing. */
   readonly tone: HilosStandingTone
   /** The Bootstrap Icon beside the word. */
@@ -1296,8 +1299,9 @@ export interface HilosStandingBadge {
 
 /**
  * The badge beside the presence in a card's header: one, for the standing
- * shown, in the color and with the icon the shell uses for it — or `null` for
- * an account with nothing standing against it.
+ * shown — merged, erasing, blocked, frozen or deletion scheduled, in that order
+ * of precedence — in the color and with the icon the shell uses for it, or
+ * `null` for an account with nothing standing against it.
  *
  * @param kind The standing shown.
  */
@@ -1310,6 +1314,12 @@ export function hilosStandingBadge(
         label: 'Merged',
         tone: hilosStandingTone(kind),
         icon: 'bi-sign-merge-left',
+      }
+    case 'erasing':
+      return {
+        label: 'Being deleted',
+        tone: hilosStandingTone(kind),
+        icon: 'bi-trash',
       }
     case 'blocked':
       return {
@@ -1373,6 +1383,149 @@ export function hilosUserMergedNotice(
       userId === null
         ? null
         : resolveHilosPath(HilosPages.USER, { userId: String(userId) }),
+  }
+}
+
+/**
+ * Whether the card offers any action over the account: not for a merged one
+ * (HIL-1292), whose every action the server refuses, and not for one whose
+ * erasure has begun (HIL-1957), which cannot be taken back. While the card has
+ * no standing yet, it offers them as before the verdict existed.
+ *
+ * @param standing The person's standing, or `null` while the card has none.
+ */
+export function hilosUserOffersActions(
+  standing: HilosAccountStanding | null,
+): boolean {
+  return (
+    standing === null ||
+    (standing.shown !== 'merged' && standing.shown !== 'erasing')
+  )
+}
+
+/**
+ * What the card of an account being erased says (HIL-1957): the line under its
+ * header, and the section that shows the erasure's progress. The line is the
+ * sentence the server refuses a sign-in of such an account with.
+ */
+export const HILOS_USER_ERASURE_COPY = {
+  notice: 'This account is being deleted.',
+  title: 'Account erasure',
+  inProgress: 'Erasure in progress',
+  started: 'Started {dateTime} — it cannot be canceled',
+  parts: 'Parts',
+  expected: 'Expected',
+  done: 'Done',
+  waits: 'Waiting for an owner',
+  refusals: 'Refused',
+  refusedTable: 'Table {table} still references the account',
+  refusedOther: 'Another table still references the account',
+} as const
+
+/**
+ * The line a card draws under its header while the account is being erased,
+ * or `null` for any other standing and while the card has none.
+ *
+ * @param standing The person's standing, or `null` while the card has none.
+ */
+export function hilosUserErasingNotice(
+  standing: HilosAccountStanding | null,
+): string | null {
+  return standing?.shown === 'erasing' ? HILOS_USER_ERASURE_COPY.notice : null
+}
+
+/** One erasure part as the card's erasure section lists it. */
+export interface HilosUserErasurePartLine {
+  /** The line's key among the parts. */
+  readonly key: string
+  /** The participant's key, as the wire carried it. */
+  readonly participant: string
+  /** The other account the part is about, or `null` when it is the card's own. */
+  readonly account: number | null
+  /** Whether the part has finished. */
+  readonly done: boolean
+  /** The part's state in words. */
+  readonly state: string
+}
+
+/** One awaited owner as the card's erasure section lists it. */
+export interface HilosUserErasureWaitLine {
+  /** The line's key among the waits. */
+  readonly key: string
+  /** The participant's key, as the wire carried it. */
+  readonly participant: string
+  /** The other account the wait is about, or `null` when it is the card's own. */
+  readonly account: number | null
+}
+
+/** One refused final as the card's erasure section lists it. */
+export interface HilosUserErasureRefusalLine {
+  /** The line's key among the refusals. */
+  readonly key: string
+  /** The other account refused, or `null` when it is the card's own. */
+  readonly account: number | null
+  /** The refusal in words. */
+  readonly text: string
+}
+
+/** The card's section about a begun erasure (HIL-1957). */
+export interface HilosUserErasureSection {
+  /** When the erasure started, and that it cannot be canceled. */
+  readonly started: string
+  /** The participants' parts, in the wire's order. */
+  readonly parts: readonly HilosUserErasurePartLine[]
+  /** The owners still awaited, in the wire's order. */
+  readonly waits: readonly HilosUserErasureWaitLine[]
+  /** The refused finals, in the wire's order. */
+  readonly refusals: readonly HilosUserErasureRefusalLine[]
+}
+
+/**
+ * The card's erasure section, or `null` while no erasure progress stands. A
+ * line about the card's own person names no account; a line about an account
+ * merged into it names that account. Participant keys and table names are shown
+ * as they came. The start is presented in the reader's zone, so call this inside
+ * a computed signal.
+ *
+ * @param erasure The erasure progress, or `null` when none stands.
+ * @param shownUserId The person the card shows, absent until the table arrives.
+ */
+export function hilosUserErasureSection(
+  erasure: HilosAccountErasure | null,
+  shownUserId: number | undefined,
+): HilosUserErasureSection | null {
+  if (erasure === null) {
+    return null
+  }
+  const copy = HILOS_USER_ERASURE_COPY
+  const account = (userId: number): number | null =>
+    userId === shownUserId ? null : userId
+
+  return {
+    started: copy.started.replace(
+      '{dateTime}',
+      formatMoment(erasure.startedAt, { kind: 'dateTime' }) ?? '—',
+    ),
+    parts: erasure.parts.map((part) => ({
+      key: `${part.participant}:${part.owner}:${String(part.userId)}`,
+      participant: part.participant,
+      account: account(part.userId),
+      done: part.done,
+      state: part.done ? copy.done : copy.expected,
+    })),
+    waits: erasure.waits.map((wait) => ({
+      key: `${wait.participant}:${String(wait.userId)}`,
+      participant: wait.participant,
+      account: account(wait.userId),
+    })),
+    refusals: erasure.refusals.map((refusal) => ({
+      key: String(refusal.userId),
+      account: account(refusal.userId),
+      text:
+        refusal.table === null
+          ? copy.refusedOther
+          : copy.refusedTable.replace('{table}', refusal.table),
+    })),
   }
 }
 
@@ -1864,7 +2017,9 @@ export interface HilosUserLifecycleSection {
  * has one (HIL-945) — the verdict the header badge shows too — and from the
  * committed row only while it has none, as before the verdict existed. A merged
  * account has no sections at all (HIL-1292): the server refuses every action
- * over it, and the card says where the account went instead.
+ * over it, and the card says where the account went instead. Nor has an account
+ * whose erasure has begun (HIL-1957): it cannot be taken back, and the card
+ * shows the erasure's progress instead.
  *
  * @param detail The committed user row, absent until the table arrives.
  * @param currentUserId The person behind this session.
@@ -1879,7 +2034,7 @@ export function hilosUserLifecycleSections(
   now: number,
   standing: HilosAccountStanding | null = null,
 ): readonly HilosUserLifecycleSection[] {
-  if (!detail || standing?.shown === 'merged') return []
+  if (!detail || !hilosUserOffersActions(standing)) return []
   const copy = HILOS_USER_LIFECYCLE_COPY
   const own = detail.id === currentUserId
   const blocked = standing?.blocked ?? detail.block
@@ -2176,7 +2331,8 @@ export interface HilosUserImpersonationSection {
 /**
  * The card's takeover section, or `null` when impersonation is switched off,
  * the card has no settings to read (HIL-1170), or the account was merged into
- * another one (HIL-1292) — a tombstone is nobody to act as.
+ * another one (HIL-1292) or is being erased (HIL-1957) — a tombstone, or one
+ * about to be, is nobody to act as.
  *
  * The button is switched off with its reason on the person's own card, and on a
  * blocked person, a frozen person or another administrator while the row of the
@@ -2198,7 +2354,7 @@ export function hilosUserImpersonationSection(
     !detail ||
     settings === null ||
     !settings.allowed ||
-    standing?.shown === 'merged'
+    !hilosUserOffersActions(standing)
   ) {
     return null
   }

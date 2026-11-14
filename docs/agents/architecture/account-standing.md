@@ -306,7 +306,9 @@ costs an array comparison.
   connection again and passes the view mode's bridge. A people window narrowed by
   `lapsed` is sent again (`sendTableWindow`) when the people past that document's
   deadline change. It is process-local, like the subscriptions it follows, and
-  forgets a subscriber on unsubscribe and on connection close.
+  forgets a subscriber on unsubscribe and on connection close. It sends no frame
+  for a person whose `users` row is gone: the open card ends in the live 404
+  instead (HIL-1957; [page-head.md](page-head.md), Deleted While Open).
 - **The list's erasure bars** are held by the same audience as one picture for
   every open list: the bars last sent (`erasureBars()`, read through
   `AccountErasureProgressResolver::begun()`, which drops with the rest of the
@@ -326,8 +328,8 @@ costs an array comparison.
 The core binds the session's standing once, in `bootHilos`
 (`session/accountStanding.ts`); each SDK's shell only reads it.
 
-`erasing` is carried but is not drawn yet: Vue's list and card belong to
-HIL-1956/HIL-1957, React to HIL-1961 and Angular to HIL-1962. The people list's
+`erasing` is drawn by Vue's card (HIL-1957); Vue's list belongs to HIL-1956,
+React to HIL-1961 and Angular to HIL-1962. The people list's
 erasure bar is drawn so far only as the shared row bar of the window table
 (`HilosViewportTable` of each SDK), with its common label and count; its own
 words and the block of work come with Vue HIL-1956, React HIL-1961 and Angular
@@ -343,13 +345,14 @@ HIL-1962.
   banner slot; the days are counted again once a minute from the moment the
   strip appears.
 - **Impersonation strip** — `alert-{tone}` by the represented person's shown
-  standing (`hilosStandingTone()`): blocked → `danger`, frozen → `info`,
-  otherwise `warning`.
+  standing (`hilosStandingTone()`): blocked or erasing → `danger`, frozen →
+  `info`, otherwise `warning`.
 - **Avatar mark** (`hilosSessionAvatarMark`) — under a takeover, the people icon
   in the same tone; for one's own scheduled deletion, the trash in `warning`;
   otherwise none. Each demo passes it to the `HilosAvatar` of its header.
 - **Admin card** — one badge beside the presence for the shown standing
-  (`hilosStandingBadge()`: "Merged", "Blocked", "Frozen", "Deletion scheduled"),
+  (`hilosStandingBadge()`: "Merged", "Being deleted", "Blocked", "Frozen",
+  "Deletion scheduled"),
   and the frozen row between the block and the deletion rows, with no button
   (`hilosUserFrozenRow()`). A merged account (HIL-1292) gets the gray badge, a
   notice under the header — "This account was merged into {name} (#id)" with
@@ -359,7 +362,16 @@ HIL-1962.
   takeover; the core answers those sections empty for it, and a window open
   when the merge lands closes unless its action is in flight. The people list
   wears the same badge beside the name, read off the row's inline `merge` slot
-  (`AbstractHilosUsersTable::SLOT_MERGE`), not off a standing.
+  (`AbstractHilosUsersTable::SLOT_MERGE`), not off a standing. An account whose
+  erasure has begun (HIL-1957) gets the "Being deleted" badge (`danger`,
+  `bi-trash`), the line "This account is being deleted." under the header
+  (`hilosUserErasingNotice()`) and, like a merged one, no action at all
+  (`hilosUserOffersActions()`); its card draws the Account erasure section
+  instead — the start, each participant's part as expected or done, the owners
+  awaited and the refused finals (`hilosUserErasureSection()`,
+  `HILOS_USER_ERASURE_COPY`), an account merged into it named by its number.
+  When the erasure ends, the card ends in the live 404
+  ([page-head.md](page-head.md), Deleted While Open).
 - The shell draws nothing for a merged account — no strip, no mark: its
   sessions are closed by the merge and a takeover of it is refused. Its tone,
   `secondary`, exists for the badges alone.

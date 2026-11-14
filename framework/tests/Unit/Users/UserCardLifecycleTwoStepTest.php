@@ -28,6 +28,9 @@ use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Hilos;
 use Hilos\Pages\Users\AbstractHilosUserPage;
+use Hilos\Tests\Unit\Pages\Users\HilosUserPageTestDb;
+use Hilos\Users\AccountErasureProgressResolver;
+use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
@@ -54,7 +57,12 @@ final class UserCardLifecycleTwoStepTest extends TestCase
     public function testSubscriptionCarriesTheGracePeriodBesideThePageIdentity(): void
     {
         $settings = Hilos::$setting;
+        $db = Hilos::$db;
         Hilos::$setting = null;
+        // The card names the person's row before its first frame (HIL-1957), so person 12 is there.
+        Hilos::$db = new HilosUserPageTestDb([12]);
+        AccountStandingResolver::forgetAll();
+        AccountErasureProgressResolver::forgetAll();
         Hilos::initBrowser();
         try {
             $page = new UserCardLifecycleTestPage(new UserCardLifecycleTestPageAgent());
@@ -70,6 +78,9 @@ final class UserCardLifecycleTwoStepTest extends TestCase
             self::assertArrayHasKey('pageLabel', $payload);
             self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'The first render needs only the page response');
         } finally {
+            AccountStandingResolver::forgetAll();
+            AccountErasureProgressResolver::forgetAll();
+            Hilos::$db = $db;
             Hilos::$setting = $settings;
         }
     }

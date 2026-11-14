@@ -39,6 +39,10 @@ import {
   HILOS_USER_CARD_STEP_UP_OPERATIONS,
   hilosUserLifecycleSections,
   hilosUserMergedNotice,
+  hilosUserOffersActions,
+  HILOS_USER_ERASURE_COPY,
+  hilosUserErasingNotice,
+  hilosUserErasureSection,
   hilosUserLifecyclePrompt,
   hilosUserLifecyclePromptOffered,
   type HilosUserLifecycleChoice,
@@ -1881,6 +1885,11 @@ describe('hilosStandingBadge (HIL-945)', () => {
       tone: 'secondary',
       icon: 'bi-sign-merge-left',
     })
+    expect(hilosStandingBadge('erasing')).toEqual({
+      label: 'Being deleted',
+      tone: 'danger',
+      icon: 'bi-trash',
+    })
   })
 })
 
@@ -2076,6 +2085,141 @@ describe('a merged account on the card (HIL-1292)', () => {
 
     page.tables.upsert('hilosUsers', 4, { users: ref, merge: { merged: true } })
     expect(resolveHilosUserRow(row(), users).merged).toBe(true)
+  })
+})
+
+describe('an erasing account on the card (HIL-1957)', () => {
+  const detail: HilosUserDetailRow = {
+    id: 5,
+    name: 'Maria',
+    lastActivity: null,
+    timeZone: null,
+    presence: 'offline',
+    onlineSessionCount: 0,
+    openSessionCount: null,
+    hasPassword: true,
+    hasSecondFactor: false,
+    admin: false,
+    block: false,
+    deletionEffectiveAt: null,
+    deletionGraceDays: null,
+    unverifiedPasswordAddress: null,
+    merged: false,
+  }
+  const erasing = readStanding({ shown: 'erasing' })
+  const startedAt = Date.parse('2026-01-01T00:30:05Z')
+
+  it('offers actions to neither a merged nor an erasing account', () => {
+    expect(hilosUserOffersActions(readStanding({ shown: 'merged' }))).toBe(
+      false,
+    )
+    expect(hilosUserOffersActions(erasing)).toBe(false)
+    expect(hilosUserOffersActions(readStanding())).toBe(true)
+    expect(
+      hilosUserOffersActions(readStanding({ shown: 'blocked', blocked: true })),
+    ).toBe(true)
+    // Before the standing arrives the card offers them as it always did.
+    expect(hilosUserOffersActions(null)).toBe(true)
+  })
+
+  it('says under the header that the account is being deleted', () => {
+    expect(hilosUserErasingNotice(erasing)).toBe(
+      'This account is being deleted.',
+    )
+    expect(hilosUserErasingNotice(readStanding({ shown: 'merged' }))).toBeNull()
+    expect(hilosUserErasingNotice(readStanding())).toBeNull()
+    expect(hilosUserErasingNotice(null)).toBeNull()
+  })
+
+  it('offers no section at all: a begun erasure cannot be taken back', () => {
+    expect(hilosUserLifecycleSections(detail, 99, 30, 0, erasing)).toEqual([])
+    expect(
+      hilosUserImpersonationSection(
+        detail,
+        99,
+        {
+          allowed: true,
+          scope: 'act',
+          carryAdmin: false,
+          blocked: true,
+          frozen: true,
+          equal: true,
+        },
+        erasing,
+      ),
+    ).toBeNull()
+  })
+
+  it('has no erasure section while no progress stands', () => {
+    expect(hilosUserErasureSection(null, 5)).toBeNull()
+  })
+
+  it('lists parts, waits and refusals in the wire order, naming only a foreign account', () => {
+    const erasure: HilosAccountErasure = {
+      startedAt,
+      parts: [
+        { participant: 'sessions', owner: 'auth', userId: 5, done: true },
+        { participant: 'messages', owner: 'chat', userId: 8, done: false },
+      ],
+      waits: [{ participant: 'messages', userId: 8 }],
+      refusals: [
+        { userId: 5, table: 'chat_message' },
+        { userId: 8, table: null },
+      ],
+    }
+
+    expect(hilosUserErasureSection(erasure, 5)).toMatchObject({
+      parts: [
+        {
+          key: 'sessions:auth:5',
+          participant: 'sessions',
+          account: null,
+          done: true,
+          state: 'Done',
+        },
+        {
+          key: 'messages:chat:8',
+          participant: 'messages',
+          account: 8,
+          done: false,
+          state: 'Expected',
+        },
+      ],
+      waits: [{ key: 'messages:8', participant: 'messages', account: 8 }],
+      refusals: [
+        {
+          key: '5',
+          account: null,
+          text: 'Table chat_message still references the account',
+        },
+        {
+          key: '8',
+          account: 8,
+          text: 'Another table still references the account',
+        },
+      ],
+    })
+    expect(HILOS_USER_ERASURE_COPY.title).toBe('Account erasure')
+  })
+
+  it('says when the erasure started in the reader zone', () => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('America/Los_Angeles')
+    try {
+      const section = hilosUserErasureSection(
+        { startedAt, parts: [], waits: [], refusals: [] },
+        5,
+      )
+
+      expect(section?.started).toBe(
+        `Started ${String(formatMoment(startedAt, { kind: 'dateTime' }))} — it cannot be canceled`,
+      )
+      expect(section?.started).toContain('Dec 31, 2025')
+      expect(section).toMatchObject({ parts: [], waits: [], refusals: [] })
+    } finally {
+      zone.mockRestore()
+    }
   })
 })
 

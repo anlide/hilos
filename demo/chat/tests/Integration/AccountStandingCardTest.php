@@ -482,6 +482,27 @@ final class AccountStandingCardTest extends IntegrationTestCase
     }
 
     /**
+     * The person row deleted under the open card sends no frame on the next tick: the live 404 of
+     * that row closes the card, and a 'none' frame could overtake it and bring the buttons back
+     * (HIL-1957).
+     */
+    public function testThePersonRowDeletedUnderTheOpenCardSendsNoFrameOnTheNextTick(): void
+    {
+        $this->subscribeToCard();
+        $agent = new DemoHilosAgent();
+
+        Hilos::$db->users[$this->personId]->actions->setBlock(true);
+        AccountStandingAudience::onAgentTick($agent);
+        $frames = $this->standingFrames();
+        self::assertCount(1, $frames);
+        self::assertSame('blocked', $frames[0]->accountStanding[AccountStanding::shown]);
+
+        Hilos::$db->users[$this->personId]->actions->delete();
+        AccountStandingAudience::onAgentTick($agent);
+        self::assertSame([], $this->standingFrames(), 'A gone person gets no frame, not even none');
+    }
+
+    /**
      * A merge written under the open card reaches it on the next tick as the merged standing, naming
      * where the account went (HIL-1292); the chain growing past the survivor and the survivor's
      * rename move the card the same way, with nobody telling the resolver to forget anything.

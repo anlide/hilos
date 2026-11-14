@@ -98,6 +98,10 @@ import {
   readHilosUsersErasureBar,
   hilosStandingBadge,
   hilosUserFrozenRow,
+  hilosUserOffersActions,
+  HILOS_USER_ERASURE_COPY,
+  hilosUserErasingNotice,
+  hilosUserErasureSection,
   hilosUsersPath,
 } from '../src/admin/users/index.js'
 import {
@@ -185,6 +189,10 @@ it('exports the @hilos/core public surface', () => {
   expect(readHilosUsersErasureBar).toBeTypeOf('function')
   expect(hilosStandingBadge('none')).toBeNull()
   expect(hilosUserFrozenRow(null)).toBeNull()
+  expect(hilosUserOffersActions(null)).toBe(true)
+  expect(HILOS_USER_ERASURE_COPY.title).toBe('Account erasure')
+  expect(hilosUserErasingNotice(null)).toBeNull()
+  expect(hilosUserErasureSection(null, undefined)).toBeNull()
   expect(hilosUsersPath('privacy')).toBe('/hilos/users/privacy')
   expect(hilosLegalLapsedHref('terms')).toBe('/hilos/users/terms')
   expect(hilosLegalLapsedLabel(undefined)).toBe(HILOS_LEGAL_LAPSED_COPY.freeze)

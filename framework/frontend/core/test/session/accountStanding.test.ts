@@ -428,8 +428,9 @@ describe('the session standing (HIL-945)', () => {
 })
 
 describe('hilosStandingTone', () => {
-  it('is gray for a merge, red for a block, blue for a freeze and yellow otherwise', () => {
+  it('is gray for a merge, red for an erasure and a block, blue for a freeze and yellow otherwise', () => {
     expect(hilosStandingTone('merged')).toBe('secondary')
+    expect(hilosStandingTone('erasing')).toBe('danger')
     expect(hilosStandingTone('blocked')).toBe('danger')
     expect(hilosStandingTone('frozen')).toBe('info')
     expect(hilosStandingTone('deletion_scheduled')).toBe('warning')

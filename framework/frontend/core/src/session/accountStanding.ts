@@ -106,10 +106,12 @@ export interface HilosDeletionStrip {
 }
 
 /**
- * The tone a standing is shown in: gray for a merged account, red for a block,
- * blue for a freeze, yellow otherwise — a scheduled deletion and a plain account
- * alike. The strips and the avatar mark never draw a merged account: its
- * sessions are closed by the merge and a takeover of it is refused.
+ * The tone a standing is shown in: gray for a merged account, red for a begun
+ * erasure and for a block, blue for a freeze, yellow otherwise — a scheduled
+ * deletion and a plain account alike. A begun erasure is red because it cannot
+ * be taken back (HIL-1957). The strips and the avatar mark never draw a merged
+ * or an erasing account: the sessions of a merged one are closed by the merge,
+ * and a takeover of either is refused.
  *
  * @param kind The standing shown.
  */
@@ -119,6 +121,7 @@ export function hilosStandingTone(
   switch (kind) {
     case 'merged':
       return 'secondary'
+    case 'erasing':
     case 'blocked':
       return 'danger'
     case 'frozen':

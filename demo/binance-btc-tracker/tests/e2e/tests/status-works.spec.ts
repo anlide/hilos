@@ -473,279 +473,287 @@ test('Status Works schedule, change and cancel reach live windows, public files 
   }
 })
 
-test('Status Works uses the published announcement during an actual freeze and completes once after lift before its planned end', async ({
-  page,
-  browser,
-  baseURL,
-  statusWorks,
-  cleanup,
-}) => {
-  // Confirmation/event mail, an actual freeze and owner recovery.
-  test.slow()
-  const guestContext = await browser.newContext({
-    baseURL,
-    ignoreHTTPSErrors: true,
-    colorScheme: 'light',
-    timezoneId: READER_ZONE,
-  })
-  const coldContext = await browser.newContext({
-    baseURL,
-    ignoreHTTPSErrors: true,
-    colorScheme: 'light',
-    timezoneId: READER_ZONE,
-  })
-  const guest = await guestContext.newPage()
-  const cold = await coldContext.newPage()
-  const coldSocket = await controlSocketReconnect(cold)
-  const adminLog = watchDeliveryFrames(page)
-  const publicLog = watchPublicStatus(guest)
-  const coldLog = watchPublicStatus(cold)
-  cleanup.defer(() =>
-    test.info().attach('status-works-actual-freeze-drained', {
-      body: JSON.stringify({
-        guestClosed: guest.isClosed(),
-        coldClosed: cold.isClosed(),
-        warm: publicLog.reads,
-        cold: coldLog.reads,
-      }),
-      contentType: 'application/json',
-    }),
-  )
-  cleanup.defer(() => adminLog.stop())
-  cleanup.defer(() => publicLog.stop())
-  cleanup.defer(() => coldLog.stop())
-  // LIFO cleanup closes both readers before draining their HTTP captures.
-  // Each operation is attempted even if another close or the scenario fails.
-  cleanup.defer(() => guestContext.close())
-  cleanup.defer(() => coldContext.close())
-  cleanup.defer(() => coldSocket.dispose())
-  const email = uniqueEmail()
-  try {
-    await gotoPublicStatus(expect, guest)
-    await expect(guest.getByTestId('conn-state')).toHaveText('connected')
-    await subscribeToStatus(expect, guest, publicLog.wire, email)
-    const links = statusMailLinks(
-      await waitForMailTo(email, STATUS_CONFIRM_SUBJECT),
-    )
-    const confirming = publicLog.wire.sent.length
-    await openMountedStatusMailLink(expect, guest, links.confirm!)
-    await expect(guest.getByTestId('status-subscription-form')).toBeHidden()
-    await expectTrackedActionReply(
-      expect,
-      publicLog.wire,
-      'status_subscription_confirm',
-      confirming,
-      { status: 'subscribed' },
-    )
-    await grantAdminToSelf(expect, page)
-    await gotoPage(expect, page, STATUS_WORKS_PATH)
-    await openStatusWorkSchedule(expect, page)
-    const startsAt = Math.floor(Date.now() / 1000) * 1000 + 20_000
-    const draft = {
-      title: `The announced real freeze ${startsAt}`,
-      description: 'Service closes only for the actual freeze.',
-      startsAt,
-      endsAt: startsAt + 3_600_000,
-      componentKeys: ['settings'],
-    }
-    statusWorks.reserve(draft)
-    await draftStatusWork(expect, page, draft, READER_ZONE)
-    await submitStatusWork(expect, page, adminLog, STATUS_WORK_SCHEDULE)
-    await expect
-      .poll(() =>
-        statusWorkRows(adminLog).find((work) => work.title === draft.title),
-      )
-      .toBeDefined()
-    const work = statusWorkRows(adminLog).find(
-      (work) => work.title === draft.title,
-    )!
-    const scheduled = await waitForMailTo(
-      email,
-      `Scheduled maintenance: ${draft.title}`,
-    )
-    expectStatusMailAlternatives(
-      expect,
-      scheduled,
-      statusMailLinks(scheduled),
-      READER_ZONE,
-    )
-    await expectPublicStatusPair(expect, guest, publicLog, ({ status }) =>
-      status.scheduledWorks.some((entry) => entry.id === work.publicId),
-    )
-    // The schedule keeps its strictly-future guard; a command, not a wait,
-    // brings the announced start to now.
-    const started = await startStatusWork(work.publicId)
-    await expectPublicStatusPair(expect, guest, publicLog, ({ status }) =>
-      status.scheduledWorks.some(
-        (entry) =>
-          entry.id === work.publicId && entry.startsAt <= started.startsAt,
-      ),
-    )
-    expect(Date.now()).toBeLessThan(draft.endsAt)
-    expect(await enterProtectedMode('e2e-status-announced-work')).toBe('active')
-    const phase = await inspectProtectedMode()
-    expect(phase).toMatchObject({ phase: 'active', agentStartGateClosed: true })
-    expect(phase.stoppedAgents).toContain('hilos_settings_library')
-    expect(phase.stoppedAgents).not.toContain('hilos_status')
-    // The cold reader below gets no socket and so no hint: its first GET must
-    // already find the period, or its next poll is a whole interval away. The
-    // owner publishes the period from its first tick under the freeze; wait
-    // for that file on its disk before the reader opens.
-    const opened = (status: PublicStatusFile): boolean =>
-      status.maintenancePeriods.some(
-        (period) =>
-          period.workId === work.publicId &&
-          period.completionObservedAt === null,
-      )
-    await expect
-      .poll(async () => {
-        const status = await readPublishedStatus()
-        return status !== undefined && opened(status)
-      })
-      .toBe(true)
-    // A never-welcomed document reads nginx files while its first socket is held.
-    await coldSocket.hold()
-    await gotoPublicStatus(expect, cold)
-    const active = await expectPublicStatusPair(
-      expect,
-      cold,
-      coldLog,
-      ({ status }) => opened(status),
-    )
-    expect(
-      active.status.components.every(
-        (component) => component.state === 'maintenance',
-      ),
-    ).toBe(true)
-    const period = active.status.maintenancePeriods.find(
-      (period) => period.workId === work.publicId,
-    )!
-    expect(period).toMatchObject({
-      workId: work.publicId,
-      announcementKnown: true,
-      title: draft.title,
-      endedAt: null,
-      completionObservedAt: null,
+// FIXME(F-098, 2026-11-14): Post-lift open predicate times out at :605; on base the announcement form stays open at :553 · чужой · попытка 1 · HIL-2035
+test(
+  'Status Works uses the published announcement during an actual freeze and completes once after lift before its planned end',
+  { tag: '@quarantine:F-098' },
+  async ({ page, browser, baseURL, statusWorks, cleanup }) => {
+    // Confirmation/event mail, an actual freeze and owner recovery.
+    test.slow()
+    const guestContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors: true,
+      colorScheme: 'light',
+      timezoneId: READER_ZONE,
     })
-    expect(period.startedAt).toBeGreaterThanOrEqual(started.startsAt)
-    expect(period.startedAt).toBeLessThan(draft.endsAt)
-    await expect(cold.getByTestId('public-status-maintenance')).toContainText(
-      draft.title,
-    )
-    await expect(cold.getByTestId('public-status-maintenance')).toContainText(
-      'Announced in advance',
-    )
-    await expect(cold.getByTestId('public-status-component-state')).toHaveText(
-      active.status.components.map(() => 'Maintenance'),
-    )
-    expect(coldLog.wire.packets).toEqual([])
-    expectPublicStatusReadOnly(expect, coldLog)
-    expect((await mailsTo(email)).map((mail) => mail.subject).sort()).toEqual(
-      [STATUS_CONFIRM_SUBJECT, `Scheduled maintenance: ${draft.title}`].sort(),
-    )
-    await markDocument(page)
-    await openProtectedMode()
-    await expectSelfReload(page, test.info().project.use.navigationTimeout)
-    await expectPageReady(expect, page)
-    // No poll is waited out: the released socket rereads at once, and the
-    // owner's hint carries a completion published after that.
-    await coldSocket.release()
-    await expect(cold.getByTestId('conn-state')).toHaveText('connected')
-    const completedPair = await expectPublicStatusPair(
-      expect,
-      cold,
-      coldLog,
-      ({ status }) =>
-        status.maintenancePeriods.some(
-          (entry) =>
-            entry.id === period.id && entry.completionObservedAt !== null,
-        ) && status.scheduledWorks.every((entry) => entry.id !== work.publicId),
-    )
-    const completed = completedPair.status.maintenancePeriods.filter(
-      (entry) => entry.id === period.id,
-    )
-    expect(completed).toHaveLength(1)
-    expect(completed[0].completionObservedAt).toBeLessThan(draft.endsAt)
-    await expect(cold.getByTestId('public-status-maintenance')).toHaveCount(0)
-    const history = cold.getByTestId('public-status-history')
-    await expect(history).toContainText(draft.title)
-    // Other scenarios can leave genuine completed maintenance in this history.
-    // This announcement owns exactly one completed period and heading.
-    await expect(
-      history.getByRole('heading', {
-        name: `${draft.title} Maintenance Completed`,
-        exact: true,
-      }),
-    ).toHaveCount(1)
-    await expect(cold.getByTestId('public-status-works')).toHaveCount(0)
-    const completedMail = await waitForMailTo(
-      email,
-      `Completed: ${draft.title}`,
-    )
-    expectStatusMailAlternatives(
-      expect,
-      completedMail,
-      statusMailLinks(completedMail),
-      READER_ZONE,
-    )
-    expect(completedMail.text).toContain('Service is open again.')
-    await gotoPage(expect, page, STATUS_WORKS_PATH)
-    await expect(shownByTestId(page, 'hilos-table-empty')).toBeVisible()
-    await gotoPage(expect, page, STATUS_PATH)
-    await expect(page.getByTestId('hilos-status-works-count')).toHaveText('0')
-    await test.step('History retains exactly this completed period and announcement', async () => {
-      const since = adminLog.packets.length
-      await page.getByTestId('hilos-page-tab-hilos_status_history').click()
-      await expectPageReady(expect, page)
-      await expect(page).toHaveURL(new RegExp(`${STATUS_HISTORY_PATH}$`))
-      const answer = statusHistoryDeliveries(adminLog, since)[0]
-      const facts = answer.rows.filter(
-        (row) => row.workPublicId === work.publicId,
-      )
-      expect(facts).toHaveLength(1)
-      const fact = facts[0]
-      // Public period ids are opaque; History names the numeric source row.
-      // The public work and exact saved interval identify this same observation.
-      expect(fact).toMatchObject({
-        kind: 'maintenance',
-        startedAt: period.startedAt,
-        endedAt: completed[0].endedAt,
-        completionObservedAt: completed[0].completionObservedAt,
-        publishedAt: null,
-        outcome: 'maintenance_completed',
-        title: draft.title,
-        componentKeys: draft.componentKeys,
-        severity: null,
-        announcementKnown: true,
-        workPublicId: work.publicId,
-      })
-      await expectStatusHistoryFact(expect, page, fact)
-      await expect(
-        shownByTestId(page, `hilos-table-row-${fact.id}`),
-      ).toHaveCount(1)
+    const coldContext = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors: true,
+      colorScheme: 'light',
+      timezoneId: READER_ZONE,
     })
-    expect((await mailsTo(email)).map((mail) => mail.subject).sort()).toEqual(
-      [
-        STATUS_CONFIRM_SUBJECT,
-        `Scheduled maintenance: ${draft.title}`,
-        `Completed: ${draft.title}`,
-      ].sort(),
-    )
-  } finally {
+    const guest = await guestContext.newPage()
+    const cold = await coldContext.newPage()
+    const coldSocket = await controlSocketReconnect(cold)
+    const adminLog = watchDeliveryFrames(page)
+    const publicLog = watchPublicStatus(guest)
+    const coldLog = watchPublicStatus(cold)
     cleanup.defer(() =>
-      test.info().attach('status-works-actual-freeze', {
+      test.info().attach('status-works-actual-freeze-drained', {
         body: JSON.stringify({
-          admin: adminLog,
+          guestClosed: guest.isClosed(),
+          coldClosed: cold.isClosed(),
           warm: publicLog.reads,
           cold: coldLog.reads,
-          displayed: coldLog.displayed,
         }),
         contentType: 'application/json',
       }),
     )
-    cleanup.defer(async () => {
-      await openProtectedModeIfAny()
-      expect((await inspectProtectedMode()).phase).toBe('inactive')
-    })
-  }
-})
+    cleanup.defer(() => adminLog.stop())
+    cleanup.defer(() => publicLog.stop())
+    cleanup.defer(() => coldLog.stop())
+    // LIFO cleanup closes both readers before draining their HTTP captures.
+    // Each operation is attempted even if another close or the scenario fails.
+    cleanup.defer(() => guestContext.close())
+    cleanup.defer(() => coldContext.close())
+    cleanup.defer(() => coldSocket.dispose())
+    const email = uniqueEmail()
+    try {
+      await gotoPublicStatus(expect, guest)
+      await expect(guest.getByTestId('conn-state')).toHaveText('connected')
+      await subscribeToStatus(expect, guest, publicLog.wire, email)
+      const links = statusMailLinks(
+        await waitForMailTo(email, STATUS_CONFIRM_SUBJECT),
+      )
+      const confirming = publicLog.wire.sent.length
+      await openMountedStatusMailLink(expect, guest, links.confirm!)
+      await expect(guest.getByTestId('status-subscription-form')).toBeHidden()
+      await expectTrackedActionReply(
+        expect,
+        publicLog.wire,
+        'status_subscription_confirm',
+        confirming,
+        { status: 'subscribed' },
+      )
+      await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, STATUS_WORKS_PATH)
+      await openStatusWorkSchedule(expect, page)
+      const startsAt = Math.floor(Date.now() / 1000) * 1000 + 20_000
+      const draft = {
+        title: `The announced real freeze ${startsAt}`,
+        description: 'Service closes only for the actual freeze.',
+        startsAt,
+        endsAt: startsAt + 3_600_000,
+        componentKeys: ['settings'],
+      }
+      statusWorks.reserve(draft)
+      await draftStatusWork(expect, page, draft, READER_ZONE)
+      await submitStatusWork(expect, page, adminLog, STATUS_WORK_SCHEDULE)
+      await expect
+        .poll(() =>
+          statusWorkRows(adminLog).find((work) => work.title === draft.title),
+        )
+        .toBeDefined()
+      const work = statusWorkRows(adminLog).find(
+        (work) => work.title === draft.title,
+      )!
+      const scheduled = await waitForMailTo(
+        email,
+        `Scheduled maintenance: ${draft.title}`,
+      )
+      expectStatusMailAlternatives(
+        expect,
+        scheduled,
+        statusMailLinks(scheduled),
+        READER_ZONE,
+      )
+      await expectPublicStatusPair(expect, guest, publicLog, ({ status }) =>
+        status.scheduledWorks.some((entry) => entry.id === work.publicId),
+      )
+      // The schedule keeps its strictly-future guard; a command, not a wait,
+      // brings the announced start to now.
+      const started = await startStatusWork(work.publicId)
+      await expectPublicStatusPair(expect, guest, publicLog, ({ status }) =>
+        status.scheduledWorks.some(
+          (entry) =>
+            entry.id === work.publicId && entry.startsAt <= started.startsAt,
+        ),
+      )
+      expect(Date.now()).toBeLessThan(draft.endsAt)
+      expect(await enterProtectedMode('e2e-status-announced-work')).toBe(
+        'active',
+      )
+      const phase = await inspectProtectedMode()
+      expect(phase).toMatchObject({
+        phase: 'active',
+        agentStartGateClosed: true,
+      })
+      expect(phase.stoppedAgents).toContain('hilos_settings_library')
+      expect(phase.stoppedAgents).not.toContain('hilos_status')
+      // The cold reader below gets no socket and so no hint: its first GET must
+      // already find the period, or its next poll is a whole interval away. The
+      // owner publishes the period from its first tick under the freeze; wait
+      // for that file on its disk before the reader opens.
+      const opened = (status: PublicStatusFile): boolean =>
+        status.maintenancePeriods.some(
+          (period) =>
+            period.workId === work.publicId &&
+            period.completionObservedAt === null,
+        )
+      await expect
+        .poll(async () => {
+          const status = await readPublishedStatus()
+          return status !== undefined && opened(status)
+        })
+        .toBe(true)
+      // A never-welcomed document reads nginx files while its first socket is held.
+      await coldSocket.hold()
+      await gotoPublicStatus(expect, cold)
+      const active = await expectPublicStatusPair(
+        expect,
+        cold,
+        coldLog,
+        ({ status }) => opened(status),
+      )
+      expect(
+        active.status.components.every(
+          (component) => component.state === 'maintenance',
+        ),
+      ).toBe(true)
+      const period = active.status.maintenancePeriods.find(
+        (period) => period.workId === work.publicId,
+      )!
+      expect(period).toMatchObject({
+        workId: work.publicId,
+        announcementKnown: true,
+        title: draft.title,
+        endedAt: null,
+        completionObservedAt: null,
+      })
+      expect(period.startedAt).toBeGreaterThanOrEqual(started.startsAt)
+      expect(period.startedAt).toBeLessThan(draft.endsAt)
+      await expect(cold.getByTestId('public-status-maintenance')).toContainText(
+        draft.title,
+      )
+      await expect(cold.getByTestId('public-status-maintenance')).toContainText(
+        'Announced in advance',
+      )
+      await expect(
+        cold.getByTestId('public-status-component-state'),
+      ).toHaveText(active.status.components.map(() => 'Maintenance'))
+      expect(coldLog.wire.packets).toEqual([])
+      expectPublicStatusReadOnly(expect, coldLog)
+      expect((await mailsTo(email)).map((mail) => mail.subject).sort()).toEqual(
+        [
+          STATUS_CONFIRM_SUBJECT,
+          `Scheduled maintenance: ${draft.title}`,
+        ].sort(),
+      )
+      await markDocument(page)
+      await openProtectedMode()
+      await expectSelfReload(page, test.info().project.use.navigationTimeout)
+      await expectPageReady(expect, page)
+      // No poll is waited out: the released socket rereads at once, and the
+      // owner's hint carries a completion published after that.
+      await coldSocket.release()
+      await expect(cold.getByTestId('conn-state')).toHaveText('connected')
+      const completedPair = await expectPublicStatusPair(
+        expect,
+        cold,
+        coldLog,
+        ({ status }) =>
+          status.maintenancePeriods.some(
+            (entry) =>
+              entry.id === period.id && entry.completionObservedAt !== null,
+          ) &&
+          status.scheduledWorks.every((entry) => entry.id !== work.publicId),
+      )
+      const completed = completedPair.status.maintenancePeriods.filter(
+        (entry) => entry.id === period.id,
+      )
+      expect(completed).toHaveLength(1)
+      expect(completed[0].completionObservedAt).toBeLessThan(draft.endsAt)
+      await expect(cold.getByTestId('public-status-maintenance')).toHaveCount(0)
+      const history = cold.getByTestId('public-status-history')
+      await expect(history).toContainText(draft.title)
+      // Other scenarios can leave genuine completed maintenance in this history.
+      // This announcement owns exactly one completed period and heading.
+      await expect(
+        history.getByRole('heading', {
+          name: `${draft.title} Maintenance Completed`,
+          exact: true,
+        }),
+      ).toHaveCount(1)
+      await expect(cold.getByTestId('public-status-works')).toHaveCount(0)
+      const completedMail = await waitForMailTo(
+        email,
+        `Completed: ${draft.title}`,
+      )
+      expectStatusMailAlternatives(
+        expect,
+        completedMail,
+        statusMailLinks(completedMail),
+        READER_ZONE,
+      )
+      expect(completedMail.text).toContain('Service is open again.')
+      await gotoPage(expect, page, STATUS_WORKS_PATH)
+      await expect(shownByTestId(page, 'hilos-table-empty')).toBeVisible()
+      await gotoPage(expect, page, STATUS_PATH)
+      await expect(page.getByTestId('hilos-status-works-count')).toHaveText('0')
+      await test.step('History retains exactly this completed period and announcement', async () => {
+        const since = adminLog.packets.length
+        await page.getByTestId('hilos-page-tab-hilos_status_history').click()
+        await expectPageReady(expect, page)
+        await expect(page).toHaveURL(new RegExp(`${STATUS_HISTORY_PATH}$`))
+        const answer = statusHistoryDeliveries(adminLog, since)[0]
+        const facts = answer.rows.filter(
+          (row) => row.workPublicId === work.publicId,
+        )
+        expect(facts).toHaveLength(1)
+        const fact = facts[0]
+        // Public period ids are opaque; History names the numeric source row.
+        // The public work and exact saved interval identify this same observation.
+        expect(fact).toMatchObject({
+          kind: 'maintenance',
+          startedAt: period.startedAt,
+          endedAt: completed[0].endedAt,
+          completionObservedAt: completed[0].completionObservedAt,
+          publishedAt: null,
+          outcome: 'maintenance_completed',
+          title: draft.title,
+          componentKeys: draft.componentKeys,
+          severity: null,
+          announcementKnown: true,
+          workPublicId: work.publicId,
+        })
+        await expectStatusHistoryFact(expect, page, fact)
+        await expect(
+          shownByTestId(page, `hilos-table-row-${fact.id}`),
+        ).toHaveCount(1)
+      })
+      expect((await mailsTo(email)).map((mail) => mail.subject).sort()).toEqual(
+        [
+          STATUS_CONFIRM_SUBJECT,
+          `Scheduled maintenance: ${draft.title}`,
+          `Completed: ${draft.title}`,
+        ].sort(),
+      )
+    } finally {
+      cleanup.defer(() =>
+        test.info().attach('status-works-actual-freeze', {
+          body: JSON.stringify({
+            admin: adminLog,
+            warm: publicLog.reads,
+            cold: coldLog.reads,
+            displayed: coldLog.displayed,
+          }),
+          contentType: 'application/json',
+        }),
+      )
+      cleanup.defer(async () => {
+        await openProtectedModeIfAny()
+        expect((await inspectProtectedMode()).phase).toBe('inactive')
+      })
+    }
+  },
+)

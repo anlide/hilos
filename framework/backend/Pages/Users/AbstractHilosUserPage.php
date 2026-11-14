@@ -26,9 +26,12 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageReach;
+use Hilos\Core\Page\PageResource;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -36,6 +39,7 @@ use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Hilos;
@@ -65,6 +69,10 @@ use Throwable;
  *
  * The default subscription path answers the client, parses the `userId` route param, and then
  * calls {@see self::onHilosUserSubscribe()}.
+ *
+ * The card names the person's row ({@see self::resolvePageResource()}): deleting that row gives
+ * every window open on it the live 404 (Deleted While Open, docs/agents/architecture/page-head.md,
+ * HIL-1957).
  *
  * Its ADMIN gate closes renaming, account merging, rights, blocking, scheduled deletion and taking
  * the person over. The sessions or users library judges and writes each change, then returns its
@@ -301,6 +309,33 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
         }
 
         $this->sendToUser(HilosSignalConstants::HILOS_USER_UPDATE_SUCCESS, $acceptKey, new HilosUserUpdateSuccessSignalData());
+    }
+
+    /**
+     * Names the person this card is about by their row in the person table.
+     *
+     * The address and the resource both name the person's primary id; when the row goes, every
+     * window open on the card, on either of its tabs, gets the live 404 (HIL-1957).
+     *
+     * @param string $acceptKey Subscribing connection
+     * @param PageRouteParams $params Raw route parameters
+     * @return ?PageResource Person row, addressed by primary id
+     * @throws MissingPageRouteParamException When `userId` is absent
+     * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
+     * @throws PageResourceNotFoundException When no person has this id
+     * @throws PageInternalErrorException When the person id is empty
+     * @throws DatabaseException When the person lookup fails
+     * @throws LogicException When collection classes are not configured
+     * @throws InvalidArgumentException When a loaded person has the wrong type
+     */
+    final protected function resolvePageResource(string $acceptKey, PageRouteParams $params): ?PageResource
+    {
+        $userId = HilosUserPageSubscribeParams::fromPageRouteParams($params)->userId;
+        if (!isset(Hilos::$db->users[$userId])) {
+            throw new PageResourceNotFoundException("No such user: {$userId}");
+        }
+
+        return PageResource::db(HilosDbContext::users, $userId);
     }
 
     /**

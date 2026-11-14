@@ -8,7 +8,7 @@
 // lives on the card since HIL-1170: its section follows the installation's
 // settings the page's first answer carries (`impersonation`).
 import { flushPromises, mount } from '@vue/test-utils'
-import { h, markRaw, nextTick } from 'vue'
+import { defineComponent, h, markRaw, nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type TableViewportController,
@@ -19,13 +19,16 @@ import {
   bindAdminAccess,
   bindSessionScope,
   createAppPageRouter,
+  createHilosRouter,
   formatCalendarDate,
   formatMoment,
   HIDDEN_VALUE,
   hilosToasts,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosPages,
+  PageSubscription,
   type Hideable,
+  type PageSubscriptionError,
   type ProjectSignal,
   type TableViewportDescriptor,
   resolveHilosPath,
@@ -56,6 +59,8 @@ import {
 } from '@hilos/core/admin/users'
 
 import HilosUserPage from './HilosUserPage.vue'
+import ErrorPage from '../../ErrorPage.vue'
+import HilosView from '../../HilosView.vue'
 import HilosHideable from '../../HilosHideable.vue'
 import LoadingButton from '../../LoadingButton.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
@@ -3239,6 +3244,306 @@ describe('HilosUserPage merged account (HIL-1292)', () => {
 
     expect(modalEl('modal')).toBeNull()
     expect(modalEl('hilos-user-merged')).not.toBeNull()
+  })
+})
+
+describe('HilosUserPage erasing account (HIL-1957)', () => {
+  const startedAt = Date.parse('2026-01-01T00:30:05Z')
+  const erasing = standing({ shown: 'erasing' })
+
+  /**
+   * The progress of a begun erasure as the wire carries it: the card's own
+   * part and that of an account merged into it (#7), one owner awaited.
+   *
+   * @param facts The facts that differ from that progress.
+   */
+  function erasure(
+    facts: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      startedAt,
+      parts: [
+        { participant: 'sessions', owner: 'auth', userId: 1, done: true },
+        { participant: 'messages', owner: 'chat', userId: 7, done: false },
+      ],
+      waits: [{ participant: 'messages', userId: 7 }],
+      refusals: [],
+      ...facts,
+    }
+  }
+
+  async function settle(): Promise<void> {
+    await flushPromises()
+    await nextTick()
+  }
+
+  async function mountCard(context: HilosUsersContext): Promise<void> {
+    mounted.push(
+      mount(HilosUserPage, {
+        props: { context: markRaw(context) },
+        attachTo: document.body,
+        global: {
+          provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+        },
+      }),
+    )
+    await settle()
+  }
+
+  function lines(id: string): string[] {
+    return Array.from(document.querySelectorAll(`[data-id="${id}"]`)).map(
+      (line) => (line.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    )
+  }
+
+  it('shows the erasure in progress and offers nothing to press', async () => {
+    const { context, standingFrame } = userContext(true, {
+      impersonation: impersonationSettings(),
+    })
+    await mountCard(context)
+    expect(modalEl('hilos-user-edit')).not.toBeNull()
+    expect(modalEl('hilos-user-erasure')).toBeNull()
+
+    standingFrame({
+      userId: 1,
+      accountStanding: erasing,
+      accountErasure: erasure(),
+    })
+    await settle()
+
+    expect(modalEl('user-standing-badge')?.textContent?.trim()).toBe(
+      'Being deleted',
+    )
+    expect(modalEl('hilos-user-erasing')?.textContent?.trim()).toBe(
+      'This account is being deleted.',
+    )
+    expect(modalEl('hilos-user-edit')).toBeNull()
+    expect(modalEl('hilos-user-rights')).toBeNull()
+    expect(modalEl('hilos-user-access')).toBeNull()
+    expect(modalEl('hilos-user-merge-zone')).toBeNull()
+    expect(modalEl('hilos-user-impersonate-open')).toBeNull()
+    const section = modalEl('hilos-user-erasure')!
+    expect(section.querySelector('h2')?.textContent).toBe('Account erasure')
+    expect(section.textContent).toContain('Erasure in progress')
+    expect(
+      Array.from(section.querySelectorAll('h3')).map((h) => h.textContent),
+    ).toEqual(['Parts', 'Waiting for an owner'])
+    expect(modalEl('hilos-user-erasure-started')?.textContent?.trim()).toBe(
+      `Started ${String(formatMoment(startedAt, { kind: 'dateTime' }))} — it cannot be canceled`,
+    )
+    expect(lines('hilos-user-erasure-part')).toEqual([
+      'sessions — Done',
+      'messages · #7 — Expected',
+    ])
+    expect(lines('hilos-user-erasure-wait')).toEqual(['messages · #7'])
+    expect(lines('hilos-user-erasure-refusal')).toEqual([])
+    expect(section.querySelectorAll('button')).toHaveLength(0)
+  })
+
+  it('says which table refused the final, and whose', async () => {
+    const { context, standingFrame } = userContext()
+    await mountCard(context)
+
+    standingFrame({
+      userId: 1,
+      accountStanding: erasing,
+      accountErasure: erasure({
+        waits: [],
+        refusals: [
+          { userId: 1, table: 'chat_message' },
+          { userId: 7, table: null },
+        ],
+      }),
+    })
+    await settle()
+
+    expect(
+      Array.from(modalEl('hilos-user-erasure')!.querySelectorAll('h3')).map(
+        (h) => h.textContent,
+      ),
+    ).toEqual(['Parts', 'Refused'])
+    expect(lines('hilos-user-erasure-refusal')).toEqual([
+      'Table chat_message still references the account',
+      '#7 · Another table still references the account',
+    ])
+    expect(lines('hilos-user-erasure-part')).toContain(
+      'messages · #7 — Expected',
+    )
+  })
+
+  it('closes an open window when the erasure begins and keeps one whose action is in flight', async () => {
+    const opened = userContext()
+    await mountCard(opened.context)
+    modalEl('hilos-user-block-open')?.click()
+    await settle()
+    expect(modalEl('modal')).not.toBeNull()
+
+    opened.standingFrame({ userId: 1, accountStanding: erasing })
+    await settle()
+    expect(modalEl('modal')).toBeNull()
+    expect(modalEl('hilos-user-erasing')).not.toBeNull()
+
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+    const flying = userContext()
+    await mountCard(flying.context)
+    modalEl('hilos-user-block-open')?.click()
+    await settle()
+    let reject!: (reason: unknown) => void
+    vi.spyOn(flying.context.actions, 'dispatch').mockImplementation(() => ({
+      requestId: 'erasing-req',
+      loading: createSignal(false),
+      done: new Promise<ActionResult>((_, no) => {
+        reject = no
+      }),
+    }))
+    modalEl('hilos-user-lifecycle-confirm')?.click()
+    await settle()
+
+    flying.standingFrame({ userId: 1, accountStanding: erasing })
+    await settle()
+    expect(modalEl('modal')).not.toBeNull()
+
+    reject(
+      new ActionError(
+        'hilos_user_block_set',
+        'fail',
+        'This account is being deleted.',
+      ),
+    )
+    await settle()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-user-lifecycle-error')?.textContent).toContain(
+      'This account is being deleted.',
+    )
+  })
+
+  it('shows a viewer of the admin view mode the same section, with nothing hidden', async () => {
+    const listeners: ((signal: ProjectSignal) => void)[] = []
+    const sessionConnection = {
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'projectSignal') {
+          listeners.push(listener as (signal: ProjectSignal) => void)
+        }
+
+        return () => {}
+      },
+    } as unknown as HilosConnection
+    const scopes = new ScopeManager()
+    bindSessionScope(sessionConnection, scopes)
+    const unbindAccess = bindAdminAccess(scopes)
+    try {
+      for (const listener of listeners) {
+        listener({
+          kind: 'project',
+          type: 'handshake_response',
+          data: {
+            entities: { currentUser: null },
+            data: { adminViewMode: true },
+          },
+          envelope: {},
+        } as unknown as ProjectSignal)
+      }
+      const world = userContext(false, { scopes })
+      scopes.page()!.data.set('accountStanding', erasing)
+      scopes.page()!.data.set('accountErasure', erasure())
+      await mountCard(world.context)
+
+      const section = modalEl('hilos-user-erasure')!
+      expect(section.querySelector('[data-id="hilos-hidden"]')).toBeNull()
+      expect(lines('hilos-user-erasure-part')).toEqual([
+        'sessions — Done',
+        'messages · #7 — Expected',
+      ])
+      expect(lines('hilos-user-erasure-wait')).toEqual(['messages · #7'])
+      expect(modalEl('hilos-user-edit')).toBeNull()
+      expect(world.sent).toEqual([])
+    } finally {
+      unbindAccess()
+    }
+  })
+
+  it('ends in the one 404 when the erasure ends under the open card', async () => {
+    const scopes = new ScopeManager()
+    scopes.session.data.set('adminViewMode', false)
+    const releaseAccess = bindAdminAccess(scopes)
+    const subscription = new PageSubscription(
+      {
+        state: 'connected',
+        reconnectDragging: false,
+        send: () => true,
+        on: () => () => {},
+        forgetPageFrames: () => {},
+        tableWindowDescriptors: () => ({}),
+      },
+      scopes,
+    )
+    let path = '/hilos/user/1'
+    const navigation = createHilosRouter(
+      createAppPageRouter({}),
+      subscription,
+      {
+        pathname: () => path,
+        pushState: (next) => {
+          path = next
+        },
+        replaceState: (next) => {
+          path = next
+        },
+        onPopState: () => () => {},
+      },
+    )
+    navigation.start()
+    try {
+      const world = userContext(false, { scopes })
+      const view = mount(HilosView, {
+        props: {
+          pages: {
+            [HilosPages.USER]: markRaw(
+              defineComponent(
+                () => () =>
+                  h(HilosUserPage, { context: markRaw(world.context) }),
+              ),
+            ),
+          },
+        },
+        attachTo: document.body,
+        global: { provide: { [hilosRouterKey as symbol]: navigation } },
+      })
+      mounted.push(view)
+      subscription.ingestPageResponse(HilosPages.USER, {
+        data: { accountStanding: erasing, accountErasure: erasure() },
+      })
+      await settle()
+      expect(view.find('[data-id="hilos-user-erasure"]').exists()).toBe(true)
+      expect(view.find('[data-id="hilos-user-erasing"]').exists()).toBe(true)
+
+      const deletedElsewhere: PageSubscriptionError = {
+        page: HilosPages.USER,
+        httpCode: 404,
+        errorCode: 'not_found',
+        title: 'Page Not Found',
+        message: 'The page you are looking for does not exist.',
+        transitionMessage: 'It was deleted just now.',
+      }
+      subscription.handleSubscriptionError(deletedElsewhere)
+      await settle()
+
+      expect(view.findAllComponents(ErrorPage)).toHaveLength(1)
+      expect(view.get('[data-id="page-error-transition-message"]').text()).toBe(
+        'It was deleted just now.',
+      )
+      for (const gone of [
+        'user-standing-badge',
+        'hilos-user-erasing',
+        'hilos-user-erasure',
+      ]) {
+        expect(view.find(`[data-id="${gone}"]`).exists()).toBe(false)
+      }
+      expect(world.sent).toEqual([])
+    } finally {
+      navigation.stop()
+      releaseAccess()
+    }
   })
 })
 

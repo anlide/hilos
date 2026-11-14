@@ -144,6 +144,9 @@ final class AccountStandingAudience
     /**
      * Sends what changed under the open cards and the narrowed lists.
      *
+     * A card whose person is gone gets no frame: the live 404 of its row closes it, and a frame
+     * could overtake that 404 and bring the card's buttons back (HIL-1957).
+     *
      * @param PageAgentInterface $agent Agent serving the surfaces; the card frames leave from it
      * @throws InvalidArgumentException When a frame cannot be named
      * @throws InvalidFormatException When a standing frame cannot be built for its person
@@ -152,6 +155,11 @@ final class AccountStandingAudience
     public static function onAgentTick(PageAgentInterface $agent): void
     {
         foreach (self::$cards as $acceptKey => $userId) {
+            // The person left: the live 404 of their row closes the card, and a 'none' frame could
+            // overtake it and bring the buttons back (HIL-1957).
+            if (!isset(Hilos::$db->users[$userId])) {
+                continue;
+            }
             $standing = AccountStandingResolver::of($userId);
             $erasure = AccountErasureProgressResolver::of($userId)?->toArray();
             if ($standing->toArray() === self::$shown[$acceptKey]->toArray() && $erasure === self::$shownErasure[$acceptKey]) {
