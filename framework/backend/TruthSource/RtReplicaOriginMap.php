@@ -74,7 +74,7 @@ final class RtReplicaOriginMap
     {
         $confirmation = ($this->confirmations[$nodeId] ?? null)?->get();
         if ($confirmation === null || !$confirmation->isCurrent($this, $sources)) {
-            $confirmation = new RtReplicaConfirmation($this, $sources);
+            $confirmation = new RtReplicaConfirmation($nodeId, $this, $sources);
             $this->confirmations[$nodeId] = WeakReference::create($confirmation);
         }
         return $confirmation;

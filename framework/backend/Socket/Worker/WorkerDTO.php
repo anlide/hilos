@@ -61,9 +61,7 @@ use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\DTO\WorkerUploadConsumedDTO;
 use Hilos\Socket\Worker\DTO\WorkerUploadSettingsDTO;
 use Hilos\Socket\Worker\DTO\WorkerDeliverySettingsDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Utils\Logger;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
@@ -165,9 +163,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerTestCronScheduleResultDTO::MESSAGE_TYPE => WorkerTestCronScheduleResultDTO::fromArray($data),
             WorkerDbReHydratedDTO::MESSAGE_TYPE => WorkerDbReHydratedDTO::fromArray($data),
             DbReHydrateCompleteDTO::MESSAGE_TYPE => DbReHydrateCompleteDTO::fromArray($data),
-            WorkerRtSyncCreatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncCreatedMessageDTO::fromArray($data),
-            WorkerRtSyncUpdatedMessageDTO::MESSAGE_TYPE => WorkerRtSyncUpdatedMessageDTO::fromArray($data),
-            WorkerRtSyncDeletedMessageDTO::MESSAGE_TYPE => WorkerRtSyncDeletedMessageDTO::fromArray($data),
+            WorkerRtSyncStreamDTO::MESSAGE_TYPE => WorkerRtSyncStreamDTO::fromArray($data),
             WorkerRtSourceRegisteredDTO::MESSAGE_TYPE => WorkerRtSourceRegisteredDTO::fromArray($data),
             WorkerRtSourceReleasedDTO::MESSAGE_TYPE => WorkerRtSourceReleasedDTO::fromArray($data),
             WorkerSourceInterestDTO::MESSAGE_TYPE => WorkerSourceInterestDTO::fromArray($data),

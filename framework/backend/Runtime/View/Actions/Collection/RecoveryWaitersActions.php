@@ -15,6 +15,7 @@ use Hilos\Runtime\State\Collection\RecoveryWaiters as StateRecoveryWaiters;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\View\Collection\RecoveryWaiters;
 use Hilos\Runtime\View\Item\RecoveryWaiter;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the sessions parked on a password-recovery code step (HIL-416).
@@ -59,6 +60,8 @@ final class RecoveryWaitersActions extends RtActions
      * @param string $sessionToken Session token the grant is bound to
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
@@ -180,6 +183,8 @@ final class RecoveryWaitersActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function release(string $acceptKey): void
     {

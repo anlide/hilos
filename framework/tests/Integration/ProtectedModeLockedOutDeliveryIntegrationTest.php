@@ -330,12 +330,16 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
         $state->phase = StateProtectedModeRuntime::PHASE_VERIFYING;
         $state->initiatorAcceptKey = $operator->acceptKey;
         $state->initiatorSessionTokenHash = self::sessionHash(self::OPERATOR_SESSION_TOKEN);
+        $admittedHashes = [];
+        $circleHashes = [];
         for ($index = 0; $index < 1024; $index++) {
-            $state->admittedSessionTokenHashes[] = StateProtectedModeRuntime::hashSessionToken('pass-' . $index);
-            $state->circleSessionTokenHashes[] = StateProtectedModeRuntime::hashSessionToken('circle-' . $index);
+            $admittedHashes[] = StateProtectedModeRuntime::hashSessionToken('pass-' . $index);
+            $circleHashes[] = StateProtectedModeRuntime::hashSessionToken('circle-' . $index);
         }
-        $state->admittedSessionTokenHashes[] = self::sessionHash(self::PASS_HOLDER_SESSION_TOKEN);
-        $state->circleSessionTokenHashes[] = self::sessionHash(self::MEMBER_SESSION_TOKEN);
+        $admittedHashes[] = self::sessionHash(self::PASS_HOLDER_SESSION_TOKEN);
+        $circleHashes[] = self::sessionHash(self::MEMBER_SESSION_TOKEN);
+        $state->admittedSessionTokenHashes = $admittedHashes;
+        $state->circleSessionTokenHashes = $circleHashes;
         Hilos::$rt = new LockedOutDeliveryTestRtContext();
         Hilos::$rt->mountFeatureItem(StateProtectedModeRuntime::RT_ITEM, $state);
         RtTruthSourceRegistry::registerDaemon(StateProtectedModeRuntime::RT_ITEM);

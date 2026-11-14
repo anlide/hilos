@@ -21,10 +21,11 @@ final class RtReplicaConfirmation
     private readonly WeakReference $sources;
 
     /**
+     * @param string $nodeId Origin node the receipt speaks for
      * @param RtReplicaOriginMap $origins Original replica bookkeeping owner
      * @param RtNodeSourceMap $sources Original ownership source
      */
-    public function __construct(RtReplicaOriginMap $origins, RtNodeSourceMap $sources)
+    public function __construct(public readonly string $nodeId, RtReplicaOriginMap $origins, RtNodeSourceMap $sources)
     {
         $this->basis = new RtSnapshotBasis();
         $this->origins = WeakReference::create($origins);

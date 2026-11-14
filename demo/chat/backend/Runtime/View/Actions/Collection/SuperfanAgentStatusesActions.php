@@ -19,6 +19,8 @@ use Hilos\Runtime\View\Actions\Collection\RtActions;
 use LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for superfan run statuses.
@@ -39,6 +41,8 @@ final class SuperfanAgentStatusesActions extends RtActions
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException When a source subscriber fails
      * @throws LogicException When the item factory returns the wrong status type
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function syncStatuses(array $statuses): void
     {
@@ -62,6 +66,8 @@ final class SuperfanAgentStatusesActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws SourceChangeSubscriberException When a source subscriber fails
      * @throws LogicException When the item factory returns the wrong status type
      */
@@ -74,17 +80,20 @@ final class SuperfanAgentStatusesActions extends RtActions
     }
 
     /**
-     * Remove every superfan status row from runtime state.
+     * Remove every superfan status row from runtime state: the rows a stopping agent leaves
+     * behind, removed as mandatory cleanup, so a full FIFO does not keep them standing - a row the
+     * service reserve cannot take now is owed and retried as the FIFO frees.
      *
-     * @throws RtActionsCallbackNotSetException When runtime item factory callback is not configured
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
-     * @throws InvalidArgumentException When an argument is invalid
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws InvalidArgumentException When a retirement allowance of the hand-off is invalid
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
      */
     public function clear(): void
     {
-        $this->clearAllStates();
+        $this->removeAllStatesAsCleanup();
     }
 
     /**

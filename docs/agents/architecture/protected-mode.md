@@ -471,8 +471,8 @@ full snapshot. A master that becomes leader also sends snapshots to its already
 linked slaves, including after adopting a freeze and assigning a local legacy
 generation. The new `peer_protected_mode_sync` and
 `peer_protected_mode_synced` frames use `PeerProtectedModeSyncDTO` and
-`PeerProtectedModeSyncedDTO`; `PeerProtocol` is version 26, so a peer on an
-incompatible version is refused by the ordinary handshake. These are peer
+`PeerProtectedModeSyncedDTO`; `PeerProtocol` rose to version 26 with them, so a peer
+on an incompatible version is refused by the ordinary handshake. These are peer
 frames only: browser signals, pages, routes and Status payloads do not change.
 
 The sync snapshot carries `syncId`, `phase`, `entryMode`, `payload`,

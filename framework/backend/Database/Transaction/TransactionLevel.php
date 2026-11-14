@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Database\Transaction;
 
 use Closure;
+use Hilos\Runtime\Snapshot\RtVersionStore;
+use Hilos\Runtime\Snapshot\RtVersionTransaction;
 
 /**
  * One level of the transaction stack a database connection carries.
@@ -40,6 +42,9 @@ final class TransactionLevel
     /** @var list<Closure> Steps putting this process's memory back, in the order the writes were made */
     private array $undo = [];
 
+    /** @var array<int, RtVersionTransaction> Prepared selectors by retained store identity, never a row/history list */
+    private array $runtime = [];
+
     private bool $opened = false;
 
     private bool $failed = false;
@@ -48,11 +53,13 @@ final class TransactionLevel
      * @param bool $nestable Whether this level allows another level to start inside it
      * @param ?string $savepoint Savepoint this level stands on, or null for the outermost level
      * @param ?TestRollbackScope $testScope Owner of a synthetic test root; null on application levels
+     * @param ?self $parent Previous level on this connection, never a foreign connection's level
      */
     public function __construct(
         public readonly bool $nestable,
         public readonly ?string $savepoint,
         public readonly ?TestRollbackScope $testScope = null,
+        public readonly ?self $parent = null,
     ) {
     }
 
@@ -104,6 +111,64 @@ final class TransactionLevel
         $this->undo = [];
 
         return $undo;
+    }
+
+    /**
+     * @internal Resolves a prepared base only through this connection's ancestors.
+     *
+     * @param RtVersionStore $store Isolated Runtime selector
+     * @return ?RtVersionTransaction Latest prepared prefix, or no Runtime work
+     */
+    public function runtimeParticipant(RtVersionStore $store): ?RtVersionTransaction
+    {
+        for ($level = $this; $level !== null; $level = $level->parent) {
+            if (isset($level->runtime[spl_object_id($store)])) {
+                return $level->runtime[spl_object_id($store)];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @internal Replaces only a fully prepared prefix; no subscriber runs here.
+     *
+     * @param RtVersionTransaction $participant Already admitted Runtime descriptor
+     */
+    public function prepareRuntime(RtVersionTransaction $participant): void
+    {
+        $this->runtime[spl_object_id($participant->store)] = $participant;
+    }
+
+    /**
+     * @internal A savepoint commit extends its parent's prepared prefix without publishing.
+     *
+     * @param self $parent Parent level on the same connection
+     */
+    public function forwardRuntime(self $parent): void
+    {
+        foreach ($this->runtime as $participant) {
+            $parent->prepareRuntime($participant);
+        }
+        $this->runtime = [];
+    }
+
+    /** @internal Installs prepared selectors after SQL commit and before every observer. */
+    public function installRuntime(): void
+    {
+        foreach ($this->runtime as $participant) {
+            $participant->install();
+        }
+        $this->runtime = [];
+    }
+
+    /** @internal All rollback paths close their own prepared roots before ordinary undo. */
+    public function rollbackRuntime(): void
+    {
+        foreach ($this->runtime as $participant) {
+            $participant->rollback();
+        }
+        $this->runtime = [];
     }
 
     /**

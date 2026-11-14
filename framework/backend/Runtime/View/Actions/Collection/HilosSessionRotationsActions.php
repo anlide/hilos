@@ -13,6 +13,8 @@ use Hilos\Runtime\State\Collection\HilosSessionRotations as StateHilosSessionRot
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\View\Collection\HilosSessionRotations;
 use Hilos\Runtime\View\Item\HilosSessionRotation;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the pending token rotations (HIL-582).
@@ -37,6 +39,8 @@ final class HilosSessionRotationsActions extends RtActions
      * @param list<string> $acceptKeysToDrop Accept keys of the session's other connections
      * @param float $expiresAtMs Unix milliseconds after which the ticket is refused
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
@@ -67,6 +71,8 @@ final class HilosSessionRotationsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function forget(string $ticket): void
     {
@@ -92,6 +98,8 @@ final class HilosSessionRotationsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function forgetExpired(): int
     {

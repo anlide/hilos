@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\CommandExecution;
 use Hilos\Core\CLI\Commands\CommandInterface;
@@ -19,6 +20,9 @@ use Hilos\Database\Migration\FrameworkSchemaCatalog;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\HilosConnection;
@@ -722,30 +726,39 @@ final class DeferredRequirementsConnections extends HilosConnections
  */
 final class DeferredRequirementsConnection extends HilosConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     * @param RtRowReader $row Serialized runtime row (nothing of its own to read)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Always empty: the row is the framework base
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     * @param RtRowReader $diff Partial update (nothing of its own to apply)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

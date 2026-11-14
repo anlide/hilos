@@ -128,6 +128,7 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotReadableException;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Item\RtItem;
+use Hilos\Runtime\RtRowValues;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
@@ -151,6 +152,7 @@ use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Database\Exception\InvalidMountedCollectionException;
 use Hilos\Database\Exception\NamedDatabaseException;
+use LogicException as NativeLogicException;
 
 /**
  * Base browser-facing context.
@@ -3572,7 +3574,7 @@ abstract class BrowserContext
         }
 
         foreach ($triggers as $field) {
-            if (is_string($field) && $this->changeValueKey($rowConfig, $change, $change->row, $field) !== null) {
+            if (is_string($field) && $this->changeValueKey($rowConfig, $change, $change->carriedRow(), $field) !== null) {
                 return true;
             }
         }
@@ -3698,9 +3700,9 @@ abstract class BrowserContext
                     browserParams: $browserParams,
                 );
             } else {
-                $candidates = [$this->rowKeyValue($rowConfig, $change, $browserParams, $change->row)];
-                if ($change->previous !== []) {
-                    $candidates[] = $this->rowKeyValue($rowConfig, $change, $browserParams, $change->previous);
+                $candidates = [$this->rowKeyValue($rowConfig, $change, $browserParams, $change->carriedRow())];
+                if (!self::changedValuesEmpty($change->carriedPrevious())) {
+                    $candidates[] = $this->rowKeyValue($rowConfig, $change, $browserParams, $change->carriedPrevious());
                 }
             }
 
@@ -3828,10 +3830,12 @@ abstract class BrowserContext
         if (!$this->rowConfigMatchesChange($anchorConfig, $change)) {
             return false;
         }
-        if (!$this->sameValue(
-            $this->rowKeyValue($anchorConfig, $change, $browserParams, array_replace($change->row, $change->previous)),
-            $rowKey,
-        )) {
+        $current = $change->carriedRow();
+        $previous = $change->carriedPrevious();
+        $rowKeyValue = is_array($current) && is_array($previous)
+            ? $this->rowKeyValue($anchorConfig, $change, $browserParams, array_replace($current, $previous))
+            : $this->rowKeyValue($anchorConfig, $change, $browserParams, $previous, $current);
+        if (!$this->sameValue($rowKeyValue, $rowKey)) {
             return false;
         }
 
@@ -3841,12 +3845,12 @@ abstract class BrowserContext
             if (!is_string($field)) {
                 continue;
             }
-            $previousKey = $this->changeValueKey($anchorConfig, $change, $change->previous, $field);
-            $currentKey = $this->changeValueKey($anchorConfig, $change, $change->row, $field);
+            $previousKey = $this->changeValueKey($anchorConfig, $change, $previous, $field);
+            $currentKey = $this->changeValueKey($anchorConfig, $change, $current, $field);
             $previousAnchor[$field] = $previousKey !== null
-                ? $change->previous[$previousKey]
+                ? self::changedValue($previous, $previousKey)
                 : ($currentKey !== null
-                    ? $change->row[$currentKey]
+                    ? self::changedValue($current, $currentKey)
                     : ($changedAnchor === null ? null : $this->fieldValue($changedAnchor, $field)));
         }
 
@@ -3861,18 +3865,24 @@ abstract class BrowserContext
      * Object::toArray() keys, and runtime mutations carry state property names. List and table
      * declarations use object field names (e.g. Session::userId).
      *
+     * A runtime change carries its values segmented or as the wire decoded them; only the key
+     * field is read out of them. Several value sets are searched in the order given, the first
+     * carrying the field winning - the previous values over the current ones, as a merge would.
+     *
      * @param array<string, mixed> $rowConfig Browser row source config
      * @param SourceChange $change Grouped DB/RT source change
      * @param array<string, mixed> $browserParams Resolved table params
-     * @param array<string, mixed> $sourceValues Current or previous changed field values
+     * @param array<string, mixed>|RtRowValues ...$sourceValues Current or previous changed field values, by priority
      * @return int|string|null Browser row key
      * @throws PageInternalErrorException When the row source configuration is malformed
+     * @throws InvalidFormatException When segmented values are not a field map
+     * @throws NativeLogicException When a segmented lease already closed
      */
     private function rowKeyValue(
         array $rowConfig,
         SourceChange $change,
         array $browserParams,
-        array $sourceValues,
+        array|RtRowValues ...$sourceValues,
     ): int|string|null
     {
         $rowKey = $rowConfig[BrowserListFieldKey::ITEM_KEY] ?? $rowConfig[BrowserTableFieldKey::ROW_KEY] ?? null;
@@ -3884,9 +3894,11 @@ abstract class BrowserContext
             return $this->normalizeKey($change->sourceId);
         }
 
-        $key = $this->changeValueKey($rowConfig, $change, $sourceValues, $rowKey);
-        if ($key !== null) {
-            return $this->normalizeKey($sourceValues[$key]);
+        foreach ($sourceValues as $values) {
+            $key = $this->changeValueKey($rowConfig, $change, $values, $rowKey);
+            if ($key !== null) {
+                return $this->normalizeKey(self::changedValue($values, $key));
+            }
         }
 
         $source = $rowConfig[BrowserFieldKey::SOURCE] ?? [];
@@ -3911,24 +3923,29 @@ abstract class BrowserContext
      * The direct declared name is checked first; for database changes, the entity column the
      * field resolves to ({@see DbCollection::columnForField()}) is checked next.
      *
+     * A runtime change is read field by field through its segmented carrier and never
+     * materialized; it has one vocabulary only, so the column fallback below is database-only.
+     *
      * @param array<string, mixed> $rowConfig Browser row source config
      * @param SourceChange $change Grouped DB/RT source change
-     * @param array<string, mixed> $values Current or previous changed field values
+     * @param array<string, mixed>|RtRowValues $values Current or previous changed field values
      * @param string $field Declared field name
      * @return ?string Key under which the value resides in $values, or null when absent
      * @throws PageInternalErrorException When the row source configuration is malformed
+     * @throws InvalidFormatException When segmented values are not a field map
+     * @throws NativeLogicException When a segmented lease already closed
      */
     private function changeValueKey(
         array $rowConfig,
         SourceChange $change,
-        array $values,
+        array|RtRowValues $values,
         string $field,
     ): ?string {
-        if (array_key_exists($field, $values)) {
+        if (is_array($values) ? array_key_exists($field, $values) : $values->field($field) !== null) {
             return $field;
         }
 
-        if ($change->kind !== SourceChange::KIND_DB) {
+        if ($change->kind !== SourceChange::KIND_DB || !is_array($values)) {
             return null;
         }
 
@@ -7275,6 +7292,30 @@ abstract class BrowserContext
         }
 
         return null;
+    }
+
+    /**
+     * Reads one changed value that the caller already found present, materializing that field alone.
+     *
+     * @param array<string, mixed>|RtRowValues $values Current or previous changed field values
+     * @param string $key Key the value resides under
+     * @return mixed Native field value
+     * @throws InvalidFormatException When segmented values are not a field map
+     * @throws NativeLogicException When a segmented lease already closed
+     */
+    private static function changedValue(array|RtRowValues $values, string $key): mixed
+    {
+        return is_array($values) ? $values[$key] : $values->field($key)?->toNative();
+    }
+
+    /**
+     * @param array<string, mixed>|RtRowValues $values Changed field values in either carried form
+     * @return bool Whether no field is carried at all
+     * @throws NativeLogicException When a segmented lease already closed
+     */
+    private static function changedValuesEmpty(array|RtRowValues $values): bool
+    {
+        return is_array($values) ? $values === [] : $values->isEmptyMap();
     }
 
     /**

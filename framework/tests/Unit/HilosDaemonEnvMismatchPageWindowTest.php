@@ -5,25 +5,25 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Closure;
-use Hilos\Core\Page\DTO\PagePayload;
-use Hilos\Core\Table\DTO\TableQueryDTO;
-
+use Generator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Hilos\AbstractHilosDaemonAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
+use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\DaemonSection\ClusterDaemonNodeSlot;
 use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DaemonCronPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DaemonProcessRoster;
-use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentFingerprint;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
@@ -31,6 +31,9 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvSource;
 use Hilos\Hilos;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvMismatchPage;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\View\Context\RtContext;
@@ -462,24 +465,30 @@ final class DaemonEnvMismatchWindowTestBrowser extends IdentityTestBrowser
 
 final class DaemonEnvMismatchWindowConnection extends HilosConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Serialized connection */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Serialized connection */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No project fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Project patch */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Project patch */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

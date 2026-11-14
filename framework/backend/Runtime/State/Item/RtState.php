@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Generator;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException as FrameworkLogicException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -15,11 +17,27 @@ use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\State\RtRowCodecNotSupportedException;
 use Hilos\Runtime\Exception\State\RtStatePropertyNotFoundException;
 use Hilos\Runtime\Exception\State\RtStateReadOnlyException;
 use Hilos\Runtime\Exception\State\RtStateUnserializeException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\Row\RtFrozenRow;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\Row\RtRowBinding;
+use Hilos\Runtime\Row\RtRowDescriptor;
+use Hilos\Runtime\Row\RtRowKind;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\Row\RtRowRoot;
+use Hilos\Runtime\RtRowCodec;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\State\Collection\RtStates;
+use Hilos\Runtime\View\Actions\Item\RtActions;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use LogicException;
+use WeakMap;
 
 /**
  * Base class for runtime state objects.
@@ -44,14 +62,29 @@ abstract class RtState
      */
     public const string SET_VIA = '';
 
+    /** Process-local storage handle; legacy-only rows leave it absent. */
+    private ?RtRowBinding $rowBinding = null;
+
+    /** @var array<string, mixed> Explicit compatibility baseline for unconverted subclasses only */
+    private array $legacyRtSyncBaseline = [];
+
     /**
-     * Copy of the row as of the last "synced" moment: {@see sync()} diffs {@see toArray()} against this
-     * to know which fields to put in RT_SYNC_UPDATED (same idea as Object_ entity vs entitySync, without DB).
-     * Written only by {@see markRtSyncBaseline()} and at the end of {@see sync()}.
+     * The common binding resolves both values and baseline. Keeping this compatibility
+     * accessor lets legacy rows and transactional undo use their existing sync semantics.
      *
-     * @var array<string, mixed>
+     * @var array<string, mixed>|RtRowDescriptor
      */
-    private array $rtSyncBaseline = [];
+    private array|RtRowDescriptor $rtSyncBaseline {
+        get => $this->rowBinding?->baseline() ?? $this->legacyRtSyncBaseline;
+        set {
+            if ($value instanceof RtRowDescriptor) {
+                $this->rowBinding->markBaseline($value);
+            } else {
+                $this->rowBinding?->markBaseline(null);
+                $this->legacyRtSyncBaseline = $value;
+            }
+        }
+    }
 
     /**
      * Protected constructor. Child classes must use static factory methods (e.g. fromRow).
@@ -61,10 +94,17 @@ abstract class RtState
     }
 
     /**
-     * Protected clone. Prevents cloning of RtState instances.
+     * Protected clone; a draft replaces its own binding without changing the live handle. The live
+     * handle is settled first, so the draft starts from the values a published generation gave it.
+     *
+     * @throws InvalidFormatException When retained upload identities are malformed
+     * @throws LogicException When a backing lease closed
      */
     protected function __clone()
     {
+        if ($this->rowBinding !== null) {
+            $this->rowBinding = $this->rowBinding->fork();
+        }
     }
 
     /**
@@ -130,16 +170,217 @@ abstract class RtState
     }
 
     /**
-     * Resets diff baseline to the current row (call after create/fromRow and after inbound RT applyDiff).
+     * @internal The codec of this row class, for a reader that has no row of it at hand yet: a
+     * hand-over into an empty collection has nothing to ask {@see self::rowCodec()} of. Asked of a
+     * blank instance, which no collection ever holds.
+     *
+     * @return RtRowCodec Codec the concrete row class declares
+     * @throws RtRowCodecNotSupportedException When the row class has not migrated
+     */
+    final public static function rowCodecOfClass(): RtRowCodec
+    {
+        return new static()->rowCodec();
+    }
+
+    /**
+     * Additive opt-in: legacy subclasses retain their synchronous doors. There is
+     * deliberately no toArray/fromRow fallback in the resumable path.
+     *
+     * @return RtRowCodec Codec explicitly implemented by the concrete row
+     * @throws RtRowCodecNotSupportedException When this row has not migrated
+     */
+    public function rowCodec(): RtRowCodec
+    {
+        throw new RtRowCodecNotSupportedException('Runtime row has no resumable codec: ' . static::class);
+    }
+
+    /**
+     * Captures fixed descriptors only; no codec, native export or id materialization runs here.
+     *
+     * @return RtFrozenRow Immutable local values, baseline and handle incarnation
+     * @throws RtRowCodecNotSupportedException When the row has no binding migration
+     * @throws InvalidFormatException When retained upload identities are malformed
+     * @throws LogicException When an internal backing lease closed
+     */
+    final public function freezeRow(): RtFrozenRow
+    {
+        if ($this->rowFieldDefaults() === []) {
+            throw new RtRowCodecNotSupportedException('Runtime row has no descriptor binding: ' . static::class);
+        }
+
+        return $this->frozenValues();
+    }
+
+    /** @return bool Whether this row has a descriptor binding and a resumable codec, rather than legacy doors only */
+    final public function hasRowBinding(): bool
+    {
+        return $this->rowFieldDefaults() !== [];
+    }
+
+    /**
+     * Current row for a source fact or a sync signal: segmented for a row with a binding, so no
+     * carrier materializes it, and the native compatibility row of a legacy-only state.
+     *
+     * The carrier references the row's own immutable values in the process arena, one entry per
+     * field ({@see RtRowDescriptor::carry()}): nothing the row holds is copied, so one synchronous
+     * step costs the number of fields, not the bytes of the row. Like {@see self::toArray()}, it
+     * promises no refusal of its own: a malformed page or a closed backing lease here is a broken
+     * Runtime invariant, not an outcome a writer handles.
+     *
+     * @return array<string, mixed>|RtRowValues Whole current row
+     */
+    final public function carriedRow(): array|RtRowValues
+    {
+        if ($this->rowFieldDefaults() === []) {
+            return $this->toArray();
+        }
+        $this->rowValues();
+        $out = new RtRowWriter(RtRowArena::process(), RtRowRole::Transient);
+        RtRowValues::completed($this->rowBinding->current()->carry($out));
+
+        return RtRowValues::completed($out->finish());
+    }
+
+    /**
+     * @return static Unpublished clone with its own binding and immutable baseline
+     * @throws RtRowCodecNotSupportedException When the row has no binding migration
+     */
+    final public function draftRow(): static
+    {
+        if ($this->rowFieldDefaults() === []) {
+            throw new RtRowCodecNotSupportedException('Runtime row has no descriptor binding: ' . static::class);
+        }
+        $this->rowValues();
+
+        return clone $this;
+    }
+
+    /**
+     * @internal Publishes a validated draft of this very row in one descriptor swap. No field is
+     * written one by one, so a refusal raised while the draft was patched leaves this row whole,
+     * and the handle - with every view wrapping it - stays the same object.
+     *
+     * @param RtState $draft Draft this row's {@see self::draftRow()} made, patched and validated since
+     * @throws FrameworkLogicException When the draft is not one of this row's own
+     */
+    final public function publishDraft(RtState $draft): void
+    {
+        if ($draft::class !== static::class
+            || $draft->rowBinding === null
+            || $this->rowBinding === null
+            || $draft->rowBinding->incarnation !== $this->rowBinding->incarnation) {
+            throw new FrameworkLogicException('Only a draft of this very row can be published into it');
+        }
+        $this->rowBinding->replace($draft->rowBinding->current()->retain(RtRowRole::Resident));
+    }
+
+    /**
+     * A diff of one list field holding this row's list with one more element at its end, for the
+     * write door that patches the row in portions ({@see RtActions::applyDiffWithSync()}).
+     *
+     * Built over the row's own pages: the elements already held are referenced, never
+     * materialized or copied, so appending to a long list costs a bounded walk of its entries
+     * rather than a native copy of the whole list and a spread.
+     *
+     * @param string $key Declared list field of this row
+     * @param string $element Bounded element to append
+     * @return RtRowValues Segmented diff carrying that field alone
+     * @throws RtRowCodecNotSupportedException When the row has no binding migration
+     * @throws InvalidFormatException When the field holds no segmented list, or a stored page is malformed
+     * @throws FrameworkLogicException When a backing lease closed - a broken Runtime invariant
+     */
+    final public function appendedListDiff(string $key, string $element): RtRowValues
+    {
+        if ($this->rowFieldDefaults() === []) {
+            throw new RtRowCodecNotSupportedException('Runtime row has no descriptor binding: ' . static::class);
+        }
+        $held = $this->rowValues()[$key] ?? null;
+        if ($held !== null && !$held instanceof RtRowValues) {
+            throw new InvalidFormatException('Runtime row field holds no segmented list: ' . $key);
+        }
+        try {
+            return RtRowValues::completed(self::appendedList($key, $held, $element, RtRowArena::process()));
+        } catch (LogicException $broken) {
+            throw new FrameworkLogicException($broken->getMessage(), previous: $broken);
+        }
+    }
+
+    /**
+     * @internal Stages, for this row that keeps its identity, the values a snapshot generation
+     * restored and validated for its id, as both its values and its baseline. Nothing becomes
+     * visible here: the pair waits in the generation until it is installed on the collection's
+     * root ({@see RtRowRoot::install()}), and is read through this row's handle from then on.
+     * Constant work per field; nothing is exported, compared or copied.
+     *
+     * @param RtState $restored Row of this very class the generation restored for this one's id
+     * @param RtRowRoot $root Resolution root of the collection this row stands in
+     * @param WeakMap<RtRowBinding, array{RtRowDescriptor, RtRowDescriptor}> $generation Generation being prepared
+     * @throws FrameworkLogicException When the restored row is not of this row's class or either row has no binding
+     * @throws InvalidFormatException When retained upload identities are malformed
+     * @throws LogicException When a backing lease closed
+     */
+    final public function stageSnapshotValues(RtState $restored, RtRowRoot $root, WeakMap $generation): void
+    {
+        if ($restored::class !== static::class || $this->rowFieldDefaults() === []) {
+            throw new FrameworkLogicException('Only a migrated row of the same class can stage snapshot values');
+        }
+        $this->rowValues();
+        $restored->rowValues();
+        $this->rowBinding->attach($root);
+        $generation[$this->rowBinding] = [
+            $restored->rowBinding->current()->retain(RtRowRole::Candidate),
+            $restored->rowBinding->current()->retain(RtRowRole::Candidate),
+        ];
+    }
+
+    /**
+     * @internal Makes the values of a row restored for a snapshot its baseline as well, the way a
+     * hand-over marks what it wrote; constant work, nothing exported. The row stands in no
+     * collection yet, so no selector hears of it here.
+     *
+     * @throws FrameworkLogicException When the row has no binding
+     * @throws InvalidFormatException When retained upload identities are malformed
+     * @throws LogicException When a backing lease closed
+     */
+    final public function adoptSnapshotBaseline(): void
+    {
+        if ($this->rowFieldDefaults() === []) {
+            throw new FrameworkLogicException('Only a migrated row can adopt a snapshot baseline');
+        }
+        $this->rowValues();
+        $this->rtSyncBaseline = $this->rowBinding->current()->retain(RtRowRole::Ordinary);
+    }
+
+    /**
+     * Resets the baseline; migrated rows retain pages rather than a native value graph. A row
+     * standing in a collection commits these values into its snapshot selector as well.
+     *
+     * @throws InvalidFormatException When the row's values cannot be held by the snapshot selector
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
+     * @throws InvalidArgumentException When a retirement allowance of the selector is invalid
      */
     public function markRtSyncBaseline(): void
     {
-        $this->rtSyncBaseline = $this->toArray();
+        if ($this->rowFieldDefaults() !== []) {
+            $this->rowValues();
+            $this->rtSyncBaseline = $this->rowBinding->current()->retain(RtRowRole::Ordinary);
+            RtStates::noteCommittedRow($this);
+        } else {
+            $this->rtSyncBaseline = $this->toArray();
+            RtStates::noteCommittedRow($this, $this->rtSyncBaseline);
+        }
     }
 
     /**
      * Queue RT_SYNC_UPDATED for all fields that differ from the last baseline, then advance the baseline.
      * Does not persist to DB; cross-worker runtime sync only.
+     *
+     * A row with a binding computes the changed fields and their previous values on its segmented
+     * pages ({@see RtFrozenRow::changes()}) and hands them to the signal as they are: neither the row
+     * nor the baseline is materialized. A legacy-only row keeps its native comparison.
+     *
+     * This is the late half of a write whose fields are already assigned: it never refuses for want
+     * of ordinary capacity - that refusal belongs to the door before the first assignment.
      *
      * Under an open transaction the frame leaves at the commit, and the write leaves a step for the
      * rollback: the changed fields get their baseline values back and the baseline goes back too,
@@ -149,48 +390,31 @@ abstract class RtState
      *
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws InvalidFormatException When stored pages or retained upload identities are malformed
+     * @throws LogicException When an internal backing lease closed
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
      */
     public function sync(): void
     {
-        $current = $this->toArray();
-        $diff = [];
-        foreach ($current as $k => $v) {
-            if (($this->rtSyncBaseline[$k] ?? null) !== $v) {
-                $diff[$k] = $v;
-            }
-        }
-        if ($diff === []) {
+        if ($this->rowFieldDefaults() === []) {
+            $this->syncLegacy();
+
             return;
         }
-        $previous = array_intersect_key($this->rtSyncBaseline, $diff);
-
-        $collectionKey = static::getRtCollectionKey();
-        if ($collectionKey !== '' && Hilos::$sr !== null) {
-            RtTruthSourceRegistry::checkCanWriteState(
-                $collectionKey,
-                $this->getId(),
-                $this->touchedSetKeys(),
-                TruthSourceOperation::Update,
-            );
-            Hilos::$sr->queueRtSyncSignal(
-                SignalConstants::RT_SYNC_UPDATED,
-                new RtSyncUpdatedSignalData(
-                    $collectionKey,
-                    $this->getId(),
-                    $diff,
-                    ExecutionContext::currentAcceptKey(),
-                    ExecutionContext::currentRequestId(),
-                    previous: $previous,
-                ),
-            );
+        $changes = RtRowValues::completed($this->frozenValues()->changes(RtRowArena::process()));
+        if ($changes->diff->isEmptyMap()) {
+            return;
         }
+        $this->queueSyncUpdated($changes->diff, $changes->previous);
 
         $baseline = $this->rtSyncBaseline;
+        $previous = $changes->previous;
         Database::onRollback(function () use ($previous, $baseline): void {
-            $this->applyDiff($previous);
+            $this->applyDiff(RtRowValues::nativeMap($previous));
             $this->rtSyncBaseline = $baseline;
         });
-        $this->rtSyncBaseline = $current;
+        $this->rtSyncBaseline = $this->rowBinding->current()->retain(RtRowRole::Ordinary);
+        RtStates::noteCommittedRow($this);
     }
 
     /**
@@ -219,8 +443,9 @@ abstract class RtState
         }
 
         $edited = array_key_exists($field, $diff) ? $diff[$field] : ($this->toArray()[$field] ?? null);
-        $values = array_key_exists($field, $this->rtSyncBaseline)
-            ? [$this->rtSyncBaseline[$field], $edited]
+        $baseline = $this->synchronousBaseline();
+        $values = array_key_exists($field, $baseline)
+            ? [$baseline[$field], $edited]
             : [$edited];
         foreach ($values as $value) {
             if (!is_scalar($value)) {
@@ -269,6 +494,61 @@ abstract class RtState
      * @return array<string, mixed> State fields as associative array
      */
     abstract public function toArray(): array;
+
+    /**
+     * Codec owners call this after their binding migration, without a legacy fallback.
+     *
+     * @return RtFrozenRow Independently retained immutable descriptors
+     * @throws InvalidFormatException When retained upload identities are malformed
+     * @throws LogicException When an internal backing lease closed
+     */
+    final protected function frozenValues(): RtFrozenRow
+    {
+        $this->rowValues();
+
+        return new RtFrozenRow(
+            $this->rowBinding->current()->retain(RtRowRole::Snapshot),
+            ($this->rtSyncBaseline instanceof RtRowDescriptor ? $this->rtSyncBaseline : new RtRowDescriptor([], []))
+                ->retain(RtRowRole::Snapshot),
+            $this->rowBinding->incarnation,
+        );
+    }
+
+    /** @return array<string, mixed> Fixed export defaults; empty declares a legacy-only row */
+    protected function rowFieldDefaults(): array
+    {
+        return [];
+    }
+
+    /** @return array<string, mixed> Fixed field backing; variable values remain page leases */
+    final protected function rowValues(): array
+    {
+        $this->rowBinding ??= RtRowBinding::create(new RtRowDescriptor([], $this->rowFieldDefaults()));
+
+        return $this->rowBinding->current()->fields;
+    }
+
+    /**
+     * The array is a fixed codec schema, never a native variable graph.
+     *
+     * @param array<string, mixed> $values Prepared fixed descriptor
+     */
+    final protected function replaceRowValues(array $values): void
+    {
+        $this->rowValues();
+        $this->rowBinding->replace(new RtRowDescriptor($values, $this->rowFieldDefaults()));
+    }
+
+    /**
+     * @param string $key Declared field name
+     * @param mixed $value Codec-owned scalar, immutable collection or segmented value
+     */
+    final protected function setRowValue(string $key, mixed $value): void
+    {
+        $values = $this->rowValues();
+        $values[$key] = $value;
+        $this->replaceRowValues($values);
+    }
 
     /**
      * Reads a string field of a runtime row that the state cannot be built without.
@@ -700,5 +980,114 @@ abstract class RtState
         }
 
         return self::optionalStringList($diff, $key);
+    }
+
+    /**
+     * The native comparison of a legacy-only row, kept as it was before rows had a binding.
+     *
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     */
+    private function syncLegacy(): void
+    {
+        $current = $this->toArray();
+        $nativeBaseline = $this->synchronousBaseline();
+        $diff = [];
+        foreach ($current as $k => $v) {
+            if (($nativeBaseline[$k] ?? null) !== $v) {
+                $diff[$k] = $v;
+            }
+        }
+        if ($diff === []) {
+            return;
+        }
+        $previous = array_intersect_key($nativeBaseline, $diff);
+        $this->queueSyncUpdated($diff, $previous);
+
+        $baseline = $this->rtSyncBaseline;
+        Database::onRollback(function () use ($previous, $baseline): void {
+            $this->applyDiff($previous);
+            $this->rtSyncBaseline = $baseline;
+        });
+        $this->rtSyncBaseline = $current;
+        RtStates::noteCommittedRow($this, $current);
+    }
+
+    /**
+     * Judges the write by the set the row stands in and queues the frame, when the row has a
+     * collection key and a router to send it by.
+     *
+     * @param array<string, mixed>|RtRowValues $diff Changed fields
+     * @param array<string, mixed>|RtRowValues $previous Baseline values of the changed fields
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     */
+    private function queueSyncUpdated(array|RtRowValues $diff, array|RtRowValues $previous): void
+    {
+        $collectionKey = static::getRtCollectionKey();
+        if ($collectionKey === '' || Hilos::$sr === null) {
+            return;
+        }
+        RtTruthSourceRegistry::checkCanWriteState(
+            $collectionKey,
+            $this->getId(),
+            $this->touchedSetKeys(),
+            TruthSourceOperation::Update,
+        );
+        Hilos::$sr->queueRtSyncSignal(
+            SignalConstants::RT_SYNC_UPDATED,
+            new RtSyncUpdatedSignalData(
+                $collectionKey,
+                $this->getId(),
+                $diff,
+                ExecutionContext::currentAcceptKey(),
+                ExecutionContext::currentRequestId(),
+                previous: $previous,
+            ),
+        );
+    }
+
+    /**
+     * @param string $key List field the diff carries
+     * @param ?RtRowValues $held List the row holds, or null while the field keeps its empty default
+     * @param string $element Element to append
+     * @param RtRowArena $arena Storage owner of the row's pages
+     * @return Generator<int, RtWork, int, RtRowValues> One-field diff over the held pages
+     * @throws InvalidFormatException When the held value is not a list
+     * @throws LogicException When a writer lifetime is violated or a page lease closed
+     */
+    private static function appendedList(string $key, ?RtRowValues $held, string $element, RtRowArena $arena): Generator
+    {
+        $list = new RtRowWriter($arena);
+        $position = 0;
+        if ($held !== null) {
+            if ($held->reader()->kind() !== RtRowKind::Map) {
+                throw new InvalidFormatException('Runtime row field holds no list: ' . $key);
+            }
+            $cursor = $held->reader()->entries();
+            while (($entry = yield from $cursor->advance()) !== null) {
+                yield from $list->writeEntry($entry->key, $entry->value);
+                ++$position;
+            }
+        }
+        yield from $list->write($position, yield from RtRowWriter::encode($element, $arena));
+        $diff = new RtRowWriter($arena);
+        yield from $diff->write($key, yield from $list->finish());
+
+        return yield from $diff->finish();
+    }
+
+    /** @return array<string, mixed> Explicit synchronous compatibility materialization */
+    private function synchronousBaseline(): array
+    {
+        if (is_array($this->rtSyncBaseline)) {
+            return $this->rtSyncBaseline;
+        }
+        // Explicit native compatibility boundary, using the same typed reads as before.
+        // Frozen preparation never creates this application-facing view.
+        $view = clone $this;
+        $view->rowBinding->replace($this->rtSyncBaseline);
+
+        return $view->toArray();
     }
 }

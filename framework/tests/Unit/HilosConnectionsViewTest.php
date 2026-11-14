@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\State\Collection\HilosSessionConnections as StateHilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
@@ -460,30 +464,39 @@ final class HilosConnectionsViewTest extends TestCase
  */
 final class PresenceViewConnection extends StateHilosConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     * @param RtRowReader $row Serialized runtime row (nothing of its own to read)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Always empty: the row is the framework base
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     * @param RtRowReader $diff Partial update (nothing of its own to apply)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 
@@ -492,30 +505,39 @@ final class PresenceViewConnection extends StateHilosConnection
  */
 final class SessionViewConnection extends StateHilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     * @param RtRowReader $row Serialized runtime row (nothing of its own to read)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Always empty: the row is the framework base
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     * @param RtRowReader $diff Partial update (nothing of its own to apply)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

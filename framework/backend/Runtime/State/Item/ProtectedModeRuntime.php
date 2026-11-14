@@ -4,10 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Generator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\ProtectedMode\ProtectedModeStuckVerdict;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
+use Hilos\Runtime\Row\ProtectedModeRuntimeRowCodec;
+use Hilos\Runtime\Row\RtRowKind;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\RtRowCodec;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
+use LogicException;
 
 /**
  * ProtectedModeRuntime - the singleton runtime state of the protected mode subsystem.
@@ -89,20 +99,157 @@ final class ProtectedModeRuntime extends RtState
     /** Hash algorithm the initiator's session token is stored and compared under. */
     private const string SESSION_TOKEN_HASH_ALGO = 'sha256';
 
+    /** The existing diagnostic record boundary; nullable fields must still be present. */
+    private const array MAINTENANCE_NODE_TYPES = [
+        'nodeId' => 'text',
+        'nodeName' => '?text',
+        self::phase => '?text',
+        'quiesced' => '?bool',
+        'isLeader' => 'bool',
+        'isInitiator' => 'bool',
+        'reportState' => 'text',
+    ];
+
+    /** Fixed row schema; variable values live in segmented pages. */
+    private const array FIELD_TYPES = [
+        self::phase => 'text',
+        self::entryMode => '?text',
+        self::operation => '?text',
+        self::freezeId => '?text',
+        self::initiatorAcceptKey => '?text',
+        self::initiatorSessionTokenHash => '?text',
+        self::initiatorAgentType => '?text',
+        self::initiatorAgentIndex => '?int',
+        self::initiatorNodeId => '?text',
+        self::startedAt => '?int',
+        self::activatedAt => '?int',
+        self::progressAt => '?int',
+        self::passHashes => 'list',
+        self::admittedSessionTokenHashes => 'list',
+        self::circleSessionTokenHashes => 'list',
+        self::circleNamedCount => 'int',
+        self::enteredFromBrowser => 'bool',
+        self::diagnosticsNodeId => '?text',
+        self::stoppedAgentCount => '?int',
+        self::preservedAgentTypes => '?list',
+        self::agentStartGateClosed => '?bool',
+        self::maintenanceNodes => '?nodes',
+        self::watchdogVerdict => '?text',
+        self::watchdogPendingNodeIds => 'list',
+        self::watchdogQuiesceTimeoutSeconds => '?int',
+        self::watchdogSilenceTimeoutSeconds => '?int',
+        self::watchdogAlertIntervalSeconds => '?int',
+        self::watchdogAlertEmails => '?list',
+        self::watchdogManualRestartIsNormal => '?bool',
+    ];
+
+    /** Application property defaults, not defaults for missing required incoming fields. */
+    private const array FIELD_DEFAULTS = [
+        self::phase => self::PHASE_INACTIVE,
+        self::entryMode => null,
+        self::operation => null,
+        self::freezeId => null,
+        self::initiatorAcceptKey => null,
+        self::initiatorSessionTokenHash => null,
+        self::initiatorAgentType => null,
+        self::initiatorAgentIndex => null,
+        self::initiatorNodeId => null,
+        self::startedAt => null,
+        self::activatedAt => null,
+        self::progressAt => null,
+        self::passHashes => [],
+        self::admittedSessionTokenHashes => [],
+        self::circleSessionTokenHashes => [],
+        self::circleNamedCount => 0,
+        self::enteredFromBrowser => false,
+        self::diagnosticsNodeId => null,
+        self::stoppedAgentCount => null,
+        self::preservedAgentTypes => null,
+        self::agentStartGateClosed => null,
+        self::maintenanceNodes => null,
+        self::watchdogVerdict => null,
+        self::watchdogPendingNodeIds => [],
+        self::watchdogQuiesceTimeoutSeconds => null,
+        self::watchdogSilenceTimeoutSeconds => null,
+        self::watchdogAlertIntervalSeconds => null,
+        self::watchdogAlertEmails => null,
+        self::watchdogManualRestartIsNormal => null,
+    ];
+
+    /** Exactly the fields accepted by the legacy patch door. */
+    private const array PATCH_FIELDS = [
+        self::phase => true,
+        self::entryMode => true,
+        self::operation => true,
+        self::freezeId => true,
+        self::initiatorAcceptKey => true,
+        self::initiatorSessionTokenHash => true,
+        self::initiatorAgentType => true,
+        self::initiatorAgentIndex => true,
+        self::initiatorNodeId => true,
+        self::startedAt => true,
+        self::activatedAt => true,
+        self::progressAt => true,
+        self::passHashes => true,
+        self::admittedSessionTokenHashes => true,
+        self::circleSessionTokenHashes => true,
+        self::circleNamedCount => true,
+        self::enteredFromBrowser => true,
+        self::diagnosticsNodeId => true,
+        self::stoppedAgentCount => true,
+        self::preservedAgentTypes => true,
+        self::agentStartGateClosed => true,
+        self::maintenanceNodes => true,
+        self::watchdogVerdict => true,
+        self::watchdogPendingNodeIds => true,
+        self::watchdogQuiesceTimeoutSeconds => true,
+        self::watchdogSilenceTimeoutSeconds => true,
+        self::watchdogAlertIntervalSeconds => true,
+        self::watchdogAlertEmails => true,
+        self::watchdogManualRestartIsNormal => true,
+    ];
+
     /** Current lifecycle phase of the protected mode. */
-    public string $phase = self::PHASE_INACTIVE;
+    public string $phase {
+        get => isset($this->rowValues()[self::phase])
+            ? $this->rowValues()[self::phase]->toNative()
+            : self::FIELD_DEFAULTS[self::phase];
+        set {
+            $this->setRowValue(self::phase, RtRowValues::fromNative($value));
+        }
+    }
 
     /** How this window was entered, or null when inactive. */
-    public ?string $entryMode = null;
+    public ?string $entryMode {
+        get => ($this->rowValues()[self::entryMode] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::entryMode, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Operation name the initiator is running, or null when inactive. */
-    public ?string $operation = null;
+    public ?string $operation {
+        get => ($this->rowValues()[self::operation] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::operation, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Cluster barrier generation; null while inactive, standalone or restored from a legacy file. */
-    public ?string $freezeId = null;
+    public ?string $freezeId {
+        get => ($this->rowValues()[self::freezeId] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::freezeId, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Accept key of the initiator connection, admitted in the verification window, or null. */
-    public ?string $initiatorAcceptKey = null;
+    public ?string $initiatorAcceptKey {
+        get => ($this->rowValues()[self::initiatorAcceptKey] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::initiatorAcceptKey, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * SHA-256 of the session token of the browser that asked for the operation, or null.
@@ -115,22 +262,52 @@ final class ProtectedModeRuntime extends RtState
      * token itself is the key to the account: the same reason {@see self::$passHashes} keeps
      * hashes and not the passes they were minted from.
      */
-    public ?string $initiatorSessionTokenHash = null;
+    public ?string $initiatorSessionTokenHash {
+        get => ($this->rowValues()[self::initiatorSessionTokenHash] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::initiatorSessionTokenHash, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Agent type of the initiator agent left running during the freeze, or null. */
-    public ?string $initiatorAgentType = null;
+    public ?string $initiatorAgentType {
+        get => ($this->rowValues()[self::initiatorAgentType] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::initiatorAgentType, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Agent index of the initiator agent left running during the freeze, or null. */
-    public ?int $initiatorAgentIndex = null;
+    public ?int $initiatorAgentIndex {
+        get => $this->rowValues()[self::initiatorAgentIndex] ?? self::FIELD_DEFAULTS[self::initiatorAgentIndex];
+        set {
+            $this->setRowValue(self::initiatorAgentIndex, $value);
+        }
+    }
 
     /** Node id that hosts the initiator agent, or null when inactive. */
-    public ?string $initiatorNodeId = null;
+    public ?string $initiatorNodeId {
+        get => ($this->rowValues()[self::initiatorNodeId] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::initiatorNodeId, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Epoch seconds when the leader began activating, or null when inactive. */
-    public ?int $startedAt = null;
+    public ?int $startedAt {
+        get => $this->rowValues()[self::startedAt] ?? self::FIELD_DEFAULTS[self::startedAt];
+        set {
+            $this->setRowValue(self::startedAt, $value);
+        }
+    }
 
     /** Epoch seconds when the mode reached active, or null before it does. */
-    public ?int $activatedAt = null;
+    public ?int $activatedAt {
+        get => $this->rowValues()[self::activatedAt] ?? self::FIELD_DEFAULTS[self::activatedAt];
+        set {
+            $this->setRowValue(self::activatedAt, $value);
+        }
+    }
 
     /**
      * Epoch seconds of the last progress mark the operation behind the freeze left, or null.
@@ -141,7 +318,12 @@ final class ProtectedModeRuntime extends RtState
      * carried on the wire - the mark travels as a bare fact, so a node with a skewed clock cannot
      * push the arithmetic that reads it around.
      */
-    public ?int $progressAt = null;
+    public ?int $progressAt {
+        get => $this->rowValues()[self::progressAt] ?? self::FIELD_DEFAULTS[self::progressAt];
+        set {
+            $this->setRowValue(self::progressAt, $value);
+        }
+    }
 
     /**
      * SHA-256 of every pass minted for the verification in flight; empty on every other phase.
@@ -152,14 +334,28 @@ final class ProtectedModeRuntime extends RtState
      *
      * @var list<string>
      */
-    public array $passHashes = [];
+    public array $passHashes {
+        get => isset($this->rowValues()[self::passHashes])
+            ? $this->rowValues()[self::passHashes]->toNative()
+            : self::FIELD_DEFAULTS[self::passHashes];
+        set {
+            $this->setRowValue(self::passHashes, RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * Session token hashes of the browsers that presented a valid pass; empty on every other phase.
      *
      * @var list<string>
      */
-    public array $admittedSessionTokenHashes = [];
+    public array $admittedSessionTokenHashes {
+        get => isset($this->rowValues()[self::admittedSessionTokenHashes])
+            ? $this->rowValues()[self::admittedSessionTokenHashes]->toNative()
+            : self::FIELD_DEFAULTS[self::admittedSessionTokenHashes];
+        set {
+            $this->setRowValue(self::admittedSessionTokenHashes, RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * Session token hashes of the verifier circle photographed at the freeze; empty on every other phase.
@@ -173,7 +369,14 @@ final class ProtectedModeRuntime extends RtState
      *
      * @var list<string>
      */
-    public array $circleSessionTokenHashes = [];
+    public array $circleSessionTokenHashes {
+        get => isset($this->rowValues()[self::circleSessionTokenHashes])
+            ? $this->rowValues()[self::circleSessionTokenHashes]->toNative()
+            : self::FIELD_DEFAULTS[self::circleSessionTokenHashes];
+        set {
+            $this->setRowValue(self::circleSessionTokenHashes, RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * How many people the circle named when this node froze; zero on every other phase.
@@ -184,7 +387,12 @@ final class ProtectedModeRuntime extends RtState
      * nobody was named at all - the one distinction the operator's log line and the inspector
      * both turn on.
      */
-    public int $circleNamedCount = 0;
+    public int $circleNamedCount {
+        get => $this->rowValues()[self::circleNamedCount] ?? self::FIELD_DEFAULTS[self::circleNamedCount];
+        set {
+            $this->setRowValue(self::circleNamedCount, $value);
+        }
+    }
 
     /**
      * Whether the request that opened this freeze came from a browser session.
@@ -192,21 +400,36 @@ final class ProtectedModeRuntime extends RtState
      * This survives restart when a manual window drops its initiating session hash, so the
      * Maintenance section can still say whether the window was opened there or from the CLI.
      */
-    public bool $enteredFromBrowser = false;
+    public bool $enteredFromBrowser {
+        get => $this->rowValues()[self::enteredFromBrowser] ?? self::FIELD_DEFAULTS[self::enteredFromBrowser];
+        set {
+            $this->setRowValue(self::enteredFromBrowser, $value);
+        }
+    }
 
     /**
      * Node these diagnostics describe, or null until this node's master publishes them.
      *
      * Live only. A restart does not treat a value left in the freeze file as current.
      */
-    public ?string $diagnosticsNodeId = null;
+    public ?string $diagnosticsNodeId {
+        get => ($this->rowValues()[self::diagnosticsNodeId] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::diagnosticsNodeId, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * Agents this node is holding stopped, or null until this node's master publishes the count.
      *
      * Null is unpublished, not zero.
      */
-    public ?int $stoppedAgentCount = null;
+    public ?int $stoppedAgentCount {
+        get => $this->rowValues()[self::stoppedAgentCount] ?? self::FIELD_DEFAULTS[self::stoppedAgentCount];
+        set {
+            $this->setRowValue(self::stoppedAgentCount, $value);
+        }
+    }
 
     /**
      * Agent types the full-stop policy leaves running, besides the initiator already named above.
@@ -216,14 +439,24 @@ final class ProtectedModeRuntime extends RtState
      *
      * @var ?list<string>
      */
-    public ?array $preservedAgentTypes = null;
+    public ?array $preservedAgentTypes {
+        get => ($this->rowValues()[self::preservedAgentTypes] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::preservedAgentTypes, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * Whether agent start is actually closed on this node, or null until the master publishes it.
      *
      * Null is unpublished, not an open gate.
      */
-    public ?bool $agentStartGateClosed = null;
+    public ?bool $agentStartGateClosed {
+        get => $this->rowValues()[self::agentStartGateClosed] ?? self::FIELD_DEFAULTS[self::agentStartGateClosed];
+        set {
+            $this->setRowValue(self::agentStartGateClosed, $value);
+        }
+    }
 
     /**
      * Node reports published by the local master, or null while unavailable or unpublished.
@@ -238,28 +471,70 @@ final class ProtectedModeRuntime extends RtState
      *     reportState: 'current'|'missing'|'silent'
      * }>
      */
-    public ?array $maintenanceNodes = null;
+    public ?array $maintenanceNodes {
+        get => ($this->rowValues()[self::maintenanceNodes] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::maintenanceNodes, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Current watchdog cause, or null while clear or unpublished. */
-    public ?string $watchdogVerdict = null;
+    public ?string $watchdogVerdict {
+        get => ($this->rowValues()[self::watchdogVerdict] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::watchdogVerdict, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** @var list<string> Pending nodes for the current overdue quiesce round, empty otherwise */
-    public array $watchdogPendingNodeIds = [];
+    public array $watchdogPendingNodeIds {
+        get => isset($this->rowValues()[self::watchdogPendingNodeIds])
+            ? $this->rowValues()[self::watchdogPendingNodeIds]->toNative()
+            : self::FIELD_DEFAULTS[self::watchdogPendingNodeIds];
+        set {
+            $this->setRowValue(self::watchdogPendingNodeIds, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Effective quiesce threshold in seconds, or null until published. */
-    public ?int $watchdogQuiesceTimeoutSeconds = null;
+    public ?int $watchdogQuiesceTimeoutSeconds {
+        get => $this->rowValues()[self::watchdogQuiesceTimeoutSeconds] ?? self::FIELD_DEFAULTS[self::watchdogQuiesceTimeoutSeconds];
+        set {
+            $this->setRowValue(self::watchdogQuiesceTimeoutSeconds, $value);
+        }
+    }
 
     /** Effective silence threshold in seconds, or null until published. */
-    public ?int $watchdogSilenceTimeoutSeconds = null;
+    public ?int $watchdogSilenceTimeoutSeconds {
+        get => $this->rowValues()[self::watchdogSilenceTimeoutSeconds] ?? self::FIELD_DEFAULTS[self::watchdogSilenceTimeoutSeconds];
+        set {
+            $this->setRowValue(self::watchdogSilenceTimeoutSeconds, $value);
+        }
+    }
 
     /** Effective reminder interval in seconds, or null until published. */
-    public ?int $watchdogAlertIntervalSeconds = null;
+    public ?int $watchdogAlertIntervalSeconds {
+        get => $this->rowValues()[self::watchdogAlertIntervalSeconds] ?? self::FIELD_DEFAULTS[self::watchdogAlertIntervalSeconds];
+        set {
+            $this->setRowValue(self::watchdogAlertIntervalSeconds, $value);
+        }
+    }
 
     /** @var ?list<string> Effective mail recipients; null until published, empty when configured so */
-    public ?array $watchdogAlertEmails = null;
+    public ?array $watchdogAlertEmails {
+        get => ($this->rowValues()[self::watchdogAlertEmails] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::watchdogAlertEmails, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Last worker-reported manual restart policy, or null before a report. */
-    public ?bool $watchdogManualRestartIsNormal = null;
+    public ?bool $watchdogManualRestartIsNormal {
+        get => $this->rowValues()[self::watchdogManualRestartIsNormal] ?? self::FIELD_DEFAULTS[self::watchdogManualRestartIsNormal];
+        set {
+            $this->setRowValue(self::watchdogManualRestartIsNormal, $value);
+        }
+    }
 
     /**
      * Creates the inactive singleton runtime row.
@@ -619,6 +894,62 @@ final class ProtectedModeRuntime extends RtState
         ];
     }
 
+    /** @return RtRowCodec Segmented codec preserving this row's nested-value contract */
+    public function rowCodec(): RtRowCodec
+    {
+        return new ProtectedModeRuntimeRowCodec();
+    }
+
+    /**
+     * Prepares an unpublished row; the committed-root layer supplies its baseline later.
+     *
+     * @param RtRowReader $in Segmented full row
+     * @return Generator<int, RtWork, int, static> Fully validated candidate
+     * @throws InvalidFormatException When a field violates the existing row contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public static function fromValues(RtRowReader $in): Generator
+    {
+        $prepared = yield from self::prepareValues($in, null);
+        yield new RtWork();
+        $instance = new static();
+        $instance->replaceRowValues($prepared);
+
+        return $instance;
+    }
+
+    /**
+     * Every accepted field is validated before the fixed descriptor is replaced.
+     *
+     * @param RtRowReader $diff Segmented changed fields
+     * @return Generator<int, RtWork, int, void> Atomic candidate patch
+     * @throws InvalidFormatException When a changed field violates the existing contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public function patchValues(RtRowReader $diff): Generator
+    {
+        $prepared = yield from self::prepareValues($diff, $this->rowValues());
+        yield new RtWork();
+        $this->replaceRowValues($prepared);
+    }
+
+    /**
+     * @param RtRowWriter $out Unpublished output in any Runtime arena
+     * @return Generator<int, RtWork, int, void> Bounded nested-value export
+     * @throws InvalidFormatException When a stored segmented value is malformed
+     * @throws LogicException When the output has already closed
+     */
+    public function exportValues(RtRowWriter $out): Generator
+    {
+        return $this->frozenValues()->export($out);
+    }
+
+    /** @return array<string, mixed> Fixed property defaults in codec export order */
+    protected function rowFieldDefaults(): array
+    {
+        return self::FIELD_DEFAULTS;
+    }
+
     /**
      * Reads the diagnostic serialization boundary without inventing unknown facts.
      *
@@ -725,5 +1056,179 @@ final class ProtectedModeRuntime extends RtState
     {
         return $this->phase === self::PHASE_VERIFYING
             && ($acceptKey === $this->initiatorAcceptKey || $this->belongsToInitiator($sessionTokenHash));
+    }
+
+    /**
+     * @param RtRowReader $input Segmented full row or diff
+     * @param ?array<string, RtRowValues|int|float|bool|null> $current Fixed descriptor, null for restore
+     * @return Generator<int, RtWork, int, array<string, RtRowValues|int|float|bool|null>> Validated fixed descriptor
+     * @throws InvalidFormatException When a field violates its existing contract
+     * @throws LogicException When a writer lifetime is violated
+     */
+    private static function prepareValues(RtRowReader $input, ?array $current): Generator
+    {
+        $prepared = $current ?? [];
+        foreach (self::FIELD_TYPES as $key => $type) {
+            yield new RtWork();
+            if ($current !== null && !isset(self::PATCH_FIELDS[$key])) {
+                continue;
+            }
+            $value = yield from $input->field($key);
+            if ($value === null) {
+                if ($current !== null) {
+                    continue;
+                }
+                if ($key === self::entryMode) {
+                    $prepared[$key] = (yield from $prepared[self::phase]->reader()->equals(self::PHASE_INACTIVE))
+                        ? null : yield from RtRowWriter::encode(self::ENTRY_MODE_FREEZE, $input->arena(), RtRowRole::Candidate);
+                    continue;
+                }
+                if ($key === self::watchdogPendingNodeIds) {
+                    $prepared[$key] = yield from RtRowWriter::encode([], $input->arena(), RtRowRole::Candidate);
+                    continue;
+                }
+                if (str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                throw new InvalidFormatException('Runtime row is missing required key ' . $key);
+            }
+            $reader = $value->reader();
+            if ($reader->kind() === RtRowKind::Scalar) {
+                $scalar = yield from $reader->scalar();
+                if ($scalar === null && str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                $scalarType = ltrim($type, '?');
+                if (($scalarType === 'int' && is_int($scalar)) || ($scalarType === 'bool' && is_bool($scalar))) {
+                    $prepared[$key] = $scalar;
+                    continue;
+                }
+                if ($scalarType === 'float' && (is_int($scalar) || is_float($scalar))) {
+                    $prepared[$key] = (float)$scalar;
+                    continue;
+                }
+            }
+            if (in_array($type, ['list', '?list', 'array'], true)) {
+                $prepared[$key] = yield from self::prepareList($reader);
+                continue;
+            }
+            if ($type === '?nodes') {
+                $prepared[$key] = yield from self::prepareMaintenanceNodes($reader);
+                continue;
+            }
+            if ($reader->kind() !== RtRowKind::Text || !in_array($type, ['text', '?text', 'moment', '?moment'], true)) {
+                throw new InvalidFormatException('Runtime row carries the wrong type under key ' . $key);
+            }
+            $prepared[$key] = yield from RtRowWriter::copy($reader, $input->arena(), RtRowRole::Candidate);
+        }
+
+        foreach ([self::entryMode, self::watchdogVerdict] as $key) {
+            yield new RtWork();
+            if (isset($prepared[$key])) {
+                $allowed = $key === self::entryMode
+                    ? [self::ENTRY_MODE_FREEZE, self::ENTRY_MODE_VERIFICATION_WINDOW]
+                    : array_map(static fn (ProtectedModeStuckVerdict $verdict): string => $verdict->value, ProtectedModeStuckVerdict::cases());
+                yield from self::validateChoice($prepared[$key]->reader(), $allowed);
+            }
+        }
+
+        return $prepared;
+    }
+
+    /**
+     * Strict string lists retain their order and duplicates without a native list.
+     *
+     * @param RtRowReader $input Incoming array
+     * @return Generator<int, RtWork, int, RtRowValues> Validated segmented list
+     * @throws InvalidFormatException When a list key or element violates the existing contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    private static function prepareList(RtRowReader $input): Generator
+    {
+        $cursor = $input->entries();
+        $writer = new RtRowWriter($input->arena(), RtRowRole::Candidate);
+        $position = 0;
+        while (($entry = yield from $cursor->advance()) !== null) {
+            if ($entry->key->reader()->kind() !== RtRowKind::Scalar
+                || (yield from $entry->key->reader()->scalar()) !== $position
+                || $entry->value->reader()->kind() !== RtRowKind::Text) {
+                throw new InvalidFormatException('Runtime row carries no list of strings');
+            }
+            $value = yield from RtRowWriter::copy($entry->value->reader(), $input->arena());
+            yield from $writer->write($position++, $value);
+        }
+
+        return yield from $writer->finish();
+    }
+
+    /**
+     * @param RtRowReader $input Serialized non-null node reports
+     * @return Generator<int, RtWork, int, RtRowValues> Canonical reports, with unknown record fields omitted
+     * @throws InvalidFormatException When a list or report field is malformed
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    private static function prepareMaintenanceNodes(RtRowReader $input): Generator
+    {
+        $cursor = $input->entries();
+        $writer = new RtRowWriter($input->arena(), RtRowRole::Candidate);
+        $position = 0;
+        while (($entry = yield from $cursor->advance()) !== null) {
+            if ($entry->key->reader()->kind() !== RtRowKind::Scalar
+                || (yield from $entry->key->reader()->scalar()) !== $position) {
+                throw new InvalidFormatException('Maintenance nodes must be a list');
+            }
+            $node = $entry->value->reader();
+            $record = new RtRowWriter($input->arena());
+            foreach (self::MAINTENANCE_NODE_TYPES as $key => $type) {
+                yield new RtWork();
+                $value = yield from $node->field($key);
+                if ($value === null) {
+                    throw new InvalidFormatException('Maintenance node report is missing ' . $key);
+                }
+                $reader = $value->reader();
+                if ($reader->kind() === RtRowKind::Scalar) {
+                    $scalar = yield from $reader->scalar();
+                    if (($scalar === null && str_starts_with($type, '?'))
+                        || (is_bool($scalar) && ltrim($type, '?') === 'bool')) {
+                        yield from $record->write($key, yield from RtRowWriter::encode($scalar, $input->arena()));
+                        continue;
+                    }
+                }
+                if ($reader->kind() !== RtRowKind::Text || ltrim($type, '?') !== 'text') {
+                    throw new InvalidFormatException('Maintenance node report carries the wrong type under key ' . $key);
+                }
+                if ($key === self::phase) {
+                    yield from self::validateChoice($reader, [
+                        self::PHASE_INACTIVE, self::PHASE_ACTIVATING, self::PHASE_ACTIVE,
+                        self::PHASE_VERIFYING, self::PHASE_DEACTIVATING,
+                    ]);
+                } elseif ($key === 'reportState') {
+                    yield from self::validateChoice($reader, ['current', 'missing', 'silent']);
+                }
+                yield from $record->write($key, yield from RtRowWriter::copy($reader, $input->arena()));
+            }
+            yield from $writer->write($position++, yield from $record->finish());
+        }
+
+        return yield from $writer->finish();
+    }
+
+    /**
+     * @param RtRowReader $input Segmented text, possibly arbitrarily long and invalid
+     * @param list<string> $allowed Fixed domain vocabulary
+     * @return Generator<int, RtWork, int, void> Byte-budgeted exact membership check
+     * @throws InvalidFormatException When the value is not a known choice
+     */
+    private static function validateChoice(RtRowReader $input, array $allowed): Generator
+    {
+        foreach ($allowed as $choice) {
+            if (yield from $input->equals($choice)) {
+                return;
+            }
+        }
+
+        throw new InvalidFormatException('Runtime row carries an unknown protected-mode choice');
     }
 }

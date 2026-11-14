@@ -28,11 +28,12 @@ namespace Hilos\Cluster\Peer;
  * 24 — peer_clock_probe / peer_clock_reply measure a node's clock against the leader's (HIL-1646).
  * 25 — hello/welcome and roster/announce entries carry the node's readable name (HIL-1509).
  * 26 — protected-mode quiesce and window descriptors require a barrier generation (HIL-1818).
+ * 27 — ordinary RT replication is the acknowledged peer_rt_sync_stream; peer_rt_sync is gone.
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 26;
+    public const int VERSION = 27;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

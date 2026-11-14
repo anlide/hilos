@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
@@ -14,11 +15,11 @@ use Hilos\Auth\Library\DTO\AuthSecondFactorTrustDaysApplySignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\SecondFactorSetupConfirmActionDTO;
-use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\BackupCodeGenerator;
-use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
+use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\SecondFactorGate;
 use Hilos\Auth\SecondFactor\SecondFactorMessages;
+use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
@@ -27,8 +28,8 @@ use Hilos\Auth\Session\DTO\SessionRebindSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Constants\EnvConstants;
-use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\DTO\UserBrowserTrustRenewDoneSignalData;
@@ -41,8 +42,8 @@ use Hilos\Users\DTO\UserSecondFactorTrustRestrictDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorTrustRestrictSignalData;
 use Hilos\Users\SecondFactorFate;
 use Hilos\Constants\TimeConstants;
-use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
+use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
@@ -56,11 +57,11 @@ use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Settings\Library\SettingsLibraryAgent;
@@ -69,6 +70,9 @@ use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Log\AgentLogStream;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
@@ -2341,29 +2345,38 @@ final class SecondFactorTestConnections extends HilosSessionConnections
  */
 final class SecondFactorTestConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Own fields, of which this fixture has none
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Incoming field changes
+     * @param RtRowReader $diff Incoming field changes
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }

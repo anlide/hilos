@@ -4,11 +4,21 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Runtime\Row\HilosOAuthTripRowCodec;
+use Hilos\Runtime\Row\RtRowKind;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\RtRowCodec;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosOAuthTrips;
 use Hilos\Runtime\View\Actions\Item\HilosOAuthTripActions;
+use LogicException;
 
 /**
  * HilosOAuthTrip - one provider sign-in a browser tab is waiting on, and how it ended (HIL-1044).
@@ -77,20 +87,93 @@ final class HilosOAuthTrip extends RtState
     /** Key form: lowercase hex, two characters per byte. */
     private const string KEY_PATTERN = '/\A[0-9a-f]{' . self::KEY_BYTES * 2 . '}\z/';
 
+    /** Fixed scalar schema; variable text is held in segmented pages. */
+    private const array FIELD_TYPES = [
+        self::tripKeyHash => 'text',
+        self::sessionTokenHash => 'text',
+        self::acceptKey => 'text',
+        self::mode => 'text',
+        self::provider => 'text',
+        self::ending => '?text',
+        self::email => '?text',
+        self::linkToken => '?text',
+        self::accountToken => '?text',
+        self::userId => '?int',
+        self::sessionId => '?int',
+        self::updatedAt => 'int',
+    ];
+
+    /** The synchronous property defaults, not defaults for missing incoming keys. */
+    private const array FIELD_DEFAULTS = [
+        self::tripKeyHash => '',
+        self::sessionTokenHash => '',
+        self::acceptKey => '',
+        self::mode => '',
+        self::provider => '',
+        self::ending => null,
+        self::email => null,
+        self::linkToken => null,
+        self::accountToken => null,
+        self::userId => null,
+        self::sessionId => null,
+        self::updatedAt => 0,
+    ];
+
+    /** Only the fields the existing applyDiff door accepts. */
+    private const array PATCH_FIELDS = [
+        self::acceptKey => true,
+        self::ending => true,
+        self::email => true,
+        self::linkToken => true,
+        self::accountToken => true,
+        self::userId => true,
+        self::sessionId => true,
+        self::updatedAt => true,
+    ];
+
     /** Hash of the key the tab minted; also the row id. */
-    private(set) string $tripKeyHash = '';
+    private(set) string $tripKeyHash {
+        get => isset($this->rowValues()[self::tripKeyHash])
+            ? $this->rowValues()[self::tripKeyHash]->toNative()
+            : self::FIELD_DEFAULTS[self::tripKeyHash];
+        set {
+            $this->setRowValue(self::tripKeyHash, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Hash of the session cookie token the trip was started under. */
-    private(set) string $sessionTokenHash = '';
+    private(set) string $sessionTokenHash {
+        get => isset($this->rowValues()[self::sessionTokenHash])
+            ? $this->rowValues()[self::sessionTokenHash]->toNative()
+            : self::FIELD_DEFAULTS[self::sessionTokenHash];
+        set {
+            $this->setRowValue(self::sessionTokenHash, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Accept key of the connection the outcome is owed to right now. */
-    private(set) string $acceptKey = '';
+    private(set) string $acceptKey {
+        get => isset($this->rowValues()[self::acceptKey]) ? $this->rowValues()[self::acceptKey]->toNative() : self::FIELD_DEFAULTS[self::acceptKey];
+        set {
+            $this->setRowValue(self::acceptKey, RtRowValues::fromNative($value));
+        }
+    }
 
     /** {@see OAuthPendingLogin::MODE_LOGIN} or {@see OAuthPendingLogin::MODE_LINK}. */
-    private(set) string $mode = '';
+    private(set) string $mode {
+        get => isset($this->rowValues()[self::mode]) ? $this->rowValues()[self::mode]->toNative() : self::FIELD_DEFAULTS[self::mode];
+        set {
+            $this->setRowValue(self::mode, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Provider key, e.g. 'oauth:github'. */
-    private(set) string $provider = '';
+    private(set) string $provider {
+        get => isset($this->rowValues()[self::provider]) ? $this->rowValues()[self::provider]->toNative() : self::FIELD_DEFAULTS[self::provider];
+        set {
+            $this->setRowValue(self::provider, RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * How the trip ended, or null while it is still going.
@@ -98,25 +181,60 @@ final class HilosOAuthTrip extends RtState
      * An {@see OAuthResultSignalData} reason, {@see self::ENDING_GRANTED} or
      * {@see self::ENDING_SIGNED_IN}.
      */
-    private(set) ?string $ending = null;
+    private(set) ?string $ending {
+        get => ($this->rowValues()[self::ending] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::ending, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Provider address on a re-authentication or consent ending, null when withheld. */
-    private(set) ?string $email = null;
+    private(set) ?string $email {
+        get => ($this->rowValues()[self::email] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::email, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Signed link capability to redeem after the re-authentication, on that ending alone. */
-    private(set) ?string $linkToken = null;
+    private(set) ?string $linkToken {
+        get => ($this->rowValues()[self::linkToken] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::linkToken, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Signed first sign-in capability, on the consent-required ending alone. */
-    private(set) ?string $accountToken = null;
+    private(set) ?string $accountToken {
+        get => ($this->rowValues()[self::accountToken] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::accountToken, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** User the provider's answer resolved to, on {@see self::ENDING_GRANTED}. */
-    private(set) ?int $userId = null;
+    private(set) ?int $userId {
+        get => $this->rowValues()[self::userId] ?? self::FIELD_DEFAULTS[self::userId];
+        set {
+            $this->setRowValue(self::userId, $value);
+        }
+    }
 
     /** Id of the session row signed in, on {@see self::ENDING_SIGNED_IN}; a rotation keeps it. */
-    private(set) ?int $sessionId = null;
+    private(set) ?int $sessionId {
+        get => $this->rowValues()[self::sessionId] ?? self::FIELD_DEFAULTS[self::sessionId];
+        set {
+            $this->setRowValue(self::sessionId, $value);
+        }
+    }
 
     /** Epoch milliseconds of the last write, on the server's scale. */
-    private(set) int $updatedAt = 0;
+    private(set) int $updatedAt {
+        get => $this->rowValues()[self::updatedAt] ?? self::FIELD_DEFAULTS[self::updatedAt];
+        set {
+            $this->setRowValue(self::updatedAt, $value);
+        }
+    }
 
     /**
      * Opens the trip the moment the users library accepted its callback.
@@ -260,5 +378,112 @@ final class HilosOAuthTrip extends RtState
             self::sessionId => $this->sessionId,
             self::updatedAt => $this->updatedAt,
         ];
+    }
+    /** @return RtRowCodec Segmented codec preserving this row's scalar contract */
+    public function rowCodec(): RtRowCodec
+    {
+        return new HilosOAuthTripRowCodec();
+    }
+
+    /**
+     * Prepares an unpublished row; the committed-root layer supplies its baseline later.
+     *
+     * @param RtRowReader $in Segmented full row
+     * @return Generator<int, RtWork, int, static> Fully validated candidate
+     * @throws InvalidFormatException When a field violates the existing row contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public static function fromValues(RtRowReader $in): Generator
+    {
+        $prepared = yield from self::prepareValues($in, null);
+        yield new RtWork();
+        $instance = new static();
+        $instance->replaceRowValues($prepared);
+
+        return $instance;
+    }
+
+    /**
+     * Every accepted field is validated before the fixed descriptor is replaced.
+     *
+     * @param RtRowReader $diff Segmented changed fields
+     * @return Generator<int, RtWork, int, void> Atomic candidate patch
+     * @throws InvalidFormatException When a changed field violates the existing contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public function patchValues(RtRowReader $diff): Generator
+    {
+        $prepared = yield from self::prepareValues($diff, $this->rowValues());
+        yield new RtWork();
+        $this->replaceRowValues($prepared);
+    }
+
+    /**
+     * @param RtRowWriter $out Unpublished output in any Runtime arena
+     * @return Generator<int, RtWork, int, void> Bounded scalar/text export
+     * @throws InvalidFormatException When a stored segmented value is malformed
+     * @throws LogicException When the output has already closed
+     */
+    public function exportValues(RtRowWriter $out): Generator
+    {
+        return $this->frozenValues()->export($out);
+    }
+
+    /** @return array<string, mixed> Fixed property defaults in codec export order */
+    protected function rowFieldDefaults(): array
+    {
+        return self::FIELD_DEFAULTS;
+    }
+
+    /**
+     * @param RtRowReader $input Segmented full row or diff
+     * @param ?array<string, RtRowValues|int|float|bool|null> $current Fixed descriptor, null for restore
+     * @return Generator<int, RtWork, int, array<string, RtRowValues|int|float|bool|null>> Validated fixed descriptor
+     * @throws InvalidFormatException When a field violates its existing contract
+     * @throws LogicException When a writer lifetime is violated
+     */
+    private static function prepareValues(RtRowReader $input, ?array $current): Generator
+    {
+        $prepared = $current ?? [];
+        foreach (self::FIELD_TYPES as $key => $type) {
+            yield new RtWork();
+            if ($current !== null && !isset(self::PATCH_FIELDS[$key])) {
+                continue;
+            }
+            $value = yield from $input->field($key);
+            if ($value === null) {
+                if ($current !== null) {
+                    continue;
+                }
+                if (str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                throw new InvalidFormatException('Runtime row is missing required key ' . $key);
+            }
+            $reader = $value->reader();
+            if ($reader->kind() === RtRowKind::Scalar) {
+                $scalar = yield from $reader->scalar();
+                if ($scalar === null && str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                $scalarType = ltrim($type, '?');
+                if (($scalarType === 'int' && is_int($scalar)) || ($scalarType === 'bool' && is_bool($scalar))) {
+                    $prepared[$key] = $scalar;
+                    continue;
+                }
+                if ($scalarType === 'float' && (is_int($scalar) || is_float($scalar))) {
+                    $prepared[$key] = (float)$scalar;
+                    continue;
+                }
+            }
+            if ($reader->kind() !== RtRowKind::Text || !in_array($type, ['text', '?text', 'moment', '?moment'], true)) {
+                throw new InvalidFormatException('Runtime row carries the wrong type under key ' . $key);
+            }
+            $prepared[$key] = yield from RtRowWriter::copy($reader, $input->arena(), RtRowRole::Candidate);
+        }
+
+        return $prepared;
     }
 }

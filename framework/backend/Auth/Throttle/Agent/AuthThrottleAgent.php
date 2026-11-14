@@ -37,6 +37,8 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\TimeHelper;
 use Throwable;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * The cluster's one owner of the anti-abuse attempt counters and blocks (HIL-420, HIL-1280).
@@ -134,6 +136,8 @@ final class AuthThrottleAgent extends AbstractAgent
      * @throws AgentUnknownSignalException When the signal name is neither of the two it answers
      * @throws InvalidAgentSignalPayloadException When the payload does not match the signal contract
      * @throws InvalidArgumentException When the verdict signal cannot be named or queued
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      */

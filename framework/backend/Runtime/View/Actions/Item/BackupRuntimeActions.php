@@ -13,6 +13,9 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\View\Item\BackupRuntime as ViewBackupRuntime;
 use Hilos\Utils\Helpers\UtcMoment;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for the backup runtime singleton.
@@ -40,21 +43,25 @@ final class BackupRuntimeActions extends RtActions
      * @param ?int $estimatedSeconds How long the run is expected to take; null when there is no history
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markRunning(string $backupId, BackupScope $scope, ?int $estimatedSeconds = null): void
     {
         $this->ensureCanWrite();
 
-        $this->state->running = true;
-        $this->state->currentBackupId = $backupId;
-        $this->state->scope = $scope->value;
-        $this->state->startedAt = UtcMoment::format(new DateTimeImmutable());
-        $this->state->phase = null;
-        $this->state->phaseStartedAt = null;
-        $this->state->estimatedSeconds = $estimatedSeconds;
-        $this->state->percent = null;
-        $this->state->remainingSeconds = null;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateBackupRuntime::running => true,
+            StateBackupRuntime::currentBackupId => $backupId,
+            StateBackupRuntime::scope => $scope->value,
+            StateBackupRuntime::startedAt => UtcMoment::format(new DateTimeImmutable()),
+            StateBackupRuntime::phase => null,
+            StateBackupRuntime::phaseStartedAt => null,
+            StateBackupRuntime::estimatedSeconds => $estimatedSeconds,
+            StateBackupRuntime::percent => null,
+            StateBackupRuntime::remainingSeconds => null,
+        ]);
     }
 
     /**
@@ -67,14 +74,18 @@ final class BackupRuntimeActions extends RtActions
      * @param BackupPhase $phase Phase the run has just entered
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markPhase(BackupPhase $phase): void
     {
         $this->ensureCanWrite();
 
-        $this->state->phase = $phase->value;
-        $this->state->phaseStartedAt = UtcMoment::format(new DateTimeImmutable());
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateBackupRuntime::phase => $phase->value,
+            StateBackupRuntime::phaseStartedAt => UtcMoment::format(new DateTimeImmutable()),
+        ]);
     }
 
     /**
@@ -89,14 +100,18 @@ final class BackupRuntimeActions extends RtActions
      * @param ?int $remainingSeconds Seconds left, negative once the estimate is spent; null when it cannot be estimated
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markProgress(?int $percent, ?int $remainingSeconds): void
     {
         $this->ensureCanWrite();
 
-        $this->state->percent = $percent;
-        $this->state->remainingSeconds = $remainingSeconds;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateBackupRuntime::percent => $percent,
+            StateBackupRuntime::remainingSeconds => $remainingSeconds,
+        ]);
     }
 
     /**
@@ -106,22 +121,28 @@ final class BackupRuntimeActions extends RtActions
      * page and the table describing a run that is over, and a leftover phase would leave a
      * progress bar frozen wherever the run happened to end instead of taking it away.
      *
+     * A terminal transition: it takes the service reserve of the source's FIFO and is never refused
+     * for want of room - one the reserve cannot take now is owed and retried as the FIFO frees.
+     *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function clearRunning(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->running = false;
-        $this->state->currentBackupId = null;
-        $this->state->scope = null;
-        $this->state->startedAt = null;
-        $this->state->phase = null;
-        $this->state->phaseStartedAt = null;
-        $this->state->estimatedSeconds = null;
-        $this->state->percent = null;
-        $this->state->remainingSeconds = null;
-        $this->sync();
+        $this->applyDiffAsCleanup([
+            StateBackupRuntime::running => false,
+            StateBackupRuntime::currentBackupId => null,
+            StateBackupRuntime::scope => null,
+            StateBackupRuntime::startedAt => null,
+            StateBackupRuntime::phase => null,
+            StateBackupRuntime::phaseStartedAt => null,
+            StateBackupRuntime::estimatedSeconds => null,
+            StateBackupRuntime::percent => null,
+            StateBackupRuntime::remainingSeconds => null,
+        ]);
     }
 }

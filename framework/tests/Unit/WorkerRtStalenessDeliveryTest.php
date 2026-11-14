@@ -20,12 +20,17 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\Runtime\DTO\RtStalenessSignalData;
+use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Stream\RtSyncStreamChannel;
+use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -68,6 +73,7 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
     protected function tearDown(): void
     {
         RtStaleness::reset();
+        RtOrdinaryAdmission::reset();
         SourceInterestRegistry::readsWhatItMounts();
         SourceInterestRegistry::releaseConsumer(SourceConsumer::page(self::ACCEPT_KEY));
         SourceInterestRegistry::releaseConsumer(SourceConsumer::agent('unit_rt_staleness:1'));
@@ -193,6 +199,39 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
             new WorkerRtSnapshotMessageDTO(self::COLLECTION, ['row-1' => ['id' => 'row-1']], []),
         );
 
+        $this->assertNull(RtStaleness::staleSince(self::COLLECTION, 'row-1'));
+    }
+
+    /**
+     * A row whose streamed operation this worker refused is held, and its copy here is frozen
+     * whatever the master says of its own: the master's thaw lifts the rows it names except that
+     * one, and the snapshot that gives it a base again lifts it too.
+     *
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testARowTheWorkersStreamHoldsStaysFrozenThroughTheMastersThawUntilASnapshot(): void
+    {
+        $worker = new WorkerRtStalenessDeliveryTestManager();
+        $worker->handleDaemonMessage(new WorkerRtStalenessMessageDTO(self::COLLECTION, ['row-2'], self::FROZE_AT));
+        $parts = [];
+        $master = new RtSyncStreamChannel(
+            static function (RtSyncStreamFrame $frame) use (&$parts): void {
+                $parts[] = $frame;
+            },
+            static fn (): null => null,
+        );
+        // An operation naming a node is refused by a worker at once, so its row is held.
+        $master->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['id' => 'row-1']), 'unit-peer-node');
+        $this->assertCount(1, $parts);
+
+        $worker->handleDaemonMessage(new WorkerRtSyncStreamDTO($parts[0]));
+        $this->assertNotNull(RtStaleness::staleSince(self::COLLECTION, 'row-1'), 'The held row is frozen');
+
+        $worker->handleDaemonMessage(new WorkerRtStalenessMessageDTO(self::COLLECTION, ['row-1', 'row-2'], null));
+        $this->assertNotNull(RtStaleness::staleSince(self::COLLECTION, 'row-1'), 'The master\'s thaw does not lift a held row');
+        $this->assertNull(RtStaleness::staleSince(self::COLLECTION, 'row-2'));
+
+        $worker->handleDaemonMessage(new WorkerRtSnapshotMessageDTO(self::COLLECTION, ['row-1' => ['id' => 'row-1']], []));
         $this->assertNull(RtStaleness::staleSince(self::COLLECTION, 'row-1'));
     }
 

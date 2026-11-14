@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Generator;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -72,9 +73,12 @@ use Hilos\Moderation\ModerationKindKey;
 use Hilos\Moderation\ModerationLlmConstants;
 use Hilos\Moderation\ModerationReason;
 use Hilos\Moderation\ModerationSettingsCatalog;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosModerationCheck as StateHilosModerationCheck;
@@ -1412,24 +1416,30 @@ final class ModerationAgentIntegrationConnections extends HilosConnections
  */
 final class ModerationAgentIntegrationConnection extends HilosConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Serialized runtime row */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Serialized runtime row */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No project fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Incoming field changes */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Incoming field changes */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

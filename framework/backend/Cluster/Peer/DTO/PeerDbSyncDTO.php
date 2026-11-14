@@ -12,7 +12,7 @@ use Throwable;
 /**
  * Broadcast frame carrying one DB sync fact to every other node of the mesh.
  *
- * The twin of {@see PeerRtSyncDTO} for rows that live in the database rather than in runtime
+ * The twin of {@see PeerRtSyncStreamDTO} for rows that live in the database rather than in runtime
  * state, and it exists because the shared database is not what the nodes read from: each one
  * keeps rows in memory, and a row another node changed stayed as this node first read it,
  * forever. What travels is the fact itself - created, updated, deleted, cleared, plus the row -
@@ -20,7 +20,7 @@ use Throwable;
  * the writing node's worker would have applied.
  *
  * The frame names no target and the receiver never passes it on: one hop, exactly as
- * {@see PeerRtSyncDTO} and {@see PeerSignalDTO}, which rules out the echo structurally rather
+ * {@see PeerRtSyncStreamDTO} and {@see PeerSignalDTO}, which rules out the echo structurally rather
  * than by counting hops.
  *
  * {@see $signalType} repeats what the inner signal carries because the frame is judged before

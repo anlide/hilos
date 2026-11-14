@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
-use Hilos\Users\AccountStandingResolver;
+use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\CliCommands;
@@ -24,17 +24,21 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\Hilos;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections as StateSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection as StateSessionConnection;
+use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
 use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
 use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosSessionConnection;
-use Hilos\Runtime\State\Item\RtState;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Users\AccountStandingResolver;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /** Drives the real session owner and observes its ordinary sign-in effects. */
@@ -328,24 +332,30 @@ final class SessionTestBindConnectionStates extends StateSessionConnections
 
 final class SessionTestBindConnectionState extends StateSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row No fixture-specific fields */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row No fixture-specific fields */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No fixture-specific fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff No fixture-specific fields */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff No fixture-specific fields */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

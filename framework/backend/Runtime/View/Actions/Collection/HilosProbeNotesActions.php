@@ -14,6 +14,8 @@ use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the notes of the set probe.
@@ -36,6 +38,8 @@ final class HilosProbeNotesActions extends RtActions
      * @param string $text Text of the note
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtActionsItemClassException When the runtime item class is missing or invalid
      * @throws RtTruthSourceWriteNotAllowedException When the caller does not hold the set the note is in
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises

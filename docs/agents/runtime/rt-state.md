@@ -83,28 +83,46 @@ The stages are mirrored on all four layers — State item, State collection, Vie
 item, View collection — so a project stands on one stage everywhere.
 
 **The base half of the row cannot be skipped.** `fromRow()`, `toArray()` and
-`applyDiff()` are `final` on the base and run the base half themselves, including
-`markRtSyncBaseline()`; the project half is four abstract hooks:
+`applyDiff()` are `final` on the base. Creation and hydration mark the legacy
+baseline after all stages finish. The project implements four yielding hooks:
 
 ```php
 final class Connection extends HilosSessionConnection {
-    protected function initOwn(): void {}
-    protected function hydrateOwn(array $row): void { ... }
-    protected function ownToArray(): array { return [ ... ]; }
-    protected function applyOwnDiff(array $diff): void { ... }
+    protected function initOwn(): Generator { yield new RtWork(); }
+    protected function hydrateOwn(RtRowReader $row): Generator { ... }
+    protected function exportOwn(RtRowWriter $out): Generator { ... }
+    protected function applyOwnDiff(RtRowReader $diff): Generator { ... }
 }
 ```
 
-The base runs first and the hook second, in all four. That order does not protect
-the base keys — `toArray()` merges the project half over the base one, so a
-project field named like a base field takes the key and hides it. Name project
-fields around the base; never restate one. Between stages the framework chains its
-own halves through
-`parent::` (`initBase`/`hydrateBase`/`baseToArray`/`applyBaseDiff`) — those are a
-detail of the base, not an API a project calls.
+Even an empty hook is a real `Generator` yielding `RtWork`. Initialization,
+hydration, segmented export and patch run presence → session → project. Between
+framework stages, `initBase`/`hydrateBase`/`exportBase`/`applyBaseDiff` chain through
+`parent::`; a project uses its own hooks instead. Name project fields around the
+base; never restate one.
+
+Declare project field types in `OWN_FIELD_TYPES`. Read the shared fixed backing
+through `rowValues()` and write one field through `setRowValue($key, $value)`;
+`replaceRowValues($values)` installs a complete codec-prepared fixed descriptor.
+Variable strings and lists hold `RtRowValues` leases, with native materialization
+only in typed property getters and explicit legacy adapters. `readFields()`
+validates and copies one stage through the row reader; `exportFields()` writes
+its stored values with fixed property defaults. A project with extra fields also
+overrides `rowFieldDefaults(): array`, returning the parent defaults followed by
+its own fixed defaults in export order. This metadata describes existing typed
+properties; it does not supply defaults for missing required incoming fields.
+The legacy `toArray()` reads the declared properties in base then project order;
+it preserves native keys and values without becoming a resumable-path fallback.
+
+`rowCodec()` binds the concrete project class. Its restore prepares a row without
+marking a baseline, and its patch validates an invisible clone before replacing
+the target's fixed descriptor. Neither operation announces a source change.
+The legacy `applyDiff()` keeps sequential field mutation and its existing
+refusal behavior. Other `RtState` subclasses may keep their legacy APIs;
+`rowCodec()` explicitly refuses a subclass that has not supplied a codec.
 
 `create()` is the single exception to `final`: the session stage widens its
-signature with the token, and a `final` method cannot be overridden. It is
+signature with the token and session id, and a `final` method cannot be overridden. It is
 `final` on the last stage, so a project never overrides the factory.
 
 **A project that serves pages must stand on the base.** Non-empty `PAGES` means
@@ -139,6 +157,85 @@ diff reads it with `patchBool`, so a diff about another field leaves it as it wa
   until it closes. The doubt is not the freshness of a replica (`stale`): a copy
   can be fresh and doubted, or frozen and trusted.
 
+## Local row bindings and frozen descriptors
+
+Migrated framework and demo rows use the common process-local `RtRowBinding`.
+A stable state handle replaces immutable `RtRowDescriptor` values; its incarnation
+is independent of its textual id. `draftRow(): static` clones the binding while
+retaining immutable pages and baseline. Codec patching remains the validation
+owner, including the immutable rows whose patch is deliberately a no-op.
+
+`freezeRow(): RtFrozenRow` captures values and baseline without serialization,
+property materialization or `getId()`. Its `export()` and `exportBaseline()` write
+the captured descriptors through `RtRowWriter`; `prepare(RtPreparedIdentity)`
+prepares a record for the isolated version store. `changes(RtRowArena)` builds
+segmented `RtRowChanges::diff` and `previous`. All three preparation operations
+are generators driven with `RtWorkBudget`; cancellation releases page references
+through the arena's retirement lane, including abandoned nested comparisons.
+Frozen holds are charged as Snapshot; baseline history is charged as Ordinary.
+Only the fixed codec schema is copied when a descriptor acquires its root leases.
+
+`markRtSyncBaseline()` retains immutable backing for migrated rows. `sync()` of a
+migrated row compares its values with that baseline on the segmented pages
+(`frozenValues()->changes()`) and hands the changed fields and their previous
+values to the signal as they are: neither the row nor the baseline is
+materialized. `touchedSetKeys()` stays an explicit synchronous compatibility
+boundary: a short-lived view reads the captured baseline through the same typed
+properties, without retaining a native baseline graph. Legacy-only subclasses
+keep their existing synchronous behavior, `sync()` included, and explicitly
+refuse the binding/frozen doors. Implement the codec and fixed backing/default
+metadata before using those doors.
+
+Each `RtStates` keeps a committed selector of its rows: membership in insertion
+order and the immutable values each row was last committed with. Every
+membership change and every `sync()`/`markRtSyncBaseline()` of a row standing in
+the collection commits there (`RtStates::noteCommittedRow()`); the row is
+carried by reference to its own pages (`RtState::carriedRow()`,
+`RtRowDescriptor::carry()`), one entry per field, and only once a holder is
+found. Under an open transaction the change is prepared on the level whose
+rollback undoes the live write - the innermost level that has not failed - and
+installs at its commit; a rollback forgets it. `versionCut()` freezes the
+selector at one point, and `RtSnapshot::capture()` reads that cut. A snapshot
+generation is staged beside the live rows (`openStaging()`) and installed on the
+collection's resolution root (`installStaged()`); from then on a row handle
+resolves its values through that root. A new row with the same id receives a
+different incarnation; frozen readers never resolve a replacement by textual id.
+
+Pages are retired, not freed at once. A synchronous write door retires what it
+released itself before it returns; everything else waits in the process arena's
+shared queue for the RT pass - the master's dispatch rounds and a worker's RT
+pass - which advances it by the retirement share of each round. A process without
+an RT pass, a command or a test, has its outermost door retire that queue too.
+
+The share alone does not keep up with a burst - agents stopping and starting by
+the dozen release far more between two rounds than it retires - so the shared
+queue has a bound. Beyond `RtRowArena::SHARED_BACKLOG_RELEASES` releases, or
+beyond `SHARED_BACKLOG_BYTES` logical bytes awaiting retirement (released roots
+not begun and the graphs being retired), the excess is retired by
+`RtRowArena::retireExcess()` before the share: the master calls it once at the start
+of every dispatch pass, before its rounds, and a worker at the start of every RT pass,
+outside any door. The count
+catches a burst of small values,
+whose cost is the releases and pages themselves; the volume catches a few large
+values, which stay far under the count while the share takes them 8 KiB a round.
+The excess grows with the burst and a round must not, so one call spends at most
+`EXCESS_RETIREMENT_STEPS` steps and `EXCESS_RETIREMENT_BYTES` bytes; what it
+leaves keeps the queue pending, and the pending queue keeps the next pass cued -
+the master's dispatch through `DaemonManager::wakeRetirementRemainder()`, a
+worker's loop through `WorkerManager::rtPassOwes()`: a pass that ran out of time
+with the queue pending keeps the loop off its socket wait, and the next pass comes
+after the loop's short active sleep (`ACTIVE_PASS_MICROSECONDS`), whether a frame
+came or not - so the passes bring the queue back to its bounds without waiting for
+traffic. The bound and the limit are the same in both
+processes: a worker back from a freeze takes its agents' releases by the hundred
+thousand.
+
+What a worker's agents release after its pass - on the ticks behind it - is no
+debt of that pass: it caps the socket wait at 100 ms, as the other maintenance
+guards do, and the next iteration's pass retires it. Taken for a debt, an agent
+that released rows on every tick held its worker on the short sleep for good, and
+every agent of that worker ticked ten times as often (HIL-2056).
+
 ## Writing to state
 
 State fields must be real typed properties so PhpStorm and static analysis can
@@ -169,11 +266,14 @@ Those hide the actual row shape from the IDE and make action code depend on
 runtime magic. Keep magic access only as a framework fallback for unknown
 dynamic access.
 
-Inside `Runtime/` item actions, write typed state fields and call `sync()`:
+Inside `Runtime/` item actions, a write hands its values to the door that admits
+them before the row changes, `applyDiffWithSync()`, keyed by the row's field
+constants:
 
 ```php
-$this->state->status = $newStatus;
-$this->sync();        // broadcasts RT_SYNC_UPDATED to all workers - at the commit under an open transaction
+$this->ensureCanWrite();
+$this->applyDiffWithSync([StateFoo::status => $newStatus]);
+// right, draft, admission, one-swap publish, RT_SYNC_UPDATED - at the commit under an open transaction
 ```
 
 Or use an item **Actions** class when the caller has the collection key:
@@ -182,10 +282,39 @@ Or use an item **Actions** class when the caller has the collection key:
 Hilos::$rt->connections[$acceptKey]?->actions->setUserId($newUserId);
 ```
 
-Custom RT actions must mutate typed state fields and call `sync()`. Do not call
-`applyDiffToState()` or expose arbitrary `applyDiff*()` action methods from
-application code; `applyDiff()` is for inbound RT synchronization after another
-worker already made the write.
+The door judges the right - for the set the edited row stands in as well - takes
+the whole diff on a draft of the row, so a refused field publishes no field,
+prepares the update as one immutable operation and admits it on the source's
+ordinary FIFO; only then is the draft published in one swap and synced. A full
+FIFO refuses with `RtWriteBackpressureException` while nothing has changed, and a
+diff that changes nothing reserves, publishes and sends nothing. A write that
+grows a list hands a segmented diff (`RtState::appendedListDiff()`): the list the
+row holds is neither materialized nor spread. Collection actions write a known
+row the same way through `applyDiffToState()`.
+
+Synced, the operation travels to its readers on the link's ordinary RT stream, in
+parts. What the link carries after it is read on the other end behind the whole
+write only when the reader acts on it trusting the write is applied - see
+[What waits behind the writes](#what-waits-behind-the-writes).
+
+Assigning typed fields and calling `sync()` afterwards is not a write an action
+makes: such a write has no values to admit before the row changes, and the late
+`sync()` never refuses for want of room. Do not expose arbitrary `applyDiff*()`
+methods as public actions either - the doors are protected, and an action names
+the fields it writes. A state's own `applyDiff()` is for inbound RT
+synchronization after another worker already made the write, and for the
+doors' drafts.
+
+A terminal transition - the values an ended run, a lifted freeze or a stopped
+owner leaves a row with - goes through `applyDiffAsCleanup()` instead, and the
+rows a stopping owner leaves behind through `removeAllStatesAsCleanup()` (one
+row: `removeAsCleanup()`). They take the bounded service reserve of the source's
+FIFO and are never refused for want of room: one the reserve cannot take now is
+owed by the row's identity and retried through the same door as the FIFO frees,
+the last one owed for a row wins, and a later ordinary write of the row
+supersedes it. A caller never handles a backpressure refusal there, so a full
+FIFO does not leave a run "going" for ever; an owner stopping while one is owed
+reports its stop only behind the write that pays it.
 
 Collection actions may create rows or operate on the whole collection. Do not
 add a collection action that accepts a runtime row id to update or delete that
@@ -205,9 +334,7 @@ local annotation:
 final class UserStatesActions extends RtActions {}
 
 $this->ensureCanWrite();
-$this->stateCollection[$userId]->moderationMessage = '';
-$this->stateCollection[$userId]->sync();
-$this->clearCollectionCache();
+$this->applyDiffToState($this->stateCollection[$userId], [StateChatUserState::lastOutboundSubmittedAt => 0.0]);
 ```
 
 Concrete `RtStates` subclasses should also narrow `get()` and `offsetGet()`:
@@ -262,6 +389,110 @@ The restriction on direct membership writes is checked automatically:
 `RT-STATE-MUTATE`, see
 [automated-checks.md](../code-style/automated-checks.md).
 
+### What waits behind the writes
+
+A frame written on a link after an RT write goes in its turn behind that write
+when the receiver, acting on the frame, relies on the write being applied there.
+The sender holds the frame until the write's last part is out
+(`RtSyncStreamChannel::writeInTurn()`), and the receiver applies the write before
+it hands the frame on: a master holds such a frame of a worker while its stream
+reads (`WorkerClient::waitsForRtSyncStream()`), a worker holds such a frame of its
+master the same way (`WorkerManager::nextDaemonMessage()`), and a node queues such
+a frame of another node in its master's effect queue behind the read of the write
+(`DaemonManager::deliverSignalToAgent()`). A worker and a node name the set once:
+`WorkerManager::readsBehindRtWrites()` and `PeerLink::readsBehindRtWrites()`. A
+master writing to a worker has no such list: each caller that writes a frame of the
+set puts it through the link's one door, `WorkerClient::sendInTurn()` -
+`WorkerServer::sendSignalToAgent()`, `DaemonManager::walkWorkerFrame()`, and the
+link's own `WorkerClient::sendAgentStart()`, `sendRtStaleness()` and
+`sendNamingAgent()`.
+
+| What the receiver relies on | Worker → master | Master → worker | Node → node |
+|---|---|---|---|
+| (a) A signal to an agent | an agent's signal | a signal to an agent (`DaemonAgentMessageDTO`) | `PeerSignalDTO`, but the budgeted portion of an upload |
+| (b) Work or a role is over, and another may start writing the same rows | the release of what a stopped agent owned in RT, the report of its stop | an agent's start (`AgentStartDTO`) | the status of an agent of the node (`PeerAgentStatusDTO`), the report of what the node hosts (`PeerPlacementReportDTO`), the claims of its agents (`PeerRtClaimsDTO`), an order to place an agent (`PeerPlaceAgentDTO`) |
+| (c) An answer confirming the work is done | an agent's command reply, the outcome of a cron rule a console asked to fire, the response to a browser's handshake and what goes to the same socket behind it | - | a forwarded command reply (`PeerCommandReplyDTO`) |
+| (d) A decision that reads RT | an access re-decision of pages - by user, by connection, by session | the relays of those re-decisions | an access re-decision of pages (`PeerPageAccessReassessDTO`) |
+| (e) The freshness the write gave back | - | the thaw of a row (`WorkerRtStalenessMessageDTO` without a moment) | - |
+| Only behind a waiting frame of the same agent | the report of its start or stop | its stop, the answer to its protected-mode entry, the verdict on its re-hydrate announcement | its stop (`PeerStopAgentDTO`), its restart (`PeerAgentRestartDTO`) |
+
+Everything else goes at once on either end, and may reach the other end first:
+transport control - ping and pong, heartbeat and votes, the clock, membership and a
+node's leave, the drain marker; the stream's own frames; snapshots with a cut of
+their own - RT snapshots and replica offers, the placement view, the browser
+connections a node holds; DB sync and re-hydrate; uploads; HTTP replies and the
+answers to browsers, which read no RT - all but the response to a browser's handshake,
+which waits in row (c): the browser acts on it with frames judged against RT, joining
+its groups on a worker that reads who the socket is from its copy of the connection row
+the agent wrote right before the response; the other lifecycle reports, placement queries, cron
+and system signals; a row's freeze; and protected mode, which cuts by its own quiesce
+and sync. A reader that must see a write before it acts is told by a signal to its
+agent.
+
+Two frames the rule would hold go at once. A draining link writes no more parts of
+its stream, so it writes what waits at once, in its order, ahead of its end marker
+(`PeerLink::beginDrain()`). The budgeted portion of an upload keeps its own count of
+the link's bytes.
+
+What names an agent keeps its order too. A master writing to a worker puts what it
+writes for an agent a waiting frame names - its stop, the answer to its protected-mode
+entry, the verdict on its re-hydrate announcement - behind that frame
+(`WorkerClient::sendInTurn()`), so the worker never stops an agent ahead of a signal
+sent to it before, or ahead of its start; the worker holds such a frame on receipt the
+same way. An agent's start waits on its own: the worker applies a streamed write to a
+row whoever holds it, so a write of the old instance read after the start would hide
+from the new one what the old one wrote, and land over what the new one writes. A node
+writing to another puts a stop or a restart of an agent behind a frame naming the
+same agent - a signal to it, its status, an order to place it - that still waits
+(`PeerLink::sendFrame()`), and an order to place an agent always waits: the new
+instance reads and writes the rows the old one wrote when it ran on the sending node.
+The receiving master acts on a stop, a restart or a placement as it reads it; a signal
+it read before and still holds in its effect queue behind the read of a write is not
+ordered against them. A report of an agent's start or stop goes, on both ends, behind
+a waiting report of the same agent, so an agent restarted on one worker is never read
+as started ahead of its old stop. What names a socket keeps its order the same way: an
+answer a worker writes to a socket whose handshake response waits - the rotation ticket,
+the answer to its sign-in - goes behind that response on the worker and on the master
+(`WorkerManager::orderKeyOf()`, `WorkerClient::orderKeyOf()`), so the browser never reads
+it ahead of who it is. A worker writes the release of what a stopped agent owned in RT, followed by
+the report that it stopped, once the writes of its `onStop()` are handed to the
+stream (`WorkerManager::notifyAgentStopped()`) and once a cleanup its FIFO still
+owes (`applyDiffAsCleanup()`, above) is paid or no longer owed - the agent keeps its
+RT claim until then, and a worker leaving lets such a release and report go with
+the debt unpaid. The master reads the report behind the old instance's writes, so
+never reads a write of that instance after it. On a report it awaits - it stopped
+the agent itself - it starts the agent on another worker only once its dispatch has
+handed the writes it read before the report to the workers' streams
+(`WorkerServer::noteWorkerStopReport()`): the start then goes on that worker's link
+behind the old instance's last write, and a start asked for meanwhile waits for them
+too. A link that closes lets the starts it held go the same way, behind the writes
+read from it, whether its worker reported the stop or left without the report
+(`WorkerServer::removeClient()`). A stop the master did not ask for - the agent
+stopped itself or went idle - holds no start, and neither does a link already gone:
+a start asked for then stays behind those writes only by the order of the master's
+effect queue, where they were queued first. The master drops the agent's claim, and
+the cluster's placement hears of the stop - and may start the agent on another node -
+behind the same writes: only once the master's dispatch has handed the writes it read
+before them to the peers
+(`AgentManagerDaemon::handleRtSourceReleased()`, `handleAgentStopped()`) - a write
+is announced to the peers only while an agent of its node owns the collection, so a
+claim dropped ahead of the agent's last writes would keep them from the other
+nodes. A claim the agent reports anew meanwhile stands. Each link keeps its own
+order only: nothing orders a node's link to the leader against its link to the node
+the leader picks next.
+
+A row's freshness travels with the writes it depends on. The master lifts its own
+mark at once, and writes the thaw to the workers that read the row only once the write
+that lifted it is handed to their streams - a row delta, a hand-over, a holder offer,
+a worker's own write, or the snapshot that gives a held row a base again, whose apply
+may still wait in the effect queue (`DaemonManager::thawOnWorkers()`) - so the thaw
+goes behind it, and the worker holds the thaw until the write is applied. A freeze
+goes at once, and takes its rows out of a thaw still waiting on the link
+(`WorkerClient::sendRtStaleness()`); written after the freeze, that thaw would undo it.
+A freeze that comes before the thaw is written keeps its rows out of it as well: the
+thaw names only the rows not frozen here again by the time it goes.
+A worker holds a freeze behind a thaw of the same collection it still holds.
+
 ### Replacing a row
 
 `add()` over an id the collection already holds replaces the row in **this
@@ -274,7 +505,25 @@ row, and applies every later diff to it.
 `addStateToCollection()`.** The removal and the creation are two events every
 copy applies; `HilosCodeSendAttemptsActions::start()` is the example. Writes
 applied from a sync or a snapshot are the copy itself and are outside this
-replacement rule.
+replacement rule. A replacement is a compound write, so it runs under one
+transaction (below).
+
+### A compound write runs under one transaction
+
+Each door reserves its own operations on the source's FIFO before its row
+changes. An action that writes through more than one door - a replacement, a
+removal and a patch, several creations - is a compound, and outside a
+transaction its first door's write stands while a later door may still be
+refused: every copy then holds half of it. **Run a compound under one
+transaction**: inside the caller's when it holds one, otherwise under one of its
+own - `Database::transactionStart()`, the doors, `Database::transactionCommit()`,
+and `Database::transactionRollbackSilent()` on any failure before rethrowing. A
+refusal then takes the rows and their reservations back together, and the
+announcements leave only at the commit. A transaction that touches only the
+runtime sends no SQL. `HilosCodeSendAttemptsActions::start()` and
+`HilosProfileNameChangesActions::open()` have this shape; `clearAllStates()`
+reserves its whole compound at once and needs none. The framework joins a
+caller's transaction and never nests one ([../orm/transactions.md](../orm/transactions.md)).
 
 ## Reading a row: required, optional, and a patch
 
@@ -384,7 +633,8 @@ recover the type.
 ## Lifecycle
 
 - Created: collection actions such as `create(...)`, `register(...)`, or `ensure(...)`
-- Updated: item actions when the item key is known, or direct field set + `sync()` inside RT internals
+- Updated: item actions through `applyDiffWithSync()` when the item key is known; collection actions
+  through `applyDiffToState()` for create/ensure and bulk logic
 - Deleted: item actions when one item key is known; collection actions only for clear/bulk cleanup
 - Each of the three asks the truth-source guard for its own operation, so a source
   granted only some of them is refused on the others by name

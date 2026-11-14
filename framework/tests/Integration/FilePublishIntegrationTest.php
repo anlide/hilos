@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
@@ -13,12 +14,12 @@ use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Core\Feature\Definition\UploadsFeature;
+use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -36,8 +37,8 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Files\DTO\FilePublishSignalData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
-use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Files\FileVisibility;
+use Hilos\Files\FilesSettingsCatalog;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Library\AbstractFilesLibraryAgent;
 use Hilos\Files\Storage\LocalFilesStorage;
@@ -57,7 +58,10 @@ use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Log\AgentLogStream;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
 use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
@@ -1341,30 +1345,37 @@ final class FilePublishTestConnection extends HilosConnection
 {
     /**
      * Nothing of its own to initialize.
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     * @param RtRowReader $row Serialized runtime row (nothing of its own to read)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Always empty
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     * @param RtRowReader $diff Partial update (nothing of its own to apply)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }

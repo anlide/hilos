@@ -9,6 +9,8 @@ use Closure;
 use Generator;
 
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSettle;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -29,6 +31,7 @@ use Hilos\Core\Source\Interest\SourceReaderUnion;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Daemon\AgentLossSink;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\Database\ReHydrateBarrierSink;
@@ -52,9 +55,6 @@ use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\TruthSource\RtNodeSourceMap;
 use Hilos\TruthSource\RtReplicaOriginMap;
@@ -200,6 +200,38 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 
     /** Local worker queue owner, notified only when a linked roster entry frees a seat. */
     private ?Closure $workerCapacityWake = null;
+
+    /**
+     * @var array<int, true> Writes the workers of this node streamed, handed to the dispatch and not settled yet, by
+     *      hand-over number, oldest first. Framework-first: process-local bookkeeping of RT replication, as the answers
+     *      it is kept beside are ({@see RtSyncStreamSettle}); nothing else reads it and nothing replicates it.
+     */
+    private array $unsettledStreamedWrites = [];
+
+    /**
+     * Hand-over number of the last write a worker of this node streamed. Framework-first: the same process-local
+     * bookkeeping as {@see self::$unsettledStreamedWrites}, which it numbers.
+     */
+    private int $streamedWrites = 0;
+
+    /**
+     * @var list<array{int, Closure(): void}> Work held behind the writes streamed before it, oldest first: the last
+     *      one's number, the work. Framework-first: the same process-local bookkeeping as the writes it waits for.
+     */
+    private array $behindStreamedWrites = [];
+
+    /**
+     * @var array<string, int> Releases of RT sources held behind the writes streamed before them, by agent: the
+     *      number of the agent's last release read. A claim the agent reports anew drops it. Framework-first: the
+     *      same process-local bookkeeping as the writes it waits for.
+     */
+    private array $releasesBehindStreamedWrites = [];
+
+    /**
+     * Number of the last release of RT sources read from a worker of this node. Framework-first: the same
+     * process-local bookkeeping as {@see self::$releasesBehindStreamedWrites}, which it numbers.
+     */
+    private int $rtSourceReleases = 0;
 
     /**
      * Create agent daemon instance (factory method)
@@ -565,7 +597,10 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     /**
      * Handle agent_stopped signal from worker
      *
-     * Removes agent daemon and calls onStop().
+     * Removes agent daemon and calls onStop(). The cluster's placement hears of the stop only behind
+     * the writes the workers streamed before the report, once the dispatch has handed them to the
+     * peers ({@see self::afterStreamedWrites()}): the report is read as soon as those writes are
+     * queued here ({@see WorkerClient::waitsForRtSyncStream()}), ahead of their delivery.
      *
      * @param WorkerAgentStoppedDTO $dto DTO with agent stopped data
      * @throws InvalidFormatException When the start sink cannot resolve a pending page recovery
@@ -589,9 +624,13 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         // The placement map is told separately rather than through that sink, which belongs to
         // the freeze watchdog alone: an agent that stopped itself after its declared silence
         // (HIL-628) leaves a map naming a host it no longer runs on, and a second meaning inside
-        // one seam is how the freeze would start reacting to ordinary idleness.
+        // one seam is how the freeze would start reacting to ordinary idleness. It is told behind
+        // the writes read before the report, once they are handed to the peers: the leader places
+        // the agent anew on this note, and the old instance's last write goes out ahead of it.
         $stopped = AgentId::fromId($dto->agentId);
-        Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
+        $this->afterStreamedWrites(static function () use ($stopped): void {
+            Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
+        });
 
         Logger::info("Agent '{$dto->agentId}' stopped on worker #{$workerIndex}");
         $this->reportAgentStopped($dto->agentId);
@@ -1049,60 +1088,88 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     }
 
     /**
-     * Handle RT sync created message from worker (worker-level broadcast).
+     * Queues one operation a worker streamed as the ordinary RT sync signal this master's
+     * dispatch walks, in the same FIFO as everything else the worker sent; the dispatch answers
+     * the stream once it applied the operation here and queued its further delivery
+     * ({@see RtSyncStreamSettle}). A worker speaks for its own writes and names no node.
      *
-     * @param WorkerRtSyncCreatedMessageDTO $dto DTO with sync created data
-     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     * The operation is counted until that answer, applied or refused: what must not reach the mesh
+     * ahead of the writes the workers streamed before it waits for them to settle
+     * ({@see self::afterStreamedWrites()}).
+     *
+     * @param RtSyncStreamOperation $operation Operation read from its parts
+     * @param Closure(bool): void $settled The stream's answer
+     * @throws InvalidArgumentException When the queued signal is malformed
      */
-    public function handleWorkerRtSyncCreated(WorkerRtSyncCreatedMessageDTO $dto): void
+    public function handleWorkerRtSyncStream(RtSyncStreamOperation $operation, Closure $settled): void
     {
-        Hilos::$sr->queueSignal(
-            signalSource: new SignalSource(SignalSource::RT),
-            signalType: new SignalType(SignalTypeConstants::RT_SYNC_CREATED),
-            signalName: new SignalName(SignalConstants::RT_SYNC_CREATED),
-            signalData: $dto->signalData,
-        );
+        if ($operation->originNodeId !== null) {
+            Logger::warning("Refusing a streamed RT write from a worker that names a node [node={$operation->originNodeId}]");
+            $settled(false);
+
+            return;
+        }
+        $data = $operation->signalData();
+        $signal = $operation->signal($data);
+        $number = ++$this->streamedWrites;
+        $this->unsettledStreamedWrites[$number] = true;
+        $owner = WeakReference::create($this);
+        RtSyncStreamSettle::await($data, static function (bool $applied) use ($settled, $owner, $number): void {
+            $settled($applied);
+            $owner->get()?->settleStreamedWrite($number);
+        });
+        Hilos::$sr->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $data);
     }
 
     /**
-     * Handle RT sync updated message from worker (worker-level broadcast).
+     * Runs work behind every write the workers of this node streamed before now: at once when each
+     * of them has settled, otherwise when the last of them does ({@see self::settleStreamedWrite()}).
+     * The dispatch settles a write once it applied it here and handed it to the peers
+     * ({@see DaemonManager::broadcastRtSyncToPeers()}), in the order the writes came. Besides this
+     * manager's own placement note and release, the worker server holds a start that waited for the
+     * report of its agent's stop here, read or never to come from a link that left
+     * ({@see WorkerServer::noteWorkerStopReport()}, {@see WorkerServer::removeClient()}).
      *
-     * @param WorkerRtSyncUpdatedMessageDTO $dto DTO with sync updated data
-     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     * @param Closure(): void $work Work that must not go ahead of those writes
      */
-    public function handleWorkerRtSyncUpdated(WorkerRtSyncUpdatedMessageDTO $dto): void
+    public function afterStreamedWrites(Closure $work): void
     {
-        Hilos::$sr->queueSignal(
-            signalSource: new SignalSource(SignalSource::RT),
-            signalType: new SignalType(SignalTypeConstants::RT_SYNC_UPDATED),
-            signalName: new SignalName(SignalConstants::RT_SYNC_UPDATED),
-            signalData: $dto->signalData,
-        );
+        $last = array_key_last($this->unsettledStreamedWrites);
+        if ($last === null) {
+            $work();
+
+            return;
+        }
+        $this->behindStreamedWrites[] = [$last, $work];
     }
 
     /**
-     * Handle RT sync deleted message from worker (worker-level broadcast).
+     * One streamed write settled, applied or refused: the work held behind it and behind every write
+     * streamed before it runs now, oldest first.
      *
-     * @param WorkerRtSyncDeletedMessageDTO $dto DTO with sync deleted data
-     * @throws InvalidArgumentException When the signal name or the queued signal is malformed
+     * @param int $number Hand-over number of the write
      */
-    public function handleWorkerRtSyncDeleted(WorkerRtSyncDeletedMessageDTO $dto): void
+    private function settleStreamedWrite(int $number): void
     {
-        Hilos::$sr->queueSignal(
-            signalSource: new SignalSource(SignalSource::RT),
-            signalType: new SignalType(SignalTypeConstants::RT_SYNC_DELETED),
-            signalName: new SignalName(SignalConstants::RT_SYNC_DELETED),
-            signalData: $dto->signalData,
-        );
+        unset($this->unsettledStreamedWrites[$number]);
+        $oldest = array_key_first($this->unsettledStreamedWrites);
+        while ($this->behindStreamedWrites !== [] && ($oldest === null || $this->behindStreamedWrites[0][0] < $oldest)) {
+            [, $work] = array_shift($this->behindStreamedWrites);
+            $work();
+        }
     }
 
     /**
-     * Records what an agent started on this node took ownership of.
+     * Records what an agent started on this node took ownership of. A release of the same agent that
+     * still waits behind the writes streamed before it ({@see self::handleRtSourceReleased()}) spoke
+     * for the instance before this one: it lets go of nothing now, and the claim reported here
+     * replaces the old one.
      *
      * @param WorkerRtSourceRegisteredDTO $dto DTO with the agent and the collections it owns
      */
     public function handleRtSourceRegistered(WorkerRtSourceRegisteredDTO $dto): void
     {
+        unset($this->releasesBehindStreamedWrites[$dto->agentId]);
         $this->rtNodeSourceMap()->note(
             $dto->agentId,
             $dto->collectionKeys,
@@ -1278,13 +1345,28 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     }
 
     /**
-     * Records that an agent stopped here and owns nothing any more.
+     * Records that an agent stopped here and owns nothing any more - behind the writes the workers
+     * streamed before the release, once the dispatch has handed them to the peers
+     * ({@see self::afterStreamedWrites()}). The worker writes the release behind the agent's last writes
+     * ({@see WorkerManager::sendToDaemon()}), and the link reads it as soon as those writes are queued
+     * here ({@see WorkerClient::waitsForRtSyncStream()}), ahead of their delivery: dropped at once, the
+     * claim would be gone when the dispatch asks whether those writes are this node's to announce
+     * ({@see DaemonManager::broadcastRtSyncToPeers()}), and the other nodes would never get them.
      *
      * @param WorkerRtSourceReleasedDTO $dto DTO with the agent that stopped
      */
     public function handleRtSourceReleased(WorkerRtSourceReleasedDTO $dto): void
     {
-        $this->rtNodeSourceMap()->release($dto->agentId);
+        $agentId = $dto->agentId;
+        $release = ++$this->rtSourceReleases;
+        $this->releasesBehindStreamedWrites[$agentId] = $release;
+        $this->afterStreamedWrites(function () use ($agentId, $release): void {
+            if (($this->releasesBehindStreamedWrites[$agentId] ?? null) !== $release) {
+                return;
+            }
+            unset($this->releasesBehindStreamedWrites[$agentId]);
+            $this->rtNodeSourceMap()->release($agentId);
+        });
     }
 
     /**

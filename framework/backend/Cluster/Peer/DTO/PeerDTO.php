@@ -28,7 +28,7 @@ use Hilos\Cluster\Placement\PlacementRefusal;
  * ({@see PeerPlacementReleaseDTO}) is a former leader telling the nodes that answered to it that
  * it leads no more; the signal-forward frame
  * ({@see PeerSignalDTO}) carries one resolved signal to an agent on another node; the
- * RT replication frames ({@see PeerRtSyncDTO}, {@see PeerRtSnapshotDTO}) carry one RT sync
+ * RT replication frames ({@see PeerRtSyncStreamDTO}, {@see PeerRtSnapshotDTO}) carry one RT sync
  * fact, and one whole collection to a node that just joined, from the node that owns it to
  * the other nodes' read-only copies; the connection-index frames
  * ({@see PeerConnectionsSnapshotDTO}, {@see PeerConnectionsDeltaDTO}) tell the mesh which
@@ -121,7 +121,7 @@ abstract class PeerDTO extends BaseDTO
             PeerUploadGrantedDTO::MESSAGE_TYPE => PeerUploadGrantedDTO::fromArray($data),
             PeerUploadAcceptedDTO::MESSAGE_TYPE => PeerUploadAcceptedDTO::fromArray($data),
             PeerUploadReleaseDTO::MESSAGE_TYPE => PeerUploadReleaseDTO::fromArray($data),
-            PeerRtSyncDTO::MESSAGE_TYPE => PeerRtSyncDTO::fromArray($data),
+            PeerRtSyncStreamDTO::MESSAGE_TYPE => PeerRtSyncStreamDTO::fromArray($data),
             PeerDbSyncDTO::MESSAGE_TYPE => PeerDbSyncDTO::fromArray($data),
             PeerRtSnapshotDTO::MESSAGE_TYPE => PeerRtSnapshotDTO::fromArray($data),
             PeerSourceInterestDTO::MESSAGE_TYPE => PeerSourceInterestDTO::fromArray($data),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosSignalConstants;
@@ -21,16 +22,19 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Hilos;
-use Hilos\Runtime\State\Item\HilosClusterNode;
-use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Maintenance\DTO\HilosMaintenanceStateSignalData;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -223,7 +227,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         $this->assertSame(1, $this->payload($signal)[HilosMaintenanceStateSignalData::passCount]);
         $this->assertNull(Hilos::$sr?->getNextQueuedSignal());
 
-        $row->passHashes[] = 'second';
+        $row->passHashes = [...$row->passHashes, 'second'];
         AbstractHilosMaintenancePage::markStale();
         AbstractHilosMaintenancePage::onAgentTick(new MaintenanceStateTestAgent());
         $this->assertSame(2, $this->payload(Hilos::$sr?->getNextQueuedSignal())[HilosMaintenanceStateSignalData::passCount]);
@@ -895,30 +899,39 @@ final class MaintenanceStateTestRtContext extends RtContext
  */
 final class MaintenanceStateSessionConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Subclass-owned half of the row
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Changed fields => values
+     * @param RtRowReader $diff Changed fields => values
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

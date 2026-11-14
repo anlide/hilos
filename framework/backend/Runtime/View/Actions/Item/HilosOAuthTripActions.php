@@ -10,6 +10,9 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\View\Item\HilosOAuthTrip as ViewHilosOAuthTrip;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for one provider sign-in a tab is waiting on (HIL-1044).
@@ -33,6 +36,9 @@ final class HilosOAuthTripActions extends RtActions
      * @param ?string $email Provider address on a re-authentication or consent ending
      * @param ?string $linkToken Signed link capability, on the re-authentication ending alone
      * @param ?string $accountToken Signed first sign-in capability, on the consent-required ending alone
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @param ?int $userId User a held grant signs in, on {@see StateHilosOAuthTrip::ENDING_GRANTED}
      * @return bool Whether this was the first ending
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -73,6 +79,9 @@ final class HilosOAuthTripActions extends RtActions
      * @param int $sessionId Id of the session row that is signed in now
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function markSignedIn(int $sessionId): void
     {
@@ -89,6 +98,9 @@ final class HilosOAuthTripActions extends RtActions
      * @param string $acceptKey Accept key of the connection that presented the trip's key
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function readdress(string $acceptKey): void
     {

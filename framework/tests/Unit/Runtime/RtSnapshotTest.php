@@ -11,6 +11,10 @@ use Hilos\Hilos;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSnapshotBasis;
 use Hilos\Runtime\RtSnapshotRead;
+use Hilos\Runtime\Snapshot\RtSnapshotExport;
+use Hilos\Runtime\Snapshot\RtSnapshotPortion;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
@@ -140,20 +144,32 @@ final class RtSnapshotTest extends TestCase
         );
     }
 
-    public function testRowCandidatesCaptureBeforeAdvancementAndRejectReplacementAndRejoin(): void
+    /**
+     * @throws InvalidFormatException When the fixture row is not one the state can be built from
+     */
+    public function testACutKeepsItsMembershipAndValuesAcrossReplacementRemovalAndRejoin(): void
     {
         $this->arrangeContext('Ada');
-        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::SETS);
         RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['b'], ['b' => ['id' => 'b', 'ownerId' => '42']]);
         RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['c'], []);
         RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['c'], ['c' => ['id' => 'c', 'ownerId' => '42']]);
         RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['late'], ['late' => ['id' => 'late', 'ownerId' => '42']]);
 
-        $this->assertSame(['a' => ['id' => 'a', 'ownerId' => '42'], 'b' => null], iterator_to_array($rows));
-        $this->assertSame(['a', 'b', 'c', 'late'], array_keys(iterator_to_array(RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS))));
+        $this->assertSame([
+            'a' => ['id' => 'a', 'ownerId' => '42'],
+            'b' => ['id' => 'b', 'ownerId' => '7'],
+            'c' => ['id' => 'c', 'ownerId' => '42'],
+        ], $this->readOut($read->export));
+        $this->assertSame([
+            'a' => ['id' => 'a', 'ownerId' => '42'],
+            'b' => ['id' => 'b', 'ownerId' => '42'],
+            'c' => ['id' => 'c', 'ownerId' => '42'],
+            'late' => ['id' => 'late', 'ownerId' => '42'],
+        ], $this->readOut(RtSnapshot::capture(RtSnapshotTestRtContext::SETS, RtSnapshotScope::whole())));
     }
 
-    public function testDelayedSourceDiscoveryUsesTheOriginalCrossSourceRowAdmission(): void
+    public function testADelayedSourceIsCutWhenItsReadIsMadeOnTheOriginalBasis(): void
     {
         $this->arrangeContext('Ada');
         $basis = new RtSnapshotBasis();
@@ -162,13 +178,15 @@ final class RtSnapshotTest extends TestCase
         $read = new RtSnapshotRead(RtSnapshotTestRtContext::SETS, basis: $basis);
         $this->assertTrue($read->isCurrent());
         $this->assertSame([
-            'a' => ['id' => 'a', 'ownerId' => '42'], 'b' => null,
-            'c' => ['id' => 'c', 'ownerId' => '42'], 'late' => null,
-        ], iterator_to_array($read->rows));
+            'a' => ['id' => 'a', 'ownerId' => '42'],
+            'c' => ['id' => 'c', 'ownerId' => '42'],
+            'b' => ['id' => 'b', 'ownerId' => '7'],
+            'late' => ['id' => 'late', 'ownerId' => '42'],
+        ], $this->readOut($read->export));
         $this->assertSame(['a', 'b', 'c', 'late'], array_keys(RtSnapshot::rows(RtSnapshotTestRtContext::SETS)));
     }
 
-    public function testRowCandidatesKeepNumericMapKeysAndSampleOriginalRowsOnce(): void
+    public function testACutKeepsNumericMapKeysAndTheValuesCommittedBeforeIt(): void
     {
         $context = $this->arrangeContext('Ada');
         $states = $context->getStateCollection(RtSnapshotTestRtContext::SETS);
@@ -177,82 +195,99 @@ final class RtSnapshotTest extends TestCase
             '07' => ['id' => '07', 'ownerId' => '42'],
             '7' => ['id' => '7', 'ownerId' => '42'],
         ]);
-        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
-        $rows->rewind();
-        $this->assertSame('0', $rows->key());
-        $this->assertSame(['id' => '0', 'ownerId' => '42'], $rows->current());
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::SETS);
+        $first = $this->firstPortion($read->export);
+        $this->assertSame(['0'], $first->ids);
         $states->get('07')->applyDiff(['ownerId' => '7']);
-        $this->assertSame(RtSnapshot::rows(RtSnapshotTestRtContext::SETS), iterator_to_array($rows));
+        $states->get('07')->markRtSyncBaseline();
+        $rows = [$first->ids[0] => $first->values[0]->toNative()] + $this->readOut($read->export);
+        $this->assertSame([
+            '0' => ['id' => '0', 'ownerId' => '42'],
+            '07' => ['id' => '07', 'ownerId' => '42'],
+            '7' => ['id' => '7', 'ownerId' => '42'],
+        ], $rows);
+        $this->assertSame(
+            RtSnapshot::rows(RtSnapshotTestRtContext::SETS),
+            $this->readOut(RtSnapshot::capture(RtSnapshotTestRtContext::SETS, RtSnapshotScope::whole())),
+        );
     }
 
-    public function testClearInvalidatesAnUnadvancedCohortEvenWhenTheSameRowsReturn(): void
+    public function testAWholeClearMakesAnEarlierReadStaleEvenWhenTheSameRowsReturn(): void
     {
         $context = $this->arrangeContext('Ada');
         $states = $context->getStateCollection(RtSnapshotTestRtContext::SETS);
-        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::SETS);
         $original = $states->get('a')->toArray();
         RtSnapshot::replace(RtSnapshotTestRtContext::SETS, []);
         RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, ['a'], ['a' => $original]);
-        $this->assertSame([], iterator_to_array($rows));
-        $this->assertSame(['a' => ['id' => 'a', 'ownerId' => '42']], iterator_to_array($states->snapshotRows()));
+        $this->assertFalse($read->isCurrent());
+        $this->assertSame(['a', 'b', 'c'], array_keys($this->readOut($read->export)));
+        $this->assertSame(
+            ['a' => ['id' => 'a', 'ownerId' => '42']],
+            $this->readOut(RtSnapshot::capture(RtSnapshotTestRtContext::SETS, RtSnapshotScope::whole())),
+        );
     }
 
-    public function testRowCandidatesDoNotRetainAnUnmountedRuntimeOrItsRowsWithoutGc(): void
+    public function testAReadDoesNotRetainAnUnmountedRuntimeOrItsRowsWithoutGc(): void
     {
         $context = $this->arrangeContext('Ada');
         $weakContext = WeakReference::create($context);
         $weakSets = WeakReference::create($context->getStateCollection(RtSnapshotTestRtContext::SETS));
         $weakState = WeakReference::create($context->getStateCollection(RtSnapshotTestRtContext::SETS)->get('b'));
-        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
-        $rows->rewind();
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::SETS);
+        $first = $this->firstPortion($read->export);
         Hilos::$rt = null;
         unset($context);
         $this->assertNull($weakContext->get());
         $this->assertNull($weakSets->get());
         $this->assertNull($weakState->get());
-        $rows->next();
-        $this->assertFalse($rows->valid());
+        $this->assertFalse($read->isCurrent());
+        $this->assertSame(['a'], $first->ids);
+        $this->assertSame(['b', 'c'], array_keys($this->readOut($read->export)));
     }
 
     public function testTheSameSourceCannotReenterAnOlderReadThroughRemountOrRebind(): void
     {
         $context = $this->arrangeContext('Ada');
         $source = $context->getStateCollection(RtSnapshotTestRtContext::SETS);
-        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::SETS);
         $context->mountFeatureCollection(RtSnapshotTestRtContext::SETS, $source);
-        $this->assertSame([], iterator_to_array($rows));
-        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $this->assertFalse($read->isCurrent());
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::SETS);
         $context->bindStateCollectionNames();
-        $this->assertSame([], iterator_to_array($rows));
+        $this->assertFalse($read->isCurrent());
 
-        $standalone = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM);
+        $standalone = new RtSnapshotRead(RtSnapshotTestRtContext::ITEM);
         $context->mountFeatureItem(RtSnapshotTestRtContext::ITEM, $context->item);
-        $this->assertSame([], iterator_to_array($standalone));
+        $this->assertFalse($standalone->isCurrent());
+        $standalone = new RtSnapshotRead(RtSnapshotTestRtContext::ITEM);
+        $this->assertTrue($standalone->isCurrent());
         $this->assertSame(
             [RtSnapshotTestState::ID => ['id' => RtSnapshotTestState::ID, 'name' => 'Ada']],
-            iterator_to_array(RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM)),
+            $this->readOut($standalone->export),
         );
         SourceInterestRegistry::releaseConsumer(SourceConsumer::feature(RtSnapshotTestRtContext::SETS));
     }
 
-    public function testStandaloneRowCandidatesCaptureTheOriginalMountedItemBeforeAdvancement(): void
+    public function testAStandaloneReadCutsTheOriginalMountedItemWhenItIsMade(): void
     {
         $context = $this->arrangeContext('Ada');
-        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM);
-        $this->assertSame(RtSnapshot::rows(RtSnapshotTestRtContext::ITEM), iterator_to_array($rows));
-        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM);
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::ITEM);
+        $this->assertSame(RtSnapshot::rows(RtSnapshotTestRtContext::ITEM), $this->readOut($read->export));
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::ITEM);
         $replacement = $this->arrangeContext('Grace');
-        $this->assertSame([], iterator_to_array($rows));
+        $this->assertFalse($read->isCurrent());
+        $this->assertSame([RtSnapshotTestState::ID => ['id' => RtSnapshotTestState::ID, 'name' => 'Ada']], $this->readOut($read->export));
         $weak = WeakReference::create($replacement->item);
-        $unadvanced = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::ITEM);
+        $unadvanced = new RtSnapshotRead(RtSnapshotTestRtContext::ITEM);
         Hilos::$rt = null;
         unset($replacement);
         $this->assertNull($weak->get());
-        $this->assertSame([], iterator_to_array($unadvanced));
+        $this->assertFalse($unadvanced->isCurrent());
         $this->assertSame('Ada', $context->item->name);
     }
 
-    public function testSparseRowCandidatesSerializeOneRowPerAdvancementAndNoRowsAtCapture(): void
+    public function testASparseCutReadsOutInBoundedPortionsWithoutSerializingAnyRow(): void
     {
         $this->arrangeContext('Ada');
         $initial = [];
@@ -262,17 +297,68 @@ final class RtSnapshotTest extends TestCase
         RtSnapshot::replace(RtSnapshotTestRtContext::SETS, $initial);
         RtSnapshot::replaceScope(RtSnapshotTestRtContext::SETS, array_map(strval(...), range(1, 8190)), []);
         RtSnapshotTestSetState::$serializations = 0;
-        $rows = RtSnapshot::rowCandidates(RtSnapshotTestRtContext::SETS);
+        $read = new RtSnapshotRead(RtSnapshotTestRtContext::SETS);
         $this->assertSame(0, RtSnapshotTestSetState::$serializations);
-        $rows->rewind();
-        $this->assertSame('0', $rows->key());
-        $this->assertSame(1, RtSnapshotTestSetState::$serializations);
-        $rows->next();
-        $this->assertSame('8191', $rows->key());
-        $this->assertSame(2, RtSnapshotTestSetState::$serializations);
-        $rows->next();
-        $this->assertFalse($rows->valid());
-        $this->assertSame(2, RtSnapshotTestSetState::$serializations);
+        $this->assertSame(['0'], $this->firstPortion($read->export)->ids);
+        $this->assertSame(['8191' => ['id' => '8191', 'ownerId' => '42']], $this->readOut($read->export));
+        $this->assertSame(0, RtSnapshotTestSetState::$serializations);
+    }
+
+    public function testAnExplicitScopeReadsOnlyItsRowsOrSetsAndAnEmptyOneReadsNothing(): void
+    {
+        $this->arrangeContext('Ada');
+        $this->assertSame(
+            ['b' => ['id' => 'b', 'ownerId' => '7']],
+            $this->readOut(RtSnapshot::capture(RtSnapshotTestRtContext::SETS, RtSnapshotScope::rows(['b', 'missing']))),
+        );
+        $this->assertSame(
+            ['a', 'c'],
+            array_keys($this->readOut(RtSnapshot::capture(RtSnapshotTestRtContext::SETS, RtSnapshotScope::sets(['42'])))),
+        );
+        $this->assertSame([], $this->readOut(RtSnapshot::capture(RtSnapshotTestRtContext::SETS, RtSnapshotScope::rows([]))));
+        $this->assertSame([], $this->readOut(RtSnapshot::capture(RtSnapshotTestRtContext::PLAIN, RtSnapshotScope::sets(['42']))));
+        $this->assertTrue(RtSnapshotScope::rows([])->isEmpty());
+        $this->assertFalse(RtSnapshotScope::whole()->isEmpty());
+    }
+
+    /**
+     * Advances under allowances too small for two rows until one row is read out.
+     *
+     * @param RtSnapshotExport $export Unfinished read
+     * @return RtSnapshotPortion First portion the read completed
+     */
+    private function firstPortion(RtSnapshotExport $export): RtSnapshotPortion
+    {
+        for ($passes = 0; $passes < 1000; $passes++) {
+            $budget = new RtWorkBudget(3, 7);
+            $portion = $export->advance($budget);
+            $this->assertLessThanOrEqual(3, $budget->usedSteps());
+            if ($portion !== null) {
+                return $portion;
+            }
+        }
+        $this->fail('A snapshot read must keep progressing');
+    }
+
+    /**
+     * Reads a whole export out under small allowances, as an explicit test materialization.
+     *
+     * @param RtSnapshotExport $export Unfinished read
+     * @return array<string, array<string, mixed>> Rows by state id, in the order read
+     */
+    private function readOut(RtSnapshotExport $export): array
+    {
+        $rows = [];
+        $passes = 0;
+        while (!$export->isFinished()) {
+            $portion = $export->advance(new RtWorkBudget(3, 7));
+            foreach ($portion?->ids ?? [] as $position => $stateId) {
+                $rows[$stateId] = $portion->values[$position]->toNative();
+            }
+            $this->assertLessThan(100000, ++$passes, 'A snapshot read must keep progressing');
+        }
+
+        return $rows;
     }
 
     /**

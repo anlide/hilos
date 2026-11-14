@@ -9,6 +9,9 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\HilosStatusMaintenance as StateHilosStatusMaintenance;
 use Hilos\Runtime\View\Item\HilosStatusMaintenance as ViewHilosStatusMaintenance;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * @extends RtActions<ViewHilosStatusMaintenance, StateHilosStatusMaintenance>
@@ -31,6 +34,9 @@ final class HilosStatusMaintenanceActions extends RtActions
      * @throws InvalidFormatException When maintenance fields are invalid
      * @throws RtActionsCollectionNameNullException When the collection is unmounted
      * @throws RtTruthSourceWriteNotAllowedException When the caller cannot update the singleton
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function update(
         bool $available = false,
@@ -51,17 +57,18 @@ final class HilosStatusMaintenanceActions extends RtActions
             $available, $active, $announcementKnown, $periodId, $workPublicId, $title,
             $componentKeys, $startsAt, $endsAt, $startedAt, $lastObservedAt,
         );
-        $this->state->available = $next->available;
-        $this->state->active = $next->active;
-        $this->state->announcementKnown = $next->announcementKnown;
-        $this->state->periodId = $next->periodId;
-        $this->state->workPublicId = $next->workPublicId;
-        $this->state->title = $next->title;
-        $this->state->componentKeys = $next->componentKeys;
-        $this->state->startsAt = $next->startsAt;
-        $this->state->endsAt = $next->endsAt;
-        $this->state->startedAt = $next->startedAt;
-        $this->state->lastObservedAt = $next->lastObservedAt;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateHilosStatusMaintenance::available => $next->available,
+            StateHilosStatusMaintenance::active => $next->active,
+            StateHilosStatusMaintenance::announcementKnown => $next->announcementKnown,
+            StateHilosStatusMaintenance::periodId => $next->periodId,
+            StateHilosStatusMaintenance::workPublicId => $next->workPublicId,
+            StateHilosStatusMaintenance::title => $next->title,
+            StateHilosStatusMaintenance::componentKeys => $next->componentKeys,
+            StateHilosStatusMaintenance::startsAt => $next->startsAt,
+            StateHilosStatusMaintenance::endsAt => $next->endsAt,
+            StateHilosStatusMaintenance::startedAt => $next->startedAt,
+            StateHilosStatusMaintenance::lastObservedAt => $next->lastObservedAt,
+        ]);
     }
 }

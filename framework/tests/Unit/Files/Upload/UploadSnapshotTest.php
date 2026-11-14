@@ -31,6 +31,9 @@ final class UploadSnapshotTest extends TestCase
         }
         self::assertSame($first->toArray(), UploadSnapshotData::fromArray($first->toArray())->toArray());
         self::assertSame([], new UploadSnapshotCollection()->toArray());
+        $named = new UploadSnapshotCollection(second: $second, first: $first);
+        self::assertSame([$second->toArray(), $first->toArray()], $named->toArray());
+        self::assertSame([0, 1], array_keys(iterator_to_array($named)));
     }
 
     public function testAnIdentityCannotBeEditedAfterAdmission(): void

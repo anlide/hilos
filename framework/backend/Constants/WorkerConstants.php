@@ -124,14 +124,8 @@ final class WorkerConstants
      */
     public const string MESSAGE_DB_RE_READ = 'db_re_read';
 
-    /** @var string RT sync created (daemon/worker broadcast); canonical value in SignalTypeConstants */
-    public const string MESSAGE_RT_SYNC_CREATED = SignalTypeConstants::RT_SYNC_CREATED;
-
-    /** @var string RT sync updated (daemon/worker broadcast); canonical value in SignalTypeConstants */
-    public const string MESSAGE_RT_SYNC_UPDATED = SignalTypeConstants::RT_SYNC_UPDATED;
-
-    /** @var string RT sync deleted (daemon/worker broadcast); canonical value in SignalTypeConstants */
-    public const string MESSAGE_RT_SYNC_DELETED = SignalTypeConstants::RT_SYNC_DELETED;
+    /** @var string One part of an ordinary RT stream, or the answer to one (both directions of a worker link) */
+    public const string MESSAGE_RT_SYNC_STREAM = 'rt_sync_stream';
 
     /** @var string Worker reporting which RT collections an agent it started owns */
     public const string MESSAGE_RT_SOURCE_REGISTERED = 'rt_source_registered';

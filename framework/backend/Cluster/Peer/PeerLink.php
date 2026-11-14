@@ -71,7 +71,7 @@ use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerUploadReserveDTO;
 use Hilos\Cluster\Peer\DTO\PeerUploadGrantedDTO;
@@ -81,18 +81,25 @@ use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\Stream\RtSyncStreamChannel;
+use Hilos\Runtime\Stream\RtSyncStreamFrame;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Socket\Client\AbstractClient;
+use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Transport\SocketTransportInterface;
+use Hilos\TruthSource\RtReplicaConfirmation;
 use Hilos\Utils\Logger;
 use SplQueue;
 use WeakReference;
@@ -125,6 +132,13 @@ final class PeerLink extends AbstractClient
 
     /** @var PeerServer Owning peer server, driven for membership fan-out */
     private PeerServer $server;
+    /** The ordinary RT stream of this link instance */
+    private ?RtSyncStreamChannel $rtSyncStream = null;
+    /**
+     * @var array<string, int> Frames naming each agent that wait for their turn behind this link's RT stream, until
+     *      written ({@see self::queueFrame()}); the stream is this link instance's, so the count ends with it
+     */
+    private array $waitingInTurn = [];
 
     /** @var NodeIdentity Local node identity announced to the remote peer */
     private NodeIdentity $localIdentity;
@@ -233,6 +247,55 @@ final class PeerLink extends AbstractClient
     }
 
     /**
+     * Whether the linked node acts on a frame trusting that the RT writes this node streamed to it
+     * before the frame are already applied there - so the frame goes in its turn among the stream's
+     * operations ({@see RtSyncStreamChannel::writeInTurn()}). A signal to an agent, but not the
+     * budgeted portion of an upload, which keeps its own accounting. The status of an agent of this
+     * node and the report of what this node hosts: told an agent stopped here, the leader places it
+     * anew. The claims of this node's agents: the leader drops a claim this node no longer reports,
+     * and another node's claim to the same rows then stands. A command's reply: its caller acts on
+     * the outcome. An access re-decision of pages, which reads who is behind a connection from the
+     * RT copy. An order to place an agent: the linked node starts the new instance, which reads and
+     * writes the rows the old one wrote when it ran on this node. Every other frame - keepalive,
+     * consensus, membership, the drain marker, uploads, snapshots and their queries, DB sync, answers
+     * to browsers and HTTP, protected mode - goes at once: none of them is read against a write sent
+     * before it. A stop or a restart of an agent goes at once too, unless a frame naming the same agent
+     * still waits for its turn ({@see self::queueFrame()}).
+     *
+     * @param PeerDTO $frame Frame to send
+     * @return bool Whether it goes in its turn behind the writes streamed before it
+     */
+    public static function readsBehindRtWrites(PeerDTO $frame): bool
+    {
+        if ($frame instanceof PeerSignalDTO) {
+            return $frame->uploadReservation === null;
+        }
+
+        return $frame instanceof PeerAgentStatusDTO || $frame instanceof PeerPlacementReportDTO || $frame instanceof PeerRtClaimsDTO
+            || $frame instanceof PeerCommandReplyDTO || $frame instanceof PeerPageAccessReassessDTO
+            || $frame instanceof PeerPlaceAgentDTO;
+    }
+
+    /**
+     * Names the agent a frame of this link is about, where its order behind another frame of the same
+     * agent matters: a signal to it, but not the budgeted portion of an upload, which keeps its own count
+     * of the link's bytes; its status; an order to place, stop or restart it. A forwarded command reply
+     * names none: it answers a console's caller.
+     *
+     * @param PeerDTO $frame Frame to send
+     * @return ?string Id of the agent, or null when the frame names none
+     */
+    private static function agentIdOf(PeerDTO $frame): ?string
+    {
+        if (($frame instanceof PeerSignalDTO && $frame->uploadReservation === null) || $frame instanceof PeerAgentStatusDTO
+            || $frame instanceof PeerPlaceAgentDTO || $frame instanceof PeerStopAgentDTO || $frame instanceof PeerAgentRestartDTO) {
+            return $frame->agentIndex !== null ? $frame->agentType . AgentConstants::ID_SEPARATOR . $frame->agentIndex : $frame->agentType;
+        }
+
+        return null;
+    }
+
+    /**
      * Bind silence before either handshake, retaining the constructor's original age.
      * The timer only cues the existing guarded read/tick/write portion.
      *
@@ -291,6 +354,22 @@ final class PeerLink extends AbstractClient
     /**
      * Queues one peer frame for delivery to this link.
      *
+     * A signal to an agent goes in its turn among the operations of this link's RT stream, once the
+     * stream is open ({@see RtSyncStreamChannel::writeInTurn()}): an RT write this node streamed to
+     * the linked node before it is out whole first, so the linked node takes the signal behind the
+     * write's final part. There the part's arrival queues the master's read of it, and the signal is
+     * queued for the agent behind that read, in the same order ({@see DaemonManager::deliverSignalToAgent()}).
+     * The status of an agent of this node ({@see PeerAgentStatusDTO}) goes the same way: told the
+     * agent stopped here or failed to start, the leader places it anew, so the status must not reach
+     * the leader ahead of a write of this node still waiting for its part's credit; so do the report of
+     * what this node hosts, the claims of its agents, a command's reply and an order to place an agent
+     * ({@see self::readsBehindRtWrites()}). A stop or a restart of an agent a waiting frame names goes
+     * behind that frame, so the linked node never stops an agent ahead of a signal sent to it before
+     * ({@see self::queueFrame()}). A frame packed once by its fan-out chooses the same way
+     * ({@see self::sendPackedFrame()}). Every other frame - keepalive, consensus, the drain marker, the
+     * budgeted portions of an upload, DB sync - is queued at once: none of them waits for a part's
+     * credit. A draining link writes what waits at once ({@see self::beginDrain()}).
+     *
      * @param PeerDTO $frame Frame to send
      */
     public function sendFrame(PeerDTO $frame): void
@@ -308,7 +387,7 @@ final class PeerLink extends AbstractClient
             return;
         }
 
-        $this->queueOutbound($frame->toJson(), $frame instanceof PeerSignalDTO && $frame->uploadReservation !== null);
+        $this->queueFrame($frame, $frame->toJson());
     }
 
     /**
@@ -325,6 +404,69 @@ final class PeerLink extends AbstractClient
     public function sendEncodedFrame(string $frameJson): void
     {
         $this->queueOutbound($frameJson, false);
+    }
+
+    /**
+     * Queues one frame its fan-out packed once for every link it reaches, choosing its turn as a frame
+     * of this link's own does ({@see self::sendFrame()}): a frame the linked node reads behind the
+     * writes before it ({@see self::readsBehindRtWrites()}) goes in its turn among the operations of
+     * this link's RT stream, once the stream is open. An access re-decision of pages
+     * ({@see PeerPageAccessReassessDTO}): the linked node's workers re-decide against their RT copy -
+     * who is behind a connection is a row this node streams there - so a write streamed before the
+     * re-decision is out whole first, and the linked node queues the re-decision for its workers behind
+     * its read of that write ({@see DaemonManager::deliverPageAccessReassess()}). The claims of this
+     * node's agents, which the leader folds behind its read the same way
+     * ({@see DaemonManager::applyRemoteRtClaims()}), and the report of what this node hosts, broadcast
+     * once its placed work is fenced. A draining link writes no more parts, so there it is queued at once.
+     *
+     * @param PeerDTO $frame Frame the fan-out sends
+     * @param string $frameJson The same frame packed, without the newline delimiter
+     */
+    public function sendPackedFrame(PeerDTO $frame, string $frameJson): void
+    {
+        if ($this->draining) {
+            $this->queueOutbound($frameJson, false);
+
+            return;
+        }
+        $this->queueFrame($frame, $frameJson);
+    }
+
+    /**
+     * Queues one frame at once, or in its turn among the operations of this link's RT stream once the
+     * stream is open ({@see RtSyncStreamChannel::writeInTurn()}): in its turn when the linked node reads
+     * it behind the writes streamed before it ({@see self::readsBehindRtWrites()}), and when it names an
+     * agent a frame still waiting for its turn names ({@see self::agentIdOf()}) - then it goes behind that
+     * frame, as on a worker's link ({@see WorkerClient::sendInTurn()}). The agent counts as waited for
+     * until the frame naming it is written; the stream writes every frame waiting in it in the end,
+     * behind an operation dropped or refused as well, and a draining link writes them at once.
+     *
+     * @param PeerDTO $frame Frame to send
+     * @param string $frameJson The same frame packed, without the newline delimiter
+     */
+    private function queueFrame(PeerDTO $frame, string $frameJson): void
+    {
+        $agentId = self::agentIdOf($frame);
+        $inTurn = self::readsBehindRtWrites($frame) || ($agentId !== null && isset($this->waitingInTurn[$agentId]));
+        if ($this->rtSyncStream === null || !$inTurn) {
+            $this->queueOutbound($frameJson, $frame instanceof PeerSignalDTO && $frame->uploadReservation !== null);
+
+            return;
+        }
+        if ($agentId !== null) {
+            $this->waitingInTurn[$agentId] = ($this->waitingInTurn[$agentId] ?? 0) + 1;
+        }
+        $link = WeakReference::create($this);
+        $this->rtSyncStream->writeInTurn(static function () use ($link, $frameJson, $agentId): void {
+            $owner = $link->get();
+            if ($owner === null) {
+                return;
+            }
+            if ($agentId !== null && --$owner->waitingInTurn[$agentId] === 0) {
+                unset($owner->waitingInTurn[$agentId]);
+            }
+            $owner->queueOutbound($frameJson, false);
+        });
     }
 
     /** @return int Absolute FIFO end, including staged bytes that have not reached the native buffer */
@@ -445,12 +587,16 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Queues the old route's end marker after all application frames already queued there.
+     * Queues the old route's end marker after all application frames already queued there. The
+     * frames still waiting for their turn behind the RT stream's writes ({@see self::readsBehindRtWrites()})
+     * go out first: a draining link writes no more parts of its stream, so the writes they wait for would
+     * never go out here.
      *
      * @throws EventLoopException When the remaining silence deadline cannot be armed
      */
     public function beginDrain(): void
     {
+        $this->rtSyncStream?->releaseWaiting();
         $this->peerDrainAllowed = true;
         $this->draining = true;
         $this->sendEncodedFrame((new PeerDrainDTO())->toJson());
@@ -745,7 +891,7 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerSignalDTO => $this->onSignal($frame),
             $frame instanceof PeerUploadReserveDTO, $frame instanceof PeerUploadGrantedDTO,
             $frame instanceof PeerUploadAcceptedDTO, $frame instanceof PeerUploadReleaseDTO => $this->onUploadControl($frame),
-            $frame instanceof PeerRtSyncDTO => $this->onRtSync($frame),
+            $frame instanceof PeerRtSyncStreamDTO => $this->onRtSyncStream($frame),
             $frame instanceof PeerDbSyncDTO => $this->onDbSync($frame),
             $frame instanceof PeerRtSnapshotDTO => $this->onRtSnapshot($frame),
             $frame instanceof PeerSourceInterestDTO => $this->onSourceInterest($frame),
@@ -1166,15 +1312,82 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Hands a received RT replica to the server for this node's copy to be updated.
+     * Hands a part or an answer of the ordinary RT stream to this link's stream.
      *
-     * @param PeerRtSyncDTO $frame Incoming RT sync frame
+     * @param PeerRtSyncStreamDTO $frame Incoming RT stream frame
      * @throws PeerTransportException When the frame arrives before the handshake
      */
-    private function onRtSync(PeerRtSyncDTO $frame): void
+    private function onRtSyncStream(PeerRtSyncStreamDTO $frame): void
     {
         $this->requireHandshaked('RT sync');
-        $this->server->onRtSyncReceived($this, $frame);
+        $this->rtSyncStream()->receive($frame->frame);
+    }
+
+    /**
+     * The ordinary RT stream of this link instance, both directions: this node's writes out, and
+     * the linked node's in, each applied only as that node's own. Opened on first use, so a
+     * replaced link is a new epoch.
+     *
+     * An operation is received with the receipt taken when its final part arrived, and applied
+     * by the server even if this link closed in between: a loss of its node then freezes it.
+     *
+     * A row the stream holds after refusing the linked node's write is marked by the master, which
+     * tells the workers that read the row, since their copies came from this node's and froze with
+     * it; there is no writing worker to leave out. Without a master's mark it is marked in this
+     * process alone.
+     *
+     * A draining link writes nothing more of its stream. Its positions belong to this instance:
+     * handed to the replacement route as other frames are, a part would open the new link's
+     * incoming epoch under this stream id, or read there as another generation.
+     *
+     * @return RtSyncStreamChannel Stream of this link
+     */
+    public function rtSyncStream(): RtSyncStreamChannel
+    {
+        if ($this->rtSyncStream === null) {
+            $link = WeakReference::create($this);
+            $server = $this->server;
+            $hold = $this->server->rtSyncStreamHold();
+            $this->rtSyncStream = new RtSyncStreamChannel(
+                static function (RtSyncStreamFrame $frame) use ($link): void {
+                    $owner = $link->get();
+                    if ($owner === null || $owner->draining) {
+                        return;
+                    }
+                    $owner->sendFrame(new PeerRtSyncStreamDTO($frame));
+                },
+                static function (RtSyncStreamOperation $operation, Closure $settled, ?RtReplicaConfirmation $receipt = null) use (
+                    $link,
+                    $server,
+                ): void {
+                    $server->onRtSyncStreamReceived($link->get(), $operation, $settled, $receipt);
+                },
+                $this->server->rtSyncStreamWake(),
+                null,
+                static function () use ($link, $server): ?RtReplicaConfirmation {
+                    $owner = $link->get();
+
+                    return $owner === null ? null : $server->rtSyncReceipt($owner);
+                },
+                $hold === null ? null : static function (string $collectionKey, array $stateIds, ?float $since) use ($hold): void {
+                    $hold(null, $collectionKey, $stateIds, $since);
+                },
+            );
+        }
+
+        return $this->rtSyncStream;
+    }
+
+    /**
+     * Lifts the hold this link's stream keeps on the rows of a collection whose operation it
+     * refused, once the linked node's snapshot of the collection was applied here. A link that
+     * never opened its stream holds nothing.
+     *
+     * @param string $collectionKey Collection the snapshot replaced
+     */
+    public function recoverRtSyncStream(string $collectionKey): void
+    {
+        $this->rtSyncStream?->recover($collectionKey);
     }
 
     /**

@@ -18,6 +18,8 @@ use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Collection\BackupHistories;
 use Hilos\Runtime\View\Item\BackupHistory as ViewBackupHistory;
 use LogicException;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the stored-backup index.
@@ -63,6 +65,8 @@ final class BackupHistoriesActions extends RtActions
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws RtActionsItemClassException When the item factory returns a class the collection does not accept
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws LogicException When an internal invariant is violated
      * @throws InvalidFormatException When backup metadata carries an ambiguous or invalid moment
      */

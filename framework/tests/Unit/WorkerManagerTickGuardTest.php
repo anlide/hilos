@@ -15,6 +15,10 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Hilos;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
+use Hilos\Runtime\Snapshot\RtWorkScheduler;
 use Hilos\Socket\Exception\Base\BrokenPipeException;
 use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\WorkerDaemonClient;
@@ -22,6 +26,7 @@ use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 use Hilos\Utils\WorkerTickFailureLog;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 use RuntimeException;
 use Throwable;
 
@@ -205,6 +210,52 @@ final class WorkerManagerTickGuardTest extends TestCase
     }
 
     /**
+     * A worker back from a freeze holds its agents' releases by the hundred thousand, and may stand
+     * without a single frame (HIL-2056). Its RT pass runs whenever the arena owes retirement, and
+     * first retires a bounded portion of what lies beyond the bound, as the master's dispatch does;
+     * the passes bring the shared queue down to the bound, each within the excess limit. The share
+     * is held to nothing here, so what the passes retire is the excess retirement alone.
+     */
+    public function testAnRtPassWithoutFramesRetiresABurstBeyondTheBoundAPortionAPass(): void
+    {
+        $manager = new WorkerManagerTickGuardTestManager();
+        new ReflectionProperty(WorkerManager::class, 'rtWork')->setValue($manager, new RtWorkScheduler(0, 0));
+        $arena = RtRowArena::process();
+        try {
+            $burst = [];
+            for ($agent = 0; $agent < RtRowArena::SHARED_BACKLOG_RELEASES + 4096; $agent++) {
+                $burst[] = RtRowValues::fromNative(['agent' => $agent, 'state' => 'frozen']);
+            }
+            foreach ($burst as $values) {
+                $values->release();
+            }
+            $burst = [];
+            $pages = $arena->retention()->pages;
+
+            $manager->run();
+
+            $this->assertSame([], $manager->handledMessageTypes, 'No frame came');
+            $retired = $pages - $arena->retention()->pages;
+            $this->assertGreaterThan(0, $retired, 'The pass retired a portion of the burst');
+            $this->assertLessThanOrEqual(RtRowArena::EXCESS_RETIREMENT_STEPS, $retired, 'A pass spends no more than the limit');
+            for ($passes = 1; $arena->retention()->pendingReleases > RtRowArena::SHARED_BACKLOG_RELEASES; $passes++) {
+                $this->assertLessThan(64, $passes, 'The passes bring the queue down to its bound');
+                $pages = $arena->retention()->pages;
+                $manager->runRtPassAgain();
+                $retired = $pages - $arena->retention()->pages;
+                $this->assertGreaterThan(0, $retired, 'Every pass beyond the bound retires');
+                $this->assertLessThanOrEqual(RtRowArena::EXCESS_RETIREMENT_STEPS, $retired, 'A pass spends no more than the limit');
+            }
+            $this->assertTrue($arena->hasPendingRetirement(), 'The rest is left to the share');
+        } finally {
+            $manager->unbindRtPass();
+            while ($arena->hasPendingRetirement()) {
+                $arena->advanceRetirement(new RtWorkBudget());
+            }
+        }
+    }
+
+    /**
      * @return string Everything the tick put in the journal
      */
     private function logged(): string
@@ -271,6 +322,23 @@ final class WorkerManagerTickGuardTestManager extends WorkerManager
     public function hasTestAgent(AgentInterface $agent): bool
     {
         return $this->agentManager->hasAgent($agent->getId());
+    }
+
+    /** Runs the worker's RT pass once more, as the next iteration of the loop would. */
+    public function runRtPassAgain(): void
+    {
+        Closure::bind(function (): void {
+            $this->runRtPass();
+        }, $this, WorkerManager::class)();
+    }
+
+    /** Hands the arena's shared retirement back, as the cleanup this manager skips would. */
+    public function unbindRtPass(): void
+    {
+        $wake = new ReflectionProperty(WorkerManager::class, 'rtPassWake')->getValue($this);
+        if ($wake !== null) {
+            RtRowArena::process()->unbindPassWake($wake);
+        }
     }
 
     public function handleDaemonMessage(WorkerDTO $data): void

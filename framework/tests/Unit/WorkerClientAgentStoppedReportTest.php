@@ -297,6 +297,8 @@ final class WorkerClientAgentStoppedReportTest extends TestCase
         $this->assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $sockets));
         $this->peers[] = $sockets[1];
         $server = new ReflectionClass(AgentStoppedReportTestWorkerServer::class)->newInstanceWithoutConstructor();
+        // The roster the daemon's constructor hands it: a consumed report waits behind its streamed writes.
+        new ReflectionProperty(WorkerServer::class, 'agentManager')->setValue($server, $manager);
         $client = new WorkerClient($sockets[0], $manager, $server);
         $client->setWorkerIndex(self::WORKER_INDEX);
         $client->setIsMonopolistic($isMonopolistic);

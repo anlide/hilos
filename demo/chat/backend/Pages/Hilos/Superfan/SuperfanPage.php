@@ -25,6 +25,7 @@ use Hilos\Pages\AbstractHilosSuperfanPage;
 use Hilos\Runtime\Exception\RtBaseException;
 use Throwable;
 use LogicException;
+use Hilos\HilosException;
 
 /**
  * SuperfanPage - Superfan AI agent page implementation for demo.
@@ -61,6 +62,7 @@ final class SuperfanPage extends AbstractHilosSuperfanPage
      * @throws RtBaseException When a run the agent failed cannot be recorded as FAILED in runtime state
      * @throws SourceChangeSubscriberException When a status subscriber fails
      * @return ?ActionReplyDTO Domain reply for a tracked action, or null when the action answers with nothing
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
      * @throws LogicException When an internal invariant is violated
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO

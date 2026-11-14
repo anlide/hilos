@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\SecurityNotice\SecurityNotificationType;
@@ -33,6 +34,9 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\DTO\NotificationEmitSignalData;
 use Hilos\Notification\HilosNotifier;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -49,9 +53,9 @@ use Hilos\Users\DTO\UserBlockWriteDoneSignalData;
 use Hilos\Users\DTO\UserBlockWriteSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
+use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
-use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -1134,23 +1138,26 @@ final class PersonEditsTestConnections extends HilosSessionConnections
 final class PersonEditsTestConnection extends HilosSessionConnection
 {
     /** This fixture adds no fields to the session stage. */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Serialized runtime row */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Serialized runtime row */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No project-owned fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Incoming field changes */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Incoming field changes */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }

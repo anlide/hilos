@@ -10,6 +10,9 @@ use Demo\Chat\Runtime\View\Item\Connection as RuntimeConnection;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for a single connection (RtItem), mirroring DB item actions pattern.
@@ -30,19 +33,22 @@ final class ConnectionActions extends HilosConnectionActions
      * @param list<string> $attachmentIds Client ids of the complete uploads the message carries, in attach order
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function startOutboundModeration(string $message, array $attachmentIds): void
     {
         $this->ensureCanWrite();
 
-        $this->state->outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING;
-        $this->state->outboundModerationMessage = $message;
-        $this->state->outboundModerationAttachments = $attachmentIds;
-        $this->state->outboundModerationPicture = null;
-        $this->state->outboundModerationReason = null;
-        $this->state->outboundModerationUpdatedAt = time();
-
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateConnection::outboundModerationPhase => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
+            StateConnection::outboundModerationMessage => $message,
+            StateConnection::outboundModerationAttachments => $attachmentIds,
+            StateConnection::outboundModerationPicture => null,
+            StateConnection::outboundModerationReason => null,
+            StateConnection::outboundModerationUpdatedAt => time(),
+        ]);
     }
 
     /**
@@ -54,17 +60,20 @@ final class ConnectionActions extends HilosConnectionActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function failOutboundModeration(string $phase, string $reason, ?string $picture = null): void
     {
         $this->ensureCanWrite();
 
-        $this->state->outboundModerationPhase = $phase;
-        $this->state->outboundModerationReason = $reason;
-        $this->state->outboundModerationPicture = $picture;
-        $this->state->outboundModerationUpdatedAt = time();
-
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateConnection::outboundModerationPhase => $phase,
+            StateConnection::outboundModerationReason => $reason,
+            StateConnection::outboundModerationPicture => $picture,
+            StateConnection::outboundModerationUpdatedAt => time(),
+        ]);
     }
 
     /**
@@ -72,18 +81,21 @@ final class ConnectionActions extends HilosConnectionActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function clearOutboundModeration(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE;
-        $this->state->outboundModerationMessage = null;
-        $this->state->outboundModerationAttachments = [];
-        $this->state->outboundModerationPicture = null;
-        $this->state->outboundModerationReason = null;
-        $this->state->outboundModerationUpdatedAt = time();
-
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateConnection::outboundModerationPhase => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
+            StateConnection::outboundModerationMessage => null,
+            StateConnection::outboundModerationAttachments => [],
+            StateConnection::outboundModerationPicture => null,
+            StateConnection::outboundModerationReason => null,
+            StateConnection::outboundModerationUpdatedAt => time(),
+        ]);
     }
 }

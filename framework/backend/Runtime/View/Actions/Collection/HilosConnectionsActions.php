@@ -17,6 +17,8 @@ use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Collection\HilosConnections;
 use Hilos\Runtime\View\Item\HilosConnection;
 use LogicException;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the connections runtime collection — the presence stage (HIL-509).
@@ -45,6 +47,8 @@ abstract class HilosConnectionsActions extends RtActions
      * @throws RtActionsStateClassException When the mounted collection names a non-connection state class
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws LogicException When the runtime item factory rejects a connection
      */
@@ -65,6 +69,8 @@ abstract class HilosConnectionsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function clear(): void
     {

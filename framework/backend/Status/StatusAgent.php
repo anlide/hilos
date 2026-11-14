@@ -237,6 +237,8 @@ final class StatusAgent extends AbstractHilosAgent
     // Private transit/recovery work of this owner; the shared current verdict is in RT.
     private StatusMaintenanceObservationStore $maintenanceStore;
     private ?StatusMaintenanceObservation $maintenanceObservation = null;
+    // As last saved to transit: RT carries its occupied fact, so a busy tick writes RT on the save cadence only.
+    private ?StatusMaintenanceObservation $maintenanceSaved = null;
     /** @var ?ArrayIterator<int, StatusPublicMaintenancePeriod> Bounded coherent-pair recovery cursor */
     private ?ArrayIterator $maintenancePublicRecovery = null;
     /** @var ?ArrayIterator<int, StatusPublicWork> Bounded search for a recovered period's announcement snapshot */
@@ -1552,9 +1554,16 @@ final class StatusAgent extends AbstractHilosAgent
                     $component, $observation, $incidents, $key, $nowMs,
                 ): ?int {
                     Hilos::$rt->hilosStatusComponents->actions->ensure($key, $observation->expectedInstances);
-                    Hilos::$rt->hilosStatusComponents[$key]->actions->update(
-                        $observation->expectedInstances, $observation->liveInstances, $observation->observedAt,
-                    );
+                    $current = Hilos::$rt->hilosStatusComponents[$key];
+                    $observedAt = $observation->observedAt;
+                    // Changed counts reach RT at once; unchanged ones refresh their moment on the heartbeat cadence.
+                    if ($current->expectedInstances === $observation->expectedInstances
+                        && $current->liveInstances === $observation->liveInstances
+                        && $observedAt !== null && $current->observedAt !== null && $current->observedAt <= $observedAt
+                        && $observedAt - $current->observedAt < $this->publicFiles->getHeartbeatIntervalMs()) {
+                        $observedAt = $current->observedAt;
+                    }
+                    $current->actions->update($observation->expectedInstances, $observation->liveInstances, $observedAt);
                     return $this->reconcile($component, $observation, $incidents[$key] ?? null, $nowMs);
                 });
                 if ($deadline !== null && ($this->nextReconcileAt === null || $deadline < $this->nextReconcileAt)) {
@@ -2089,6 +2098,7 @@ final class StatusAgent extends AbstractHilosAgent
     private function persistMaintenance(int $nowMs): void
     {
         $this->maintenanceStore->save($this->maintenanceObservation);
+        $this->maintenanceSaved = $this->maintenanceObservation;
         $this->maintenanceSavePending = false;
         $this->maintenancePersistedAt = $nowMs;
     }
@@ -2124,6 +2134,7 @@ final class StatusAgent extends AbstractHilosAgent
                 }
             } elseif ($observation->period->completionObservedAt === null && $this->maintenanceObservation === null) {
                 $this->maintenanceObservation = $observation;
+                $this->maintenanceSaved = $observation;
                 $this->maintenanceContinuous = false;
                 $this->maintenancePersistedAt = $nowMs;
                 $this->publicInvalidated = true;
@@ -2268,6 +2279,9 @@ final class StatusAgent extends AbstractHilosAgent
     }
 
     /**
+     * Start and completion reach RT at once; the last occupied fact only as saved to transit, on the
+     * heartbeat cadence. A tick that saved nothing leaves the row unchanged and writes no RT operation.
+     *
      * @param ?bool $occupied Unconditional source verdict; null never means open
      * @throws HilosException When represented owner-only runtime actions fail
      */
@@ -2280,11 +2294,13 @@ final class StatusAgent extends AbstractHilosAgent
         $period = $this->maintenanceObservation?->period;
         $work = $this->maintenanceObservation?->work;
         if ($period !== null) {
+            // Unsaved transit has no saved fact of its own; its live one is the best known.
+            $saved = $this->maintenanceSaved?->period->id === $period->id ? $this->maintenanceSaved->period : $period;
             Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->actions->update(
                 $occupied !== null && !($occupied && $period->completionObservedAt !== null),
                 $occupied ?? ($period->completionObservedAt === null),
                 $period->announcementKnown, $period->id, $period->workId, $period->title, $period->componentKeys,
-                $work?->startsAt, $work?->endsAt, $period->startedAt, $period->lastObservedAt,
+                $work?->startsAt, $work?->endsAt, $period->startedAt, $saved->lastObservedAt,
             );
         } elseif ($occupied === false) {
             Hilos::$rt->hilosStatusMaintenance[HilosStatusMaintenance::CURRENT]->actions->update(available: true);

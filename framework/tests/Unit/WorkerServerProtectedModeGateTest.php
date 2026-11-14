@@ -32,6 +32,7 @@ use Hilos\ProtectedMode\ProtectedModeMesh;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
+use Hilos\Runtime\Row\RtRowDescriptor;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Server\AwaitingWorkerAgent;
@@ -574,15 +575,16 @@ final class WorkerServerProtectedModeGateTest extends TestCase
             $this->assertInstanceOf(StateProtectedModeRuntime::class, $state);
             $baseline = new ReflectionProperty(RtState::class, 'rtSyncBaseline');
             $stored = $baseline->getValue($state);
-            $this->assertIsArray($stored);
-            $stored[StateProtectedModeRuntime::stoppedAgentCount] = 99;
-            $baseline->setValue($state, $stored);
+            $this->assertInstanceOf(RtRowDescriptor::class, $stored);
+            $fields = $stored->fields;
+            $fields[StateProtectedModeRuntime::stoppedAgentCount] = 99;
+            $baseline->setValue($state, new RtRowDescriptor($fields, $stored->defaults));
 
             $server->publishDiagnosticsPublic();
 
             $after = $baseline->getValue($state);
-            $this->assertIsArray($after);
-            $this->assertSame(99, $after[StateProtectedModeRuntime::stoppedAgentCount]);
+            $this->assertInstanceOf(RtRowDescriptor::class, $after);
+            $this->assertSame(99, $after->fields[StateProtectedModeRuntime::stoppedAgentCount]);
             $this->assertSame(0, Hilos::$rt->hilosProtectedModeRuntime->stoppedAgentCount);
 
             $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null);

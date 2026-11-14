@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Hilos;
 use Hilos\Runtime\ConnectionRosterReconciler;
+use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
+use Hilos\Runtime\Ordinary\RtOrdinaryQueue;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
 use Hilos\Runtime\State\Item\RtState;
@@ -43,6 +50,7 @@ final class ConnectionRosterReconcilerTest extends TestCase
         ExecutionContext::setCurrentAgentId(null);
         RtTruthSourceRegistry::unregisterAgent(self::AGENT_ID);
         RtTruthSourceRegistry::unregisterAgent(self::OTHER_AGENT_ID);
+        RtOrdinaryAdmission::reset();
 
         parent::tearDown();
     }
@@ -115,6 +123,26 @@ final class ConnectionRosterReconcilerTest extends TestCase
         $this->assertCount(2, $connections);
     }
 
+    public function testAStrikePastTheServiceReserveIsOwedAndMadeWhenTheFifoFrees(): void
+    {
+        $connections = $this->arrangeOwnedCollection();
+        RtOrdinaryAdmission::bindSourceQueue(new RtOrdinaryQueue(RtRowArena::process(), maxCleanupOperations: 1));
+        // An unsettled head holds every committed cell, so the one service cell stays taken.
+        $head = RtOrdinaryAdmission::reserve(1);
+        $head->seal([[]]);
+
+        $struck = ConnectionRosterReconciler::reconcile([]);
+
+        $this->assertSame(2, $struck);
+        $this->assertCount(1, $connections, 'The strike past the service reserve is owed, not refused');
+        $this->assertSame(1, RtOrdinaryAdmission::owedRemovals());
+        unset($head);
+        $connections->actions->register('ak-new', 3);
+        $this->assertFalse(isset($connections['ak-gone']), 'The owed strike is made once the FIFO frees');
+        $this->assertTrue(isset($connections['ak-new']));
+        $this->assertSame(0, RtOrdinaryAdmission::owedRemovals());
+    }
+
     /**
      * Mounts two connection rows under an agent that owns the collection, one of them live.
      *
@@ -141,30 +169,39 @@ final class ConnectionRosterReconcilerTest extends TestCase
  */
 final class RosterConnection extends StateHilosConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     * @param RtRowReader $row Serialized runtime row (nothing of its own to read)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Always empty: the row is the framework base
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     * @param RtRowReader $diff Partial update (nothing of its own to apply)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\Totp;
-use mysqli;
 use Hilos\Constants\TimeConstants;
-use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\StepUp\StepUpSettings;
@@ -21,14 +20,11 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\AbstractAgent;
-use Hilos\Core\Feature\Definition\AuthFeature;
-use Hilos\Runtime\State\Item\HilosSessionRotation;
-use Hilos\Runtime\State\Item\HilosSessionToastStack;
-use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -38,6 +34,7 @@ use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -52,24 +49,31 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\View\Collection\Identities;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\State\Item\HilosSessionRotation;
+use Hilos\Runtime\State\Item\HilosSessionToastStack;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AccountMergeCommandConstants;
-use Hilos\Users\Agent\AbstractUserAgent;
-use Hilos\Users\SecondFactorFate;
-use Hilos\Users\SecondFactorOutcome;
 use Hilos\Users\AccountMergeSummary;
 use Hilos\Utils\Helpers\TimeHelper;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Users\AdminAudience;
+use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
+use Hilos\Users\SecondFactorFate;
+use Hilos\Users\SecondFactorOutcome;
 use Hilos\Utils\Helpers\RandomHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
+use mysqli;
 
 /**
  * The agent side of the account:merge route and of the browser frame beside it (HIL-378, HIL-729).
@@ -1861,30 +1865,39 @@ final class AccountMergeRouteTestConnections extends HilosSessionConnections
  */
 final class AccountMergeRouteTestConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> No project fields
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Incoming field changes
+     * @param RtRowReader $diff Incoming field changes
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

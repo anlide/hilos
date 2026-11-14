@@ -11,7 +11,7 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * just joined the mesh.
  *
  * A node that comes up has no history to apply deltas to, so the owner of a collection offers
- * it whole. Unlike {@see PeerRtSyncDTO} this frame is addressed: only the joining node is
+ * it whole. Unlike {@see PeerRtSyncStreamDTO} this frame is addressed: only the joining node is
  * behind on this collection, and telling the rest would replace copies that are already
  * current. A whole-collection frame replaces the collection. A scoped frame replaces the
  * sender's rows in the declared scope. A row from another origin or one this node owns remains,

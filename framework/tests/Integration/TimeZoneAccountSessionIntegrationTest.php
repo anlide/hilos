@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\TimeZonePickActionDTO;
@@ -21,8 +22,8 @@ use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -38,6 +39,9 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Database;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections as StateSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection as StateSessionConnection;
 use Hilos\Runtime\State\Item\RtState;
@@ -731,24 +735,27 @@ final class TimeZoneAccountSessionTestConnectionStates extends StateSessionConne
 final class TimeZoneAccountSessionTestConnectionState extends StateSessionConnection
 {
     /** The fixture adds no project defaults. */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Incoming row, with no project fields */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Incoming row, with no project fields */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> Empty project field set */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Incoming diff, with no project fields */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Incoming diff, with no project fields */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

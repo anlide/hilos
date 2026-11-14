@@ -9,6 +9,9 @@ use Demo\Chat\Runtime\View\Item\ChatUserState as ViewChatUserState;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\Item\RtActions;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for one user's chat runtime state.
@@ -23,14 +26,17 @@ final class ChatUserStateActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function recordOutboundSubmission(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->lastOutboundSubmittedAt = microtime(true);
-
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateChatUserState::lastOutboundSubmittedAt => microtime(true),
+        ]);
     }
 
     /**
@@ -41,13 +47,16 @@ final class ChatUserStateActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function endSendPause(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->lastOutboundSubmittedAt = microtime(true) - ViewChatUserState::MESSAGE_RATE_LIMIT_SECONDS;
-
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateChatUserState::lastOutboundSubmittedAt => microtime(true) - ViewChatUserState::MESSAGE_RATE_LIMIT_SECONDS,
+        ]);
     }
 }

@@ -62,10 +62,14 @@ final class ProtectedModeAdmissionTest extends TestCase
     {
         $state = StateProtectedModeRuntime::create();
         $state->phase = StateProtectedModeRuntime::PHASE_VERIFYING;
+        $admittedHashes = [];
+        $circleHashes = [];
         for ($index = 0; $index < 4096; $index++) {
-            $state->admittedSessionTokenHashes[] = 'pass-' . $index;
-            $state->circleSessionTokenHashes[] = 'circle-' . $index;
+            $admittedHashes[] = 'pass-' . $index;
+            $circleHashes[] = 'circle-' . $index;
         }
+        $state->admittedSessionTokenHashes = $admittedHashes;
+        $state->circleSessionTokenHashes = $circleHashes;
         $plan = new ProtectedModeRuntime($state)->admissionPlan();
         $admitted = new ReflectionProperty($plan, 'admittedByHash');
         $circle = new ReflectionProperty($plan, 'circleByHash');

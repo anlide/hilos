@@ -91,6 +91,20 @@ class RtTruthSourceRegistry extends AbstractTruthSourceRegistry
     }
 
     /**
+     * Captures one source's immutable grant without materializing segmented row keys.
+     * Agent-less prepared writes are specifically the daemon's own grant.
+     *
+     * @param string $collection Mounted Runtime collection
+     * @return TruthSourceGrant Current agent or daemon grant, retaining its identity for recheck
+     * @throws RtTruthSourceWriteNotAllowedException When the current source has no grant
+     */
+    public static function currentWriteGrant(string $collection): TruthSourceGrant
+    {
+        return self::grantOf($collection, ExecutionContext::currentAgentId() ?? self::DAEMON_SOURCE_ID)
+            ?? throw new RtTruthSourceWriteNotAllowedException('The current source has no prepared Runtime write grant');
+    }
+
+    /**
      * Unregister agent and clear it from the current RT writer context.
      *
      * @param string $agentId Agent ID

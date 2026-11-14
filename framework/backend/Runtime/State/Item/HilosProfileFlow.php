@@ -4,10 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Runtime\Row\HilosProfileFlowRowCodec;
+use Hilos\Runtime\Row\RtRowKind;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\RtRowCodec;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosProfileFlows;
+use LogicException;
 
 /**
  * HilosProfileFlow - how far one profile window of one browser session has got (HIL-1182).
@@ -73,26 +83,94 @@ final class HilosProfileFlow extends RtState
     /** Joins the session hash and the operation key into the row id; neither of them carries it. */
     private const string ID_SEPARATOR = ':';
 
+    /** Fixed scalar schema; variable text is held in segmented pages. */
+    private const array FIELD_TYPES = [
+        self::sessionTokenHash => 'text',
+        self::operation => 'text',
+        self::userId => 'int',
+        self::step => 'text',
+        self::address => 'text',
+        self::target => '?text',
+        self::expiresAt => 'int',
+    ];
+
+    /** The synchronous property defaults, not defaults for missing incoming keys. */
+    private const array FIELD_DEFAULTS = [
+        self::sessionTokenHash => '',
+        self::operation => '',
+        self::userId => 0,
+        self::step => '',
+        self::address => '',
+        self::target => null,
+        self::expiresAt => 0,
+    ];
+
+    /** Only the fields the existing applyDiff door accepts. */
+    private const array PATCH_FIELDS = [
+        self::userId => true,
+        self::step => true,
+        self::address => true,
+        self::target => true,
+        self::expiresAt => true,
+    ];
+
     /** Hash of the session cookie token this flow belongs to. */
-    private(set) string $sessionTokenHash = '';
+    private(set) string $sessionTokenHash {
+        get => isset($this->rowValues()[self::sessionTokenHash])
+            ? $this->rowValues()[self::sessionTokenHash]->toNative()
+            : self::FIELD_DEFAULTS[self::sessionTokenHash];
+        set {
+            $this->setRowValue(self::sessionTokenHash, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Operation key of the window - CHANGE_EMAIL, CHANGE_PASSWORD, DELETE_ACCOUNT or ADD_SIGN_IN_METHOD. */
-    private(set) string $operation = '';
+    private(set) string $operation {
+        get => isset($this->rowValues()[self::operation]) ? $this->rowValues()[self::operation]->toNative() : self::FIELD_DEFAULTS[self::operation];
+        set {
+            $this->setRowValue(self::operation, RtRowValues::fromNative($value));
+        }
+    }
 
     /** The person the flow was started for; a flow read on behalf of anybody else is no proof. */
-    private(set) int $userId = 0;
+    private(set) int $userId {
+        get => $this->rowValues()[self::userId] ?? self::FIELD_DEFAULTS[self::userId];
+        set {
+            $this->setRowValue(self::userId, $value);
+        }
+    }
 
     /** One of the STEP_* constants: what has happened, not which screen draws it. */
-    private(set) string $step = '';
+    private(set) string $step {
+        get => isset($this->rowValues()[self::step]) ? $this->rowValues()[self::step]->toNative() : self::FIELD_DEFAULTS[self::step];
+        set {
+            $this->setRowValue(self::step, RtRowValues::fromNative($value));
+        }
+    }
 
     /** The account's address the proof stands on, or the address or number being added where its code went. */
-    private(set) string $address = '';
+    private(set) string $address {
+        get => isset($this->rowValues()[self::address]) ? $this->rowValues()[self::address]->toNative() : self::FIELD_DEFAULTS[self::address];
+        set {
+            $this->setRowValue(self::address, RtRowValues::fromNative($value));
+        }
+    }
 
     /** New email on STEP_NEW_SENT; added address or number on STEP_PHONE_SENT or STEP_EMAIL_SENT; null otherwise. */
-    private(set) ?string $target = null;
+    private(set) ?string $target {
+        get => ($this->rowValues()[self::target] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::target, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Epoch milliseconds the code the proof stands on dies at; the row's whole lifetime. */
-    private(set) int $expiresAt = 0;
+    private(set) int $expiresAt {
+        get => $this->rowValues()[self::expiresAt] ?? self::FIELD_DEFAULTS[self::expiresAt];
+        set {
+            $this->setRowValue(self::expiresAt, $value);
+        }
+    }
 
     /**
      * Names the row of one window of one session.
@@ -208,5 +286,112 @@ final class HilosProfileFlow extends RtState
             self::target => $this->target,
             self::expiresAt => $this->expiresAt,
         ];
+    }
+    /** @return RtRowCodec Segmented codec preserving this row's scalar contract */
+    public function rowCodec(): RtRowCodec
+    {
+        return new HilosProfileFlowRowCodec();
+    }
+
+    /**
+     * Prepares an unpublished row; the committed-root layer supplies its baseline later.
+     *
+     * @param RtRowReader $in Segmented full row
+     * @return Generator<int, RtWork, int, static> Fully validated candidate
+     * @throws InvalidFormatException When a field violates the existing row contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public static function fromValues(RtRowReader $in): Generator
+    {
+        $prepared = yield from self::prepareValues($in, null);
+        yield new RtWork();
+        $instance = new static();
+        $instance->replaceRowValues($prepared);
+
+        return $instance;
+    }
+
+    /**
+     * Every accepted field is validated before the fixed descriptor is replaced.
+     *
+     * @param RtRowReader $diff Segmented changed fields
+     * @return Generator<int, RtWork, int, void> Atomic candidate patch
+     * @throws InvalidFormatException When a changed field violates the existing contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public function patchValues(RtRowReader $diff): Generator
+    {
+        $prepared = yield from self::prepareValues($diff, $this->rowValues());
+        yield new RtWork();
+        $this->replaceRowValues($prepared);
+    }
+
+    /**
+     * @param RtRowWriter $out Unpublished output in any Runtime arena
+     * @return Generator<int, RtWork, int, void> Bounded scalar/text export
+     * @throws InvalidFormatException When a stored segmented value is malformed
+     * @throws LogicException When the output has already closed
+     */
+    public function exportValues(RtRowWriter $out): Generator
+    {
+        return $this->frozenValues()->export($out);
+    }
+
+    /** @return array<string, mixed> Fixed property defaults in codec export order */
+    protected function rowFieldDefaults(): array
+    {
+        return self::FIELD_DEFAULTS;
+    }
+
+    /**
+     * @param RtRowReader $input Segmented full row or diff
+     * @param ?array<string, RtRowValues|int|float|bool|null> $current Fixed descriptor, null for restore
+     * @return Generator<int, RtWork, int, array<string, RtRowValues|int|float|bool|null>> Validated fixed descriptor
+     * @throws InvalidFormatException When a field violates its existing contract
+     * @throws LogicException When a writer lifetime is violated
+     */
+    private static function prepareValues(RtRowReader $input, ?array $current): Generator
+    {
+        $prepared = $current ?? [];
+        foreach (self::FIELD_TYPES as $key => $type) {
+            yield new RtWork();
+            if ($current !== null && !isset(self::PATCH_FIELDS[$key])) {
+                continue;
+            }
+            $value = yield from $input->field($key);
+            if ($value === null) {
+                if ($current !== null) {
+                    continue;
+                }
+                if (str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                throw new InvalidFormatException('Runtime row is missing required key ' . $key);
+            }
+            $reader = $value->reader();
+            if ($reader->kind() === RtRowKind::Scalar) {
+                $scalar = yield from $reader->scalar();
+                if ($scalar === null && str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                $scalarType = ltrim($type, '?');
+                if (($scalarType === 'int' && is_int($scalar)) || ($scalarType === 'bool' && is_bool($scalar))) {
+                    $prepared[$key] = $scalar;
+                    continue;
+                }
+                if ($scalarType === 'float' && (is_int($scalar) || is_float($scalar))) {
+                    $prepared[$key] = (float)$scalar;
+                    continue;
+                }
+            }
+            if ($reader->kind() !== RtRowKind::Text || !in_array($type, ['text', '?text', 'moment', '?moment'], true)) {
+                throw new InvalidFormatException('Runtime row carries the wrong type under key ' . $key);
+            }
+            $prepared[$key] = yield from RtRowWriter::copy($reader, $input->arena(), RtRowRole::Candidate);
+        }
+
+        return $prepared;
     }
 }

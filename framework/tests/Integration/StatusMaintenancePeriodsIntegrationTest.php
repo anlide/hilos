@@ -43,6 +43,9 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
+use Hilos\Runtime\Ordinary\RtOrdinaryQueue;
+use Hilos\Runtime\Row\RtRowArena;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Collection\RtCollection;
@@ -633,6 +636,35 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
         self::assertFalse(Hilos::$rt->hilosStatusMaintenance['current']->active);
         self::assertGreaterThan($before, $this->heartbeatAt());
         self::assertSame([], $this->rows());
+    }
+
+    /** A busy node puts in RT only its saved occupied fact, so a stalled stream FIFO never refuses its ticks. */
+    public function testABusyNodeWritesRuntimeOnlyWithItsSavedObservation(): void
+    {
+        $this->settle($this->now - 1000);
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->settle($this->now);
+        $current = Hilos::$rt->hilosStatusMaintenance['current'];
+        $interval = (new StatusPublicFiles())->getHeartbeatIntervalMs();
+        $queue = new RtOrdinaryQueue(RtRowArena::process(), 8);
+        RtOrdinaryAdmission::bindSourceQueue($queue);
+        RtOrdinaryAdmission::consumeBy(static fn(): bool => false);
+        try {
+            for ($tick = 1; $tick <= 100; ++$tick) {
+                $this->owner->tickAt($this->now + 24 + 10 * $tick);
+            }
+            self::assertLessThanOrEqual((int)ceil(1000 / $interval) + 1, $queue->pendingOperations());
+            self::assertTrue($current->active);
+            self::assertSame($this->now, $current->lastObservedAt, 'RT carries the first saved occupied fact');
+            $due = $this->now + (int)ceil($interval);
+            $this->owner->tickAt($due);
+            self::assertSame($due, $current->lastObservedAt, 'A saved observation reaches RT at once');
+            $this->runtime->phase(ProtectedModeRuntime::PHASE_INACTIVE);
+            $this->owner->tickAt($due + 10);
+            self::assertFalse($current->active, 'Completion reaches RT at once');
+        } finally {
+            RtOrdinaryAdmission::reset();
+        }
     }
 
     public function testATornAnnouncementPairDoesNotClassifyAColdFreeze(): void

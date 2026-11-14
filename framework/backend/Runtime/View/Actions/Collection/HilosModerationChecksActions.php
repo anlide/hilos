@@ -35,6 +35,8 @@ use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use LogicException;
 use Random\RandomException;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the moderation checks, as a set (HIL-1625).
@@ -89,6 +91,8 @@ final class HilosModerationChecksActions extends RtActions
      * @throws RtTruthSourceWriteNotAllowedException When the caller does not hold the set the check is born in
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws RtActionsCallbackNotSetException When the item factory is unavailable
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtActionsItemClassException When the item factory returns an invalid class
      * @throws LogicException When an internal invariant is violated
      */

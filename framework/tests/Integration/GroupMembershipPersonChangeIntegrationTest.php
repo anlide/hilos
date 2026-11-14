@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\AccountDeletion\AccountDeletionGroup;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
@@ -15,6 +16,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Group\DTO\GroupJoinSignalData;
 use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
@@ -22,14 +24,16 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SubscriptionRegistry;
 use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\DataExport\DataExportGroup;
 use Hilos\Database\Database;
 use Hilos\Database\Settings\SettingsAccessor;
-use Hilos\DataExport\DataExportGroup;
 use Hilos\Hilos;
 use Hilos\Legal\LegalAgreementsGroup;
 use Hilos\Notification\NotificationGroup;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections as StateHilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
 use Hilos\Runtime\State\Item\RtState;
@@ -373,30 +377,39 @@ final class GroupMembershipTestAgent extends AbstractAgent
  */
 final class GroupMembershipTestConnection extends StateHilosConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     * @param RtRowReader $row Serialized runtime row (nothing of its own to read)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Always empty: the row is the framework base
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     * @param RtRowReader $diff Partial update (nothing of its own to apply)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

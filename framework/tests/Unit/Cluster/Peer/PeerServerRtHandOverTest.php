@@ -16,7 +16,7 @@ use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerProtocol;
@@ -36,6 +36,9 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Transport\PlainSocketTransport;
+use Hilos\TruthSource\RtNodeSourceMap;
+use Hilos\TruthSource\RtReplicaConfirmation;
+use Hilos\TruthSource\RtReplicaOriginMap;
 use PHPUnit\Framework\TestCase;
 use Socket;
 
@@ -364,7 +367,7 @@ final class PeerServerRtHandOverTest extends TestCase
         $link->write();
 
         $this->assertSame(
-            [PeerRtSnapshotDTO::MESSAGE_TYPE, PeerRtSyncDTO::MESSAGE_TYPE],
+            [PeerRtSnapshotDTO::MESSAGE_TYPE, PeerRtSyncStreamDTO::MESSAGE_TYPE],
             $this->frameTypesOf($far),
             'One link, one buffer, FIFO: the delta cannot arrive before the snapshot it follows',
         );
@@ -777,14 +780,26 @@ final class PeerServerRtHandOverTest extends TestCase
              * @param string $originNodeId Id of the node the write happened on
              * @param string $signalType RT sync signal type the frame carried
              * @param SignalDTO $signal RT sync signal to apply
+             * @param bool $partialOwner Whether the origin holds only part of the right
+             * @param ?RtReplicaConfirmation $receipt Receipt taken when it arrived
              */
             public function applyRemoteRtSync(
                 string $originNodeId,
                 string $signalType,
                 SignalDTO $signal,
                 bool $partialOwner = false,
+                ?RtReplicaConfirmation $receipt = null,
             ): void
             {
+            }
+
+            /**
+             * @param string $originNodeId Id of the node the fact arrives from
+             * @return RtReplicaConfirmation A receipt nothing here ever applies with
+             */
+            public function captureRtSyncReceipt(string $originNodeId): RtReplicaConfirmation
+            {
+                return new RtReplicaOriginMap()->captureConfirmation($originNodeId, new RtNodeSourceMap());
             }
 
             /**

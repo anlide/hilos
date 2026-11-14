@@ -5,52 +5,56 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Generator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
-use Hilos\Core\Router\AgentSignalData;
-use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\SignalConstants;
-use Hilos\Core\Router\WebSocketSignalData;
-use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
-use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
-use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
-use Hilos\ProtectedMode\DTO\ManualMaintenancePassDoneSignalData;
-use Hilos\Runtime\State\Collection\HilosSessionConnections;
-use Hilos\Runtime\State\Item\HilosSessionConnection;
-use PHPUnit\Framework\Attributes\DataProvider;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Agent\Hilos\AbstractHilosIndexAgent;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
-use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
+use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\ProtectedMode\DTO\ManualMaintenanceDisableSignalData;
-use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
-use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
-use Hilos\ProtectedMode\ProtectedModeClientNotifier;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassDoneSignalData;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeEnableSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
+use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
+use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\ProtectedMode\Exception\ProtectedModeFreezeUnreadableException;
 use Hilos\ProtectedMode\ManualMaintenanceOutcome;
 use Hilos\ProtectedMode\ProtectedModeAdmissionConstants;
+use Hilos\ProtectedMode\ProtectedModeClientNotifier;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeFreezeStore;
 use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
 use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
+use Hilos\TruthSource\RtTruthSourceRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -569,24 +573,27 @@ final class IntegrationManualConnections extends HilosSessionConnections
 final class IntegrationManualConnection extends HilosSessionConnection
 {
     /** This fixture adds no fields. */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row No fixture fields */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row No fixture fields */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No fixture fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff No fixture fields */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff No fixture fields */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

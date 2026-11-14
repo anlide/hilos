@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -17,6 +18,7 @@ use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
@@ -31,6 +33,18 @@ use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
 use Hilos\Database\Object\Collection\AccountDeletions;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
+use Hilos\Runtime\Ordinary\RtOrdinaryQueue;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\RtMutation;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\Snapshot\RtPreparedIdentity;
+use Hilos\Runtime\Snapshot\RtPreparedRow;
+use Hilos\Runtime\Snapshot\RtVersionStore;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
+use Hilos\Runtime\Snapshot\RtWorkDriver;
+use Hilos\Runtime\State\Item\HilosProbeNote;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Utils\Logger;
 use RuntimeException;
@@ -100,6 +114,97 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         Hilos::$sr = $this->previousSignalRouter;
 
         parent::tearDown();
+    }
+
+    /** A real SQL COMMIT installs the whole prepared Runtime prefix before even the earliest observer. */
+    public function testSqlCommitInstallsPreparedRuntimeRootBeforeHeldObservers(): void
+    {
+        $arena = new RtRowArena();
+        $store = new RtVersionStore($arena);
+        $seen = [];
+        Database::transactionStart();
+        Database::afterCommit(function () use ($store, &$seen): void {
+            $seen[] = [$store->cut()->revision(), $this->versionText($store), self::requestRows()];
+        });
+        $this->request(self::FIRST_USER_ID);
+        $this->stageVersion($store, TableMutationType::Create, 'first');
+        $this->request(self::SECOND_USER_ID);
+        $this->stageVersion($store, TableMutationType::Update, 'final');
+        self::assertSame(0, $store->cut()->revision());
+        self::assertNull($this->versionText($store));
+        Database::transactionCommit();
+        self::assertSame([[2, 'final', 2]], $seen);
+        self::assertSame('final', $this->versionText($store));
+        unset($store);
+        $this->retireVersions($arena);
+    }
+
+    /** Ordinary admission finishes before SQL; a killed COMMIT returns its reserve and never opens its FIFO prefix. */
+    public function testSqlCommitAndFailureOwnThePreviouslyReservedOrdinaryPrefix(): void
+    {
+        $this->configureNamedRowConnection();
+        $queue = new RtOrdinaryQueue(RtRowArena::process(), 2);
+        RtOrdinaryAdmission::bindSourceQueue($queue);
+        try {
+            foreach ([true, false] as $killCommit) {
+                // Reopen the session killed by the previous case before the next SQL transaction.
+                Database::sql('SELECT 1', index: 2);
+                // An unsettled head keeps the committed cell in the FIFO for this case to read.
+                $head = RtOrdinaryAdmission::reserve(1);
+                $head->seal([[]]);
+                $row = HilosProbeNote::create('ordinary-row', 'node', 'admitted before SQL');
+                $seen = false;
+                try {
+                    Database::transaction('archive', function () use ($row, $queue, $killCommit, &$seen): void {
+                        Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('ordinary transaction')", index: 2);
+                        $admission = RtOrdinaryAdmission::reserve(1);
+                        $admission->seal([
+                            RtOrdinaryAdmission::operation(TableMutationType::Create, self::UNMOUNTED_RT_COLLECTION, null, $row),
+                        ]);
+                        $admission->settle();
+                        self::assertSame(2, $queue->pendingOperations());
+                        Database::afterCommit(static function () use (&$seen): void {
+                            $seen = true;
+                        });
+                        if ($killCommit) {
+                            $session = (int) Database::sql('SELECT CONNECTION_ID() AS id', index: 2)->field('id');
+                            Database::sql('KILL ?', [$session], index: 0);
+                        }
+                    });
+                    self::assertFalse($killCommit, 'The killed SQL transaction must fail');
+                } catch (DatabaseRuntimeException $failure) {
+                    if (!$killCommit) {
+                        throw $failure;
+                    }
+                    self::assertTrue($killCommit);
+                    self::assertStringContainsString('Query: COMMIT', $failure->getMessage());
+                }
+                self::assertSame(!$killCommit, $seen);
+                self::assertFalse(Database::hasOpenTransactions());
+                self::assertSame($killCommit ? 0 : 1, (int) Database::sql('SELECT COUNT(*) AS total FROM `hilos_user`')->field('total'));
+                unset($head);
+                $queue->advance(new RtWorkBudget());
+                if (!$killCommit) {
+                    $cursor = $queue->head();
+                    self::assertNotNull($cursor);
+                    $page = RtWorkDriver::runSynchronously($cursor->advance());
+                    $fact = new RtMutation($queue->arena, $page);
+                    self::assertSame('admitted before SQL', $fact->after()->values()->toNative()[HilosProbeNote::text]);
+                    $cursor->cancel();
+                    $queue->releaseHead();
+                } else {
+                    self::assertNull($queue->head());
+                }
+                while ($queue->arena->retention()->pendingReleases > 0) {
+                    $queue->arena->advanceRetirement(new RtWorkBudget(11, 17));
+                    $queue->advance(new RtWorkBudget(3, 5));
+                }
+                $queue->advance(new RtWorkBudget());
+                self::assertSame(0, $queue->pendingOperations());
+            }
+        } finally {
+            RtOrdinaryAdmission::reset();
+        }
     }
 
     /**
@@ -291,10 +396,15 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
      */
     public function testAClosedConnectionEndsItsTransactionAsFailed(): void
     {
+        $arena = new RtRowArena();
+        $store = new RtVersionStore($arena);
         Database::transactionStart();
         $this->request(self::FIRST_USER_ID);
+        $this->stageVersion($store, TableMutationType::Create, 'closed');
 
         Database::close();
+        self::assertSame(0, $store->cut()->revision());
+        self::assertNull($this->versionText($store));
 
         try {
             Database::sql('SELECT 1');
@@ -320,6 +430,10 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
 
         Database::connect(DatabaseConnectionDefaults::PRIMARY_INDEX);
         self::assertSame(0, self::requestRows());
+        $this->stageVersion($store, TableMutationType::Create, 'fresh');
+        self::assertSame(1, $store->cut()->revision());
+        unset($store);
+        $this->retireVersions($arena);
     }
 
     /**
@@ -332,8 +446,11 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
      */
     public function testALostLinkInsideATransactionIsNotReconnectedAndEndsIt(): void
     {
+        $arena = new RtRowArena();
+        $store = new RtVersionStore($arena);
         Database::transactionStart();
         $this->request(self::FIRST_USER_ID);
+        $this->stageVersion($store, TableMutationType::Create, 'lost link');
         Database::sql('SELECT CONNECTION_ID() AS id');
         $this->killFromAnotherSession((int)Database::field('id'));
 
@@ -355,7 +472,11 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         } catch (TransactionNotOpenException) {
             // Refused by the stack, not by the link
         }
+        self::assertSame(0, $store->cut()->revision());
+        self::assertNull($this->versionText($store));
         Database::transactionRollback();
+        unset($store);
+        $this->retireVersions($arena);
 
         self::assertSame([], Database::handlerEnd(), 'The rollback closed the failed level');
         self::assertSame([], $this->drainDbFrames());
@@ -874,14 +995,17 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
     public function testNamedCommitFailurePreservesItsSqlFailureAndRestoresTheScope(): void
     {
         $this->configureNamedRowConnection();
+        $arena = new RtRowArena();
+        $store = new RtVersionStore($arena);
         $made = [];
         $undone = false;
         try {
-            Database::transaction('archive', static function () use (&$made, &$undone): void {
+            Database::transaction('archive', function () use ($store, &$made, &$undone): void {
                 Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('lost archive')", index: 2);
                 $session = (int) Database::sql('SELECT CONNECTION_ID() AS id', index: 2)->field('id');
                 Database::onRollback(static function () use (&$undone): void { $undone = true; });
                 Database::afterCommit(static function () use (&$made): void { $made[] = 'must not leave'; });
+                $this->stageVersion($store, TableMutationType::Create, 'commit refused');
                 Database::sql('KILL ?', [$session], index: 0);
             });
             self::fail('A commit on a killed session must fail');
@@ -890,6 +1014,8 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         }
         self::assertTrue($undone);
         self::assertSame([], $made);
+        self::assertSame(0, $store->cut()->revision());
+        self::assertNull($this->versionText($store));
         self::assertSame([], Database::handlerEnd());
         self::assertFalse(Database::hasOpenTransactions());
         self::assertSame([], Database::sql('SELECT `name` FROM `hilos_user`')->rows());
@@ -898,6 +1024,10 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         self::assertSame([], $made);
         Database::transactionCommit();
         self::assertSame(['primary'], $made);
+        $this->stageVersion($store, TableMutationType::Create, 'fresh after failed SQL commit');
+        self::assertSame(1, $store->cut()->revision());
+        unset($store, $failure);
+        $this->retireVersions($arena);
     }
 
     /** A failed driver rollback must not replace the callback's original refusal. */
@@ -1023,6 +1153,53 @@ final class DatabaseTransactionIntegrationTest extends HilosSessionIntegrationTe
         } finally {
             Database::useConnection(0);
         }
+    }
+
+    /**
+     * @param RtVersionStore $store Isolated selector with real transaction hooks
+     * @param TableMutationType $type Example write
+     * @param string $text Prepared example value
+     */
+    private function stageVersion(RtVersionStore $store, TableMutationType $type, string $text): void
+    {
+        $id = RtRowValues::fromNative('version-row', $store->arena);
+        $values = RtRowValues::fromNative(['mark' => $text], $store->arena);
+        $identity = RtWorkDriver::runSynchronously(RtPreparedIdentity::prepare($id));
+        $row = RtWorkDriver::runSynchronously(RtPreparedRow::prepare($identity, $values, $values, 1));
+        $batch = $store->begin();
+        RtWorkDriver::runSynchronously($batch->change($type, $row));
+        $store->apply($batch);
+    }
+
+    /**
+     * @param RtVersionStore $store Committed selector
+     * @return ?string Explicit application read of the example row
+     */
+    private function versionText(RtVersionStore $store): ?string
+    {
+        $cursor = $store->cut()->rows();
+        $entry = RtWorkDriver::runSynchronously($cursor->advance());
+        if ($entry === null) {
+            return null;
+        }
+        $record = new RtPreparedRow(
+            $store->arena,
+            new RtRowValues($store->arena, $entry->rootIn($store->arena)->first, RtRowRole::Transient),
+        );
+
+        return $record->values()->toNative()['mark'];
+    }
+
+    /**
+     * @param RtRowArena $arena Owner after all holders close
+     */
+    private function retireVersions(RtRowArena $arena): void
+    {
+        while ($arena->retention()->pendingReleases > 0) {
+            $arena->advanceRetirement(new RtWorkBudget(7, 11));
+        }
+        self::assertSame(0, $arena->retention()->physicalBytes);
+        self::assertSame(0, $arena->retention()->bytes(RtRowRole::Retired));
     }
 
     /** A real second session on the existing framework database; no remote service or SQL double. */

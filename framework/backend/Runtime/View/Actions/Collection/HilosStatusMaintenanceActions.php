@@ -14,6 +14,8 @@ use Hilos\Runtime\State\Collection\HilosStatusMaintenance as StateHilosStatusMai
 use Hilos\Runtime\State\Item\HilosStatusMaintenance as StateHilosStatusMaintenance;
 use Hilos\Runtime\View\Collection\HilosStatusMaintenance as ViewHilosStatusMaintenanceCollection;
 use Hilos\Runtime\View\Item\HilosStatusMaintenance as ViewHilosStatusMaintenance;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * @extends RtActions<ViewHilosStatusMaintenance, ViewHilosStatusMaintenanceCollection, StateHilosStatusMaintenanceCollection>
@@ -26,6 +28,8 @@ final class HilosStatusMaintenanceActions extends RtActions
      *
      * @throws InvalidFormatException When initial state is invalid
      * @throws RtActionsCollectionNameNullException When the collection is unmounted
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtActionsStateCollectionNullException When backing state is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller cannot add the singleton
      * @throws SourceChangeSubscriberException When a source-change subscriber fails

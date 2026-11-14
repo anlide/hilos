@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\AccessLog\AccessLogEvent;
 use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
@@ -22,21 +23,21 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
-use Hilos\Core\Source\SourceChangeBus;
-use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\UserVerification as EntityUserVerification;
 use Hilos\Database\Exception\ObjectCollectionNotFoundException;
 use Hilos\Database\Identity\IdentityType;
-use Hilos\Database\Schema\Schema;
-use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Collection\UserVerifications as ObjectUserVerifications;
+use Hilos\Database\Object\Item\Object_;
+use Hilos\Database\Schema\Schema;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Files\DTO\FileRemoveSignalData;
 use Hilos\Files\HilosFiles;
@@ -44,6 +45,9 @@ use Hilos\Files\Storage\LocalFilesStorage;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\HilosNotifier;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
@@ -1280,30 +1284,39 @@ final class AccountErasureTestConnections extends HilosSessionConnections
  */
 final class AccountErasureTestConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> No project fields
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Incoming field changes
+     * @param RtRowReader $diff Incoming field changes
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

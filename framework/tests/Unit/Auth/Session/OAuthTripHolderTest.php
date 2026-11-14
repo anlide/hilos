@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Auth\Session;
 
+use Generator;
+use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Library\DTO\OAuthCallbackActionDTO;
@@ -13,7 +15,6 @@ use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
 use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
-use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -27,6 +28,9 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Hilos;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
@@ -34,8 +38,8 @@ use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Collection\HilosOAuthTrips;
-use Hilos\Runtime\View\Item\HilosOAuthTrip as ViewHilosOAuthTrip;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Item\HilosOAuthTrip as ViewHilosOAuthTrip;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -744,29 +748,38 @@ final class OAuthTripHolderTestConnections extends HilosSessionConnections
  */
 final class OAuthTripHolderTestConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Own fields, of which this fixture has none
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Incoming field changes
+     * @param RtRowReader $diff Incoming field changes
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }

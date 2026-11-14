@@ -4,10 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Generator;
 use Hilos\Backup\BackupPhase;
 use Hilos\Backup\BackupProgress;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Runtime\Row\BackupRuntimeRowCodec;
+use Hilos\Runtime\Row\RtRowKind;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\RtRowCodec;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Utils\Helpers\UtcMoment;
+use LogicException;
 
 /**
  * BackupRuntime - the singleton runtime state of the backup subsystem.
@@ -35,23 +45,94 @@ final class BackupRuntime extends RtState
     public const string percent = 'percent';
     public const string remainingSeconds = 'remainingSeconds';
 
+    /** Fixed scalar schema; variable text is held in segmented pages. */
+    private const array FIELD_TYPES = [
+        self::running => 'bool',
+        self::currentBackupId => '?text',
+        self::scope => '?text',
+        self::startedAt => '?moment',
+        self::phase => '?text',
+        self::phaseStartedAt => '?moment',
+        self::estimatedSeconds => '?int',
+        self::percent => '?int',
+        self::remainingSeconds => '?int',
+    ];
+
+    /** The synchronous property defaults, not defaults for missing incoming keys. */
+    private const array FIELD_DEFAULTS = [
+        self::running => false,
+        self::currentBackupId => null,
+        self::scope => null,
+        self::startedAt => null,
+        self::phase => null,
+        self::phaseStartedAt => null,
+        self::estimatedSeconds => null,
+        self::percent => null,
+        self::remainingSeconds => null,
+    ];
+
+    /** Only the fields the existing applyDiff door accepts. */
+    private const array PATCH_FIELDS = [
+        self::running => true,
+        self::currentBackupId => true,
+        self::scope => true,
+        self::startedAt => true,
+        self::phase => true,
+        self::phaseStartedAt => true,
+        self::estimatedSeconds => true,
+        self::percent => true,
+        self::remainingSeconds => true,
+    ];
+
+    private const int MOMENT_MAX_BYTES = 32;
+
     /** Whether a backup is currently running. */
-    public bool $running = false;
+    public bool $running {
+        get => $this->rowValues()[self::running] ?? self::FIELD_DEFAULTS[self::running];
+        set {
+            $this->setRowValue(self::running, $value);
+        }
+    }
 
     /** Id of the backup in progress, or null when idle. */
-    public ?string $currentBackupId = null;
+    public ?string $currentBackupId {
+        get => ($this->rowValues()[self::currentBackupId] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::currentBackupId, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Scope value of the backup in progress, or null when idle. */
-    public ?string $scope = null;
+    public ?string $scope {
+        get => ($this->rowValues()[self::scope] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::scope, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** ISO-8601 UTC (Z) start time of the backup in progress, or null when idle. */
-    public ?string $startedAt = null;
+    public ?string $startedAt {
+        get => ($this->rowValues()[self::startedAt] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::startedAt, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Phase value ({@see BackupPhase}) the run is in, or null when idle or not yet reported. */
-    public ?string $phase = null;
+    public ?string $phase {
+        get => ($this->rowValues()[self::phase] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::phase, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** ISO-8601 UTC (Z) instant the current phase began, or null when there is no phase. */
-    public ?string $phaseStartedAt = null;
+    public ?string $phaseStartedAt {
+        get => ($this->rowValues()[self::phaseStartedAt] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::phaseStartedAt, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * How long the run is expected to take in seconds, or null when there is no history to
@@ -59,7 +140,12 @@ final class BackupRuntime extends RtState
      * something a reader recomputes: the agent does that arithmetic here and writes the answer,
      * so the row is refreshed on a timer while an estimated run is in flight.
      */
-    public ?int $estimatedSeconds = null;
+    public ?int $estimatedSeconds {
+        get => $this->rowValues()[self::estimatedSeconds] ?? self::FIELD_DEFAULTS[self::estimatedSeconds];
+        set {
+            $this->setRowValue(self::estimatedSeconds, $value);
+        }
+    }
 
     /**
      * How far along the run is, 0..99, or null when the run cannot be estimated.
@@ -67,7 +153,12 @@ final class BackupRuntime extends RtState
      * Never a hundred while the row still says running: a full bar under a run that has not
      * finished is the one reading an operator cannot act on ({@see BackupProgress::percent()}).
      */
-    public ?int $percent = null;
+    public ?int $percent {
+        get => $this->rowValues()[self::percent] ?? self::FIELD_DEFAULTS[self::percent];
+        set {
+            $this->setRowValue(self::percent, $value);
+        }
+    }
 
     /**
      * How many seconds the run is still expected to take, or null when it cannot be estimated.
@@ -75,7 +166,12 @@ final class BackupRuntime extends RtState
      * Negative once the estimate is spent, which is the whole reason it is not clamped: a run
      * that outlived its estimate and one that is about to finish must not read the same.
      */
-    public ?int $remainingSeconds = null;
+    public ?int $remainingSeconds {
+        get => $this->rowValues()[self::remainingSeconds] ?? self::FIELD_DEFAULTS[self::remainingSeconds];
+        set {
+            $this->setRowValue(self::remainingSeconds, $value);
+        }
+    }
 
     /**
      * Creates the idle singleton runtime row.
@@ -174,5 +270,125 @@ final class BackupRuntime extends RtState
             self::percent => $this->percent,
             self::remainingSeconds => $this->remainingSeconds,
         ];
+    }
+    /** @return RtRowCodec Segmented codec preserving this row's scalar contract */
+    public function rowCodec(): RtRowCodec
+    {
+        return new BackupRuntimeRowCodec();
+    }
+
+    /**
+     * Prepares an unpublished row; the committed-root layer supplies its baseline later.
+     *
+     * @param RtRowReader $in Segmented full row
+     * @return Generator<int, RtWork, int, static> Fully validated candidate
+     * @throws InvalidFormatException When a field violates the existing row contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public static function fromValues(RtRowReader $in): Generator
+    {
+        $prepared = yield from self::prepareValues($in, null);
+        yield new RtWork();
+        $instance = new static();
+        $instance->replaceRowValues($prepared);
+
+        return $instance;
+    }
+
+    /**
+     * Every accepted field is validated before the fixed descriptor is replaced.
+     *
+     * @param RtRowReader $diff Segmented changed fields
+     * @return Generator<int, RtWork, int, void> Atomic candidate patch
+     * @throws InvalidFormatException When a changed field violates the existing contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public function patchValues(RtRowReader $diff): Generator
+    {
+        $prepared = yield from self::prepareValues($diff, $this->rowValues());
+        yield new RtWork();
+        $this->replaceRowValues($prepared);
+    }
+
+    /**
+     * @param RtRowWriter $out Unpublished output in any Runtime arena
+     * @return Generator<int, RtWork, int, void> Bounded scalar/text export
+     * @throws InvalidFormatException When a stored segmented value is malformed
+     * @throws LogicException When the output has already closed
+     */
+    public function exportValues(RtRowWriter $out): Generator
+    {
+        return $this->frozenValues()->export($out);
+    }
+
+    /** @return array<string, mixed> Fixed property defaults in codec export order */
+    protected function rowFieldDefaults(): array
+    {
+        return self::FIELD_DEFAULTS;
+    }
+
+    /**
+     * @param RtRowReader $input Segmented full row or diff
+     * @param ?array<string, RtRowValues|int|float|bool|null> $current Fixed descriptor, null for restore
+     * @return Generator<int, RtWork, int, array<string, RtRowValues|int|float|bool|null>> Validated fixed descriptor
+     * @throws InvalidFormatException When a field violates its existing contract
+     * @throws LogicException When a writer lifetime is violated
+     */
+    private static function prepareValues(RtRowReader $input, ?array $current): Generator
+    {
+        $prepared = $current ?? [];
+        foreach (self::FIELD_TYPES as $key => $type) {
+            yield new RtWork();
+            if ($current !== null && !isset(self::PATCH_FIELDS[$key])) {
+                continue;
+            }
+            $value = yield from $input->field($key);
+            if ($value === null) {
+                if ($current !== null) {
+                    continue;
+                }
+                if (str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                throw new InvalidFormatException('Runtime row is missing required key ' . $key);
+            }
+            $reader = $value->reader();
+            if ($reader->kind() === RtRowKind::Scalar) {
+                $scalar = yield from $reader->scalar();
+                if ($scalar === null && str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                $scalarType = ltrim($type, '?');
+                if (($scalarType === 'int' && is_int($scalar)) || ($scalarType === 'bool' && is_bool($scalar))) {
+                    $prepared[$key] = $scalar;
+                    continue;
+                }
+                if ($scalarType === 'float' && (is_int($scalar) || is_float($scalar))) {
+                    $prepared[$key] = (float)$scalar;
+                    continue;
+                }
+            }
+            if ($reader->kind() !== RtRowKind::Text || !in_array($type, ['text', '?text', 'moment', '?moment'], true)) {
+                throw new InvalidFormatException('Runtime row carries the wrong type under key ' . $key);
+            }
+            if ($type === '?moment') {
+                $moment = yield from $reader->boundedText(self::MOMENT_MAX_BYTES);
+                $remaining = strlen($moment);
+                while ($remaining > 0) {
+                    $remaining -= yield new RtWork($remaining);
+                }
+                $prepared[$key] = yield from RtRowWriter::encode(
+                    UtcMoment::normalize($moment),
+                    $input->arena(),
+                    RtRowRole::Candidate,
+                );
+                continue;
+            }
+            $prepared[$key] = yield from RtRowWriter::copy($reader, $input->arena(), RtRowRole::Candidate);
+        }
+
+        return $prepared;
     }
 }

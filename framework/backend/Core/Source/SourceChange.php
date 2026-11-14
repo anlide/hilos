@@ -7,6 +7,8 @@ namespace Hilos\Core\Source;
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Runtime\RtRowValues;
+use LogicException;
 
 /**
  * DB/RT sync fact that can invalidate worker-local browser state.
@@ -16,6 +18,11 @@ use Hilos\Core\Table\Mutation\TableMutationType;
  * signals.
  * Serializable as a BaseDTO so the fact can also travel inside worker-to-daemon
  * transport payloads.
+ *
+ * A runtime fact may carry its values segmented ({@see RtRowValues}): observers read the fields
+ * they need through {@see self::rtRowValues()} and {@see self::rtPreviousValues()}, and only the
+ * public `row` and `previous` reads materialize the native arrays, explicitly, on each read. A database
+ * fact always carries arrays.
  */
 final class SourceChange extends BaseDTO
 {
@@ -31,6 +38,21 @@ final class SourceChange extends BaseDTO
     public const string FIELD_ORIGIN = 'origin';
     public const string FIELD_ORIGIN_REQUEST_ID = 'originRequestId';
 
+    /** @var array<string, mixed> Full row for create, diff for update, previous row for delete when available */
+    public array $row {
+        get => RtRowValues::nativeMap($this->rowSource);
+    }
+
+    /** @var array<string, mixed> Previous values of fields carried by an update */
+    public array $previous {
+        get => RtRowValues::nativeMap($this->previousSource);
+    }
+
+    /** @var array<string, mixed>|RtRowValues Values as the writer handed them over */
+    private readonly array|RtRowValues $rowSource;
+    /** @var array<string, mixed>|RtRowValues Previous values as the writer handed them over */
+    private readonly array|RtRowValues $previousSource;
+
     /**
      * Creates a source fact for one DB or RT collection mutation.
      *
@@ -38,8 +60,9 @@ final class SourceChange extends BaseDTO
      * @param string $sourceKey DB collection key or RT collection key
      * @param string $sourceId Row id or runtime state id, always serialized as string
      * @param TableMutationType $mutationType Source mutation type
-     * @param array<string, mixed> $row Full row for create, diff for update, previous row for delete when available
-     * @param array<string, mixed> $previous Previous values of fields carried by an update
+     * @param array<string, mixed>|RtRowValues $row Full row for create, diff for update, previous row for delete when available;
+     *        segmented only by the runtime factories, whose lease the fact keeps
+     * @param array<string, mixed>|RtRowValues $previous Previous values of fields carried by an update; segmented only for a runtime fact
      * @param ?string $origin Accept key of the connection whose write caused this change, or null when unattended
      * @param ?string $originRequestId Request id of the action that caused this change, or null when no action is behind it
      */
@@ -48,11 +71,13 @@ final class SourceChange extends BaseDTO
         public readonly string $sourceKey,
         public readonly string $sourceId,
         public readonly TableMutationType $mutationType,
-        public readonly array $row = [],
-        public readonly array $previous = [],
+        array|RtRowValues $row = [],
+        array|RtRowValues $previous = [],
         public readonly ?string $origin = null,
         public readonly ?string $originRequestId = null,
     ) {
+        $this->rowSource = $row;
+        $this->previousSource = $previous;
     }
 
     /**
@@ -165,7 +190,7 @@ final class SourceChange extends BaseDTO
      *
      * @param string $collectionKey RT collection key
      * @param string $stateId Created runtime state id
-     * @param array<string, mixed> $row Full runtime row
+     * @param array<string, mixed>|RtRowValues $row Full runtime row
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
      * @return self Source change for the created runtime row
@@ -173,7 +198,7 @@ final class SourceChange extends BaseDTO
     public static function rtCreated(
         string $collectionKey,
         string $stateId,
-        array $row,
+        array|RtRowValues $row,
         ?string $origin = null,
         ?string $originRequestId = null,
     ): self {
@@ -194,19 +219,19 @@ final class SourceChange extends BaseDTO
      *
      * @param string $collectionKey RT collection key
      * @param string $stateId Updated runtime state id
-     * @param array<string, mixed> $row Changed runtime fields
+     * @param array<string, mixed>|RtRowValues $row Changed runtime fields
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
-     * @param array<string, mixed> $previous Previous values of the changed runtime fields
+     * @param array<string, mixed>|RtRowValues $previous Previous values of the changed runtime fields
      * @return self Source change for the updated runtime row
      */
     public static function rtUpdated(
         string $collectionKey,
         string $stateId,
-        array $row,
+        array|RtRowValues $row,
         ?string $origin = null,
         ?string $originRequestId = null,
-        array $previous = [],
+        array|RtRowValues $previous = [],
     ): self {
         return new self(
             self::KIND_RT,
@@ -225,7 +250,7 @@ final class SourceChange extends BaseDTO
      *
      * @param string $collectionKey RT collection key
      * @param string $stateId Deleted runtime state id
-     * @param array<string, mixed> $row Previous runtime row, when the source can provide it
+     * @param array<string, mixed>|RtRowValues $row Previous runtime row, when the source can provide it
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
      * @return self Source change for the deleted runtime row
@@ -233,7 +258,7 @@ final class SourceChange extends BaseDTO
     public static function rtDeleted(
         string $collectionKey,
         string $stateId,
-        array $row = [],
+        array|RtRowValues $row = [],
         ?string $origin = null,
         ?string $originRequestId = null,
     ): self {
@@ -267,6 +292,50 @@ final class SourceChange extends BaseDTO
     public function isRt(): bool
     {
         return $this->kind === self::KIND_RT;
+    }
+
+    /**
+     * @internal Hands the row on in the form this fact holds it, for a reader of single fields.
+     *
+     * @return array<string, mixed>|RtRowValues Row as the writer or the wire handed it over
+     */
+    public function carriedRow(): array|RtRowValues
+    {
+        return $this->rowSource;
+    }
+
+    /**
+     * @internal Hands the previous values on in the form this fact holds them.
+     *
+     * @return array<string, mixed>|RtRowValues Previous values as the writer or the wire handed them over
+     */
+    public function carriedPrevious(): array|RtRowValues
+    {
+        return $this->previousSource;
+    }
+
+    /**
+     * Segmented row of a runtime fact; a fact built from an array crosses the native boundary here.
+     *
+     * @return ?RtRowValues Full row, diff or previous row of a runtime fact; null for a database fact
+     * @throws InvalidFormatException When an array row holds a value a runtime row cannot carry
+     * @throws LogicException When a segmented lease already closed
+     */
+    public function rtRowValues(): ?RtRowValues
+    {
+        return $this->isRt() ? RtRowValues::carried($this->rowSource) : null;
+    }
+
+    /**
+     * Segmented previous values of a runtime fact; empty for a create or a delete.
+     *
+     * @return ?RtRowValues Previous values of the fields an update carries; null for a database fact
+     * @throws InvalidFormatException When an array holds a value a runtime row cannot carry
+     * @throws LogicException When a segmented lease already closed
+     */
+    public function rtPreviousValues(): ?RtRowValues
+    {
+        return $this->isRt() ? RtRowValues::carried($this->previousSource) : null;
     }
 
     /**

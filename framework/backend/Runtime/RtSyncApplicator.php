@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime;
 
+use Generator;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChangeBus;
@@ -13,8 +14,13 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Utils\Logger;
+use LogicException;
+use Throwable;
 
 /**
  * Applies RT sync signals (created/updated/deleted) to Hilos::$rt.
@@ -136,6 +142,64 @@ final class RtSyncApplicator
     }
 
     /**
+     * Applies RT_SYNC_UPDATED in bounded portions, publishing nothing until the whole draft holds.
+     *
+     * The row's own draft ({@see RtState::draftRow()}) takes the diff through the row's codec, read
+     * field by field off the segmented carrier, and the complete result is restored once more, so
+     * the codec's cross-field contracts are judged too. Only then is the draft published into the
+     * live row in one swap ({@see RtState::publishDraft()}) and the baseline moved. A refusal leaves
+     * every field, the baseline and the previous values where they were and reaches the caller,
+     * which therefore has no success to acknowledge. This is the deliberate difference from the
+     * synchronous {@see self::applyUpdated()}, which keeps writing field by field.
+     *
+     * The guards are those of the synchronous door, the late protected mode echo included; the
+     * phase is read out of the carrier, not out of a materialized row. A legacy-only row has no
+     * draft and keeps the synchronous door.
+     *
+     * @param RtSyncUpdatedSignalData $data Diff payload from another process
+     * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
+     * @return Generator<int, RtWork, int, void> Bounded validation, then one publication
+     * @throws Throwable Whatever the row's codec refuses, raised before any field is published
+     */
+    public static function applyUpdatedInPortions(RtSyncUpdatedSignalData $data, bool $skipSelfBroadcastCheck = true): Generator
+    {
+        yield new RtWork();
+        if ($data->collectionKey === '' || $data->stateId === '' || self::isEmptyCarried($data->carriedRow())
+            || !self::shouldApplyRtSync($data->collectionKey, $data->stateId, $skipSelfBroadcastCheck)
+            || ($skipSelfBroadcastCheck && self::isStaleProtectedModeEcho($data))) {
+            return;
+        }
+
+        $stateCollection = Hilos::$rt?->getStateCollection($data->collectionKey);
+        $state = $stateCollection === null
+            ? Hilos::$rt?->getStateItem($data->collectionKey)
+            : $stateCollection->get($data->stateId);
+        if ($state === null || ($stateCollection === null && $state->getId() !== $data->stateId)) {
+            return;
+        }
+        if (!$state->hasRowBinding()) {
+            self::applyUpdated($data, skipSelfBroadcastCheck: false);
+
+            return;
+        }
+
+        $codec = $state->rowCodec();
+        $draft = $state->draftRow();
+        yield from $codec->patch($draft, $data->rowValues()->reader());
+        $out = new RtRowWriter(RtRowArena::process(), RtRowRole::Transient);
+        yield from $codec->export($draft, $out);
+        $full = yield from $out->finish();
+        yield from $codec->restore($full->reader());
+
+        if ($stateCollection === null && $data->collectionKey === StateProtectedModeRuntime::RT_ITEM) {
+            Hilos::$ac?->invalidateProtectedMode();
+            Hilos::$rt?->noteProtectedModeChanged();
+        }
+        $state->publishDraft($draft);
+        $state->markRtSyncBaseline();
+    }
+
+    /**
      * Applies RT_SYNC_DELETED payload by removing state from its collection.
      *
      * Applied-remote for the same reason as {@see self::applyCreated()}: the removal repairs the
@@ -213,8 +277,13 @@ final class RtSyncApplicator
      * the frame's phase move differ from the row's phase; a phase that is not a string is left to
      * `applyDiff()` to refuse, because a Hilos process does not outlive the warning of printing one.
      *
+     * The two phases are read out of the payload in the form it carries them: one field each,
+     * never the whole diff.
+     *
      * @param RtSyncUpdatedSignalData $data Diff payload the master is about to apply
      * @return bool True when the frame is stale, already logged, and must not be applied
+     * @throws InvalidFormatException When segmented values are not a field map
+     * @throws LogicException When a segmented lease already closed
      */
     private static function isStaleProtectedModeEcho(RtSyncUpdatedSignalData $data): bool
     {
@@ -222,8 +291,8 @@ final class RtSyncApplicator
             return false;
         }
 
-        $previous = $data->previous[StateProtectedModeRuntime::phase] ?? null;
-        $target = $data->row[StateProtectedModeRuntime::phase] ?? null;
+        $previous = self::carriedField($data->carriedPrevious(), StateProtectedModeRuntime::phase);
+        $target = self::carriedField($data->carriedRow(), StateProtectedModeRuntime::phase);
         if (!is_string($previous) || !is_string($target)) {
             return false;
         }
@@ -289,5 +358,27 @@ final class RtSyncApplicator
             'RT sync row refused for collection ' . $collectionKey
             . ' id ' . $stateId . ': ' . $e->getMessage(),
         );
+    }
+
+    /**
+     * @param array<string, mixed>|RtRowValues $values Carried row or previous values
+     * @param string $field Field to read alone
+     * @return mixed Native value of that one field, or null when it is not carried
+     * @throws InvalidFormatException When segmented values are not a field map
+     * @throws LogicException When a segmented lease already closed
+     */
+    private static function carriedField(array|RtRowValues $values, string $field): mixed
+    {
+        return is_array($values) ? $values[$field] ?? null : $values->field($field)?->toNative();
+    }
+
+    /**
+     * @param array<string, mixed>|RtRowValues $values Carried row
+     * @return bool Whether the payload carries no field at all
+     * @throws LogicException When a segmented lease already closed
+     */
+    private static function isEmptyCarried(array|RtRowValues $values): bool
+    {
+        return is_array($values) ? $values === [] : $values->isEmptyMap();
     }
 }

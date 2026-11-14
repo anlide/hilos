@@ -6,15 +6,16 @@ namespace Hilos\Cluster;
 
 use Hilos\Core\Exception\InvalidFormatException;
 
-use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\TruthSource\RtReplicaConfirmation;
 use Hilos\HilosException;
 
 /**
  * Local port between the peer transport and the daemon's runtime state.
  *
  * Mostly the receiving half of cross-node RT replication: when a peer broadcasts a
- * {@see PeerRtSyncDTO}, the transport passes it through this seam to the daemon master, which
+ * {@see PeerRtSyncStreamDTO}, the transport passes it through this seam to the daemon master, which
  * applies it to the read-only copy this node holds and fans it out to its own workers. The
  * seam exists for the same reason {@see AgentSignalSink} does — the transport must not reach
  * into the daemon, and a test supplies a fake so the transport runs without one.
@@ -33,6 +34,8 @@ interface RtSyncSink
      * @param string $signalType RT sync signal type the frame carried
      * @param SignalDTO $signal RT sync signal to apply and fan out locally
      * @param bool $partialOwner Whether the origin holds only part of the right over the collection
+     * @param ?RtReplicaConfirmation $receipt Taken when the fact arrived ({@see self::captureRtSyncReceipt()}),
+     *        or null to take it now
      * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function applyRemoteRtSync(
@@ -40,7 +43,17 @@ interface RtSyncSink
         string $signalType,
         SignalDTO $signal,
         bool $partialOwner = false,
+        ?RtReplicaConfirmation $receipt = null,
     ): void;
+
+    /**
+     * Takes the receipt of an RT sync fact arriving from a node now, for its apply to confirm the
+     * rows as of this moment: a loss of the node noted before the apply still freezes them.
+     *
+     * @param string $originNodeId Id of the node the fact arrives from
+     * @return RtReplicaConfirmation Receipt to hand to {@see self::applyRemoteRtSync()}
+     */
+    public function captureRtSyncReceipt(string $originNodeId): RtReplicaConfirmation;
 
     /**
      * Replaces this node's copy of one RT collection, or of the rows named, with the owner's.

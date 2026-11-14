@@ -14,7 +14,6 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Constants\EnvConstants;
@@ -35,10 +34,10 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\SignalName;
-use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
@@ -275,6 +274,7 @@ final class DaemonManagerWakeupTest extends TestCase
         $peer = new PeerServer('127.0.0.1', 0, NodeIdentity::of('node-a', 'Node A', NodeRole::Master, []),
             [], PeerTestTls::unread(), PeerTestMarkers::shared());
         $link = new ReflectionClass(PeerLink::class)->newInstanceWithoutConstructor();
+        new ReflectionProperty(PeerLink::class, 'remoteIdentity')->setValue($link, NodeIdentity::of('node-b', 'Node B', NodeRole::Master, []));
         $head = 0;
         $this->invoke('queueSignalEffect', static function () use (&$head): Generator {
             yield;
@@ -285,10 +285,10 @@ final class DaemonManagerWakeupTest extends TestCase
         });
         $key = DaemonManagerRtSyncPeerTestRtContext::ROWS;
         if ($door === 'RT sync') {
-            $signal = new SignalDTO(new SignalSource(SignalSource::RT), new SignalType(SignalTypeConstants::RT_SYNC_CREATED),
-                new SignalName(SignalConstants::RT_SYNC_CREATED), new DbSyncCreatedSignalData($key, '7', ['id' => '7']));
-            $frame = new PeerRtSyncDTO('node-b', SignalTypeConstants::RT_SYNC_CREATED, $signal);
-            $peer->onRtSyncReceived($link, PeerRtSyncDTO::fromArray($frame->toArray()));
+            $peer->onRtSyncStreamReceived($link, RtSyncStreamOperation::fromSignalData(
+                new RtSyncCreatedSignalData($key, '7', ['id' => '7', 'name' => 'bad']), 1, 'node-b',
+            ), static function (): void {
+            });
         } elseif ($door === 'DB sync') {
             $signal = new SignalDTO(new SignalSource(SignalSource::DB), new SignalType(SignalTypeConstants::DB_SYNC_CREATED),
                 new SignalName(SignalConstants::DB_SYNC_CREATED), new RtSyncCreatedSignalData($key, '7', ['id' => '7']));
@@ -339,10 +339,10 @@ final class DaemonManagerWakeupTest extends TestCase
             $failed->agentsDelivered[] = $destination;
             unset($destination);
         }
-        $healthy = new SignalDTO(new SignalSource(SignalSource::RT), new SignalType(SignalTypeConstants::RT_SYNC_CREATED),
-            new SignalName(SignalConstants::RT_SYNC_CREATED), new RtSyncCreatedSignalData($key, '8', ['id' => '8', 'name' => 'healthy']));
-        $healthyFrame = new PeerRtSyncDTO('node-b', SignalTypeConstants::RT_SYNC_CREATED, $healthy);
-        $peer->onRtSyncReceived($link, PeerRtSyncDTO::fromArray($healthyFrame->toArray()));
+        $peer->onRtSyncStreamReceived($link, RtSyncStreamOperation::fromSignalData(
+            new RtSyncCreatedSignalData($key, '8', ['id' => '8', 'name' => 'healthy']), 2, 'node-b',
+        ), static function (): void {
+        });
         self::assertLessThan(512, $head);
         $this->loop->tick();
         self::assertNull(Hilos::$rt->rows->get('8'), 'Native callbacks only cue owner work');

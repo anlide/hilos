@@ -724,8 +724,11 @@ The feature-owned `Hilos::$rt->hilosStatusComponents` collection carries only
 collection and its representation/actions. Its owner uses
 `$collection->actions->ensure($componentKey, $expectedInstances)` and
 `$component->actions->update($expectedInstances, $liveInstances, $observedAt)`;
-`StatusAgent` is the only writer. Per-component DB reconciliation and these RT
-writes share one primary transaction, including the automatic timeline append. A failed
+`StatusAgent` is the only writer. Changed counts are written at once; with
+unchanged counts `observedAt` advances no more often than the public heartbeat
+interval, so a new Daemon picture that keeps the counts writes no RT operation.
+Per-component DB reconciliation and these RT writes share one primary
+transaction, including the automatic timeline append. A failed
 transaction rolls back the RT and ORM memory too. Each pass handles at most 32
 components; a durable publication deadline schedules a pass even without a
 new Daemon picture.
@@ -997,10 +1000,12 @@ title: string | null, componentKeys: list<string>, startsAt: int | null,
 endsAt: int | null, startedAt: int | null, lastObservedAt: int | null}`.
 Nullable moments are epoch milliseconds UTC, and `id` is the fixed key
 `current`. `available=false` does not mean inactive. `StatusAgent`
-is the only writer, through row actions; the Overview reads it through declared
-RT interest in another worker. Missing, stale or unavailable RT produces an
-unknown announcement verdict, not false or an empty work. The Status feature
-mounts this collection; protected-mode runtime shape and its owner are
+is the only writer, through row actions. Start and completion are written at
+once; while occupied, `lastObservedAt` is the one last saved to transit, so the
+row changes on the heartbeat cadence, not on every tick. The Overview reads it
+through declared RT interest in another worker. Missing, stale or unavailable
+RT produces an unknown announcement verdict, not false or an empty work. The
+Status feature mounts this collection; protected-mode runtime shape and its owner are
 unchanged. Transit cursors and partial DB/file work remain private to the
 Status owner and are not shared state.
 

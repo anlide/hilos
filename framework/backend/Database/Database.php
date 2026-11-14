@@ -1126,6 +1126,7 @@ class Database
         self::$transactions[$index][] = new TransactionLevel(
             nestable: false,
             savepoint: $depth === 0 ? null : TransactionLevel::SAVEPOINT_PREFIX . ($depth + 1),
+            parent: self::$transactions[$index][$depth - 1] ?? null,
         );
     }
 
@@ -1173,6 +1174,7 @@ class Database
         self::$transactions[$index][] = new TransactionLevel(
             nestable: true,
             savepoint: TransactionLevel::SAVEPOINT_PREFIX . ($depth + 1),
+            parent: $levels[$depth - 1],
         );
     }
 
@@ -1230,6 +1232,7 @@ class Database
         array_pop(self::$transactions[$index]);
         if ($level->savepoint !== null) {
             $parent = self::$transactions[$index][$depth - 2];
+            $level->forwardRuntime($parent);
             foreach ($level->takeHeld() as $announce) {
                 $parent->hold($announce);
             }
@@ -1240,6 +1243,7 @@ class Database
             return;
         }
         // The journal leaves with the level: the commit stands, and nothing is to be put back.
+        $level->installRuntime();
         self::release($index, $level->takeHeld());
     }
 
@@ -1329,6 +1333,35 @@ class Database
         if (self::$testRollbackScope === null) {
             $announce();
         }
+    }
+
+    /**
+     * @internal Prepared Runtime participants follow the same named/explicit connection
+     * scope as undo/held work, and the same level: the one {@see self::onRollback()} keeps the
+     * undo of their live write on - the innermost level that has not failed, or a test's
+     * rollback root. A failed level's writes are gone while the live rows written under it
+     * stay, so the selector keeps such a write too: with the parent that may still commit, or
+     * at once when no level is left. They install in a separate pre-announcement phase.
+     *
+     * @param ?int $index Connection index, defaulting to the named scope or current connection
+     * @return ?TransactionLevel Innermost level the work belongs to, or immediate-commit scope
+     * @throws TestRollbackRefusedException When a test rollback scope is closing
+     */
+    public static function runtimeTransactionLevel(?int $index = null): ?TransactionLevel
+    {
+        if (self::$cleaningTestScope) {
+            throw new TestRollbackRefusedException('Cannot prepare Runtime work while a test rollback scope is closing');
+        }
+        $index ??= self::$transactionIndex ?? self::$currentIndex;
+        self::ensureTestRoot($index);
+        $levels = self::$transactions[$index] ?? [];
+        for ($position = count($levels) - 1; $position >= 0; $position--) {
+            if (!$levels[$position]->isFailed() || $levels[$position]->testScope !== null) {
+                return $levels[$position];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -1835,6 +1868,7 @@ class Database
      */
     private static function restoreMemory(int $index, int $depth, TransactionLevel $level): ?Throwable
     {
+        $level->rollbackRuntime();
         $steps = array_reverse($level->takeUndo());
         $first = null;
         $failed = 0;

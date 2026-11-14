@@ -4,16 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime;
 
-use Generator;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\Snapshot\RtSnapshotExport;
+use Hilos\Runtime\Snapshot\RtSnapshotImport;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
 use Hilos\Utils\Logger;
-use WeakReference;
+use LogicException;
 
 /**
  * Reads and replaces a whole RT collection, for the node-to-node hand-over of one.
@@ -82,49 +84,58 @@ final class RtSnapshot
     }
 
     /**
-     * Captures the current runtime and exact mounted source before the first advancement.
-     * The cursor owns no context, state collection or state object across a suspension.
+     * Cuts one source for a snapshot: its membership and committed values at one revision, read
+     * out later in portions ({@see RtSnapshotExport::advance()}). The cut itself is constant work -
+     * no row is visited, copied or serialized here - and the read holds no context, collection or
+     * row object, so an unmounted source is not kept alive by it.
      *
-     * @param string $collectionKey Collection or standalone item to read in original insertion order
-     * @param ?int $admittedThrough Earlier cross-source row cutoff, absent to capture this call's cohort
-     * @return Generator<string, ?array<string, mixed>> One original row per step, null for a replaced row
+     * A standalone item has no membership of its own: its one row is taken as it stands now, and
+     * only when the scope covers it. A source this process does not hold reads as empty.
+     *
+     * @param string $collectionKey Collection or standalone item to cut
+     * @param RtSnapshotScope $scope Rows the read covers
+     * @return RtSnapshotExport Unstarted read of the cut
+     * @throws InvalidFormatException When the standalone row's set field is malformed
+     * @throws LogicException When the source's version pages have closed
      */
-    public static function rowCandidates(string $collectionKey, ?int $admittedThrough = null): Generator
+    public static function capture(string $collectionKey, RtSnapshotScope $scope): RtSnapshotExport
     {
-        $runtime = Hilos::$rt === null ? null : WeakReference::create(Hilos::$rt);
-        $mountRevision = Hilos::$rt?->snapshotMountRevision();
-        $collection = Hilos::$rt?->getStateCollection($collectionKey);
-        $source = $collection ?? Hilos::$rt?->getStateItem($collectionKey);
-        $source = $source === null ? null : WeakReference::create($source);
-        $rows = $collection?->snapshotRows($admittedThrough);
-        return (static function () use ($runtime, $source, $rows, $collectionKey, $mountRevision): Generator {
-            if ($rows === null) {
-                $state = $source?->get();
-                if ($state !== null && $runtime?->get() !== null && $runtime->get() === Hilos::$rt
-                    && Hilos::$rt->snapshotMountRevision() === $mountRevision
-                    && Hilos::$rt->getStateItem($collectionKey) === $state) {
-                    $id = $state->getId();
-                    $row = $state->toArray();
-                    unset($state);
-                    yield $id => $row;
-                }
-                return;
-            }
-            while ($runtime?->get() !== null && $runtime->get() === Hilos::$rt
-                && Hilos::$rt->snapshotMountRevision() === $mountRevision
-                && $source?->get() !== null && Hilos::$rt->getStateCollection($collectionKey) === $source->get()) {
-                if (!$rows->valid()) {
-                    return;
-                }
-                yield $rows->key() => $rows->current();
-                // Revalidate the mounted source before advancing and serializing its next row.
-                if ($runtime->get() !== Hilos::$rt || Hilos::$rt?->snapshotMountRevision() !== $mountRevision
-                    || $source->get() !== Hilos::$rt?->getStateCollection($collectionKey)) {
-                    return;
-                }
-                $rows->next();
-            }
-        })();
+        $stateCollection = Hilos::$rt?->getStateCollection($collectionKey);
+        if ($stateCollection !== null) {
+            $cut = $stateCollection->versionCut();
+
+            return new RtSnapshotExport($cut?->revision() ?? 0, $cut, $scope);
+        }
+        $state = Hilos::$rt?->getStateItem($collectionKey);
+        if ($state === null) {
+            return new RtSnapshotExport(0, null, $scope);
+        }
+        $values = RtRowValues::carried($state->carriedRow());
+        $setKey = $state::SET_VIA === '' ? null : $values->field($state::SET_VIA)?->toNative();
+        $setKey = is_scalar($setKey) ? (string)$setKey : null;
+
+        return $scope->admits($state->getId(), $setKey)
+            ? new RtSnapshotExport(0, null, $scope, [$state->getId()], [$values])
+            : new RtSnapshotExport(0, null, $scope);
+    }
+
+    /**
+     * Stages one snapshot generation into a collection or standalone item of this process: the
+     * portions of a cut and the source's later changes go in, the generation is prepared in passes
+     * beside the live source and published whole ({@see RtSnapshotImport}). Until then every reader
+     * sees the last whole version. Constant work; nothing is read here.
+     *
+     * SCAFFOLD: no production caller until the initial-sync frames move onto staging (HIL-1817);
+     * {@see self::replace()}, {@see self::replaceScope()} and the standalone door stay until then.
+     *
+     * @param string $collectionKey Collection or standalone item to stage into
+     * @param RtSnapshotScope $scope Rows the generation replaces
+     * @param int $cutRevision Source revision the portions were cut at
+     * @return RtSnapshotImport Building generation; one for a source this process does not hold is canceled
+     */
+    public static function stage(string $collectionKey, RtSnapshotScope $scope, int $cutRevision): RtSnapshotImport
+    {
+        return new RtSnapshotImport($collectionKey, $scope, $cutRevision);
     }
 
     /**

@@ -18,6 +18,7 @@ use Hilos\Runtime\View\Collection\HilosSessionConnections;
 use Hilos\Runtime\View\Item\HilosConnection;
 use LogicException;
 use Hilos\Runtime\View\Item\HilosSessionConnection;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the connections runtime collection — the session stage (HIL-509).
@@ -54,6 +55,8 @@ abstract class HilosSessionConnectionsActions extends HilosConnectionsActions
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws LogicException When the runtime item factory rejects a session connection
      */
     public function register(

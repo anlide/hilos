@@ -21,6 +21,7 @@ use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use LogicException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Chat demo superfans agent that wires project AI agents into the Hilos superfans page.
@@ -53,6 +54,8 @@ final class DemoHilosSuperfanAgent extends AbstractHilosSuperfanAgent
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this agent cannot write the runtime collection
      * @throws SourceChangeSubscriberException When a source subscriber fails
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function onStart(): void
     {
@@ -82,6 +85,8 @@ final class DemoHilosSuperfanAgent extends AbstractHilosSuperfanAgent
      * @throws RtActionsCollectionNameNullException When the runtime collection has no name
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When this agent cannot write the runtime collection
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws InvalidArgumentException When a runtime collection argument is invalid
      */
     public function onStop(): void
@@ -103,6 +108,8 @@ final class DemoHilosSuperfanAgent extends AbstractHilosSuperfanAgent
      * @throws RtTruthSourceWriteNotAllowedException When this agent cannot write the runtime collection
      * @throws SourceChangeSubscriberException When a source subscriber fails
      * @throws LogicException When an internal invariant is violated
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     protected function onSuperfanRunStatusChanged(string $agentId, SuperfanRunStatus $status): void
     {

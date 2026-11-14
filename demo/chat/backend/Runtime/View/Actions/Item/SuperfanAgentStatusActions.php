@@ -10,6 +10,9 @@ use Hilos\Core\Agent\Hilos\SuperfanRunStatus;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\Item\RtActions;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for one superfan run status.
@@ -26,14 +29,17 @@ final class SuperfanAgentStatusActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function setStatus(SuperfanRunStatus $status): void
     {
         $this->ensureCanWrite();
 
-        $this->state->status = $status->value;
-        $this->state->updatedAt = time();
-
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateSuperfanAgentStatus::status => $status->value,
+            StateSuperfanAgentStatus::updatedAt => time(),
+        ]);
     }
 }

@@ -31,6 +31,7 @@ use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\CollectionNotFoundException;
 use Hilos\Database\Exception\Transaction\MemoryRollbackFailedException;
+use Hilos\Database\Exception\Transaction\TransactionLeftOpenException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
@@ -39,8 +40,20 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\Row\RtRowPage;
+use Hilos\Runtime\Row\RtRowRole;
 use Hilos\Runtime\RtMembershipVersion;
+use Hilos\Runtime\RtRowValues;
 use Hilos\Runtime\RtSnapshot;
+use Hilos\Runtime\RtSnapshotRead;
+use Hilos\Runtime\Snapshot\RtSnapshotExport;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtPreparedIdentity;
+use Hilos\Runtime\Snapshot\RtPreparedRow;
+use Hilos\Runtime\Snapshot\RtVersionStore;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
+use Hilos\Runtime\Snapshot\RtWorkDriver;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
@@ -52,6 +65,7 @@ use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 use RuntimeException;
+use WeakReference;
 
 /**
  * Unit tests for the memory of a process going back with the database (HIL-1165).
@@ -139,6 +153,138 @@ final class TransactionMemoryRollbackTest extends TestCase
         }
 
         parent::tearDown();
+    }
+
+    /** Even an observer registered before any RT write sees the entire committed revision prefix. */
+    public function testPreparedRuntimeRootInstallsBeforeEveryObserverAndIncludesBothWrites(): void
+    {
+        $arena = new RtRowArena();
+        $store = new RtVersionStore($arena);
+        $store->retainChanges();
+        $seen = [];
+        Database::transactionStart();
+        Database::afterCommit(function () use ($store, &$seen): void {
+            $seen[] = [$store->cut()->revision(), $this->versionText($store)];
+        });
+        $this->stageVersion($store, TableMutationType::Create, 'first');
+        Database::afterCommit(function () use ($store, &$seen): void {
+            $seen[] = [$store->cut()->revision(), $this->versionText($store)];
+        });
+        $this->stageVersion($store, TableMutationType::Update, 'second');
+        self::assertSame(0, $store->cut()->revision());
+        self::assertNull($this->versionText($store));
+        while ($arena->retention()->pendingReleases > 0) {
+            $arena->advanceRetirement(new RtWorkBudget());
+        }
+        self::assertSame(RtRowPage::OVERHEAD_BYTES, $arena->retention()->bytes(RtRowRole::Resident));
+        self::assertGreaterThan(0, $arena->retention()->bytes(RtRowRole::Candidate));
+        Database::transactionCommit();
+        self::assertSame([[2, 'second'], [2, 'second']], $seen);
+        self::assertSame([[1, 'create'], [2, 'update']], $this->versionChanges($store));
+        unset($store);
+        $this->retireVersions($arena);
+    }
+
+    /** Named archive installation is independent of an explicit primary level and its later rollback. */
+    public function testPreparedRuntimeParticipantsKeepNamedAndExplicitConnectionScopesIndependent(): void
+    {
+        $this->configureNamedArchive();
+        $arena = new RtRowArena();
+        $primary = new RtVersionStore($arena);
+        $primary->retainChanges();
+        $archive = new RtVersionStore($arena);
+        Database::transactionStart(0);
+        $this->stageVersion($primary, TableMutationType::Create, 'primary pending', 0);
+        $seen = [];
+        Database::transaction('archive', function () use ($primary, $archive, &$seen): void {
+            Database::afterCommit(function () use ($archive, &$seen): void {
+                $seen[] = [$archive->cut()->revision(), $this->versionText($archive)];
+            });
+            $this->stageVersion($archive, TableMutationType::Create, 'archive first');
+            $this->stageVersion($primary, TableMutationType::Update, 'primary second', 0);
+            $this->stageVersion($archive, TableMutationType::Update, 'archive final');
+            self::assertSame(0, $primary->cut()->revision());
+            self::assertSame(0, $archive->cut()->revision());
+        });
+        self::assertSame([[2, 'archive final']], $seen);
+        self::assertSame(0, $primary->cut()->revision());
+        Database::transactionRollback(0);
+        self::assertSame(0, $primary->cut()->revision());
+        self::assertSame([], $this->versionChanges($primary));
+        self::assertSame('archive final', $this->versionText($archive));
+        self::assertSame(2, $archive->cut()->revision());
+        $this->stageVersion($primary, TableMutationType::Create, 'primary committed');
+        self::assertSame(1, $primary->cut()->revision(), 'Rollback consumed no committed revision');
+        unset($primary, $archive);
+        $this->retireVersions($arena);
+    }
+
+    /** Project savepoints forward only prepared roots; an inner rollback restores its parent's prepared prefix. */
+    public function testPreparedRuntimeParticipantsFollowNestedCommitAndRollbackWithoutPublishingEarly(): void
+    {
+        $arena = new RtRowArena();
+        $store = new RtVersionStore($arena);
+        $store->retainChanges();
+        Database::transactionStartNestable();
+        $this->stageVersion($store, TableMutationType::Create, 'outer');
+        Database::transactionStartNestable();
+        $this->stageVersion($store, TableMutationType::Update, 'inner');
+        Database::transactionCommit();
+        self::assertSame(0, $store->cut()->revision());
+        Database::transactionRollback();
+        self::assertNull($this->versionText($store));
+        self::assertSame([], $this->versionChanges($store));
+
+        Database::transactionStartNestable();
+        $this->stageVersion($store, TableMutationType::Create, 'outer stands');
+        Database::transactionStartNestable();
+        $this->stageVersion($store, TableMutationType::Update, 'inner rolled back');
+        Database::transactionRollback();
+        Database::transactionCommit();
+        self::assertSame(1, $store->cut()->revision());
+        self::assertSame('outer stands', $this->versionText($store));
+        self::assertSame([[1, 'create']], $this->versionChanges($store));
+
+        Database::transactionStartNestable();
+        $this->stageVersion($store, TableMutationType::Update, 'next outer');
+        Database::transactionStartNestable();
+        $this->stageVersion($store, TableMutationType::Update, 'next inner');
+        Database::transactionCommit();
+        Database::transactionCommit();
+        self::assertSame(3, $store->cut()->revision());
+        self::assertSame('next inner', $this->versionText($store));
+        self::assertSame([[2, 'update'], [3, 'update']], $this->versionChanges($store));
+        unset($store);
+        $this->retireVersions($arena);
+    }
+
+    /** Handler cleanup cancels the participant before ordinary undo and permits a fresh generation. */
+    public function testHandlerCleanupClosesPreparedRuntimeRootsBesideOrdinaryMemoryUndo(): void
+    {
+        $arena = new RtRowArena();
+        $store = new RtVersionStore($arena);
+        Database::handlerStart();
+        Database::transactionStart();
+        $level = WeakReference::create(Database::runtimeTransactionLevel());
+        $canceled = $store->begin();
+        $canceled->cancel();
+        $undone = false;
+        Database::onRollback(function () use ($store, &$undone): void {
+            self::assertSame(0, $store->cut()->revision());
+            $undone = true;
+        });
+        $this->stageVersion($store, TableMutationType::Create, 'never committed');
+        $failures = Database::handlerEnd();
+        self::assertCount(1, $failures);
+        self::assertInstanceOf(TransactionLeftOpenException::class, $failures[0]);
+        self::assertTrue($undone);
+        self::assertNull($level->get(), 'A canceled batch cannot retain the completed level and its undo journal');
+        self::assertSame(0, $store->cut()->revision());
+        self::assertSame([], $this->versionChanges($store));
+        $this->stageVersion($store, TableMutationType::Create, 'fresh');
+        self::assertSame(1, $store->cut()->revision());
+        unset($store, $canceled);
+        $this->retireVersions($arena);
     }
 
     /**
@@ -619,36 +765,32 @@ final class TransactionMemoryRollbackTest extends TestCase
         $this->assertSame([], $this->drainRtFrames());
     }
 
-    public function testRollbackDoesNotReadmitRestoredRowsIntoAnEarlierSnapshotCohort(): void
+    public function testAnOpenTransactionNeverEntersASnapshotCutAndItsRollbackLeavesTheCutAsCommitted(): void
     {
         $collection = $this->mountedRt();
         $collection->actions->put('kept', 'before');
         $collection->actions->put('restored', 'before');
-        $original = RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION);
+        $committed = ['kept' => ['id' => 'kept', 'mark' => 'before'], 'restored' => ['id' => 'restored', 'mark' => 'before']];
+        $original = RtSnapshot::capture(MemoryRollbackRtContext::COLLECTION, RtSnapshotScope::whole());
         Database::transactionStart();
         $collection->actions->drop('restored');
         $collection->actions->put('temporary', 'inside');
-        $failed = RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION);
+        $failed = RtSnapshot::capture(MemoryRollbackRtContext::COLLECTION, RtSnapshotScope::whole());
         Database::transactionRollback();
 
-        $this->assertSame(['kept' => ['id' => 'kept', 'mark' => 'before']], iterator_to_array($original));
-        $this->assertSame(['kept' => ['id' => 'kept', 'mark' => 'before']], iterator_to_array($failed));
-        $this->assertSame(
-            ['kept' => ['id' => 'kept', 'mark' => 'before'], 'restored' => ['id' => 'restored', 'mark' => 'before']],
-            iterator_to_array(RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION)),
-        );
+        $this->assertSame($committed, $this->readOut($original));
+        $this->assertSame($committed, $this->readOut($failed));
+        $this->assertSame($committed, $this->readOut(RtSnapshot::capture(MemoryRollbackRtContext::COLLECTION, RtSnapshotScope::whole())));
 
-        $beforeClear = RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION);
+        $beforeClear = new RtSnapshotRead(MemoryRollbackRtContext::COLLECTION);
         Database::transactionStart();
         $collection->actions->wipe();
-        $duringClear = RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION);
+        $duringClear = RtSnapshot::capture(MemoryRollbackRtContext::COLLECTION, RtSnapshotScope::whole());
         Database::transactionRollback();
-        $this->assertSame([], iterator_to_array($beforeClear));
-        $this->assertSame([], iterator_to_array($duringClear));
-        $this->assertSame(
-            ['kept' => ['id' => 'kept', 'mark' => 'before'], 'restored' => ['id' => 'restored', 'mark' => 'before']],
-            iterator_to_array(RtSnapshot::rowCandidates(MemoryRollbackRtContext::COLLECTION)),
-        );
+        $this->assertFalse($beforeClear->isCurrent());
+        $this->assertSame($committed, $this->readOut($beforeClear->export));
+        $this->assertSame($committed, $this->readOut($duringClear));
+        $this->assertSame($committed, $this->readOut(RtSnapshot::capture(MemoryRollbackRtContext::COLLECTION, RtSnapshotScope::whole())));
     }
 
     /**
@@ -1097,12 +1239,95 @@ final class TransactionMemoryRollbackTest extends TestCase
         }
     }
 
+    /**
+     * @param RtVersionStore $store Isolated selector under the real Database lifecycle
+     * @param TableMutationType $type Example write
+     * @param string $text Prepared row value
+     * @param ?int $index Explicit connection or named/ambient scope
+     */
+    private function stageVersion(RtVersionStore $store, TableMutationType $type, string $text, ?int $index = null): void
+    {
+        $id = RtRowValues::fromNative('version-row', $store->arena);
+        $values = RtRowValues::fromNative(['mark' => $text], $store->arena);
+        $identity = RtWorkDriver::runSynchronously(RtPreparedIdentity::prepare($id));
+        $row = RtWorkDriver::runSynchronously(RtPreparedRow::prepare($identity, $values, $values, 1));
+        $batch = $store->begin($index);
+        RtWorkDriver::runSynchronously($batch->change($type, $row));
+        $store->apply($batch, $index);
+    }
+
+    /**
+     * @param RtVersionStore $store Committed selector
+     * @return ?string Explicit application read of the example row
+     */
+    private function versionText(RtVersionStore $store): ?string
+    {
+        $cursor = $store->cut()->rows();
+        $entry = RtWorkDriver::runSynchronously($cursor->advance());
+        if ($entry === null) {
+            return null;
+        }
+        $record = new RtPreparedRow(
+            $store->arena,
+            new RtRowValues($store->arena, $entry->rootIn($store->arena)->first, RtRowRole::Transient),
+        );
+
+        return $record->values()->toNative()['mark'];
+    }
+
+    /**
+     * @param RtVersionStore $store Committed selector
+     * @return list<array{int, string}> Observable prefix of the latest committed batch
+     */
+    private function versionChanges(RtVersionStore $store): array
+    {
+        $cursor = $store->cut()->changes();
+        $changes = [];
+        while (($change = RtWorkDriver::runSynchronously($cursor->advance())) !== null) {
+            $page = $change->rootIn($store->arena);
+            $changes[] = [$page->scalar, $page->first->scalar];
+        }
+
+        return $changes;
+    }
+
+    /**
+     * @param RtRowArena $arena Owner after all test holders close
+     */
+    private function retireVersions(RtRowArena $arena): void
+    {
+        while ($arena->retention()->pendingReleases > 0) {
+            $arena->advanceRetirement(new RtWorkBudget(7, 11));
+        }
+        self::assertSame(0, $arena->retention()->physicalBytes);
+        self::assertSame(0, $arena->retention()->bytes(RtRowRole::Retired));
+    }
+
     private function configureNamedArchive(): void
     {
         Database::configure(database: 'memory_primary');
         Database::configure(index: 2, database: 'memory_archive');
         Database::registerDatabase('archive', 2);
         Database::useConnection(0);
+    }
+
+    /**
+     * Reads a whole export out, as an explicit test materialization.
+     *
+     * @param RtSnapshotExport $export Unfinished read
+     * @return array<string, array<string, mixed>> Rows by state id, in the order read
+     */
+    private function readOut(RtSnapshotExport $export): array
+    {
+        $rows = [];
+        while (!$export->isFinished()) {
+            $portion = $export->advance(new RtWorkBudget(5, 11));
+            foreach ($portion?->ids ?? [] as $position => $stateId) {
+                $rows[$stateId] = $portion->values[$position]->toNative();
+            }
+        }
+
+        return $rows;
     }
 
     /**

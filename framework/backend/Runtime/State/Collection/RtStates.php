@@ -7,21 +7,39 @@ namespace Hilos\Runtime\State\Collection;
 use ArrayAccess;
 use Countable;
 use Generator;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException as FrameworkLogicException;
 use Hilos\Core\Execution\ExecutionContext;
-use Hilos\Core\Daemon\SignalHoldIndex;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Database;
+use Hilos\Database\Exception\TestRollbackRefusedException;
 use Hilos\Runtime\Exception\State\RtStatesCloneException;
 use Hilos\Runtime\Exception\State\RtStatesUnserializeException;
-use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\Row\RtRowBinding;
+use Hilos\Runtime\Row\RtRowDescriptor;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\Row\RtRowRoot;
 use Hilos\Runtime\RtMembershipVersion;
-use Hilos\Runtime\RtSnapshotAdmission;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\RtSyncApplicator;
+use Hilos\Runtime\Snapshot\RtPreparedIdentity;
+use Hilos\Runtime\Snapshot\RtPreparedRow;
+use Hilos\Runtime\Snapshot\RtSnapshotImport;
+use Hilos\Runtime\Snapshot\RtVersionCut;
+use Hilos\Runtime\Snapshot\RtVersionStore;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\View\Context\RtContext;
 use IteratorAggregate;
+use LogicException;
 use OutOfBoundsException;
+use WeakMap;
 use WeakReference;
 
 /**
@@ -49,22 +67,27 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     /** @var ?string Name this collection is mounted under, or null while it is not mounted */
     private ?string $collectionName = null;
 
-    /** Scalar insertion order; readers retain only weak references, never the backing row map. */
-    private ?SignalHoldIndex $snapshotIndex = null;
+    /**
+     * Committed selector of this collection's rows: membership in insertion order and the immutable
+     * values each row was last committed with. Process-local copy machinery for snapshot reads, not a
+     * replicated collection (docs/agents/runtime/rt-context.md); created by the first write.
+     */
+    private ?RtVersionStore $versions = null;
 
-    /** @var array<string, int> Live row's original insertion position */
-    private array $snapshotPositions = [];
+    /** Row lifetime tokens of the selector, never reused, so a restored or recreated row is a new one. */
+    private int $incarnations = 0;
 
-    /** @var array<int, string> Live insertion position to row id */
-    private array $snapshotIds = [];
-
-    /** @var array<string, int> Exact row incarnation, advanced on replacement and rollback */
-    private array $snapshotGenerations = [];
-
-    private int $snapshotSequence = 0;
+    /** @var ?WeakMap<RtState, WeakReference<self>> Collection each committed row object stands in */
+    private static ?WeakMap $holders = null;
 
     /** Full replacement invalidates every older read, even when the same row objects return. */
     private int $snapshotEpoch = 0;
+
+    /** Root the row handles read a published snapshot generation through, created by the first one staged */
+    private ?RtRowRoot $rowRoot = null;
+
+    /** @var ?WeakMap<RtSnapshotImport, true> Snapshot generations being staged into this collection */
+    private ?WeakMap $stagings = null;
 
     /**
      * Protected constructor - use static factory methods.
@@ -149,6 +172,9 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      *
      * @param T $state State instance to add
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws InvalidFormatException When the row's values cannot be held by the snapshot selector
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
+     * @throws InvalidArgumentException When a retirement allowance of the selector is invalid
      */
     public function add(RtState $state): void
     {
@@ -156,7 +182,8 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
         if (!isset($this->states[$state->getId()])) {
             RtMembershipVersion::advance($this, $state->getId());
         }
-        $this->indexSnapshotRow($state->getId(), $this->states[$state->getId()] ?? null, $state);
+        $carried = $state->carriedRow();
+        $this->writeVersion($state->getId(), $this->states[$state->getId()] ?? null, $state, $carried);
         $this->states[$state->getId()] = $state;
         if ($this->collectionName === null) {
             return;
@@ -164,7 +191,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
         SourceChangeBus::publish(SourceChange::rtCreated(
             $this->collectionName,
             $state->getId(),
-            $state->toArray(),
+            $carried,
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
         ));
@@ -180,6 +207,9 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      *
      * @param string $id State ID
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws InvalidFormatException When the row's values cannot be held by the snapshot selector
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
+     * @throws InvalidArgumentException When a retirement allowance of the selector is invalid
      */
     public function remove(string $id): void
     {
@@ -188,7 +218,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
         if ($previous !== null) {
             RtMembershipVersion::advance($this, $id);
         }
-        $this->indexSnapshotRow($id, $previous, null);
+        $this->writeVersion($id, $previous, null);
         unset($this->states[$id]);
         if ($this->collectionName === null) {
             return;
@@ -196,7 +226,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
         SourceChangeBus::publish(SourceChange::rtDeleted(
             $this->collectionName,
             $id,
-            $previous?->toArray() ?? [],
+            $previous?->carriedRow() ?? [],
             ExecutionContext::currentAcceptKey(),
             ExecutionContext::currentRequestId(),
         ));
@@ -237,19 +267,30 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      * own road end to end - the caller broadcasts a delete per row and empties the view cache in
      * one go - and routing it through per-row announcements would change what goes over the wire.
      * Under an open transaction the whole map is remembered first, for a rollback to put back.
+     * The snapshot selector loses the rows as one prefix, committed with the transaction.
+     *
+     * @throws InvalidFormatException When the row's values cannot be held by the snapshot selector
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
+     * @throws InvalidArgumentException When a retirement allowance of the selector is invalid
      */
     public function clear(): void
     {
+        foreach ($this->openStagings() as $import) {
+            $import->cancel();
+        }
         $this->rememberAll();
         if ($this->states !== []) {
             RtMembershipVersion::advance($this);
         }
+        if ($this->versions !== null && $this->states !== []) {
+            $changes = [];
+            foreach ($this->states as $id => $state) {
+                $changes[] = [(string)$id, $state, null, null];
+            }
+            $this->writeVersions($changes);
+        }
         $this->states = [];
         $this->snapshotEpoch++;
-        $this->snapshotIndex = null;
-        $this->snapshotPositions = [];
-        $this->snapshotIds = [];
-        $this->snapshotGenerations = [];
     }
 
     /**
@@ -337,6 +378,9 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      * @param mixed $offset Ignored, the state is stored under its own ID
      * @param T $value RtState instance to set
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws InvalidFormatException When the row's values cannot be held by the snapshot selector
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
+     * @throws InvalidArgumentException When a retirement allowance of the selector is invalid
      */
     public function offsetSet(mixed $offset, mixed $value): void
     {
@@ -352,6 +396,9 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      *
      * @param mixed $offset State ID to remove, or null for no-op
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
+     * @throws InvalidFormatException When the row's values cannot be held by the snapshot selector
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
+     * @throws InvalidArgumentException When a retirement allowance of the selector is invalid
      */
     public function offsetUnset(mixed $offset): void
     {
@@ -392,46 +439,122 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
-     * Captures the finite row cohort now, without copying keys or serializing rows. Each step
-     * searches O(log live rows) scalar positions and serializes at most one original incarnation.
-     * A replacement keeps its insertion position but is excluded by its newer admission number.
-     * Serialization still costs that row's fields and bytes; this is no per-row byte ceiling.
+     * @internal Pins this collection's rows as one version: membership in insertion order with
+     * each row's values as they were last committed, at one revision. Constant work: nothing is
+     * walked, copied or serialized here. Only committed rows are in it: a snapshot is read for
+     * another process, and the prefix of an open transaction - the caller's own included - is
+     * not committed until its SQL commit, and never after its rollback.
      *
-     * @param ?int $admittedThrough Earlier cross-source admission cutoff, absent to capture this call's cohort
-     * @return Generator<string, ?array<string, mixed>> Original live rows, null for a replaced or later incarnation
+     * @return ?RtVersionCut Pinned version, or null while this collection was never written
+     * @throws LogicException When the selector's lease has closed
      */
-    public function snapshotRows(?int $admittedThrough = null): Generator
+    public function versionCut(): ?RtVersionCut
     {
-        $owner = WeakReference::create($this);
-        $index = $this->snapshotIndex === null ? null : WeakReference::create($this->snapshotIndex);
-        $tail = $this->snapshotSequence;
-        $admittedThrough ??= RtSnapshotAdmission::current();
-        return (static function () use ($owner, $index, $tail, $admittedThrough): Generator {
-            $after = null;
-            while (true) {
-                $collection = $owner->get();
-                if ($collection === null || $index === null || $index->get() === null
-                    || $collection->snapshotIndex !== $index->get()) {
-                    return;
-                }
-                $position = $collection->snapshotIndex->successor($after);
-                if ($position === null || $position > $tail) {
-                    return;
-                }
-                $after = $position;
-                $id = $collection->snapshotIds[$position];
-                $row = $collection->snapshotGenerations[$id] <= $admittedThrough ? $collection->states[$id]->toArray() : null;
-                unset($collection);
-                yield $id => $row;
-                unset($row);
-            }
-        })();
+        return $this->versions?->cut();
     }
 
     /** @return int Whole-source incarnation, independent of individual row admissions */
     public function snapshotEpoch(): int
     {
         return $this->snapshotEpoch;
+    }
+
+    /**
+     * @internal Opens a snapshot generation's view of this collection at one committed point: the
+     * rows as they stand, a detached candidate selector branched from the committed one, and the
+     * root the row handles read a published generation through. From now until the generation
+     * closes, every committed row change is handed to it as well ({@see RtSnapshotImport::noteLive()}).
+     * Constant work: the map is shared copy-on-write and the selector branched at its root. Taken
+     * outside any transaction, so the map and the committed selector agree.
+     *
+     * @param RtSnapshotImport $import Generation being staged
+     * @return array{array<string, T>, RtVersionStore, RtRowRoot} Rows, candidate selector and resolution root
+     * @throws LogicException When the selector's lease has closed
+     */
+    public function openStaging(RtSnapshotImport $import): array
+    {
+        $this->stagings ??= new WeakMap();
+        $this->stagings[$import] = true;
+        $this->rowRoot ??= new RtRowRoot();
+
+        return [$this->states, ($this->versions ??= new RtVersionStore(RtRowArena::process()))->branch(), $this->rowRoot];
+    }
+
+    /**
+     * @internal Stops handing committed row changes to a generation that closed or published.
+     *
+     * @param RtSnapshotImport $import Generation that no longer stages
+     */
+    public function closeStaging(RtSnapshotImport $import): void
+    {
+        unset($this->stagings[$import]);
+    }
+
+    /**
+     * @internal A new row lifetime token for a row a generation brings into this collection, as
+     * {@see self::writeVersions()} takes one for a row a write brings in.
+     *
+     * @return int Unused lifetime token
+     */
+    public function nextIncarnation(): int
+    {
+        return ++$this->incarnations;
+    }
+
+    /**
+     * @internal Marks a row a generation is about to publish as standing in this collection, so
+     * its later baseline marks reach this selector; until the row is installed here they are
+     * ignored ({@see self::noteCommittedRow()}).
+     *
+     * @param RtState $state Row of the generation
+     */
+    public function holdStaged(RtState $state): void
+    {
+        self::$holders ??= new WeakMap();
+        self::$holders[$state] = WeakReference::create($this);
+    }
+
+    /**
+     * @internal Switches this collection to a staged generation in constant work: its rows, its
+     * selector and the values its kept rows read through their handles become current together,
+     * and no row is visited. The membership cue goes first, as for any write; a whole replacement
+     * also starts a new incarnation of the source, so every older read of it ends. Every other
+     * generation still staging here was built on what this one replaces and is canceled; a retry
+     * takes a new cut. The publishing generation closes its own staging first.
+     *
+     * @param array<string, T> $states Rows of the generation, in their order
+     * @param RtVersionStore $versions Its selector, already holding every change of the generation
+     * @param WeakMap<RtRowBinding, array{RtRowDescriptor, RtRowDescriptor}> $generation Values and baselines of kept rows
+     * @param bool $whole Whether the generation replaces the whole source
+     * @throws LogicException When the previous generation is not settled yet
+     */
+    public function installStaged(array $states, RtVersionStore $versions, WeakMap $generation, bool $whole): void
+    {
+        foreach ($this->openStagings() as $outdated) {
+            $outdated->cancel();
+        }
+        RtMembershipVersion::advance($this);
+        ($this->rowRoot ??= new RtRowRoot())->install($generation);
+        $versions->goLive();
+        $this->versions = $versions;
+        $this->states = $states;
+        if ($whole) {
+            $this->snapshotEpoch++;
+        }
+    }
+
+    /** @return bool Whether every row handle holds what the last published generation gave it */
+    public function isSettled(): bool
+    {
+        return $this->rowRoot?->isSettled() ?? true;
+    }
+
+    /**
+     * @internal Settles one row handle of the last published generation, in constant work.
+     */
+    public function settleOne(): void
+    {
+        $this->rowRoot?->settleOne();
     }
 
     /**
@@ -472,11 +595,11 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
             if (($held === null) !== ($replaced === null)) {
                 RtMembershipVersion::advance($this, $id);
             }
-            $this->indexSnapshotRow($id, $replaced, $held);
             if ($held === null) {
                 unset($this->states[$id]);
             } else {
                 $this->states[$id] = $held;
+                self::$holders[$held] = WeakReference::create($this);
             }
             $this->announceRestored($id, $held, $replaced);
         });
@@ -496,12 +619,8 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
             $this->states = $map;
             RtMembershipVersion::advance($this);
             $this->snapshotEpoch++;
-            $this->snapshotIndex = null;
-            $this->snapshotPositions = [];
-            $this->snapshotIds = [];
-            $this->snapshotGenerations = [];
-            foreach ($map as $id => $state) {
-                $this->indexSnapshotRow((string)$id, null, $state);
+            foreach ($map as $state) {
+                self::$holders[$state] = WeakReference::create($this);
             }
             foreach (array_keys($map + $replaced) as $id) {
                 $this->announceRestored((string)$id, $map[$id] ?? null, $replaced[$id] ?? null);
@@ -510,32 +629,164 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
-     * Maintains the existing membership write's private cursor metadata, including undo. A
-     * cursor's cutoff never becomes current again when an old object is restored by rollback.
+     * @internal Commits a row's new values into the selector of the collection it stands in: the
+     * late half of {@see RtState::sync()} and of a baseline mark, once the row's values are what
+     * it announced. A row standing in no collection, or replaced there since, is not written, and
+     * nothing is built for it: the whole row is carried only once a holder is found.
      *
-     * @param string $id Canonical state id
-     * @param ?T $previous Previous row incarnation
-     * @param ?T $next Replacement incarnation, absent for deletion
+     * @param RtState $state Row whose announced values changed
+     * @param array<string, mixed>|RtRowValues|null $carried Whole row as it now stands when the caller
+     *        already holds it, null to carry it here
+     * @throws InvalidFormatException When the row's values cannot be held by the snapshot selector
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
+     * @throws InvalidArgumentException When a retirement allowance of the selector is invalid
      */
-    private function indexSnapshotRow(string $id, ?RtState $previous, ?RtState $next): void
+    public static function noteCommittedRow(RtState $state, array|RtRowValues|null $carried = null): void
     {
-        if ($previous === $next) {
+        $holder = isset(self::$holders[$state]) ? self::$holders[$state]->get() : null;
+        if ($holder !== null && ($holder->states[$state->getId()] ?? null) === $state) {
+            $holder->writeVersion($state->getId(), $state, $state, $carried);
+        }
+    }
+
+    /**
+     * Prepares one row change in the selector and applies it: at once outside a transaction, at
+     * the SQL commit inside one, and never after a rollback, which closes the prepared prefix
+     * itself - so the rollback steps of this class do not write here. A new row object takes a
+     * new lifetime token and goes to the end of the insertion order; the same object keeps both.
+     *
+     * Runs to its end in one step and retires what it released itself, as the other synchronous
+     * doors of the process arena do ({@see RtRowArena::openDoor()}); the backlog it finds stays for
+     * the RT pass. A closing test scope refuses, and a write it refuses is the rolled-back prefix
+     * the selector already forgets.
+     *
+     * @param string $id State ID
+     * @param ?T $previous Row object standing under the id before this change
+     * @param ?T $next Row object standing under it after, null for a removal
+     * @param array<string, mixed>|RtRowValues|null $carried Whole new row when already exported
+     * @throws InvalidFormatException When the row's values cannot be held by the snapshot selector
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
+     * @throws InvalidArgumentException When a retirement allowance of the selector is invalid
+     */
+    private function writeVersion(string $id, ?RtState $previous, ?RtState $next, array|RtRowValues|null $carried = null): void
+    {
+        if ($previous !== null || $next !== null) {
+            $this->writeVersions([[$id, $previous, $next, $carried]]);
+        }
+    }
+
+    /**
+     * Prepares several row changes as one prefix of the selector and applies it, as
+     * {@see self::writeVersion()} applies one.
+     *
+     * @param list<array{string, ?T, ?T, array<string, mixed>|RtRowValues|null}> $changes Id, row before, row after
+     *        and the whole new row when already exported, per change
+     * @throws InvalidFormatException When the row's values cannot be held by the snapshot selector
+     * @throws FrameworkLogicException When the snapshot selector's pages or preparation lineage broke
+     * @throws InvalidArgumentException When a retirement allowance of the selector is invalid
+     */
+    private function writeVersions(array $changes): void
+    {
+        $arena = RtRowArena::process();
+        $noted = [];
+        $arena->openDoor();
+        try {
+            $store = $this->versions ??= new RtVersionStore($arena);
+            $batch = $store->begin();
+            $changed = false;
+            foreach ($changes as [$id, $previous, $next, $carried]) {
+                if ($previous !== null && $previous !== $next && isset(self::$holders[$previous])
+                    && self::$holders[$previous]->get() === $this) {
+                    unset(self::$holders[$previous]);
+                }
+                if ($next !== null) {
+                    self::$holders ??= new WeakMap();
+                    self::$holders[$next] = WeakReference::create($this);
+                }
+                $values = $next === null ? null : RtRowValues::carried($carried ?? $next->carriedRow());
+                $noted[] = [$id, $previous, $next, $values];
+                $identity = RtRowValues::completed(RtPreparedIdentity::prepare(
+                    RtRowValues::completed(RtRowWriter::encode($id, $arena, RtRowRole::Transient)),
+                    $values === null ? null : self::setIdentity($next, $values, $arena),
+                ));
+                $existing = RtRowValues::completed($batch->find($identity));
+                if ($existing !== null && $previous !== $next) {
+                    RtRowValues::completed($batch->change(TableMutationType::Delete, $existing));
+                    $existing = null;
+                    $changed = true;
+                }
+                if ($values !== null) {
+                    $record = RtRowValues::completed(
+                        RtPreparedRow::prepare($identity, $values, $values, $existing?->incarnation() ?? ++$this->incarnations),
+                    );
+                    RtRowValues::completed($batch->change($existing === null ? TableMutationType::Create : TableMutationType::Update, $record));
+                    $changed = true;
+                }
+            }
+            if ($changed) {
+                $store->apply($batch);
+                $this->handToStagings($noted);
+            }
+        } catch (TestRollbackRefusedException) {
+            // A closing test scope: the selector keeps what was committed, and this prefix is
+            // the one the scope's rollback forgets.
+        } catch (LogicException $broken) {
+            throw new FrameworkLogicException('The RT snapshot selector refused a row change: ' . $broken->getMessage(), previous: $broken);
+        } finally {
+            unset($batch, $store, $values, $identity, $existing, $record);
+            $arena->closeDoor();
+        }
+    }
+
+    /**
+     * Hands committed row changes to the generations staging into this collection, once they are
+     * committed: at once with no transaction open, at the commit inside one, never after a rollback.
+     *
+     * @param list<array{string, ?T, ?T, ?RtRowValues}> $noted Id, row before, row after and its values, per change
+     */
+    private function handToStagings(array $noted): void
+    {
+        if ($this->openStagings() === []) {
             return;
         }
-        if ($next === null) {
-            $position = $this->snapshotPositions[$id];
-            $this->snapshotIndex?->remove($position);
-            unset($this->snapshotPositions[$id], $this->snapshotIds[$position], $this->snapshotGenerations[$id]);
-            return;
+        Database::afterCommit(function () use ($noted): void {
+            foreach ($this->openStagings() as $import) {
+                foreach ($noted as [$id, $previous, $next, $values]) {
+                    $import->noteLive($id, $previous, $next, $values);
+                }
+            }
+        });
+    }
+
+    /** @return list<RtSnapshotImport> Generations staging into this collection now */
+    private function openStagings(): array
+    {
+        $open = [];
+        foreach ($this->stagings ?? [] as $import => $_) {
+            $open[] = $import;
         }
-        $this->snapshotGenerations[$id] = RtSnapshotAdmission::advance();
-        $this->snapshotSequence++;
-        if ($previous === null) {
-            $this->snapshotPositions[$id] = $this->snapshotSequence;
-            $this->snapshotIds[$this->snapshotSequence] = $id;
-            $this->snapshotIndex ??= new SignalHoldIndex();
-            $this->snapshotIndex->add($this->snapshotSequence);
+
+        return $open;
+    }
+
+    /**
+     * Segments the set a row stands in, read as {@see RtState::touchedSetKeys()} reads it.
+     *
+     * @param RtState $state Row being written
+     * @param RtRowValues $values Its whole carried row
+     * @param RtRowArena $arena Selector's storage owner
+     * @return ?RtRowValues Set key text, null when the row class names no set field or the row is in nobody's set
+     * @throws InvalidFormatException When the values are not a field map
+     * @throws LogicException When a value lease closed
+     */
+    private static function setIdentity(RtState $state, RtRowValues $values, RtRowArena $arena): ?RtRowValues
+    {
+        if ($state::SET_VIA === '') {
+            return null;
         }
+        $value = $values->field($state::SET_VIA)?->toNative();
+
+        return is_scalar($value) ? RtRowValues::completed(RtRowWriter::encode((string)$value, $arena, RtRowRole::Transient)) : null;
     }
 
     /**
@@ -560,7 +811,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
             SourceChangeBus::publishToMirrors(SourceChange::rtCreated(
                 $this->collectionName,
                 $id,
-                $restored->toArray(),
+                $restored->carriedRow(),
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
             ));
@@ -568,7 +819,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
             SourceChangeBus::publishToMirrors(SourceChange::rtDeleted(
                 $this->collectionName,
                 $id,
-                $replaced->toArray(),
+                $replaced->carriedRow(),
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
             ));

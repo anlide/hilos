@@ -22,6 +22,8 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Runtime\View\Item\HilosUpload as ViewHilosUpload;
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for one upload (HIL-135).
@@ -43,6 +45,8 @@ final class HilosUploadActions extends RtActions
      * @param int $deadlineAt Fixed future epoch-millisecond deadline
      * @throws InvalidArgumentException When the token is empty or the deadline is not in the future
      * @throws InvalidStateException When bytes are incomplete, another token is active, or this token ended or changed deadline
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws InvalidFormatException When the received byte identity is malformed
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the upload owner
@@ -79,6 +83,8 @@ final class HilosUploadActions extends RtActions
      * @throws InvalidFormatException When the received byte identity is malformed
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the upload owner
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function approveHold(string $uploadHoldId): void
     {
@@ -105,6 +111,8 @@ final class HilosUploadActions extends RtActions
      * @throws InvalidArgumentException When the token is empty
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the upload owner
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function releaseHold(string $uploadHoldId): void
     {
@@ -127,6 +135,9 @@ final class HilosUploadActions extends RtActions
      * @param int $receivedBytes Exact count of bytes received so far
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function advance(int $receivedBytes): void
     {
@@ -148,6 +159,9 @@ final class HilosUploadActions extends RtActions
      * @param ?string $detectedMimeType Type read from the content, or null when the target does not sniff
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function inspect(string $contentHash, ?string $detectedMimeType): void
     {
@@ -167,6 +181,9 @@ final class HilosUploadActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function complete(): void
     {
@@ -186,6 +203,9 @@ final class HilosUploadActions extends RtActions
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws DirectoryNotFoundException When the tmp directory is not configured
      * @throws FileDeleteException When the temporary file exists but cannot be deleted
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function fail(string $code, string $message): void
     {
@@ -211,6 +231,8 @@ final class HilosUploadActions extends RtActions
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws DirectoryNotFoundException When the tmp directory is not configured
      * @throws FileDeleteException When the temporary file exists but cannot be deleted
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function forgetWithFile(): void
     {
@@ -231,6 +253,8 @@ final class HilosUploadActions extends RtActions
      * @throws RtItemParentCollectionNullException When item is not attached to a collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function handOver(): void
     {

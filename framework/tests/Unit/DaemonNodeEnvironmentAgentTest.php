@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeRole;
@@ -24,9 +25,12 @@ use Hilos\Fs\Watch\FsRescanSchedule;
 use Hilos\Hilos;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvOrphansPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonEnvPage;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
-use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosClusterNode;
+use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -284,24 +288,30 @@ final class DaemonNodeEnvironmentCatalog implements CatalogProviderInterface
 
 final class DaemonNodeEnvironmentConnection extends HilosConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

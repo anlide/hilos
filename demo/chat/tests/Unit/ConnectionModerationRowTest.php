@@ -6,7 +6,9 @@ namespace Demo\Chat\Tests\Unit;
 
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Runtime\State\Item\Connection;
+use Hilos\Core\Exception\InvalidFormatException;
 use PHPUnit\Framework\TestCase;
+use stdClass;
 
 /**
  * Unit tests for the moderation fields of a connection row crossing workers.
@@ -88,6 +90,39 @@ final class ConnectionModerationRowTest extends TestCase
         $connection = Connection::fromRow(self::row([Connection::outboundModerationMessage => null]));
 
         $this->assertNull($connection->outboundModerationMessage);
+    }
+
+    public function testLegacyPatchStillMutatesFieldsBeforeARefusedNativeGraph(): void
+    {
+        $connection = Connection::create('ak-1', null);
+
+        try {
+            $connection->applyDiff([
+                Connection::userId => 7,
+                Connection::outboundModerationPhase => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
+                Connection::outboundModerationMessage => '',
+                Connection::outboundModerationAttachments => ['valid', new stdClass()],
+            ]);
+            $this->fail('An attachment that is not a string must be refused');
+        } catch (InvalidFormatException) {
+            $this->assertSame(7, $connection->userId);
+            $this->assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING, $connection->outboundModerationPhase);
+            $this->assertSame('', $connection->outboundModerationMessage);
+            $this->assertSame([], $connection->outboundModerationAttachments);
+        }
+    }
+
+    public function testLegacyIngressIgnoresUnrelatedGraphsAndTheImmutableIdInAPatch(): void
+    {
+        $connection = Connection::fromRow(self::row(['unrelated' => new stdClass()]));
+        $connection->applyDiff([
+            Connection::acceptKey => new stdClass(),
+            Connection::userId => 7,
+            'unrelated' => new stdClass(),
+        ]);
+
+        $this->assertSame('ak-1', $connection->acceptKey);
+        $this->assertSame(7, $connection->userId);
     }
 
     /**

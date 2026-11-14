@@ -15,6 +15,9 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
 use Hilos\Runtime\View\Item\BackupHistory as ViewBackupHistory;
 use Hilos\Utils\Helpers\UtcMoment;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for one stored-backup index row.
@@ -38,6 +41,9 @@ final class BackupHistoryActions extends RtActions
      * reach becomes reachable again here - the agent has come back to the node it left.
      *
      * @param BackupMetadata $metadata Freshly scanned sidecar metadata
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @param ?string $nodeId Node that ran the scan, or null on an installation without clustering
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
@@ -70,6 +76,9 @@ final class BackupHistoryActions extends RtActions
      * @return bool True when the row moved, false when it was already out of reach
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function markOutOfReach(): bool
     {
@@ -97,6 +106,9 @@ final class BackupHistoryActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidFormatException When metadata carries an ambiguous or invalid moment
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function recordRestore(string $restoredAt, int $durationSeconds): void
     {
@@ -123,6 +135,9 @@ final class BackupHistoryActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidFormatException When metadata carries an ambiguous or invalid moment
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function recordShipping(
         ?string $shippedAt,
@@ -151,6 +166,8 @@ final class BackupHistoryActions extends RtActions
      * @throws RtItemParentCollectionNullException When item is not attached to a collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function delete(): void
     {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Backup\Agent\BackupAgent;
 use Hilos\Backup\RestoreReleaseGate;
 use Hilos\Cluster\ClusterContext;
@@ -36,6 +37,9 @@ use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlDoneSignalData;
 use Hilos\ProtectedMode\DTO\MaintenanceRestoreControlSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -506,23 +510,26 @@ final class MaintenanceRestoreControlConnections extends HilosSessionConnections
 final class MaintenanceRestoreControlConnection extends HilosSessionConnection
 {
     /** This fixture adds no fields. */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Fields unused by this fixture */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Fields unused by this fixture */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No project fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Fields unused by this fixture */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Fields unused by this fixture */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }

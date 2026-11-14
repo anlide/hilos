@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\HilosAgentType;
@@ -23,28 +24,31 @@ use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Page\SignalRouteConfig;
 use Hilos\Core\Router\AgentSignalData;
-use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\Destination\AgentDestination;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
 use Hilos\Hilos;
-use Hilos\Runtime\State\Collection\HilosClusterNodes as StateHilosClusterNodes;
-use Hilos\Runtime\State\Item\HilosClusterNode;
-use Hilos\Runtime\View\Collection\HilosClusterNodes;
-use Hilos\Runtime\View\Actions\Collection\HilosClusterNodesActions;
 use Hilos\Pages\Maintenance\AbstractHilosMaintenancePage;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassActionDTO;
-use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
-use Hilos\ProtectedMode\DTO\ManualMaintenancePassDoneSignalData;
 use Hilos\Pages\Maintenance\DTO\MaintenancePassReplyDTO;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassDoneSignalData;
+use Hilos\ProtectedMode\DTO\ManualMaintenancePassSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModePassSignalData;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\State\Collection\HilosClusterNodes as StateHilosClusterNodes;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
+use Hilos\Runtime\State\Item\HilosClusterNode;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\View\Actions\Collection\HilosClusterNodesActions;
+use Hilos\Runtime\View\Collection\HilosClusterNodes;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -634,23 +638,26 @@ final class MaintenancePassTestConnections extends HilosSessionConnections
 final class MaintenancePassTestConnection extends HilosSessionConnection
 {
     /** This fixture adds no fields. */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Fields unused by this fixture */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Fields unused by this fixture */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No project fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Fields unused by this fixture */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Fields unused by this fixture */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }

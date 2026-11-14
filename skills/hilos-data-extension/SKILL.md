@@ -86,10 +86,10 @@ restart is acceptable and a truth source can own writes.
 | DB update/delete for one loaded item | Item actions |
 | New runtime collection | `RtContext`, `RtStates`, `RtCollection`, and actions |
 | App-level single runtime item alias | Existing runtime collection plus `_stateItems` resolver and `RtContext::setRepresentItem()` |
-| New runtime row field | `RtState` typed property, sync-row `toArray()`, `fromRow()`, `applyDiff()` |
+| New runtime row field | `RtState` typed property declared to the row codec (`OWN_FIELD_TYPES`, `rowFieldDefaults()`, the codec stages), plus the legacy `toArray()`, `fromRow()`, `applyDiff()` |
 | Runtime lookup | State collection plus View collection wrapper |
-| Runtime create/register/ensure/clear/bulk cleanup | Collection actions with `sync()` behavior |
-| Runtime update/delete for one loaded item | Item actions that mutate typed state and call `sync()` or remove |
+| Runtime create/register/ensure/clear/bulk cleanup | Collection actions through the base doors (`addStateToCollection()`, `applyDiffToState()`, `removeStateFromCollection()`, `clearAllStates()`); several doors in one action run under one transaction |
+| Runtime update/delete for one loaded item | Item actions handing their values to `applyDiffWithSync()`, or removing through `remove()`; a terminal transition through `applyDiffAsCleanup()` |
 | Page/table behavior | Orchestration through existing DB/RT APIs only |
 
 ## Workflow
@@ -115,9 +115,20 @@ For RT changes:
    normal item actions, call the owning collection's `setRepresent()` first so
    `RtContext` can attach the parent collection automatically.
 2. Define `RtState` fields as real typed properties.
-3. Keep serialization and sync methods explicit:
-   `toArray()`, `fromRow()`, `applyDiff()`, and `sync()`.
-4. Put writes behind runtime collection/item actions.
+3. Keep the row's serialization explicit: declare a new field to the row codec -
+   its type in `OWN_FIELD_TYPES`, its default in `rowFieldDefaults()` and its read
+   and export in the codec stages - and keep the legacy `toArray()`, `fromRow()`
+   and `applyDiff()` beside it (`docs/agents/runtime/rt-state.md`, "Inheriting a
+   framework row"). A field the codec does not know is refused on the segmented
+   path.
+4. Put writes behind runtime collection/item actions, and hand the values to the
+   door that admits them before the row changes: `applyDiffWithSync()` on item
+   actions, `applyDiffToState()` on collection actions, keyed by the row's field
+   constants. Assigning typed fields and calling `sync()` afterwards is not an
+   action's write: nothing is admitted before the row changes. An action that
+   writes through more than one door runs them under one transaction, and a
+   terminal transition takes `applyDiffAsCleanup()` (`docs/agents/runtime/rt-state.md`,
+   "Writing to state").
 5. If updating or deleting one runtime item and the key is known, load the item
    and call `$item->actions->...`; do not add a collection action that accepts
    the item key for that one-item write.

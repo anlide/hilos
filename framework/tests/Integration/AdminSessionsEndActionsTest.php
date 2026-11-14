@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\UserSessionsEndRequestSignalData;
@@ -38,8 +39,11 @@ use Hilos\Database\View\Item\Session;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Pages\Users\AbstractHilosUserSessionsPage;
-use Hilos\Runtime\State\Item\AdminViewModeRuntime;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
@@ -1045,24 +1049,30 @@ final class AdminSessionsEndConnections extends HilosSessionConnections
 
 final class AdminSessionsEndConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Serialized runtime row */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Serialized runtime row */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No project-owned fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Incoming field changes */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Incoming field changes */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

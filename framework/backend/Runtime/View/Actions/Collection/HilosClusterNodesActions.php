@@ -13,6 +13,8 @@ use Hilos\Runtime\State\Collection\HilosClusterNodes as StateHilosClusterNodes;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\View\Collection\HilosClusterNodes;
 use Hilos\Runtime\View\Item\HilosClusterNode;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the cluster picture the master publishes (HIL-337).
@@ -33,10 +35,9 @@ final class HilosClusterNodesActions extends RtActions
      * Always called with the full set of fields, never with what changed: the caller mirrors a
      * snapshot rather than tracking edits, and telling apart the first sight of a node from a
      * later one is this method's job, not its caller's. A node whose row did not move costs
-     * nothing all the same - {@see StateHilosClusterNode::sync()} diffs the row against the
-     * baseline it kept, and an empty diff queues no frame at all. That is why the fields are
-     * written and synced rather than handed over as a diff: a diff is taken at its word, and a
-     * caller republishing a whole snapshot has no idea which of its values are news.
+     * nothing all the same: the door compares the whole snapshot with the row before it admits
+     * anything, carries the fields that moved alone, and a snapshot that moved nothing reserves,
+     * publishes and sends nothing at all.
      *
      * @param string $nodeId Node id, empty on a standalone install
      * @param string $name Non-empty readable node name
@@ -47,6 +48,8 @@ final class HilosClusterNodesActions extends RtActions
      * @param float $lastSeen Microtime the node was last observed
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
@@ -71,13 +74,13 @@ final class HilosClusterNodesActions extends RtActions
             return;
         }
 
-        $state->name = $name;
-        $state->role = $role;
-        $state->capabilities = $capabilities;
-        $state->address = $address;
-        $state->online = $online;
-        $state->lastSeen = $lastSeen;
-
-        $state->sync();
+        $this->applyDiffToState($state, [
+            StateHilosClusterNode::name => $name,
+            StateHilosClusterNode::role => $role,
+            StateHilosClusterNode::capabilities => $capabilities,
+            StateHilosClusterNode::address => $address,
+            StateHilosClusterNode::online => $online,
+            StateHilosClusterNode::lastSeen => $lastSeen,
+        ]);
     }
 }

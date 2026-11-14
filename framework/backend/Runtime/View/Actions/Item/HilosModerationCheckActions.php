@@ -11,6 +11,8 @@ use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\HilosModerationCheck as StateHilosModerationCheck;
 use Hilos\Runtime\View\Item\HilosModerationCheck;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for one moderation check (HIL-1625).
@@ -28,6 +30,8 @@ final class HilosModerationCheckActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When the collection name is unavailable
      * @throws RtActionsStateCollectionNullException When the runtime collection is unavailable
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtItemParentCollectionNullException When the item is detached
      * @throws RtTruthSourceWriteNotAllowedException When the caller does not hold the set the check is in
      * @throws SourceChangeSubscriberException Whatever a subscriber raises

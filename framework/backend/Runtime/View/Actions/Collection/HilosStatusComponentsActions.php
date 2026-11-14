@@ -14,6 +14,8 @@ use Hilos\Runtime\State\Collection\HilosStatusComponents as StateHilosStatusComp
 use Hilos\Runtime\State\Item\HilosStatusComponent as StateHilosStatusComponent;
 use Hilos\Runtime\View\Collection\HilosStatusComponents;
 use Hilos\Runtime\View\Item\HilosStatusComponent as ViewHilosStatusComponent;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * @extends RtActions<ViewHilosStatusComponent, HilosStatusComponents, StateHilosStatusComponents>
@@ -28,6 +30,8 @@ final class HilosStatusComponentsActions extends RtActions
      * @param int $expectedInstances Initial expected slots
      * @throws InvalidFormatException When the new row's key or expected count is invalid
      * @throws RtActionsCollectionNameNullException When the collection is unmounted
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtActionsStateCollectionNullException When backing state is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller cannot add this row
      * @throws SourceChangeSubscriberException When a source-change subscriber fails

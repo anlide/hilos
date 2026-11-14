@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\Session\DTO\ImpersonateRequestSignalData;
@@ -23,18 +24,21 @@ use Hilos\Database\Context\DbContext;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
-use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
-use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
-use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
-use Hilos\HilosException;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
+use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\View\Context\RtContext;
-use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
-use Hilos\Tests\Unit\Auth\Session\ImpersonationTwoStepTest;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Tests\Unit\Auth\Session\ImpersonationTwoStepTest;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -975,29 +979,38 @@ final class ImpersonationRouteTestConnections extends HilosSessionConnections
  */
 final class ImpersonationRouteTestConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Own fields, of which this fixture has none
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Incoming field changes
+     * @param RtRowReader $diff Incoming field changes
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }

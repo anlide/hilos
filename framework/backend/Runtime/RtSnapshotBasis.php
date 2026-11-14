@@ -8,20 +8,17 @@ use Hilos\Hilos;
 use Hilos\Runtime\View\Context\RtContext;
 use WeakReference;
 
-/** Original runtime and row admission cohort shared by sources discovered over several portions. */
+/** Original runtime and mount shared by the sources a hand-over discovers over several portions. */
 final readonly class RtSnapshotBasis
 {
-    public int $admission;
-
     /** @var ?WeakReference<RtContext> Original runtime; an expired reference differs from original absence */
     private ?WeakReference $runtime;
 
     private ?int $mountRevision;
 
-    /** Capture the runtime, registry incarnation and finite row tail without enumerating a source. */
+    /** Capture the runtime and registry incarnation without enumerating a source. */
     public function __construct()
     {
-        $this->admission = RtSnapshotAdmission::current();
         $this->runtime = Hilos::$rt === null ? null : WeakReference::create(Hilos::$rt);
         $this->mountRevision = Hilos::$rt?->snapshotMountRevision();
     }

@@ -11,6 +11,9 @@ use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\AuthAttempt as StateAuthAttempt;
 use Hilos\Runtime\View\Item\AuthAttempt as ViewAuthAttempt;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for the window counter of one throttle key (HIL-420).
@@ -37,6 +40,9 @@ final class AuthAttemptActions extends RtActions
      * waiting out one window.
      *
      * @param float $now Current unix seconds
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @param float $windowSeconds Length of the fixed counting window
      * @return int Attempts counted in the window this attempt belongs to
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
@@ -77,6 +83,9 @@ final class AuthAttemptActions extends RtActions
      * @param float $decidedAt Unix seconds the block was decided or replayed
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function block(int $level, ?float $blockedUntil, float $decidedAt): void
     {
@@ -99,6 +108,9 @@ final class AuthAttemptActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws InvalidArgumentException When an RT retirement allowance is invalid
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function reset(): void
     {
@@ -124,6 +136,8 @@ final class AuthAttemptActions extends RtActions
      * @throws RtItemParentCollectionNullException When item is not attached to a collection
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function forget(): void
     {

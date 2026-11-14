@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
+use Generator;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
@@ -64,14 +65,17 @@ use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
 use Hilos\Legal\Export\LegalAcceptancesCsv;
 use Hilos\Legal\Export\LegalAcceptancesExportErasureResult;
 use Hilos\Legal\Export\LegalAcceptancesExportHttp;
-use Hilos\Legal\Export\LegalAcceptancesExports;
 use Hilos\Legal\Export\LegalAcceptancesExportState;
+use Hilos\Legal\Export\LegalAcceptancesExports;
 use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalRevision;
 use Hilos\Legal\LegalSignificance;
 use Hilos\Pages\Legal\DTO\HilosLegalAcceptancesExportActionDTO;
 use Hilos\Pages\Legal\LegalAdminAudience;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -2051,30 +2055,36 @@ final class LegalExportIntegrationConnections extends HilosSessionConnections
 final class LegalExportIntegrationConnection extends HilosSessionConnection
 {
     /** Adds no project fields. */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> No project fields
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Incoming field changes
+     * @param RtRowReader $diff Incoming field changes
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

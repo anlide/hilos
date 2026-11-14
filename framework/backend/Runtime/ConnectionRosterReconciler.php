@@ -15,6 +15,7 @@ use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Item\HilosConnection;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
 
 /**
  * Strikes the connection rows whose socket is gone, against the roster of a starting agent (HIL-664).
@@ -44,8 +45,11 @@ final class ConnectionRosterReconciler
      * which is most of them, since the roster rides every agent start and only one agent per
      * node brings connection rows into being and takes them away.
      *
+     * Each strike is a mandatory cleanup ({@see HilosConnectionActions::unregister()}): one the
+     * source's service reserve cannot take now is owed and made as its FIFO frees, never refused.
+     *
      * @param list<string> $liveAcceptKeys Accept keys still held across the cluster
-     * @return int Rows struck out
+     * @return int Rows struck out, the ones owed for now included
      *
      * @throws RtActionsCollectionNameNullException When the collection name is unavailable
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable

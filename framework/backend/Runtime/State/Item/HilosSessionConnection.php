@@ -4,58 +4,60 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Generator;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException as FrameworkLogicException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\Snapshot\RtWorkDriver;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
+use LogicException;
+use Throwable;
+use Hilos\HilosException;
 
 /**
- * Inheritable runtime row for one WebSocket connection — the session stage (HIL-509).
+ * Session stage of a connection: sessionToken and database sessionId follow presence.
  *
- * The stage above {@see HilosConnection}: it adds the `sessionToken` and database
- * session id the socket belongs to, which turn a set of live sockets into the live
- * sockets of a browser session without exposing the token to browser payloads. A
- * project stands here once it carries sessions at all; a
- * project that does not stays on the presence stage, and the session seams are
- * then missing from its type rather than answering empty.
- *
- * The token moves in exactly one case, and the distinction is the whole of the rule
- * (HIL-582). A socket that changes SESSION is still a new row, as it always was —
- * nothing re-points a connection from one browser session to another. But a session
- * that is RENAMED keeps its sockets: the login rotation mints a new token for the
- * same session, and the initiating connection follows it through
- * {@see HilosSessionConnectionsActions::repointSessionToken()}. The row's identity is
- * the accept key, and that is what stays immutable.
- *
- * The stage carries the session reference and nothing else. It used to carry the pending success
- * ack beside it (HIL-422), until the socket turned out to be the wrong owner for a
- * sentence about an account: the mark outlived the session on every path where the
- * two part company, and it lives on the session row since HIL-875.
- *
- * The base half of the row is composed by chaining {@see initBase()} /
- * {@see hydrateBase()} / {@see baseToArray()} / {@see applyBaseDiff()} through
- * `parent::` — the chain lives entirely inside the framework, so the "cannot be
- * skipped" contract the project sees ({@see HilosConnection::initOwn()} and its
- * three siblings) is unchanged. {@see create()} is final here: this is the last
- * stage, so nothing below it has a signature left to widen.
+ * Login rotation keeps the socket identity and repoints its token through
+ * HilosSessionConnectionsActions::repointSessionToken(). A different session gets
+ * a new connection row. Project hooks always run after both framework stages.
  */
 abstract class HilosSessionConnection extends HilosConnection
 {
     public const string sessionToken = 'sessionToken';
     public const string sessionId = 'sessionId';
 
-    /** Session cookie token this connection belongs to, or null when it belongs to none. */
-    private(set) ?string $sessionToken = null;
+    protected const array BASE_FIELD_TYPES = parent::BASE_FIELD_TYPES + self::SESSION_FIELD_TYPES;
+    protected const array BASE_FIELD_DEFAULTS = parent::BASE_FIELD_DEFAULTS + self::SESSION_FIELD_DEFAULTS;
 
-    /** Database session row id, or null when this socket belongs to no session. */
-    private(set) ?int $sessionId = null;
+    private const array SESSION_FIELD_TYPES = [self::sessionToken => '?text', self::sessionId => '?int'];
+    private const array SESSION_FIELD_DEFAULTS = [self::sessionToken => null, self::sessionId => null];
+
+    /** Session token, or null when this connection belongs to none. */
+    private(set) ?string $sessionToken {
+        get => ($this->rowValues()[self::sessionToken] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::sessionToken, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
+
+    /** Database session id, or null when this connection belongs to none. */
+    private(set) ?int $sessionId {
+        get => $this->rowValues()[self::sessionId] ?? null;
+        set {
+            $this->setRowValue(self::sessionId, $value);
+        }
+    }
 
     /**
-     * Creates a connection row for a freshly opened socket of a session.
-     *
-     * @param string $acceptKey WebSocket accept key (unique identifier)
-     * @param ?int $userId Authenticated user id, or null for an anonymous session
-     * @param ?string $sessionToken Session cookie token this connection belongs to, or null when it belongs to none
-     * @param ?int $sessionId Database session row id, or null when this socket belongs to no session
-     * @return static Connection row ready for the collection
+     * @param string $acceptKey WebSocket accept key
+     * @param ?int $userId Authenticated user id
+     * @param ?string $sessionToken Browser session token
+     * @param ?int $sessionId Database session id
+     * @return static Fresh connection with the legacy baseline
+     * @throws HilosException When project initialization fails
      */
     final public static function create(
         string $acceptKey,
@@ -64,24 +66,25 @@ abstract class HilosSessionConnection extends HilosConnection
         ?int $sessionId = null,
     ): static
     {
-        $instance = new static();
-        $instance->initBase($acceptKey, $userId, $sessionToken, $sessionId);
-        $instance->initOwn();
-        $instance->markRtSyncBaseline();
+        try {
+            $instance = new static();
+            $instance->initBase($acceptKey, $userId, $sessionToken, $sessionId);
+            RtWorkDriver::runSynchronously($instance->initOwn());
+            $instance->markRtSyncBaseline();
 
-        return $instance;
+            return $instance;
+        } catch (HilosException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            throw new FrameworkLogicException('Session connection compatibility operation failed', previous: $exception);
+        }
     }
 
     /**
-     * Seeds the base fields of both stages on a freshly created connection.
-     *
-     * The session token is optional in the signature because widening an
-     * inherited one with a required parameter is not a legal override.
-     *
-     * @param string $acceptKey WebSocket accept key (unique identifier)
-     * @param ?int $userId Authenticated user id, or null for an anonymous session
-     * @param ?string $sessionToken Session cookie token this connection belongs to, or null when it belongs to none
-     * @param ?int $sessionId Database session row id, or null when this socket belongs to no session
+     * @param string $acceptKey WebSocket accept key
+     * @param ?int $userId Authenticated user id
+     * @param ?string $sessionToken Browser session token
+     * @param ?int $sessionId Database session id
      */
     protected function initBase(
         string $acceptKey,
@@ -96,35 +99,38 @@ abstract class HilosSessionConnection extends HilosConnection
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
-     * @throws InvalidFormatException When the row lost a base field or carries it as another type
+     * @param RtRowReader $row Segmented full row
+     * @return Generator<int, RtWork, int, void> Presence then session hydration
+     * @throws InvalidFormatException When a base field is missing or mistyped
+     * @throws LogicException When segmented copying violates writer lifetime
      */
-    protected function hydrateBase(array $row): void
+    protected function hydrateBase(RtRowReader $row): Generator
     {
-        parent::hydrateBase($row);
-        $this->sessionToken = self::optionalString($row, self::sessionToken);
-        $this->sessionId = self::optionalInt($row, self::sessionId);
+        yield from parent::hydrateBase($row);
+        yield from $this->readFields($row, self::SESSION_FIELD_TYPES);
     }
 
     /**
-     * @return array<string, mixed> Base fields of both stages (acceptKey, userId, connectedAt, probablyOffline, sessionToken, sessionId)
+     * @param RtRowWriter $out Segmented destination
+     * @return Generator<int, RtWork, int, void> Presence then session export
+     * @throws InvalidFormatException When a stored value is malformed
+     * @throws LogicException When the destination has closed
      */
-    protected function baseToArray(): array
+    protected function exportBase(RtRowWriter $out): Generator
     {
-        return array_merge(parent::baseToArray(), [
-            self::sessionToken => $this->sessionToken,
-            self::sessionId => $this->sessionId,
-        ]);
+        yield from parent::exportBase($out);
+        yield from $this->exportFields($out, self::SESSION_FIELD_DEFAULTS);
     }
 
     /**
-     * @param array<string, mixed> $diff Partial update
-     * @throws InvalidFormatException When the diff carries a base field as another type
+     * @param RtRowReader $diff Segmented changed fields
+     * @return Generator<int, RtWork, int, void> Presence then session patch
+     * @throws InvalidFormatException When a changed base field is mistyped
+     * @throws LogicException When segmented copying violates writer lifetime
      */
-    protected function applyBaseDiff(array $diff): void
+    protected function applyBaseDiff(RtRowReader $diff): Generator
     {
-        parent::applyBaseDiff($diff);
-        $this->sessionToken = self::patchOptionalString($diff, self::sessionToken, $this->sessionToken);
-        $this->sessionId = self::patchOptionalInt($diff, self::sessionId, $this->sessionId);
+        yield from parent::applyBaseDiff($diff);
+        yield from $this->readFields($diff, self::SESSION_FIELD_TYPES, true);
     }
 }

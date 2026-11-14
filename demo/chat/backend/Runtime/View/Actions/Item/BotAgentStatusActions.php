@@ -9,6 +9,9 @@ use Demo\Chat\Runtime\View\Item\BotAgentStatus as ViewBotAgentStatus;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\View\Actions\Item\RtActions;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for one bot agent lifecycle status.
@@ -23,6 +26,9 @@ final class BotAgentStatusActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markJoined(): void
     {
@@ -34,6 +40,9 @@ final class BotAgentStatusActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markLeft(): void
     {
@@ -45,14 +54,17 @@ final class BotAgentStatusActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     private function setStatus(string $status): void
     {
         $this->ensureCanWrite();
 
-        $this->state->status = $status;
-        $this->state->updatedAt = time();
-
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateBotAgentStatus::status => $status,
+            StateBotAgentStatus::updatedAt => time(),
+        ]);
     }
 }

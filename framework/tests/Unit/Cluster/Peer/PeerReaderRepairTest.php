@@ -17,7 +17,7 @@ use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Cluster\Peer\PeerLink;
@@ -39,6 +39,9 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Runtime\RtSnapshot;
+use Hilos\Runtime\Snapshot\RtWorkDriver;
+use Hilos\Runtime\Stream\RtSyncStreamDecoder;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
@@ -232,8 +235,18 @@ final class PeerReaderRepairTest extends TestCase
                 new SignalName(SignalConstants::RT_SYNC_UPDATED), new RtSyncUpdatedSignalData($collection, 'x', ['name' => 'v2']),
             );
             $b->broadcastRtSync(SignalTypeConstants::RT_SYNC_UPDATED, $update, partialOwner: true);
-            self::assertEquals([new PeerRtSyncDTO('node-b', SignalTypeConstants::RT_SYNC_UPDATED, $update, true)],
-                $this->relay($routeB, $routeA));
+            $relayed = $this->relay($routeB, $routeA);
+            self::assertCount(1, $relayed);
+            self::assertInstanceOf(PeerRtSyncStreamDTO::class, $relayed[0]);
+            self::assertSame([1, 0, true], [$relayed[0]->frame->sequence, $relayed[0]->frame->part, $relayed[0]->frame->final]);
+            $decoder = new RtSyncStreamDecoder();
+            RtWorkDriver::runSynchronously($decoder->feed($relayed[0]->frame->data));
+            $operation = RtWorkDriver::runSynchronously(RtSyncStreamOperation::read($decoder->finish()));
+            self::assertSame(
+                ['node-b', SignalTypeConstants::RT_SYNC_UPDATED, true, 'x', ['name' => 'v2'], []],
+                [$operation->originNodeId, $operation->signalType, $operation->partialOwner, $operation->stateId,
+                    $operation->row->toNative(), $operation->previous?->toNative()],
+            );
             $this->drainManager($reader);
             self::assertSame(['x' => ['id' => 'x', 'name' => 'v2']], RtSnapshot::rows($collection));
             self::assertFalse($this->phase($reader, 'hasRunnableReaderInterest'));

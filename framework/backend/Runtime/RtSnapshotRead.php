@@ -4,17 +4,22 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime;
 
-use Generator;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Hilos;
+use Hilos\Runtime\Snapshot\RtSnapshotExport;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\State\Collection\RtStates;
 use Hilos\Runtime\State\Item\RtState;
+use LogicException;
 use WeakReference;
 
-/** A source's finite row cohort, captured before a retained hand-over starts advancing. */
+/** One source's snapshot, cut when the read is made and read out in portions by its hand-over. */
 final readonly class RtSnapshotRead
 {
-    /** @var Generator<string, ?array<string, mixed>> Original row incarnations, without owning their backing source */
-    public Generator $rows;
+    /** Rows of the cut within the scope, in insertion order, without owning their backing source */
+    public RtSnapshotExport $export;
+
+    public RtSnapshotScope $scope;
 
     /** @var ?WeakReference<RtStates|RtState> Original backing source, never returned to a caller */
     private ?WeakReference $source;
@@ -24,22 +29,20 @@ final readonly class RtSnapshotRead
     private ?int $sourceEpoch;
 
     /**
-     * @param string $collectionKey Mounted source to capture now
-     * @param ?list<string> $scopeKeys Named-row width, absent for other widths
-     * @param ?list<string> $scopeSetKeys Set width, absent for other widths
-     * @param ?RtSnapshotBasis $basis Original runtime and cross-source row cutoff, absent for immediate capture
+     * @param string $collectionKey Mounted source to cut now
+     * @param ?RtSnapshotScope $scope Rows the snapshot covers, absent for the whole source
+     * @param ?RtSnapshotBasis $basis Original runtime and mount the hand-over started on, absent for immediate capture
+     * @throws InvalidFormatException When a standalone row's set field is malformed
+     * @throws LogicException When the source's version pages have closed
      */
-    public function __construct(
-        public string $collectionKey,
-        public ?array $scopeKeys = null,
-        public ?array $scopeSetKeys = null,
-        ?RtSnapshotBasis $basis = null,
-    ) {
+    public function __construct(public string $collectionKey, ?RtSnapshotScope $scope = null, ?RtSnapshotBasis $basis = null)
+    {
+        $this->scope = $scope ?? RtSnapshotScope::whole();
         $this->basis = $basis ?? new RtSnapshotBasis();
         $source = Hilos::$rt?->getStateCollection($collectionKey) ?? Hilos::$rt?->getStateItem($collectionKey);
         $this->source = $source === null ? null : WeakReference::create($source);
         $this->sourceEpoch = $source instanceof RtStates ? $source->snapshotEpoch() : null;
-        $this->rows = RtSnapshot::rowCandidates($collectionKey, $this->basis->admission);
+        $this->export = RtSnapshot::capture($collectionKey, $this->scope);
     }
 
     /**

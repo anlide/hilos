@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Constants\CommandChannelWindows;
@@ -23,14 +24,17 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\HilosSessionRotation as StateHilosSessionRotation;
 use Hilos\Runtime\State\Item\HilosSessionToastStack as StateHilosSessionToastStack;
 use Hilos\Runtime\View\Context\RtContext;
-use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AdminCommandConstants;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Utils\Helpers\TimeHelper;
@@ -665,23 +669,26 @@ final class AdminCreateRouteTestConnections extends HilosSessionConnections
 final class AdminCreateRouteTestConnection extends HilosSessionConnection
 {
     /** This fixture adds no fields to the session stage. */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Serialized runtime row */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Serialized runtime row */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No project-owned fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Incoming field changes */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Incoming field changes */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }

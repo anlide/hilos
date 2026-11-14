@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Consensus\ConsensusRole;
 use Hilos\Cluster\NodeRole;
@@ -25,8 +26,8 @@ use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
-use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageResendOutcome;
+use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
@@ -38,6 +39,7 @@ use Hilos\DaemonSection\ClusterDaemonNodeSlot;
 use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonClockPicture;
 use Hilos\DaemonSection\DaemonClockReading;
@@ -45,7 +47,6 @@ use Hilos\DaemonSection\DaemonConsensusPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DaemonProcessRoster;
 use Hilos\DaemonSection\DaemonWorkerPicture;
-use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\DaemonSection\NodeEnvironmentFingerprint;
 use Hilos\DaemonSection\NodeEnvironmentSummary;
@@ -55,6 +56,9 @@ use Hilos\HilosException;
 use Hilos\Pages\Daemon\AbstractHilosDaemonNodeOverviewPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonNodePage;
 use Hilos\Pages\Daemon\DTO\HilosDaemonNodeOverviewData;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Runtime\State\Item\HilosClusterNode;
@@ -712,21 +716,37 @@ final class NodeOverviewTestResender implements PageResender
 
 final class NodeOverviewTestConnection extends HilosConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    protected function hydrateOwn(array $row): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
-    protected function ownToArray(): array
+    /**
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    protected function applyOwnDiff(array $diff): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

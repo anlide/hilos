@@ -11,6 +11,7 @@ use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\ProtectedMode\FrozenAgentPlacement;
@@ -79,6 +80,7 @@ use Hilos\Notification\Delivery\DeliveryChannelOwners;
 use Hilos\ProtectedMode\DaemonProtectedModeExecutor;
 use Hilos\Runtime\State\Item\HilosClusterNode as StateHilosClusterNode;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
+use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Client\Interface\WorkerClientInterface;
 use Hilos\Socket\Client\WorkerClient;
@@ -179,6 +181,13 @@ abstract class WorkerServer extends AbstractServer implements
 
     /** Master-owned receiver for delivery window reports. */
     private ?DeliverySettingsSink $deliverySettingsSink = null;
+    /** @var ?Closure(RtSyncStreamChannel): void The master's pass a worker link's RT stream is pumped on; null pumps at once */
+    private ?Closure $rtSyncStreamWake = null;
+    /**
+     * @var ?Closure(int, string, list<string>, ?float): void The master's mark of rows a worker link's RT stream holds,
+     *      by the link's worker; null marks them in this process alone
+     */
+    private ?Closure $rtSyncStreamHold = null;
 
     /** @var array<int, UploadMemoryWorkerLifetime> Registered process/connection pairs retained through both exit facts */
     private array $uploadWorkerLifetimes = [];
@@ -287,6 +296,21 @@ abstract class WorkerServer extends AbstractServer implements
 
     /** @var array<int, array<string, AwaitingStopReportStart>> Blocked starts indexed by exact connection */
     private array $stopReportWaiters = [];
+
+    /**
+     * @var array<int, array<string, int>> Stop reports read, and departures of connections a start waited on, while
+     *      writes the workers streamed before them were not settled yet, by exact connection and agent: the number of
+     *      the last such mark. A departed connection keeps its marks until they settle. Framework-first: the same
+     *      process-local bookkeeping of this master's starts as the waits beside it; nothing else reads it and nothing
+     *      replicates it.
+     */
+    private array $settlingStopReports = [];
+
+    /**
+     * Number of the last mark this master set in {@see self::$settlingStopReports}. Framework-first: the same
+     * process-local bookkeeping as those marks.
+     */
+    private int $stopReports = 0;
 
     private bool $queuesStopping = false;
 
@@ -531,6 +555,8 @@ abstract class WorkerServer extends AbstractServer implements
     protected function onCreateClient($socket): WorkerClientInterface
     {
         $client = new WorkerClient($socket, $this->agentManager, $this);
+        $client->setRtSyncStreamWake($this->rtSyncStreamWake);
+        $client->setRtSyncStreamHold($this->rtSyncStreamHold);
         if ($this->deliverySettingsSink !== null) {
             $client->setDeliverySettingsSink($this->deliverySettingsSink);
         }
@@ -538,6 +564,33 @@ abstract class WorkerServer extends AbstractServer implements
             $client->setUploadMemoryPoolSink($this->uploadMemoryPoolSink);
         }
         return $client;
+    }
+
+    /**
+     * @param ?Closure(RtSyncStreamChannel): void $wake The master's pass each worker link's RT stream is pumped on
+     */
+    public function setRtSyncStreamWake(?Closure $wake): void
+    {
+        $this->rtSyncStreamWake = $wake;
+        foreach ($this->clients as $client) {
+            if ($client instanceof WorkerClient) {
+                $client->setRtSyncStreamWake($wake);
+            }
+        }
+    }
+
+    /**
+     * @param ?Closure(int, string, list<string>, ?float): void $hold The master's mark of rows each worker link's RT
+     *        stream holds, given the link's worker
+     */
+    public function setRtSyncStreamHold(?Closure $hold): void
+    {
+        $this->rtSyncStreamHold = $hold;
+        foreach ($this->clients as $client) {
+            if ($client instanceof WorkerClient) {
+                $client->setRtSyncStreamHold($hold);
+            }
+        }
     }
 
     /**
@@ -1130,21 +1183,68 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * A consumed report releases only the start waiting on this exact connection.
+     * A consumed report releases only the start waiting on this exact connection, and only behind the writes the
+     * workers streamed before it, once the dispatch has handed them to the workers' streams
+     * ({@see AgentManagerDaemon::afterStreamedWrites()}): the link reads the report as soon as those writes are queued
+     * here ({@see WorkerClient::waitsForRtSyncStream()}), and a start sent to another worker ahead of them would find
+     * nothing of the old instance's last write on that worker's link to wait behind. Until then the report still holds
+     * the start ({@see self::stopReportHolds()}), one asked for meanwhile as well. The second stop wave hears of the
+     * report at once.
      *
      * @param WorkerClient $client Reporting connection
      * @param string $agentId Agent actually reported stopped
      */
     public function noteWorkerStopReport(WorkerClient $client, string $agentId): void
     {
-        $awaiting = $this->stopReportWaiters[spl_object_id($client)][$agentId] ?? null;
-        if ($awaiting !== null) {
-            $this->stopReportPending[$agentId] = $awaiting;
-            $this->stopReportWork?->markReady();
-        }
+        $this->settleStopReport($client, $agentId);
         if (in_array($client, $this->heldStopClients, true)) {
             $this->secondStopWork?->markReady();
         }
+    }
+
+    /**
+     * Holds the start of the agent waiting on this exact connection behind the writes the workers streamed before now,
+     * and releases it once the dispatch has handed them on ({@see AgentManagerDaemon::afterStreamedWrites()}) - at once
+     * when nothing is left to hand on. A later mark of the same agent on the connection replaces this one. The work
+     * holds the connection itself, so its number is not handed to another connection before the mark is gone.
+     *
+     * @param WorkerClient $client Connection the report was read on, or that left
+     * @param string $agentId Agent whose start waits
+     */
+    private function settleStopReport(WorkerClient $client, string $agentId): void
+    {
+        $report = ++$this->stopReports;
+        $this->settlingStopReports[spl_object_id($client)][$agentId] = $report;
+        $this->agentManager->afterStreamedWrites(function () use ($client, $agentId, $report): void {
+            $link = spl_object_id($client);
+            if (($this->settlingStopReports[$link][$agentId] ?? null) !== $report) {
+                return;
+            }
+            unset($this->settlingStopReports[$link][$agentId]);
+            if ($this->settlingStopReports[$link] === []) {
+                unset($this->settlingStopReports[$link]);
+            }
+            $awaiting = $this->stopReportWaiters[$link][$agentId] ?? null;
+            if ($awaiting !== null) {
+                $this->stopReportPending[$agentId] = $awaiting;
+                $this->stopReportWork?->markReady();
+            }
+        });
+    }
+
+    /**
+     * Whether a start of the agent still waits on this exact connection: its worker has not reported the stop the
+     * link sent it while the link is up, or the report - or the link's departure - came behind writes the workers
+     * streamed that the dispatch has not handed on yet ({@see self::settleStopReport()}).
+     *
+     * @param WorkerClient $client Connection the stop was sent on
+     * @param string $agentId Agent whose start waits
+     * @return bool True while the start must not go
+     */
+    private function stopReportHolds(WorkerClient $client, string $agentId): bool
+    {
+        return isset($this->settlingStopReports[spl_object_id($client)][$agentId])
+            || ($client->awaitsStopReport($agentId) && in_array($client, $this->clients, true));
     }
 
     /**
@@ -1261,17 +1361,21 @@ abstract class WorkerServer extends AbstractServer implements
      * stop never ends - and nothing is started for a client that never registered as a worker,
      * which carried no agents to lose.
      *
+     * A start that waited on this connection for the report of its agent's stop goes once the writes read from it are
+     * handed on, whether the worker reported the stop or left without it ({@see self::settleStopReport()}): those
+     * writes still wait in the dispatch, and the start would reach another worker ahead of them.
+     *
      * @param ClientInterface $client Client to remove
      */
     public function removeClient(ClientInterface $client): void
     {
-        unset($this->registeredClients[spl_object_id($client)]);
+        $link = spl_object_id($client);
+        unset($this->registeredClients[$link]);
         parent::removeClient($client);
-        foreach ($this->stopReportWaiters[spl_object_id($client)] ?? [] as $agentId => $awaiting) {
-            $this->stopReportPending[$agentId] = $awaiting;
-        }
-        if ($this->stopReportPending !== []) {
-            $this->stopReportWork?->markReady();
+        foreach ($this->stopReportWaiters[$link] ?? [] as $agentId => $awaiting) {
+            if (!isset($this->settlingStopReports[$link][$agentId])) {
+                $this->settleStopReport($awaiting->awaitedWorker, $agentId);
+            }
         }
         $this->noteWorkerCapacityChanged();
         if ($this->secondStopWave !== []) {
@@ -2177,13 +2281,14 @@ abstract class WorkerServer extends AbstractServer implements
 
         // A worker handles stop before a later start on its link, but an agent placed on a
         // different worker could report its old stop after the new instance was registered.
-        // Keep the start out of the roster until that report (or the link's departure). Once
-        // recorded, only the advance pass ends this wait: it reports a gate's quiet refusal.
+        // Keep the start out of the roster until that report or the link's departure, and the
+        // writes read before it are handed on. Once recorded, only the advance pass ends this
+        // wait: it reports a gate's quiet refusal.
         $awaiting = $this->agentsAwaitingStopReport[$agentId] ?? null;
         $awaitedWorker = $awaiting?->awaitedWorker;
         if ($awaitedWorker === null) {
             foreach ($this->clients as $client) {
-                if ($client instanceof WorkerClient && $client->awaitsStopReport($agentId)) {
+                if ($client instanceof WorkerClient && $this->stopReportHolds($client, $agentId)) {
                     $awaitedWorker = $client;
                     break;
                 }
@@ -2644,7 +2749,8 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Continues starts once their old worker reports the stop or its link closes.
+     * Continues starts once their old worker reports the stop, or its link closes, and the writes read before are
+     * handed on.
      *
      * The ordinary start asks every current gate again. A quiet refusal must be reported to
      * the master because it may be holding frames for this start.
@@ -2667,7 +2773,7 @@ abstract class WorkerServer extends AbstractServer implements
                     $this->stopAgent($awaiting->agentType, $awaiting->agentIndex);
                     continue;
                 }
-                if (in_array($awaiting->awaitedWorker, $this->clients, true) && $awaiting->awaitedWorker->awaitsStopReport($agentId)) {
+                if ($this->stopReportHolds($awaiting->awaitedWorker, $agentId)) {
                     continue;
                 }
 
@@ -3117,8 +3223,8 @@ abstract class WorkerServer extends AbstractServer implements
             }
         }
 
-        // Agent exists and is linked, send message DTO immediately
-        $workerClient->send($messageDto->toJson());
+        // Agent exists and is linked: the signal goes behind the RT writes streamed to its worker before it
+        $workerClient->sendInTurn($messageDto->toJson(), $agentId);
     }
 
     /**
@@ -3577,7 +3683,8 @@ abstract class WorkerServer extends AbstractServer implements
      * unchanged tuple never calls the action. The node id is this master's local id, and the
      * standalone id when the cluster facade is absent — the same rule as the cluster-node roster.
      * The write does not move the phase or the gate, and it adds no peer frame of its own: the
-     * row's existing sync is what this node's workers already receive.
+     * row's existing sync is what this node's workers already receive. A write the full ordinary
+     * FIFO refuses changes nothing and leaves the tuple dirty for the next fact.
      *
      * @throws InvalidFormatException When the preserved agent types are not a list of strings
      * @throws RtActionsCollectionNameNullException When the freeze row cannot name its collection
@@ -3585,6 +3692,8 @@ abstract class WorkerServer extends AbstractServer implements
      * @throws EnvException When the cluster-enabled flag or a cluster env value cannot be read
      * @throws ClusterConfigurationException When cluster mode is on and the node config is missing or invalid
      * @throws ClusterDisabledException When the cluster reports itself on and then refuses its identity
+     * @throws HilosException Whatever the row's read of the diagnostics or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     protected function publishProtectedModeAgentDiagnostics(): void
     {
@@ -3606,12 +3715,18 @@ abstract class WorkerServer extends AbstractServer implements
             return;
         }
 
-        Hilos::$rt->hilosProtectedModeRuntime->actions->updateAgentDiagnostics(
-            $nodeId,
-            $diagnostics[StateProtectedModeRuntime::stoppedAgentCount],
-            $diagnostics[StateProtectedModeRuntime::preservedAgentTypes],
-            $diagnostics[StateProtectedModeRuntime::agentStartGateClosed],
-        );
+        try {
+            Hilos::$rt->hilosProtectedModeRuntime->actions->updateAgentDiagnostics(
+                $nodeId,
+                $diagnostics[StateProtectedModeRuntime::stoppedAgentCount],
+                $diagnostics[StateProtectedModeRuntime::preservedAgentTypes],
+                $diagnostics[StateProtectedModeRuntime::agentStartGateClosed],
+            );
+        } catch (RtWriteBackpressureException) {
+            // Refused before the row changed: the tuple stays unpublished, and the next fact that
+            // dirties it publishes it again.
+            $this->protectedModeDiagnosticsDirty = true;
+        }
     }
 
     /**

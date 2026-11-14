@@ -74,6 +74,9 @@ use Hilos\DaemonSection\DaemonProcessRoster;
 use Hilos\DaemonSection\DaemonWorkerPicture;
 use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
+use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
+use Hilos\Runtime\Ordinary\RtOrdinaryQueue;
+use Hilos\Runtime\Row\RtRowArena;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Status\Exception\StatusIncidentWriteException;
@@ -81,6 +84,7 @@ use Hilos\Status\StatusAgent;
 use Hilos\Tests\Fixtures\StatusPublicVolume;
 use Hilos\Status\StatusComponentState;
 use Hilos\Status\StatusIncidentOutcome;
+use Hilos\Status\StatusPublicFiles;
 use Hilos\Status\StatusSeverity;
 use Hilos\Status\StatusSettingsCatalog;
 use Hilos\Status\StatusSnapshot;
@@ -183,6 +187,39 @@ final class StatusMachineIntegrationTest extends StatusStorageIntegrationTestCas
         self::assertSame([['kind' => 'published', 'severity' => 'major_outage', 'text' => 'Major outage.', 'at' => '302000']],
             $this->storedUpdates());
         self::assertSame(StatusComponentState::MAJOR_OUTAGE, StatusSnapshot::read()->components['service']->state);
+    }
+
+    /** Pictures that keep the counts write no component until its observation is one heartbeat interval old. */
+    public function testUnchangedCountsReachRuntimeAtMostOncePerHeartbeatInterval(): void
+    {
+        $owner = $this->startMachine();
+        $this->freshReport($owner, 1000, [true]);
+        $owner->tickAt(1000);
+        self::assertSame(1, Hilos::$rt->hilosStatusComponents['service']->liveInstances);
+        self::assertSame(1000, Hilos::$rt->hilosStatusComponents['service']->observedAt);
+        $interval = (int)ceil((new StatusPublicFiles())->getHeartbeatIntervalMs());
+        $queue = new RtOrdinaryQueue(RtRowArena::process(), 8);
+        RtOrdinaryAdmission::bindSourceQueue($queue);
+        RtOrdinaryAdmission::consumeBy(static fn(): bool => false);
+        try {
+            for ($portion = 1; $portion <= 10; ++$portion) {
+                $this->report($owner, false, 1000 + 10 * $portion, [true]);
+                $owner->tickAt(1000 + 10 * $portion);
+            }
+            self::assertSame(0, $queue->pendingOperations(), 'Unchanged counts within the interval write nothing');
+            self::assertSame(1000, Hilos::$rt->hilosStatusComponents['service']->observedAt);
+            $this->report($owner, false, 1000 + $interval, [true]);
+            $owner->tickAt(1000 + $interval);
+            self::assertSame(1, $queue->pendingOperations());
+            self::assertSame(1000 + $interval, Hilos::$rt->hilosStatusComponents['service']->observedAt);
+            $this->report($owner, false, 1100 + $interval, [false]);
+            $owner->tickAt(1100 + $interval);
+            self::assertSame(2, $queue->pendingOperations(), 'Changed counts reach RT at once');
+            self::assertSame(0, Hilos::$rt->hilosStatusComponents['service']->liveInstances);
+            self::assertSame(1100 + $interval, Hilos::$rt->hilosStatusComponents['service']->observedAt);
+        } finally {
+            RtOrdinaryAdmission::reset();
+        }
     }
 
     /** A hidden Major peak does not leak into publication; only later published severity raises the peak. */

@@ -14,6 +14,8 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the probe fleet statuses.
@@ -35,6 +37,8 @@ final class HilosProbeFleetStatusesActions extends RtActions
      * @param int $rowsSeen Rows of this collection the member itself can see
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtActionsItemClassException When the runtime item class is missing or invalid
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source of this row
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises

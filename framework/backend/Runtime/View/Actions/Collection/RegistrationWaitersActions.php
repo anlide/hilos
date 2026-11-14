@@ -15,6 +15,7 @@ use Hilos\Runtime\State\Collection\RegistrationWaiters as StateRegistrationWaite
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 use Hilos\Runtime\View\Collection\RegistrationWaiters;
 use Hilos\Runtime\View\Item\RegistrationWaiter;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the sessions parked on a registration code step (HIL-415).
@@ -53,6 +54,8 @@ final class RegistrationWaitersActions extends RtActions
      * @param string $sessionToken Session token to sign in on confirmation
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
@@ -124,6 +127,8 @@ final class RegistrationWaitersActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function release(string $acceptKey): void
     {

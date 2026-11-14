@@ -8,6 +8,9 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\TableLagRuntime as StateTableLagRuntime;
 use Hilos\Runtime\View\Item\TableLagRuntime as ViewTableLagRuntime;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for the test-only table lag singleton (HIL-1020).
@@ -29,13 +32,17 @@ final class TableLagRuntimeActions extends RtActions
      * @param int $facetsMs Milliseconds a facet count is held back; 0 turns it off
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function set(int $windowMs, int $facetsMs): void
     {
         $this->ensureCanWrite();
 
-        $this->state->windowMs = $windowMs;
-        $this->state->facetsMs = $facetsMs;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateTableLagRuntime::windowMs => $windowMs,
+            StateTableLagRuntime::facetsMs => $facetsMs,
+        ]);
     }
 }

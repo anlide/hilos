@@ -13,6 +13,9 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\View\Item\RestoreRuntime as ViewRestoreRuntime;
 use Hilos\Utils\Helpers\UtcMoment;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for the restore runtime singleton.
@@ -43,27 +46,30 @@ final class RestoreRuntimeActions extends RtActions
      *     scope has been recorded yet
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markRunning(string $backupId, BackupScope $scope, ?int $estimatedSeconds = null): void
     {
         $this->ensureCanWrite();
 
-        $this->state->running = true;
-        $this->state->backupId = $backupId;
-        $this->state->scope = $scope->value;
         $startedAt = UtcMoment::format(new DateTimeImmutable());
-
-        $this->state->phase = RestorePhase::PENDING->value;
-        $this->state->phaseStartedAt = $startedAt;
-        $this->state->startedAt = $startedAt;
-        $this->state->estimatedSeconds = $estimatedSeconds;
-        $this->state->finishedAt = null;
-        $this->state->outcome = null;
-        $this->state->failureReason = null;
-        $this->state->rehydrateComplete = false;
-        $this->state->rehydrateProblems = [];
-        $this->state->databaseTouched = false;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateRestoreRuntime::running => true,
+            StateRestoreRuntime::backupId => $backupId,
+            StateRestoreRuntime::scope => $scope->value,
+            StateRestoreRuntime::phase => RestorePhase::PENDING->value,
+            StateRestoreRuntime::phaseStartedAt => $startedAt,
+            StateRestoreRuntime::startedAt => $startedAt,
+            StateRestoreRuntime::estimatedSeconds => $estimatedSeconds,
+            StateRestoreRuntime::finishedAt => null,
+            StateRestoreRuntime::outcome => null,
+            StateRestoreRuntime::failureReason => null,
+            StateRestoreRuntime::rehydrateComplete => false,
+            StateRestoreRuntime::rehydrateProblems => [],
+            StateRestoreRuntime::databaseTouched => false,
+        ]);
     }
 
     /**
@@ -79,14 +85,18 @@ final class RestoreRuntimeActions extends RtActions
      * @param RestorePhase $phase Non-terminal phase the run is entering
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markPhase(RestorePhase $phase): void
     {
         $this->ensureCanWrite();
 
-        $this->state->phase = $phase->value;
-        $this->state->phaseStartedAt = UtcMoment::format(new DateTimeImmutable());
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateRestoreRuntime::phase => $phase->value,
+            StateRestoreRuntime::phaseStartedAt => UtcMoment::format(new DateTimeImmutable()),
+        ]);
     }
 
     /**
@@ -99,16 +109,20 @@ final class RestoreRuntimeActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markRehydrating(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->phase = RestorePhase::REHYDRATING->value;
-        $this->state->phaseStartedAt = UtcMoment::format(new DateTimeImmutable());
-        $this->state->rehydrateComplete = false;
-        $this->state->rehydrateProblems = [];
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateRestoreRuntime::phase => RestorePhase::REHYDRATING->value,
+            StateRestoreRuntime::phaseStartedAt => UtcMoment::format(new DateTimeImmutable()),
+            StateRestoreRuntime::rehydrateComplete => false,
+            StateRestoreRuntime::rehydrateProblems => [],
+        ]);
     }
 
     /**
@@ -122,14 +136,18 @@ final class RestoreRuntimeActions extends RtActions
      * @param list<string> $problems Processes that failed to re-read or never answered, one line each
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markRehydrateOutcome(bool $complete, array $problems): void
     {
         $this->ensureCanWrite();
 
-        $this->state->rehydrateComplete = $complete;
-        $this->state->rehydrateProblems = $problems;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateRestoreRuntime::rehydrateComplete => $complete,
+            StateRestoreRuntime::rehydrateProblems => $problems,
+        ]);
     }
 
     /**
@@ -141,13 +159,17 @@ final class RestoreRuntimeActions extends RtActions
      * @param bool $touched Whether the run got as far as writing to the database
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markDatabaseTouched(bool $touched): void
     {
         $this->ensureCanWrite();
 
-        $this->state->databaseTouched = $touched;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateRestoreRuntime::databaseTouched => $touched,
+        ]);
     }
 
     /**
@@ -161,25 +183,31 @@ final class RestoreRuntimeActions extends RtActions
      * bar that kept filling against an estimate nobody is running against anymore would be the one
      * thing on the screen still claiming work is happening.
      *
+     * A terminal transition: it takes the service reserve of the source's FIFO and is never refused
+     * for want of room - one the reserve cannot take now is owed and retried as the FIFO frees.
+     *
      * @param BackupStatus $outcome How the run ended
      * @param ?string $failureReason Operator-facing failure detail; null on success
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function finish(BackupStatus $outcome, ?string $failureReason = null): void
     {
         $this->ensureCanWrite();
 
-        $this->state->running = false;
-        $this->state->phase = $outcome === BackupStatus::SUCCESS
-            ? RestorePhase::SUCCEEDED->value
-            : RestorePhase::FAILED->value;
-        $this->state->phaseStartedAt = null;
-        $this->state->estimatedSeconds = null;
-        $this->state->finishedAt = UtcMoment::format(new DateTimeImmutable());
-        $this->state->outcome = $outcome->value;
-        $this->state->failureReason = $failureReason;
-        $this->sync();
+        $this->applyDiffAsCleanup([
+            StateRestoreRuntime::running => false,
+            StateRestoreRuntime::phase => $outcome === BackupStatus::SUCCESS
+                ? RestorePhase::SUCCEEDED->value
+                : RestorePhase::FAILED->value,
+            StateRestoreRuntime::phaseStartedAt => null,
+            StateRestoreRuntime::estimatedSeconds => null,
+            StateRestoreRuntime::finishedAt => UtcMoment::format(new DateTimeImmutable()),
+            StateRestoreRuntime::outcome => $outcome->value,
+            StateRestoreRuntime::failureReason => $failureReason,
+        ]);
     }
 
     /**
@@ -188,26 +216,32 @@ final class RestoreRuntimeActions extends RtActions
      * Every field is cleared, not only the flag: a leftover id, phase or outcome would
      * keep readers describing a run that is over and already reported.
      *
+     * A terminal transition: it takes the service reserve of the source's FIFO and is never refused
+     * for want of room - one the reserve cannot take now is owed and retried as the FIFO frees.
+     *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function clear(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->running = false;
-        $this->state->backupId = null;
-        $this->state->scope = null;
-        $this->state->phase = null;
-        $this->state->phaseStartedAt = null;
-        $this->state->startedAt = null;
-        $this->state->estimatedSeconds = null;
-        $this->state->finishedAt = null;
-        $this->state->outcome = null;
-        $this->state->failureReason = null;
-        $this->state->rehydrateComplete = false;
-        $this->state->rehydrateProblems = [];
-        $this->state->databaseTouched = false;
-        $this->sync();
+        $this->applyDiffAsCleanup([
+            StateRestoreRuntime::running => false,
+            StateRestoreRuntime::backupId => null,
+            StateRestoreRuntime::scope => null,
+            StateRestoreRuntime::phase => null,
+            StateRestoreRuntime::phaseStartedAt => null,
+            StateRestoreRuntime::startedAt => null,
+            StateRestoreRuntime::estimatedSeconds => null,
+            StateRestoreRuntime::finishedAt => null,
+            StateRestoreRuntime::outcome => null,
+            StateRestoreRuntime::failureReason => null,
+            StateRestoreRuntime::rehydrateComplete => false,
+            StateRestoreRuntime::rehydrateProblems => [],
+            StateRestoreRuntime::databaseTouched => false,
+        ]);
     }
 }

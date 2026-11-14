@@ -19,6 +19,7 @@ use Hilos\Core\Daemon\Module\BuildTimestampModule;
 use Hilos\Core\Daemon\Module\DaemonModule;
 use Hilos\Core\Daemon\Module\PeerModule;
 use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Router\SignalRouter;
@@ -46,6 +47,7 @@ final class ChatDaemonManager extends DaemonManager
      * Registers the cron rule of the chat history cleanup.
      *
      * @throws InvalidFormatException When the initial daemon measurement violates its value contract
+     * @throws InvalidArgumentException When the RT pass allowance is invalid
      * @throws CronRuleNameException When the history cleanup name uses the reserved framework prefix
      * @throws EventLoopException When cron registration cannot rearm native scheduling
      */

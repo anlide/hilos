@@ -46,6 +46,9 @@ final class RtStaleness
     /** @var array<string, array<string, float>> [collectionKey => [stateId => frozen since]] */
     private static array $frozen = [];
 
+    /** @var array<string, int> How often each collection's marks changed, for a copy prepared beside them */
+    private static array $revisions = [];
+
     /**
      * Marks the named rows of a collection as frozen since a moment.
      *
@@ -63,6 +66,7 @@ final class RtStaleness
             $held = self::$frozen[$collectionKey][$stateId] ?? null;
             if ($held === null || $since < $held) {
                 self::$frozen[$collectionKey][$stateId] = $since;
+                self::$revisions[$collectionKey] = self::revision($collectionKey) + 1;
             }
         }
     }
@@ -76,11 +80,41 @@ final class RtStaleness
     public static function clear(string $collectionKey, array $stateIds): void
     {
         foreach ($stateIds as $stateId) {
-            unset(self::$frozen[$collectionKey][$stateId]);
+            if (isset(self::$frozen[$collectionKey][$stateId])) {
+                unset(self::$frozen[$collectionKey][$stateId]);
+                self::$revisions[$collectionKey] = self::revision($collectionKey) + 1;
+            }
         }
         if ((self::$frozen[$collectionKey] ?? []) === []) {
             unset(self::$frozen[$collectionKey]);
         }
+    }
+
+    /**
+     * Replaces a collection's marks whole, in one assignment rather than a row at a time: the
+     * marks a snapshot generation prepared beside its candidate, switched in with its rows.
+     *
+     * @param string $collectionKey RT collection the marks belong to
+     * @param array<string, float> $rows Frozen rows by state id, as {@see self::staleRows()} gives them
+     */
+    public static function install(string $collectionKey, array $rows): void
+    {
+        if ($rows === []) {
+            unset(self::$frozen[$collectionKey]);
+        } else {
+            self::$frozen[$collectionKey] = $rows;
+        }
+        self::$revisions[$collectionKey] = self::revision($collectionKey) + 1;
+    }
+
+    /**
+     * @param string $collectionKey RT collection to ask about
+     * @return int Revision of its marks: whatever changes one of them changes it, so a copy taken at
+     *     one revision is current while it stands
+     */
+    public static function revision(string $collectionKey): int
+    {
+        return self::$revisions[$collectionKey] ?? 0;
     }
 
     /**
@@ -136,10 +170,14 @@ final class RtStaleness
      * Forgets every mark this process holds.
      *
      * For a process starting over, and for the tests around it: process-wide state outlives a
-     * case, so without this one case's marks would be read by the next.
+     * case, so without this one case's marks would be read by the next. Every revision moves on,
+     * so no copy prepared before is taken for current.
      */
     public static function reset(): void
     {
         self::$frozen = [];
+        foreach (self::$revisions as $collectionKey => $revision) {
+            self::$revisions[$collectionKey] = $revision + 1;
+        }
     }
 }

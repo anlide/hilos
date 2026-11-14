@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Generator;
 use Hilos\Auth\Session\DeferredSessionCarryoverQueue;
 use Hilos\Auth\Session\SessionCarrier;
 use Hilos\Auth\Session\SessionCarryover;
@@ -22,8 +23,8 @@ use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceOperation;
-use Hilos\Database\Database;
 use Hilos\Database\DTO\DbReHydrateOutcome;
+use Hilos\Database\Database;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogConstants;
 use Hilos\Environment\Exception\EnvException;
@@ -32,25 +33,28 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\DeferredNotificationQueue;
 use Hilos\Notification\NotificationDraft;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\BackupHistories;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
-use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\BackupHistory as StateBackupHistory;
+use Hilos\Runtime\State\Item\BackupRuntime as StateBackupRuntime;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\RestoreRuntime as StateRestoreRuntime;
 use Hilos\Runtime\State\Item\RtState;
-use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Actions\Collection\BackupHistoriesActions;
 use Hilos\Runtime\View\Actions\Collection\HilosSessionConnectionsActions;
 use Hilos\Runtime\View\Actions\Item\HilosConnectionActions;
 use Hilos\Runtime\View\Collection\BackupHistories as ViewBackupHistories;
 use Hilos\Runtime\View\Collection\HilosSessionConnections as ViewHilosSessionConnections;
+use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\HilosSessionConnection as ViewHilosSessionConnection;
 use Hilos\Runtime\View\Item\RestoreRuntime;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\AgentStopDTO;
-use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use RuntimeException;
 
@@ -600,30 +604,39 @@ final class CarryOverTestConnection extends HilosSessionConnection
         return CarryOverTestRtContext::connections;
     }
 
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row (nothing of its own to read)
+     * @param RtRowReader $row Serialized runtime row (nothing of its own to read)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Always empty: the row is the framework base
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Partial update (nothing of its own to apply)
+     * @param RtRowReader $diff Partial update (nothing of its own to apply)
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

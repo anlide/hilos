@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use ArrayIterator;
 use Closure;
 use DateTimeImmutable;
+use Generator;
 use Hilos\Auth\IdentifierMask;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\DTO\ThrottleCheckSignalData;
@@ -18,9 +19,9 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
-use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthThrottleFeature;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
@@ -58,6 +59,9 @@ use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\HilosMailer;
 use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Mail\Template\StatusSubscriptionConfirmMailTemplate;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -686,21 +690,24 @@ final class StatusGuestConnections extends HilosSessionConnections
 final class StatusGuestConnection extends HilosSessionConnection
 {
     /** No project fields. */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
-    /** @param array<string, mixed> $row No project fields */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row No project fields */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
     /** @return array<string, mixed> No project fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
-    /** @param array<string, mixed> $diff No project fields */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff No project fields */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

@@ -19,6 +19,8 @@ use Hilos\Runtime\View\Actions\Collection\RtActions;
 use LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for bot agent lifecycle statuses.
@@ -38,6 +40,8 @@ final class BotAgentStatusesActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws SourceChangeSubscriberException When a source subscriber fails
      * @throws LogicException When the item factory returns the wrong status type
      */
@@ -70,6 +74,8 @@ final class BotAgentStatusesActions extends RtActions
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException When a source subscriber fails
      * @throws LogicException When the item factory returns the wrong status type
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function create(int $botId, string $status): ViewBotAgentStatus
     {
@@ -87,6 +93,8 @@ final class BotAgentStatusesActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidArgumentException When an argument is invalid
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function clear(): void
     {

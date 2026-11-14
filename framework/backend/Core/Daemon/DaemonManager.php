@@ -47,7 +47,6 @@ use Hilos\Cluster\Peer\ConnectionPolicy;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbReHydrateDTO;
 use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\FullMeshConnectionPolicy;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Peer\PeerLink;
@@ -211,9 +210,17 @@ use Hilos\ProtectedMode\StandaloneProtectedMode;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\Row\RtRowArena;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSnapshotBasis;
 use Hilos\Runtime\RtSnapshotRead;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
+use Hilos\Runtime\Snapshot\RtWorkLane;
+use Hilos\Runtime\Snapshot\RtWorkScheduler;
+use Hilos\Runtime\Stream\RtSyncStreamChannel;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSettle;
 use Hilos\Runtime\RtMembershipVersion;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\RtStaleness;
@@ -277,9 +284,6 @@ use Hilos\Socket\Worker\DTO\WorkerGroupLeaveAllDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Status\DTO\StatusFilesChangedSignalData;
 use Hilos\Utils\ClientReadFailureLog;
@@ -287,6 +291,7 @@ use Hilos\Utils\Logger;
 use Random\RandomException;
 use JsonException;
 use Throwable;
+use WeakMap;
 use WeakReference;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
@@ -1048,6 +1053,15 @@ abstract class DaemonManager extends BaseManager implements
     private bool $measurementReportDue = false;
 
     /**
+     * RT pass of the master: each portion of a signal dispatch opens one, and the RT work its steps
+     * do - a snapshot read out of a source's cut - spends that pass's share. Process-local copy
+     * machinery, not application state (docs/agents/runtime/rt-context.md).
+     */
+    private readonly RtWorkScheduler $rtWork;
+    /** @var ?WeakMap<RtSyncStreamChannel, int> Wakes of each link stream whose pump is queued on this master's FIFO */
+    private ?WeakMap $rtSyncStreamWakes = null;
+
+    /**
      * Initializes daemon manager.
      *
      * Initializes signal router via Hilos::initSignalRouter() and creates
@@ -1055,6 +1069,7 @@ abstract class DaemonManager extends BaseManager implements
      * and createAgentManagerDaemon().
      *
      * @throws InvalidFormatException When the initial daemon measurement violates its value contract
+     * @throws InvalidArgumentException When the RT pass allowance is invalid
      */
     public function __construct()
     {
@@ -1072,6 +1087,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->probeFleetSupervisor = new ProbeFleetSupervisor();
         $this->policyDeclarations = new AgentDeclarationDuty(self::POLICY_PLACEMENT_RETRY_SEC);
         $this->rtClaimRegistry = new RtClusterClaimRegistry();
+        $this->rtWork = new RtWorkScheduler();
         $this->commandReplyOrigins = new CommandReplyOrigins();
         $this->agentRestarts = new AgentRestarts(
             $this->agentManagerDaemon,
@@ -3425,6 +3441,10 @@ abstract class DaemonManager extends BaseManager implements
         if ($server instanceof WorkerServer) {
             $server->registerProtectedModeSourceBinding($this->protectedModeSourceBinding);
         }
+        if ($server instanceof WorkerServer || $server instanceof PeerServer) {
+            $server->setRtSyncStreamWake($this->wakeRtSyncStream(...));
+            $server->setRtSyncStreamHold($this->markRtSyncStreamHold(...));
+        }
         if ($server instanceof WorkerServer || $server instanceof WebSocketServer) {
             $this->deliverySettings ??= new DeliverySettingsMirror();
             if ($server instanceof WorkerServer) {
@@ -5519,6 +5539,7 @@ abstract class DaemonManager extends BaseManager implements
             // The poll has woken; the manager's dispatch phase follows it in this iteration.
         });
         $this->signalDispatchNotifier = $this->signalDispatchWake->markReady(...);
+        RtRowArena::process()->bindPassWake($this->signalDispatchNotifier);
         $this->signalDispatchState();
         $this->bindSignalDispatchRouter();
         $this->identitySignalTimer = $this->eventLoop->createTimer(function (): void {
@@ -5539,6 +5560,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->bindSourceInterestDeliverySources();
         $this->bindParkedSignalOwners();
         $this->wakeSignalDispatchRemainder();
+        $this->wakeRetirementRemainder();
     }
 
     /** Releases the exact bound owners, even when the facade already names a replacement router. */
@@ -5566,6 +5588,7 @@ abstract class DaemonManager extends BaseManager implements
         if ($this->signalDispatchNotifier !== null) {
             $this->signalDispatchRouter?->removeQueueWake($this->signalDispatchNotifier);
             $this->signalDispatchWorkerServer?->removeStopDispatchWake($this->signalDispatchNotifier);
+            RtRowArena::process()->unbindPassWake($this->signalDispatchNotifier);
         }
         if ($this->sourceInterestDeliveryBinding !== null) {
             $this->signalDispatchPeerServer?->get()?->removeSourceInterestDelivery($this->sourceInterestDeliveryBinding);
@@ -5671,6 +5694,20 @@ abstract class DaemonManager extends BaseManager implements
      * Each portion stays in the current guarded phase and checks the monotonic budget,
      * so queued work gains throughput without starving the next I/O pass.
      *
+     * Every round opens a fresh RT work share: the lanes divide a round between them, and the
+     * deadline bounds the pass. A share opened once per pass ran out on one streamed operation
+     * and left the rest of the pass idle, so a busy writer outran the stream (HIL-2056). The
+     * round's retirement share advances what the process arena's shared queue holds - releases
+     * no write door retired itself - in portions. The rounds go on for it as for runnable signals,
+     * and a remainder the deadline leaves cues the next pass ({@see self::wakeRetirementRemainder()}).
+     * It stays out of {@see self::hasRunnableSignalDispatch()}: {@see self::dispatchSignals()}
+     * does not retire, so a caller that walks the dispatch until that predicate clears never ends.
+     * The pass first - once, before its rounds - retires a bounded portion of what the queue holds
+     * beyond its bounds, by count and by volume ({@see RtRowArena::retireExcess()}): agents stopping
+     * and starting by the dozen release far more between two passes than the shares retire, and the
+     * backlog took the master past its memory limit. The portion is bounded because the excess grows
+     * with the burst; what it leaves keeps the queue pending, and so the next pass cued.
+     *
      * @throws InvalidArgumentException When an internally produced signal cannot be named
      * @throws EnvException When destination configuration is invalid
      * @throws ClusterConfigurationException When a named-node destination cannot resolve its node
@@ -5678,10 +5715,14 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function dispatchSignalsWithinBudget(): void
     {
+        RtRowArena::process()->retireExcess();
         $deadline = hrtime(true) + self::SIGNAL_DISPATCH_BUDGET_NS;
         do {
+            $this->rtWork->beginPass();
             $this->dispatchSignals();
-        } while (hrtime(true) < $deadline && $this->hasRunnableSignalDispatch());
+            RtRowArena::process()->advanceRetirement($this->rtWork->budget(RtWorkLane::Retire));
+        } while (hrtime(true) < $deadline && ($this->hasRunnableSignalDispatch() || RtRowArena::process()->hasPendingRetirement()));
+        $this->wakeRetirementRemainder();
     }
 
     /**
@@ -6211,6 +6252,17 @@ abstract class DaemonManager extends BaseManager implements
         }
     }
 
+    /**
+     * Re-cues the dispatch phase while the process arena's shared retirement has portions left.
+     * Each round retires on a positive share, so a cued pass always moves the queue on.
+     */
+    private function wakeRetirementRemainder(): void
+    {
+        if (RtRowArena::process()->hasPendingRetirement()) {
+            $this->signalDispatchWake?->markReady();
+        }
+    }
+
     /** @return ?int Oldest finite caller cancellation ready to forget, excluding unconsumed input */
     private function readyCommandCancellationId(): ?int
     {
@@ -6542,19 +6594,28 @@ abstract class DaemonManager extends BaseManager implements
                 $this->broadcastDbSyncToPeers($peerServer, $signal);
             });
         } elseif (in_array($signal->signalType->getType(), $syncTypes, true)) {
+            // A worker's write lifts the mark here at once, and the readers are told behind the write.
             // The router's local publication does not confirm its subject is reachable;
             // that row stays stale until the peer handshake (HIL-876).
+            $thawed = [];
             if ($signal->data instanceof RtSyncSignalDataInterface
                 && $signal->data->collectionKey !== StateHilosClusterNode::RT_COLLECTION) {
                 $this->agentManagerDaemon->rtReplicaOriginMap()->forget($signal->data->collectionKey, $signal->data->stateId);
-                $this->clearStaleness($signal->data->collectionKey, [$signal->data->stateId]);
+                $thawed = $this->liftStaleness($signal->data->collectionKey, [$signal->data->stateId]);
             }
             yield from $this->syncFrameDelivery($workerServer, $signal);
+            if ($signal->data instanceof RtSyncSignalDataInterface) {
+                $this->thawOnWorkers($signal->data->collectionKey, $thawed);
+            }
             $this->handleDaemonSignal($signal);
             yield from $this->peerAnnouncementDelivery($peerServer, function () use ($peerServer, $signal): void {
                 $this->broadcastRtSyncToPeers($peerServer, $signal);
                 $this->broadcastDbSyncToPeers($peerServer, $signal);
             });
+            // A write a worker streamed is answered now: applied here and its further delivery queued.
+            if ($signal->data instanceof RtSyncSignalDataInterface) {
+                RtSyncStreamSettle::settle($signal->data, true);
+            }
         }
 
         // The access re-decision announcement is fanned out and nothing more (HIL-644): the
@@ -7051,6 +7112,15 @@ abstract class DaemonManager extends BaseManager implements
         int $reHydrateRound = 0,
     ): Generator {
         $signalName = $signal->signalName->getName();
+        $rtData = match ($signalName) {
+            SignalConstants::RT_SYNC_CREATED => self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
+            SignalConstants::RT_SYNC_UPDATED => self::syncSignalData($signal->data, RtSyncUpdatedSignalData::class),
+            SignalConstants::RT_SYNC_DELETED => self::syncSignalData($signal->data, RtSyncDeletedSignalData::class),
+            default => null,
+        };
+        if ($rtData instanceof RtSyncSignalDataInterface) {
+            return $this->workerRtSyncDelivery($workerServer, $rtData);
+        }
 
         $dto = match ($signalName) {
             SignalConstants::DB_SYNC_CREATED => new WorkerDbSyncCreatedMessageDTO(
@@ -7078,15 +7148,6 @@ abstract class DaemonManager extends BaseManager implements
                 self::syncSignalData($signal->data, DbReHydrateSignalData::class)->agentId,
                 $reHydrateRound,
             ),
-            SignalConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO(
-                self::syncSignalData($signal->data, RtSyncCreatedSignalData::class),
-            ),
-            SignalConstants::RT_SYNC_UPDATED => new WorkerRtSyncUpdatedMessageDTO(
-                self::syncSignalData($signal->data, RtSyncUpdatedSignalData::class),
-            ),
-            SignalConstants::RT_SYNC_DELETED => new WorkerRtSyncDeletedMessageDTO(
-                self::syncSignalData($signal->data, RtSyncDeletedSignalData::class),
-            ),
             default => null,
         };
 
@@ -7111,6 +7172,90 @@ abstract class DaemonManager extends BaseManager implements
             $sourceKind,
             $signal->data instanceof SyncSignalDataInterface ? $signal->data->collectionKey : null,
         );
+    }
+
+    /**
+     * Hands one RT write to the ordinary stream of every worker of this node that reads its
+     * collection; the stream cuts it into parts and the worker answers it once applied.
+     *
+     * The same reader map as {@see self::workerFrameDelivery()}: a worker that has not said it
+     * reads the collection holds nothing the write could land on.
+     *
+     * @param WorkerServer $server Owning worker server
+     * @param RtSyncSignalDataInterface $data RT sync carrier
+     * @return Generator<int, void> Effect-free initial yield, then one worker link per step
+     */
+    private function workerRtSyncDelivery(WorkerServer $server, RtSyncSignalDataInterface $data): Generator
+    {
+        return $this->walkWorkerRtSync($server->clientCandidates(), $data);
+    }
+
+    /**
+     * @param Generator<int, ?ClientInterface> $clients Original worker roster slots
+     * @param RtSyncSignalDataInterface $data RT sync carrier, shared by every stream that takes it
+     * @return Generator<int, void> One worker link per step after the initial yield
+     */
+    private function walkWorkerRtSync(Generator $clients, RtSyncSignalDataInterface $data): Generator
+    {
+        yield;
+        foreach ($clients as $client) {
+            if ($client instanceof WorkerClient && $this->agentManagerDaemon->workerReaderMap()->holds(
+                AgentManagerDaemon::workerHolderId($client->getWorkerIndex()), SourceChange::KIND_RT, $data->collectionKey,
+            )) {
+                $client->rtSyncStream()->send($data);
+            }
+            yield;
+        }
+    }
+
+    /**
+     * @param WorkerServer $workerServer Worker server instance
+     * @param RtSyncSignalDataInterface $data RT sync carrier for every worker reading its collection
+     */
+    private function streamRtSyncToWorkers(WorkerServer $workerServer, RtSyncSignalDataInterface $data): void
+    {
+        foreach ($this->workerRtSyncDelivery($workerServer, $data) as $_) {
+        }
+    }
+
+    /**
+     * Pumps one link's ordinary RT stream as work of this master's own FIFO: each step spends the
+     * ordinary share of the current RT pass and gives the step up when it runs out. A wake while
+     * the work is queued asks it for one more round instead of queuing a second one.
+     *
+     * Implements the wake the worker and peer servers hand their links' streams.
+     *
+     * @param RtSyncStreamChannel $channel Stream with work to do
+     */
+    public function wakeRtSyncStream(RtSyncStreamChannel $channel): void
+    {
+        $this->rtSyncStreamWakes ??= new WeakMap();
+        $wakes = ($this->rtSyncStreamWakes[$channel] ?? 0) + 1;
+        $this->rtSyncStreamWakes[$channel] = $wakes;
+        if ($wakes > 1) {
+            return;
+        }
+        $this->dispatchSourceWork(fn (): Generator => $this->pumpRtSyncStream($channel));
+    }
+
+    /**
+     * @param RtSyncStreamChannel $channel Stream with work to do
+     * @return Generator<int, void> One budgeted pump per step, until only credit or input can move it
+     */
+    private function pumpRtSyncStream(RtSyncStreamChannel $channel): Generator
+    {
+        try {
+            do {
+                $seen = $this->rtSyncStreamWakes[$channel];
+                while ($channel->pump($this->signalDispatchNotifier === null
+                    ? new RtWorkBudget()
+                    : $this->rtWork->budget(RtWorkLane::Ordinary))) {
+                    yield;
+                }
+            } while ($this->rtSyncStreamWakes[$channel] !== $seen);
+        } finally {
+            unset($this->rtSyncStreamWakes[$channel]);
+        }
     }
 
     /**
@@ -7204,7 +7349,15 @@ abstract class DaemonManager extends BaseManager implements
                     AgentManagerDaemon::workerHolderId($client->getWorkerIndex()), $kind, $collectionKey,
                 ))) {
                 $frame ??= $dto->toJson();
-                $client->send($frame);
+                if ($dto instanceof WorkerPageAccessReassessMessageDTO || $dto instanceof WorkerPageAccessReassessConnectionsMessageDTO) {
+                    // Pages re-decide against the worker's RT copy, so the writes streamed to it before go first.
+                    $client->sendInTurn($frame);
+                } elseif ($dto instanceof WorkerRtStalenessMessageDTO) {
+                    // A thaw goes behind the write that lifted the mark, a freeze at once.
+                    $client->sendRtStaleness($dto, $frame);
+                } else {
+                    $client->send($frame);
+                }
             }
             yield;
         }
@@ -7301,7 +7454,7 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $signalType = $signal->signalType->getType();
-        if (!in_array($signalType, PeerRtSyncDTO::SIGNAL_TYPES, true)) {
+        if (!in_array($signalType, RtSyncStreamOperation::SIGNAL_TYPES, true)) {
             return;
         }
 
@@ -7392,7 +7545,8 @@ abstract class DaemonManager extends BaseManager implements
         $route = $mesh instanceof PeerServer ? $mesh->nodeRouteGuard($nodeId) : static fn(): bool => true;
         $mesh = WeakReference::create($mesh);
         $claims = $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports();
-        $work = static function () use ($mesh, $claims, $nodeId, $route): Generator {
+        $rtWork = $this->rtWork;
+        $work = static function () use ($mesh, $claims, $nodeId, $route, $rtWork): Generator {
             $transport = $mesh->get();
             if ($transport === null || !$route()) {
                 return;
@@ -7406,14 +7560,14 @@ abstract class DaemonManager extends BaseManager implements
                 }
                 foreach ($plan->keyScopes as $collectionKey => $scopeKeys) {
                     yield self::isHandedOverInSnapshot($collectionKey)
-                        ? new RtSnapshotRead($collectionKey, scopeKeys: $scopeKeys, basis: $basis) : null;
+                        ? new RtSnapshotRead($collectionKey, RtSnapshotScope::rows($scopeKeys), $basis) : null;
                 }
                 foreach ($plan->setScopes as $collectionKey => $setKeys) {
                     yield self::isHandedOverInSnapshot($collectionKey)
-                        ? new RtSnapshotRead($collectionKey, scopeSetKeys: $setKeys, basis: $basis) : null;
+                        ? new RtSnapshotRead($collectionKey, RtSnapshotScope::sets($setKeys), $basis) : null;
                 }
             })();
-            $delivery = new RtOwnedSnapshotBuild($transport, $nodeId, $sources, $route)->delivery();
+            $delivery = new RtOwnedSnapshotBuild($transport, $nodeId, $sources, $route, $rtWork)->delivery();
             unset($transport);
             yield from $delivery;
         };
@@ -7511,10 +7665,15 @@ abstract class DaemonManager extends BaseManager implements
      * the same line. A payload naming no row is judged by the collection, as everything was
      * before there were rows to judge: it says nothing this node could narrow the question with.
      *
+     * A streamed operation is applied inside the master's pump of its link, long after it arrived;
+     * it brings the receipt taken when its final part arrived, so the same holds for it: a receipt
+     * that outlived its runtime, mount or owners applies nothing, and a loss noted since freezes.
+     *
      * @param string $originNodeId Id of the node the write happened on
      * @param string $signalType RT sync signal type the frame carried
      * @param SignalDTO $signal RT sync signal to apply and fan out locally
      * @param bool $partialOwner Whether the origin holds only part of the right over the collection
+     * @param ?RtReplicaConfirmation $receipt Taken when the fact arrived, or null to take it now
      * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function applyRemoteRtSync(
@@ -7522,14 +7681,22 @@ abstract class DaemonManager extends BaseManager implements
         string $signalType,
         SignalDTO $signal,
         bool $partialOwner = false,
+        ?RtReplicaConfirmation $receipt = null,
     ): void {
         if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
             $owner = WeakReference::create($this);
             $this->queueSignalEffect(static function () use ($owner, $originNodeId, $signalType, $signal, $partialOwner): Generator {
                 $owner->get()?->applyRemoteRtSync($originNodeId, $signalType, $signal, $partialOwner);
                 yield;
-            }, peerApplyContext: "RT sync from node '{$originNodeId}'", rtConfirmation:
-                $this->agentManagerDaemon->rtReplicaOriginMap()->captureConfirmation($originNodeId, $this->agentManagerDaemon->rtNodeSourceMap()));
+            }, peerApplyContext: "RT sync from node '{$originNodeId}'", rtConfirmation: $receipt ?? $this->captureRtSyncReceipt($originNodeId));
+            return;
+        }
+        if ($receipt !== null && !$receipt->isCurrent(
+            $this->agentManagerDaemon->rtReplicaOriginMap(), $this->agentManagerDaemon->rtNodeSourceMap(),
+        )) {
+            Logger::warning("Dropping peer RT sync from node '{$originNodeId}': its runtime or owners changed since it arrived");
+            self::settleRtSyncStream($signal, false);
+
             return;
         }
         $carriedType = $signal->signalType->getType();
@@ -7537,13 +7704,14 @@ abstract class DaemonManager extends BaseManager implements
         if (
             $carriedType !== $signalType
             || $carriedName !== $signalType
-            || !in_array($carriedType, PeerRtSyncDTO::SIGNAL_TYPES, true)
+            || !in_array($carriedType, RtSyncStreamOperation::SIGNAL_TYPES, true)
         ) {
             Logger::warning(
                 "Dropping peer RT sync from node '{$originNodeId}': declared '{$signalType}',"
                 . " carried type '{$carriedType}' name '{$carriedName}'"
                 . ' - only a matching RT sync fact is applied',
             );
+            self::settleRtSyncStream($signal, false);
 
             return;
         }
@@ -7569,6 +7737,7 @@ abstract class DaemonManager extends BaseManager implements
                 "RT collection {$syncData->collectionKey} has truth sources on two nodes:"
                 . " local and {$originNodeId}",
             );
+            self::settleRtSyncStream($signal, false);
 
             return;
         }
@@ -7585,14 +7754,18 @@ abstract class DaemonManager extends BaseManager implements
         // still freezes that data, including a row first created by this frame. A later owner's
         // confirmation can thaw a moved row without a hand-over from the previous owner.
         // A deleted row clears its mark: what no longer exists cannot be out of date.
+        //
+        // The mark is lifted here at once, and the readers are told once the write is handed to their
+        // streams, behind it: a thaw told ahead of the write would read the row as current without it.
+        $thawed = [];
         if ($stateId !== null) {
             $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
             if ($carriedType === SignalTypeConstants::RT_SYNC_DELETED) {
                 $originMap->forget($syncData->collectionKey, $stateId);
-                $this->clearStaleness($syncData->collectionKey, [$stateId]);
+                $thawed = $this->liftStaleness($syncData->collectionKey, [$stateId]);
             } else {
                 $originMap->note($originNodeId, $syncData->collectionKey, [$stateId]);
-                $this->confirmRemoteRtRows($syncData->collectionKey, [$stateId]);
+                $thawed = $this->confirmRemoteRtRows($syncData->collectionKey, [$stateId], $receipt);
             }
         }
 
@@ -7600,8 +7773,36 @@ abstract class DaemonManager extends BaseManager implements
         if ($workerServer !== null) {
             $this->sendSyncToWorkers($workerServer, $signal);
         }
+        $this->thawOnWorkers($syncData->collectionKey, $thawed);
 
         $this->handleDaemonSignal($signal);
+        self::settleRtSyncStream($signal, true);
+    }
+
+    /**
+     * Implements {@see RtSyncSink}: the receipt this node's replica bookkeeping keeps for the
+     * origin now, shared by everything that arrives from it until its next loss.
+     *
+     * @param string $originNodeId Id of the node the fact arrives from
+     * @return RtReplicaConfirmation Receipt to hand to {@see self::applyRemoteRtSync()}
+     */
+    public function captureRtSyncReceipt(string $originNodeId): RtReplicaConfirmation
+    {
+        return $this->agentManagerDaemon->rtReplicaOriginMap()->captureConfirmation($originNodeId, $this->agentManagerDaemon->rtNodeSourceMap());
+    }
+
+    /**
+     * Answers the stream an operation came on, if it came on one: applied once it is applied here
+     * and queued for this node's workers, refused when it was not.
+     *
+     * @param SignalDTO $signal RT sync signal of a streamed operation
+     * @param bool $applied Whether it was applied
+     */
+    private static function settleRtSyncStream(SignalDTO $signal, bool $applied): void
+    {
+        if ($signal->data instanceof RtSyncSignalDataInterface) {
+            RtSyncStreamSettle::settle($signal->data, $applied);
+        }
     }
 
     /**
@@ -7834,14 +8035,14 @@ abstract class DaemonManager extends BaseManager implements
 
         // A hand-over confirms these replicas at receipt; a subsequent loss still applies when
         // this retained work reaches them. Swept rows lose their origin and stale mark, so the
-        // next dropped link cannot freeze a row that no longer exists.
+        // next dropped link cannot freeze a row that no longer exists. The readers are told of the
+        // thaw behind the rows streamed to them below.
         $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
         $originMap->note($originNodeId, $collectionKey, $arrived);
         foreach ($swept as $stateId) {
             $originMap->forget($collectionKey, $stateId);
         }
-        $this->clearStaleness($collectionKey, $swept);
-        $this->confirmRemoteRtRows($collectionKey, $arrived);
+        $thawed = [...$this->liftStaleness($collectionKey, $swept), ...$this->confirmRemoteRtRows($collectionKey, $arrived)];
         $this->onIdentitySourceChanged($collectionKey);
         if ($collectionKey === StateHilosUpload::RT_COLLECTION) {
             $this->uploadMemory?->onUploadsChanged();
@@ -7853,22 +8054,13 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         foreach (array_keys($held) as $stateId) {
-            $this->writeFrameToWorkers(
-                $workerServer,
-                new WorkerRtSyncDeletedMessageDTO(new RtSyncDeletedSignalData($collectionKey, (string)$stateId)),
-                SourceChange::KIND_RT,
-                $collectionKey,
-            );
+            $this->streamRtSyncToWorkers($workerServer, new RtSyncDeletedSignalData($collectionKey, (string)$stateId));
         }
 
         foreach ($rows as $stateId => $row) {
-            $this->writeFrameToWorkers(
-                $workerServer,
-                new WorkerRtSyncCreatedMessageDTO(new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row)),
-                SourceChange::KIND_RT,
-                $collectionKey,
-            );
+            $this->streamRtSyncToWorkers($workerServer, new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row));
         }
+        $this->thawOnWorkers($collectionKey, $thawed);
     }
 
     /**
@@ -7935,7 +8127,7 @@ abstract class DaemonManager extends BaseManager implements
         RtSnapshot::replaceScope($collectionKey, $delivered, $missing);
 
         $this->agentManagerDaemon->rtReplicaOriginMap()->note($originNodeId, $collectionKey, $delivered);
-        $this->confirmRemoteRtRows($collectionKey, $delivered);
+        $thawed = $this->confirmRemoteRtRows($collectionKey, $delivered);
         $this->onIdentitySourceChanged($collectionKey);
 
         $workerServer = $this->findWorkerServer();
@@ -7944,14 +8136,11 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         // Creations only, and not one deletion: nothing was deleted for a worker to be told about.
+        // The readers are told of the thaw behind them.
         foreach ($missing as $stateId => $row) {
-            $this->writeFrameToWorkers(
-                $workerServer,
-                new WorkerRtSyncCreatedMessageDTO(new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row)),
-                SourceChange::KIND_RT,
-                $collectionKey,
-            );
+            $this->streamRtSyncToWorkers($workerServer, new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row));
         }
+        $this->thawOnWorkers($collectionKey, $thawed);
     }
 
     /**
@@ -8788,7 +8977,8 @@ abstract class DaemonManager extends BaseManager implements
         $mesh = WeakReference::create($mesh);
         $claims = $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports();
         $origins = WeakReference::create($this->agentManagerDaemon->rtReplicaOriginMap());
-        $work = static function () use ($mesh, $claims, $origins, $nodeId, $collectionKeys, $route): Generator {
+        $rtWork = $this->rtWork;
+        $work = static function () use ($mesh, $claims, $origins, $nodeId, $collectionKeys, $route, $rtWork): Generator {
             $transport = $mesh->get();
             $originMap = $origins->get();
             if ($transport === null || $originMap === null || !$route()) {
@@ -8800,7 +8990,7 @@ abstract class DaemonManager extends BaseManager implements
                     yield self::isHandedOverInSnapshot($collectionKey) ? new RtSnapshotRead($collectionKey, basis: $basis) : null;
                 }
             })();
-            $delivery = new RtReplicaOfferBuild($transport, $nodeId, $claims, $originMap, $sources, $route)->delivery();
+            $delivery = new RtReplicaOfferBuild($transport, $nodeId, $claims, $originMap, $sources, $rtWork, $route)->delivery();
             unset($transport, $originMap);
             yield from $delivery;
         };
@@ -8884,15 +9074,20 @@ abstract class DaemonManager extends BaseManager implements
      * A retained receipt confirms data as of arrival, before any subsequent loss of its origin.
      * Late-created rows inherit that loss too; no transient worker thaw is sent.
      *
+     * The mark is lifted here at once, and the workers that read the rows are told by the caller once
+     * the write that confirmed them is handed to their streams ({@see self::thawOnWorkers()}); a freeze
+     * is told to them at once.
+     *
      * @param string $collectionKey RT collection the receipt speaks for
      * @param list<string> $stateIds Confirmed rows, excluding deletions
+     * @param ?RtReplicaConfirmation $receipt Receipt the rows arrived with, or null for the retained work's own
+     * @return list<string> Rows thawed here, whose readers are still to be told
      */
-    private function confirmRemoteRtRows(string $collectionKey, array $stateIds): void
+    private function confirmRemoteRtRows(string $collectionKey, array $stateIds, ?RtReplicaConfirmation $receipt = null): array
     {
-        $lostAt = $this->currentSignalDispatch?->rtConfirmation?->lostAt;
+        $lostAt = ($receipt ?? $this->currentSignalDispatch?->rtConfirmation)?->lostAt;
         if ($lostAt === null) {
-            $this->clearStaleness($collectionKey, $stateIds);
-            return;
+            return $this->liftStaleness($collectionKey, $stateIds);
         }
         RtStaleness::mark($collectionKey, $stateIds, $lostAt);
         $workerServer = $this->findWorkerServer();
@@ -8900,26 +9095,115 @@ abstract class DaemonManager extends BaseManager implements
             $this->writeFrameToWorkers($workerServer, new WorkerRtStalenessMessageDTO($collectionKey, $stateIds, $lostAt),
                 SourceChange::KIND_RT, $collectionKey);
         }
+
+        return [];
     }
 
     /**
-     * Lifts the mark from some rows here and on the workers that read their collection.
+     * Marks the rows a link's RT stream holds - writes this master refused, of a worker or of a
+     * linked node - the way every other mark of this master's copy goes: here, and to the workers
+     * that read their collection ({@see self::confirmRemoteRtRows()}), since their copies came from
+     * this one and froze with it. A worker that wrote the rows is not told: its copy is the one they
+     * are written to, and nothing froze there. A node's write has no such worker here, so every
+     * reader is told. A hold let go of lifts the mark here at once; the readers are told behind the
+     * snapshot that gave the rows a base again: its apply may still wait in the effect queue, and
+     * hands the rows to their streams there, so the thaw is queued behind it
+     * ({@see self::thawOnWorkers()}).
      *
-     * The workers are told only when something was actually frozen. Callers include a row delta,
-     * a hand-over, a holder offer, and the handshake's own router row. A lift announcing that
-     * nothing changed is a socket write per worker for no reader at all.
+     * Implements the hold the worker and peer servers hand their links' streams.
+     *
+     * @param ?int $workerIndex Worker whose link holds the rows, or null for a peer link
+     * @param string $collectionKey RT collection the rows belong to
+     * @param list<string> $stateIds Rows held, or let go of
+     * @param ?float $since Microtime the hold began, or null when the rows have a base again
+     */
+    private function markRtSyncStreamHold(?int $workerIndex, string $collectionKey, array $stateIds, ?float $since): void
+    {
+        if ($since === null) {
+            $thawed = $this->liftStaleness($collectionKey, $stateIds);
+            if ($thawed !== [] && $this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
+                $owner = WeakReference::create($this);
+                $this->queueSignalEffect(static function () use ($owner, $collectionKey, $thawed): Generator {
+                    $owner->get()?->thawOnWorkers($collectionKey, $thawed);
+                    yield;
+                });
+
+                return;
+            }
+            $this->thawOnWorkers($collectionKey, $thawed);
+
+            return;
+        }
+        RtStaleness::mark($collectionKey, $stateIds, $since);
+        $workerServer = $this->findWorkerServer();
+        if ($workerServer !== null && $stateIds !== []) {
+            $this->writeFrameToWorkers($workerServer, new WorkerRtStalenessMessageDTO($collectionKey, $stateIds, $since),
+                SourceChange::KIND_RT, $collectionKey, $workerIndex);
+        }
+    }
+
+    /**
+     * Lifts the mark from some rows here and on the workers that read their collection. A lift no
+     * write brought - the handshake's own router row - tells the workers at once; a write's own lift
+     * tells them behind the write ({@see self::liftStaleness()}).
      *
      * @param string $collectionKey RT collection the rows belong to
      * @param list<string> $stateIds Rows that are current again
      */
     private function clearStaleness(string $collectionKey, array $stateIds): void
     {
-        $wasFrozen = array_intersect($stateIds, array_keys(RtStaleness::staleRows($collectionKey)));
+        $this->thawOnWorkers($collectionKey, $this->liftStaleness($collectionKey, $stateIds));
+    }
+
+    /**
+     * Lifts the mark from some rows here, at once, and names those that were frozen: only they owe the
+     * workers that read their collection a thaw. A write that lifts it - a row delta, a hand-over, a
+     * holder offer, a worker's own write - tells them once it is handed to their streams
+     * ({@see self::thawOnWorkers()}), so the thaw goes behind it there.
+     *
+     * @param string $collectionKey RT collection the rows belong to
+     * @param list<string> $stateIds Rows that are current again
+     * @return list<string> Rows of them that were frozen here
+     */
+    private function liftStaleness(string $collectionKey, array $stateIds): array
+    {
+        $wasFrozen = array_values(array_intersect($stateIds, array_keys(RtStaleness::staleRows($collectionKey))));
         RtStaleness::clear($collectionKey, $stateIds);
         if ($collectionKey === StateHilosUpload::RT_COLLECTION && $wasFrozen !== []) {
             $this->uploadMemory?->onUploadsChanged();
         }
-        if ($wasFrozen === []) {
+
+        return $wasFrozen;
+    }
+
+    /**
+     * Tells the workers that read a collection that rows of it thawed here. Each link writes the thaw
+     * in its turn behind the writes streamed to its worker before it ({@see WorkerClient::sendRtStaleness()}),
+     * so a caller whose write lifted the mark hands the write to the streams first. Nothing frozen is
+     * nothing to tell: a lift announcing that nothing changed is a socket write per worker for no
+     * reader at all.
+     *
+     * Rows frozen here again by now are left out: a caller may lift the mark and tell the workers
+     * later - behind a write it yields to hand on, or from the effect queue - and a freeze of the
+     * same rows that came in between went to the workers at once; a thaw naming them would follow
+     * it and leave the workers reading as current a row this master holds frozen. An empty list leaves
+     * before any other work, and the rest is asked row by row: this runs on every RT write the master
+     * parses, so what it costs follows the rows named and not the rows the collection holds frozen.
+     *
+     * @param string $collectionKey RT collection the rows belong to
+     * @param list<string> $thawed Rows that were frozen here and are current again
+     */
+    private function thawOnWorkers(string $collectionKey, array $thawed): void
+    {
+        if ($thawed === []) {
+            return;
+        }
+
+        $thawed = array_values(array_filter(
+            $thawed,
+            static fn (string $stateId): bool => RtStaleness::staleSince($collectionKey, $stateId) === null,
+        ));
+        if ($thawed === []) {
             return;
         }
 
@@ -8930,7 +9214,7 @@ abstract class DaemonManager extends BaseManager implements
 
         $this->writeFrameToWorkers(
             $workerServer,
-            new WorkerRtStalenessMessageDTO($collectionKey, array_values($wasFrozen), null),
+            new WorkerRtStalenessMessageDTO($collectionKey, $thawed, null),
             SourceChange::KIND_RT,
             $collectionKey,
         );
@@ -9011,11 +9295,24 @@ abstract class DaemonManager extends BaseManager implements
     /**
      * Completes a forwarded reply's page wait, or delivers it to this node's held console.
      *
+     * The reply rides the master's effect queue, as a signal to an agent does
+     * ({@see self::deliverSignalToAgent()}): the node that answered wrote it behind the writes its agent
+     * made before ({@see PeerLink::readsBehindRtWrites()}), and here it waits behind the read of those
+     * writes, so the caller acting on the outcome reads them in this node's copy.
+     *
      * @param SignalDTO $signal COMMAND_REPLY signal already addressed by correlation id
      * @throws EventLoopException When the next restart caller deadline cannot be armed or canceled
      */
     public function deliverCommandReply(SignalDTO $signal): void
     {
+        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
+            $owner = WeakReference::create($this);
+            $this->queueSignalEffect(static function () use ($owner, $signal): Generator {
+                $owner->get()?->deliverCommandReply($signal);
+                yield;
+            }, peerApplyContext: 'forwarded command reply');
+            return;
+        }
         $reply = $signal->data;
         if (!$reply instanceof CommandReplyDTO) {
             Logger::warning('Forwarded command reply dropped: the frame carries ' . get_debug_type($reply) . ', not a reply');

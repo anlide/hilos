@@ -85,7 +85,6 @@ use Hilos\Cluster\Peer\DTO\PeerRtClaimsQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
@@ -99,6 +98,7 @@ use Hilos\Cluster\DbSyncMesh;
 use Hilos\Cluster\DbSyncSink;
 use Hilos\Cluster\RtClaimMesh;
 use Hilos\Cluster\RtSyncMesh;
+use Hilos\Cluster\RtSyncSink;
 use Hilos\Cluster\SourceInterestMesh;
 use Hilos\Cluster\Tls\ClusterTlsConfig;
 use Hilos\Constants\EnvConstants;
@@ -116,6 +116,7 @@ use Hilos\Core\Source\Interest\SourceReaderMap;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Database\ReHydrateBarrierSink;
 use Hilos\Database\ReHydrateRound;
 use Hilos\Environment\Exception\EnvException;
@@ -135,6 +136,10 @@ use Hilos\ProtectedMode\ProtectedModeSyncScheduler;
 use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\TruthSource\RtReplicaConfirmation;
+use Hilos\Runtime\Stream\RtSyncStreamChannel;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSettle;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractTlsServer;
 use Hilos\Socket\SocketException;
@@ -243,6 +248,13 @@ final class PeerServer extends AbstractTlsServer implements
 
     /** @var ?Closure(Generator<int, void>): void Existing master FIFO, absent for standalone servers */
     private ?Closure $sourceInterestDelivery = null;
+    /** @var ?Closure(RtSyncStreamChannel): void The master's pass each link's RT stream is pumped on; null pumps at once */
+    private ?Closure $rtSyncStreamWake = null;
+    /**
+     * @var ?Closure(?int, string, list<string>, ?float): void The master's mark of rows a link's RT stream holds, given
+     *      no writing worker - the writer is on the linked node; null marks them in this process alone
+     */
+    private ?Closure $rtSyncStreamHold = null;
 
     private ?string $deliveryNodeId = null;
 
@@ -3001,19 +3013,55 @@ final class PeerServer extends AbstractTlsServer implements
      */
     public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void
     {
-        $frame = new PeerRtSyncDTO($this->localIdentity->nodeId, $signalType, $signal, $partialOwner);
-        $collectionKey = $signal->data instanceof SyncSignalDataInterface ? $signal->data->collectionKey : null;
-        if ($collectionKey === null) {
-            // Nothing to match an interest against, so the old address stands: everybody. The
-            // daemon never produces such a fact - it refuses to announce one whose payload names
-            // no collection - and if one ever arrives here, replicating it too widely is the side
-            // of the mistake a receiver can still recover from.
-            $this->broadcastToNodes($frame);
+        $data = $signal->data;
+        if (!$data instanceof RtSyncSignalDataInterface || $signal->signalType->getType() !== $signalType) {
+            // The daemon announces RT sync facts only; anything else has no operation to stream.
+            Logger::warning("Not announcing '{$signalType}' on the RT stream: it carries no RT sync fact of that type");
 
             return;
         }
+        $nodeId = $this->localIdentity->nodeId;
+        $delivery = $this->walkRtSyncFanout(
+            $this->clientCandidates(),
+            $data,
+            $partialOwner,
+            fn (PeerLink $link): bool => $this->nodeReaderMap->holds($link->remoteIdentity()->nodeId, SourceChange::KIND_RT, $data->collectionKey),
+            $nodeId,
+        );
+        if ($this->capturedBroadcasts !== null) {
+            $this->capturedBroadcasts->enqueue($delivery);
 
-        $this->broadcastToNodesHolding($frame, SourceChange::KIND_RT, $collectionKey);
+            return;
+        }
+        foreach ($delivery as $_) {
+        }
+    }
+
+    /**
+     * Hands one operation to the RT stream of every handshaked link that reads its collection.
+     *
+     * @param Generator<int, ?PeerLink> $clients Original roster slots
+     * @param RtSyncSignalDataInterface $data RT sync carrier, shared by every stream that takes it
+     * @param bool $partialOwner Whether this node holds only part of the right over the collection
+     * @param callable(PeerLink): bool $reaches Whether the operation reaches the given link
+     * @param string $nodeId This node, the origin every receiver checks against its link
+     * @return Generator<int, void> One link per step after the initial yield
+     */
+    private function walkRtSyncFanout(
+        Generator $clients,
+        RtSyncSignalDataInterface $data,
+        bool $partialOwner,
+        callable $reaches,
+        string $nodeId,
+    ): Generator {
+        yield;
+        foreach ($clients as $client) {
+            $linkedNodeId = $client?->remoteIdentity()?->nodeId;
+            if ($linkedNodeId !== null && ($this->activeLinks[$linkedNodeId] ?? null) === $client && $reaches($client)) {
+                $client->rtSyncStream()->send($data, $nodeId, $partialOwner);
+            }
+            yield;
+        }
     }
 
     /**
@@ -3081,36 +3129,98 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Applies a received RT replica to this node's copy of the collection.
+     * Applies an operation a linked node streamed to this node's copy of the collection.
      *
-     * Hands the frame to the local apply port and stops there: the fact is not passed on to
-     * the rest of the mesh, because the owner already announced it to everyone. That is the
-     * whole echo defense — one hop, no hop counters, no de-duplication by id. An unregistered
-     * sink or a failing apply is dropped and logged, so a bad frame cannot end the daemon loop.
+     * The operation is applied only as the linked node's own: one naming any other node is
+     * refused, so a node cannot speak for a third. Then it goes to the local apply port and stops
+     * there - the owner already announced it to everyone, which is the whole echo defense: one
+     * hop, no hop counters. The port answers the stream once the operation is applied and its
+     * delivery to this node's workers queued ({@see RtSyncStreamSettle}); an unregistered port,
+     * a refusal or a failing apply answers it refused, so a bad frame cannot end the daemon loop.
      *
-     * @param PeerLink $link Link the replica arrived on
-     * @param PeerRtSyncDTO $frame Received RT sync frame
+     * The apply confirms the rows as of the receipt taken when the final part arrived
+     * ({@see self::rtSyncReceipt()}), and a link closed since then still has its operation applied
+     * as the node that receipt was taken for: the loss it noted freezes what the operation writes.
+     *
+     * @param ?PeerLink $link Link the operation arrived on, or null once it closed after the final part arrived
+     * @param RtSyncStreamOperation $operation Operation read from its parts
+     * @param Closure(bool): void $settled The stream's answer
+     * @param ?RtReplicaConfirmation $receipt Taken when the final part arrived, or null to take it at the apply
      */
-    public function onRtSyncReceived(PeerLink $link, PeerRtSyncDTO $frame): void
-    {
+    public function onRtSyncStreamReceived(
+        ?PeerLink $link,
+        RtSyncStreamOperation $operation,
+        Closure $settled,
+        ?RtReplicaConfirmation $receipt = null,
+    ): void {
+        $linkedNodeId = $link?->remoteIdentity()?->nodeId ?? $receipt?->nodeId;
+        if ($linkedNodeId === null || $operation->originNodeId !== $linkedNodeId) {
+            Logger::warning("Refusing a streamed RT write naming node '{$operation->originNodeId}' on the link of '{$linkedNodeId}'");
+            $settled(false);
+
+            return;
+        }
         $sink = Hilos::$cluster?->rtSyncSink();
         if ($sink === null) {
-            Logger::warning(
-                "Dropping peer RT sync from node '{$frame->originNodeId}': no local RT sync sink registered",
-            );
+            Logger::warning("Dropping peer RT sync from node '{$linkedNodeId}': no local RT sync sink registered");
+            $settled(false);
+
             return;
         }
 
         try {
-            $sink->applyRemoteRtSync(
-                $frame->originNodeId,
-                $frame->signalType,
-                $frame->signal,
-                $frame->partialOwner,
-            );
+            $data = $operation->signalData();
+            RtSyncStreamSettle::await($data, $settled);
+            $sink->applyRemoteRtSync($linkedNodeId, $operation->signalType, $operation->signal($data), $operation->partialOwner, $receipt);
         } catch (Throwable $e) {
-            Logger::warning("Failed to apply peer RT sync from node '{$frame->originNodeId}': {$e->getMessage()}");
+            Logger::warning("Failed to apply peer RT sync from node '{$linkedNodeId}': {$e->getMessage()}");
         }
+    }
+
+    /**
+     * The receipt of an operation whose final part arrives on a link now, for its apply to confirm
+     * the rows as of this moment ({@see RtSyncSink::captureRtSyncReceipt()}).
+     *
+     * @param PeerLink $link Link the final part arrived on
+     * @return ?RtReplicaConfirmation Receipt, or null before the handshake or without a local sink
+     */
+    public function rtSyncReceipt(PeerLink $link): ?RtReplicaConfirmation
+    {
+        $nodeId = $link->remoteIdentity()?->nodeId;
+
+        return $nodeId === null ? null : Hilos::$cluster?->rtSyncSink()?->captureRtSyncReceipt($nodeId);
+    }
+
+    /**
+     * @param ?Closure(RtSyncStreamChannel): void $wake The master's pass each link's RT stream is pumped on
+     */
+    public function setRtSyncStreamWake(?Closure $wake): void
+    {
+        $this->rtSyncStreamWake = $wake;
+    }
+
+    /** @return ?Closure(RtSyncStreamChannel): void The master's pass a link's RT stream is pumped on; null pumps at once */
+    public function rtSyncStreamWake(): ?Closure
+    {
+        return $this->rtSyncStreamWake;
+    }
+
+    /**
+     * @param ?Closure(?int, string, list<string>, ?float): void $hold The master's mark of rows each link's RT stream
+     *        holds, given the writing worker - none on a peer link
+     */
+    public function setRtSyncStreamHold(?Closure $hold): void
+    {
+        $this->rtSyncStreamHold = $hold;
+    }
+
+    /**
+     * @return ?Closure(?int, string, list<string>, ?float): void The master's mark of rows a link's RT stream holds;
+     *         null marks them in the master's process alone
+     */
+    public function rtSyncStreamHold(): ?Closure
+    {
+        return $this->rtSyncStreamHold;
     }
 
     /**
@@ -3147,7 +3257,7 @@ final class PeerServer extends AbstractTlsServer implements
      * Applies a received DB replica to the rows this node holds.
      *
      * Hands the frame to the local apply port and stops there, exactly as
-     * {@see onRtSyncReceived()} does: the writing node already announced the fact to everyone,
+     * {@see onRtSyncStreamReceived()} does: the writing node already announced the fact to everyone,
      * so passing it on would be an echo. An unregistered sink or a failing apply is dropped and
      * logged, so a bad frame cannot end the daemon loop.
      *
@@ -3306,6 +3416,11 @@ final class PeerServer extends AbstractTlsServer implements
      * agents would otherwise be the one thing its map never held. The fold ignores the call on a
      * node that does not lead, so it is safe wherever this runs.
      *
+     * Each link writes the report in its turn behind this node's writes streamed there before it
+     * ({@see PeerLink::readsBehindRtWrites()}), and the leader folds it behind its read of them: a claim
+     * the report no longer carries is dropped there, and another node's claim to the same rows then
+     * stands - so the report never reaches the leader ahead of the last write the dropped claim made.
+     *
      * @param list<PeerRtClaimEntry> $claims What each agent of this node owns
      */
     public function announceRtClaims(array $claims): void
@@ -3373,7 +3488,7 @@ final class PeerServer extends AbstractTlsServer implements
      * Replaces this node's copy of an RT collection with the one its owner handed over.
      *
      * The receiving twin of {@see sendRtSnapshotToNode()}, and it stops here in the same way
-     * {@see onRtSyncReceived()} does: nothing is passed on, since the owner addressed the node
+     * {@see onRtSyncStreamReceived()} does: nothing is passed on, since the owner addressed the node
      * that needed it. An unregistered sink or a failing apply is dropped and logged.
      *
      * @param PeerLink $link Link the snapshot arrived on
@@ -3397,6 +3512,9 @@ final class PeerServer extends AbstractTlsServer implements
                 $frame->scopeKeys,
                 $frame->scopeSetKeys,
             );
+            // The owner's snapshot is a base again for the rows of it whose streamed operation
+            // this node refused: the link's later operations of them are applied.
+            $link->recoverRtSyncStream($frame->collectionKey);
         } catch (Throwable $e) {
             Logger::warning(
                 "Failed to apply peer RT snapshot from node '{$frame->originNodeId}': {$e->getMessage()}",
@@ -3407,7 +3525,7 @@ final class PeerServer extends AbstractTlsServer implements
     /**
      * Routes a received request for a collection to the local sink so this node answers it.
      *
-     * The asker is read off the frame rather than off the link, the way {@see onRtSyncReceived()}
+     * The asker is read off the frame rather than off the link, the way {@see onRtSyncStreamReceived()}
      * reads the origin: what a node calls itself is what the reader map is keyed by, and the
      * answer is addressed through that map.
      *
@@ -3735,7 +3853,8 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Broadcasts a page access re-decision announcement to every other node.
+     * Broadcasts a page access re-decision announcement to every other node, on each link behind
+     * the RT writes this node streamed there before it ({@see PeerLink::sendPackedFrame()}).
      *
      * @param SignalDTO $signal By-user or by-connection announcement
      */
@@ -3816,7 +3935,7 @@ final class PeerServer extends AbstractTlsServer implements
      * subscription registry — the one thing the sending node could not do — and writes to
      * whoever comes out. It stops here: passing it on is what the sending node already did for
      * everyone, and not doing it is the whole echo defense, the same one-hop rule
-     * {@see onRtSyncReceived()} stands on. An unregistered sink or a failing expansion is
+     * {@see onRtSyncStreamReceived()} stands on. An unregistered sink or a failing expansion is
      * dropped and logged, so a bad frame cannot end the daemon loop.
      *
      * @param PeerLink $link Link the fan-out arrived on
@@ -4111,7 +4230,9 @@ final class PeerServer extends AbstractTlsServer implements
             $nodeId = $client?->remoteIdentity()?->nodeId;
             if ($nodeId !== null && ($this->activeLinks[$nodeId] ?? null) === $client && $reaches($client)) {
                 $encoded ??= $frame->toJson();
-                $client->sendEncodedFrame($encoded);
+                // The link chooses its turn as for a frame of its own: one the node acts on trusting the
+                // writes streamed there before it goes behind them.
+                $client->sendPackedFrame($frame, $encoded);
             }
             yield;
         }

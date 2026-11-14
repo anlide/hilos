@@ -19,14 +19,11 @@ use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\SyncSignalDataKey;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncMessageInterface;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncMessageInterface;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -271,15 +268,17 @@ final class SyncSignalDataContractTest extends TestCase
         }
     }
 
-    public function testRtTransportMessagesCarryAStateScopedPayload(): void
+    public function testRtStreamOperationsCarryAStateScopedPayload(): void
     {
         foreach ([
-            new WorkerRtSyncCreatedMessageDTO(new RtSyncCreatedSignalData(self::COLLECTION_KEY, 'ak-1', [])),
-            new WorkerRtSyncUpdatedMessageDTO(new RtSyncUpdatedSignalData(self::COLLECTION_KEY, 'ak-1', [])),
-            new WorkerRtSyncDeletedMessageDTO(new RtSyncDeletedSignalData(self::COLLECTION_KEY, 'ak-1', [])),
-        ] as $message) {
-            $this->assertInstanceOf(WorkerRtSyncMessageInterface::class, $message);
-            $this->assertInstanceOf(RtSyncSignalDataInterface::class, $message->signalData);
+            new RtSyncCreatedSignalData(self::COLLECTION_KEY, 'ak-1', []),
+            new RtSyncUpdatedSignalData(self::COLLECTION_KEY, 'ak-1', []),
+            new RtSyncDeletedSignalData(self::COLLECTION_KEY, 'ak-1', []),
+        ] as $data) {
+            $carried = RtSyncStreamOperation::fromSignalData($data, 1)->signalData();
+            $this->assertInstanceOf($data::class, $carried);
+            $this->assertInstanceOf(RtSyncSignalDataInterface::class, $carried);
+            $this->assertSame([self::COLLECTION_KEY, 'ak-1'], [$carried->collectionKey, $carried->stateId]);
         }
     }
 

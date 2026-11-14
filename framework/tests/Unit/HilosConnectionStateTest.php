@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
@@ -309,8 +314,16 @@ final class PresenceConnectionFixture extends HilosConnection
 {
     public const string label = 'label';
 
+    protected const array OWN_FIELD_TYPES = [self::label => 'text'];
+    private const string DEFAULT_LABEL = '';
+
     /** Subclass-owned field, to prove composition with the base halves. */
-    public string $label = '';
+    public string $label {
+        get => isset($this->rowValues()[self::label]) ? $this->rowValues()[self::label]->toNative() : self::DEFAULT_LABEL;
+        set {
+            $this->setRowValue(self::label, RtRowValues::fromNative($value));
+        }
+    }
 
     /** How many times the base marked the sync baseline on this row. */
     public int $baselineMarks = 0;
@@ -321,35 +334,48 @@ final class PresenceConnectionFixture extends HilosConnection
         parent::markRtSyncBaseline();
     }
 
-    protected function initOwn(): void
+    /** @return array<string, mixed> Base defaults followed by the fixture's own label */
+    protected function rowFieldDefaults(): array
     {
+        return parent::rowFieldDefaults() + [self::label => self::DEFAULT_LABEL];
+    }
+
+    /**
+     * @return Generator<int, RtWork, int, void> Project field operation
+     */
+    protected function initOwn(): Generator
+    {
+        yield new RtWork();
         $this->label = 'seeded';
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
      * @throws InvalidFormatException When the row lost the subclass-owned field
+     * @return Generator<int, RtWork, int, void> Project field operation
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
-        $this->label = self::requireString($row, self::label);
+        yield from $this->readFields($row, self::OWN_FIELD_TYPES);
     }
 
     /**
-     * @return array<string, mixed> Subclass-owned half of the row
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> Project field operation
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [self::label => $this->label];
+        yield from $this->exportFields($out, [self::label => '']);
     }
 
     /**
-     * @param array<string, mixed> $diff Changed fields => values
+     * @param RtRowReader $diff Changed fields => values
      * @throws InvalidFormatException When the diff carries the subclass-owned field as a non-string
+     * @return Generator<int, RtWork, int, void> Project field operation
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
-        $this->label = self::patchString($diff, self::label, $this->label);
+        yield from $this->readFields($diff, self::OWN_FIELD_TYPES, true);
     }
 }
 
@@ -360,8 +386,16 @@ final class SessionConnectionFixture extends HilosSessionConnection
 {
     public const string label = 'label';
 
+    protected const array OWN_FIELD_TYPES = [self::label => 'text'];
+    private const string DEFAULT_LABEL = '';
+
     /** Subclass-owned field, to prove the chain reaches it through both stages. */
-    public string $label = '';
+    public string $label {
+        get => isset($this->rowValues()[self::label]) ? $this->rowValues()[self::label]->toNative() : self::DEFAULT_LABEL;
+        set {
+            $this->setRowValue(self::label, RtRowValues::fromNative($value));
+        }
+    }
 
     /** How many times the base marked the sync baseline on this row. */
     public int $baselineMarks = 0;
@@ -372,35 +406,48 @@ final class SessionConnectionFixture extends HilosSessionConnection
         parent::markRtSyncBaseline();
     }
 
-    protected function initOwn(): void
+    /** @return array<string, mixed> Base defaults followed by the fixture's own label */
+    protected function rowFieldDefaults(): array
     {
+        return parent::rowFieldDefaults() + [self::label => self::DEFAULT_LABEL];
+    }
+
+    /**
+     * @return Generator<int, RtWork, int, void> Project field operation
+     */
+    protected function initOwn(): Generator
+    {
+        yield new RtWork();
         $this->label = 'seeded';
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
      * @throws InvalidFormatException When the row lost the subclass-owned field
+     * @return Generator<int, RtWork, int, void> Project field operation
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
-        $this->label = self::requireString($row, self::label);
+        yield from $this->readFields($row, self::OWN_FIELD_TYPES);
     }
 
     /**
-     * @return array<string, mixed> Subclass-owned half of the row
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> Project field operation
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [self::label => $this->label];
+        yield from $this->exportFields($out, [self::label => '']);
     }
 
     /**
-     * @param array<string, mixed> $diff Changed fields => values
+     * @param RtRowReader $diff Changed fields => values
      * @throws InvalidFormatException When the diff carries the subclass-owned field as a non-string
+     * @return Generator<int, RtWork, int, void> Project field operation
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
-        $this->label = self::patchString($diff, self::label, $this->label);
+        yield from $this->readFields($diff, self::OWN_FIELD_TYPES, true);
     }
 }
 

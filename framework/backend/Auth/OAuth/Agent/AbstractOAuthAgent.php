@@ -24,6 +24,8 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException as FrameworkLogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -136,6 +138,9 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the signal name is not the pending-login handoff
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws InvalidArgumentException When a retirement allowance of the pool's snapshot selector is invalid
+     * @throws InvalidFormatException When the pool's row values cannot be held by its snapshot selector
+     * @throws FrameworkLogicException When the pool's snapshot selector broke
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -160,6 +165,8 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      *
      * @throws InvalidArgumentException When the failed-login result signal cannot be named or queued
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws InvalidFormatException When the pool's row values cannot be held by its snapshot selector
+     * @throws FrameworkLogicException When the pool's snapshot selector broke
      */
     public function onTick(): void
     {
@@ -182,6 +189,8 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      *
      * @throws InvalidArgumentException When an ending frame cannot be named or queued
      * @throws SourceChangeSubscriberException Whatever a subscriber to the pool's announcement raises
+     * @throws InvalidFormatException When the pool's row values cannot be held by its snapshot selector
+     * @throws FrameworkLogicException When the pool's snapshot selector broke
      */
     public function onStop(): void
     {

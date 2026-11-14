@@ -12,13 +12,16 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerPingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPongDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\EventLoopTimer;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\Server\AbstractServer;
@@ -374,6 +377,32 @@ final class PeerLinkLivenessEventLoopTest extends TestCase
         $this->assertFalse($this->loop->hasReadyWork());
     }
 
+    /** A replaced link's RT stream ends with its drain: none of its frames reach the replacement route, whose own stream runs. */
+    public function testADrainingLinkKeepsItsRtStreamOffTheReplacementRoute(): void
+    {
+        [$old, $oldFar] = $this->plain();
+        $this->bind($old);
+        $this->server->registerCandidate($old, $this->remote());
+        $this->server->activateCandidate($old, $this->remote());
+        [$current, $far] = $this->plain();
+        $this->bind($current);
+        $this->server->registerCandidate($current, $this->remote());
+        $this->server->activateCandidate($current, $this->remote());
+        $this->assertTrue($old->isDraining());
+
+        $old->rtSyncStream()->send(new RtSyncCreatedSignalData(HilosProbeFleetStatus::RT_COLLECTION, 'w1', ['jobsDone' => 1]), 'node-a');
+        $old->write();
+        $current->write();
+        $this->assertStringNotContainsString(PeerRtSyncStreamDTO::MESSAGE_TYPE, $this->readAvailable($far),
+            'The old epoch is not handed to the new route');
+        $this->assertStringNotContainsString(PeerRtSyncStreamDTO::MESSAGE_TYPE, $this->readAvailable($oldFar),
+            'Nothing follows the drain marker on the old route');
+
+        $current->rtSyncStream()->send(new RtSyncCreatedSignalData(HilosProbeFleetStatus::RT_COLLECTION, 'w2', ['jobsDone' => 2]), 'node-a');
+        $current->write();
+        $this->assertStringContainsString(PeerRtSyncStreamDTO::MESSAGE_TYPE, $this->readAvailable($far), 'The new route opens its own stream');
+    }
+
     /** Isolate facade state; native cases always use the unmodified positive production intervals. */
     protected function setUp(): void
     {
@@ -463,6 +492,28 @@ final class PeerLinkLivenessEventLoopTest extends TestCase
         $link = new PeerLink($pair[0], $this->server, $this->local(), false, new PlainSocketTransport($pair[0]));
         $this->links[] = $link;
         return [$link, $pair[1]];
+    }
+
+    /**
+     * @param Socket $socket Far end of a socket pair
+     * @return string Bytes already waiting on it, without waiting for more
+     */
+    private function readAvailable(Socket $socket): string
+    {
+        $read = [$socket];
+        $write = null;
+        $except = null;
+        $bytes = '';
+        while (socket_select($read, $write, $except, 0) > 0) {
+            $chunk = socket_read($socket, 65536);
+            if ($chunk === false || $chunk === '') {
+                break;
+            }
+            $bytes .= $chunk;
+            $read = [$socket];
+        }
+
+        return $bytes;
     }
 
     /**

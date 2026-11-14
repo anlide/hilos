@@ -4,9 +4,19 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Generator;
 use Hilos\Auth\Throttle\ThrottleScope;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Object\Item\AuthBlock as ObjectAuthBlock;
+use Hilos\Runtime\Row\AuthAttemptRowCodec;
+use Hilos\Runtime\Row\RtRowKind;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\RtRowCodec;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
+use LogicException;
 
 /**
  * AuthAttempt - hot window counter for one throttle key (HIL-420).
@@ -43,23 +53,83 @@ final class AuthAttempt extends RtState
     public const string level = 'level';
     public const string blockedUntil = 'blockedUntil';
 
+    /** Fixed scalar schema; variable text is held in segmented pages. */
+    private const array FIELD_TYPES = [
+        self::scope => 'text',
+        self::identity => 'text',
+        self::action => 'text',
+        self::count => 'int',
+        self::windowStartedAt => 'float',
+        self::level => 'int',
+        self::blockedUntil => '?float',
+    ];
+
+    /** The synchronous property defaults, not defaults for missing incoming keys. */
+    private const array FIELD_DEFAULTS = [
+        self::scope => ThrottleScope::IP,
+        self::identity => '',
+        self::action => '',
+        self::count => 0,
+        self::windowStartedAt => 0.0,
+        self::level => 0,
+        self::blockedUntil => null,
+    ];
+
+    /** Only the fields the existing applyDiff door accepts. */
+    private const array PATCH_FIELDS = [
+        self::count => true,
+        self::windowStartedAt => true,
+        self::level => true,
+        self::blockedUntil => true,
+    ];
+
     /** Throttle scope, one of {@see ThrottleScope} (id part). */
-    private(set) string $scope = ThrottleScope::IP;
+    private(set) string $scope {
+        get => isset($this->rowValues()[self::scope]) ? $this->rowValues()[self::scope]->toNative() : self::FIELD_DEFAULTS[self::scope];
+        set {
+            $this->setRowValue(self::scope, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Client IP or sha256 of the session token, per {@see scope} (id part). */
-    private(set) string $identity = '';
+    private(set) string $identity {
+        get => isset($this->rowValues()[self::identity]) ? $this->rowValues()[self::identity]->toNative() : self::FIELD_DEFAULTS[self::identity];
+        set {
+            $this->setRowValue(self::identity, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Throttled action name (id part). */
-    private(set) string $action = '';
+    private(set) string $action {
+        get => isset($this->rowValues()[self::action]) ? $this->rowValues()[self::action]->toNative() : self::FIELD_DEFAULTS[self::action];
+        set {
+            $this->setRowValue(self::action, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Attempts counted since {@see windowStartedAt}. */
-    public int $count = 0;
+    public int $count {
+        get => $this->rowValues()[self::count] ?? self::FIELD_DEFAULTS[self::count];
+        set {
+            $this->setRowValue(self::count, $value);
+        }
+    }
 
     /** Microtime (unix seconds) the current fixed window opened; 0.0 before the first attempt. */
-    public float $windowStartedAt = 0.0;
+    public float $windowStartedAt {
+        get => $this->rowValues()[self::windowStartedAt] ?? self::FIELD_DEFAULTS[self::windowStartedAt];
+        set {
+            $this->setRowValue(self::windowStartedAt, $value);
+        }
+    }
 
     /** Escalation level reached so far; drives the block-duration ladder. */
-    public int $level = 0;
+    public int $level {
+        get => $this->rowValues()[self::level] ?? self::FIELD_DEFAULTS[self::level];
+        set {
+            $this->setRowValue(self::level, $value);
+        }
+    }
 
     /**
      * Unix seconds the consummated block lifts, or null when this key is not blocked.
@@ -69,7 +139,12 @@ final class AuthAttempt extends RtState
      * database read and without asking the agent at all. The durable row stays the
      * truth - this field is loaded from it when the agent starts.
      */
-    public ?float $blockedUntil = null;
+    public ?float $blockedUntil {
+        get => $this->rowValues()[self::blockedUntil] ?? self::FIELD_DEFAULTS[self::blockedUntil];
+        set {
+            $this->setRowValue(self::blockedUntil, $value);
+        }
+    }
 
     /**
      * Composes the runtime row id from a throttle key triple.
@@ -165,5 +240,112 @@ final class AuthAttempt extends RtState
             self::level => $this->level,
             self::blockedUntil => $this->blockedUntil,
         ];
+    }
+    /** @return RtRowCodec Segmented codec preserving this row's scalar contract */
+    public function rowCodec(): RtRowCodec
+    {
+        return new AuthAttemptRowCodec();
+    }
+
+    /**
+     * Prepares an unpublished row; the committed-root layer supplies its baseline later.
+     *
+     * @param RtRowReader $in Segmented full row
+     * @return Generator<int, RtWork, int, static> Fully validated candidate
+     * @throws InvalidFormatException When a field violates the existing row contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public static function fromValues(RtRowReader $in): Generator
+    {
+        $prepared = yield from self::prepareValues($in, null);
+        yield new RtWork();
+        $instance = new static();
+        $instance->replaceRowValues($prepared);
+
+        return $instance;
+    }
+
+    /**
+     * Every accepted field is validated before the fixed descriptor is replaced.
+     *
+     * @param RtRowReader $diff Segmented changed fields
+     * @return Generator<int, RtWork, int, void> Atomic candidate patch
+     * @throws InvalidFormatException When a changed field violates the existing contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public function patchValues(RtRowReader $diff): Generator
+    {
+        $prepared = yield from self::prepareValues($diff, $this->rowValues());
+        yield new RtWork();
+        $this->replaceRowValues($prepared);
+    }
+
+    /**
+     * @param RtRowWriter $out Unpublished output in any Runtime arena
+     * @return Generator<int, RtWork, int, void> Bounded scalar/text export
+     * @throws InvalidFormatException When a stored segmented value is malformed
+     * @throws LogicException When the output has already closed
+     */
+    public function exportValues(RtRowWriter $out): Generator
+    {
+        return $this->frozenValues()->export($out);
+    }
+
+    /** @return array<string, mixed> Fixed property defaults in codec export order */
+    protected function rowFieldDefaults(): array
+    {
+        return self::FIELD_DEFAULTS;
+    }
+
+    /**
+     * @param RtRowReader $input Segmented full row or diff
+     * @param ?array<string, RtRowValues|int|float|bool|null> $current Fixed descriptor, null for restore
+     * @return Generator<int, RtWork, int, array<string, RtRowValues|int|float|bool|null>> Validated fixed descriptor
+     * @throws InvalidFormatException When a field violates its existing contract
+     * @throws LogicException When a writer lifetime is violated
+     */
+    private static function prepareValues(RtRowReader $input, ?array $current): Generator
+    {
+        $prepared = $current ?? [];
+        foreach (self::FIELD_TYPES as $key => $type) {
+            yield new RtWork();
+            if ($current !== null && !isset(self::PATCH_FIELDS[$key])) {
+                continue;
+            }
+            $value = yield from $input->field($key);
+            if ($value === null) {
+                if ($current !== null) {
+                    continue;
+                }
+                if (str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                throw new InvalidFormatException('Runtime row is missing required key ' . $key);
+            }
+            $reader = $value->reader();
+            if ($reader->kind() === RtRowKind::Scalar) {
+                $scalar = yield from $reader->scalar();
+                if ($scalar === null && str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                $scalarType = ltrim($type, '?');
+                if (($scalarType === 'int' && is_int($scalar)) || ($scalarType === 'bool' && is_bool($scalar))) {
+                    $prepared[$key] = $scalar;
+                    continue;
+                }
+                if ($scalarType === 'float' && (is_int($scalar) || is_float($scalar))) {
+                    $prepared[$key] = (float)$scalar;
+                    continue;
+                }
+            }
+            if ($reader->kind() !== RtRowKind::Text || !in_array($type, ['text', '?text', 'moment', '?moment'], true)) {
+                throw new InvalidFormatException('Runtime row carries the wrong type under key ' . $key);
+            }
+            $prepared[$key] = yield from RtRowWriter::copy($reader, $input->arena(), RtRowRole::Candidate);
+        }
+
+        return $prepared;
     }
 }

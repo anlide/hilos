@@ -18,6 +18,8 @@ use LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Runtime\Exception\Actions\RtActionsItemClassException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for per-user chat runtime state.
@@ -41,6 +43,8 @@ final class UserStatesActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException When a source subscriber fails
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws LogicException When the item factory returns the wrong state type
      * @throws RtActionsItemClassException When the runtime item class is unavailable
      */
@@ -86,6 +90,8 @@ final class UserStatesActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws InvalidArgumentException When an argument is invalid
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function clear(): void
     {

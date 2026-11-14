@@ -19,6 +19,8 @@ use Hilos\Runtime\View\Actions\Item\AuthAttemptActions;
 use Hilos\Runtime\View\Collection\AuthAttempts;
 use Hilos\Runtime\View\Item\AuthAttempt as ViewAuthAttempt;
 use LogicException;
+use Hilos\HilosException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the throttle window counters as a whole (HIL-420).
@@ -46,6 +48,8 @@ final class AuthAttemptsActions extends RtActions
      * @param string $action Throttled action name
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */

@@ -409,6 +409,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
      * @throws InvalidArgumentException When a signal the frame turns into cannot be named
      * @throws LogicException When upload admission metadata or ledger ownership is inconsistent
      * @throws EventLoopException When the next protocol deadline cannot be armed
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
      */
     protected function processReadBuffer(): void
     {

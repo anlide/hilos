@@ -13,6 +13,7 @@ use Hilos\Runtime\Exception\Item\RtItemParentCollectionNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\HilosConnection as StateHilosConnection;
 use Hilos\Runtime\View\Item\HilosConnection;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for a single connection (HIL-509).
@@ -32,6 +33,10 @@ abstract class HilosConnectionActions extends RtActions
     /**
      * Removes this connection from the runtime collection on socket close.
      *
+     * Mandatory cleanup: a closed socket's row must go even while the source's ordinary FIFO is
+     * full, so the removal takes the bounded service reserve and, when even that is taken, is owed
+     * and retried as the FIFO frees rather than refused or lost ({@see RtActions::removeAsCleanup()}).
+     *
      * @throws RtActionsCollectionNameNullException When the collection name is unavailable
      * @throws RtActionsStateCollectionNullException When the runtime state collection is unavailable
      * @throws RtItemParentCollectionNullException When this connection is not attached to a collection
@@ -40,7 +45,7 @@ abstract class HilosConnectionActions extends RtActions
      */
     public function unregister(): void
     {
-        $this->remove();
+        $this->removeAsCleanup();
     }
 
     /**
@@ -59,15 +64,17 @@ abstract class HilosConnectionActions extends RtActions
      * @throws RtActionsCollectionNameNullException When the collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
      * @throws InvalidArgumentException When the group leave-all announcement cannot be named
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
      */
     public function bindUser(?int $userId): void
     {
         $this->ensureCanWrite();
 
         $changed = $this->state->userId !== $userId;
-        $this->state->userId = $userId;
-
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateHilosConnection::userId => $userId,
+        ]);
 
         if ($changed) {
             GroupMembership::leaveAll($this->state->acceptKey);
@@ -84,6 +91,9 @@ abstract class HilosConnectionActions extends RtActions
      * @param bool $probablyOffline Whether the socket went silent past its liveness window
      * @throws RtActionsCollectionNameNullException When the collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When the caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function setProbablyOffline(bool $probablyOffline): void
     {
@@ -92,8 +102,8 @@ abstract class HilosConnectionActions extends RtActions
         if ($this->state->probablyOffline === $probablyOffline) {
             return;
         }
-        $this->state->probablyOffline = $probablyOffline;
-
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateHilosConnection::probablyOffline => $probablyOffline,
+        ]);
     }
 }

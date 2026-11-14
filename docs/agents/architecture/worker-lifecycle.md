@@ -28,7 +28,7 @@ rebuilt, including the backup index after placement moves to another node.
 | `AgentStartDTO` | Create & start agent |
 | `AgentStopDTO` | Stop & remove agent |
 | `WorkerDbSyncCreated/Updated/Deleted/ClearedMessageDTO` | Apply DB sync to local context |
-| `WorkerRtSyncCreated/Updated/DeletedMessageDTO` | Apply RT sync to local context |
+| `WorkerRtSyncStreamDTO` | One part of the ordinary RT stream, or the answer to one, both ways: parts of at most 16 KiB, a non-final part credited by `next`, an operation answered `applied` only after it was applied and its further delivery queued; an update applies in portions (`RtSyncStreamChannel`) |
 | `WorkerPageAccessReassessMessageDTO` | Sweep this worker's page subscriptions for the named user (HIL-644) |
 | `SystemSignalDTO` | System signals |
 | `CronSignalDTO` | Route cron to agent |
@@ -121,6 +121,11 @@ A node with no such agent stops in one wave, as before.
 
 Sending those frames is an attempt, not a guarantee:
 
+- A signal to an agent that waits behind a streamed RT write the master has not read to its end — a
+  signal of a stop hook, the last analytics batch — is released into the buffer before the buffer is
+  written out, in the order it was written (HIL-2056); the `agent_stopped` report and the other frames
+  that are no signal to an agent never wait. The parts of that write which are not out yet are lost,
+  as they were before: no RT pass and no answer of the master runs on this path.
 - A master that has already gone takes them with it: the write fails, and whatever was not written
   is lost. An orphaned worker — its master gone without the connection closing — does not write at
   all.

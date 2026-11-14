@@ -4,12 +4,22 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Generator;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Files\ContentHash;
 use Hilos\Files\Upload\UploadFrame;
 use Hilos\Files\Upload\UploadPhase;
 use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Runtime\Row\HilosUploadRowCodec;
+use Hilos\Runtime\Row\RtRowKind;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\RtRowCodec;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosUploads;
+use LogicException;
 
 /**
  * HilosUpload - one file a connection is sending, or has sent and not yet handed over (HIL-135).
@@ -52,59 +62,213 @@ final class HilosUpload extends RtState
     public const string uploadHoldDeadlineAt = 'uploadHoldDeadlineAt';
     public const string uploadHoldApproved = 'uploadHoldApproved';
 
+    /** Fixed scalar schema; variable text is held in segmented pages. */
+    private const array FIELD_TYPES = [
+        self::acceptKey => 'text',
+        self::clientUploadId => 'text',
+        self::target => 'text',
+        self::userId => '?int',
+        self::filename => 'text',
+        self::mimeType => 'text',
+        self::declaredSize => 'int',
+        self::receivedBytes => 'int',
+        self::tmpIndex => '?text',
+        self::phase => 'text',
+        self::detectedMimeType => '?text',
+        self::contentHash => '?text',
+        self::errorCode => '?text',
+        self::errorMessage => '?text',
+        self::updatedAt => 'int',
+        self::uploadHoldId => '?text',
+        self::uploadHoldDeadlineAt => '?int',
+        self::uploadHoldApproved => 'bool',
+    ];
+
+    /** The synchronous property defaults, not defaults for missing incoming keys. */
+    private const array FIELD_DEFAULTS = [
+        self::acceptKey => '',
+        self::clientUploadId => '',
+        self::target => '',
+        self::userId => null,
+        self::filename => '',
+        self::mimeType => '',
+        self::declaredSize => 0,
+        self::receivedBytes => 0,
+        self::tmpIndex => null,
+        self::phase => '',
+        self::detectedMimeType => null,
+        self::contentHash => null,
+        self::errorCode => null,
+        self::errorMessage => null,
+        self::updatedAt => 0,
+        self::uploadHoldId => null,
+        self::uploadHoldDeadlineAt => null,
+        self::uploadHoldApproved => false,
+    ];
+
+    /** Only the fields the existing applyDiff door accepts. */
+    private const array PATCH_FIELDS = [
+        self::uploadHoldId => true,
+        self::uploadHoldDeadlineAt => true,
+        self::uploadHoldApproved => true,
+        self::receivedBytes => true,
+        self::tmpIndex => true,
+        self::phase => true,
+        self::detectedMimeType => true,
+        self::contentHash => true,
+        self::errorCode => true,
+        self::errorMessage => true,
+        self::updatedAt => true,
+    ];
+
+    /** Longest UploadPhase value, uploading. */
+    private const int PHASE_MAX_BYTES = 9;
+
     /** Accept key of the connection the upload belongs to. */
-    private(set) string $acceptKey = '';
+    private(set) string $acceptKey {
+        get => isset($this->rowValues()[self::acceptKey]) ? $this->rowValues()[self::acceptKey]->toNative() : self::FIELD_DEFAULTS[self::acceptKey];
+        set {
+            $this->setRowValue(self::acceptKey, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Id the client gave the upload, unique on its connection ({@see UploadFrame::isValidId()}). */
-    private(set) string $clientUploadId = '';
+    private(set) string $clientUploadId {
+        get => isset($this->rowValues()[self::clientUploadId])
+            ? $this->rowValues()[self::clientUploadId]->toNative()
+            : self::FIELD_DEFAULTS[self::clientUploadId];
+        set {
+            $this->setRowValue(self::clientUploadId, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Name of the upload target in the project's UPLOAD_TARGETS. */
-    private(set) string $target = '';
+    private(set) string $target {
+        get => isset($this->rowValues()[self::target]) ? $this->rowValues()[self::target]->toNative() : self::FIELD_DEFAULTS[self::target];
+        set {
+            $this->setRowValue(self::target, RtRowValues::fromNative($value));
+        }
+    }
 
     /** User signed in on the connection when the file was declared, or null for a guest. */
-    private(set) ?int $userId = null;
+    private(set) ?int $userId {
+        get => $this->rowValues()[self::userId] ?? self::FIELD_DEFAULTS[self::userId];
+        set {
+            $this->setRowValue(self::userId, $value);
+        }
+    }
 
     /** File name without any path. */
-    private(set) string $filename = '';
+    private(set) string $filename {
+        get => isset($this->rowValues()[self::filename]) ? $this->rowValues()[self::filename]->toNative() : self::FIELD_DEFAULTS[self::filename];
+        set {
+            $this->setRowValue(self::filename, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Declared type, normalized. */
-    private(set) string $mimeType = '';
+    private(set) string $mimeType {
+        get => isset($this->rowValues()[self::mimeType]) ? $this->rowValues()[self::mimeType]->toNative() : self::FIELD_DEFAULTS[self::mimeType];
+        set {
+            $this->setRowValue(self::mimeType, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Declared size in bytes. */
-    private(set) int $declaredSize = 0;
+    private(set) int $declaredSize {
+        get => $this->rowValues()[self::declaredSize] ?? self::FIELD_DEFAULTS[self::declaredSize];
+        set {
+            $this->setRowValue(self::declaredSize, $value);
+        }
+    }
 
     /** Bytes received as of the last write of the row; the exact count lives in the agent. */
-    private(set) int $receivedBytes = 0;
+    private(set) int $receivedBytes {
+        get => $this->rowValues()[self::receivedBytes] ?? self::FIELD_DEFAULTS[self::receivedBytes];
+        set {
+            $this->setRowValue(self::receivedBytes, $value);
+        }
+    }
 
     /** Index of the temporary file in the tmp directory, or null once the file is deleted. */
-    private(set) ?string $tmpIndex = null;
+    private(set) ?string $tmpIndex {
+        get => ($this->rowValues()[self::tmpIndex] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::tmpIndex, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Raw {@see UploadPhase} value. */
-    private(set) string $phase = '';
+    private(set) string $phase {
+        get => isset($this->rowValues()[self::phase]) ? $this->rowValues()[self::phase]->toNative() : self::FIELD_DEFAULTS[self::phase];
+        set {
+            $this->setRowValue(self::phase, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Type read from the content of the whole file, only for a target that sniffs. */
-    private(set) ?string $detectedMimeType = null;
+    private(set) ?string $detectedMimeType {
+        get => ($this->rowValues()[self::detectedMimeType] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::detectedMimeType, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Fingerprint of the whole file ({@see ContentHash}), or null until every byte has arrived. */
-    private(set) ?string $contentHash = null;
+    private(set) ?string $contentHash {
+        get => ($this->rowValues()[self::contentHash] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::contentHash, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Code of the failure, on the failed phase alone. */
-    private(set) ?string $errorCode = null;
+    private(set) ?string $errorCode {
+        get => ($this->rowValues()[self::errorCode] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::errorCode, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Sentence of the failure, on the failed phase alone. */
-    private(set) ?string $errorMessage = null;
+    private(set) ?string $errorMessage {
+        get => ($this->rowValues()[self::errorMessage] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::errorMessage, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Unix seconds of the last change of the row. */
-    private(set) int $updatedAt = 0;
+    private(set) int $updatedAt {
+        get => $this->rowValues()[self::updatedAt] ?? self::FIELD_DEFAULTS[self::updatedAt];
+        set {
+            $this->setRowValue(self::updatedAt, $value);
+        }
+    }
 
     /** Attempt holding these bytes, retained as a tombstone after release. */
-    private(set) ?string $uploadHoldId = null;
+    private(set) ?string $uploadHoldId {
+        get => ($this->rowValues()[self::uploadHoldId] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::uploadHoldId, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Fixed hold deadline in epoch milliseconds; null for an initial or released hold. */
-    private(set) ?int $uploadHoldDeadlineAt = null;
+    private(set) ?int $uploadHoldDeadlineAt {
+        get => $this->rowValues()[self::uploadHoldDeadlineAt] ?? self::FIELD_DEFAULTS[self::uploadHoldDeadlineAt];
+        set {
+            $this->setRowValue(self::uploadHoldDeadlineAt, $value);
+        }
+    }
 
     /** Final approval for this token; an expired deadline never grants permission. */
-    private(set) bool $uploadHoldApproved = false;
+    private(set) bool $uploadHoldApproved {
+        get => $this->rowValues()[self::uploadHoldApproved] ?? self::FIELD_DEFAULTS[self::uploadHoldApproved];
+        set {
+            $this->setRowValue(self::uploadHoldApproved, $value);
+        }
+    }
 
     /**
      * Composes the row id from the connection and the id the client gave the upload.
@@ -269,6 +433,62 @@ final class HilosUpload extends RtState
         ];
     }
 
+    /** @return RtRowCodec Segmented codec preserving this row's scalar contract */
+    public function rowCodec(): RtRowCodec
+    {
+        return new HilosUploadRowCodec();
+    }
+
+    /**
+     * Prepares an unpublished row; the committed-root layer supplies its baseline later.
+     *
+     * @param RtRowReader $in Segmented full row
+     * @return Generator<int, RtWork, int, static> Fully validated candidate
+     * @throws InvalidFormatException When a field violates the existing row contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public static function fromValues(RtRowReader $in): Generator
+    {
+        $prepared = yield from self::prepareValues($in, null);
+        yield new RtWork();
+        $instance = new static();
+        $instance->replaceRowValues($prepared);
+
+        return $instance;
+    }
+
+    /**
+     * Every accepted field is validated before the fixed descriptor is replaced.
+     *
+     * @param RtRowReader $diff Segmented changed fields
+     * @return Generator<int, RtWork, int, void> Atomic candidate patch
+     * @throws InvalidFormatException When a changed field violates the existing contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public function patchValues(RtRowReader $diff): Generator
+    {
+        $prepared = yield from self::prepareValues($diff, $this->rowValues());
+        yield new RtWork();
+        $this->replaceRowValues($prepared);
+    }
+
+    /**
+     * @param RtRowWriter $out Unpublished output in any Runtime arena
+     * @return Generator<int, RtWork, int, void> Bounded scalar/text export
+     * @throws InvalidFormatException When a stored segmented value is malformed
+     * @throws LogicException When the output has already closed
+     */
+    public function exportValues(RtRowWriter $out): Generator
+    {
+        return $this->frozenValues()->export($out);
+    }
+
+    /** @return array<string, mixed> Fixed property defaults in codec export order */
+    protected function rowFieldDefaults(): array
+    {
+        return self::FIELD_DEFAULTS;
+    }
+
     /**
      * @param ?string $uploadHoldId Attempt token or null before the first hold
      * @param ?int $deadlineAt Fixed positive epoch-millisecond deadline or null after release
@@ -277,9 +497,21 @@ final class HilosUpload extends RtState
      */
     private static function assertUploadHold(?string $uploadHoldId, ?int $deadlineAt, bool $approved): void
     {
+        self::assertUploadHoldMarks($uploadHoldId !== null, $uploadHoldId === '', $deadlineAt, $approved);
+    }
+
+    /**
+     * @param bool $hasId Whether a token is present
+     * @param bool $emptyId Whether the present token is empty
+     * @param ?int $deadlineAt Fixed positive deadline or null after release
+     * @param bool $approved Whether this token has final approval
+     * @throws InvalidFormatException When the marks cannot describe a valid hold
+     */
+    private static function assertUploadHoldMarks(bool $hasId, bool $emptyId, ?int $deadlineAt, bool $approved): void
+    {
         if (
-            $uploadHoldId === '' || ($deadlineAt !== null && ($deadlineAt <= 0 || $uploadHoldId === null))
-            || ($approved && ($uploadHoldId === null || $deadlineAt === null))
+            $emptyId || ($deadlineAt !== null && ($deadlineAt <= 0 || !$hasId))
+            || ($approved && (!$hasId || $deadlineAt === null))
         ) {
             throw new InvalidFormatException('Invalid uploadHoldId, uploadHoldDeadlineAt or uploadHoldApproved marks.');
         }
@@ -299,5 +531,73 @@ final class HilosUpload extends RtState
         }
 
         return $phase;
+    }
+
+    /**
+     * @param RtRowReader $input Segmented full row or diff
+     * @param ?array<string, RtRowValues|int|float|bool|null> $current Fixed descriptor, null for restore
+     * @return Generator<int, RtWork, int, array<string, RtRowValues|int|float|bool|null>> Validated fixed descriptor
+     * @throws InvalidFormatException When a field violates its existing contract
+     * @throws LogicException When a writer lifetime is violated
+     */
+    private static function prepareValues(RtRowReader $input, ?array $current): Generator
+    {
+        $prepared = $current ?? [];
+        foreach (self::FIELD_TYPES as $key => $type) {
+            yield new RtWork();
+            if ($current !== null && !isset(self::PATCH_FIELDS[$key])) {
+                continue;
+            }
+            $value = yield from $input->field($key);
+            if ($value === null) {
+                if ($current !== null) {
+                    continue;
+                }
+                if ($key === self::uploadHoldId || $key === self::uploadHoldDeadlineAt) {
+                    throw new InvalidFormatException("Missing runtime field: {$key}");
+                }
+                if (str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                throw new InvalidFormatException('Runtime row is missing required key ' . $key);
+            }
+            $reader = $value->reader();
+            if ($reader->kind() === RtRowKind::Scalar) {
+                $scalar = yield from $reader->scalar();
+                if ($scalar === null && str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                $scalarType = ltrim($type, '?');
+                if (($scalarType === 'int' && is_int($scalar)) || ($scalarType === 'bool' && is_bool($scalar))) {
+                    $prepared[$key] = $scalar;
+                    continue;
+                }
+                if ($scalarType === 'float' && (is_int($scalar) || is_float($scalar))) {
+                    $prepared[$key] = (float)$scalar;
+                    continue;
+                }
+            }
+            if ($reader->kind() !== RtRowKind::Text || !in_array($type, ['text', '?text', 'moment', '?moment'], true)) {
+                throw new InvalidFormatException('Runtime row carries the wrong type under key ' . $key);
+            }
+            $prepared[$key] = yield from RtRowWriter::copy($reader, $input->arena(), RtRowRole::Candidate);
+        }
+        $phase = yield from $prepared[self::phase]->reader()->boundedText(self::PHASE_MAX_BYTES);
+        $remaining = strlen($phase);
+        while ($remaining > 0) {
+            $remaining -= yield new RtWork($remaining);
+        }
+        self::readPhase($phase);
+        $hold = $prepared[self::uploadHoldId] ?? null;
+        self::assertUploadHoldMarks(
+            $hold !== null,
+            $hold !== null && (yield from $hold->reader()->equals('')),
+            $prepared[self::uploadHoldDeadlineAt] ?? self::FIELD_DEFAULTS[self::uploadHoldDeadlineAt],
+            $prepared[self::uploadHoldApproved] ?? self::FIELD_DEFAULTS[self::uploadHoldApproved],
+        );
+
+        return $prepared;
     }
 }

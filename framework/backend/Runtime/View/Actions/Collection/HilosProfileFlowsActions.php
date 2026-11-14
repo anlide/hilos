@@ -14,6 +14,7 @@ use Hilos\Runtime\State\Collection\HilosProfileFlows as StateHilosProfileFlows;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\View\Collection\HilosProfileFlows;
 use Hilos\Runtime\View\Item\HilosProfileFlow;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write API for the profile windows half-way through (HIL-1182).
@@ -95,6 +96,8 @@ final class HilosProfileFlowsActions extends RtActions
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      */
     public function drop(string $sessionTokenHash, string $operation): bool
@@ -123,6 +126,8 @@ final class HilosProfileFlowsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function forget(string $sessionTokenHash): bool
     {
@@ -155,6 +160,8 @@ final class HilosProfileFlowsActions extends RtActions
      * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever preparing the RT write's immutable operation raises
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
      */
     public function forgetExpired(int $nowMs): int
     {

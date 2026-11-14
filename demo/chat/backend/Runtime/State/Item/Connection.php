@@ -6,8 +6,14 @@ namespace Demo\Chat\Runtime\State\Item;
 
 use Demo\Chat\Constants\ConnectionRuntimeConstants;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Generator;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
+use LogicException;
 
 /**
  * Runtime row for one WebSocket connection (`acceptKey` is the collection id).
@@ -19,7 +25,7 @@ use Hilos\Runtime\State\Item\HilosSessionConnection;
  * socket only - the files a submitted message carries are the framework uploads
  * agent's, named here by their client ids (HIL-144) - and reaches it through
  * the four hooks the base leaves it: {@see initOwn()}, {@see hydrateOwn()},
- * {@see ownToArray()}, {@see applyOwnDiff()}. Inbound RT updates arrive through
+ * {@see exportOwn()}, {@see applyOwnDiff()}. Inbound RT updates arrive through
  * the base `applyDiff()`; local writes from item actions use typed properties and
  * `sync()`. Public string constants name row keys.
  */
@@ -32,20 +38,60 @@ final class Connection extends HilosSessionConnection
     public const string outboundModerationAttachments = 'outboundModerationAttachments';
     public const string outboundModerationPicture = 'outboundModerationPicture';
 
+    protected const array OWN_FIELD_TYPES = [
+        self::outboundModerationPhase => 'text',
+        self::outboundModerationMessage => '?text',
+        self::outboundModerationReason => '?text',
+        self::outboundModerationUpdatedAt => 'int',
+        self::outboundModerationAttachments => 'strings',
+        self::outboundModerationPicture => '?text',
+    ];
+
+    private const array OWN_FIELD_DEFAULTS = [
+        self::outboundModerationPhase => ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
+        self::outboundModerationMessage => null,
+        self::outboundModerationReason => null,
+        self::outboundModerationUpdatedAt => 0,
+        self::outboundModerationAttachments => [],
+        self::outboundModerationPicture => null,
+    ];
+
     /** Moderation phase: checking, rejected, unavailable, or none while the socket is clear. */
-    public string $outboundModerationPhase = ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE;
+    public string $outboundModerationPhase {
+        get => isset($this->rowValues()[self::outboundModerationPhase])
+            ? $this->rowValues()[self::outboundModerationPhase]->toNative()
+            : self::OWN_FIELD_DEFAULTS[self::outboundModerationPhase];
+        set {
+            $this->setRowValue(self::outboundModerationPhase, RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * Submitted message text associated with the moderation state — empty when
      * the submit carried attachments and no text — or null while none is.
      */
-    public ?string $outboundModerationMessage = null;
+    public ?string $outboundModerationMessage {
+        get => ($this->rowValues()[self::outboundModerationMessage] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::outboundModerationMessage, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Moderation rejection or unavailable reason, or null while the verdict names none. */
-    public ?string $outboundModerationReason = null;
+    public ?string $outboundModerationReason {
+        get => ($this->rowValues()[self::outboundModerationReason] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::outboundModerationReason, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Unix time of last moderation state update. */
-    public int $outboundModerationUpdatedAt = 0;
+    public int $outboundModerationUpdatedAt {
+        get => $this->rowValues()[self::outboundModerationUpdatedAt] ?? self::OWN_FIELD_DEFAULTS[self::outboundModerationUpdatedAt];
+        set {
+            $this->setRowValue(self::outboundModerationUpdatedAt, $value);
+        }
+    }
 
     /**
      * Client ids of the complete uploads the submitted message carries, in the order the
@@ -53,40 +99,24 @@ final class Connection extends HilosSessionConnection
      *
      * @var list<string>
      */
-    public array $outboundModerationAttachments = [];
+    public array $outboundModerationAttachments {
+        get => isset($this->rowValues()[self::outboundModerationAttachments])
+            ? $this->rowValues()[self::outboundModerationAttachments]->toNative()
+            : self::OWN_FIELD_DEFAULTS[self::outboundModerationAttachments];
+        set {
+            $this->setRowValue(self::outboundModerationAttachments, RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * Client id of the picture a refusal is about, or null when the refusal is about
      * the text or nothing is refused.
      */
-    public ?string $outboundModerationPicture = null;
-
-    protected function initOwn(): void
-    {
-    }
-
-    /**
-     * The row is written by {@see ownToArray()} on another worker, so every key it
-     * declares is required here and a phase field arrives as the empty string only
-     * when that is the phase — the value its own `*_NONE` constant names.
-     *
-     * An empty string is a value in every optional field below, never a spelling of
-     * absence: absence is `null`, and only this class writes these keys. A message
-     * submitted with attachments and no text is the field that makes the difference
-     * visible — read as "no message", it would leave the moderator's phase checking
-     * forever and every later submit refused as one already under moderation.
-     *
-     * @param array<string, mixed> $row Serialized runtime row (string keys match this class field constants)
-     * @throws InvalidFormatException When the row is missing a field of this socket's chat state
-     */
-    protected function hydrateOwn(array $row): void
-    {
-        $this->outboundModerationPhase = self::requireString($row, self::outboundModerationPhase);
-        $this->outboundModerationMessage = self::optionalString($row, self::outboundModerationMessage);
-        $this->outboundModerationReason = self::optionalString($row, self::outboundModerationReason);
-        $this->outboundModerationUpdatedAt = self::requireInt($row, self::outboundModerationUpdatedAt);
-        $this->outboundModerationAttachments = self::requireStringList($row, self::outboundModerationAttachments);
-        $this->outboundModerationPicture = self::optionalString($row, self::outboundModerationPicture);
+    public ?string $outboundModerationPicture {
+        get => ($this->rowValues()[self::outboundModerationPicture] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::outboundModerationPicture, $value === null ? null : RtRowValues::fromNative($value));
+        }
     }
 
     /**
@@ -99,43 +129,48 @@ final class Connection extends HilosSessionConnection
         return ChatRtContext::connections;
     }
 
-    /**
-     * A diff carries only the fields that changed, so an absent key means the
-     * field was not touched; a key that is present is read at its declared type.
-     *
-     * @param array<string, mixed> $diff Partial update; keys are public `* = 'fieldName'` constants on this class
-     * @throws InvalidFormatException When a field the diff does carry holds the wrong type
-     */
-    protected function applyOwnDiff(array $diff): void
+    /** @return array<string, mixed> Framework defaults followed by chat's moderation fields */
+    protected function rowFieldDefaults(): array
     {
-        $this->outboundModerationPhase = self::patchString($diff, self::outboundModerationPhase, $this->outboundModerationPhase);
-        $this->outboundModerationMessage = self::patchOptionalString($diff, self::outboundModerationMessage, $this->outboundModerationMessage);
-        $this->outboundModerationReason = self::patchOptionalString($diff, self::outboundModerationReason, $this->outboundModerationReason);
-        $this->outboundModerationUpdatedAt = self::patchInt($diff, self::outboundModerationUpdatedAt, $this->outboundModerationUpdatedAt);
-        $this->outboundModerationAttachments = self::patchStringList(
-            $diff,
-            self::outboundModerationAttachments,
-            $this->outboundModerationAttachments,
-        );
-        $this->outboundModerationPicture = self::patchOptionalString(
-            $diff,
-            self::outboundModerationPicture,
-            $this->outboundModerationPicture,
-        );
+        return parent::rowFieldDefaults() + self::OWN_FIELD_DEFAULTS;
+    }
+
+    /** @return Generator<int, RtWork, int, void> Property defaults seed the project stage */
+    protected function initOwn(): Generator
+    {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> Chat's own fields of the row
+     * @param RtRowReader $row Segmented input
+     * @return Generator<int, RtWork, int, void> Hydrates chat moderation fields
+     * @throws InvalidFormatException When a project field violates its existing contract
+     * @throws LogicException When page preparation violates writer lifetime
      */
-    protected function ownToArray(): array
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
-        return [
-            self::outboundModerationPhase => $this->outboundModerationPhase,
-            self::outboundModerationMessage => $this->outboundModerationMessage,
-            self::outboundModerationReason => $this->outboundModerationReason,
-            self::outboundModerationUpdatedAt => $this->outboundModerationUpdatedAt,
-            self::outboundModerationAttachments => $this->outboundModerationAttachments,
-            self::outboundModerationPicture => $this->outboundModerationPicture,
-        ];
+        yield from $this->readFields($row, self::OWN_FIELD_TYPES);
+    }
+
+    /**
+     * @param RtRowReader $diff Segmented input
+     * @return Generator<int, RtWork, int, void> Patches only supplied chat moderation fields
+     * @throws InvalidFormatException When a project field violates its existing contract
+     * @throws LogicException When page preparation violates writer lifetime
+     */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
+    {
+        yield from $this->readFields($diff, self::OWN_FIELD_TYPES, true);
+    }
+
+    /**
+     * @param RtRowWriter $out Segmented destination
+     * @return Generator<int, RtWork, int, void> Exports chat moderation fields
+     * @throws InvalidFormatException When a project field violates its existing contract
+     * @throws LogicException When page preparation violates writer lifetime
+     */
+    protected function exportOwn(RtRowWriter $out): Generator
+    {
+        yield from $this->exportFields($out, self::OWN_FIELD_DEFAULTS);
     }
 }

@@ -8,6 +8,9 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\TableRefusalRuntime as StateTableRefusalRuntime;
 use Hilos\Runtime\View\Item\TableRefusalRuntime as ViewTableRefusalRuntime;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for the test-only table refusal singleton (HIL-1131).
@@ -28,12 +31,16 @@ final class TableRefusalRuntimeActions extends RtActions
      * @param string $tableKey Wire key of the table whose windows are refused; empty turns it off
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function set(string $tableKey): void
     {
         $this->ensureCanWrite();
 
-        $this->state->tableKey = $tableKey;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateTableRefusalRuntime::tableKey => $tableKey,
+        ]);
     }
 }

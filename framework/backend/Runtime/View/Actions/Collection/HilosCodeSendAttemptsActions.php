@@ -6,9 +6,15 @@ namespace Hilos\Runtime\View\Actions\Collection;
 
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
+use Hilos\Database\Exception\Transaction\NestedTransactionRefusedException;
+use Hilos\Database\Exception\Transaction\TransactionNotOpenException;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
@@ -16,6 +22,7 @@ use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
 use Hilos\Runtime\View\Item\HilosCodeSendAttempt;
 use Hilos\Utils\Helpers\TimeHelper;
+use Throwable;
 
 /**
  * Write API for the code send attempts, and the home of the stale-report rule (HIL-826).
@@ -50,6 +57,11 @@ final class HilosCodeSendAttemptsActions extends RtActions
      * command ending the resend pause, would stamp a ticket no row carries (HIL-1186). A removal
      * and a creation are two events every copy applies.
      *
+     * The two are one compound and stand or go back together: they run under the caller's
+     * transaction, or under one of their own when the caller has none, so a creation the FIFO
+     * refuses takes the removal back with its reservation instead of leaving the session with no
+     * line on every copy (rt-state.md, "A compound write runs under one transaction").
+     *
      * @param string $sessionTokenHash Hash of the session cookie token the line is addressed to
      * @param string $ticket Ticket of the send this line follows
      * @param string $channel Channel the code travels over - `email` or a code channel key
@@ -59,21 +71,30 @@ final class HilosCodeSendAttemptsActions extends RtActions
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
      * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
      * @throws HilosException Whatever the row's read of the written fields raises
+     * @throws RtWriteBackpressureException When the source's ordinary FIFO has no room for the compound; nothing stays written
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws NestedTransactionRefusedException When the connection holds only a failed transaction its caller has not closed
+     * @throws TransactionNotOpenException When the compound's own transaction was closed under it
+     * @throws AnnouncementFailedException When an announcement its commit released failed outside a handler
+     * @throws DatabaseException When the connection's state refuses the memory-only commit, or a test scope is closing
      */
     public function start(string $sessionTokenHash, string $ticket, string $channel, ?string $purpose = null): void
     {
         $this->ensureCanWrite();
+        $level = Database::runtimeTransactionLevel();
+        if ($level !== null && $level->testScope === null) {
+            $this->replaceLine($sessionTokenHash, $ticket, $channel, $purpose);
 
-        if ($this->stateCollection->has($sessionTokenHash)) {
-            $this->removeStateFromCollection($sessionTokenHash);
+            return;
         }
-        $this->addStateToCollection(StateHilosCodeSendAttempt::create(
-            $sessionTokenHash,
-            $ticket,
-            $channel,
-            TimeHelper::nowMs(),
-            $purpose,
-        ));
+        Database::transactionStart();
+        try {
+            $this->replaceLine($sessionTokenHash, $ticket, $channel, $purpose);
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            Database::transactionRollbackSilent();
+            throw $failure;
+        }
     }
 
     /**
@@ -200,5 +221,34 @@ final class HilosCodeSendAttemptsActions extends RtActions
         $this->removeStateFromCollection($sessionTokenHash);
 
         return true;
+    }
+
+    /**
+     * The compound of {@see self::start()}: the previous line goes, the new one is born queued.
+     *
+     * @param string $sessionTokenHash Hash of the session cookie token the line is addressed to
+     * @param string $ticket Ticket of the send this line follows
+     * @param string $channel Channel the code travels over - `email` or a code channel key
+     * @param ?string $purpose Profile operation, or null for a guest send
+     * @throws RtActionsCollectionNameNullException When collection name is unavailable
+     * @throws RtActionsStateCollectionNullException When runtime state collection is unavailable
+     * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the collection's announcement raises
+     * @throws HilosException Whatever the row's read of the written fields raises
+     * @throws RtWriteBackpressureException When the source's ordinary FIFO has no room; nothing was written by that door
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     */
+    private function replaceLine(string $sessionTokenHash, string $ticket, string $channel, ?string $purpose): void
+    {
+        if ($this->stateCollection->has($sessionTokenHash)) {
+            $this->removeStateFromCollection($sessionTokenHash);
+        }
+        $this->addStateToCollection(StateHilosCodeSendAttempt::create(
+            $sessionTokenHash,
+            $ticket,
+            $channel,
+            TimeHelper::nowMs(),
+            $purpose,
+        ));
     }
 }

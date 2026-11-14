@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Moderation;
 
 use ArrayAccess;
 use Closure;
+use Generator;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -24,7 +25,9 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Upload\DTO\UploadSnapshotData;
 use Hilos\Files\Upload\UploadPhase;
+use Hilos\Files\Upload\UploadSnapshotCollection;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\FsDirectory;
@@ -40,27 +43,27 @@ use Hilos\LLM\Constants\LLMApiConstants;
 use Hilos\LLM\Routing\LlmProfile;
 use Hilos\LLM\Routing\LlmProvider;
 use Hilos\LLM\Routing\LlmRouter;
-use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\DTO\ModerationObserveCommandData;
-use Hilos\Moderation\ModerationCommandConstants;
-use Hilos\Files\Upload\DTO\UploadSnapshotData;
-use Hilos\Files\Upload\UploadSnapshotCollection;
-use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Throwable;
+use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationAgent;
+use Hilos\Moderation\ModerationCommandConstants;
 use Hilos\Moderation\ModerationInput;
 use Hilos\Moderation\ModerationKind;
 use Hilos\Moderation\ModerationKindDirectory;
+use Hilos\Moderation\ModerationKindKey;
 use Hilos\Moderation\ModerationLlmConstants;
 use Hilos\Moderation\ModerationFailureLog;
 use Hilos\Moderation\ModerationReason;
-use Hilos\Moderation\ModerationKindKey;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosModerationCheck;
 use Hilos\Runtime\State\Item\HilosUpload;
-use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Log\AgentLogStream;
 use Hilos\Utils\LogLevel;
@@ -70,6 +73,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 use RuntimeException;
+use Throwable;
 
 /**
  * The moderator over the runtime queue, with a scripted model (HIL-1625).
@@ -1530,24 +1534,30 @@ final class ModerationAgentTestConnections extends HilosConnections
 
 final class ModerationAgentTestConnection extends HilosConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Fields unused by this fixture */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Fields unused by this fixture */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No project fields */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Fields unused by this fixture */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Fields unused by this fixture */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

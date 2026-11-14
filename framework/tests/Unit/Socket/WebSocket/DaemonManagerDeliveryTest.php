@@ -35,6 +35,9 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Files\Upload\UploadMemoryMaster;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeStateSignalData;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Socket\Client\Interface\WebSocketClientInterface;
 use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Server\WebSocketServer;
@@ -841,6 +844,69 @@ final class DaemonManagerDeliveryTest extends TestCase
             $loop->unregister($pair[0]);
             socket_close($pair[0]);
             socket_close($pair[1]);
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->manager);
+            $loop->close();
+        }
+    }
+
+    /**
+     * Agents stopping and starting by the dozen release far more between two master rounds than a
+     * round's retirement share retires, and the backlog took the master past its memory limit. A
+     * round retires a bounded portion of what lies beyond the bound first, also when its own signal
+     * work outlasts its deadline and it gets one share; the excess keeps the dispatch cued, and the
+     * rounds bring the shared queue down to the bound. The rest stays with the share and keeps the
+     * dispatch cued.
+     */
+    public function testAMasterRoundRetiresABurstBeyondTheBoundBeforeItsShare(): void
+    {
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->manager, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->manager);
+        $arena = RtRowArena::process();
+        try {
+            $burst = [];
+            for ($agent = 0; $agent < RtRowArena::SHARED_BACKLOG_RELEASES + 1024; $agent++) {
+                $burst[] = RtRowValues::fromNative(['agent' => $agent, 'state' => 'frozen']);
+            }
+            foreach ($burst as $values) {
+                $values->release();
+            }
+            $burst = [];
+            self::assertGreaterThanOrEqual(RtRowArena::SHARED_BACKLOG_RELEASES + 1024, $arena->retention()->pendingReleases);
+
+            $round = false;
+            $held = false;
+            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->manager,
+                static function () use (&$round, &$held): Generator {
+                    while (!$round) {
+                        yield;
+                    }
+                    // Longer than the round's 2 ms budget: the round ends after its first share.
+                    usleep(3000);
+                    $held = true;
+                });
+            self::assertFalse($held, 'The effect waits for the round');
+            $round = true;
+            $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignalsWithinBudget');
+            $pages = $arena->retention()->pages;
+            $dispatch->invoke($this->manager);
+
+            self::assertTrue($held, 'The round\'s own signal work outlasted its deadline');
+            $retired = $pages - $arena->retention()->pages;
+            self::assertGreaterThan(0, $retired, 'The round retired a portion of the burst');
+            self::assertLessThanOrEqual(RtRowArena::EXCESS_RETIREMENT_STEPS + RtWorkBudget::DEFAULT_STEPS, $retired,
+                'The round spent no more than its excess retirement and its share');
+            for ($rounds = 1; $arena->retention()->pendingReleases > RtRowArena::SHARED_BACKLOG_RELEASES; $rounds++) {
+                self::assertLessThan(64, $rounds, 'The rounds bring the queue down to its bound');
+                self::assertTrue($loop->hasReadyWork(), 'The excess keeps the dispatch cued');
+                $dispatch->invoke($this->manager);
+            }
+            self::assertTrue($arena->hasPendingRetirement(), 'The rest is left to the share');
+            self::assertTrue($loop->hasReadyWork(), 'The rest keeps the dispatch cued');
+        } finally {
+            while ($arena->hasPendingRetirement()) {
+                $arena->advanceRetirement(new RtWorkBudget());
+            }
             new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->manager);
             $loop->close();
         }

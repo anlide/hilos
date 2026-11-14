@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Closure;
+use Generator;
+use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Core\Analytics\AnalyticsCollector;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HttpConstants;
@@ -27,8 +30,16 @@ use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Runtime\ConnectionRosterReconciler;
+use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\Snapshot\RtWorkLane;
+use Hilos\Runtime\Snapshot\RtWorkScheduler;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\RtSnapshot;
+use Hilos\Runtime\Stream\RtSyncStreamChannel;
+use Hilos\Runtime\Stream\RtSyncStreamFrame;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\DTO\RtStalenessSignalData;
@@ -79,7 +90,9 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\DaemonSection\DTO\DaemonAgentRestartRequestSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\SocketException;
+use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketAcceptKeySignalDTO;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
@@ -151,10 +164,7 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeRefreezeDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncCreatedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncDeletedMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncMessageInterface;
-use Hilos\Socket\Worker\DTO\WorkerRtSyncUpdatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Log\LogWriteLevelApplier;
 use Hilos\ProtectedMode\DTO\ProtectedModeCircleSignalData;
 use Hilos\ProtectedMode\DTO\ProtectedModeDisableSignalData;
@@ -217,6 +227,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /** What a wait with no consumer of its own is parked under: the daemon link, waiting for the framework's own rows. */
     private const string PARKED_LINK_KEY = 'link';
 
+    /** Prefix of an agent among the names frames keep their order under ({@see self::orderKeyOf()}). */
+    private const string ORDER_OF_AGENT = 'agent ';
+
+    /** Prefix of a socket among the names frames keep their order under ({@see self::orderKeyOf()}). */
+    private const string ORDER_OF_SOCKET = 'socket ';
+
     /** Address of the project's tick hook in a contained failure, in the unit's own terms. */
     private const string ADDRESS_ON_TICK = 'onTick';
 
@@ -229,6 +245,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /** Address of the terminal upload receipt batch in a contained failure. */
     private const string ADDRESS_UPLOAD_RECEIPTS = 'upload receipts';
 
+    /** Address of the RT pass, its stream portions and retirement, in a contained failure. */
+    private const string ADDRESS_RT_PASS = 'rt pass';
+
+    /** Longest run of RT rounds one pass of this worker spends before the loop moves on. */
+    private const int RT_PASS_BUDGET_NS = 2 * TimeConstants::NS_PER_MILLISECOND;
+
     /** Worker index assigned by the daemon supervisor. */
     protected int $workerIndex;
 
@@ -237,6 +259,40 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
     /** Daemon client and POSIX receiver, or null before process setup/after cleanup. */
     protected ?WorkerDaemonClient $daemonClient = null;
+    /** The ordinary RT stream of the current daemon connection; a new connection is a new epoch */
+    private ?RtSyncStreamChannel $rtSyncStream = null;
+
+    /** Shares of this worker's RT pass: the stream with the ordinary one, the arena's retirement with its own */
+    private ?RtWorkScheduler $rtWork = null;
+    /** Whether an RT pass is running now, so a wake from inside it asks for one more round instead of nesting */
+    private bool $rtPassRunning = false;
+    /** Whether a wake arrived while the pass ran */
+    private bool $rtPassAgain = false;
+    /** Whether the stream still had work when its last round's share ran out */
+    private bool $rtStreamOwed = false;
+    /** Whether the arena's shared retirement was left when the last RT pass ran out of time */
+    private bool $rtRetireOwed = false;
+    /**
+     * @var list<WorkerDTO> Daemon frames taken while the stream still read or applied a part, handled first once it is
+     *      through, in arrival order ({@see self::waitsForRtSyncStream()}). Process-local like the parked frames: gone
+     *      with the connection.
+     */
+    private array $heldForRtSyncStream = [];
+    /**
+     * @var array<string, int> Frames that wait for their turn behind the stream's operations and keep their order -
+     *      reports of an agent's start or stop, answers to a socket - counted by the agent or the socket they name
+     *      ({@see self::orderKeyOf()}) until each is written ({@see self::sendToDaemon()}). Process-local like the
+     *      stream: gone with the connection.
+     */
+    private array $waitingInTurn = [];
+    /**
+     * @var array<string, true> Agents stopped here whose RT claim and stop report wait for a cleanup their FIFO still
+     *      owes ({@see RtOrdinaryAdmission::owes()}), by agent id, until {@see self::reportStopsPaidUp()} lets them go.
+     *      Process-local like the stream: a worker leaving lets them go with the debt unpaid ({@see self::cleanup()}).
+     */
+    private array $stopsBehindDebt = [];
+    /** @var ?Closure(): void This worker's RT pass as the process arena knows it, while the loop runs */
+    private ?Closure $rtPassWake = null;
 
     /** @var ?ProtectedModeSettingsReporter Subscriber registered once for this worker process */
     private ?ProtectedModeSettingsReporter $protectedModeSettingsReporter = null;
@@ -413,6 +469,13 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
+        // The arena's shared retirement is this loop's RT pass from now on. The loop asks the arena
+        // after every iteration (hasRtPassWork()) and waits no longer than IDLE_WAIT_SECONDS while
+        // it holds work, so the wake has nothing to schedule.
+        $this->rtPassWake = static function (): void {
+        };
+        RtRowArena::process()->bindPassWake($this->rtPassWake);
+
         // Main loop
         while (!$this->shouldExit) {
             $this->dispatchProcessSignals();
@@ -463,8 +526,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 // whether it returned or raised: a transaction lives inside the unit that opened
                 // it, and one left standing would take in every later write of this worker. And
                 // every unit starts with Database::handlerStart(), so a commit inside it holds a
-                // failed announcement for the unit's card.
-                while (($message = $this->daemonClient->getNextMessage()) !== null) {
+                // failed announcement for the unit's card. A frame behind a streamed write the RT
+                // pass has not applied yet waits for it (nextDaemonMessage()).
+                while (($message = $this->nextDaemonMessage()) !== null) {
                     $handledMessage = true;
                     Database::handlerStart();
                     try {
@@ -483,6 +547,18 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     $this->flushUploadReceipts();
                 } catch (Throwable $failure) {
                     $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_UPLOAD_RECEIPTS, $failure);
+                }
+
+                // What the RT pass still owes after the wakes of this iteration: the portions of a
+                // streamed operation or of a part to send, and the arena's shared retirement.
+                if ($this->hasRtPassWork()) {
+                    Database::handlerStart();
+                    try {
+                        $this->runRtPass();
+                        $this->endUnit(WorkerTickUnit::DAEMON_MESSAGE, self::ADDRESS_RT_PASS);
+                    } catch (Throwable $failure) {
+                        $this->endUnit(WorkerTickUnit::DAEMON_MESSAGE, self::ADDRESS_RT_PASS, $failure);
+                    }
                 }
 
                 // Call tick method (only when connected)
@@ -508,8 +584,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     $this->endUnit(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS, $failure);
                 }
 
-                // Behind the signals, so the cron report of the tick that fired an armed rule
-                // reaches the master ahead of the outcome the console is answered with.
+                // Behind the signals, and in turn behind the writes as they wait (readsBehindRtWrites), so the cron
+                // report of the tick that fired an armed rule reaches the master ahead of the outcome the console gets.
                 $this->sendCronFiredAcks();
 
                 Database::handlerStart();
@@ -571,7 +647,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
         $client = $this->daemonClient;
         if ($client === null || !$client->isConnected() || $client->getSocket() === null || $handledMessage
-            || $client->hasPendingWrite() || TickDrivenIoRegistry::anyInFlight()) {
+            || $client->hasPendingWrite() || TickDrivenIoRegistry::anyInFlight() || $this->rtPassOwes()
+            || $this->heldForRtSyncStream !== []) {
             $this->sleepWithPreciseTiming($loopStartTime, min(
                 self::ACTIVE_PASS_MICROSECONDS,
                 (int)floor(($deadline - $loopStartTime) * TimeConstants::US_PER_SECOND),
@@ -633,7 +710,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
             || $this->cronFiredAcks !== []
             || (Hilos::$sr?->hasQueuedSignals() ?? false)
             || (Hilos::$ac?->hasPendingData() ?? false)
-            || WorkerTickFailureLog::hasPendingWindows()) {
+            || WorkerTickFailureLog::hasPendingWindows()
+            || RtRowArena::process()->hasPendingRetirement()) {
             return $shortDeadline;
         }
         foreach ($this->pageSignalRouters as $router) {
@@ -784,9 +862,13 @@ abstract class WorkerManager extends BaseManager implements PageResender
         $this->pendingUploadReceiptIds = [];
         $this->daemonClient ??= new WorkerDaemonClient();
         $this->daemonClient->connect();
+        $this->rtSyncStream = null;
+        $this->rtStreamOwed = false;
+        $this->heldForRtSyncStream = [];
+        $this->waitingInTurn = [];
 
         // Send worker registration message (will be sent when connection is established)
-        $this->daemonClient->send(new WorkerRegisterDTO(
+        $this->sendToDaemon(new WorkerRegisterDTO(
             workerIndex: $this->workerIndex,
             monopolistic: $this->isMonopolistic,
         ));
@@ -1025,28 +1107,13 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 $this->handleRtStalenessMessage($data);
                 break;
 
-            case WorkerConstants::MESSAGE_RT_SYNC_CREATED:
-                if (!$data instanceof WorkerRtSyncCreatedMessageDTO) {
-                    Logger::error("handleRtSyncMessage - unexpected type: " . get_class($data));
+            case WorkerConstants::MESSAGE_RT_SYNC_STREAM:
+                if (!$data instanceof WorkerRtSyncStreamDTO) {
+                    Logger::error("rtSyncStream - unexpected type: " . get_class($data));
                     break;
                 }
-                $this->handleRtSyncMessage($data);
-                break;
-
-            case WorkerConstants::MESSAGE_RT_SYNC_UPDATED:
-                if (!$data instanceof WorkerRtSyncUpdatedMessageDTO) {
-                    Logger::error("handleRtSyncMessage - unexpected type: " . get_class($data));
-                    break;
-                }
-                $this->handleRtSyncMessage($data);
-                break;
-
-            case WorkerConstants::MESSAGE_RT_SYNC_DELETED:
-                if (!$data instanceof WorkerRtSyncDeletedMessageDTO) {
-                    Logger::error("handleRtSyncMessage - unexpected type: " . get_class($data));
-                    break;
-                }
-                $this->handleRtSyncMessage($data);
+                $this->rtSyncStream()->receive($data->frame);
+                RtOrdinaryAdmission::handOnCommitted();
                 break;
 
             default:
@@ -1413,8 +1480,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
         // are replaced: the snapshot is the whole truth about this collection, freshness
         // included. A worker whose last reader of it went away stops being sent the thaw frames -
         // they are addressed by interest - so a mark from before would otherwise survive a
-        // snapshot that says the rows are current.
+        // snapshot that says the rows are current. Read before the stream lets go of its held
+        // rows below, so the rows that thaw with them are named to the tables too.
         $wereFrozen = array_map(strval(...), array_keys(RtStaleness::staleRows($data->collectionKey)));
+        // The snapshot is a base again for every row of it, those whose streamed operation this
+        // worker refused included: their later operations are applied from here on.
+        $this->rtSyncStream?->recover($data->collectionKey);
         RtStaleness::clear($data->collectionKey, $wereFrozen);
         foreach ($data->staleRows as $stateId => $since) {
             RtStaleness::mark($data->collectionKey, [$stateId], $since);
@@ -1473,7 +1544,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
     private function handleRtStalenessMessage(WorkerRtStalenessMessageDTO $data): void
     {
         if ($data->since === null) {
-            RtStaleness::clear($data->collectionKey, $data->stateIds);
+            // The master speaks of its own copy. A row this worker's stream holds missed one of its
+            // operations here, and stays frozen until a snapshot gives it a base again.
+            RtStaleness::clear(
+                $data->collectionKey,
+                array_values(array_diff($data->stateIds, $this->rtSyncStream?->heldRows($data->collectionKey) ?? [])),
+            );
         } else {
             RtStaleness::mark($data->collectionKey, $data->stateIds, $data->since);
         }
@@ -1704,10 +1780,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
         try {
             DbSyncApplicator::applyReHydrate();
-            $this->daemonClient->send(new WorkerDbReHydratedDTO(round: $dto->round, ok: true));
+            $this->sendToDaemon(new WorkerDbReHydratedDTO(round: $dto->round, ok: true));
         } catch (DatabaseException | LogicException $e) {
             Logger::error('handleDbReHydrateMessage - could not re-read the database: ' . $e->getMessage());
-            $this->daemonClient->send(
+            $this->sendToDaemon(
                 new WorkerDbReHydratedDTO(round: $dto->round, ok: false, error: $e->getMessage()),
             );
         }
@@ -1847,33 +1923,383 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * applicator runs, the browser invalidation is recorded after it, and agents
      * are notified last.
      *
-     * @param WorkerRtSyncMessageInterface $data Worker-level RT sync message (create, update or delete)
+     * An update is applied in portions on the shares of this worker's RT passes: a row whose
+     * codec refuses the patch publishes nothing, and the refusal leaves here before anyone is told.
+     *
+     * @param RtSyncSignalDataInterface $data RT sync carrier the daemon streamed (create, update or delete)
+     * @return Generator<int, RtWork, int, void> Bounded apply, then the browser fact and the agents
      * @throws HilosException Whatever the applied write raises
+     * @throws Throwable Whatever the row's codec refuses in a portioned update, before any field is published
      */
-    private function handleRtSyncMessage(WorkerRtSyncMessageInterface $data): void
+    private function handleRtSyncMessage(RtSyncSignalDataInterface $data): Generator
     {
-        if ($this->consumeIncomingRtSyncSelfBroadcast($data->signalData)) {
+        if ($this->consumeIncomingRtSyncSelfBroadcast($data)) {
             return;
         }
-        match (true) {
-            $data->signalData instanceof RtSyncCreatedSignalData => RtSyncApplicator::applyCreated(
-                $data->signalData,
-                skipSelfBroadcastCheck: false,
-            ),
-            $data->signalData instanceof RtSyncUpdatedSignalData => RtSyncApplicator::applyUpdated(
-                $data->signalData,
-                skipSelfBroadcastCheck: false,
-            ),
-            $data->signalData instanceof RtSyncDeletedSignalData => RtSyncApplicator::applyDeleted(
-                $data->signalData,
-                skipSelfBroadcastCheck: false,
-            ),
-            default => Logger::error(
-                'handleRtSyncMessage - unexpected payload: ' . get_class($data->signalData),
-            ),
-        };
-        $this->recordBrowserSourceChange($data->signalData);
-        $this->dispatchRtSyncToAgents($data->signalData);
+        if ($data instanceof RtSyncUpdatedSignalData) {
+            yield from RtSyncApplicator::applyUpdatedInPortions($data, skipSelfBroadcastCheck: false);
+        } else {
+            yield new RtWork();
+            match (true) {
+                $data instanceof RtSyncCreatedSignalData => RtSyncApplicator::applyCreated($data, skipSelfBroadcastCheck: false),
+                $data instanceof RtSyncDeletedSignalData => RtSyncApplicator::applyDeleted($data, skipSelfBroadcastCheck: false),
+                default => Logger::error('handleRtSyncMessage - unexpected payload: ' . get_class($data)),
+            };
+        }
+        $this->recordBrowserSourceChange($data);
+        $this->dispatchRtSyncToAgents($data);
+    }
+
+    /**
+     * The ordinary RT stream of the current daemon connection, opened on first use. Its sender
+     * consumes this process's ordinary FIFOs ({@see RtOrdinaryAdmission::consumeBy()}): committed
+     * cells are handed on while it has room.
+     *
+     * @return RtSyncStreamChannel Both directions of the stream on this connection
+     */
+    private function rtSyncStream(): RtSyncStreamChannel
+    {
+        if ($this->rtSyncStream === null) {
+            $client = $this->daemonClient;
+            $stream = new RtSyncStreamChannel(
+                static function (RtSyncStreamFrame $frame) use ($client): void {
+                    $client?->send(new WorkerRtSyncStreamDTO($frame));
+                },
+                $this->applyStreamedRtSync(...),
+                $this->wakeRtSyncStream(...),
+            );
+            RtOrdinaryAdmission::consumeBy(static fn (): bool => $stream->hasRoom());
+            $this->rtSyncStream = $stream;
+        }
+
+        return $this->rtSyncStream;
+    }
+
+    /**
+     * Writes one frame of this worker to the daemon. A frame the master reads against the writes this
+     * worker streamed before it ({@see self::readsBehindRtWrites()}) goes, once the connection's RT
+     * stream is open, in its turn among the stream's operations ({@see RtSyncStreamChannel::writeInTurn()}):
+     * a write streamed before it is out whole first - all its parts, also when the pass that took it
+     * had no time to cut it - so the master reads the signal an agent sent right after its RT write,
+     * or the release of what a stopped agent owned and the report of its stop, only behind that write,
+     * and holds it until the write is read. A report of an agent's start or stop naming an agent whose frame waits goes behind it as
+     * well, so the master never reads an agent restarted here as started ahead of its old instance's
+     * stop; and an answer to a socket whose handshake response waits goes behind that response, so the
+     * browser never reads the rotation ticket or the answer to its sign-in ahead of who it is
+     * ({@see self::orderKeyOf()}). Every other frame is written at once, as on a peer link ({@see PeerLink::sendFrame()}):
+     * the other lifecycle reports, HTTP replies, the other answers to browsers, DB sync and the control frames.
+     * Behind a tail of one agent's writes they waited for seconds, and a node's protected-mode entry
+     * with them (HIL-2056). The stream's own frames do not come here. A worker leaving writes the
+     * frames still waiting behind a stream operation before it writes its buffer out
+     * ({@see self::cleanup()}): nothing runs after that to let them go.
+     *
+     * @param WorkerDTO|array<string, mixed> $message Frame to write, as a DTO or a message array
+     */
+    private function sendToDaemon(WorkerDTO|array $message): void
+    {
+        $orderKey = self::orderKeyOf($message);
+        $inTurn = self::readsBehindRtWrites($message) || ($orderKey !== null && isset($this->waitingInTurn[$orderKey]));
+        if ($this->rtSyncStream === null || !$inTurn) {
+            $this->daemonClient->send($message);
+
+            return;
+        }
+        if ($orderKey !== null) {
+            $this->waitingInTurn[$orderKey] = ($this->waitingInTurn[$orderKey] ?? 0) + 1;
+        }
+        $client = $this->daemonClient;
+        $this->rtSyncStream->writeInTurn(function () use ($client, $message, $orderKey): void {
+            if ($orderKey !== null && isset($this->waitingInTurn[$orderKey]) && --$this->waitingInTurn[$orderKey] === 0) {
+                unset($this->waitingInTurn[$orderKey]);
+            }
+            $client?->send($message);
+        });
+    }
+
+    /**
+     * Whether the master reads a frame of this worker against the RT writes the worker streamed before
+     * it. A signal to an agent and an access re-decision of pages - by user, by connection, or by session,
+     * which the master turns into the connections that carry the session - are handed on to what reads
+     * the master's RT copy. An agent's answer to a command and the report of its stop say that the agent's
+     * work is done: the command's caller acts on the outcome, and the master on the stop - it starts the
+     * agent on another worker, or lets the cluster's placement start it on another node, once it reads
+     * the report ({@see WorkerServer::startAgent()}), and a write of the old instance read after the
+     * report would land over the new instance's. The release of what a stopped agent owned in RT says
+     * it too: the master announces a write to the peers only while an agent of its node owns the
+     * collection ({@see DaemonManager::broadcastRtSyncToPeers()}), so a release read ahead of the agent's
+     * last writes would keep them from the other nodes. The outcome of a cron rule a console asked to
+     * fire is a command's answer as well, written behind the cron report of the tick that fired it
+     * ({@see self::sendCronFiredAcks()}), which waits as a signal: at once, it would overtake the report.
+     * The one answer to a browser among them is the response to its handshake ({@see AbstractAgent::sendHandshakeResponse()}),
+     * the one place it is sent from: it tells the browser who it is, and the browser acts on it with frames
+     * judged against the connection row the agent wrote right before it - it joins its groups, and the
+     * worker of a group reads who the socket is from its RT copy of that row - so the master must not
+     * hand it on ahead of the row. Every other answer to a browser reads no RT.
+     *
+     * @param WorkerDTO|array<string, mixed> $message Frame to write, as a DTO or a message array
+     * @return bool Whether it goes in its turn behind the writes streamed before it
+     */
+    private static function readsBehindRtWrites(WorkerDTO|array $message): bool
+    {
+        if (is_array($message)) {
+            return ($message[WorkerDTO::TYPE] ?? null) === WorkerConstants::MESSAGE_AGENT_STOPPED;
+        }
+        if ($message instanceof WorkerAgentMessageDTO) {
+            $signalType = $message->signal->signalType->getType();
+            $answer = $message->signal->data;
+
+            return $signalType === SignalTypeConstants::AGENT_SIGNAL || $signalType === SignalTypeConstants::COMMAND_REPLY
+                || $signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS_SESSION
+                || ($signalType === SignalTypeConstants::WS_USER && $answer instanceof WebSocketSignalData
+                    && $answer->data instanceof HandshakeResponseSignalData);
+        }
+
+        return $message instanceof WorkerRtSourceReleasedDTO || $message instanceof WorkerPageAccessReassessMessageDTO
+            || $message instanceof WorkerPageAccessReassessConnectionsMessageDTO || $message instanceof WorkerTestCronFiredDTO;
+    }
+
+    /**
+     * Names what a frame of this worker keeps its order with while a frame naming the same waits for its
+     * turn ({@see self::sendToDaemon()}): the agent whose start or stop it reports
+     * ({@see self::lifecycleAgentIdOf()}), or the socket an answer to one browser is addressed to - the
+     * response to its handshake, and the rotation ticket, the answer to its sign-in and whatever else the
+     * agent sends that socket behind it. An agent and a socket are named apart, so neither stands for the other.
+     *
+     * @param WorkerDTO|array<string, mixed> $message Frame to write, as a DTO or a message array
+     * @return ?string What the frame keeps its order with, or null when it names no agent's start or stop and no socket
+     */
+    private static function orderKeyOf(WorkerDTO|array $message): ?string
+    {
+        $agentId = self::lifecycleAgentIdOf($message);
+        if ($agentId !== null) {
+            return self::ORDER_OF_AGENT . $agentId;
+        }
+        if (!$message instanceof WorkerAgentMessageDTO || $message->signal->signalType->getType() !== SignalTypeConstants::WS_USER) {
+            return null;
+        }
+        $answer = $message->signal->data;
+        if (!$answer instanceof WebSocketSignalData || $answer->targetAcceptKey === null) {
+            return null;
+        }
+
+        return self::ORDER_OF_SOCKET . $answer->targetAcceptKey;
+    }
+
+    /**
+     * Names the agent whose start or stop a frame of this worker reports: the report of its start, of a
+     * start that did not finish, or of its stop.
+     *
+     * @param WorkerDTO|array<string, mixed> $message Frame to write, as a DTO or a message array
+     * @return ?string Id of the agent, or null when the frame reports no agent's start or stop
+     */
+    private static function lifecycleAgentIdOf(WorkerDTO|array $message): ?string
+    {
+        if ($message instanceof WorkerAgentStartFailedDTO) {
+            return $message->agentId;
+        }
+        if (!is_array($message)) {
+            return null;
+        }
+        $type = $message[WorkerDTO::TYPE] ?? null;
+        if ($type !== WorkerConstants::MESSAGE_AGENT_STARTED && $type !== WorkerConstants::MESSAGE_AGENT_STOPPED) {
+            return null;
+        }
+        $agentId = $message[AgentConstants::FIELD_AGENT_ID] ?? null;
+
+        return is_string($agentId) ? $agentId : null;
+    }
+
+    /**
+     * The stream's wake: runs this worker's RT pass now, or asks the running one for another
+     * round. Work the pass's time leaves over is owed to the next iteration of the loop.
+     *
+     * @param RtSyncStreamChannel $channel Stream with work to do
+     * @throws Throwable Whatever a round of the pass raises past the stream's own answers
+     */
+    private function wakeRtSyncStream(RtSyncStreamChannel $channel): void
+    {
+        $this->runRtPass();
+    }
+
+    /**
+     * One RT pass of this worker: rounds, each on a fresh share, while work is left and the pass
+     * has time. A round pumps the daemon link's stream - reading, applying in portions and sending -
+     * on the ordinary share, and advances the process arena's shared retirement on its own share.
+     * A wake from inside a round asks for one more instead of nesting.
+     *
+     * The pass first retires a bounded portion of what the arena's shared queue holds beyond its
+     * bounds, as the master's dispatch does ({@see RtRowArena::retireExcess()}): agents coming back
+     * from a freeze by the dozen release far more between two passes than the share retires, and
+     * the backlog took monopolistic workers past their memory limit (HIL-2056). What the call leaves
+     * keeps the retirement pending, so the loop does not wait on its socket for a frame: it runs the
+     * next pass after its short active sleep, with or without one ({@see self::rtPassOwes()}).
+     * Retirement released after the pass, by the ticks behind it, is not owed: it waits for the
+     * next iteration, whose socket wait it caps at {@see self::IDLE_WAIT_SECONDS}. Owed, it kept a
+     * worker whose agent released rows on every tick on its short sleep for good, and the agents of
+     * that worker ticking ten times as often (HIL-2056).
+     *
+     * @throws Throwable Whatever a round raises past the stream's own answers
+     */
+    private function runRtPass(): void
+    {
+        if ($this->rtPassRunning) {
+            $this->rtPassAgain = true;
+
+            return;
+        }
+        $this->rtPassRunning = true;
+        $this->rtWork ??= new RtWorkScheduler();
+        try {
+            RtRowArena::process()->retireExcess();
+            $deadline = hrtime(true) + self::RT_PASS_BUDGET_NS;
+            do {
+                $this->rtPassAgain = false;
+                $this->rtWork->beginPass();
+                $this->rtStreamOwed = $this->rtSyncStream?->pump($this->rtWork->budget(RtWorkLane::Ordinary)) ?? false;
+                RtRowArena::process()->advanceRetirement($this->rtWork->budget(RtWorkLane::Retire));
+            } while (($this->rtPassAgain || $this->hasRtPassWork()) && hrtime(true) < $deadline);
+            $this->rtRetireOwed = RtRowArena::process()->hasPendingRetirement();
+        } finally {
+            $this->rtPassRunning = false;
+        }
+    }
+
+    /** @return bool Whether the RT pass owes more: a stream portion its share left, or the arena's shared retirement */
+    private function hasRtPassWork(): bool
+    {
+        return $this->rtPassAgain || $this->rtStreamOwed || RtRowArena::process()->hasPendingRetirement();
+    }
+
+    /**
+     * @return bool Whether the last RT pass ran out of time with work left: a wake that came while it ran, a stream
+     *     portion its share left, or the arena's shared retirement. Retirement released after it is work for the
+     *     next pass ({@see self::hasRtPassWork()}), not a debt of this one.
+     */
+    private function rtPassOwes(): bool
+    {
+        return $this->rtPassAgain || $this->rtStreamOwed || $this->rtRetireOwed;
+    }
+
+    /**
+     * The next daemon frame to handle. A signal to an agent, an access re-decision of pages, an agent's start or a
+     * row's thaw, taken while the stream
+     * still reads or applies a part it took, waits here unhandled ({@see self::waitsForRtSyncStream()}): the pass
+     * applies the part's operation in portions ({@see self::runRtPass()}), and a signal to an agent the master wrote
+     * after a streamed write must not reach the agent before that write is applied. The master writes such a frame
+     * only behind every part of a write it streamed to this worker earlier, however many parts the write takes
+     * ({@see WorkerClient::sendInTurn()}), so it is taken while the write's final part is read; and its link from the
+     * worker that wrote holds its parsing the same way, so the write was queued on ahead of the signal. Every other
+     * frame is handled as it comes, ahead of the waiting ones. The stream ends its reading on the passes alone, out
+     * of parts it already took, so the wait never needs a frame taken after the ones it holds.
+     *
+     * @return ?WorkerDTO Frame to handle, or null when the queue is empty and nothing waiting is through
+     */
+    private function nextDaemonMessage(): ?WorkerDTO
+    {
+        while (true) {
+            if ($this->heldForRtSyncStream !== [] && $this->rtSyncStream?->isReading() !== true) {
+                return array_shift($this->heldForRtSyncStream);
+            }
+            $message = $this->daemonClient?->getNextMessage();
+            if ($message === null || !$this->waitsForRtSyncStream($message)) {
+                return $message;
+            }
+            $this->heldForRtSyncStream[] = $message;
+        }
+    }
+
+    /**
+     * Whether a daemon frame waits for the parts the RT stream took. What waits is what the master writes in its turn
+     * behind its writes ({@see WorkerClient::sendInTurn()}) - a signal to an agent, an access re-decision of pages, an
+     * agent's start, a row's thaw ({@see WorkerClient::sendRtStaleness()}) -
+     * while the stream reads, and once one waits, every such frame behind it and every part of an operation written
+     * after it: that operation is not the one the held frame waits for. A frame naming an agent a waiting frame names
+     * waits too, so within one agent the order of arrival stays the order of handling (HIL-1012): a stop handled
+     * ahead of a signal sent before it would leave the signal no agent to reach. A row's freeze waits behind a
+     * waiting thaw of its collection the same way: handled ahead of it, the freeze would be undone by it. The other
+     * frames - DB sync, source readiness, snapshots, control frames, the stream's answers - are handled at once.
+     *
+     * @param WorkerDTO $message Frame just taken from the daemon queue
+     * @return bool Whether it waits
+     */
+    private function waitsForRtSyncStream(WorkerDTO $message): bool
+    {
+        if ($message instanceof WorkerRtSyncStreamDTO) {
+            return $this->heldForRtSyncStream !== [] && $message->frame->isPart();
+        }
+        if ($message instanceof DaemonAgentMessageDTO || $message instanceof WorkerPageAccessReassessMessageDTO
+            || $message instanceof WorkerPageAccessReassessConnectionsMessageDTO || $message instanceof AgentStartDTO
+            || ($message instanceof WorkerRtStalenessMessageDTO && $message->since === null)) {
+            return $this->heldForRtSyncStream !== [] || $this->rtSyncStream?->isReading() === true;
+        }
+        if ($message instanceof WorkerRtStalenessMessageDTO) {
+            foreach ($this->heldForRtSyncStream as $held) {
+                if ($held instanceof WorkerRtStalenessMessageDTO && $held->collectionKey === $message->collectionKey) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        $agentId = self::agentIdOf($message);
+        if ($agentId === null) {
+            return false;
+        }
+        foreach ($this->heldForRtSyncStream as $held) {
+            if (self::agentIdOf($held) === $agentId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Applies one operation the daemon streamed, and answers it: applied once this worker holds
+     * it and its agents and pages were told, refused when the apply refused. A refusal is logged
+     * here, because the stream answer is the one thing the sender learns of it.
+     *
+     * The apply is handed back to the stream as work in portions: the stream advances it on the
+     * shares of this worker's RT passes and reads the next operation only after it.
+     *
+     * @param RtSyncStreamOperation $operation Operation read from its parts
+     * @param Closure(bool): void $settled The stream's answer
+     * @return ?Generator<int, RtWork, int, void> The apply and its answer, or null when refused at once
+     */
+    private function applyStreamedRtSync(RtSyncStreamOperation $operation, Closure $settled): ?Generator
+    {
+        if ($operation->originNodeId !== null) {
+            Logger::error("Refusing a streamed RT write that names a node on a worker link [node={$operation->originNodeId}]");
+            $settled(false);
+
+            return null;
+        }
+
+        return $this->appliedStreamedRtSync($operation, $settled);
+    }
+
+    /**
+     * @param RtSyncStreamOperation $operation Operation read from its parts
+     * @param Closure(bool): void $settled The stream's answer
+     * @return Generator<int, RtWork, int, void> The apply in portions, answered at its end
+     */
+    private function appliedStreamedRtSync(RtSyncStreamOperation $operation, Closure $settled): Generator
+    {
+        try {
+            yield from $this->handleRtSyncMessage($operation->signalData());
+        } catch (Throwable $refused) {
+            Logger::error(sprintf(
+                'Streamed RT %s of %s/%s was refused: %s',
+                $operation->signalType,
+                $operation->collectionKey,
+                $operation->stateId,
+                $refused->getMessage(),
+            ));
+            $settled(false);
+
+            return;
+        }
+        $settled(true);
     }
 
     /**
@@ -1963,6 +2389,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * accepted. Incoming self-broadcast echoes are consumed before this method,
      * so one backend fact becomes one browser invalidation per worker.
      *
+     * A runtime row is handed on in the form the payload holds it - segmented from a local
+     * writer, an array off the wire - so forwarding it converts and materializes nothing.
+     *
      * @param SyncSignalDataInterface $signalData Sync payload
      */
     private function recordBrowserSourceChange(SyncSignalDataInterface $signalData): void
@@ -2002,22 +2431,22 @@ abstract class WorkerManager extends BaseManager implements PageResender
             $signalData instanceof RtSyncCreatedSignalData => SourceChange::rtCreated(
                 $signalData->collectionKey,
                 $signalData->stateId,
-                $signalData->row,
+                $signalData->carriedRow(),
                 $signalData->origin,
                 $signalData->originRequestId,
             ),
             $signalData instanceof RtSyncUpdatedSignalData => SourceChange::rtUpdated(
                 $signalData->collectionKey,
                 $signalData->stateId,
-                $signalData->row,
+                $signalData->carriedRow(),
                 $signalData->origin,
                 $signalData->originRequestId,
-                previous: $signalData->previous,
+                previous: $signalData->carriedPrevious(),
             ),
             $signalData instanceof RtSyncDeletedSignalData => SourceChange::rtDeleted(
                 $signalData->collectionKey,
                 $signalData->stateId,
-                $signalData->row,
+                $signalData->carriedRow(),
                 $signalData->origin,
                 $signalData->originRequestId,
             ),
@@ -2821,7 +3250,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             $message[AgentConstants::FIELD_AGENT_INDEX] = $agentIndex;
         }
 
-        $this->daemonClient->send($message);
+        $this->sendToDaemon($message);
     }
 
     /**
@@ -2840,7 +3269,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
-        $this->daemonClient->send(new WorkerAgentStartFailedDTO($agentId, $agentType, $agentIndex, $reason));
+        $this->sendToDaemon(new WorkerAgentStartFailedDTO($agentId, $agentType, $agentIndex, $reason));
     }
 
     /**
@@ -2885,7 +3314,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
-        $this->daemonClient->send(new WorkerRtSourceRegisteredDTO(
+        $this->sendToDaemon(new WorkerRtSourceRegisteredDTO(
             $agentId,
             $collectionKeys,
             RtTruthSourceRegistry::partialCollectionsOf($agentId),
@@ -3103,16 +3532,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return null;
         }
 
-        $agentId = null;
-        if (
-            $data instanceof AgentStartDTO
-            || $data instanceof AgentStopDTO
-            || $data instanceof DaemonAgentMessageDTO
-            || $data instanceof ProtectedModeReadyDTO
-            || $data instanceof ProtectedModeRefusedDTO
-        ) {
-            $agentId = $data->agentId;
-        }
+        $agentId = self::agentIdOf($data);
         if ($agentId !== null && isset($this->parkedSources[self::PARKED_LINK_KEY])) {
             return self::PARKED_LINK_KEY;
         }
@@ -3139,6 +3559,25 @@ abstract class WorkerManager extends BaseManager implements PageResender
         $pageConsumer = SourceConsumer::page($acceptKey);
 
         return isset($this->parkedSources[$pageConsumer]) ? $pageConsumer : null;
+    }
+
+    /**
+     * Names the agent a daemon frame is addressed to - its start, its stop, a signal to it, the answer to its
+     * protected-mode entry, the verdict on its re-hydrate announcement - the one consumer of the frame within
+     * this worker ({@see self::parkedKeyOf()}).
+     *
+     * @param WorkerDTO $data Daemon frame
+     * @return ?string Id of the agent, or null when the frame names none
+     */
+    private static function agentIdOf(WorkerDTO $data): ?string
+    {
+        if ($data instanceof AgentStartDTO || $data instanceof AgentStopDTO || $data instanceof DaemonAgentMessageDTO
+            || $data instanceof ProtectedModeReadyDTO || $data instanceof ProtectedModeRefusedDTO
+            || $data instanceof DbReHydrateCompleteDTO) {
+            return $data->agentId;
+        }
+
+        return null;
     }
 
     /**
@@ -3264,7 +3703,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
-        $this->daemonClient->send(new WorkerUploadConsumedDTO(array_values($this->pendingUploadReceiptIds)));
+        $this->sendToDaemon(new WorkerUploadConsumedDTO(array_values($this->pendingUploadReceiptIds)));
         $this->pendingUploadReceiptIds = [];
     }
 
@@ -3512,7 +3951,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
-        $this->daemonClient->send(new WorkerSourceInterestDTO(
+        $this->sendToDaemon(new WorkerSourceInterestDTO(
             SourceInterestRegistry::collections(SourceChange::KIND_RT),
             SourceInterestRegistry::collections(SourceChange::KIND_DB),
         ));
@@ -3523,7 +3962,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
      *
      * Sent for every stopped agent, including one that never registered anything: the worker
      * would otherwise have to remember what it once reported, and the master drops an agent it
-     * does not know about anyway.
+     * does not know about anyway. Sent behind every write the agent made - those of its onStop()
+     * and a cleanup its FIFO owed among them - in its turn behind the stream's operations
+     * ({@see self::sendToDaemon()}), right ahead of the report of its stop where one is written: the
+     * master announces those writes to the peers only while the agent still owns their collection there.
      *
      * @param string $agentId Agent that stopped
      */
@@ -3533,11 +3975,22 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
-        $this->daemonClient->send(new WorkerRtSourceReleasedDTO($agentId));
+        $this->sendToDaemon(new WorkerRtSourceReleasedDTO($agentId));
     }
 
     /**
-     * Notifies the daemon that a worker-local agent has stopped.
+     * Notifies the daemon that a worker-local agent has stopped, behind every write the agent made.
+     * What the stop hooks queued - the writes of the agent's onStop() - is handed to the RT stream
+     * first, and the release of what the agent owned in RT and the report of its stop then go in
+     * their turn behind the stream's operations ({@see self::sendStop()}): the master starts the agent
+     * elsewhere once it reads the report, and a write of the old instance read after it would land
+     * over the new instance's. A dispatch that fails is contained as the tick's is, and the report
+     * goes all the same: the master waits for it before it starts the agent again.
+     *
+     * A cleanup the agent's FIFO still owes - one its service reserve could not take - is such a
+     * write too, made later, as the FIFO frees ({@see RtOrdinaryAdmission::owes()}). The stop of an
+     * agent left owing one is kept with its RT claim ({@see self::runAgentStopHook()}), and its release
+     * and report wait until the debt is paid or no longer owed ({@see self::reportStopsPaidUp()}).
      *
      * @param string $agentId Agent id
      */
@@ -3547,12 +4000,65 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
-        $message = [
+        $behindDebt = isset($this->stopsBehindDebt[$agentId]);
+        $this->setCurrentAgentId(null);
+        try {
+            $this->dispatchQueuedSignalsToDaemon();
+        } catch (Throwable $failure) {
+            $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS, $failure);
+        }
+        if ($behindDebt) {
+            return;
+        }
+
+        $this->sendStop($agentId);
+    }
+
+    /**
+     * Lets go of the stops whose agents' FIFOs owe nothing any more: each agent's RT claim, kept for
+     * the debt, is taken back, and its release and stop report go in their turn ({@see self::sendStop()}).
+     * Called with the router queue just drained into the RT stream: a debt is paid when its FIFO
+     * frees ({@see RtOrdinaryAdmission::handOnCommitted()}), its write queued there, so by now that
+     * write is on the stream ahead of the report. A debt dropped as no longer owed - its row gone or
+     * replaced - lets the report go as well: nothing of the old instance comes after it.
+     */
+    private function reportStopsPaidUp(): void
+    {
+        foreach (array_keys($this->stopsBehindDebt) as $agentId) {
+            $agentId = (string)$agentId;
+            if (RtOrdinaryAdmission::owes($agentId)) {
+                continue;
+            }
+            unset($this->stopsBehindDebt[$agentId]);
+            RtTruthSourceRegistry::unregisterAgent($agentId);
+            $this->sendStop($agentId);
+        }
+    }
+
+    /**
+     * Writes the release of what a stopped agent owned in RT and the report of its stop, in this
+     * order, as before the RT stream: both in their turn behind the writes the agent streamed
+     * ({@see self::sendToDaemon()}), so the master announces those writes to the peers while the
+     * agent still owns their collections, and starts the agent anew only behind them.
+     *
+     * @param string $agentId Agent that stopped
+     */
+    private function sendStop(string $agentId): void
+    {
+        $this->notifyRtSourcesReleased($agentId);
+        $this->sendToDaemon(self::agentStoppedReport($agentId));
+    }
+
+    /**
+     * @param string $agentId Agent that stopped
+     * @return array<string, string> The worker's report of that agent's stop
+     */
+    private static function agentStoppedReport(string $agentId): array
+    {
+        return [
             WorkerDTO::TYPE => WorkerConstants::MESSAGE_AGENT_STOPPED,
             AgentConstants::FIELD_AGENT_ID => $agentId,
         ];
-
-        $this->daemonClient->send($message);
     }
 
     /**
@@ -3571,6 +4077,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     protected function cleanup(): void
     {
+        if ($this->rtPassWake !== null) {
+            RtRowArena::process()->unbindPassWake($this->rtPassWake);
+            $this->rtPassWake = null;
+        }
         $this->dispatchProcessSignals();
         $stoppedAgentIds = [];
         // Stop all agents
@@ -3607,11 +4117,32 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 $this->containFailure(WorkerTickUnit::SIGNAL_DISPATCH, self::ADDRESS_DISPATCH_SIGNALS, $failure);
             }
             $this->dispatchProcessSignals();
-            if ($this->leavingOnStopSignal) {
-                foreach ($stoppedAgentIds as $agentId) {
+            // Each agent's release goes behind the writes its stop hook made, the report of its stop
+            // with it when the worker leaves on a stop signal.
+            foreach ($stoppedAgentIds as $agentId) {
+                if ($this->leavingOnStopSignal) {
                     $this->notifyAgentStopped($agentId);
+                } elseif (!isset($this->stopsBehindDebt[$agentId])) {
+                    $this->notifyRtSourcesReleased($agentId);
                 }
             }
+            // Nor does a FIFO free from here, so a cleanup an agent still owes stays unpaid, as the
+            // unwritten parts below stay unwritten: the RT claims kept for such debts go, and their
+            // releases and stop reports with them.
+            foreach (array_keys($this->stopsBehindDebt) as $agentId) {
+                RtTruthSourceRegistry::unregisterAgent((string)$agentId);
+                if ($this->leavingOnStopSignal) {
+                    $this->sendStop((string)$agentId);
+                } else {
+                    $this->notifyRtSourcesReleased((string)$agentId);
+                }
+            }
+            $this->stopsBehindDebt = [];
+            // No RT pass and no answer of the master runs from here, so a frame still waiting behind
+            // a streamed write would never get its turn: it goes into the buffer now, in the order it
+            // was written, and the part of the write that is not out stays unwritten - so a stop
+            // report let go here still has no write of its agent behind it on the link.
+            $this->rtSyncStream?->releaseWaiting();
             try {
                 $this->flushDaemonClient();
             } catch (SocketException $e) {
@@ -3639,7 +4170,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * Run the agent stop hook while preserving truth-source write rights during cleanup.
      *
      * The agent may still write to owned DB/RT collections inside {@see AgentInterface::onStop()}.
-     * Truth-source registrations are removed immediately after the hook, even when it fails.
+     * Truth-source registrations are removed immediately after the hook, even when it fails - all
+     * but the RT claim of an agent whose FIFO is left owing a cleanup ({@see RtOrdinaryAdmission::owes()}):
+     * the debt is paid as the FIFO frees, under that claim, and the claim goes with the stop report
+     * behind it ({@see self::reportStopsPaidUp()}). The master hears of the release with the report,
+     * behind the writes of the hook ({@see self::notifyRtSourcesReleased()}), not here.
      *
      * @param AgentInterface $agent Agent being stopped
      * @throws Throwable When the agent stop hook fails
@@ -3651,9 +4186,13 @@ abstract class WorkerManager extends BaseManager implements PageResender
             $agent->onStop();
         } finally {
             TruthSourceRegistry::unregisterAgent($agent->getId());
-            RtTruthSourceRegistry::unregisterAgent($agent->getId());
+            if (RtOrdinaryAdmission::owes($agent->getId())) {
+                $this->stopsBehindDebt[$agent->getId()] = true;
+                ExecutionContext::clearCurrentAgentIdIf($agent->getId());
+            } else {
+                RtTruthSourceRegistry::unregisterAgent($agent->getId());
+            }
             $this->releaseSourceInterest(SourceConsumer::agent($agent->getId()));
-            $this->notifyRtSourcesReleased($agent->getId());
             $this->refuseCronFireWaits($agent->getId());
         }
     }
@@ -4050,15 +4589,15 @@ abstract class WorkerManager extends BaseManager implements PageResender
                     SignalTypeConstants::DB_SYNC_UPDATED => new WorkerDbSyncUpdatedMessageDTO($syncSignalData),
                     SignalTypeConstants::DB_SYNC_DELETED => new WorkerDbSyncDeletedMessageDTO($syncSignalData),
                     SignalTypeConstants::DB_SYNC_CLEARED => new WorkerDbSyncClearedMessageDTO($syncSignalData),
-                    SignalTypeConstants::RT_SYNC_CREATED => new WorkerRtSyncCreatedMessageDTO($syncSignalData),
-                    SignalTypeConstants::RT_SYNC_UPDATED => new WorkerRtSyncUpdatedMessageDTO($syncSignalData),
-                    SignalTypeConstants::RT_SYNC_DELETED => new WorkerRtSyncDeletedMessageDTO($syncSignalData),
                     default => null,
                 };
+                $this->recordBrowserSourceChange($syncSignalData);
+                $this->dispatchSyncToLocalAgents($syncSignalData);
                 if ($syncDto !== null) {
-                    $this->recordBrowserSourceChange($syncSignalData);
-                    $this->dispatchSyncToLocalAgents($syncSignalData);
-                    $this->daemonClient->send($syncDto);
+                    $this->sendToDaemon($syncDto);
+                } elseif ($syncSignalData instanceof RtSyncSignalDataInterface) {
+                    // The ordinary RT stream takes the write; the daemon answers it once applied.
+                    $this->rtSyncStream()->send($syncSignalData);
                 }
                 continue;
             }
@@ -4070,7 +4609,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // which agent is waiting to hear back from them (HIL-436).
             if ($signalType === SignalTypeConstants::DB_REHYDRATE) {
                 if ($signal->data instanceof DbReHydrateSignalData) {
-                    $this->daemonClient->send(new WorkerDbReHydrateMessageDTO($signal->data->agentId));
+                    $this->sendToDaemon(new WorkerDbReHydrateMessageDTO($signal->data->agentId));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - re-hydrate carries invalid data: ' . get_class($signal->data));
                 }
@@ -4082,7 +4621,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // the WorkerAgentMessageDTO fallback below, which needs an agent to address (HIL-644).
             if ($signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS_USER) {
                 if ($signal->data instanceof PageAccessReassessUserSignalData) {
-                    $this->daemonClient->send(new WorkerPageAccessReassessMessageDTO($signal->data->userId));
+                    $this->sendToDaemon(new WorkerPageAccessReassessMessageDTO($signal->data->userId));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - access re-decision carries invalid data: ' . get_class($signal->data));
                 }
@@ -4094,7 +4633,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // it never has to establish which of the two questions it was asked.
             if ($signalType === SignalTypeConstants::PAGE_ACCESS_REASSESS_CONNECTIONS) {
                 if ($signal->data instanceof PageAccessReassessConnectionsSignalData) {
-                    $this->daemonClient->send(
+                    $this->sendToDaemon(
                         new WorkerPageAccessReassessConnectionsMessageDTO($signal->data->acceptKeys),
                     );
                 } else {
@@ -4109,7 +4648,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // full name that identity builds (HIL-721).
             if ($signalType === SignalTypeConstants::GROUP_JOIN) {
                 if ($signal->data instanceof GroupJoinSignalData) {
-                    $this->daemonClient->send(new WorkerGroupJoinDTO($signal->data));
+                    $this->sendToDaemon(new WorkerGroupJoinDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - group join carries invalid data: ' . get_class($signal->data));
                 }
@@ -4121,7 +4660,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // master applies it at receipt, so no join that follows can be erased by it (HIL-1284).
             if ($signalType === SignalTypeConstants::GROUP_LEAVE_ALL) {
                 if ($signal->data instanceof GroupLeaveAllSignalData) {
-                    $this->daemonClient->send(new WorkerGroupLeaveAllDTO($signal->data));
+                    $this->sendToDaemon(new WorkerGroupLeaveAllDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - group leave-all carries invalid data: ' . get_class($signal->data));
                 }
@@ -4138,7 +4677,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 ) {
                     throw new LogicException('Agent restart return address differs from its server signal source');
                 }
-                $this->daemonClient->send(new WorkerAgentRestartRequestDTO($signal->data));
+                $this->sendToDaemon(new WorkerAgentRestartRequestDTO($signal->data));
                 continue;
             }
 
@@ -4146,7 +4685,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // the initiator agent cannot emit the peer frame itself, so the daemon does it (slice 5d).
             if ($signalType === SignalTypeConstants::PROTECTED_MODE_ENABLE) {
                 if ($signal->data instanceof ProtectedModeEnableSignalData) {
-                    $this->daemonClient->send(new WorkerProtectedModeEnableDTO($signal->data));
+                    $this->sendToDaemon(new WorkerProtectedModeEnableDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode enable carries invalid data: ' . get_class($signal->data));
                 }
@@ -4154,7 +4693,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
             if ($signalType === SignalTypeConstants::PROTECTED_MODE_DISABLE) {
                 if ($signal->data instanceof ProtectedModeDisableSignalData) {
-                    $this->daemonClient->send(new WorkerProtectedModeDisableDTO($signal->data));
+                    $this->sendToDaemon(new WorkerProtectedModeDisableDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode disable carries invalid data: ' . get_class($signal->data));
                 }
@@ -4162,7 +4701,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
             if ($signalType === SignalTypeConstants::PROTECTED_MODE_VERIFY) {
                 if ($signal->data instanceof ProtectedModeVerifySignalData) {
-                    $this->daemonClient->send(new WorkerProtectedModeVerifyDTO($signal->data));
+                    $this->sendToDaemon(new WorkerProtectedModeVerifyDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode verify carries invalid data: ' . get_class($signal->data));
                 }
@@ -4170,7 +4709,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
             if ($signalType === SignalTypeConstants::PROTECTED_MODE_PROGRESS) {
                 if ($signal->data instanceof ProtectedModeProgressSignalData) {
-                    $this->daemonClient->send(new WorkerProtectedModeProgressDTO($signal->data));
+                    $this->sendToDaemon(new WorkerProtectedModeProgressDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode progress carries invalid data: ' . get_class($signal->data));
                 }
@@ -4178,7 +4717,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
             if ($signalType === SignalTypeConstants::PROTECTED_MODE_PASS) {
                 if ($signal->data instanceof ProtectedModePassSignalData) {
-                    $this->daemonClient->send(new WorkerProtectedModePassDTO($signal->data));
+                    $this->sendToDaemon(new WorkerProtectedModePassDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode pass carries invalid data: ' . get_class($signal->data));
                 }
@@ -4186,7 +4725,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
             if ($signalType === SignalTypeConstants::PROTECTED_MODE_CIRCLE) {
                 if ($signal->data instanceof ProtectedModeCircleSignalData) {
-                    $this->daemonClient->send(new WorkerProtectedModeCircleDTO($signal->data));
+                    $this->sendToDaemon(new WorkerProtectedModeCircleDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode circle carries invalid data: ' . get_class($signal->data));
                 }
@@ -4194,7 +4733,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
             if ($signalType === SignalTypeConstants::PROTECTED_MODE_REFREEZE) {
                 if ($signal->data instanceof ProtectedModeRefreezeSignalData) {
-                    $this->daemonClient->send(new WorkerProtectedModeRefreezeDTO($signal->data));
+                    $this->sendToDaemon(new WorkerProtectedModeRefreezeDTO($signal->data));
                 } else {
                     Logger::error('dispatchQueuedSignalsToDaemon - protected-mode refreeze carries invalid data: ' . get_class($signal->data));
                 }
@@ -4211,11 +4750,16 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // so the message carries no agent id at all rather than an empty one.
             $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
 
-            $this->daemonClient->send(new WorkerAgentMessageDTO(
+            $this->sendToDaemon(new WorkerAgentMessageDTO(
                 agentId: $agentId,
                 signal: $signal,
             ));
         }
+        // The queue is empty, so every write made so far is on the stream: a stop that waited for a
+        // debt of its agent's FIFO, paid by now, reports behind it.
+        $this->reportStopsPaidUp();
+        // The stream took what was queued; committed cells the room now covers are handed on.
+        RtOrdinaryAdmission::handOnCommitted();
     }
 
     /**
@@ -4356,7 +4900,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 $error = 'ORM forget failed';
             }
         }
-        $this->daemonClient->send(new WorkerTestOrmForgottenDTO($request->correlationId, $error === null, $error));
+        $this->sendToDaemon(new WorkerTestOrmForgottenDTO($request->correlationId, $error === null, $error));
     }
 
     /**
@@ -4478,7 +5022,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             }
         }
         if ($this->daemonClient !== null && $this->daemonClient->isConnected()) {
-            $this->daemonClient->send(new WorkerTestCronScheduleResultDTO($request->correlationId, $error === null, $error));
+            $this->sendToDaemon(new WorkerTestCronScheduleResultDTO($request->correlationId, $error === null, $error));
         }
     }
 
@@ -4488,6 +5032,6 @@ abstract class WorkerManager extends BaseManager implements PageResender
         if ($this->daemonClient === null || !$this->daemonClient->isConnected()) {
             return;
         }
-        $this->daemonClient->send($ack);
+        $this->sendToDaemon($ack);
     }
 }

@@ -24,7 +24,7 @@ use Throwable;
  * very resolution its own worker would have triggered.
  *
  * The receiver expands the job locally and passes it to nobody: one hop, the same structural
- * echo defense {@see PeerRtSyncDTO} and {@see PeerSignalDTO} stand on. Duplicates are ruled
+ * echo defense {@see PeerRtSyncStreamDTO} and {@see PeerSignalDTO} stand on. Duplicates are ruled
  * out by the accept key belonging to exactly one node for its whole life, so no receiver can
  * claim a browser another one also serves.
  *

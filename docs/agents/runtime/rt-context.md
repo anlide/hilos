@@ -369,6 +369,15 @@ Use item actions when the operation naturally belongs to an existing runtime
 item and needs that item's state. Do not put update logic in a page handler when
 an item action should own it.
 
+A removal that must happen whatever the source's ordinary FIFO holds - the row of
+a closed socket, struck on close or against the roster - goes through the item
+door `removeAsCleanup()`, as `HilosConnectionActions::unregister()` does. It takes
+the bounded service reserve of the FIFO, and when that is taken too it is owed by
+the row's identity and retried as the FIFO frees, never refused: a row already
+gone or replaced under its key is not removed again. An ordinary `remove()`
+refuses a full FIFO with `RtWriteBackpressureException` instead. Owed removals are
+process memory; a lost process loses them with its rows.
+
 ## Choosing Where New Logic Belongs
 
 | Need | Put it in |
@@ -514,7 +523,10 @@ The mark is uniform across every RT collection and enumerates none of them. It i
 kept BESIDE the rows (`RtStaleness`) rather than in them, because a row is the
 owner's copy byte for byte and a housekeeping field inside it would travel into
 the browser's projection and into every snapshot diff. A row is marked when the
-last link to its origin closes. Reopening a link does not by itself clear its mark:
+last link to its origin closes, and where a link's RT stream refused one of its
+writes and holds it until a snapshot gives it a base again; a master marks such
+a row for the workers that read it too, as it marks every other row of its copy.
+Reopening a link does not by itself clear its mark:
 the owner confirms the row by snapshot or delta, or a holder confirms it by an
 offer. The cluster router's own node row is the exception; it thaws at the
 handshake (HIL-876). Since HIL-1059 membership's liveness comes from the same
@@ -543,9 +555,11 @@ affected slots per row, so the mark reaches the cells the frozen values are in
 ([table-subscription.md](../frontend/table-subscription.md), *Per-source
 staleness*).
 
-Application code should write through runtime actions, typed `RtState` fields,
-and `sync()`. Reserve `applyDiff()` / `applyDiffToState()` for inbound RT
-synchronization internals after another worker already made the write.
+Application code should write through runtime actions, whose doors take the
+values before the row changes (`applyDiffWithSync()` on item actions,
+`applyDiffToState()` on collection actions) and admit them on the source's
+ordinary FIFO. A state's own `applyDiff()` is for inbound RT synchronization
+internals after another worker already made the write.
 
 ### A collection written outside its actions skips its owner
 

@@ -29,6 +29,10 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\EnvCatalogStub;
 use Hilos\Hilos;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
+use Hilos\Runtime\Snapshot\RtWorkScheduler;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Socket\Worker\WorkerDaemonClient;
@@ -378,6 +382,43 @@ final class WorkerManagerIdleWaitSchedulerTest extends TestCase
         self::assertSame([10000, 10000, 10000], $manager->pauses);
         $io->busy = false;
         self::assertSame(1600.0, $manager->finishPass(1000.0));
+    }
+
+    /**
+     * An agent that releases rows on every tick leaves the arena's shared retirement pending behind the
+     * RT pass of each iteration. That is work for the next pass, not a debt of the last one: the worker
+     * waits on its socket, no longer than the maintenance cap, and the next iteration's pass retires it.
+     * Taken for a debt, it kept the worker of the Status agent on its 10 ms branch for good, its agents
+     * ticking ten times as often (HIL-2056). A pass that runs out of time with retirement left still
+     * owes the next one at once.
+     */
+    public function testRetirementReleasedAfterThePassCapsTheSocketWaitAndOnlyAnUnfinishedPassKeepsTheTenMillisecondBranch(): void
+    {
+        $manager = $this->manager();
+        $manager->add(new IdleSchedulerAgent());
+        $arena = RtRowArena::process();
+        try {
+            self::assertSame(1600.0, $manager->finishPass(1000.0));
+            RtRowValues::fromNative(['tick' => 1, 'state' => 'published'])->release();
+            self::assertTrue($arena->hasPendingRetirement());
+
+            self::assertSame(1000.1, $manager->waitAfterPass(1000.0));
+            self::assertSame([], $manager->pauses);
+
+            new ReflectionProperty(WorkerManager::class, 'rtWork')->setValue($manager, new RtWorkScheduler(0, 0));
+            $manager->runOneRtPass();
+            self::assertTrue($arena->hasPendingRetirement(), 'A pass without a share leaves the retirement');
+            self::assertNull($manager->waitAfterPass(1000.0));
+            self::assertSame([10000], $manager->pauses);
+
+            new ReflectionProperty(WorkerManager::class, 'rtWork')->setValue($manager, new RtWorkScheduler());
+            self::assertSame(1600.0, $manager->finishPass(1000.0));
+            self::assertFalse($arena->hasPendingRetirement());
+        } finally {
+            while ($arena->hasPendingRetirement()) {
+                $arena->advanceRetirement(new RtWorkBudget());
+            }
+        }
     }
 
     public function testCronMinuteCrossingRunsTheMissedMinuteBeforeAnyWaitAndThenAdvances(): void
@@ -749,6 +790,10 @@ class IdleSchedulerManager extends WorkerManager
     }
 
     /**
+     * Ends a work pass as the loop does: the RT pass runs before the wait, so the process arena's
+     * shared retirement - what a dropped Runtime released, here or in an earlier case - is not
+     * owed when the worker chooses how to wait.
+     *
      * @param float $start Work-pass start
      * @param bool $handled Active-message guard
      * @return float|null Final epoch deadline, or null when no socket wait was requested
@@ -757,9 +802,36 @@ class IdleSchedulerManager extends WorkerManager
     {
         $this->waits = [];
         Closure::bind(function () use ($start, $handled): void {
+            while ($this->hasRtPassWork()) {
+                $this->runRtPass();
+            }
             $this->waitForWork($start, $handled);
         }, $this, WorkerManager::class)();
         return $this->waits[0] ?? null;
+    }
+
+    /**
+     * Ends a work pass whose RT pass already ran, as the loop does after the ticks behind it: what they
+     * released since is left in the arena when the worker chooses how to wait.
+     *
+     * @param float $start Work-pass start
+     * @return float|null Final epoch deadline, or null when no socket wait was requested
+     */
+    public function waitAfterPass(float $start): ?float
+    {
+        $this->waits = [];
+        Closure::bind(function () use ($start): void {
+            $this->waitForWork($start, false);
+        }, $this, WorkerManager::class)();
+        return $this->waits[0] ?? null;
+    }
+
+    /** Runs the worker's RT pass once, as an iteration of the loop does before its ticks. */
+    public function runOneRtPass(): void
+    {
+        Closure::bind(function (): void {
+            $this->runRtPass();
+        }, $this, WorkerManager::class)();
     }
 
     /**

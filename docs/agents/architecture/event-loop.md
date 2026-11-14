@@ -368,12 +368,14 @@ already spends it; see the canonical
 [onTick rule](../agent-system/ontick-rule.md#idle-wait-permission). This bounds
 idle waiting, not hook duration or a promised tick frequency.
 
-A handled daemon message, pending daemon write, or in-flight
-`TickDrivenIoRegistry` operation keeps the active 10 ms path. The worker-level
-`onTick()` and existing maintenance guards cap the wait at 100 ms. These guards
-include worker frames and upload receipts, cron-fire waits and acknowledgements,
-deferred page-router work, held facet counts, analytics data, failure-log
-windows, and queued `SignalRouter` output. Reading those guards does not drain
+A handled daemon message, pending daemon write, in-flight
+`TickDrivenIoRegistry` operation, RT pass that ran out of time with work left, or
+daemon frame held behind a part the RT stream still reads keeps the active 10 ms
+path. The worker-level `onTick()` and existing maintenance guards cap the wait at
+100 ms. These guards include worker frames and upload receipts, cron-fire waits
+and acknowledgements, deferred page-router work, held facet counts, analytics
+data, failure-log windows, queued `SignalRouter` output, and the process arena's
+retirement released after the RT pass. Reading those guards does not drain
 their queues. An already-due healthy cron deadline skips sleep, even when a
 short-work guard is also set. A failed agent unit gets a short retry without
 reusing its stale cron deadline, so an overdue schedule does not spin.

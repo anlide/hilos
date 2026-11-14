@@ -6,6 +6,7 @@ namespace Hilos\Core\Source\Subscriber;
 
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
@@ -13,6 +14,7 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Hilos;
+use LogicException;
 
 /**
  * Broadcasts a runtime membership change to the other processes.
@@ -36,9 +38,13 @@ final class OutboundRtSyncSubscriber implements SourceChangeSubscriberInterface
      * With no signal router mounted the announcement is a silent no-op, exactly as the direct
      * queueing it replaces was.
      *
+     * The row travels on in its segmented form: forwarding it into the signal materializes nothing.
+     *
      * @param SourceChange $change Fact describing what happened to the source
      * @param SourceChangeProvenance $provenance Whether this process authored the write
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws InvalidFormatException When a row handed over as an array holds a value a runtime row cannot carry
+     * @throws LogicException When the segmented row lease already closed
      */
     public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
     {
@@ -58,6 +64,8 @@ final class OutboundRtSyncSubscriber implements SourceChangeSubscriberInterface
      *
      * @param SourceChange $change Runtime create fact
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws InvalidFormatException When a row handed over as an array holds a value a runtime row cannot carry
+     * @throws LogicException When the segmented row lease already closed
      */
     private function queueCreated(SourceChange $change): void
     {
@@ -66,7 +74,7 @@ final class OutboundRtSyncSubscriber implements SourceChangeSubscriberInterface
             new RtSyncCreatedSignalData(
                 $change->sourceKey,
                 $change->sourceId,
-                $change->row,
+                $change->rtRowValues() ?? $change->row,
                 $change->origin,
                 $change->originRequestId,
             ),
@@ -78,6 +86,8 @@ final class OutboundRtSyncSubscriber implements SourceChangeSubscriberInterface
      *
      * @param SourceChange $change Runtime delete fact
      * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
+     * @throws InvalidFormatException When a row handed over as an array holds a value a runtime row cannot carry
+     * @throws LogicException When the segmented row lease already closed
      */
     private function queueDeleted(SourceChange $change): void
     {
@@ -86,7 +96,7 @@ final class OutboundRtSyncSubscriber implements SourceChangeSubscriberInterface
             new RtSyncDeletedSignalData(
                 $change->sourceKey,
                 $change->sourceId,
-                $change->row,
+                $change->rtRowValues() ?? $change->row,
                 $change->origin,
                 $change->originRequestId,
             ),

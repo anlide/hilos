@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
-use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
+use Generator;
 use Hilos\Auth\AccountDeletion\AccountDeletionSettingsCatalog;
+use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\ProfilePasswordUpdatedSignalData;
@@ -19,7 +20,6 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
-use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -28,6 +28,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -39,24 +40,27 @@ use Hilos\HilosException;
 use Hilos\Mail\DTO\MailSendSignalData;
 use Hilos\Mail\EmailMessage;
 use Hilos\Mail\HilosMailer;
-use Hilos\Runtime\State\Collection\HilosProfileFlows as StateHilosProfileFlows;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
-use Hilos\Runtime\State\Collection\HilosSessionConnections;
+use Hilos\Runtime\State\Collection\HilosProfileFlows as StateHilosProfileFlows;
 use Hilos\Runtime\State\Collection\HilosProfileNameChanges as StateHilosProfileNameChanges;
-use Hilos\Runtime\State\Item\HilosProfileNameChange;
-use Hilos\Runtime\View\Collection\HilosProfileNameChanges;
-use Hilos\Runtime\View\Actions\Collection\HilosProfileNameChangesActions;
-use Hilos\Runtime\View\Actions\Item\HilosProfileNameChangeActions;
-use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
+use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
+use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
+use Hilos\Runtime\State\Item\HilosProfileNameChange;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
-use Hilos\Runtime\View\Actions\Collection\HilosProfileFlowsActions;
 use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
+use Hilos\Runtime\View\Actions\Collection\HilosProfileFlowsActions;
+use Hilos\Runtime\View\Actions\Collection\HilosProfileNameChangesActions;
+use Hilos\Runtime\View\Actions\Item\HilosProfileNameChangeActions;
 use Hilos\Runtime\View\Collection\HilosCodeSendAttempts;
-use Hilos\Runtime\View\Item\HilosCodeSendAttempt;
 use Hilos\Runtime\View\Collection\HilosProfileFlows;
+use Hilos\Runtime\View\Collection\HilosProfileNameChanges;
 use Hilos\Runtime\View\Context\RtContext;
+use Hilos\Runtime\View\Item\HilosCodeSendAttempt;
 use Hilos\Sms\HilosSmsSender;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AdminAudience;
@@ -689,30 +693,39 @@ final class ProfileIntegrationConnections extends HilosSessionConnections
  */
 final class ProfileIntegrationConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> No project fields
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Incoming field changes
+     * @param RtRowReader $diff Incoming field changes
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Generator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeRole;
 use Hilos\Constants\HilosPageConstants;
@@ -22,34 +23,37 @@ use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
-use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageResendOutcome;
+use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Router\SignalNameInterface;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalTypeInterface;
-use Hilos\Core\Router\SignalNameInterface;
-use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\DaemonSection\ClusterDaemonNodeSlot;
 use Hilos\DaemonSection\ClusterDaemonNodeView;
 use Hilos\DaemonSection\ClusterDaemonPicture;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
+use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\DaemonAgentPicture;
 use Hilos\DaemonSection\DaemonNodeStanding;
 use Hilos\DaemonSection\DaemonProcessRoster;
 use Hilos\DaemonSection\DaemonWorkerPicture;
-use Hilos\DaemonSection\DTO\DaemonClusterPicturePortionSignalData;
 use Hilos\DaemonSection\NodeDaemonPicture;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\AbstractHilosDaemonNodePage;
+use Hilos\Pages\Daemon\AbstractHilosDaemonWebsocketsPage;
 use Hilos\Pages\Daemon\DTO\HilosDaemonWebsocketsData;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Runtime\State\Item\HilosClusterNode;
@@ -697,24 +701,27 @@ final class WebsocketsTestResender implements PageResender
 final class WebsocketsTestConnection extends HilosConnection
 {
     /** The fixture adds no project connection fields. */
-    protected function initOwn(): void
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Base connection row with no project fields */
-    protected function hydrateOwn(array $row): void
+    /** @param RtRowReader $row Base connection row with no project fields */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /** @return array<string, mixed> No project fields on this connection */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Base connection patch with no project fields */
-    protected function applyOwnDiff(array $diff): void
+    /** @param RtRowReader $diff Base connection patch with no project fields */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

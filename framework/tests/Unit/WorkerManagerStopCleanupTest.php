@@ -24,6 +24,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Socket\Exception\Base\BrokenPipeException;
@@ -38,9 +39,14 @@ use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Hilos;
+use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
+use Hilos\Runtime\Stream\RtSyncStreamChannel;
+use Hilos\Runtime\Stream\RtSyncStreamFrame;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Utils\Logger;
 use ErrorException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionProperty;
@@ -205,6 +211,65 @@ final class WorkerManagerStopCleanupTest extends TestCase
         $this->assertSame([$first->getId(), $second->getId()], $stoppedIds);
         $this->assertGreaterThan($goodbyePosition, $stopPositions[0]);
         $this->assertGreaterThan($goodbyePosition, $stopPositions[1]);
+    }
+
+    /**
+     * A streamed write of the worker that the master has not read to its end holds every later frame
+     * of the worker behind it, and nothing runs on the way out that would let them go: a worker
+     * leaving on a stop signal writes them before its buffer, in the order they were written, so the
+     * master still reads the stop hooks' signal and the stop reports (HIL-2056). A write of a worker
+     * whose parts are not all out stays cut where it is, as it did before.
+     *
+     * @param int $writes RT writes the agent made before it stopped
+     * @param int $blobBytes Size of each write's payload
+     */
+    #[DataProvider('streamedWritesTheMasterHasNotReadToTheEnd')]
+    public function testCleanupWritesTheFramesWaitingBehindAStreamedWriteBeforeItClosesTheTransport(
+        int $writes,
+        int $blobBytes,
+    ): void {
+        $agent = new WorkerManagerStopCleanupTestAgent(throwOnStop: false);
+        $agent->goodbyeAcceptKey = 'unit-stop-ak';
+        $manager = new WorkerManagerStopCleanupTestManager($agent);
+        $manager->attachClient($this->connectedClient($daemonEnd));
+        $manager->handleDaemonMessage(new AgentStartDTO($agent->getId()));
+        for ($write = 0; $write < $writes; $write++) {
+            Hilos::$sr->queueSignal(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::RT_SYNC_CREATED),
+                new SignalName(SignalTypeConstants::RT_SYNC_CREATED),
+                new RtSyncCreatedSignalData('unit_stop_stream', "row-{$write}", ['blob' => str_repeat('x', $blobBytes)]),
+            );
+        }
+        $manager->handleShutdown();
+
+        try {
+            $manager->runCleanup();
+        } finally {
+            RtOrdinaryAdmission::reset();
+        }
+
+        $types = array_column($this->framesAt($daemonEnd), WorkerDTO::TYPE);
+        $parts = array_keys($types, WorkerRtSyncStreamDTO::MESSAGE_TYPE, true);
+        $goodbye = array_search(WorkerAgentMessageDTO::MESSAGE_TYPE, $types, true);
+        $stopped = array_search(WorkerConstants::MESSAGE_AGENT_STOPPED, $types, true);
+        $this->assertNotSame([], $parts, 'The write was started: its first part left before the worker did');
+        $this->assertIsInt($goodbye, 'The stop hook\'s signal reached the master');
+        $this->assertIsInt($stopped, 'The stop report reached the master');
+        $this->assertGreaterThan(min($parts), $goodbye, 'The signal follows the part that left');
+        $this->assertGreaterThan($goodbye, $stopped, 'The stop report follows the stop hook\'s signal');
+    }
+
+    /**
+     * @return array<string, array{int, int}> The writes of each case and the payload of each: one write of two parts
+     *     that waits for the master's `next`, and more writes than the operation window takes
+     */
+    public static function streamedWritesTheMasterHasNotReadToTheEnd(): array
+    {
+        return [
+            'a write of two parts waits for next' => [1, RtSyncStreamFrame::MAX_PART_BYTES],
+            'the window of operations is full' => [RtSyncStreamChannel::WINDOW_OPERATIONS + 1, 1],
+        ];
     }
 
     /**

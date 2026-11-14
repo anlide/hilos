@@ -6,6 +6,8 @@ namespace Hilos\Core\Sync\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Runtime\RtRowValues;
+use LogicException;
 
 /**
  * RtSyncUpdatedSignalData - RT sync signal data for updated state.
@@ -14,24 +16,85 @@ use Hilos\Core\Exception\InvalidFormatException;
  */
 class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterface
 {
+    /** @var array<string, mixed> Only changed fields */
+    public array $row {
+        get => RtRowValues::nativeMap($this->rowSource);
+    }
+
+    /** @var array<string, mixed> Previous values of the changed fields */
+    public array $previous {
+        get => RtRowValues::nativeMap($this->previousSource);
+    }
+
+    /** @var array<string, mixed>|RtRowValues Row as the writer handed it over */
+    private readonly array|RtRowValues $rowSource;
+    /** @var array<string, mixed>|RtRowValues Previous values as the writer handed them over */
+    private readonly array|RtRowValues $previousSource;
+
     /**
      * Creates RT sync updated signal data.
      *
      * @param string $collectionKey Collection key
      * @param string $stateId State ID
-     * @param array<string, mixed> $row Only changed fields
+     * @param array<string, mixed>|RtRowValues $row Only changed fields, segmented by a local writer
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
-     * @param array<string, mixed> $previous Previous values of the changed fields
+     * @param array<string, mixed>|RtRowValues $previous Previous values of the changed fields
      */
     public function __construct(
         public readonly string $collectionKey,
         public readonly string $stateId,
-        public readonly array $row,
+        array|RtRowValues $row,
         public readonly ?string $origin = null,
         public readonly ?string $originRequestId = null,
-        public readonly array $previous = [],
+        array|RtRowValues $previous = [],
     ) {
+        $this->rowSource = $row;
+        $this->previousSource = $previous;
+    }
+
+    /**
+     * @internal Hands the row on in the form this payload holds it, for a carrier that forwards it unchanged.
+     *
+     * @return array<string, mixed>|RtRowValues Row as the writer or the wire handed it over
+     */
+    public function carriedRow(): array|RtRowValues
+    {
+        return $this->rowSource;
+    }
+
+    /**
+     * @internal Hands the previous values on in the form this payload holds them.
+     *
+     * @return array<string, mixed>|RtRowValues Previous values as the writer or the wire handed them over
+     */
+    public function carriedPrevious(): array|RtRowValues
+    {
+        return $this->previousSource;
+    }
+
+    /**
+     * Segmented row: forwarding, filtering and repairing a cache read the fields they need here.
+     *
+     * @return RtRowValues Only changed fields
+     * @throws InvalidFormatException When a row handed over as an array holds a value a runtime row cannot carry
+     * @throws LogicException When a segmented lease already closed
+     */
+    public function rowValues(): RtRowValues
+    {
+        return RtRowValues::carried($this->rowSource);
+    }
+
+    /**
+     * Segmented previous values, read without materializing the notification.
+     *
+     * @return RtRowValues Previous values of the changed fields
+     * @throws InvalidFormatException When previous values handed over as an array hold a value a runtime row cannot carry
+     * @throws LogicException When a segmented lease already closed
+     */
+    public function previousValues(): RtRowValues
+    {
+        return RtRowValues::carried($this->previousSource);
     }
 
     /**

@@ -14,6 +14,9 @@ use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Runtime\View\Item\ProtectedModeRuntime as ViewProtectedModeRuntime;
+use Hilos\HilosException;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Runtime\Exception\RtWriteBackpressureException;
 
 /**
  * Write operations for the protected-mode runtime singleton.
@@ -65,43 +68,47 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @param StateProtectedModeRuntime $row Freeze row as it was left on disk
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function restoreFromDisk(StateProtectedModeRuntime $row): void
     {
         $this->ensureCanWrite();
 
-        $this->state->phase = $row->phase;
-        $this->state->entryMode = $row->entryMode;
-        $this->state->operation = $row->operation;
-        $this->state->freezeId = $row->freezeId;
-        $this->state->initiatorAcceptKey = null;
-        $this->state->initiatorSessionTokenHash = $row->isManualMaintenanceWindow()
-            ? null
-            : $row->initiatorSessionTokenHash;
-        $this->state->initiatorAgentType = $row->initiatorAgentType;
-        $this->state->initiatorAgentIndex = $row->initiatorAgentIndex;
-        $this->state->initiatorNodeId = $row->initiatorNodeId;
-        $this->state->startedAt = $row->startedAt;
-        $this->state->activatedAt = $row->activatedAt;
-        $this->state->progressAt = $row->progressAt;
-        $this->state->passHashes = [];
-        $this->state->admittedSessionTokenHashes = [];
-        $this->state->circleSessionTokenHashes = [];
-        $this->state->circleNamedCount = 0;
-        $this->state->enteredFromBrowser = $row->enteredFromBrowser;
-        $this->state->diagnosticsNodeId = null;
-        $this->state->stoppedAgentCount = null;
-        $this->state->preservedAgentTypes = null;
-        $this->state->agentStartGateClosed = null;
-        $this->state->maintenanceNodes = null;
-        $this->state->watchdogVerdict = null;
-        $this->state->watchdogPendingNodeIds = [];
-        $this->state->watchdogQuiesceTimeoutSeconds = null;
-        $this->state->watchdogSilenceTimeoutSeconds = null;
-        $this->state->watchdogAlertIntervalSeconds = null;
-        $this->state->watchdogAlertEmails = null;
-        $this->state->watchdogManualRestartIsNormal = null;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::phase => $row->phase,
+            StateProtectedModeRuntime::entryMode => $row->entryMode,
+            StateProtectedModeRuntime::operation => $row->operation,
+            StateProtectedModeRuntime::freezeId => $row->freezeId,
+            StateProtectedModeRuntime::initiatorAcceptKey => null,
+            StateProtectedModeRuntime::initiatorSessionTokenHash => $row->isManualMaintenanceWindow()
+                ? null
+                : $row->initiatorSessionTokenHash,
+            StateProtectedModeRuntime::initiatorAgentType => $row->initiatorAgentType,
+            StateProtectedModeRuntime::initiatorAgentIndex => $row->initiatorAgentIndex,
+            StateProtectedModeRuntime::initiatorNodeId => $row->initiatorNodeId,
+            StateProtectedModeRuntime::startedAt => $row->startedAt,
+            StateProtectedModeRuntime::activatedAt => $row->activatedAt,
+            StateProtectedModeRuntime::progressAt => $row->progressAt,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::enteredFromBrowser => $row->enteredFromBrowser,
+            StateProtectedModeRuntime::diagnosticsNodeId => null,
+            StateProtectedModeRuntime::stoppedAgentCount => null,
+            StateProtectedModeRuntime::preservedAgentTypes => null,
+            StateProtectedModeRuntime::agentStartGateClosed => null,
+            StateProtectedModeRuntime::maintenanceNodes => null,
+            StateProtectedModeRuntime::watchdogVerdict => null,
+            StateProtectedModeRuntime::watchdogPendingNodeIds => [],
+            StateProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => null,
+            StateProtectedModeRuntime::watchdogSilenceTimeoutSeconds => null,
+            StateProtectedModeRuntime::watchdogAlertIntervalSeconds => null,
+            StateProtectedModeRuntime::watchdogAlertEmails => null,
+            StateProtectedModeRuntime::watchdogManualRestartIsNormal => null,
+        ]);
     }
 
     /**
@@ -110,6 +117,9 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @param string $freezeId Locally generated nonempty correlation
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function bootstrapFreezeId(string $freezeId): void
     {
@@ -117,8 +127,9 @@ final class ProtectedModeRuntimeActions extends RtActions
         if ($this->state->phase === StateProtectedModeRuntime::PHASE_INACTIVE || $this->state->freezeId !== null) {
             return;
         }
-        $this->state->freezeId = $freezeId;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::freezeId => $freezeId,
+        ]);
     }
 
     /**
@@ -129,6 +140,9 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @param string $phase Locally safe phase
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function importSlaveSync(PeerProtectedModeSyncDTO $snapshot, string $phase): void
     {
@@ -137,27 +151,28 @@ final class ProtectedModeRuntimeActions extends RtActions
         if ($freeze === null) {
             return;
         }
-        $changedGeneration = $this->state->freezeId !== $freeze->freezeId;
-        $this->state->phase = $phase;
-        $this->state->entryMode = $snapshot->entryMode;
-        $this->state->operation = $freeze->operation;
-        $this->state->freezeId = $freeze->freezeId;
-        $this->state->initiatorAcceptKey = null;
-        $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
-        $this->state->enteredFromBrowser = $freeze->initiatorSessionTokenHash !== null;
-        $this->state->initiatorAgentType = $freeze->initiatorAgentType;
-        $this->state->initiatorAgentIndex = $freeze->initiatorAgentIndex;
-        $this->state->initiatorNodeId = $freeze->initiatorNodeId;
-        if ($changedGeneration) {
-            $this->state->startedAt = time();
-            $this->state->activatedAt = null;
-            $this->state->progressAt = null;
+        $diff = [
+            StateProtectedModeRuntime::phase => $phase,
+            StateProtectedModeRuntime::entryMode => $snapshot->entryMode,
+            StateProtectedModeRuntime::operation => $freeze->operation,
+            StateProtectedModeRuntime::freezeId => $freeze->freezeId,
+            StateProtectedModeRuntime::initiatorAcceptKey => null,
+            StateProtectedModeRuntime::initiatorSessionTokenHash => $freeze->initiatorSessionTokenHash,
+            StateProtectedModeRuntime::enteredFromBrowser => $freeze->initiatorSessionTokenHash !== null,
+            StateProtectedModeRuntime::initiatorAgentType => $freeze->initiatorAgentType,
+            StateProtectedModeRuntime::initiatorAgentIndex => $freeze->initiatorAgentIndex,
+            StateProtectedModeRuntime::initiatorNodeId => $freeze->initiatorNodeId,
+            StateProtectedModeRuntime::passHashes => $snapshot->passHashes,
+            StateProtectedModeRuntime::admittedSessionTokenHashes => $snapshot->admittedSessionTokenHashes,
+            StateProtectedModeRuntime::circleNamedCount => $snapshot->circleNamedCount,
+            StateProtectedModeRuntime::circleSessionTokenHashes => $snapshot->circleSessionTokenHashes,
+        ];
+        if ($this->state->freezeId !== $freeze->freezeId) {
+            $diff[StateProtectedModeRuntime::startedAt] = time();
+            $diff[StateProtectedModeRuntime::activatedAt] = null;
+            $diff[StateProtectedModeRuntime::progressAt] = null;
         }
-        $this->state->passHashes = $snapshot->passHashes;
-        $this->state->admittedSessionTokenHashes = $snapshot->admittedSessionTokenHashes;
-        $this->state->circleNamedCount = $snapshot->circleNamedCount;
-        $this->state->circleSessionTokenHashes = $snapshot->circleSessionTokenHashes;
-        $this->sync();
+        $this->applyDiffWithSync($diff);
     }
 
     /**
@@ -168,21 +183,17 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @throws InvalidFormatException When a report does not match the projection shape
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function updateMaintenanceNodes(?array $nodes): void
     {
         $this->ensureCanWrite();
 
-        $validated = StateProtectedModeRuntime::fromRow([
-            ...$this->state->toArray(),
+        $this->applyDiffWithSync([
             StateProtectedModeRuntime::maintenanceNodes => $nodes,
-        ])->maintenanceNodes;
-        if ($this->state->maintenanceNodes === $validated) {
-            return;
-        }
-
-        $this->state->maintenanceNodes = $validated;
-        $this->sync();
+        ]);
     }
 
     /**
@@ -193,20 +204,24 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @throws InvalidFormatException When a verdict or string list is malformed
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function updateWatchdog(ProtectedModeWatchdogSnapshot $snapshot): void
     {
         $this->ensureCanWrite();
         $validated = ProtectedModeWatchdogSnapshot::fromArray($snapshot->toArray());
 
-        $this->state->watchdogVerdict = $validated->watchdogVerdict;
-        $this->state->watchdogPendingNodeIds = $validated->watchdogPendingNodeIds;
-        $this->state->watchdogQuiesceTimeoutSeconds = $validated->watchdogQuiesceTimeoutSeconds;
-        $this->state->watchdogSilenceTimeoutSeconds = $validated->watchdogSilenceTimeoutSeconds;
-        $this->state->watchdogAlertIntervalSeconds = $validated->watchdogAlertIntervalSeconds;
-        $this->state->watchdogAlertEmails = $validated->watchdogAlertEmails;
-        $this->state->watchdogManualRestartIsNormal = $validated->watchdogManualRestartIsNormal;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::watchdogVerdict => $validated->watchdogVerdict,
+            StateProtectedModeRuntime::watchdogPendingNodeIds => $validated->watchdogPendingNodeIds,
+            StateProtectedModeRuntime::watchdogQuiesceTimeoutSeconds => $validated->watchdogQuiesceTimeoutSeconds,
+            StateProtectedModeRuntime::watchdogSilenceTimeoutSeconds => $validated->watchdogSilenceTimeoutSeconds,
+            StateProtectedModeRuntime::watchdogAlertIntervalSeconds => $validated->watchdogAlertIntervalSeconds,
+            StateProtectedModeRuntime::watchdogAlertEmails => $validated->watchdogAlertEmails,
+            StateProtectedModeRuntime::watchdogManualRestartIsNormal => $validated->watchdogManualRestartIsNormal,
+        ]);
     }
 
     /**
@@ -225,6 +240,9 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @throws InvalidFormatException When the preserved agent types are not a list of strings
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function updateAgentDiagnostics(
         string $nodeId,
@@ -234,14 +252,12 @@ final class ProtectedModeRuntimeActions extends RtActions
     ): void {
         $this->ensureCanWrite();
 
-        $this->state->preservedAgentTypes = StateProtectedModeRuntime::fromRow([
-            ...$this->state->toArray(),
+        $this->applyDiffWithSync([
             StateProtectedModeRuntime::preservedAgentTypes => $preservedAgentTypes,
-        ])->preservedAgentTypes;
-        $this->state->diagnosticsNodeId = $nodeId;
-        $this->state->stoppedAgentCount = $stoppedAgentCount;
-        $this->state->agentStartGateClosed = $agentStartGateClosed;
-        $this->sync();
+            StateProtectedModeRuntime::diagnosticsNodeId => $nodeId,
+            StateProtectedModeRuntime::stoppedAgentCount => $stoppedAgentCount,
+            StateProtectedModeRuntime::agentStartGateClosed => $agentStartGateClosed,
+        ]);
     }
 
     /**
@@ -264,6 +280,9 @@ final class ProtectedModeRuntimeActions extends RtActions
      *                                    window opens; null on a follower node
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function enterActivating(
         ProtectedModeQuiesceData $freeze,
@@ -271,26 +290,27 @@ final class ProtectedModeRuntimeActions extends RtActions
     ): void {
         $this->ensureCanWrite();
 
-        $this->state->phase = StateProtectedModeRuntime::PHASE_ACTIVATING;
-        $this->state->entryMode = StateProtectedModeRuntime::ENTRY_MODE_FREEZE;
-        $this->state->operation = $freeze->operation;
-        $this->state->freezeId = $freeze->freezeId;
-        $this->state->initiatorAcceptKey = $initiatorAcceptKey;
-        $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
-        $this->state->enteredFromBrowser = $freeze->initiatorSessionTokenHash !== null;
-        $this->state->initiatorAgentType = $freeze->initiatorAgentType;
-        $this->state->initiatorAgentIndex = $freeze->initiatorAgentIndex;
-        $this->state->initiatorNodeId = $freeze->initiatorNodeId;
-        $this->state->startedAt = time();
-        $this->state->activatedAt = null;
-        $this->state->progressAt = null;
-        $this->state->passHashes = [];
-        $this->state->admittedSessionTokenHashes = [];
-        $this->state->circleSessionTokenHashes = [];
-        $this->state->circleNamedCount = 0;
-        $this->state->watchdogVerdict = null;
-        $this->state->watchdogPendingNodeIds = [];
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_ACTIVATING,
+            StateProtectedModeRuntime::entryMode => StateProtectedModeRuntime::ENTRY_MODE_FREEZE,
+            StateProtectedModeRuntime::operation => $freeze->operation,
+            StateProtectedModeRuntime::freezeId => $freeze->freezeId,
+            StateProtectedModeRuntime::initiatorAcceptKey => $initiatorAcceptKey,
+            StateProtectedModeRuntime::initiatorSessionTokenHash => $freeze->initiatorSessionTokenHash,
+            StateProtectedModeRuntime::enteredFromBrowser => $freeze->initiatorSessionTokenHash !== null,
+            StateProtectedModeRuntime::initiatorAgentType => $freeze->initiatorAgentType,
+            StateProtectedModeRuntime::initiatorAgentIndex => $freeze->initiatorAgentIndex,
+            StateProtectedModeRuntime::initiatorNodeId => $freeze->initiatorNodeId,
+            StateProtectedModeRuntime::startedAt => time(),
+            StateProtectedModeRuntime::activatedAt => null,
+            StateProtectedModeRuntime::progressAt => null,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::watchdogVerdict => null,
+            StateProtectedModeRuntime::watchdogPendingNodeIds => [],
+        ]);
     }
 
     /**
@@ -300,6 +320,9 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @param ?string $initiatorAcceptKey Initiating connection, or null for CLI entry
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function enterVerificationWindow(
         ProtectedModeQuiesceData $freeze,
@@ -308,26 +331,27 @@ final class ProtectedModeRuntimeActions extends RtActions
         $this->ensureCanWrite();
 
         $now = time();
-        $this->state->phase = StateProtectedModeRuntime::PHASE_VERIFYING;
-        $this->state->entryMode = StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
-        $this->state->operation = $freeze->operation;
-        $this->state->freezeId = $freeze->freezeId;
-        $this->state->initiatorAcceptKey = $initiatorAcceptKey;
-        $this->state->initiatorSessionTokenHash = $freeze->initiatorSessionTokenHash;
-        $this->state->enteredFromBrowser = $freeze->initiatorSessionTokenHash !== null;
-        $this->state->initiatorAgentType = $freeze->initiatorAgentType;
-        $this->state->initiatorAgentIndex = $freeze->initiatorAgentIndex;
-        $this->state->initiatorNodeId = $freeze->initiatorNodeId;
-        $this->state->startedAt = $now;
-        $this->state->activatedAt = null;
-        $this->state->progressAt = $now;
-        $this->state->passHashes = [];
-        $this->state->admittedSessionTokenHashes = [];
-        $this->state->circleSessionTokenHashes = [];
-        $this->state->circleNamedCount = 0;
-        $this->state->watchdogVerdict = null;
-        $this->state->watchdogPendingNodeIds = [];
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
+            StateProtectedModeRuntime::entryMode => StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
+            StateProtectedModeRuntime::operation => $freeze->operation,
+            StateProtectedModeRuntime::freezeId => $freeze->freezeId,
+            StateProtectedModeRuntime::initiatorAcceptKey => $initiatorAcceptKey,
+            StateProtectedModeRuntime::initiatorSessionTokenHash => $freeze->initiatorSessionTokenHash,
+            StateProtectedModeRuntime::enteredFromBrowser => $freeze->initiatorSessionTokenHash !== null,
+            StateProtectedModeRuntime::initiatorAgentType => $freeze->initiatorAgentType,
+            StateProtectedModeRuntime::initiatorAgentIndex => $freeze->initiatorAgentIndex,
+            StateProtectedModeRuntime::initiatorNodeId => $freeze->initiatorNodeId,
+            StateProtectedModeRuntime::startedAt => $now,
+            StateProtectedModeRuntime::activatedAt => null,
+            StateProtectedModeRuntime::progressAt => $now,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::watchdogVerdict => null,
+            StateProtectedModeRuntime::watchdogPendingNodeIds => [],
+        ]);
     }
 
     /**
@@ -342,18 +366,22 @@ final class ProtectedModeRuntimeActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function enterActive(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->phase = StateProtectedModeRuntime::PHASE_ACTIVE;
-        $this->state->activatedAt = time();
-        $this->state->passHashes = [];
-        $this->state->admittedSessionTokenHashes = [];
-        $this->state->circleSessionTokenHashes = [];
-        $this->state->circleNamedCount = 0;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_ACTIVE,
+            StateProtectedModeRuntime::activatedAt => time(),
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
+        ]);
     }
 
     /**
@@ -370,14 +398,18 @@ final class ProtectedModeRuntimeActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function enterVerifying(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->phase = StateProtectedModeRuntime::PHASE_VERIFYING;
-        $this->state->progressAt = time();
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
+            StateProtectedModeRuntime::progressAt => time(),
+        ]);
     }
 
     /**
@@ -390,13 +422,17 @@ final class ProtectedModeRuntimeActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function markProgress(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->progressAt = time();
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::progressAt => time(),
+        ]);
     }
 
     /**
@@ -408,13 +444,15 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @param string $passHash SHA-256 of the minted pass
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function issuePass(string $passHash): void
     {
         $this->ensureCanWrite();
 
-        $this->state->passHashes[] = $passHash;
-        $this->sync();
+        $this->applyDiffWithSync($this->state->appendedListDiff(StateProtectedModeRuntime::passHashes, $passHash));
     }
 
     /**
@@ -435,6 +473,9 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @param string $sessionTokenHash Hash of the admitted browser's session token
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function admitSession(string $sessionTokenHash): void
     {
@@ -446,8 +487,9 @@ final class ProtectedModeRuntimeActions extends RtActions
             }
         }
 
-        $this->state->admittedSessionTokenHashes[] = $sessionTokenHash;
-        $this->sync();
+        $this->applyDiffWithSync(
+            $this->state->appendedListDiff(StateProtectedModeRuntime::admittedSessionTokenHashes, $sessionTokenHash),
+        );
     }
 
     /**
@@ -467,6 +509,9 @@ final class ProtectedModeRuntimeActions extends RtActions
      * @param VerifierCircleSnapshot $snapshot Circle photographed on the initiator's ready relay
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function admitCircle(VerifierCircleSnapshot $snapshot): void
     {
@@ -476,9 +521,10 @@ final class ProtectedModeRuntimeActions extends RtActions
             return;
         }
 
-        $this->state->circleSessionTokenHashes = $snapshot->sessionTokenHashes;
-        $this->state->circleNamedCount = $snapshot->namedCount;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::circleSessionTokenHashes => $snapshot->sessionTokenHashes,
+            StateProtectedModeRuntime::circleNamedCount => $snapshot->namedCount,
+        ]);
     }
 
     /**
@@ -486,13 +532,17 @@ final class ProtectedModeRuntimeActions extends RtActions
      *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws RtWriteBackpressureException When the source's ordinary RT FIFO has no room; nothing was written
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function enterDeactivating(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->phase = StateProtectedModeRuntime::PHASE_DEACTIVATING;
-        $this->sync();
+        $this->applyDiffWithSync([
+            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_DEACTIVATING,
+        ]);
     }
 
     /**
@@ -503,33 +553,39 @@ final class ProtectedModeRuntimeActions extends RtActions
      * hash would hand it to a whole browser, for as long as its cookie lives. The passes, the
      * sessions they admitted and the photographed circle go the same way and for the same reason.
      *
+     * A terminal transition: it takes the service reserve of the source's FIFO and is never refused
+     * for want of room - one the reserve cannot take now is owed and retried as the FIFO frees.
+     *
      * @throws RtActionsCollectionNameNullException When collection name is unavailable
      * @throws RtTruthSourceWriteNotAllowedException When caller is not the truth source
+     * @throws HilosException Whatever the row's read of the diff or the preparation of its RT operation raises
+     * @throws InvalidArgumentException When the queued RT-sync signal cannot be named
      */
     public function enterInactive(): void
     {
         $this->ensureCanWrite();
 
-        $this->state->phase = StateProtectedModeRuntime::PHASE_INACTIVE;
-        $this->state->entryMode = null;
-        $this->state->operation = null;
-        $this->state->freezeId = null;
-        $this->state->initiatorAcceptKey = null;
-        $this->state->initiatorSessionTokenHash = null;
-        $this->state->enteredFromBrowser = false;
-        $this->state->initiatorAgentType = null;
-        $this->state->initiatorAgentIndex = null;
-        $this->state->initiatorNodeId = null;
-        $this->state->startedAt = null;
-        $this->state->activatedAt = null;
-        $this->state->progressAt = null;
-        $this->state->passHashes = [];
-        $this->state->admittedSessionTokenHashes = [];
-        $this->state->circleSessionTokenHashes = [];
-        $this->state->circleNamedCount = 0;
-        $this->state->watchdogVerdict = null;
-        $this->state->watchdogPendingNodeIds = [];
-        $this->sync();
+        $this->applyDiffAsCleanup([
+            StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_INACTIVE,
+            StateProtectedModeRuntime::entryMode => null,
+            StateProtectedModeRuntime::operation => null,
+            StateProtectedModeRuntime::freezeId => null,
+            StateProtectedModeRuntime::initiatorAcceptKey => null,
+            StateProtectedModeRuntime::initiatorSessionTokenHash => null,
+            StateProtectedModeRuntime::enteredFromBrowser => false,
+            StateProtectedModeRuntime::initiatorAgentType => null,
+            StateProtectedModeRuntime::initiatorAgentIndex => null,
+            StateProtectedModeRuntime::initiatorNodeId => null,
+            StateProtectedModeRuntime::startedAt => null,
+            StateProtectedModeRuntime::activatedAt => null,
+            StateProtectedModeRuntime::progressAt => null,
+            StateProtectedModeRuntime::passHashes => [],
+            StateProtectedModeRuntime::admittedSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleSessionTokenHashes => [],
+            StateProtectedModeRuntime::circleNamedCount => 0,
+            StateProtectedModeRuntime::watchdogVerdict => null,
+            StateProtectedModeRuntime::watchdogPendingNodeIds => [],
+        ]);
     }
 
     /**

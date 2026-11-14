@@ -90,8 +90,11 @@ Start with `agents.md`, then read the matching runtime guide.
 8. Define `RtState` subclasses with explicit typed fields.
 9. If RT changes emit signals, verify routing and payload shape through
    `$hilos-signals`.
-10. In custom RT action methods, write typed state fields and call `sync()`;
-   reserve `applyDiff()` / `applyDiffToState()` for RT synchronization internals.
+10. In custom RT action methods, hand the values to the door that admits them
+   before the row changes: `applyDiffWithSync([...])` on item actions,
+   `applyDiffToState()` on collection actions, keyed by the row's field
+   constants. Assigning typed fields and calling `sync()` afterwards is not an
+   action's write; a state's own `applyDiff()` stays for RT synchronization.
 11. Put established read-only helpers on the view collection or view item. Do
    not add `actions->has*()`, `actions->can*()`, `actions->get*()`, or similar
    read APIs.
@@ -115,8 +118,8 @@ Start with `agents.md`, then read the matching runtime guide.
     `@property` fields; use `private(set)` for immutable ids and property
     hooks only when a field needs normalization or invariant logic.
 17. Do not implement `__get()` / `__set()` in concrete `RtState` classes for
-    declared row fields; action code should read/write the declared properties
-    directly, then call `sync()`.
+    declared row fields; action code reads the declared properties directly and
+    writes them through the door with the field constants.
 18. In concrete `Runtime/View/Item/*` classes, rely on
     `@extends RtItem<StateFoo>` and read state fields as
     `$this->_state->fieldName`. Do not create local `/** @var StateFoo $state */`

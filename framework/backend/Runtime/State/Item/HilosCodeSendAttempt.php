@@ -4,11 +4,21 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\State\Item;
 
+use Generator;
 use Hilos\Auth\Code\CodeSendTicket;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Runtime\Row\HilosCodeSendAttemptRowCodec;
+use Hilos\Runtime\Row\RtRowKind;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\RtRowCodec;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts;
 use Hilos\Runtime\View\Actions\Collection\HilosCodeSendAttemptsActions;
+use LogicException;
 
 /**
  * HilosCodeSendAttempt - how the code one browser session is waiting for is travelling (HIL-826).
@@ -114,23 +124,95 @@ final class HilosCodeSendAttempt extends RtState
     /** The identity confirmation step, shared by protected operations. */
     public const string PURPOSE_STEP_UP = 'step_up';
 
+    /** Fixed scalar schema; variable text is held in segmented pages. */
+    private const array FIELD_TYPES = [
+        self::sessionTokenHash => 'text',
+        self::ticket => 'text',
+        self::channel => 'text',
+        self::purpose => '?text',
+        self::state => 'text',
+        self::detail => '?text',
+        self::reason => '?text',
+        self::resendAt => '?int',
+        self::expiresAt => '?int',
+        self::updatedAt => 'int',
+    ];
+
+    /** The synchronous property defaults, not defaults for missing incoming keys. */
+    private const array FIELD_DEFAULTS = [
+        self::sessionTokenHash => '',
+        self::ticket => '',
+        self::channel => '',
+        self::purpose => null,
+        self::state => '',
+        self::detail => null,
+        self::reason => null,
+        self::resendAt => null,
+        self::expiresAt => null,
+        self::updatedAt => 0,
+    ];
+
+    /** Only the fields the existing applyDiff door accepts. */
+    private const array PATCH_FIELDS = [
+        self::channel => true,
+        self::purpose => true,
+        self::state => true,
+        self::detail => true,
+        self::reason => true,
+        self::resendAt => true,
+        self::expiresAt => true,
+        self::updatedAt => true,
+    ];
+
     /** Hash of the session cookie token this line is addressed to; also the row id. */
-    private(set) string $sessionTokenHash = '';
+    private(set) string $sessionTokenHash {
+        get => isset($this->rowValues()[self::sessionTokenHash])
+            ? $this->rowValues()[self::sessionTokenHash]->toNative()
+            : self::FIELD_DEFAULTS[self::sessionTokenHash];
+        set {
+            $this->setRowValue(self::sessionTokenHash, RtRowValues::fromNative($value));
+        }
+    }
 
     /** The send this line is about, minted by {@see CodeSendTicket::mint()}. */
-    private(set) string $ticket = '';
+    private(set) string $ticket {
+        get => isset($this->rowValues()[self::ticket]) ? $this->rowValues()[self::ticket]->toNative() : self::FIELD_DEFAULTS[self::ticket];
+        set {
+            $this->setRowValue(self::ticket, RtRowValues::fromNative($value));
+        }
+    }
 
     /** {@see self::CHANNEL_EMAIL}, or the key of the code channel carrying it. */
-    private(set) string $channel = '';
+    private(set) string $channel {
+        get => isset($this->rowValues()[self::channel]) ? $this->rowValues()[self::channel]->toNative() : self::FIELD_DEFAULTS[self::channel];
+        set {
+            $this->setRowValue(self::channel, RtRowValues::fromNative($value));
+        }
+    }
 
     /** Profile operation owning the line, or null for a guest send. */
-    private(set) ?string $purpose = null;
+    private(set) ?string $purpose {
+        get => ($this->rowValues()[self::purpose] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::purpose, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** One of the six send states above. */
-    private(set) string $state = '';
+    private(set) string $state {
+        get => isset($this->rowValues()[self::state]) ? $this->rowValues()[self::state]->toNative() : self::FIELD_DEFAULTS[self::state];
+        set {
+            $this->setRowValue(self::state, RtRowValues::fromNative($value));
+        }
+    }
 
     /** The provider's own sentence, on {@see self::STATE_FAILED} and nowhere else. */
-    private(set) ?string $detail = null;
+    private(set) ?string $detail {
+        get => ($this->rowValues()[self::detail] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::detail, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /**
      * How the code agent's send ended - one of the REASON_* constants - on its closing step and
@@ -141,16 +223,36 @@ final class HilosCodeSendAttempt extends RtState
      * the ending when it is back. Null on every step before the last and on every send carried
      * by a transport other than the code agent.
      */
-    private(set) ?string $reason = null;
+    private(set) ?string $reason {
+        get => ($this->rowValues()[self::reason] ?? null)?->toNative();
+        set {
+            $this->setRowValue(self::reason, $value === null ? null : RtRowValues::fromNative($value));
+        }
+    }
 
     /** Server moment a send is allowed again, in epoch ms, on the arms where waiting is the answer. */
-    private(set) ?int $resendAt = null;
+    private(set) ?int $resendAt {
+        get => $this->rowValues()[self::resendAt] ?? self::FIELD_DEFAULTS[self::resendAt];
+        set {
+            $this->setRowValue(self::resendAt, $value);
+        }
+    }
 
     /** Server moment the live code dies, in epoch ms, on the arms that leave a live code. */
-    private(set) ?int $expiresAt = null;
+    private(set) ?int $expiresAt {
+        get => $this->rowValues()[self::expiresAt] ?? self::FIELD_DEFAULTS[self::expiresAt];
+        set {
+            $this->setRowValue(self::expiresAt, $value);
+        }
+    }
 
     /** Epoch milliseconds of the last write, on the server's scale. */
-    private(set) int $updatedAt = 0;
+    private(set) int $updatedAt {
+        get => $this->rowValues()[self::updatedAt] ?? self::FIELD_DEFAULTS[self::updatedAt];
+        set {
+            $this->setRowValue(self::updatedAt, $value);
+        }
+    }
 
     /**
      * Opens the line for one send.
@@ -264,5 +366,112 @@ final class HilosCodeSendAttempt extends RtState
             self::expiresAt => $this->expiresAt,
             self::updatedAt => $this->updatedAt,
         ];
+    }
+    /** @return RtRowCodec Segmented codec preserving this row's scalar contract */
+    public function rowCodec(): RtRowCodec
+    {
+        return new HilosCodeSendAttemptRowCodec();
+    }
+
+    /**
+     * Prepares an unpublished row; the committed-root layer supplies its baseline later.
+     *
+     * @param RtRowReader $in Segmented full row
+     * @return Generator<int, RtWork, int, static> Fully validated candidate
+     * @throws InvalidFormatException When a field violates the existing row contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public static function fromValues(RtRowReader $in): Generator
+    {
+        $prepared = yield from self::prepareValues($in, null);
+        yield new RtWork();
+        $instance = new static();
+        $instance->replaceRowValues($prepared);
+
+        return $instance;
+    }
+
+    /**
+     * Every accepted field is validated before the fixed descriptor is replaced.
+     *
+     * @param RtRowReader $diff Segmented changed fields
+     * @return Generator<int, RtWork, int, void> Atomic candidate patch
+     * @throws InvalidFormatException When a changed field violates the existing contract
+     * @throws LogicException When segmented preparation violates writer lifetime
+     */
+    public function patchValues(RtRowReader $diff): Generator
+    {
+        $prepared = yield from self::prepareValues($diff, $this->rowValues());
+        yield new RtWork();
+        $this->replaceRowValues($prepared);
+    }
+
+    /**
+     * @param RtRowWriter $out Unpublished output in any Runtime arena
+     * @return Generator<int, RtWork, int, void> Bounded scalar/text export
+     * @throws InvalidFormatException When a stored segmented value is malformed
+     * @throws LogicException When the output has already closed
+     */
+    public function exportValues(RtRowWriter $out): Generator
+    {
+        return $this->frozenValues()->export($out);
+    }
+
+    /** @return array<string, mixed> Fixed property defaults in codec export order */
+    protected function rowFieldDefaults(): array
+    {
+        return self::FIELD_DEFAULTS;
+    }
+
+    /**
+     * @param RtRowReader $input Segmented full row or diff
+     * @param ?array<string, RtRowValues|int|float|bool|null> $current Fixed descriptor, null for restore
+     * @return Generator<int, RtWork, int, array<string, RtRowValues|int|float|bool|null>> Validated fixed descriptor
+     * @throws InvalidFormatException When a field violates its existing contract
+     * @throws LogicException When a writer lifetime is violated
+     */
+    private static function prepareValues(RtRowReader $input, ?array $current): Generator
+    {
+        $prepared = $current ?? [];
+        foreach (self::FIELD_TYPES as $key => $type) {
+            yield new RtWork();
+            if ($current !== null && !isset(self::PATCH_FIELDS[$key])) {
+                continue;
+            }
+            $value = yield from $input->field($key);
+            if ($value === null) {
+                if ($current !== null) {
+                    continue;
+                }
+                if (str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                throw new InvalidFormatException('Runtime row is missing required key ' . $key);
+            }
+            $reader = $value->reader();
+            if ($reader->kind() === RtRowKind::Scalar) {
+                $scalar = yield from $reader->scalar();
+                if ($scalar === null && str_starts_with($type, '?')) {
+                    $prepared[$key] = null;
+                    continue;
+                }
+                $scalarType = ltrim($type, '?');
+                if (($scalarType === 'int' && is_int($scalar)) || ($scalarType === 'bool' && is_bool($scalar))) {
+                    $prepared[$key] = $scalar;
+                    continue;
+                }
+                if ($scalarType === 'float' && (is_int($scalar) || is_float($scalar))) {
+                    $prepared[$key] = (float)$scalar;
+                    continue;
+                }
+            }
+            if ($reader->kind() !== RtRowKind::Text || !in_array($type, ['text', '?text', 'moment', '?moment'], true)) {
+                throw new InvalidFormatException('Runtime row carries the wrong type under key ' . $key);
+            }
+            $prepared[$key] = yield from RtRowWriter::copy($reader, $input->arena(), RtRowRole::Candidate);
+        }
+
+        return $prepared;
     }
 }

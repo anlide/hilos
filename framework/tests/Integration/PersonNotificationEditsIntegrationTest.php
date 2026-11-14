@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Generator;
 use Hilos\API\AsyncHttpClient;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\AgentInterface;
@@ -25,6 +26,9 @@ use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Push\DTO\PushSubscribeActionDTO;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
@@ -1759,24 +1763,37 @@ final class NotificationEditsTestConnections extends HilosSessionConnections
 /** Session-stage row with no additional fields. */
 final class NotificationEditsTestConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /** @return Generator<int, RtWork, int, void> No project fields */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $row Serialized row */
-    protected function hydrateOwn(array $row): void
+    /**
+     * @param RtRowReader $row Serialized row
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
-    /** @return array<string, mixed> No project fields */
-    protected function ownToArray(): array
+    /**
+     * @param RtRowWriter $out Segmented destination
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
-    /** @param array<string, mixed> $diff Field changes */
-    protected function applyOwnDiff(array $diff): void
+    /**
+     * @param RtRowReader $diff Field changes
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
 

@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Generator;
 use Hilos\Auth\CodeChannel\CodeChannel;
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Impersonation\ImpersonationSettingsCatalog;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
-use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\BackupCodeGenerator;
+use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecondFactor\SecondFactorSettingsCatalog;
 use Hilos\Auth\SecondFactor\Totp;
@@ -31,8 +32,8 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
-use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
@@ -48,6 +49,9 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosSessionConnections;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -1230,29 +1234,38 @@ final class StepUpIntegrationConnections extends HilosSessionConnections
  */
 final class StepUpIntegrationConnection extends HilosSessionConnection
 {
-    protected function initOwn(): void
+    /**
+     * @return Generator<int, RtWork, int, void> No project fields
+     */
+    protected function initOwn(): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $row Serialized runtime row
+     * @param RtRowReader $row Serialized runtime row
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function hydrateOwn(array $row): void
+    protected function hydrateOwn(RtRowReader $row): Generator
     {
+        yield new RtWork();
     }
 
     /**
-     * @return array<string, mixed> No project fields
+     * @param RtRowWriter $out Segmented destination after both base stages
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function ownToArray(): array
+    protected function exportOwn(RtRowWriter $out): Generator
     {
-        return [];
+        yield new RtWork();
     }
 
     /**
-     * @param array<string, mixed> $diff Incoming field changes
+     * @param RtRowReader $diff Incoming field changes
+     * @return Generator<int, RtWork, int, void> No project fields
      */
-    protected function applyOwnDiff(array $diff): void
+    protected function applyOwnDiff(RtRowReader $diff): Generator
     {
+        yield new RtWork();
     }
 }
