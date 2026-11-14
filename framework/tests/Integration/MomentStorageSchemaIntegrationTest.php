@@ -20,7 +20,6 @@ use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
 use Hilos\Database\Schema\MomentColumns;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Hilos;
-use Hilos\Testing\MomentStorageBaseline;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
@@ -30,7 +29,6 @@ use Throwable;
 final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestCase
 {
     private const int JSON_FLAGS = JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
-    private const string BASELINE = __DIR__ . '/../CodeStyle/moment-storage-baseline.json';
     private const int NAMED_SCHEMA = 2;
     private const int PRIMARY_ALIAS = 3;
 
@@ -39,27 +37,17 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
     /** @var list<string> Schemas created by this case, including a partially prepared pair */
     private array $created = [];
 
-    /** Every declared moment must exist before exact historical allowances are consulted. */
-    public function testCanonicalFrameworkMomentsMatchTheHistoricalBaseline(): void
+    /** Every declared framework moment must match the storage norm on its canonical schema. */
+    public function testCanonicalFrameworkMomentsMatchStorageNorm(): void
     {
-        $subjects = $this->canonicalSubjects();
+        $this->canonicalSubjects();
         $mismatches = EntitySchemaAudit::auditMoments(EntitySchemaAudit::frameworkEntities());
         array_push($mismatches, ...EntitySchemaAudit::auditProviderMoments(
             FrameworkTablesWithoutEntity::class, DatabaseConnectionDefaults::PRIMARY_INDEX,
         ));
-        $baseline = MomentStorageBaseline::fromJson(file_get_contents(self::BASELINE));
-        $frameworkNamespace = substr(Entity::class, 0, -strlen('Entity'));
-        // A complete framework pass also covers old declarations or columns that disappeared.
-        foreach ($baseline->subjects() as $subject) {
-            [$kind, $declaration] = json_decode($subject, true, flags: JSON_THROW_ON_ERROR);
-            if ($kind === 'schema' && ($declaration === FrameworkTablesWithoutEntity::class
-                || str_starts_with($declaration, $frameworkNamespace))) {
-                $subjects[] = $subject;
-            }
-        }
-        $reported = self::reported($mismatches);
-        self::assertSame([], $baseline->reconcile($reported, array_values(array_unique($subjects))),
-            'Physical framework moments must match only the closed historical debt.');
+        self::assertSame([], $mismatches, implode(PHP_EOL, array_map(
+            static fn (EntitySchemaMismatch $mismatch): string => $mismatch->describe(), $mismatches,
+        )));
         self::assertSame(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getCurrentIndex());
     }
 
@@ -76,30 +64,25 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
 
     /**
      * @param string $type Physical definition installed during setup
-     * @param ?string $actual Expected normalized debt, absent for signed BIGINT
+     * @param ?string $actual Expected normalized type, absent for signed BIGINT
      */
     #[DataProvider('physicalTypes')]
-    public function testInjectedMomentCannotBorrowHistoricalDebt(string $type, ?string $actual): void
+    public function testInjectedMomentRequiresSignedBigint(string $type, ?string $actual): void
     {
         $mismatches = EntitySchemaAudit::auditMoments([MomentSchemaEntity::class]);
-        $reported = self::reported($mismatches);
         if ($actual === null) {
             self::assertSame([], $mismatches, $type);
         } else {
             self::assertCount(1, $mismatches);
             self::assertSame(EntitySchemaAxis::MOMENT_TYPE, $mismatches[0]->axis);
             self::assertSame($actual, $mismatches[0]->actual);
-            self::assertSame([self::json(['MOMENT-TYPE', self::subject(
-                MomentSchemaEntity::class, MomentSchemaEntity::_table, 'occurred_at',
-            ), $actual])], array_keys($reported));
+            self::assertSame(MomentSchemaEntity::class, $mismatches[0]->entityClass);
+            self::assertSame(MomentSchemaEntity::_table, $mismatches[0]->table);
+            self::assertSame('occurred_at', $mismatches[0]->subject);
         }
-        self::assertSame(array_merge(...array_values($reported)),
-            MomentStorageBaseline::fromJson(file_get_contents(self::BASELINE))->reconcile(
-                $reported, [self::subject(MomentSchemaEntity::class, MomentSchemaEntity::_table, 'occurred_at')],
-            ));
     }
 
-    /** DB-only, analytics and bootstrap moments cannot disappear behind a historical type record. */
+    /** DB-only, analytics and bootstrap moment columns must all exist. */
     public function testMissingUnmappedAndProviderColumnsAreUnconditionallyRejected(): void
     {
         self::assertFalse(MomentColumns::forEntity(MomentDbOnlyEntity::class)['occurred_at']->mapped);
@@ -113,13 +96,10 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
             ['hilos_analytics_user_agent', 'created_ts'],
         ], array_map(static fn (EntitySchemaMismatch $mismatch): array => [$mismatch->table, $mismatch->subject], $missing));
         self::assertSame('missing', $missing[0]->actual);
-        $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage('moment_column_missing');
-        self::reported($missing);
     }
 
     /** Optional-table provider semantics do not excuse a required canonical table. */
-    public function testMissingRequiredTableFailsBeforeBaselineReconciliation(): void
+    public function testMissingRequiredTableIsRejected(): void
     {
         $this->expectException(AssertionFailedError::class);
         $this->expectExceptionMessage('Required framework table hilos_analytics_loss');
@@ -184,26 +164,6 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
                 self::assertSame(DatabaseConnectionDefaults::PRIMARY_INDEX, Database::getCurrentIndex());
             }
         }
-    }
-
-    /** Repairing one historical column retires precisely its record within partial coverage. */
-    public function testPhysicalRepairRequiresDeletingOnlyItsHistoricalRecord(): void
-    {
-        $subject = self::subject(MomentSchemaEntity::class, MomentSchemaEntity::_table, 'occurred_at');
-        self::assertSame([], EntitySchemaAudit::auditMoments([MomentSchemaEntity::class]));
-        $json = self::json(['version' => 1, 'records' => [
-            ['rule' => 'MOMENT-TYPE', 'subject' => $subject, 'actual' => 'timestamp', 'count' => 1, 'owner' => 'HIL-1925'],
-        ]]);
-        $key = self::json(['MOMENT-TYPE', $subject, 'timestamp']);
-        self::assertSame([
-            'moment storage baseline record ' . $key . ' (HIL-1925) is paid off — delete the record',
-        ], MomentStorageBaseline::fromJson($json)->reconcile([], [$subject]));
-        $registry = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
-        $records = $registry['records'];
-        $registry['records'] = array_values(array_filter($records, static fn (array $record): bool =>
-            !($record['rule'] === 'MOMENT-TYPE' && $record['subject'] === $subject && $record['actual'] === 'timestamp')));
-        self::assertCount(count($records) - 1, $registry['records']);
-        self::assertSame([], MomentStorageBaseline::fromJson(self::json($registry))->reconcile([], [$subject]));
     }
 
     /** Prepare real canonical DDL, then install only the refusal fixture needed by this case. */
@@ -317,16 +277,14 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
     /** All destructive variations are setup DDL confined to the case's disposable pair. */
     private function prepareScenario(): void
     {
-        if ($this->name() === 'testInjectedMomentCannotBorrowHistoricalDebt') {
+        if ($this->name() === 'testInjectedMomentRequiresSignedBigint') {
             Database::sqlRun('CREATE TABLE moment_schema_fixture (occurred_at ' . $this->providedData()[0] . ' NULL DEFAULT NULL)');
         } elseif ($this->name() === 'testMissingUnmappedAndProviderColumnsAreUnconditionallyRejected') {
             Database::sqlRun('CREATE TABLE moment_schema_fixture (id INT UNSIGNED NOT NULL);'
                 . 'ALTER TABLE hilos_analytics_user_agent DROP COLUMN created_ts;'
                 . 'ALTER TABLE hilos_migration_claim DROP COLUMN claimed_at;');
-        } elseif ($this->name() === 'testMissingRequiredTableFailsBeforeBaselineReconciliation') {
+        } elseif ($this->name() === 'testMissingRequiredTableIsRejected') {
             Database::sqlRun('DROP TABLE hilos_analytics_loss');
-        } elseif ($this->name() === 'testPhysicalRepairRequiresDeletingOnlyItsHistoricalRecord') {
-            Database::sqlRun('CREATE TABLE moment_schema_fixture (occurred_at BIGINT NULL)');
         } elseif (in_array($this->name(), [
             'testNamedSchemaIdentityAndProviderConnectionStayIsolated', 'testAuditErrorRestoresCurrentConnection',
         ], true)) {
@@ -400,28 +358,6 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
     }
 
     /**
-     * Missing columns are unconditional failures, never keys that a baseline can excuse.
-     *
-     * @param list<EntitySchemaMismatch> $mismatches Live Entity and framework-provider findings
-     * @return array<string, list<string>> Exact canonical finding keys and diagnostic occurrences
-     */
-    private static function reported(array $mismatches): array
-    {
-        $reported = [];
-        foreach ($mismatches as $mismatch) {
-            $rule = match ($mismatch->axis) {
-                EntitySchemaAxis::MOMENT_TYPE => 'MOMENT-TYPE',
-                EntitySchemaAxis::MOMENT_AUTO_WRITE => 'MOMENT-AUTO-WRITE',
-                default => self::fail($mismatch->describe()),
-            };
-            self::assertNotNull($mismatch->subject);
-            $subject = self::subject($mismatch->entityClass ?? FrameworkTablesWithoutEntity::class, $mismatch->table, $mismatch->subject);
-            $reported[self::json([$rule, $subject, $mismatch->actual])][] = $mismatch->describe();
-        }
-        return $reported;
-    }
-
-    /**
      * @param string $declaration Canonical framework Entity or provider
      * @param string $table Physical table
      * @param string $column Physical moment
@@ -433,7 +369,7 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
     }
 
     /**
-     * @param array $value Infrastructure tuple or registry
+     * @param array $value Infrastructure subject tuple
      * @return string Canonical boundary JSON
      */
     private static function json(array $value): string
@@ -442,7 +378,7 @@ final class MomentStorageSchemaIntegrationTest extends FrameworkIntegrationTestC
     }
 }
 
-/** Test-only declarations; production discovery and historical debt cannot include these subjects. */
+/** Test-only declarations; production discovery cannot include these subjects. */
 class MomentSchemaEntity extends Entity
 {
     public const string _table = 'moment_schema_fixture';

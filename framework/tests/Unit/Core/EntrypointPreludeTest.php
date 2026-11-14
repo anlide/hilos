@@ -24,7 +24,6 @@ use Hilos\Fs\Exception\LfsPointerException;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
 use Hilos\LLM\Routing\LlmRouter;
-use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -331,7 +330,6 @@ final class EntrypointPreludeTest extends TestCase
             gmdate('Y-m-d H:i:s', $second + 1),
         ];
         $this->assertContains(date('Y-m-d H:i:s'), $accepted);
-        $this->assertContains(TimeHelper::getSqlDateTime(), $accepted);
     }
 
     private function writeEnv(string $dotenv, string $testEnv): void

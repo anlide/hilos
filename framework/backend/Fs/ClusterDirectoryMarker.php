@@ -184,7 +184,7 @@ final class ClusterDirectoryMarker
                     self::KEY_VERSION => self::FORMAT_VERSION,
                     self::KEY_MARKER => RandomHelper::hex(self::MARKER_BYTES),
                     self::KEY_WRITTEN_BY => $writtenBy,
-                    self::KEY_WRITTEN_AT => TimeHelper::getSqlDateTime(),
+                    self::KEY_WRITTEN_AT => TimeHelper::getTimestampWithMs(),
                 ],
                 JSON_THROW_ON_ERROR,
             );

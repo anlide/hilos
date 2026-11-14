@@ -5,18 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Legal;
 
 use Hilos\Legal\Exception\LegalException;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /** Computes coverage and provenance in declaration order (HIL-498). */
 final class LegalStandingResolver
 {
-    /** Length of a YYYY-MM-DD calendar date in the SQL timestamp. */
-    private const int DATE_LENGTH = 10;
-
     /** @return string Server's current calendar date */
     public static function today(): string
     {
-        return substr(TimeHelper::getSqlDateTime(), 0, self::DATE_LENGTH);
+        return date('Y-m-d');
     }
 
     /**

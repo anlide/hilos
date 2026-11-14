@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace MomentFixtures;
 
 use DateTimeImmutable;
-use Hilos\Utils\Helpers\{TimeHelper as Clock};
+use function date;
 use MomentFixtures\{EventEntity as Row};
 use function date as sqlDate;
 
@@ -57,7 +57,7 @@ class Edges
     public function groupedImports(Row $entity): void
     {
         /** @var Row $local */
-        $local->at = Clock::getSqlDateTime();
+        $local->at = date('Y-m-d H:i:s');
         $entity->at = sqlDate("Y-m-d H:i:s");
     }
 

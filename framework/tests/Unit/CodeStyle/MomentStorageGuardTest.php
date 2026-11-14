@@ -6,7 +6,6 @@ namespace Hilos\Tests\Unit\CodeStyle;
 
 use Hilos\Database\Entity\Item\UserRename;
 use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
-use Hilos\Testing\MomentStorageBaseline;
 use Hilos\Tests\CodeStyle\MomentStorage\MomentStorageSourceRule;
 use Hilos\Tests\CodeStyle\MomentStorage\MomentStorageSources;
 use PHPUnit\Framework\TestCase;
@@ -14,8 +13,8 @@ use PHPUnit\Framework\TestCase;
 /** Full production source pass; physical schema checks have their own live coverage. */
 final class MomentStorageGuardTest extends TestCase
 {
-    /** Refuse new writes and require removal of paid-off exact historical source records. */
-    public function testProductionMomentWritesMatchTheClosedHistoricalBaseline(): void
+    /** Refuse every proven write that violates the moment storage norm. */
+    public function testProductionHasNoMomentWriteFindings(): void
     {
         $repositoryRoot = dirname(__DIR__, 4);
         $autoloaders = spl_autoload_functions();
@@ -40,10 +39,7 @@ final class MomentStorageGuardTest extends TestCase
             }
         }
         $report = MomentStorageSourceRule::forRoots($repositoryRoot, $inputs['roots'], $inputs['catalog'], $inputs['excludedPaths']);
-        $baseline = MomentStorageBaseline::fromJson(file_get_contents($repositoryRoot . '/framework/tests/CodeStyle/moment-storage-baseline.json'));
-        $covered = MomentStorageSources::coveredSubjects($report['subjects'], $baseline->subjects(), $inputs['roots'], $inputs['excludedPaths']);
-
-        $this->assertSame([], $baseline->reconcile($report['reported'], $covered),
-            'Moment writes must use signed epoch milliseconds. Only exact historical records with an owning migration are allowed.');
+        $findings = array_merge(...array_values($report['reported']));
+        $this->assertSame([], $findings, implode(PHP_EOL, $findings));
     }
 }

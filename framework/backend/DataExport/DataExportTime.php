@@ -7,7 +7,6 @@ namespace Hilos\DataExport;
 use DateTimeImmutable;
 use DateTimeZone;
 use Hilos\Constants\TimeConstants;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Moments in a person's export, in the one time zone chosen for that file: the stored moment is kept
@@ -15,21 +14,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 final class DataExportTime
 {
-    private const string ISO_SECONDS_FORMAT = 'Y-m-d\TH:i:sP';
     private const string ISO_MILLISECONDS_FORMAT = 'Y-m-d\TH:i:s.vP';
     private const string FILE_NAME_DATE_FORMAT = 'Y-m-d';
-
-    /**
-     * @param ?string $sqlDateTime Stored UTC date, or an absent optional date
-     * @param DateTimeZone $timeZone Zone of the file being written
-     * @return ?string ISO 8601 date with the zone offset, retaining absence
-     */
-    public static function iso(?string $sqlDateTime, DateTimeZone $timeZone): ?string
-    {
-        return $sqlDateTime === null
-            ? null
-            : self::moment(TimeHelper::sqlToMs($sqlDateTime), $timeZone)->format(self::ISO_SECONDS_FORMAT);
-    }
 
     /**
      * @param int $milliseconds Moment in epoch milliseconds
@@ -39,16 +25,6 @@ final class DataExportTime
     public static function isoMs(int $milliseconds, DateTimeZone $timeZone): string
     {
         return self::moment($milliseconds, $timeZone)->format(self::ISO_MILLISECONDS_FORMAT);
-    }
-
-    /**
-     * @param string $sqlDateTime Stored UTC date
-     * @param DateTimeZone $timeZone Zone of the file being named
-     * @return string Calendar date of the moment in that zone, for a file name
-     */
-    public static function date(string $sqlDateTime, DateTimeZone $timeZone): string
-    {
-        return self::moment(TimeHelper::sqlToMs($sqlDateTime), $timeZone)->format(self::FILE_NAME_DATE_FORMAT);
     }
 
     /**

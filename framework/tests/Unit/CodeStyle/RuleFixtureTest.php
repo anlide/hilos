@@ -810,8 +810,8 @@ final class RuleFixtureTest extends TestCase
                     . 'variable (see docs/agents/orm/collection-iteration.md)',
                 'CODE-FQN MomentStorage/Bad.php:42 — \time is written out in code; '
                     . 'a global function or constant takes the short name and no import (see docs/agents/code-style/qualified-names.md)',
-                'CODE-FQN MomentStorage/Bad.php:68 — \Hilos\Utils\Helpers\TimeHelper is written out in code; '
-                    . 'import it and use the short name (see docs/agents/code-style/qualified-names.md)',
+                'CODE-FQN MomentStorage/Bad.php:68 — \date is written out in code; '
+                    . 'a global function or constant takes the short name and no import (see docs/agents/code-style/qualified-names.md)',
                 'CODE-FQN MomentStorage/Bad.php:164 — \date is written out in code; '
                     . 'a global function or constant takes the short name and no import (see docs/agents/code-style/qualified-names.md)',
                 'CODE-FQN MomentStorage/Destructuring/backend/Named.php:166 — time resolves to no class; '

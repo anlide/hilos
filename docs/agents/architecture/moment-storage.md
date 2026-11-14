@@ -5,11 +5,9 @@ or deciding a project-specific storage representation.
 
 ## Scope And Status
 
-**This is the approved migration design of HIL-1804 for HIL-1803, not a
-description of migrations already built.** The owner settled the decisions on
-2026-11-03. This document publishes those decisions, the complete source census
-and the proposed migration subjects. It adds no schema, DB or RT item field,
-signal, DTO, route, metadata declaration, callable API or guard.
+All subjects landed (HIL-1915–1931); the live norm is
+[time-zones.md](time-zones.md); coordinates below describe the research tree
+and are not maintained.
 
 The research base is `2cf51c6428a59f93da25068a4527b99ff21e8259`. The sources
 were checked again on 2026-11-04 at

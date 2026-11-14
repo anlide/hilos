@@ -66,16 +66,6 @@ class TimeHelper
     }
 
     /**
-     * Get current datetime in SQL format.
-     *
-     * @return string Datetime in format 'Y-m-d H:i:s' (e.g., '2025-02-19 14:30:45')
-     */
-    public static function getSqlDateTime(): string
-    {
-        return date('Y-m-d H:i:s');
-    }
-
-    /**
      * Get the current server moment in epoch milliseconds.
      *
      * The form every absolute moment takes once it leaves for the browser
@@ -88,26 +78,6 @@ class TimeHelper
     public static function nowMs(): int
     {
         return (int)(microtime(true) * TimeConstants::MS_PER_SECOND);
-    }
-
-    /**
-     * Convert an SQL datetime into the epoch milliseconds the browser is told.
-     *
-     * The bridge between the two scales the backend keeps (HIL-486): rows are
-     * written in SQL datetimes, the wire speaks moments in milliseconds, and a
-     * screen counting down to an expiry needs the second form of the first. An
-     * unreadable datetime answers the epoch rather than the current moment: a
-     * countdown that is already over is visibly wrong, while one starting now would
-     * quietly promise time that no row grants.
-     *
-     * @param string $sqlDateTime Datetime in format 'Y-m-d H:i:s'
-     * @return int Milliseconds since the Unix epoch, or 0 when the datetime cannot be read
-     */
-    public static function sqlToMs(string $sqlDateTime): int
-    {
-        $timestamp = strtotime($sqlDateTime);
-
-        return $timestamp === false ? 0 : $timestamp * TimeConstants::MS_PER_SECOND;
     }
 
     /**

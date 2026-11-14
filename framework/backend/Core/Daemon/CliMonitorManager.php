@@ -196,7 +196,7 @@ class CliMonitorManager extends BaseManager
 
         // Header
         echo "=== HILOS DAEMON MONITOR ===\n";
-        echo "Last update: " . TimeHelper::getSqlDateTime() . "\n";
+        echo "Last update: " . TimeHelper::getTimestampWithMs() . "\n";
         echo "Press Ctrl+C to exit\n\n";
 
         echo DaemonStatusTable::render($this->getStatusValue(), $this->daemonStatus);

@@ -14,7 +14,6 @@ use Hilos\Database\Schema\MomentColumns;
 use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\ScannedRoots;
-use Hilos\Tests\CodeStyle\SourceScanner;
 use Hilos\Tests\CodeStyle\Throws\SourceIndex;
 use RecursiveDirectoryIterator;
 use RuntimeException;
@@ -163,45 +162,6 @@ final class MomentStorageSources
         } finally {
             $loader->unregister();
         }
-    }
-
-    /**
-     * Call only after all roots were analyzed successfully. Old source paths need not exist anymore;
-     * a deleted file, method or last sink still pays its debt off. Schema subjects are never covered here.
-     *
-     * @param list<string> $current Proven current sink subjects
-     * @param list<string> $historical Canonical subjects from the baseline
-     * @param list<string> $roots Successfully scanned production roots
-     * @param array<string, list<string>> $excludedPaths Exclusions used by that scan
-     * @return list<string> Current and historical source subjects inside the checked domain
-     */
-    public static function coveredSubjects(array $current, array $historical, array $roots, array $excludedPaths): array
-    {
-        $covered = $current;
-        foreach ($historical as $subject) {
-            $tuple = json_decode($subject, true, flags: JSON_THROW_ON_ERROR);
-            if ($tuple[0] !== 'source') {
-                continue;
-            }
-            foreach ($roots as $root) {
-                if (!str_starts_with($tuple[1], $root . '/')) {
-                    continue;
-                }
-                $path = substr($tuple[1], strlen($root) + 1);
-                if (array_intersect(explode('/', $path), SourceScanner::PRUNED_DIRECTORIES) !== []) {
-                    continue;
-                }
-                if (array_any($excludedPaths[$root] ?? [], static fn(string $excluded): bool => str_starts_with($path, $excluded . '/'))) {
-                    continue;
-                }
-                $covered[] = $subject;
-                break;
-            }
-        }
-        $covered = array_values(array_unique($covered));
-        sort($covered, SORT_STRING);
-
-        return $covered;
     }
 
     /**

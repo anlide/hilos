@@ -9,13 +9,13 @@ use Demo\Chat\Hilos;
 use Hilos\Database\Database;
 use Hilos\Database\Migration;
 use Hilos\Database\Schema\Schema;
-use Hilos\Utils\Helpers\TimeHelper;
 
 /** DDL stays outside rollback scopes; the migration level and every pre-existing moment are restored in finally. */
 final class EventTimestampMigrationTest extends IntegrationTestCase
 {
     private const int MIGRATION_INDEX = 142;
     private const int BEFORE_MIGRATION = 141;
+    private const int LEGACY_MOMENT_MS = 1767323045000;
     private const string LEGACY_MOMENT = '2026-01-02 03:04:05';
 
     /** A populated legacy row survives UP, DOWN and a repeated UP with the same UTC instant. */
@@ -35,7 +35,7 @@ final class EventTimestampMigrationTest extends IntegrationTestCase
             $eventId = Database::lastInsertId();
 
             self::assertSame(1, Migration::migrateUp(self::MIGRATION_INDEX));
-            self::assertSame(TimeHelper::sqlToMs(self::LEGACY_MOMENT), (int)Database::sql(
+            self::assertSame(self::LEGACY_MOMENT_MS, (int)Database::sql(
                 'SELECT `timestamp` FROM `event` WHERE `id` = ?', [$eventId],
             )->field('timestamp'));
 
@@ -44,7 +44,7 @@ final class EventTimestampMigrationTest extends IntegrationTestCase
                 'SELECT `timestamp` FROM `event` WHERE `id` = ?', [$eventId],
             )->field('timestamp'));
             self::assertSame(1, Migration::migrateUp(self::MIGRATION_INDEX));
-            self::assertSame(TimeHelper::sqlToMs(self::LEGACY_MOMENT), (int)Database::sql(
+            self::assertSame(self::LEGACY_MOMENT_MS, (int)Database::sql(
                 'SELECT `timestamp` FROM `event` WHERE `id` = ?', [$eventId],
             )->field('timestamp'));
         } finally {

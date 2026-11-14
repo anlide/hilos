@@ -7080,7 +7080,7 @@ abstract class BrowserContext
     /**
      * Projects configured source and computed fields from one current item.
      *
-     * Join fragments keep source values under the same target keys before SQL moment serialization.
+     * Join fragments keep source values under the same target keys.
      * Computed fields still read the earlier serialized fragments and are evaluated once.
      *
      * @param string $browserKey Browser table key
@@ -7091,8 +7091,8 @@ abstract class BrowserContext
      * @param array<string, string> $pageParams Current page subscription params
      * @param array<string, mixed> $browserParams Resolved table params
      * @param array<string, mixed> $sources Source fragments already built for the row
-     * @return array{array<string, mixed>, array<string, mixed>} Browser fragment and pre-serialization join fragment
-     * @throws PageInternalErrorException When a declaration is malformed or a non-null SQL moment is not a string
+     * @return array{array<string, mixed>, array<string, mixed>} Browser fragment and join fragment
+     * @throws PageInternalErrorException When a declaration is malformed
      */
     private function projectSourceItem(
         string $browserKey,
@@ -7107,7 +7107,6 @@ abstract class BrowserContext
         $payload = [];
         $joinPayload = [];
         $fields = $rowConfig[BrowserFieldKey::FIELDS] ?? [];
-        $sqlMoments = $rowConfig[BrowserFieldKey::SQL_MOMENTS] ?? [];
         if (is_array($fields)) {
             foreach ($fields as $sourceField => $targetField) {
                 if (is_int($sourceField)) {
@@ -7118,14 +7117,6 @@ abstract class BrowserContext
                 }
                 $fieldValue = $this->fieldValue($item, $sourceField);
                 $joinPayload[$targetField] = $fieldValue;
-                if ($fieldValue !== null && in_array($sourceField, $sqlMoments, true)) {
-                    if (!is_string($fieldValue)) {
-                        throw new PageInternalErrorException(
-                            "Invalid browser source value: {$browserKey} sqlMoments field {$sourceField} must be a string or null",
-                        );
-                    }
-                    $fieldValue = TimeHelper::sqlToMs($fieldValue);
-                }
                 $payload[$targetField] = $fieldValue;
             }
         }

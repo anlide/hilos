@@ -37,7 +37,7 @@ Both exceptions are about `git commit` only. The push ban has none.
 |---|---|
 | [architecture/daemon-lifecycle.md](docs/agents/architecture/daemon-lifecycle.md) | working with daemon startup, cron, shutdown, server registration, or handing work out of the master |
 | [architecture/time-zones.md](docs/agents/architecture/time-zones.md) | storing a DB moment or changing its schema/writer/reader, deciding the boundary of a project's storage choice, carrying moments on the wire, choosing server/project/reader zones, calculating cron or retention boundaries, or formatting dates and times |
-| [architecture/moment-storage.md](docs/agents/architecture/moment-storage.md) | planning a moment-storage migration from the published research and corrected historical census; the current norm and transition owners are in time-zones.md |
+| [architecture/moment-storage.md](docs/agents/architecture/moment-storage.md) | reading the published research and historical census of the completed moment-storage migration; the current norm is in time-zones.md |
 | [architecture/calculated-results.md](docs/agents/architecture/calculated-results.md) | designing a result's calculation basis, invalidation or rebuilding when configuration changes: the approved research design, its cost, and the boundary with today's code |
 | [architecture/worker-lifecycle.md](docs/agents/architecture/worker-lifecycle.md) | working with worker processes, forking, message handling |
 | [architecture/agent-lifecycle.md](docs/agents/architecture/agent-lifecycle.md) | creating agents, onStart/onTick/onStop, sending signals |

@@ -15,9 +15,6 @@ final class BrowserFieldKey
     public const string SOURCE = 'source';
     public const string FIELDS = 'fields';
 
-    /** Source field names in FIELDS whose SQL UTC strings are serialized as epoch milliseconds. */
-    public const string SQL_MOMENTS = 'sqlMoments';
-
     public const string COMPUTED = 'computed';
     public const string TRIGGERS = 'triggers';
     public const string WHERE = 'where';

@@ -9,7 +9,6 @@ use Hilos\Tests\CodeStyle\SourceScanner;
 use Hilos\Tests\CodeStyle\Throws\ClassRecord;
 use Hilos\Tests\CodeStyle\Throws\MethodRecord;
 use Hilos\Tests\CodeStyle\Throws\SourceIndex;
-use Hilos\Utils\Helpers\TimeHelper;
 use RuntimeException;
 
 /**
@@ -36,7 +35,6 @@ final class MomentStorageSourceRule
         '=', T_PLUS_EQUAL, T_MINUS_EQUAL, T_MUL_EQUAL, T_DIV_EQUAL, T_MOD_EQUAL, T_CONCAT_EQUAL,
         T_AND_EQUAL, T_OR_EQUAL, T_XOR_EQUAL, T_SL_EQUAL, T_SR_EQUAL, T_POW_EQUAL, T_COALESCE_EQUAL, T_INC, T_DEC,
     ];
-    private const string TIME_HELPER = TimeHelper::class;
 
     /** @var array<string, array<int, list<string>>> __set parameters, keyed by source path and declaration line */
     private array $setterParameters = [];
@@ -60,7 +58,7 @@ final class MomentStorageSourceRule
 
     /**
      * Sources supply lexical function imports/shadows and local @var aliases missing from the shared index.
-     * The caller owns root selection/exclusions; production discovery and complete-domain coverage are separate.
+     * The caller owns root selection/exclusions; production discovery and source analysis are separate.
      *
      * @param string $base Repository or fixture base
      * @param list<string> $roots Roots relative to base
@@ -91,7 +89,7 @@ final class MomentStorageSourceRule
 
     /**
      * @param array<string, string> $sources PHP text keyed by the same relative paths as the index
-     * @return array{reported: array<string, list<string>>, subjects: list<string>} Canonical baseline input, sorted by identity
+     * @return array{reported: array<string, list<string>>, subjects: list<string>} Finding keys and proven sink subjects, sorted by identity
      */
     public function analyze(array $sources): array
     {
@@ -309,7 +307,7 @@ final class MomentStorageSourceRule
             return;
         }
         $expression = $this->withoutDocs(array_slice($tokens, $start, $end - $start));
-        // The initializer participates too: replacing an aliased RHS must not reuse historical debt.
+        // The initializer participates too: replacing an aliased RHS changes the finding key.
         $fingerprintTokens = $alias === null ? $expression : [...$expression, ...$this->withoutDocs($alias)];
         $key = $this->json([self::ID, $subject, hash('sha256', $this->json(array_column($fingerprintTokens, 1)))]);
         $fragment = implode(' ', array_column($expression, 1));
@@ -1134,10 +1132,6 @@ final class MomentStorageSourceRule
 
                 return in_array($format, ['Y-m-d H:i:s', 'Y-m-d H:i:s.u', 'Y-m-d H:i:s.v'], true);
             }
-        }
-        if ($length === 5 && $rhs[1][0] === T_DOUBLE_COLON && strcasecmp($rhs[2][1], 'getSqlDateTime') === 0
-            && $rhs[3][1] === '(' && strcasecmp($this->className($rhs[0][1], $class), self::TIME_HELPER) === 0) {
-            return true;
         }
         if ($length >= 5 && in_array($rhs[$length - 4][0], [T_OBJECT_OPERATOR, T_NULLSAFE_OBJECT_OPERATOR], true)
             && strcasecmp($rhs[$length - 3][1], 'getTimestamp') === 0

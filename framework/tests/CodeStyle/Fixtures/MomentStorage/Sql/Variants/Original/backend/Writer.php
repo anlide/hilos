@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace MomentSqlVariants;
 
 use Hilos\Database\Database;
-use Hilos\Utils\Helpers\TimeHelper;
+use function date;
 
 class Writer
 {
     public function write(): void
     {
-        $when = TimeHelper::getSqlDateTime();
+        $when = date('Y-m-d H:i:s');
         Database::sql('UPDATE event SET at = ? WHERE id = ?', [$when, 7]);
     }
 }

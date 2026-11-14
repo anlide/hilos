@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\CodeStyle;
 
-use Hilos\Testing\MomentStorageBaseline;
 use Hilos\Tests\CodeStyle\MomentStorage\MomentStorageSourceRule;
 use Hilos\Tests\CodeStyle\MomentStorage\MomentStorageSources;
 use Hilos\Tests\CodeStyle\Throws\SourceIndex;
@@ -65,13 +64,13 @@ final class MomentStorageFixtureTest extends TestCase
             ['at', '$entity->at = utcDate(\'Y-m-d \' . \'H:i:s\')', 61],
             ['created_at', '$entity->created_at = \'2026-11-07 \' . \'12:13:14.123\'', 62],
         ], 'Bad', 'Bad.php'];
-        yield 'qualified TimeHelper' => ['helper', [
-            ['at', '$entity->at = Hilos\Utils\Helpers\TimeHelper::getSqlDateTime()', 67],
-            ['created_at', '$entity->created_at = Hilos\Utils\Helpers\TimeHelper::getSqlDateTime()', 68],
+        yield 'SQL datetime date calls' => ['helper', [
+            ['at', '$entity->at = date(\'Y-m-d H:i:s\')', 67],
+            ['created_at', '$entity->created_at = \\date(\'Y-m-d H:i:s\')', 68],
         ], 'Bad', 'Bad.php'];
         yield 'Entity column indexes and fromRow entries' => ['arrays', [
             ['at', '$entity[MomentFixtures\EventEntity::at] = time()', 73],
-            ['created_at', '$entity[\'created_at\'] = Hilos\Utils\Helpers\TimeHelper::getSqlDateTime()', 74],
+            ['created_at', '$entity[\'created_at\'] = date(\'Y-m-d H:i:s\')', 74],
             ['at', 'MomentFixtures\EventEntity::fromRow([\'at\' => time()])', 75],
             ['created_at', 'MomentFixtures\EventEntity::fromRow([MomentFixtures\EventEntity::created_at => \'2026-11-07 12:13:14\'])', 75],
         ], 'Bad', 'Bad.php'];
@@ -88,8 +87,8 @@ final class MomentStorageFixtureTest extends TestCase
             ['created_at', '$this->entity->created_at = time()', 36],
         ], 'EventObject', 'Models.php'];
         yield 'one RHS alias and repeated occurrences' => ['alias', [
-            ['at', '$entity->at = (string)($now)', 107, '$now = Hilos\Utils\Helpers\TimeHelper::getSqlDateTime()'],
-            ['at', '$entity->at = (string)($now)', 108, '$now = Hilos\Utils\Helpers\TimeHelper::getSqlDateTime()'],
+            ['at', '$entity->at = (string)($now)', 107, '$now = date(\'Y-m-d H:i:s\')'],
+            ['at', '$entity->at = (string)($now)', 108, '$now = date(\'Y-m-d H:i:s\')'],
         ], 'Bad', 'Bad.php'];
         yield 'significant token multiplicity' => ['duplicate', [
             ['at', '$entity->at = time()', 113],
@@ -105,7 +104,7 @@ final class MomentStorageFixtureTest extends TestCase
             ['at', '$entity->at = $date->GETTIMESTAMP()', 54],
         ], 'Edges', 'Edges.php'];
         yield 'grouped imports and double quoted format' => ['groupedImports', [
-            ['at', '$local->at = Hilos\Utils\Helpers\TimeHelper::getSqlDateTime()', 60],
+            ['at', '$local->at = date(\'Y-m-d H:i:s\')', 60],
             ['at', '$entity->at = sqlDate("Y-m-d H:i:s")', 61],
         ], 'Edges', 'Edges.php'];
         yield 'multi-condition and parenthesized match arm' => ['multi', [
@@ -157,15 +156,15 @@ final class MomentStorageFixtureTest extends TestCase
             ['INSERT', 'INTO', 'event', '(', 'id', ',', 'at', ',', 'created_at', ')', 'VALUES', '(', '?', ',', '?', ',', '?', ')'],
             'Hilos\Database\Database::sql(SQL, [17, time(), $date->getTimestamp()])', 30, [['event', 'at'], ['event', 'created_at']],
         ]]];
-        yield 'named helper and concatenated PHP datetime' => ['named', [[
+        yield 'named date and concatenated PHP datetime' => ['named', [[
             ['UPDATE', 'event', 'SET', 'at', '=', ':at', ',', 'created_at', '=', ':created', 'WHERE', 'id', '=', ':id'],
-            'Hilos\Database\Database::sql(SQL, [\'id\' => 7, \'created\' => Hilos\Utils\Helpers\TimeHelper::getSqlDateTime(), '
+            'Hilos\Database\Database::sql(SQL, [\'id\' => 7, \'created\' => date(\'Y-m-d H:i:s\'), '
                 . '\'at\' => \'2026-11-07 \' . \'12:13:14\',])', 35, [['event', 'at'], ['event', 'created_at']],
         ]]];
         yield 'one local PHP RHS alias' => ['alias', [[
             ['UPDATE', 'event', 'SET', 'at', '=', '?'],
             'Hilos\Database\Database::sql(SQL, [(string)($when)])', 43, [['event', 'at']],
-            '$when = Hilos\Utils\Helpers\TimeHelper::getSqlDateTime()',
+            '$when = date(\'Y-m-d H:i:s\')',
         ]]];
         yield 'constants backticks casts and SQL case' => ['constants', [[
             ['UPDATE', '`event`', 'SET', '`at`', '=', '(', 'cAsT', '(', '(', 'nOw', '(', '3', ')', ')', 'As', 'SIGNED', ')', ')'],
@@ -211,9 +210,9 @@ final class MomentStorageFixtureTest extends TestCase
             ['UPDATE', 'event', 'SET', 'at', '=', 'NOW', '(', ')', ',', 'created_at', '=', '?', 'WHERE', 'id', '=', '?'],
             'Hilos\Database\Database::sql(SQL, $parameters)', 94, [['event', 'at']],
         ]]];
-        yield 'positional helper and PHP SQL datetime literal' => ['positionalDatetime', [[
+        yield 'positional date and PHP SQL datetime literal' => ['positionalDatetime', [[
             ['INSERT', 'INTO', 'event', '(', 'at', ',', 'created_at', ')', 'VALUES', '(', '?', ',', '?', ')'],
-            'Hilos\Database\Database::sql(SQL, [Hilos\Utils\Helpers\TimeHelper::getSqlDateTime(), \'2026-11-07 12:13:14\'])',
+            'Hilos\Database\Database::sql(SQL, [date(\'Y-m-d H:i:s\'), \'2026-11-07 12:13:14\'])',
             99, [['event', 'at'], ['event', 'created_at']],
         ]]];
         yield 'named DateTime parameter' => ['namedTimestamp', [[
@@ -260,7 +259,7 @@ final class MomentStorageFixtureTest extends TestCase
             ['INSERT', 'INTO', 'event', '(', 'id', ',', 'at', ',', 'created_at', ')', 'VALUES', '(', ':id', ',', ':at', ',', ':created', ')',
                 'ON', 'DUPLICATE', 'KEY', 'UPDATE', 'at', '=', ':changed', ',', 'created_at', '=', ':created'],
             'Hilos\Database\Database::sql(SQL, [\'changed\' => Hilos\Utils\Helpers\TimeHelper::nowMs(), \'id\' => time(), '
-                . '\'created\' => Hilos\Utils\Helpers\TimeHelper::getSqlDateTime(), \'at\' => time()])',
+                . '\'created\' => date(\'Y-m-d H:i:s\'), \'at\' => time()])',
             159, [['event', 'at'], ['event', 'created_at'], ['event', 'created_at']],
         ]]];
         yield 'named PHP args SQL case backticks and duplicate casts' => ['upsertNamedArguments', [[
@@ -336,7 +335,7 @@ final class MomentStorageFixtureTest extends TestCase
     }
 
     /** INSERT modifiers preserve all proven subjects, including correct and unbound writes. */
-    public function testSqlInsertModifiersKeepExactCurrentAndHistoricalCoverage(): void
+    public function testSqlInsertModifiersKeepExactSubjects(): void
     {
         $expected = [];
         $methods = [];
@@ -375,16 +374,6 @@ final class MomentStorageFixtureTest extends TestCase
         $subjects = array_values(array_filter($report['subjects'], static fn(string $subject): bool =>
             in_array(json_decode($subject, true)[2], $methods, true)));
         self::assertSame($expected, $subjects);
-
-        $deleted = self::sqlSubject('Deleted.php', 'MomentSqlFixtures\Deleted::upsert', 'event', 'at');
-        $outside = self::subject('other/backend/Writer.php', 'Other\Writer::upsert', 'at');
-        $historical = [$deleted, $outside, ...$expected];
-        $covered = MomentStorageSources::coveredSubjects($report['subjects'], $historical, [self::ROOT . '/Sql'], []);
-        self::assertContains($deleted, $covered);
-        self::assertNotContains($outside, $covered);
-        foreach ($expected as $subject) {
-            self::assertContains($subject, $covered);
-        }
     }
 
     public function testSqlDoesNotGuessBetweenProjectDeclarationsSharingAPhysicalName(): void
@@ -452,25 +441,15 @@ final class MomentStorageFixtureTest extends TestCase
         self::assertNotSame($original['reported'], $formatting['reported']);
     }
 
-    public function testSqlAliasReplacementIsNewDebtAndWhereParametersAreNotWrites(): void
+    public function testSqlAliasReplacementChangesTheFingerprintAndWhereParametersAreNotWrites(): void
     {
         $original = self::sqlVariant('Original');
         $replacement = self::sqlVariant('Replacement');
         $rebound = self::sqlVariant('Rebound');
-        $key = array_key_first($original['reported']);
-        [$rule, $subject, $actual] = json_decode($key, true);
-        $baseline = MomentStorageBaseline::fromJson(self::json(['version' => 1, 'records' => [[
-            'rule' => $rule, 'subject' => $subject, 'actual' => $actual, 'count' => 1, 'owner' => 'HIL-1930',
-        ]]]));
 
         self::assertSame($original['subjects'], $replacement['subjects']);
         self::assertCount(1, $replacement['reported']);
         self::assertNotSame(array_keys($original['reported']), array_keys($replacement['reported']));
-        self::assertSame([], $baseline->reconcile($original['reported'], $original['subjects']));
-        self::assertSame([
-            ...array_values($replacement['reported'])[0],
-            'moment storage baseline record ' . $key . ' (HIL-1930) is paid off — delete the record',
-        ], $baseline->reconcile($replacement['reported'], $replacement['subjects']));
         self::assertSame([], $rebound['reported']);
         self::assertSame([], $rebound['subjects']);
     }
@@ -838,7 +817,7 @@ final class MomentStorageFixtureTest extends TestCase
     }
 
     /** Only inaccessible real properties reach a proven direct magic setter in the caller's scope. */
-    public function testObjectPropertyVisibilityKeepsExactReportsAndCoverage(): void
+    public function testObjectPropertyVisibilityKeepsExactReportsAndSubjects(): void
     {
         $path = self::ROOT . '/Visibility/Writer.php';
         $expected = [];
@@ -912,14 +891,6 @@ final class MomentStorageFixtureTest extends TestCase
         $current = array_values(array_filter($report['subjects'], static fn(string $subject): bool =>
             json_decode($subject, true)[1] === $path));
         self::assertSame(['reported' => $expected, 'subjects' => $subjects], ['reported' => $reported, 'subjects' => $current]);
-
-        $historical = self::subject($path, 'MomentFixtures\\PrivateProperty::own', 'at');
-        $deleted = self::subject(self::ROOT . '/Visibility/Deleted.php', 'MomentFixtures\\Deleted::write', 'at');
-        $outside = self::subject('other/backend/Writer.php', 'Other\\Writer::write', 'at');
-        $covered = MomentStorageSources::coveredSubjects($current, [$historical, $deleted, $outside], [self::ROOT], []);
-        $expectedCoverage = [$historical, $deleted, ...$subjects];
-        sort($expectedCoverage, SORT_STRING);
-        self::assertSame($expectedCoverage, $covered);
     }
 
     public function testCatalogOptOutAndDbOnlyMetadataControlPhpSinks(): void
@@ -949,23 +920,7 @@ final class MomentStorageFixtureTest extends TestCase
         self::assertSame($expected, $subjects);
     }
 
-    public function testReportsReconcileWithExactBaselineAndPreserveOccurrenceGrowth(): void
-    {
-        $report = self::scan();
-        $records = [];
-        foreach ($report['reported'] as $key => $occurrences) {
-            [$rule, $subject, $actual] = json_decode($key, true);
-            $records[] = ['rule' => $rule, 'subject' => $subject, 'actual' => $actual, 'count' => count($occurrences), 'owner' => 'HIL-1930'];
-        }
-        $baseline = MomentStorageBaseline::fromJson(self::json(['version' => 1, 'records' => $records]));
-
-        self::assertSame([], $baseline->reconcile($report['reported'], $report['subjects']));
-        $first = array_key_first($report['reported']);
-        $report['reported'][$first][] = 'one more identical occurrence';
-        self::assertSame(['one more identical occurrence'], $baseline->reconcile($report['reported'], $report['subjects']));
-    }
-
-    public function testCoverageIncludesValidSinksWithoutInventingUnknownReceivers(): void
+    public function testSubjectsIncludeValidSinksWithoutInventingUnknownReceivers(): void
     {
         $subjects = self::scan()['subjects'];
 
@@ -977,24 +932,6 @@ final class MomentStorageFixtureTest extends TestCase
             self::subject(self::ROOT . '/Unknown.php', 'MomentFixtures\\Unknown::switchReceivers', 'at'),
         ], array_values(array_filter($subjects,
             static fn(string $subject): bool => json_decode($subject, true)[2] === 'MomentFixtures\\Unknown::switchReceivers')));
-    }
-
-    public function testAliasInitializerReplacementIsNewDebtAtTheSamePathMethodAndCount(): void
-    {
-        $original = self::aliasScan('AliasOriginal');
-        $replacement = self::aliasScan('AliasReplacement');
-        $key = array_key_first($original['reported']);
-        [$rule, $subject, $actual] = json_decode($key, true);
-        $baseline = MomentStorageBaseline::fromJson(self::json(['version' => 1, 'records' => [[
-            'rule' => $rule, 'subject' => $subject, 'actual' => $actual, 'count' => 1, 'owner' => 'HIL-1930',
-        ]]]));
-
-        self::assertSame($original['subjects'], $replacement['subjects']);
-        self::assertNotSame(array_keys($original['reported']), array_keys($replacement['reported']));
-        self::assertSame([
-            ...array_values($replacement['reported'])[0],
-            'moment storage baseline record ' . $key . ' (HIL-1930) is paid off — delete the record',
-        ], $baseline->reconcile($replacement['reported'], $replacement['subjects']));
     }
 
     public function testWhitespaceCommentsAndLineNumbersDoNotChangeTheFingerprint(): void
@@ -1031,43 +968,6 @@ final class MomentStorageFixtureTest extends TestCase
         $this->expectExceptionMessage('Unreadable moment source root: backend');
 
         MomentStorageSourceRule::forRoots(__FILE__, ['backend'], self::catalog());
-    }
-
-    /** Deleted sinks remain covered only inside the successfully checked source domain. */
-    public function testFullSourceCoverageRetiresDeletedSinksButLeavesOtherDomainsAlone(): void
-    {
-        $schema = self::json(['schema', self::ENTITY, 'event', 'at']);
-        $current = self::json(['source', 'framework/backend/Writer.php', 'Writer::run', $schema]);
-        $deleted = self::json(['source', 'framework/backend/Deleted.php', 'Deleted::removed', $schema]);
-        $demoDeleted = self::json(['source', 'demo/example/backend/Deleted.php', 'Deleted::removed', $schema]);
-        $outside = [
-            $schema,
-            self::json(['source', 'demo/absent/backend/Writer.php', 'Writer::run', $schema]),
-            self::json(['source', 'framework/backend-other/Writer.php', 'Writer::run', $schema]),
-            self::json(['source', 'framework/backend/Database/Migration/Change/Old.php', 'Writer::run', $schema]),
-            self::json(['source', 'demo/example/backend/vendor/Writer.php', 'Writer::run', $schema]),
-            self::json(['source', 'demo/example/backend/generated/Writer.php', 'Writer::run', $schema]),
-        ];
-        $historical = [$current, $deleted, $demoDeleted, ...$outside];
-        $covered = MomentStorageSources::coveredSubjects([$current], $historical,
-            ['framework/backend', 'demo/example/backend'], [
-                'framework/backend' => ['Database/Migration/Change'], 'demo/example/backend' => ['generated'],
-            ]);
-        $expected = [$current, $deleted, $demoDeleted];
-        sort($expected, SORT_STRING);
-        self::assertSame($expected, $covered);
-
-        $records = array_map(static fn(string $subject): array => [
-            'rule' => 'MOMENT-WRITE', 'subject' => $subject, 'actual' => str_repeat('a', 64), 'count' => 1, 'owner' => 'HIL-1930',
-        ], [$deleted, $demoDeleted]);
-        $baseline = MomentStorageBaseline::fromJson(self::json(['version' => 1, 'records' => $records]));
-        $findings = array_map(static fn(string $subject): string => self::json(['MOMENT-WRITE', $subject, str_repeat('a', 64)]),
-            [$deleted, $demoDeleted]);
-        sort($findings, SORT_STRING);
-        self::assertSame(array_map(static fn(string $key): string =>
-            'moment storage baseline record ' . $key . ' (HIL-1930) is paid off — delete the record', $findings),
-            $baseline->reconcile([], $covered));
-        self::assertSame([], MomentStorageSources::coveredSubjects([], $historical, [], []));
     }
 
     /** A broken production registration fails without loading the application or test autoload. */
@@ -1148,14 +1048,6 @@ PHP);
         $current = array_values(array_filter($report['subjects'], static fn(string $subject): bool =>
             json_decode($subject, true)[1] === $path));
         self::assertSame(['reported' => $expected, 'subjects' => $subjects], ['reported' => $reported, 'subjects' => $current]);
-
-        $historical = self::subject($path, 'MomentFixtures\\Historical::write', 'at');
-        $deleted = self::subject(dirname($path) . '/Deleted.php', 'MomentFixtures\\Deleted::write', 'at');
-        $outside = self::subject('other/backend/Writer.php', 'Other\\Writer::write', 'at');
-        $covered = MomentStorageSources::coveredSubjects($current, [$historical, $deleted, $outside], [dirname($path)], []);
-        $expectedCoverage = [$historical, $deleted, ...$subjects];
-        sort($expectedCoverage, SORT_STRING);
-        self::assertSame($expectedCoverage, $covered);
     }
 
     /**

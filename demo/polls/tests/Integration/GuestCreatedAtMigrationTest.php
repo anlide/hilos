@@ -9,7 +9,6 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration;
 use Hilos\Database\Schema\Schema;
-use Hilos\Utils\Helpers\TimeHelper;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /** DDL stays outside rollback scopes; the migration level and every pre-existing moment are restored in finally. */
@@ -17,9 +16,9 @@ final class GuestCreatedAtMigrationTest extends IntegrationTestCase
 {
     private const int MIGRATION_INDEX = 100;
     private const int BEFORE_MIGRATION = 99;
+    private const int LEGACY_UTC_MOMENT_MS = 1767312245000;
     private const string SESSION_TOKEN = 'guest-created-at-migration';
     private const string LEGACY_MOMENT = '2026-01-02 03:04:05';
-    private const string LEGACY_UTC_MOMENT = '2026-01-02 00:04:05';
 
     /** TIMESTAMP conversion preserves its instant through UP, DOWN and repeated UP in a non-UTC session. */
     public function testPopulatedUpgradeDownAndRepeatedUpgrade(): void
@@ -40,7 +39,7 @@ final class GuestCreatedAtMigrationTest extends IntegrationTestCase
             $guestId = Database::lastInsertId();
 
             self::assertSame(1, Migration::migrateUp(self::MIGRATION_INDEX));
-            self::assertSame(TimeHelper::sqlToMs(self::LEGACY_UTC_MOMENT), (int)Database::sql(
+            self::assertSame(self::LEGACY_UTC_MOMENT_MS, (int)Database::sql(
                 'SELECT `created_at` FROM `guest` WHERE `id` = ?', [$guestId],
             )->field('created_at'));
 
@@ -49,7 +48,7 @@ final class GuestCreatedAtMigrationTest extends IntegrationTestCase
                 'SELECT `created_at` FROM `guest` WHERE `id` = ?', [$guestId],
             )->field('created_at'));
             self::assertSame(1, Migration::migrateUp(self::MIGRATION_INDEX));
-            self::assertSame(TimeHelper::sqlToMs(self::LEGACY_UTC_MOMENT), (int)Database::sql(
+            self::assertSame(self::LEGACY_UTC_MOMENT_MS, (int)Database::sql(
                 'SELECT `created_at` FROM `guest` WHERE `id` = ?', [$guestId],
             )->field('created_at'));
         } finally {

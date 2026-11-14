@@ -33,13 +33,13 @@ class Writers
     public function named(): void
     {
         Sql::sql('UPDATE event SET at = :at, created_at = :created WHERE id = :id', [
-            'id' => 7, 'created' => Clock::getSqlDateTime(), 'at' => '2026-11-07 ' . '12:13:14',
+            'id' => 7, 'created' => date('Y-m-d H:i:s'), 'at' => '2026-11-07 ' . '12:13:14',
         ]);
     }
 
     public function alias(): void
     {
-        $when = Clock::getSqlDateTime();
+        $when = date('Y-m-d H:i:s');
         Sql::sql('UPDATE event SET at = ?', [(string)($when)]);
     }
 
@@ -96,7 +96,7 @@ class Writers
 
     public function positionalDatetime(): void
     {
-        Sql::sql('INSERT INTO event (at, created_at) VALUES (?, ?)', [Clock::getSqlDateTime(), '2026-11-07 12:13:14']);
+        Sql::sql('INSERT INTO event (at, created_at) VALUES (?, ?)', [date('Y-m-d H:i:s'), '2026-11-07 12:13:14']);
     }
 
     public function namedTimestamp(DateTimeInterface $date): void
@@ -157,7 +157,7 @@ class Writers
     public function upsertNamed(): void
     {
         Sql::sql('INSERT INTO event (id, at, created_at) VALUES (:id, :at, :created) ON DUPLICATE KEY UPDATE at = :changed, created_at = :created',
-            ['changed' => Clock::nowMs(), 'id' => time(), 'created' => Clock::getSqlDateTime(), 'at' => time()]);
+            ['changed' => Clock::nowMs(), 'id' => time(), 'created' => date('Y-m-d H:i:s'), 'at' => time()]);
     }
 
     public function upsertNamedArguments(): void

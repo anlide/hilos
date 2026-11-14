@@ -688,7 +688,7 @@ class Migration
         }
 
         $sanitizedName = preg_replace('/[^a-z0-9_-]/i', '_', $name);
-        $timestamp = TimeHelper::getSqlDateTime();
+        $timestamp = TimeHelper::getTimestampWithMs();
 
         $upFile = $migrationPath . '/' . $newIndex . '_up.sql';
         $downFile = $migrationPath . '/' . $newIndex . '_down.sql';

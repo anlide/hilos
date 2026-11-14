@@ -269,8 +269,7 @@ The shared normalizer preserves inherited moment semantics and refuses a
 framework-owned moment's removal or project storage exception, and rejects a
 project storage entry for any framework-owned moment. The framework extension
 guard reports invalid Entity declarations through its existing findings.
-The [transition table](../architecture/time-zones.md#transition-owners) still
-owns the migration map. The separate `MOMENT-WRITE` source guard rejects
+The separate `MOMENT-WRITE` source guard rejects
 second-based and SQL-datetime writes only at proven moment sinks; it does not
 infer arbitrary integer dataflow or claim to find every writer. The broad
 integer-family audit is not a physical moment check. See

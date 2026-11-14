@@ -142,13 +142,10 @@ counts and drops records, while raising a count or adding a record stays a
 person's hand-written decision. Full command and the `--user` caveat are in
 [code-style/automated-checks.md](code-style/automated-checks.md).
 
-Moment storage has a separate source guard and historical registry. The source
-check is `MomentStorageGuardTest`, run by `composer run test:framework:unit`;
-it scans the available framework and demo backend roots and reconciles exact
-findings against
-`framework/tests/CodeStyle/moment-storage-baseline.json`. That versioned JSON
-registry is independent of `baseline.txt`; `CODESTYLE_BASELINE_UPDATE=1` does
-not update it. Its exact tuple, ownership, coverage and payoff rules are in
+Moment storage has a separate source guard, `MomentStorageGuardTest`, run by
+`composer run test:framework:unit`. It scans the available framework and demo
+backend roots and requires zero `MOMENT-WRITE` findings, reporting each
+diagnostic. There is no moment storage registry or allowance; see
 [Moment Storage Checks](code-style/automated-checks.md#moment-storage-checks).
 
 Live schema checks are an opt-in integration door, separate from the unit

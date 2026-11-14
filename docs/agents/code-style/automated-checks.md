@@ -756,7 +756,7 @@ The detector reports `MOMENT-WRITE` only at a sink it can prove:
 
 At those sinks it rejects `time()`,
 `DateTimeInterface::getTimestamp()`, `date()` / `gmdate()` with a SQL datetime
-format, `TimeHelper::getSqlDateTime()`, and a SQL-datetime string literal. A
+format, and a SQL-datetime string literal. A
 direct SQL current-time expression or bare `UNIX_TIMESTAMP(...)` is also
 rejected. Parentheses, explicit casts, import aliases, fully qualified names,
 and split string literals do not make a bad value pass. One simple local alias
@@ -784,12 +784,12 @@ suppressions.
 ### Physical schema axes
 
 The pure `MomentStorageAudit::audit()` receives declared moment metadata and
-raw live `information_schema.COLUMNS` rows; it does not query a database or
-consult the debt registry. `EntitySchemaAxis` reports these physical axes:
+raw live `information_schema.COLUMNS` rows; it does not query a database.
+`EntitySchemaAxis` reports these physical axes:
 
 | Axis | Finding |
 |---|---|
-| `moment_column_missing` | A declared moment column is absent. This finding is never covered by the historical baseline. |
+| `moment_column_missing` | A declared moment column is absent. |
 | `moment_type` | A standard moment is not signed `BIGINT` epoch milliseconds. |
 | `moment_auto_write` | A standard moment has a SQL current-time `DEFAULT` or `ON UPDATE` writer. |
 
@@ -809,7 +809,7 @@ and checks all of its moments in tables that exist on the selected schema
 connection. An invalid declaration still fails even when a provider table is
 absent. The caller separately proves that required activated tables exist,
 using `FrameworkSchemaCatalog::selectedUnits()` where applicable. These opt-in
-methods do not make the existing `audit()` start reporting moment debt.
+methods do not make the existing `audit()` start reporting moment findings.
 
 The canonical framework integration pass audits framework Entities and
 providers. Each of the six existing demo integration owners also reports its
@@ -817,66 +817,10 @@ own/mounted Entity and configured-provider findings separately per schema;
 framework subjects are shared, not copied under each demo's name. A demo pass
 does not claim coverage of another schema or an inactive optional table.
 
-### Exact historical baseline and coverage
-
-`framework/tests/CodeStyle/moment-storage-baseline.json` is separate from
-`framework/tests/CodeStyle/baseline.txt` and its `CODESTYLE_BASELINE_UPDATE`
-mode. It is a one-time freeze of concrete historical findings at the approved
-code base, with no automatic growth. The registry has exactly `version: 1` and
-a `records` list. Each record has exactly `rule`, `subject`, `actual`, `count`,
-and `owner`; `count` is a positive integer and `owner` is one of HIL-1918 through
-HIL-1930. The only rules are `MOMENT-WRITE`, `MOMENT-TYPE`, and
-`MOMENT-AUTO-WRITE`.
-
-Subjects are compact canonical JSON tuple strings. A schema subject is
-`["schema", declaration, table, column]`; a source subject is
-`["source", repositoryPath, "FQN::method", schemaSubject]`, where the final
-member is itself the canonical schema-subject string. All tuple members,
-including numeric-looking names, remain strings. A finding key is the canonical
-JSON tuple `[rule, subject, actual]`, without whitespace and with slashes and
-Unicode unescaped. Schema `actual` is the normalized physical representation;
-source `actual` is the SHA-256 fingerprint of significant expression tokens,
-without comments, whitespace or line numbers. The diagnostic keeps a readable
-source fragment. Each source sink has its own subject. `count` covers identical
-occurrences for that exact key; replacing one with the same expression at the
-same subject and count is structurally indistinguishable to this detector.
-
-For example, a schema record has this shape:
-
-```json
-{
-  "rule": "MOMENT-AUTO-WRITE",
-  "subject": "[\"schema\",\"Demo\\\\Chat\\\\Database\\\\Entity\\\\Item\\\\Event\",\"event\",\"timestamp\"]",
-  "actual": "DEFAULT current_timestamp()",
-  "count": 1,
-  "owner": "HIL-1930"
-}
-```
-
-Malformed JSON or shape, wrong field types, extra or missing keys, duplicate
-records, an unknown version or rule, or an unapproved owner disables all
-allowances and fails the check. A new subject, changed finding, or count
-increase is not covered by old debt. A decrease or disappearance in a covered
-subject makes the old record stale and requires lowering its count or deleting
-it. Only the source migrations named by the records remove or reduce their own
-debt. Correct signed-millisecond
-columns do not receive records merely because a historical census listed them;
-the 133 columns in 72 tables describe that census, not the live registry size.
-
-Reconciliation pays debt off only inside explicit coverage. A successful full
-source pass covers current sinks and old source subjects beneath every fully
-scanned root, so removing a file, method, or last sink requires removing its
-record. The canonical framework live pass covers framework schema subjects;
-each demo pass covers only its checked schema domain and old subjects belonging
-to that domain. Unactivated tables and other databases do not pay debt off.
-Read, discovery, or scan failures are failures, never empty green domains.
-
-The shared
-[transition owners](../architecture/time-zones.md#transition-owners) remain the
-migration map, not a second baseline. Each source migration removes its own
-records and documentation markers with its behavior. Final shared bridge,
-transition-text and residual-debt cleanup follows all sources
-(not in the code yet — HIL-1931).
+The unit source guard and every live schema pass fail on any finding and
+report each diagnostic. There is no registry or allowance; an explicit project
+storage choice (`projectStorage`) is the only exemption from the standard
+storage checks for a project's own moments.
 
 ## Adding a rule
 

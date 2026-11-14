@@ -4,11 +4,9 @@ Read this before carrying, storing, interpreting or formatting a moment,
 selecting a time zone, or writing cron and retention boundaries.
 
 This holds the canonical time-zone rule of HIL-1528 and database storage norm
-of HIL-1915. Behavior still to be built ends with the literal marker naming the
-leaf that lands it. The existing code still carries mixed formats; the
-[storage transition owners](#transition-owners) and
-[wire migration table](#remaining-migration) name the work separately. A rule
-here is not a claim that those migrations have landed.
+of HIL-1915. The database storage migration is complete. The
+[wire migration table](#remaining-migration) remains for payload and screen
+work.
 
 ## Database Moment Storage
 
@@ -49,7 +47,7 @@ writers, readers, replication, payloads, exports and checks. The framework owes
 no adapter for that choice. Existing demos' old storage is migration work, not
 an opt-out.
 
-After a source migrates, its storage and replication path is numeric throughout:
+The storage and replication path is numeric throughout:
 
 ```text
 DB signed BIGINT (epoch ms) -> Entity int -> DB_SYNC number -> Entity int
@@ -57,56 +55,26 @@ DB signed BIGINT (epoch ms) -> Entity int -> DB_SYNC number -> Entity int
 
 This includes both `row` and `previous` in DB_SYNC. There is no SQL-string
 exception for DB_SYNC. Do not multiply an already-millisecond value by 1000 or
-round-trip it through SQL text. SQL/time bridges remain only for unmigrated
-sources. The general [wire norm](#a-moment-on-the-wire) still allows epoch-ms
-numbers or ISO UTC-Z strings; it does not relax this numeric replication path.
+round-trip it through SQL text. The general [wire norm](#a-moment-on-the-wire)
+still allows epoch-ms numbers or ISO UTC-Z strings; it does not relax this
+numeric replication path.
 This storage rule does not migrate RT rows, sidecars or snapshots, or change
 UTC startup, project/reader zones, cron or retention calendars.
 
-The published [moment-storage research](moment-storage.md) is the decision
-basis and full historical census. Its corrected inventory, dated 2026-11-04,
+Every historical source has migrated (HIL-1918–1930), and HIL-1931 removed the
+shared SQL-time helpers and debt registry; no transition debt remains. The
+HIL-1918 bootstrap pre-change boundary is the permanent counterpart of its
+immutable `DOWN`; see
+[Moment Storage Transitions](../orm/migrations.md#moment-storage-transitions).
+The historical census remains in [Moment Storage](moment-storage.md). Its live
+sources and schemas are checked by
+[Moment Storage Checks](../code-style/automated-checks.md#moment-storage-checks).
+
+The published [moment-storage research](moment-storage.md) remains the decision
+basis. Its corrected inventory, dated 2026-11-04,
 contains **133 moment columns in 72 physical tables**. Those counts describe
 that inventory, not a fixed number of live fields; new schemas follow the norm
 immediately.
-
-### Transition Owners
-
-Apply the norm to new changes now. Existing rows remain mixed while their named
-migrations are pending; an old source is not a pattern for a new moment. The
-source and live-schema checks are described in
-[Automated Rule Checks](../code-style/automated-checks.md#moment-storage-checks).
-The older broad integer-family schema audit alone does not prove physical
-signed `BIGINT` or milliseconds.
-
-| Work | Historical moments | Implementation owner and status |
-|---|---:|---|
-| Semantic moment metadata, inheritance/default and explicit project storage opt-out; [Entity and provider API](../orm/entity.md#persisted-moments). | — | Implemented |
-| Token-based direct-writer check, physical moment schema axes, and exact closed baseline of existing debt; [checks and coverage](../code-style/automated-checks.md#moment-storage-checks). | — | Implemented |
-| Bootstrap migration claim, admin-view latch and database marker | 3 | Implemented |
-| Sessions and verifier circle | 6 | Implemented |
-| Identity, OAuth provider and passkey | 7 | Implemented |
-| Verification, registration, step-up and auth blocks | 10 | Implemented |
-| Second factor, trust, reset and backup codes | 16 | Implemented |
-| Notifications, preferences, deliveries and push, including keyset anchors | 10 | Implemented |
-| People, access log, deletion, photo, rename and merge | 9 | Implemented |
-| Legal acceptances and both export queues; preserve the finished file's IANA-zone snapshot | 7 | Implemented |
-| Files and variants | 2 | Implemented |
-| Analytics: already milliseconds, change the sign; leave IDs, foreign keys and counters alone | 35 | Implemented |
-| Status: already milliseconds, change the sign; corrected census includes `hilos_status_incident_update.at`. A new signed-ms moment is not old unsigned debt. | 21 | Implemented |
-| Journal: database writers, triggers, stamps, receipts, numeric month boundaries, ordering, readers and restore | 4 | Implemented |
-| Project sources: `chat.event.timestamp` through its TypeScript readers, `polls.guest.created_at` and `tasks.guest.created_at` | 3 | Implemented |
-| Final removal of shared SQL-time bridges, common transition text and residual debt after every source moves | — | (not in the code yet — HIL-1931) |
-
-Each source migration closes its schema, Entity/Object/View, every writer and
-reader, queries, TTL arithmetic, anchors and tie-breakers, DB_SYNC `row` and
-`previous`, exports and its own tests. Follow the existing
-[migration delivery](../orm/migrations.md#moment-storage-transitions) for stubs,
-immutable changes, project pull and bootstrap sources.
-
-The leaf that lands behavior searches all of `docs/` for its key and clears
-only the markers made true, in the same commit, under
-[the marker rule](../rule-authoring.md#a-rule-written-ahead-of-its-code).
-HIL-1931 does not clear HIL-1918–1930's markers on their behalf.
 
 ## A Moment On The Wire
 
@@ -147,10 +115,9 @@ Each reads `hilosTimeZone` through Angular's `hilosSignal()` bridge, so an open
 view redraws its labels when the reader zone changes.
 
 The existing [TimeHelper](../../../framework/backend/Utils/Helpers/TimeHelper.php)
-already supplies `nowMs()` and `sqlToMs()` for the millisecond wire rule of
-HIL-486. Their presence does not mean every payload has been migrated. In
-particular, a conversion helper is not proof that all process and database
-defaults are already explicit UTC.
+supplies `nowMs()` for epoch milliseconds and `getTimestampWithMs()` for UTC-Z
+text with milliseconds. Their presence does not mean every payload has been
+migrated or prove that all process and database defaults are explicit UTC.
 
 ### Notification And Delivery Moments
 
@@ -871,8 +838,8 @@ value through directly as `lastActivity`. [HilosUserTableRow](../../../framework
 keeps the same `?int` wire value. The Hilos users list sorts and pages by the
 numeric moment, with the user id as the tie-breaker for equal timestamps; detail
 and merge-candidate rows carry the same moment, and missing activity remains
-null. The migration is listed as complete under
-[Transition Owners](#transition-owners).
+null. The migration is complete under
+[Database Moment Storage](#database-moment-storage).
 
 Core's typed [User](../../../framework/frontend/core/src/state/entity.ts) has
 `lastActivity: number | null` and `timeZone: string | null`. The list, detail
@@ -908,15 +875,15 @@ stores it through
 ## Remaining Migration
 
 The wire norm applies to new work; existing payloads and screens still need
-the migrations below. Each row names the leaf that removes that part of the
-mixed formats, not a prerequisite for reading or applying this rule.
+the migrations below. Each row names the leaf that completes that payload or
+screen migration, not a prerequisite for reading or applying this rule.
 
 | Surface | Migration owner and status |
 |---|---|
 | Sessions and devices | `HIL-1586` done: Chat/Polls session lists carry the stored `browserTimeZone` and UTC epoch-ms `createdAt`, `lastSeenAt` and nullable `expiresAt`; Chat device lists carry epoch-ms `createdAt` and nullable `goneAt`; framework passkey credentials carry epoch-ms `createdAt`. RT `connectedAt`, live tabs and self-connection payloads retain milliseconds. Profile dates and passkey subtitles delegate to `formatMoment()`; Vue and React mirror the reader-zone signal to refresh session dates while keeping open controls and show the stored browser zone beside the device. |
 | Notifications and deliveries | `HIL-1587` done: numeric wire moments in UTC epoch ms for notification created/snapshot signals and delivery table rows/anchors; Vue uses the reader zone. |
 | Logs | `HIL-1589` done: disk UTC `Z`; ISO UTC line strings; numeric wire moments in epoch ms; Vue uses the reader zone. |
-| Acceptances | `HIL-1591` done: numeric wire moments in UTC epoch ms for legal acceptances table browser rows; Vue uses the reader zone. The internal stored row is UTC epoch ms as well, migrated under [Transition Owners](#transition-owners). |
+| Acceptances | `HIL-1591` done: numeric wire moments in UTC epoch ms for legal acceptances table browser rows; Vue uses the reader zone. The internal stored row is UTC epoch ms as well, migrated under [Database Moment Storage](#database-moment-storage). |
 | React | `HIL-1594` done: the Profile Time zone row opens the picker immediately; previews load only while it is open, and the selection indicator follows the authoritative session echo. Session dates follow the reader zone while the stored browser zone remains descriptive and expanded tabs and confirmation dialogs stay open. The user detail shows the read-only account zone (exact, Automatic, or Hidden); activity moments in user detail, lists and merge candidates follow the reader zone. Reader-zone changes refresh notification-bell and Legal Accepted dates, delivery moments, Logs batch labels, undo deadlines and overview moments, Backup and Maintenance moments, and Cron run times. Cron expressions still use the project zone; the shared Daemon node head's Silent since follows its own reader subscription. Core-formatted strings are not reparsed, and durations and ETA are unchanged. Component tests and focused profile/Cron/accessibility e2e cover these paths. |
 | Angular | `HIL-1595` done: profile, session/device, notification, acceptance, Logs, Backup, Maintenance and Cron readers use shared presentation paths in the reader zone; Cron also shows the project zone and all seven Daemon silent-time readers follow the reader zone. No direct date-format bypass was found in the Angular SDK or the Polls and Online-testing Angular apps. |
 

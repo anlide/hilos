@@ -21,37 +21,37 @@ final class DataExportTimeTest extends TestCase
     private const int MOMENT_MS = 1790504130123;
 
     /**
-     * @param string $sqlDateTime Stored moment, its zone named so the process zone does not matter
+     * @param int $milliseconds Stored moment in epoch milliseconds
      * @param string $timeZone Zone of the file
      * @param string $iso Expected notation
      * @param string $date Expected calendar date for the file name
      */
     #[DataProvider('moments')]
-    public function testWritesTheMomentInTheZoneOfTheFile(string $sqlDateTime, string $timeZone, string $iso, string $date): void
+    public function testWritesTheMomentInTheZoneOfTheFile(int $milliseconds, string $timeZone, string $iso, string $date): void
     {
-        self::assertSame($iso, DataExportTime::iso($sqlDateTime, new DateTimeZone($timeZone)));
-        self::assertSame($date, DataExportTime::date($sqlDateTime, new DateTimeZone($timeZone)));
-        self::assertSame(strtotime($sqlDateTime), new DateTimeImmutable($iso)->getTimestamp());
+        self::assertSame($iso, DataExportTime::isoMs($milliseconds, new DateTimeZone($timeZone)));
+        self::assertSame($date, DataExportTime::dateMs($milliseconds, new DateTimeZone($timeZone)));
+        self::assertSame($milliseconds, self::epochMs($iso));
     }
 
     /**
-     * @return iterable<string, array{string, string, string, string}> Moments around midnight, offsets and a repeated hour
+     * @return iterable<string, array{int, string, string, string}> Moments around midnight, offsets and a repeated hour
      */
     public static function moments(): iterable
     {
-        yield 'utc keeps its offset' => ['2026-09-27 10:15:30 UTC', 'UTC', '2026-09-27T10:15:30+00:00', '2026-09-27'];
+        yield 'utc keeps its offset' => [1790504130000, 'UTC', '2026-09-27T10:15:30.000+00:00', '2026-09-27'];
         yield 'before midnight, positive offset moves to the next day' => [
-            '2026-03-14 23:30:00 UTC', 'Asia/Kathmandu', '2026-03-15T05:15:00+05:45', '2026-03-15',
+            1773531000000, 'Asia/Kathmandu', '2026-03-15T05:15:00.000+05:45', '2026-03-15',
         ];
-        yield 'before midnight in utc stays on its day' => ['2026-03-14 23:30:00 UTC', 'UTC', '2026-03-14T23:30:00+00:00', '2026-03-14'];
+        yield 'before midnight in utc stays on its day' => [1773531000000, 'UTC', '2026-03-14T23:30:00.000+00:00', '2026-03-14'];
         yield 'after midnight, negative offset moves to the previous day' => [
-            '2026-03-15 00:30:00 UTC', 'America/New_York', '2026-03-14T20:30:00-04:00', '2026-03-14',
+            1773534600000, 'America/New_York', '2026-03-14T20:30:00.000-04:00', '2026-03-14',
         ];
         yield 'first of the repeated hour in Warsaw' => [
-            '2026-10-25 00:30:00 UTC', 'Europe/Warsaw', '2026-10-25T02:30:00+02:00', '2026-10-25',
+            1792888200000, 'Europe/Warsaw', '2026-10-25T02:30:00.000+02:00', '2026-10-25',
         ];
         yield 'second of the repeated hour in Warsaw' => [
-            '2026-10-25 01:30:00 UTC', 'Europe/Warsaw', '2026-10-25T02:30:00+01:00', '2026-10-25',
+            1792891800000, 'Europe/Warsaw', '2026-10-25T02:30:00.000+01:00', '2026-10-25',
         ];
     }
 
@@ -80,12 +80,6 @@ final class DataExportTimeTest extends TestCase
         yield 'second of the repeated hour in Warsaw' => [1792891800000, 'Europe/Warsaw', '2026-10-25'];
         yield 'the last millisecond of a day in the zone of the file stays on that day' => [1773547199999, 'America/New_York', '2026-03-14'];
         yield 'one millisecond before 1970 is the last day of 1969' => [-1, 'UTC', '1969-12-31'];
-    }
-
-    /** An optional moment nobody recorded stays absent instead of becoming a date. */
-    public function testAbsentMomentStaysAbsent(): void
-    {
-        self::assertNull(DataExportTime::iso(null, new DateTimeZone('Asia/Kathmandu')));
     }
 
     /** Milliseconds survive exactly, and the notation reads back to the same epoch number. */

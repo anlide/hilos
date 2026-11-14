@@ -6,7 +6,7 @@ namespace MomentFixtures;
 
 use DateTimeImmutable;
 use DateTimeInterface;
-use Hilos\Utils\Helpers\TimeHelper as Clock;
+use function date;
 use MomentFixtures\EventEntity as Row;
 use function time as seconds;
 use function gmdate as utcDate;
@@ -64,14 +64,14 @@ class Bad
 
     public function helper(Row $entity): void
     {
-        $entity->at = Clock::getSqlDateTime();
-        $entity->created_at = \Hilos\Utils\Helpers\TimeHelper::getSqlDateTime();
+        $entity->at = date('Y-m-d H:i:s');
+        $entity->created_at = \date('Y-m-d H:i:s');
     }
 
     public function arrays(Row $entity): void
     {
         $entity[Row::at] = time();
-        $entity['created_at'] = Clock::getSqlDateTime();
+        $entity['created_at'] = date('Y-m-d H:i:s');
         Row::fromRow(['at' => time(), Row::created_at => '2026-11-07 12:13:14']);
     }
 
@@ -103,7 +103,7 @@ class Bad
 
     public function alias(Row $entity): void
     {
-        $now = Clock::getSqlDateTime();
+        $now = date('Y-m-d H:i:s');
         $entity->at = (string)($now);
         $entity->at = (string)($now);
     }

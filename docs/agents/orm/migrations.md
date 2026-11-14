@@ -227,7 +227,9 @@ and with no cleanup candidates. The existing physical snapshot recheck also
 rejects drift in staging, column auto-writers, triggers or visibility before
 the first destructive import.
 
-The rollout claim crosses that conversion boundary: before each write,
+The rollout claim is the permanent half of the immutable HIL-1918 pair: its
+`DOWN` restores `DATETIME`, and `migrateUp()` and `migrateDown()` take the claim
+before their own parts. It crosses that conversion boundary: before each write,
 `MigrationClaim` reads the physical type of `claimed_at` rather than retaining
 it across the migration. If a failed write observes that the type changed, it
 retries once using the newly observed type. Numeric reads are epoch
@@ -239,9 +241,8 @@ the immutable delivery and `introducesUnit` rules below still apply.
 
 A transition closes every writer and reader of its source, including replication,
 queries, exports and its own checks. Its leaf searches all of `docs/` for its
-key and removes the markers made true in the same commit. The
-[transition table](../architecture/time-zones.md#transition-owners) names the
-owners; final cleanup does not take over their marker removal.
+key and removes the markers made true in the same commit, following
+[A Rule Written Ahead Of Its Code](../rule-authoring.md#a-rule-written-ahead-of-its-code).
 
 ### Schema units and immutable changes
 
