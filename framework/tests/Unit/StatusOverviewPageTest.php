@@ -94,7 +94,7 @@ final class StatusOverviewPageTest extends StatusPageTestCase
 
     public function testSilencedFreezeNeverReadsIncidentFacts(): void
     {
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, 1700000000, 'restore');
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, 1700000000929, 'restore');
         $this->database->statusIncidents->unavailable = true;
         $this->initial('secret');
         $body = $this->drain()[0]->data->data->payload->data['status'];
@@ -102,7 +102,7 @@ final class StatusOverviewPageTest extends StatusPageTestCase
         self::assertNull($body['incidents']);
         self::assertNull($body['publishDelaySeconds']);
         self::assertFalse($body['healthKnown']);
-        self::assertSame(1700000000000, $body['maintenance']['startedAt']);
+        self::assertSame(1700000000929, $body['maintenance']['startedAt']);
     }
 
     public function testCatalogOmitsAnUnservedComponentsTab(): void

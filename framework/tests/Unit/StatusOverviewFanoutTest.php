@@ -154,12 +154,12 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
     public function testFreezeFreshnessNotificationsReadTheCurrentNodeLocalSingleton(): void
     {
         $this->subscribe('secret');
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_VERIFYING, 1700000000, ProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE);
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_VERIFYING, 1700000000929, ProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE);
         $this->browser->recordSourceStaleness(ProtectedModeRuntime::RT_ITEM, [ProtectedModeRuntime::ID]);
         $this->flush();
         $body = $this->whole('secret');
         self::assertSame(['phase' => 'verifying', 'operation' => 'manual_maintenance',
-            'startedAt' => 1700000000000, 'announcement' => null], $body['maintenance']);
+            'startedAt' => 1700000000929, 'announcement' => null], $body['maintenance']);
         self::assertSame(0, $body['components']['operationalCount']);
         self::assertNull(Hilos::$rt->hilosProtectedModeRuntime->staleSince(), 'Node-local singleton has no replicated stale copy');
         $this->runtime->phase(ProtectedModeRuntime::PHASE_INACTIVE);
@@ -223,7 +223,7 @@ final class StatusOverviewFanoutTest extends StatusPageTestCase
     public function testFreezeGuardRefusesAndThawLetsTheSameSubscriptionReceiveAgain(): void
     {
         $this->subscribe();
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, 1700000000, 'restore');
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, 1700000000929, 'restore');
         $this->factsForFlush();
         $this->flush();
         self::assertSame([], $this->drain());

@@ -104,8 +104,9 @@ legacy sidecar values keep the same instant when normalized. An invalid or
 zone-less sidecar moment makes the
 [scanner](../../../framework/backend/Backup/BackupHistoryScanner.php) report
 `BROKEN_SIDECAR` and skip the record; reading does not rewrite the file. The
-maintenance page projects its `startedAt` as UTC-Z while protected-mode runtime
-state remains epoch seconds. Durations, progress and ETA remain separate values.
+maintenance page projects the runtime's epoch-millisecond `startedAt` as UTC-Z;
+the runtime's `activatedAt` and `progressAt` remain epoch seconds. Durations,
+progress and ETA remain separate values.
 
 The Angular [backup page](../../../framework/frontend/angular/src/admin/backup/HilosBackupPage.ts)
 and [maintenance page](../../../framework/frontend/angular/src/admin/maintenance/HilosMaintenancePage.ts)

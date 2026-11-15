@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Status\DTO;
 
 use Hilos\AdminViewMode\WireField;
-use Hilos\Constants\TimeConstants;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionNotFullyLoadedException;
@@ -156,8 +155,7 @@ final readonly class StatusOverviewData
             $known, $operational, count($snapshot->components), $delay,
             $maintenance ? Hilos::$rt->hilosProtectedModeRuntime->phase : null,
             $maintenance ? Hilos::$rt->hilosProtectedModeRuntime->operation : null,
-            $maintenance && Hilos::$rt->hilosProtectedModeRuntime->startedAt !== null
-                ? Hilos::$rt->hilosProtectedModeRuntime->startedAt * TimeConstants::MS_PER_SECOND : null,
+            $maintenance ? Hilos::$rt->hilosProtectedModeRuntime->startedAt : null,
             $incidents,
             StatusSubscriberCountsData::read(),
             StatusWorksData::read(),

@@ -27,7 +27,7 @@ final class UtcMoment
     }
 
     /**
-     * Formats an integer moment for human-readable CLI and log text.
+     * Formats an epoch-millisecond moment as canonical UTC-Z text.
      *
      * @param int $milliseconds Unix epoch milliseconds, negative before 1970
      * @return string ISO-8601 UTC instant with six fractional digits and Z

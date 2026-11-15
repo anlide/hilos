@@ -574,7 +574,7 @@ final class ClusterProtectedModeTest extends TestCase
             $watchdog->attachEventLoop($loop, static fn (): bool => true,
                 static function (ProtectedModeWatchdogSnapshot $snapshot) use (&$snapshots): void { $snapshots[] = $snapshot; });
             try {
-                $epoch = Hilos::$rt->hilosProtectedModeRuntime->startedAt;
+                $epoch = intdiv(Hilos::$rt->hilosProtectedModeRuntime->startedAt, TimeConstants::MS_PER_SECOND);
                 $mono = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
                 $watchdog->dispatchReady((float)$epoch, $mono);
                 $watchdog->noteChanged();

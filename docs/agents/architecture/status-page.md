@@ -204,9 +204,9 @@ Update = {
 
 Nullable keys are present. `incidents: []` means no open facts are known;
 `incidents: null` means their DB source is unavailable. All moments are epoch
-milliseconds UTC, including `maintenance.startedAt`, which converts the
-existing protected-mode seconds once when the DTO is built. Incidents follow
-component declaration order; each update timeline is newest first by `(at, id)`.
+milliseconds UTC, including `maintenance.startedAt`, which the DTO reads as the
+protected-mode runtime stores it. Incidents follow component declaration order;
+each update timeline is newest first by `(at, id)`.
 `operationalCount` counts only components whose state is strictly
 `operational`. Unknown counts or facts never become healthy or zero, and
 maintenance takes display priority while available incident cards remain
@@ -982,14 +982,14 @@ schedule clock never starts or ends protected mode.
 
 Actual maintenance begins and ends only with the existing protected-mode
 runtime. The Status owner reads that unconditional runtime; a missing or stale
-row is unknown and cannot complete an observation. It converts the runtime's
-`startedAt` seconds to epoch milliseconds once. One occupied interval remains
+row is unknown and cannot complete an observation. It reads the runtime's
+`startedAt`, the master's epoch-millisecond stamp. One occupied interval remains
 one period across operation, phase, node or projected start changes. A clean,
 coherent public announcement snapshot can classify the actual start only when
 the most recent inactive observation proves that it predates the freeze.
-Because protected-mode `startedAt` is recorded in seconds, the proof can include
-a snapshot from that same second. Cold, dirty, building, torn, missing or
-otherwise unknown source data fails closed. After the first observation, the
+The freeze row reaches the owner's worker after the master stamps it, so the
+proof accepts an inactive observation up to one second after that stamp. Cold,
+dirty, building, torn, missing or otherwise unknown source data fails closed. After the first observation, the
 sanitized title and identity are retained. An expired window alone never ends
 actual maintenance. When an announcement is consumed, its `publicId` links the
 period; restore never matches a work by its old integer id.

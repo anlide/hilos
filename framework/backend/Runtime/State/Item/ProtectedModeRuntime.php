@@ -293,7 +293,7 @@ final class ProtectedModeRuntime extends RtState
         }
     }
 
-    /** Epoch seconds when the leader began activating, or null when inactive. */
+    /** Epoch milliseconds when the leader began activating, or null when inactive. */
     public ?int $startedAt {
         get => $this->rowValues()[self::startedAt] ?? self::FIELD_DEFAULTS[self::startedAt];
         set {

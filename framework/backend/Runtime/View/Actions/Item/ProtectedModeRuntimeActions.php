@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Runtime\View\Actions\Item;
 
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
+use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
@@ -17,6 +18,7 @@ use Hilos\Runtime\View\Item\ProtectedModeRuntime as ViewProtectedModeRuntime;
 use Hilos\HilosException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Runtime\Exception\RtWriteBackpressureException;
+use Hilos\Utils\Helpers\TimeHelper;
 
 /**
  * Write operations for the protected-mode runtime singleton.
@@ -168,7 +170,7 @@ final class ProtectedModeRuntimeActions extends RtActions
             StateProtectedModeRuntime::circleSessionTokenHashes => $snapshot->circleSessionTokenHashes,
         ];
         if ($this->state->freezeId !== $freeze->freezeId) {
-            $diff[StateProtectedModeRuntime::startedAt] = time();
+            $diff[StateProtectedModeRuntime::startedAt] = TimeHelper::nowMs();
             $diff[StateProtectedModeRuntime::activatedAt] = null;
             $diff[StateProtectedModeRuntime::progressAt] = null;
         }
@@ -301,7 +303,7 @@ final class ProtectedModeRuntimeActions extends RtActions
             StateProtectedModeRuntime::initiatorAgentType => $freeze->initiatorAgentType,
             StateProtectedModeRuntime::initiatorAgentIndex => $freeze->initiatorAgentIndex,
             StateProtectedModeRuntime::initiatorNodeId => $freeze->initiatorNodeId,
-            StateProtectedModeRuntime::startedAt => time(),
+            StateProtectedModeRuntime::startedAt => TimeHelper::nowMs(),
             StateProtectedModeRuntime::activatedAt => null,
             StateProtectedModeRuntime::progressAt => null,
             StateProtectedModeRuntime::passHashes => [],
@@ -330,7 +332,7 @@ final class ProtectedModeRuntimeActions extends RtActions
     ): void {
         $this->ensureCanWrite();
 
-        $now = time();
+        $nowMs = TimeHelper::nowMs();
         $this->applyDiffWithSync([
             StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_VERIFYING,
             StateProtectedModeRuntime::entryMode => StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW,
@@ -342,9 +344,9 @@ final class ProtectedModeRuntimeActions extends RtActions
             StateProtectedModeRuntime::initiatorAgentType => $freeze->initiatorAgentType,
             StateProtectedModeRuntime::initiatorAgentIndex => $freeze->initiatorAgentIndex,
             StateProtectedModeRuntime::initiatorNodeId => $freeze->initiatorNodeId,
-            StateProtectedModeRuntime::startedAt => $now,
+            StateProtectedModeRuntime::startedAt => $nowMs,
             StateProtectedModeRuntime::activatedAt => null,
-            StateProtectedModeRuntime::progressAt => $now,
+            StateProtectedModeRuntime::progressAt => intdiv($nowMs, TimeConstants::MS_PER_SECOND),
             StateProtectedModeRuntime::passHashes => [],
             StateProtectedModeRuntime::admittedSessionTokenHashes => [],
             StateProtectedModeRuntime::circleSessionTokenHashes => [],

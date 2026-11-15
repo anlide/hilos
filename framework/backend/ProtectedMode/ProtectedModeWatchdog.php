@@ -353,7 +353,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
         $this->reported = $verdict;
         $this->alarmRaisedAt ??= $now;
         $this->alarmOperation = $view->operation;
-        $this->alarmFrozenSince = $view->startedAt ?? $this->freezeSeenAt;
+        $this->alarmFrozenSince = self::startedSeconds($view) ?? $this->freezeSeenAt;
         $this->alertedAt = $now;
         $this->reminderDeadline = $monotonicNow + ($now + $this->alertIntervalSeconds() - $wallNow);
 
@@ -554,7 +554,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
      */
     private function lastSignOfLife(ProtectedModeRuntime $view): int
     {
-        return max($this->freezeSeenAt, $view->progressAt ?? $view->activatedAt ?? $view->startedAt ?? 0);
+        return max($this->freezeSeenAt, $view->progressAt ?? $view->activatedAt ?? self::startedSeconds($view) ?? 0);
     }
 
     /**
@@ -731,7 +731,7 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
      */
     private function stuckParams(ProtectedModeRuntime $view, string $problem, int $now, bool $still): array
     {
-        $frozenSince = $view->startedAt ?? $this->freezeSeenAt;
+        $frozenSince = self::startedSeconds($view) ?? $this->freezeSeenAt;
         $node = self::nodeIdentity();
 
         return [
@@ -970,6 +970,20 @@ final class ProtectedModeWatchdog implements ProtectedModeAgentStopSink, Protect
 
             return $fallbackSeconds;
         }
+    }
+
+    /**
+     * The moment the freeze began, on the watchdog's clock.
+     *
+     * The row stamps the start in epoch milliseconds, while the watchdog and the other moments
+     * of the row count epoch seconds.
+     *
+     * @param ProtectedModeRuntime $view Freeze row this node carries
+     * @return ?int Epoch seconds the freeze began, or null when the row has no start
+     */
+    private static function startedSeconds(ProtectedModeRuntime $view): ?int
+    {
+        return $view->startedAt === null ? null : intdiv($view->startedAt, TimeConstants::MS_PER_SECOND);
     }
 
     /**

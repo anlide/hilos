@@ -35,6 +35,7 @@ use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -202,7 +203,7 @@ final class DaemonManagerProtectedModeWatchdogTest extends TestCase
             ProtectedModeRuntime::phase => ProtectedModeRuntime::PHASE_ACTIVE,
             ProtectedModeRuntime::operation => 'restore',
             ProtectedModeRuntime::initiatorAgentType => 'hilos_backup',
-            ProtectedModeRuntime::startedAt => time(),
+            ProtectedModeRuntime::startedAt => TimeHelper::nowMs(),
         ]));
         $router->updates = [];
         new ReflectionProperty(DaemonManager::class, 'protectedModeWatchdog')->getValue($manager)->markRestoredFromDisk();

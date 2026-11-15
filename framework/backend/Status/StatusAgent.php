@@ -2107,16 +2107,15 @@ final class StatusAgent extends AbstractHilosAgent
             }
             if ($occupied === true) {
                 if ($this->maintenanceObservation === null) {
-                    // Protected-mode startedAt is seconds; this is its sole conversion boundary.
-                    $startKnown = $freeze->startedAt !== null && $freeze->startedAt > 0
-                        && $freeze->startedAt <= intdiv($nowMs, TimeConstants::MS_PER_SECOND);
-                    $startedAt = $startKnown ? $freeze->startedAt * TimeConstants::MS_PER_SECOND : $nowMs;
+                    // Protected-mode startedAt is the master's epoch-millisecond stamp.
+                    $startKnown = $freeze->startedAt !== null && $freeze->startedAt > 0 && $freeze->startedAt <= $nowMs;
+                    $startedAt = $startKnown ? $freeze->startedAt : $nowMs;
                     $snapshot = $this->publicFiles->getSnapshot();
                     $known = $this->maintenanceContinuous && $startKnown && $snapshot !== null && $this->publicSourceAvailable
                         && !$this->publicInvalidated && !$this->publicNeedsBuild && !$this->publicFiles->isPublishing()
                         && !$this->publicBuilder->isBuilding()
                         && $snapshot->sourceSchemaVersion === StatusPublicSnapshot::SCHEMA_VERSION
-                        // Inactive proves publication preceded freeze even within its truncated start second.
+                        // The freeze row reaches this worker after the master's stamp; one second covers that delivery.
                         && $this->maintenanceInactiveAt !== null && $snapshot->generatedAt <= $this->maintenanceInactiveAt
                         && $startedAt > $this->maintenanceInactiveAt - TimeConstants::MS_PER_SECOND;
                     $work = null;

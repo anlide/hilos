@@ -1336,7 +1336,7 @@ final class ProtectedModeWatchdogTest extends TestCase
             StateProtectedModeRuntime::initiatorAgentType => self::INITIATOR_TYPE,
             StateProtectedModeRuntime::initiatorAgentIndex => self::INITIATOR_INDEX,
             StateProtectedModeRuntime::initiatorNodeId => 'node-a',
-            StateProtectedModeRuntime::startedAt => $startedAt,
+            StateProtectedModeRuntime::startedAt => $startedAt * TimeConstants::MS_PER_SECOND,
             StateProtectedModeRuntime::activatedAt => $activatedAt,
             StateProtectedModeRuntime::progressAt => $progressAt,
             StateProtectedModeRuntime::passHashes => [],

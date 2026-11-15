@@ -32,7 +32,7 @@ use Hilos\HilosException;
  * @property-read ?string $initiatorAgentType Agent type of the initiator agent; null when inactive
  * @property-read ?int $initiatorAgentIndex Agent index of the initiator agent; null when inactive
  * @property-read ?string $initiatorNodeId Node hosting the initiator agent; null when inactive
- * @property-read ?int $startedAt Epoch seconds the freeze began; null when inactive
+ * @property-read ?int $startedAt Epoch milliseconds the freeze began; null when inactive
  * @property-read ?int $activatedAt Epoch seconds the freeze reached active; null before it does
  * @property-read ?int $progressAt Epoch seconds of the last progress mark behind the freeze; null when none
  * @property-read list<string> $passHashes Hashes of the passes minted for the verification; empty otherwise

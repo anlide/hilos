@@ -159,10 +159,10 @@ final class StatusOverviewProjectionTest extends StatusReadTestCase
         $this->observe('zeta', 2);
         $this->observe('alpha', 2);
         $this->incident(3, 'zeta', 1700000000050);
-        $this->runtime->phase($phase, 1700000000, ProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE);
+        $this->runtime->phase($phase, 1700000000929, ProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE);
         $overview = StatusOverviewData::read()->toArray();
         self::assertSame(['phase' => $phase, 'operation' => 'manual_maintenance',
-            'startedAt' => 1700000000000, 'announcement' => null], $overview['maintenance']);
+            'startedAt' => 1700000000929, 'announcement' => null], $overview['maintenance']);
         self::assertSame(0, $overview['components']['operationalCount']);
         self::assertSame(!$silenced, $overview['healthKnown']);
         self::assertSame($silenced ? 0 : 1, $this->database->statusIncidents->reads);

@@ -153,7 +153,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
 
     public function testColdResetRefusalAfterOwnerStopStillReleasesTheEnvironment(): void
     {
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->releaseOwner();
         putenv(EnvConstants::APP_ENV->name . '=prod');
         $this->expectException(OrmForgetRefusedException::class);
@@ -166,7 +166,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             'Upgrade', 'Public description', $this->now, $this->now + 2000, $this->now - 2000, ['service'],
         ));
         $this->settle($this->now - 1000);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVATING, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVATING, $this->now);
         $this->owner->tickAt($this->now + 100);
         $current = Hilos::$rt->hilosStatusMaintenance['current'];
         self::assertTrue($current->available);
@@ -182,7 +182,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
         try {
             foreach ([ProtectedModeRuntime::PHASE_ACTIVE, ProtectedModeRuntime::PHASE_VERIFYING,
                 ProtectedModeRuntime::PHASE_DEACTIVATING] as $index => $phase) {
-                $this->runtime->phase($phase, intdiv($this->now, 1000) + $index + 1);
+                $this->runtime->phase($phase, $this->now + ($index + 1) * TimeConstants::MS_PER_SECOND);
                 $this->settle($this->now + 3000 + $index * 1000);
                 self::assertTrue($current->active);
                 self::assertSame($id, $current->periodId);
@@ -226,7 +226,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
         $this->settle($this->now + 100);
         self::assertGreaterThanOrEqual($this->now + 100, (new StatusPublicFiles())->restore()->generatedAt);
         $this->owner->tickAt($this->now + 200);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $database = Hilos::$db;
         $settings = Hilos::$setting;
         Hilos::$db = null;
@@ -298,7 +298,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             ));
         }
         $this->owner->reconcileMaintenanceBeforeWrite($this->now + 200);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $files = new ReflectionProperty(StatusAgent::class, 'publicFiles')->getValue($this->owner);
         $snapshot = new StatusPublicSnapshot('after-inactive', $this->now + 250, 30, 120, [], [], []);
         if ($source === 'publishing' || $source === 'late') {
@@ -316,7 +316,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             $this->owner->tickAt($this->now + 250);
             $this->runtime->sourceUnavailable = false;
         }
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->owner->tickAt($this->now + 300);
         self::assertFalse(Hilos::$rt->hilosStatusMaintenance['current']->announcementKnown);
         self::assertNull(Hilos::$rt->hilosStatusMaintenance['current']->workPublicId);
@@ -354,7 +354,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             'SELECT id FROM hilos_status_work_component WHERE work_id = ? AND component_key = ?', [$work->id, 'web'],
         )->rows()[0]['id']);
         $this->settle($this->now - 1000);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->settle($this->now);
         $store = new StatusMaintenanceObservationStore();
         $id = Hilos::$rt->hilosStatusMaintenance['current']->periodId;
@@ -469,7 +469,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
         $data['scheduledWorks'][0]['componentKeys'] = ['web', 'api'];
         FsPath::write(Hilos::$fs->status['status.json']->getPath(), json_encode($data, JSON_THROW_ON_ERROR));
         $this->releaseOwner();
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->startOwner();
         $this->settle($this->now);
         self::assertSame($active->period->id, Hilos::$rt->hilosStatusMaintenance['current']->periodId);
@@ -494,7 +494,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             'Current title', 'Current description', $this->now, $this->now + 5000, $this->now - 2000, ['service'],
         ));
         $this->settle($this->now - 1000);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->settle($this->now);
         self::assertSame($work->publicId, Hilos::$rt->hilosStatusMaintenance['current']->workPublicId);
         $store = new StatusMaintenanceObservationStore();
@@ -550,14 +550,14 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
     public function testRestartAndMissingRuntimeNeverInventAnExactEndOrAnotherPeriod(): void
     {
         $this->settle($this->now - 1000);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->settle($this->now);
         $id = Hilos::$rt->hilosStatusMaintenance['current']->periodId;
         self::assertTrue(Hilos::$rt->hilosStatusMaintenance['current']->announcementKnown);
         self::assertNull(Hilos::$rt->hilosStatusMaintenance['current']->workPublicId);
         $this->releaseOwner();
         $this->startOwner();
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_VERIFYING, intdiv($this->now, 1000) + 50);
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_VERIFYING, $this->now + 50000);
         $this->settle($this->now + 50000);
         self::assertSame($id, Hilos::$rt->hilosStatusMaintenance['current']->periodId);
         $this->runtime->sourceUnavailable = true;
@@ -588,7 +588,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
     public function testColdBusyOwnerHasUnknownAnnouncementWithoutDbSettingsOrMail(string $phase): void
     {
         $this->releaseOwner();
-        $this->runtime->phase($phase, intdiv($this->now, 1000));
+        $this->runtime->phase($phase, $this->now);
         $database = Hilos::$db;
         $settings = Hilos::$setting;
         Hilos::$db = null;
@@ -609,7 +609,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             self::assertFalse(Hilos::$rt->hilosStatusMaintenance['current']->available);
             self::assertTrue(Hilos::$rt->hilosStatusMaintenance['current']->active);
             $this->runtime->sourceUnavailable = false;
-            $this->runtime->phase($phase, intdiv($this->now, 1000) + 50, 'other-node', 'other-operation');
+            $this->runtime->phase($phase, $this->now + 50000, 'other-node', 'other-operation');
             $this->settle($this->now + 60000);
             self::assertSame($id, Hilos::$rt->hilosStatusMaintenance['current']->periodId);
             self::assertTrue(Hilos::$rt->hilosStatusMaintenance['current']->available);
@@ -625,7 +625,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
     {
         $this->settle($this->now - 1000);
         FsPath::write($this->transitPath(), 'A file obstructs the private directory.');
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->settle($this->now);
         self::assertTrue(Hilos::$rt->hilosStatusMaintenance['current']->active);
         $before = $this->heartbeatAt();
@@ -643,7 +643,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
     public function testABusyNodeWritesRuntimeOnlyWithItsSavedObservation(): void
     {
         $this->settle($this->now - 1000);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->settle($this->now);
         $current = Hilos::$rt->hilosStatusMaintenance['current'];
         $interval = (new StatusPublicFiles())->getHeartbeatIntervalMs();
@@ -678,7 +678,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             'schemaVersion' => 4, 'revision' => 'different', 'aliveAt' => $this->now,
         ], JSON_THROW_ON_ERROR));
         $this->releaseOwner();
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->startOwner();
         $this->settle($this->now);
         self::assertFalse(Hilos::$rt->hilosStatusMaintenance['current']->announcementKnown);
@@ -713,13 +713,13 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
         $database = Hilos::$db;
         Hilos::$db = null;
         try {
-            $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+            $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
             $this->settle($this->now);
             $firstId = Hilos::$rt->hilosStatusMaintenance['current']->periodId;
             $this->runtime->phase(ProtectedModeRuntime::PHASE_INACTIVE);
             $this->settle($this->now + 1000);
             self::assertFalse(Hilos::$rt->hilosStatusMaintenance['current']->active);
-            $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000) + 2);
+            $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now + 2000);
             $this->settle($this->now + 2000);
             $secondId = Hilos::$rt->hilosStatusMaintenance['current']->periodId;
             self::assertNotSame($firstId, $secondId);
@@ -744,7 +744,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             $this->startOwner();
             $this->settle($this->now - 1000);
             self::assertSame([], (new StatusPublicFiles())->restore()->scheduledWorks);
-            $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+            $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
             $this->settle($this->now);
             self::assertTrue(Hilos::$rt->hilosStatusMaintenance['current']->active);
             self::assertFalse(Hilos::$rt->hilosStatusMaintenance['current']->announcementKnown);
@@ -796,7 +796,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             'Original', null, $this->now, $this->now + 10000, $this->now - 2000, ['service'],
         ));
         $this->settle($this->now - 1000);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->settle($this->now);
         $publicId = $work->publicId;
         $this->releaseOwner();
@@ -842,7 +842,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             new StatusPublicComponent('service', 'Service', null, StatusComponentState::MAINTENANCE, $this->now - 60000),
         ], [], [], [], [$active->period, $completed->period]);
         $this->publish($snapshot);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->releaseOwner();
         $this->startOwner();
         $this->settle($this->now);
@@ -888,13 +888,41 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             'Upgrade', null, $this->now, $this->now + 10000, $this->now - 2000, ['service'],
         ));
         $this->settle($this->now - 1000);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->owner->applyPicturePortion(new DaemonClusterPicturePortionSignalData(true, []), $this->now + 50);
         $this->owner->tickAt($this->now + 100);
         $current = Hilos::$rt->hilosStatusMaintenance['current'];
         self::assertTrue($current->announcementKnown);
         self::assertSame($work->publicId, $current->workPublicId);
         self::assertSame($this->now, $current->startedAt);
+    }
+
+    /** @return iterable<string, array{int, bool}> Last inactive tick after a freeze stamped at .929 of its second */
+    public static function lateInactiveTicks(): iterable
+    {
+        yield 'next second' => [1050, true];
+        yield 'last millisecond of the window' => [1928, true];
+        yield 'exactly one second after the stamp' => [1929, false];
+    }
+
+    /**
+     * @param int $inactiveAt Last inactive tick, milliseconds after the aligned second
+     * @param bool $known Whether the freeze row still proves the announcement
+     */
+    #[DataProvider('lateInactiveTicks')]
+    public function testAFreezeStampedLateInItsSecondKeepsItsAnnouncement(int $inactiveAt, bool $known): void
+    {
+        $work = Database::transaction(DatabaseNames::PRIMARY, fn() => Hilos::$db->statusWorks->actions->create(
+            'Upgrade', null, $this->now, $this->now + 10000, $this->now - 2000, ['service'],
+        ));
+        $this->settle($this->now + $inactiveAt - 100);
+        $this->owner->tickAt($this->now + $inactiveAt);
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now + 929);
+        $this->owner->tickAt($this->now + $inactiveAt + 50);
+        $current = Hilos::$rt->hilosStatusMaintenance['current'];
+        self::assertSame($known, $current->announcementKnown);
+        self::assertSame($known ? $work->publicId : null, $current->workPublicId);
+        self::assertSame($this->now + 929, $current->startedAt);
     }
 
     /** @return iterable<string, array{string}> Public refusals that can precede the first occupied tick */
@@ -915,7 +943,7 @@ final class StatusMaintenancePeriodsIntegrationTest extends FrameworkIntegration
             'Upgrade', null, $this->now, $this->now + 10000, $this->now - 2000, ['service'],
         ));
         $this->settle($this->now - 1000);
-        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, intdiv($this->now, 1000));
+        $this->runtime->phase(ProtectedModeRuntime::PHASE_ACTIVE, $this->now);
         $this->queuedFrames();
         $before = Hilos::$rt->hilosStatusMaintenance['current']->toArray();
 
@@ -1135,7 +1163,7 @@ final class StatusMaintenanceLifecycleRuntime extends RtContext
 
     /**
      * @param string $phase Unconditional freeze phase
-     * @param ?int $startedAt Existing protected-mode seconds boundary
+     * @param ?int $startedAt Protected-mode start in epoch milliseconds
      * @param ?string $nodeId Changed node identity must not split a continuous observation
      * @param ?string $operation Changed operation must not split a continuous observation
      */

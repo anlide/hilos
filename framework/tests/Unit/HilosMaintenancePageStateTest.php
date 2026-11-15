@@ -171,7 +171,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         $row->entryMode = StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW;
         $row->operation = StateProtectedModeRuntime::OPERATION_MANUAL_MAINTENANCE;
         $row->initiatorAcceptKey = self::ACCEPT_KEY;
-        $row->startedAt = self::STARTED_AT;
+        $row->startedAt = self::STARTED_AT * 1000 + 929;
         $row->enteredFromBrowser = true;
         $row->passHashes = ['a', 'b'];
         $row->circleNamedCount = 3;
@@ -181,7 +181,7 @@ final class HilosMaintenancePageStateTest extends TestCase
         $manual = $this->payload(Hilos::$sr?->getNextQueuedSignal());
         $this->assertTrue($manual[HilosMaintenanceStateSignalData::manual]);
         $this->assertSame('manual_maintenance', $manual[HilosMaintenanceStateSignalData::operation]);
-        $this->assertSame('2023-11-14T22:13:20.000000Z', $manual[HilosMaintenanceStateSignalData::startedAt]);
+        $this->assertSame('2023-11-14T22:13:20.929000Z', $manual[HilosMaintenanceStateSignalData::startedAt]);
         $this->assertTrue($manual[HilosMaintenanceStateSignalData::enteredFromBrowser]);
         $this->assertSame(2, $manual[HilosMaintenanceStateSignalData::passCount]);
         $this->assertSame(3, $manual[HilosMaintenanceStateSignalData::circleNamed]);
@@ -305,7 +305,7 @@ final class HilosMaintenancePageStateTest extends TestCase
     public function testNewRowsKeepUtcNullAndEmptyListAndOmitSecrets(): void
     {
         $row = $this->mountRestore();
-        $row->startedAt = self::STARTED_AT;
+        $row->startedAt = self::STARTED_AT * 1000 + 929;
         $row->activatedAt = self::ACTIVATED_AT;
         $row->progressAt = self::PROGRESS_AT;
         $row->initiatorAgentType = 'hilos_backup';
@@ -324,7 +324,7 @@ final class HilosMaintenancePageStateTest extends TestCase
 
         $this->assertSame('hilos_backup', $wire[HilosMaintenanceStateSignalData::initiatorAgentType]);
         $this->assertSame('node-1', $wire[HilosMaintenanceStateSignalData::initiatorNodeId]);
-        $this->assertSame('2023-11-14T22:13:20.000000Z', $wire[HilosMaintenanceStateSignalData::startedAt]);
+        $this->assertSame('2023-11-14T22:13:20.929000Z', $wire[HilosMaintenanceStateSignalData::startedAt]);
         $this->assertSame('2023-11-14T22:15:00.000000Z', $wire[HilosMaintenanceStateSignalData::activatedAt]);
         $this->assertSame('2023-11-14T22:16:40.000000Z', $wire[HilosMaintenanceStateSignalData::progressAt]);
         $this->assertFalse($wire[HilosMaintenanceStateSignalData::isInitiator]);

@@ -213,7 +213,7 @@ final class StatusProjectionRuntime extends RtContext
 
     /**
      * @param string $phase Protected-mode phase
-     * @param ?int $startedAt Start epoch seconds UTC
+     * @param ?int $startedAt Start epoch milliseconds UTC
      * @param ?string $operation Protected operation
      */
     public function phase(string $phase, ?int $startedAt = null, ?string $operation = null): void

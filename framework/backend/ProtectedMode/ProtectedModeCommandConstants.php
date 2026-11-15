@@ -91,7 +91,7 @@ final class ProtectedModeCommandConstants
     /** @var string Snapshot key: node id hosting the initiator, or null off-cluster */
     public const string FIELD_INITIATOR_NODE_ID = 'initiatorNodeId';
 
-    /** @var string Snapshot key: epoch seconds the freeze began activating at, or null */
+    /** @var string Snapshot key: epoch milliseconds the freeze began activating at, or null */
     public const string FIELD_STARTED_AT = 'startedAt';
 
     /** @var string Snapshot key: epoch seconds the freeze reached active at, or null */

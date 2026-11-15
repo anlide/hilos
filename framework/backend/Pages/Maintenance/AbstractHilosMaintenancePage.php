@@ -261,7 +261,7 @@ abstract class AbstractHilosMaintenancePage extends AbstractHilosPage
             phase: $row->phase,
             operation: $row->operation,
             manual: $row->isManualMaintenanceWindow(),
-            startedAt: self::formatEpoch($row->startedAt),
+            startedAt: $row->startedAt === null ? null : UtcMoment::fromMs($row->startedAt),
             enteredFromBrowser: $row->enteredFromBrowser,
             passCount: count($row->passHashes),
             circleNamed: $row->circleNamedCount,

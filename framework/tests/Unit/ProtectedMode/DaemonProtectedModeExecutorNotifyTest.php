@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\ProtectedMode;
 
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\TimeConstants;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\ProtectedMode\DTO\ProtectedModeQuiesceData;
@@ -205,7 +206,7 @@ final class DaemonProtectedModeExecutorNotifyTest extends TestCase
         $this->assertSame(StateProtectedModeRuntime::ENTRY_MODE_VERIFICATION_WINDOW, $view?->entryMode);
         $this->assertNull($view?->activatedAt);
         $this->assertNotNull($view?->startedAt);
-        $this->assertSame($view?->startedAt, $view?->progressAt);
+        $this->assertSame(intdiv($view->startedAt, TimeConstants::MS_PER_SECOND), $view->progressAt);
         $this->assertSame([], $this->notifier->lockedOutFrames);
         $this->assertSame([], $this->notifier->sessionFrames);
         $this->assertFalse($view?->silencesUnstoppedWriters());
