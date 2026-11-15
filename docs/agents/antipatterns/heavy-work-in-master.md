@@ -120,7 +120,11 @@ that needs no I/O — a random token — and let the worker persist and verify i
   `USE_LOCAL_CLIENT_CALLBACK`. A manager overriding `updateSubscriptions()` selects
   `USE_SUBSCRIPTION_CALLBACK`. These protected constants default to false; the framework
   uses its portioned paths. An opted-in callback runs once with its existing output and
-  must keep its own work bounded. Do not infer an override by comparing callables.
+  must keep its own work bounded. The three constants are the earlier form of the
+  question "is this method overridden" (HIL-1831), and the three seams stay as they are;
+  a new seam does not add a "constant plus method" pair —
+  [reflection.md](../code-style/reflection.md#asking-whether-a-method-is-overridden)
+  names the form.
 - **The master now also asks** (HIL-619): `onContainedFailure()` tells the project
   about a failure a master guard swallowed, and it is master-loop code like the hooks
   above — a line or a counter, and `MasterSignalSender` for anything more. It is called

@@ -34,7 +34,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/import-aliases-and-helper-names.md` | adding or changing a PHP import alias or a helper method name |
 | `docs/agents/code-style/table-names.md` | naming a database table |
 | `docs/agents/code-style/php-language-level.md` | choosing between an old and a new PHP syntax form, or weighing an 8.4-only construct |
-| `docs/agents/code-style/reflection.md` | adding or changing a `Reflection*` call, or judging an existing one |
+| `docs/agents/code-style/reflection.md` | adding or changing a `Reflection*` call, judging an existing one, or asking whether a subclass overrides a method |
 | `docs/agents/code-style/error-suppression.md` | writing `@` in front of a PHP call, or deciding how a failing builtin reports |
 | `docs/agents/code-style/wiring-refusals.md` | writing a `catch` around a read of `Hilos::$db` or `Hilos::$rt`, or deciding what an accessor answers to a collection it cannot read |
 | `docs/agents/code-style/random-source.md` | drawing a random value — minting a token, id or name — or judging a `RandomHelper` call |

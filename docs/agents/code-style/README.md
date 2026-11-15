@@ -33,7 +33,7 @@ layer's specifics on top.
 | [table-names.md](table-names.md) | PHP | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
 | [php-class-members.md](php-class-members.md) | PHP | adding or reordering PHP class constants, properties, or methods |
 | [line-length.md](line-length.md) | PHP | a line runs long, a class declaration or a call no longer fits, or the width guard failed |
-| [reflection.md](reflection.md) | PHP | adding or changing a Reflection call, or wondering whether an existing one is justified |
+| [reflection.md](reflection.md) | PHP | adding or changing a Reflection call, wondering whether an existing one is justified, or asking whether a subclass overrides a method |
 | [error-suppression.md](error-suppression.md) | PHP | writing `@` in front of a PHP call — how a failing builtin reports: exception, checked error code, or a marked degrade |
 | [wiring-refusals.md](wiring-refusals.md) | PHP | writing a `catch` around a read of `Hilos::$db` or `Hilos::$rt`, when `WIRING-REFUSAL-SWALLOWED` went red, or deciding what an accessor answers to a collection it cannot read |
 | [random-source.md](random-source.md) | PHP | drawing a random value — which axis of `RandomHelper` a token, id or name comes from, and what a refused entropy source does to the node |

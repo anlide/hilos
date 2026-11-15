@@ -15,6 +15,13 @@ Reflection is allowed only where the question is genuinely about a
 was it declared with — and plain PHP has no answer. Everything about *behavior*
 has a plain-PHP answer, and that answer is the one to write.
 
+The ban has two reasons, both the owner's (HIL-2099): Reflection is very heavy,
+and the code built on it comes out crooked. Comparing first-class callables is
+not Reflection, and it is neither heavy nor crooked. For the question "is this
+method overridden" it is allowed inside the boundary of
+[Asking Whether a Method Is Overridden](#asking-whether-a-method-is-overridden) —
+allowed, but better avoided.
+
 The scope of this rule is production code: `framework/backend` and
 `demo/*/backend`.
 
@@ -28,6 +35,10 @@ The scope of this rule is production code: `framework/backend` and
    `ReflectionClass::getConstant()`.
 3. Look for a declaration instead of a computation. A fact the code can state
    next to what it describes does not need to be derived from the class shape.
+   For the question "does a subclass override this hook" the plain-PHP
+   computation is a callable comparison:
+   [Asking Whether a Method Is Overridden](#asking-whether-a-method-is-overridden)
+   gives its one form and says when a declaration is still the better answer.
 4. If the call survives both, it is a proposal, not a decision: say what it asks
    and why plain PHP does not answer, and let the owner rule on it.
 5. Every surviving call carries an inline comment in that same shape — what is
@@ -66,6 +77,82 @@ public function mountsRuntime(): bool
 }
 ```
 
+## Asking Whether a Method Is Overridden
+
+"Does the receiver override this method" is a question about behavior, and plain
+PHP answers it by comparing two first-class callables. This is not Reflection
+and needs no approval inside the boundary below. Outside the boundary it is not
+a weaker form of the same answer — it is a mistake.
+
+**One form.** `$this->m(...) != self::m(...)` — the same method on the same
+object: the implementation the receiver resolves against the base one. Any other
+pair of closures is either incomparable or answers a different question.
+
+**The boundary.**
+
+- The method is an instance method, `public` or `protected`, not `final`, and
+  the base class gives it a default body. For a `private` method the answer is
+  always "not overridden"; for an abstract one `self::m(...)` fails.
+- The check stands in the class whose body is the default, not in a trait: in a
+  trait `self` is the class that uses it.
+- The operator is `!=`. `!==` compares two distinct `Closure` objects and
+  silently always answers "overridden".
+- The result is cached per instance (`??=`) and handed out by a `final` method
+  named as the question — `hasOwnTick()`.
+- A comment beside it says what is being asked and that the receiver's
+  implementation is compared against the base one.
+
+**The pattern** is `framework/backend/Core/Agent/AbstractAgent.php` —
+`hasOwnStopCheck()`, `hasOwnTick()`, `hasCronRulesHook()` and the cache property
+of each:
+
+```php
+/** Whether this instance resolves onTick() to a non-default implementation. */
+private ?bool $hasOwnTick = null;
+
+/**
+ * @internal Worker hook detection; inherited overrides count as own implementations.
+ * @return bool True when onTick() differs from the base implementation
+ */
+final public function hasOwnTick(): bool
+{
+    return $this->hasOwnTick ??= ($this->onTick(...) != self::onTick(...));
+}
+```
+
+**A test holds the pair**, modeled on
+`framework/tests/Unit/WorkerManagerEmptyTickTest.php`:
+`testHookDetectionDoesNotExecuteHooksAndSurvivesParentCalls` with its provider
+`hookImplementations` runs five cases — default, inherited default, override,
+parent call (an override that calls `parent::`), inherited override. Such a test
+also catches a "fix" of `!=` to `!==`. These five are what the test holds; do
+not read the comparison as proven for a class shape outside them.
+
+**Better avoided.** Declare the fact instead of comparing in three cases:
+
+1. The fact is not the same as "the method is overridden" — a class overrides
+   the method and the answer must still be "no", or the other way round.
+2. The answer is needed without an instance — by class name, statically.
+3. Correctness, not economy, depends on the answer. This is the main one.
+
+In `WorkerManager::tickAgents()` a mistake toward "overridden" costs one extra
+tick, so the comparison fits. Where a mistake changes behavior, declare the fact
+by [Preferred Shape](#preferred-shape): a method next to what it describes, and
+a test that holds the pair. `mountsRuntime()` there is the third case — its
+answer decides whether activation is refused in `framework/backend/Hilos.php`,
+and `testEveryDefinitionAnswersMountsRuntimeAsItsOwnMountSays` in
+`framework/tests/Unit/Runtime/FeatureRuntimeMountTest.php` holds the pair.
+
+**The earlier form.** `USE_*_CALLBACK` (HIL-1831) is how the same question, "is
+this method overridden", was answered before. The three seams stay as they are —
+`USE_DESTINATION_CALLBACK` and `USE_LOCAL_CLIENT_CALLBACK` in
+`framework/backend/Core/Router/SignalRouter.php`, `USE_SUBSCRIPTION_CALLBACK` in
+`framework/backend/Core/Daemon/DaemonManager.php`. New code does not add a
+"constant set to true, plus the method" pair for this question. A constant is
+still the right form for a real declaration of a choice — opting into another
+mode, an answer needed without an instance, a fact wider than one method;
+Preferred Shape stands.
+
 ## Anti-Patterns
 
 ```php
@@ -74,7 +161,14 @@ public function mountsRuntime(): bool
 $declared = (new ReflectionClass($hilosClass))->getConstant('FEATURES');
 
 // Wrong: deriving a fact from the class shape when the class can state it.
+// The plain-PHP answer to "is mount() overridden" is a callable comparison,
+// not Reflection — and here the answer decides activation, so the fact is
+// declared: mountsRuntime().
 return (new ReflectionMethod(static::class, 'mount'))->getDeclaringClass()->getName() !== self::class;
+
+// Wrong: identity instead of equality. Each side is a new Closure object, so
+// the two are never identical and the answer is always "overridden".
+return $this->m(...) !== self::m(...);
 ```
 
 ## Exceptions
@@ -121,3 +215,17 @@ executable Reflection calls; a comment that names the ban stays. Under
 `framework/backend` the only executable calls are in `EntitySchemaAudit`.
 Every other executable call the grep returns is either new debt or a decision
 the owner has taken.
+
+A callable comparison passes both silently: the notification and the inventory
+grep look for the word Reflection, and a comparison is not Reflection. That is
+how they are built, not a gap in them. The comparisons have an inventory of
+their own, a second grep:
+
+```bash
+grep -rnE '\(\.\.\.\) *!=' framework/backend demo/*/backend --include=*.php
+```
+
+Today it returns the hook checks of `AbstractAgent` and the `onTick()` check in
+`WorkerManager`. It matches `!==` as well, so the wrong operator shows up in the
+same list. No guard is added for the comparison: the decision above (HIL-538)
+covers it too.

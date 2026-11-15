@@ -222,7 +222,7 @@ the rule away.
 | [code-style/table-names.md](docs/agents/code-style/table-names.md) | PHP | naming a database table — entity first then purpose; bridge tables order both entities by project dominance |
 | [code-style/php-class-members.md](docs/agents/code-style/php-class-members.md) | PHP | adding or reordering PHP class constants, properties, or methods |
 | [code-style/local-variables.md](docs/agents/code-style/local-variables.md) | PHP | introducing temporary variables or reviewing one-use locals |
-| [code-style/reflection.md](docs/agents/code-style/reflection.md) | PHP | adding or changing a Reflection call in production PHP, or judging an existing one |
+| [code-style/reflection.md](docs/agents/code-style/reflection.md) | PHP | adding or changing a Reflection call in production PHP, judging an existing one, or asking whether a subclass overrides a method |
 | [code-style/error-suppression.md](docs/agents/code-style/error-suppression.md) | PHP | writing `@` in front of a PHP call in production, or deciding how a failing builtin reports |
 | [code-style/random-source.md](docs/agents/code-style/random-source.md) | PHP | drawing a random value in backend PHP — which axis of `RandomHelper` a token, id or name comes from |
 | [code-style/blocking-resolution.md](docs/agents/code-style/blocking-resolution.md) | PHP | turning a host name into an address in backend PHP — the six builtins that block the loop on a nameserver, and why `gethostname()` is not one of them |
