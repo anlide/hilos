@@ -126,6 +126,9 @@ Plus scenarios beyond that matrix:
     stops the work             slave carrying work fences it itself, nobody leads, the other
                                master holds no quorum; the returned pair leads one and restarts
                                the fleet (HIL-2037)
+ 55 primary and replica lost   while the primary is down a write is not confirmed and no
+    and restored with the      application connection reaches the replica; both return without
+    journal                    a Hilos restart and hold one journal (HIL-2042)
 
 Scenario 48 is carried by online-testing's three-master stand and runs after
 scenarios 21, 24 and 40 there. It brings the watchdog's 60-second silence and
@@ -3952,7 +3955,8 @@ class JournalOracle:
     write_batch() may be called from another thread than the one that reads, but one call at a
     time: verify() binds each receipt to the window of exactly one batch, and the windows of calls
     that overlap would each hold it. Call verify() after the load has stopped. The fault scenarios of
-    HIL-2040, HIL-2041 and HIL-2042 build their own load on write_batch() within that.
+    HIL-2040, HIL-2041 and scenario 55 on file-gallery-manager build their own load on write_batch()
+    within that.
     """
 
     def __init__(self):
@@ -4371,8 +4375,8 @@ def scenario_50_journal_is_one_logical_set_on_every_server():
     different servers are not duplicates.
 
     It restarts nothing and builds no load. An ordinary restart of a node is scenario 40's (on
-    online-testing); a database server lost and caught up again is HIL-2040, HIL-2041 and HIL-2042's;
-    exactly-once business operations when a reply is lost are not promised here.
+    online-testing); a database server lost and caught up again is HIL-2040, HIL-2041 and scenario 55
+    on file-gallery-manager's; exactly-once business operations when a reply is lost are not promised here.
     """
     wait_converge(ALL_NODES)
     oracle = JournalOracle()
@@ -6819,6 +6823,127 @@ def scenario_28_database_member_comes_back_and_catches_up():
             f"acknowledged while it was away; none of {len(after_start)} writes failed while it came back")
 
 
+def scenario_55_primary_and_replica_lost_and_restored():
+    """While the primary is down a write is not confirmed and no application connection reaches
+    the replica; both return without a Hilos restart and hold one journal (HIL-2042).
+
+    The returned primary accepts writes from the same nodes without restarting any of them, and
+    losing the replica does not touch writes on the primary. Once both return and catch up, the
+    journal oracle confirms that both servers hold the same logical journal.
+
+    This scenario runs on file-gallery-manager's stand. It covers no writes in flight during kill
+    or background fault load (HIL-2040 on roblox-game-server), replica promotion or replica reads
+    (docs/agents/app-topology.md, Database Guarantees), replica reconnection on its own timer (the
+    primary -> replica order replaces it), or exactly-once business operations when a reply is
+    lost. The reconnect layer is covered by DatabaseReconnectIntegrationTest and
+    JournalReceiptIntegrationTest.
+    """
+    wait_converge(ALL_NODES)
+    oracle = JournalOracle()
+    oracle.start()
+    for r in STAND.database_replicas:
+        wait_replica_answers(r.service)
+    oracle.settle()
+    replica = STAND.database_replicas[0].service
+    primary = STAND.database_replicas[0].replica_of
+    started_at = {}
+    for node in ALL_NODES:
+        outcome = control.node_started_at(STAND, node)
+        assert outcome.code == 0, f"could not inspect {node}'s start: {outcome.err}"
+        started_at[node] = outcome.out.strip()
+
+    batch = oracle.write_batch(oracle.next_pairs())
+    assert batch.outcome == JOURNAL_CONFIRMED, (
+        f"{JournalOracle._batch_text(batch)} came to {batch.outcome}, expected confirmed: {batch.detail}"
+    )
+
+    primary_down = False
+    replica_down = False
+    down = None
+    try:
+        primary_down = False
+        db_kill(primary)
+        primary_down = True
+        started = time.monotonic()
+        deadline = started + DB_MEMBER_DEATH_TIMEOUT
+        while True:
+            outcome = control.execute(STAND, "db-sql", "SELECT 1", primary)
+            if outcome.code != 0:
+                break
+            if time.monotonic() >= deadline:
+                raise ScenarioTimeout(f"{primary} still answers after it was killed")
+            time.sleep(POLL_INTERVAL)
+
+        down = oracle.write_batch(oracle.next_pairs())
+        assert down.outcome != JOURNAL_CONFIRMED, (
+            f"{JournalOracle._batch_text(down)} was confirmed while {primary} was down: "
+            "the one address led past the primary"
+        )
+
+        connections_sql = app_connections_sql(STAND.database.user)
+        answer = db_sql(connections_sql, replica)
+        assert answer.isdigit(), f"{replica} did not answer: {connections_sql}"
+        count = int(answer)
+        assert count == 0, (
+            f"{replica} holds {count} connection(s) of {STAND.database.user} while {primary} is down: "
+            "the nodes' one address leads past the primary, and nothing may read a replica "
+            "(docs/agents/app-topology.md, Database Guarantees)"
+        )
+
+        db_start(primary)
+        primary_down = False
+        started = time.monotonic()
+        deadline = started + DB_MEMBER_RETURN_TIMEOUT
+        while True:
+            outcome = control.execute(STAND, "db-sql", "SELECT 1", primary)
+            if outcome.code == 0:
+                break
+            if time.monotonic() >= deadline:
+                raise ScenarioTimeout(f"{primary} did not return within {DB_MEMBER_RETURN_TIMEOUT:.0f}s")
+            time.sleep(POLL_INTERVAL)
+
+        back = oracle.write_batch(oracle.next_pairs())
+        assert back.outcome == JOURNAL_CONFIRMED, (
+            f"{JournalOracle._batch_text(back)} came to {back.outcome} after {primary} returned: "
+            f"the nodes did not write again: {back.detail}"
+        )
+
+        replica_down = False
+        db_kill(replica)
+        replica_down = True
+        batch = oracle.write_batch(oracle.next_pairs())
+        assert batch.outcome == JOURNAL_CONFIRMED, (
+            f"{JournalOracle._batch_text(batch)} came to {batch.outcome} while {replica} was down: "
+            f"losing the replica touched the primary: {batch.detail}"
+        )
+        db_start(replica)
+        replica_down = False
+        wait_replica_answers(replica)
+
+        oracle.settle()
+        for node in ALL_NODES:
+            outcome = control.node_started_at(STAND, node)
+            assert outcome.code == 0 and outcome.out.strip() == started_at[node], (
+                f"{node} was restarted while the database was down"
+            )
+        wait_converge(ALL_NODES)
+        judged = oracle.verify(oracle.batches())
+    finally:
+        restarted_in_finally = False
+        if primary_down:
+            db_start(primary)
+            restarted_in_finally = True
+        if replica_down:
+            db_start(replica)
+            restarted_in_finally = True
+        if restarted_in_finally:
+            wait_replica_answers(replica)
+
+    return (f"{primary} lost: the write came to {down.outcome} and no application connection reached {replica}; "
+            f"back, the nodes wrote again; {replica} lost: the primary wrote on; both back and caught up, "
+            f"no node restarted; {SETTINGS_LIBRARY_AGENT_TYPE} on {oracle.node_id}; {judged}")
+
+
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
                      "cluster_directory entry database_replicas database_votes working_masters bare_master "
                      "masters_exactly",
@@ -6922,6 +7047,10 @@ SCENARIOS = [
              Need(database_members=2, database_votes=3)),
     Scenario("28 database member comes back and catches up", scenario_28_database_member_comes_back_and_catches_up,
              Need(database_members=2, database_votes=3)),
+    # After 27/28: the primary and then its read-only replica are lost and returned, one synchronous
+    # journal batch at a time; 31 then reads the replica both returns left behind.
+    Scenario("55 primary and replica lost and restored with the journal", scenario_55_primary_and_replica_lost_and_restored,
+             Need(database_replicas=1)),
     # After the ordinary failovers: the master alone must retain waiting work, then start it on a
     # returning slave without another ask. Its full restart removes the ballast before either ceiling.
     Scenario("43 waiting work retries when a node returns", scenario_43_waiting_work_retries_when_a_node_returns,

@@ -190,10 +190,11 @@ For test selection and stand lifecycle details, see
 `docker/docker-compose.cluster.yml` declares two masters, `m1` and `m2`, with
 no placement capacity, and three slave workers: `s1` with `ram=10`, `s2` with
 `ram=6`, and `s3` with `ram=4`; each worker has `slots=64`. Its scenario
-matrix contains **31**, **50** and **52**. Scenario 31 checks that the replica
+matrix contains **31**, **50**, **52** and **55**. Scenario 31 checks that the replica
 keeps up with the primary. Scenario 50 holds the primary and the replica to one
 journal. In scenario 52 the leader of the two masters is lost — the
 stand stops leading and its slaves stop their placed work until it returns.
+In scenario 55 the primary and then the replica are lost and return.
 The demo lists the framework's probe-fleet row in its `AGENTS`; the fleet
 starts only on a node of the cluster stand, so a one-node run carries the row
 and runs none of it.
@@ -219,7 +220,7 @@ From this demo directory:
 | `composer run test:cluster:inspect -- m1` | inspect a node as JSON |
 | `composer run test:cluster:logs -- m1` | follow a node's container logs |
 | `composer run test:cluster:client -- m1 test:cluster:inspect` | run a CLI command through a selected node |
-| `composer run test:cluster:scenarios` | run the declared matrix; `-- 31`, `-- 50` or `-- 52` selects one scenario |
+| `composer run test:cluster:scenarios` | run the declared matrix; `-- 31`, `-- 50`, `-- 52` or `-- 55` selects one scenario |
 | `composer run test:cluster:e2e` | run the cluster browser phase |
 | `composer run test:cluster:e2e-time-zone` | prepare the cluster browser time-zone environment |
 | `composer run test:cluster:down` | stop the stand |

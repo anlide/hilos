@@ -1026,8 +1026,9 @@ holds its three servers in the proof below that a member is lost and returned
 40's, on online-testing.
 Roblox proves the journal after Galera data-node and arbitrator failures
 (not in the code yet — HIL-2040). Concert-tickets proves it after a member is
-lost and returned (not in the code yet — HIL-2041). File-gallery-manager proves
-it after primary and replica recovery (not in the code yet — HIL-2042).
+lost and returned (not in the code yet — HIL-2041). Scenario 55 proves it on
+file-gallery-manager: its primary and then its replica are lost and returned, and
+the same oracle holds both servers to one journal.
 These proofs do not promise exactly-once business operations when a reply is lost.
 
 ## What Phase 1 Leaves Out

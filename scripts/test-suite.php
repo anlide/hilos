@@ -388,13 +388,14 @@ $steps = array_merge($steps, [
     ],
     // The file-gallery-manager fleet: two masters without capacity and three slave workers,
     // on a MariaDB primary with a read-only replica. Scenario 52 loses the leader of the two
-    // masters and returns it, 50 holds the primary and the replica to one journal, and 31
-    // checks the replica.
+    // masters and returns it, Scenario 55 loses the primary and then the replica and returns both,
+    // 50 holds the primary and the replica to one journal, and 31 checks the replica.
     // The stand group keeps a browser step from running beneath the scenario matrix; takes
     // its stand down at any outcome, for the reason binance-btc-tracker-cluster does.
     // Seconds: a rough estimate after online-testing, allowing for five nodes and a replica,
-    // and one leader loss and its return on top of the former estimate; not a measurement
-    // (HIL-2043 measures it).
+    // one leader loss, and the primary's and the replica's loss and return on top of the former
+    // estimate, the write made while the primary is down waits out the CLI's 15 s window;
+    // not a measurement (HIL-2043 measures it).
     [
         'id' => 'file-gallery-manager-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -403,7 +404,7 @@ $steps = array_merge($steps, [
         'deps' => ['file-gallery-manager-deps'],
         'group' => 'file-gallery-manager-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 80,
+        'seconds' => 110,
         'downsStand' => true,
     ],
     // React sign-in and admin access through the non-leader master. The single-node e2e
