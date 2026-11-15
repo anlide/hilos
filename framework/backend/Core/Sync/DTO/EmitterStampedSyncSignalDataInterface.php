@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Sync\DTO;
 
 /**
- * A DB sync payload that names the process which broadcast it.
+ * A DB or RT sync payload that names the process which broadcast it.
  *
  * Two identities travel with such a payload and must not be confused: `origin` is the
  * accept key of the connection whose write caused the fact, while `emitter` names the
@@ -13,8 +13,8 @@ namespace Hilos\Core\Sync\DTO;
  * echo", and it is the field a receiver compares with its own identity.
  *
  * A payload with no stamp reads as someone else's. That is the safe direction for
- * every DB sync fact alike: applying one extra time costs a redundant write to a
- * mirror, while swallowing a foreign change leaves this process holding a row the
+ * every sync fact alike, DB or RT: applying one extra time costs a redundant write to
+ * a copy, while swallowing a foreign change leaves this process holding a row the
  * rest of the cluster no longer has.
  */
 interface EmitterStampedSyncSignalDataInterface extends SyncSignalDataInterface

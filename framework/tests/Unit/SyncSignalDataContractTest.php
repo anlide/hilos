@@ -19,6 +19,7 @@ use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\SyncSignalDataKey;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\PhpType;
+use Hilos\Runtime\RtRowValues;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
@@ -107,6 +108,28 @@ final class SyncSignalDataContractTest extends TestCase
         $this->assertEquals($rtPayload, RtSyncUpdatedSignalData::fromArray($rtPayload->toArray()));
     }
 
+    public function testStampedRtPayloadsRoundtripTheEmitter(): void
+    {
+        foreach ($this->rtStatePayloads() as $signalData) {
+            $roundtripped = $signalData::fromArray($signalData->toArray());
+
+            $this->assertSame('node-a', $roundtripped->emitter);
+            $this->assertEquals($signalData, $roundtripped);
+        }
+    }
+
+    public function testUnstampedRtPayloadsRoundtripAsUnstamped(): void
+    {
+        foreach ([
+            new RtSyncCreatedSignalData(self::COLLECTION_KEY, 'ak-1', ['userId' => 1]),
+            new RtSyncUpdatedSignalData(self::COLLECTION_KEY, 'ak-1', ['presence' => 'online']),
+            new RtSyncDeletedSignalData(self::COLLECTION_KEY, 'ak-1', ['presence' => 'online']),
+        ] as $signalData) {
+            $this->assertNull($signalData->emitter);
+            $this->assertNull($signalData::fromArray($signalData->toArray())->emitter);
+        }
+    }
+
     public function testRowScopedDbPayloadsImplementTheDbInterface(): void
     {
         foreach ($this->dbRowPayloads(null, null) as $signalData) {
@@ -186,6 +209,39 @@ final class SyncSignalDataContractTest extends TestCase
         }
     }
 
+    public function testWithEmitterChangesOnlyTheEmitterOnRtStatePayloads(): void
+    {
+        foreach ($this->rtStatePayloads() as $signalData) {
+            $stamped = $signalData->withEmitter('node-b');
+            $expected = $signalData->toArray();
+            $expected[SyncSignalDataKey::EMITTER] = 'node-b';
+
+            $this->assertSame($signalData::class, $stamped::class);
+            $this->assertSame($expected, $stamped->toArray());
+            $this->assertSame('node-a', $signalData->emitter);
+            if ($signalData instanceof RtSyncUpdatedSignalData) {
+                $this->assertSame(['presence' => 'away'], $stamped->previous);
+            }
+        }
+    }
+
+    /**
+     * A stamped copy hands the row and the previous values on in the form the original holds
+     * them: stamping a segmented carrier must not materialize it.
+     */
+    public function testWithEmitterKeepsTheSegmentedCarrierOfAnRtPayload(): void
+    {
+        $row = RtRowValues::fromNative(['presence' => 'online']);
+        $previous = RtRowValues::fromNative(['presence' => 'away']);
+
+        $updated = (new RtSyncUpdatedSignalData(self::COLLECTION_KEY, 'ak-1', $row, previous: $previous))->withEmitter('node-b');
+        $created = (new RtSyncCreatedSignalData(self::COLLECTION_KEY, 'ak-1', $row))->withEmitter('node-b');
+
+        $this->assertSame($row, $updated->carriedRow());
+        $this->assertSame($previous, $updated->carriedPrevious());
+        $this->assertSame($row, $created->carriedRow());
+    }
+
     /**
      * Every DB sync fact carries the identity of the process that broadcast it — the row
      * ones as well as the collection-scoped clear, since HIL-737. The declaration is what
@@ -205,17 +261,17 @@ final class SyncSignalDataContractTest extends TestCase
     }
 
     /**
-     * RT sync frames stay out of it: they do not travel between nodes and are keyed by
-     * the state id alone, so nothing on their path has an emitter to compare.
+     * RT sync frames travel between processes and between nodes, and the receiver knows
+     * its own echo by the stamp, so every one of them declares it as the DB ones do.
      */
-    public function testRtPayloadsDoNotDeclareTheEmitterStamp(): void
+    public function testRtPayloadsDeclareTheEmitterStamp(): void
     {
         foreach ([
             new RtSyncCreatedSignalData(self::COLLECTION_KEY, 'ak-1', ['userId' => 1]),
             new RtSyncUpdatedSignalData(self::COLLECTION_KEY, 'ak-1', ['presence' => 'online']),
             new RtSyncDeletedSignalData(self::COLLECTION_KEY, 'ak-1', ['presence' => 'online']),
         ] as $signalData) {
-            $this->assertNotInstanceOf(EmitterStampedSyncSignalDataInterface::class, $signalData);
+            $this->assertInstanceOf(EmitterStampedSyncSignalDataInterface::class, $signalData);
         }
     }
 
@@ -279,7 +335,54 @@ final class SyncSignalDataContractTest extends TestCase
             $this->assertInstanceOf($data::class, $carried);
             $this->assertInstanceOf(RtSyncSignalDataInterface::class, $carried);
             $this->assertSame([self::COLLECTION_KEY, 'ak-1'], [$carried->collectionKey, $carried->stateId]);
+            $this->assertNull($carried->emitter);
         }
+    }
+
+    public function testRtStreamOperationsCarryTheEmitterStamp(): void
+    {
+        foreach ($this->rtStatePayloads() as $data) {
+            $operation = RtSyncStreamOperation::fromSignalData($data, 1);
+            $carried = $operation->signalData();
+
+            $this->assertSame('node-a', $operation->emitter);
+            $this->assertSame($data::class, $carried::class);
+            $this->assertSame('node-a', $carried->emitter);
+        }
+    }
+
+    /**
+     * @return list<RtSyncSignalDataInterface> The three state-scoped RT sync payloads, each stamped by node-a
+     */
+    private function rtStatePayloads(): array
+    {
+        return [
+            new RtSyncCreatedSignalData(
+                collectionKey: self::COLLECTION_KEY,
+                stateId: 'ak-1',
+                row: ['presence' => 'online'],
+                origin: 'accept-1',
+                originRequestId: 'request-1',
+                emitter: 'node-a',
+            ),
+            new RtSyncUpdatedSignalData(
+                collectionKey: self::COLLECTION_KEY,
+                stateId: 'ak-1',
+                row: ['presence' => 'online'],
+                origin: 'accept-1',
+                originRequestId: 'request-1',
+                previous: ['presence' => 'away'],
+                emitter: 'node-a',
+            ),
+            new RtSyncDeletedSignalData(
+                collectionKey: self::COLLECTION_KEY,
+                stateId: 'ak-1',
+                row: ['presence' => 'online'],
+                origin: 'accept-1',
+                originRequestId: 'request-1',
+                emitter: 'node-a',
+            ),
+        ];
     }
 
     /**

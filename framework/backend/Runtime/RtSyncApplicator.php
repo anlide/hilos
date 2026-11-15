@@ -56,7 +56,7 @@ final class RtSyncApplicator
      */
     public static function applyCreated(RtSyncCreatedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
-        if (!self::shouldApplyRtSyncRow($data->collectionKey, $data->stateId, $data->row, $skipSelfBroadcastCheck)) {
+        if (!self::shouldApplyRtSyncRow($data->collectionKey, $data->stateId, $data->emitter, $data->row, $skipSelfBroadcastCheck)) {
             return;
         }
 
@@ -102,19 +102,12 @@ final class RtSyncApplicator
      * next local `sync()` therefore re-sends those fields instead of treating a
      * half-applied diff as agreed.
      *
-     * On the master path a late echo of the protected mode row is dropped before any of that,
-     * see {@see self::isStaleProtectedModeEcho()}: nothing is written and the baseline stays.
-     *
      * @param RtSyncUpdatedSignalData $data Diff payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      */
     public static function applyUpdated(RtSyncUpdatedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
-        if (!self::shouldApplyRtSyncRow($data->collectionKey, $data->stateId, $data->row, $skipSelfBroadcastCheck)) {
-            return;
-        }
-
-        if ($skipSelfBroadcastCheck && self::isStaleProtectedModeEcho($data)) {
+        if (!self::shouldApplyRtSyncRow($data->collectionKey, $data->stateId, $data->emitter, $data->row, $skipSelfBroadcastCheck)) {
             return;
         }
 
@@ -152,9 +145,8 @@ final class RtSyncApplicator
      * which therefore has no success to acknowledge. This is the deliberate difference from the
      * synchronous {@see self::applyUpdated()}, which keeps writing field by field.
      *
-     * The guards are those of the synchronous door, the late protected mode echo included; the
-     * phase is read out of the carrier, not out of a materialized row. A legacy-only row has no
-     * draft and keeps the synchronous door.
+     * The guards are those of the synchronous door. A legacy-only row has no draft and keeps the
+     * synchronous door.
      *
      * @param RtSyncUpdatedSignalData $data Diff payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
@@ -165,8 +157,7 @@ final class RtSyncApplicator
     {
         yield new RtWork();
         if ($data->collectionKey === '' || $data->stateId === '' || self::isEmptyCarried($data->carriedRow())
-            || !self::shouldApplyRtSync($data->collectionKey, $data->stateId, $skipSelfBroadcastCheck)
-            || ($skipSelfBroadcastCheck && self::isStaleProtectedModeEcho($data))) {
+            || !self::shouldApplyRtSync($data->collectionKey, $data->stateId, $data->emitter, $skipSelfBroadcastCheck)) {
             return;
         }
 
@@ -211,7 +202,7 @@ final class RtSyncApplicator
      */
     public static function applyDeleted(RtSyncDeletedSignalData $data, bool $skipSelfBroadcastCheck = true): void
     {
-        if (!self::shouldApplyRtSync($data->collectionKey, $data->stateId, $skipSelfBroadcastCheck)) {
+        if (!self::shouldApplyRtSync($data->collectionKey, $data->stateId, $data->emitter, $skipSelfBroadcastCheck)) {
             return;
         }
 
@@ -228,16 +219,19 @@ final class RtSyncApplicator
     }
 
     /**
-     * Returns false when row payload is invalid or this process should skip applying the sync.
+     * Returns false when row payload is invalid or this process should skip applying the sync:
+     * applies the own-echo verdict of Hilos::$sr to the emitter stamp.
      *
      * @param string $collectionKey RT collection key from sync payload
      * @param string $stateId Target state id from sync payload
+     * @param ?string $emitter Emitter stamp from sync payload, null when unstamped
      * @param array<string, mixed> $row Full state or diff row
      * @param bool $skipSelfBroadcastCheck When true, applies self-broadcast guard from Hilos::$sr
      */
     private static function shouldApplyRtSyncRow(
         string $collectionKey,
         string $stateId,
+        ?string $emitter,
         array $row,
         bool $skipSelfBroadcastCheck,
     ): bool {
@@ -245,70 +239,31 @@ final class RtSyncApplicator
             return false;
         }
 
-        return self::shouldApplyRtSync($collectionKey, $stateId, $skipSelfBroadcastCheck);
+        return self::shouldApplyRtSync($collectionKey, $stateId, $emitter, $skipSelfBroadcastCheck);
     }
 
     /**
-     * Returns false when identity is invalid or self-broadcast guard says to skip applying.
+     * Returns false when identity is invalid or self-broadcast guard says to skip applying:
+     * applies the own-echo verdict of Hilos::$sr to the emitter stamp.
      *
      * @param string $collectionKey RT collection key from sync payload
      * @param string $stateId Target state id from sync payload
+     * @param ?string $emitter Emitter stamp from sync payload, null when unstamped
      * @param bool $skipSelfBroadcastCheck When true, applies self-broadcast guard from Hilos::$sr
      */
     private static function shouldApplyRtSync(
         string $collectionKey,
         string $stateId,
+        ?string $emitter,
         bool $skipSelfBroadcastCheck,
     ): bool {
         if ($collectionKey === '' || $stateId === '') {
             return false;
         }
 
-        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipRtSyncApply($collectionKey, $stateId)) {
+        if ($skipSelfBroadcastCheck && Hilos::$sr !== null && Hilos::$sr->shouldSkipRtSyncApply($emitter)) {
             return false;
         }
-
-        return true;
-    }
-
-    /**
-     * Whether a frame of the protected mode row would take the phase back: self-echo accounting is
-     * one mark per row, so an echo can get here after the row moved on. Stale means both ends of
-     * the frame's phase move differ from the row's phase; a phase that is not a string is left to
-     * `applyDiff()` to refuse, because a Hilos process does not outlive the warning of printing one.
-     *
-     * The two phases are read out of the payload in the form it carries them: one field each,
-     * never the whole diff.
-     *
-     * @param RtSyncUpdatedSignalData $data Diff payload the master is about to apply
-     * @return bool True when the frame is stale, already logged, and must not be applied
-     * @throws InvalidFormatException When segmented values are not a field map
-     * @throws LogicException When a segmented lease already closed
-     */
-    private static function isStaleProtectedModeEcho(RtSyncUpdatedSignalData $data): bool
-    {
-        if ($data->collectionKey !== StateProtectedModeRuntime::RT_ITEM) {
-            return false;
-        }
-
-        $previous = self::carriedField($data->carriedPrevious(), StateProtectedModeRuntime::phase);
-        $target = self::carriedField($data->carriedRow(), StateProtectedModeRuntime::phase);
-        if (!is_string($previous) || !is_string($target)) {
-            return false;
-        }
-
-        $state = Hilos::$rt?->getStateItem(StateProtectedModeRuntime::RT_ITEM);
-        if (!$state instanceof StateProtectedModeRuntime) {
-            return false;
-        }
-
-        if ($previous === $state->phase || $target === $state->phase) {
-            return false;
-        }
-
-        Logger::warning(
-            "Protected mode: dropped a late echo moving the phase from '{$previous}' to '{$target}' while the row reads '{$state->phase}'",
-        );
 
         return true;
     }
@@ -358,18 +313,6 @@ final class RtSyncApplicator
             'RT sync row refused for collection ' . $collectionKey
             . ' id ' . $stateId . ': ' . $e->getMessage(),
         );
-    }
-
-    /**
-     * @param array<string, mixed>|RtRowValues $values Carried row or previous values
-     * @param string $field Field to read alone
-     * @return mixed Native value of that one field, or null when it is not carried
-     * @throws InvalidFormatException When segmented values are not a field map
-     * @throws LogicException When a segmented lease already closed
-     */
-    private static function carriedField(array|RtRowValues $values, string $field): mixed
-    {
-        return is_array($values) ? $values[$field] ?? null : $values->field($field)?->toNative();
     }
 
     /**

@@ -25,14 +25,14 @@ state and does not decide which frontend collections changed.
    own browser context.
 
 The originating worker receives its daemon echo too, but it recognizes its own
-broadcast and does not record the fact a second time. Every DB sync payload
-carries the `emitter` identity of the process that broadcast it, and comparing
-it with the receiving process's own is the whole verdict, for a row sync and for
-a collection clear alike. No per-row marker is kept, so however many frames of
-its own for one row are in flight, none of their echoes is applied back. An
-unstamped payload counts as someone else's, so a fact that cannot be attributed
-is applied rather than swallowed. An RT sync is still recognized by a
-`(collectionKey, stateId)` self-broadcast marker, until HIL-2104.
+broadcast and does not record the fact a second time. Every DB and RT sync
+frame carries the `emitter` identity of the process that broadcast it, and
+comparing it with the receiving process's own is the whole verdict, for a row
+sync, a runtime state sync and a collection clear alike. No marker is kept, so
+however many frames of its own for one row are in flight, none of their echoes
+is applied back, and a frame of someone else's spends nothing. An unstamped
+frame counts as someone else's, so a fact that cannot be attributed is applied
+rather than swallowed.
 
 ## Delivery
 

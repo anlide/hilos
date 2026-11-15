@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\Constants\SignalConstants;
-use Hilos\Core\Router\SelfBroadcastRegistry;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
@@ -13,15 +12,12 @@ use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Pins where the non-empty check on a sync payload belongs: it guards the RT self-apply
- * REGISTRATION, never the broadcast. A DB frame registers nothing, since its own echo is
- * known by the emitter stamp alone, so the DB cases here pin only that the frame leaves.
+ * Pins that a row sync frame leaves whatever its keys hold. Neither a DB nor an RT frame
+ * registers anything: its own echo is known by the emitter stamp alone, so an empty key
+ * guards nothing any more, and the frame is broadcast all the same.
  *
- * The check used to sit inside {@see SelfBroadcastRegistry::register()}, silently doing
- * nothing, while two of the three queue methods called it with no check at all. Moving
- * it up is right; turning it into an early return is not, and HIL-468 did that on its
- * first pass — a payload that cannot be deduped still has to reach the other processes,
- * and dropping it took every live table and event-stream update in the chat demo with it.
+ * HIL-468 once turned the emptiness check into an early return, and a frame that could not
+ * be deduped took every live table and event-stream update in the chat demo with it.
  */
 final class SignalRouterSyncQueueInvariantTest extends TestCase
 {
@@ -61,8 +57,10 @@ final class SignalRouterSyncQueueInvariantTest extends TestCase
             new RtSyncCreatedSignalData(self::COLLECTION_KEY, '', []),
         );
 
-        $this->assertNotNull($router->getNextQueuedSignal());
-        $this->assertFalse($router->shouldSkipRtSyncApply(self::COLLECTION_KEY, ''));
+        $signal = $router->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(RtSyncCreatedSignalData::class, $signal->data);
+        $this->assertSame($router->getEmitter(), $signal->data->emitter);
     }
 
     public function testDbSyncSignalNamingBothPartsIsBroadcastStamped(): void
@@ -79,7 +77,7 @@ final class SignalRouterSyncQueueInvariantTest extends TestCase
         $this->assertSame($router->getEmitter(), $signal->data->emitter);
     }
 
-    public function testRtSyncSignalNamingBothPartsIsBroadcastAndRegistered(): void
+    public function testRtSyncSignalNamingBothPartsIsBroadcastStamped(): void
     {
         $router = new SignalRouter();
         $router->queueRtSyncSignal(
@@ -87,8 +85,10 @@ final class SignalRouterSyncQueueInvariantTest extends TestCase
             new RtSyncCreatedSignalData(self::COLLECTION_KEY, self::ID, []),
         );
 
-        $this->assertNotNull($router->getNextQueuedSignal());
-        $this->assertTrue($router->shouldSkipRtSyncApply(self::COLLECTION_KEY, self::ID));
+        $signal = $router->getNextQueuedSignal();
+        $this->assertNotNull($signal);
+        $this->assertInstanceOf(RtSyncCreatedSignalData::class, $signal->data);
+        $this->assertSame($router->getEmitter(), $signal->data->emitter);
     }
 
     public function testDbSyncClearedSignalWithoutACollectionIsNotQueued(): void

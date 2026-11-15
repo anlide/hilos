@@ -18,6 +18,7 @@ use Hilos\Core\Source\Subscriber\OutboundRtSyncSubscriber;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -47,6 +48,7 @@ use Hilos\Runtime\RtMembershipVersion;
 use Hilos\Runtime\RtRowValues;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSnapshotRead;
+use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\Snapshot\RtSnapshotExport;
 use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\Snapshot\RtPreparedIdentity;
@@ -83,8 +85,8 @@ use WeakReference;
  * save writes the difference rather than inserting a row the table already holds.
  *
  * The runtime is covered by the same transaction: a state added, removed, wiped or edited goes
- * back with it, and its frames to the other processes - with the echo each one awaits - leave
- * only at the commit, as the frames of the rows do.
+ * back with it, and its frames to the other processes leave only at the commit, as the frames
+ * of the rows do.
  *
  * Nothing here needs a database: the MySQL part of a transaction opens only at its first query,
  * the entity fixture reports its writes without making them and can be told to refuse them, and
@@ -708,8 +710,8 @@ final class TransactionMemoryRollbackTest extends TestCase
 
     /**
      * Runtime membership goes back with the transaction: the state added inside is gone, the one
-     * removed is back as the same instance, and no frame leaves for either - nor any echo awaited.
-     * Inside the transaction the code reads its own writes.
+     * removed is back as the same instance, and no frame leaves for either; a foreign frame of the
+     * added row is applied afterwards. Inside the transaction the code reads its own writes.
      *
      * @throws HilosException When the fixture collection cannot be mounted or written
      */
@@ -719,7 +721,7 @@ final class TransactionMemoryRollbackTest extends TestCase
         $collection->actions->put('kept', 'kept');
         $collection->actions->put('dropped', 'dropped');
         $dropped = $collection->getStateCollection()->get('dropped');
-        // The setup's own frames and the echoes they await are not what is judged below.
+        // The setup's own frames are not what is judged below.
         Hilos::$sr = new SignalRouter();
 
         Database::transactionStart();
@@ -736,8 +738,13 @@ final class TransactionMemoryRollbackTest extends TestCase
         $this->assertSame('dropped', $collection['dropped']?->mark());
         $this->assertSame('kept', $collection['kept']?->mark());
         $this->assertSame([], $this->drainRtFrames());
-        $this->assertFalse(Hilos::$sr?->shouldSkipRtSyncApply(MemoryRollbackRtContext::COLLECTION, 'added'));
-        $this->assertFalse(Hilos::$sr?->shouldSkipRtSyncApply(MemoryRollbackRtContext::COLLECTION, 'dropped'));
+        RtSyncApplicator::applyCreated(new RtSyncCreatedSignalData(
+            MemoryRollbackRtContext::COLLECTION,
+            'added',
+            ['id' => 'added', 'mark' => 'foreign'],
+            emitter: 'another-process',
+        ));
+        $this->assertSame('foreign', $collection['added']?->mark());
     }
 
     /**
@@ -845,9 +852,9 @@ final class TransactionMemoryRollbackTest extends TestCase
     }
 
     /**
-     * The frames of the runtime wait for the commit, as the frames of the rows do, and the echo
-     * each one awaits is registered with it. A mirror hears the fact at the write; a reaction at
-     * the commit. And none of it needs a connection: the transaction never sent a query.
+     * The frames of the runtime wait for the commit, as the frames of the rows do. A mirror hears
+     * the fact at the write; a reaction at the commit. And none of it needs a connection: the
+     * transaction never sent a query.
      *
      * @throws HilosException When the fixture collection cannot be mounted or written
      */
@@ -870,13 +877,12 @@ final class TransactionMemoryRollbackTest extends TestCase
             [[SignalConstants::RT_SYNC_CREATED, 'a'], [SignalConstants::RT_SYNC_UPDATED, 'a']],
             $this->drainRtFrames(),
         );
-        $this->assertTrue(Hilos::$sr?->shouldSkipRtSyncApply(MemoryRollbackRtContext::COLLECTION, 'a'));
         $this->assertSame([[TableMutationType::Create, 'a', ['id' => 'a', 'mark' => 'first']]], $this->reaction->seen);
         $this->assertSame('second', $collection['a']?->mark());
     }
 
-    /** Runtime undo and deferred echo registration belong to the named level beside an independent primary level. */
-    public function testRuntimeMemoryAndEchoRollbackFollowTheNamedScopeInsteadOfAmbientConnection(): void
+    /** Runtime undo and deferred frames belong to the named level beside an independent primary level. */
+    public function testRuntimeMemoryRollbackFollowsTheNamedScopeInsteadOfAmbientConnection(): void
     {
         $this->configureNamedArchive();
         $collection = $this->mountedRt();
@@ -893,7 +899,6 @@ final class TransactionMemoryRollbackTest extends TestCase
                 $collection->actions->put('added', 'added');
                 self::assertSame(0, Database::getCurrentIndex());
                 self::assertSame([], $this->drainRtFrames());
-                self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply(MemoryRollbackRtContext::COLLECTION, 'added'));
                 throw $failure;
             });
             self::fail('The named callback must fail');
@@ -905,14 +910,13 @@ final class TransactionMemoryRollbackTest extends TestCase
         self::assertNull($collection['added']);
         self::assertSame([], $this->drainRtFrames());
         self::assertSame($beforeReactions, $this->reaction->seen);
-        self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply(MemoryRollbackRtContext::COLLECTION, 'added'));
         Database::transactionRollback();
         self::assertTrue($primaryUndone, 'Outside the callback the low-level default is the ambient connection again');
         self::assertFalse(Database::hasOpenTransactions());
     }
 
     /** The primary rollback cannot undo runtime work already committed by the named connection. */
-    public function testNamedRuntimeCommitReleasesFramesAndEchoesIndependentlyOfAnExplicitPrimaryLevel(): void
+    public function testNamedRuntimeCommitReleasesFramesIndependentlyOfAnExplicitPrimaryLevel(): void
     {
         $this->configureNamedArchive();
         $collection = $this->mountedRt();
@@ -929,7 +933,6 @@ final class TransactionMemoryRollbackTest extends TestCase
             [[SignalConstants::RT_SYNC_CREATED, 'added'], [SignalConstants::RT_SYNC_UPDATED, 'added']],
             $this->drainRtFrames(),
         );
-        self::assertTrue(Hilos::$sr->shouldSkipRtSyncApply(MemoryRollbackRtContext::COLLECTION, 'added'));
         self::assertSame([[TableMutationType::Create, 'added', ['id' => 'added', 'mark' => 'first']]], $this->reaction->seen);
         Database::transactionRollback(0);
         self::assertTrue($primaryUndone);

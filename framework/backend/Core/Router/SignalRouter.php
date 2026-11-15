@@ -170,9 +170,6 @@ class SignalRouter
     /** @var bool Whether DB sync broadcast is enabled (false for CLI/migrations) */
     public bool $dbSyncBroadcastEnabled = true;
 
-    /** @var SelfBroadcastRegistry RT sync ids this worker broadcast, pending self-apply skip */
-    private SelfBroadcastRegistry $rtSelfBroadcast;
-
     /** @var SubscriptionRegistry Worker-local page and group subscription store */
     private SubscriptionRegistry $subscriptions;
 
@@ -196,24 +193,22 @@ class SignalRouter
     private array $actionSecretFields = [];
 
     /**
-     * @var string Identity of this process as the emitter of the DB syncs it sends.
+     * @var string Identity of this process as the emitter of the DB and RT syncs it sends.
      *
-     * The stamp is the whole verdict on every DB frame, a row sync and a clear alike:
-     * it travels in the payload and is compared on receive, so suppression holds no
-     * state and nothing in it can be evicted or spent. Random rather than the worker
+     * The stamp is the whole verdict on every sync frame, DB and RT, a row sync and a DB
+     * clear alike: it travels in the payload and is compared on receive, so suppression
+     * holds no state and nothing in it can be evicted or spent. Random rather than the worker
      * index because indexes are reused after a worker restart, and an echo from the
      * dead worker would then suppress a legitimate write in its successor.
      */
     private readonly string $emitter;
 
     /**
-     * Initializes the signal queue, worker-local subscription mirror, the RT self-broadcast
-     * registry, and this process's emitter identity.
+     * Initializes the signal queue, worker-local subscription mirror and this process's emitter identity.
      */
     public function __construct()
     {
         $this->queuedSignals = new SplQueue();
-        $this->rtSelfBroadcast = new SelfBroadcastRegistry();
         $this->subscriptions = new SubscriptionRegistry();
         $this->emitter = RandomHelper::hex(self::EMITTER_RANDOM_BYTES);
     }
@@ -225,7 +220,7 @@ class SignalRouter
     }
 
     /**
-     * Returns the emitter identity stamped on the DB syncs this process sends.
+     * Returns the emitter identity stamped on the DB and RT syncs this process sends.
      *
      * @return string Emitter identity of this process
      */
@@ -534,16 +529,14 @@ class SignalRouter
 
     /**
      * Queue RT sync signal (from RtActions write operations).
-     * Registers (collectionKey, stateId) for self-apply skip when the payload names
-     * both; an unnamed one is broadcast without the self-apply guard, exactly as
-     * before, because a payload that cannot be deduped still has to reach the other
-     * processes.
+     *
+     * Stamps the payload with this process's emitter identity, the way
+     * {@see self::queueDbSyncSignal()} does: the receiving side tells this process's own
+     * echo by it ({@see self::shouldSkipRtSyncApply()}).
      *
      * Under an open transaction the frame is queued when the outermost level commits,
      * and a rollback drops it, exactly as a DB-sync frame: one transaction covers the
-     * database and the runtime (HIL-1165). The registration travels with the frame:
-     * registered at the write, a dropped frame would leave an echo awaited that never
-     * comes.
+     * database and the runtime (HIL-1165).
      *
      * @param string $signalName Signal name (e.g. SignalConstants::RT_SYNC_CREATED)
      * @param RtSyncSignalDataInterface $signalData Signal data with collectionKey and stateId
@@ -552,29 +545,32 @@ class SignalRouter
     public function queueRtSyncSignal(string $signalName, RtSyncSignalDataInterface $signalData): void
     {
         Database::afterCommit(function () use ($signalName, $signalData): void {
-            if ($signalData->collectionKey !== '' && $signalData->stateId !== '') {
-                $this->rtSelfBroadcast->register($signalData->collectionKey, $signalData->stateId);
-            }
-
             $this->queueSignal(
                 signalSource: new SignalSource(SignalSource::RT),
                 signalType: new SignalType($signalName),
                 signalName: new SignalName($signalName),
-                signalData: $signalData,
+                signalData: $signalData->withEmitter($this->emitter),
             );
         });
     }
 
     /**
-     * Check if RT sync apply should be skipped (self-broadcast) and remove from registry.
+     * Check if an RT sync apply should be skipped because this process emitted the frame.
      *
-     * @param string $collectionKey Collection key for sync
-     * @param string $stateId Runtime state ID
+     * One rule for every RT frame - created, updated and deleted: the frame is this
+     * process's own echo exactly when it carries this process's emitter stamp. An
+     * unstamped frame counts as someone else's.
+     *
+     * The verdict holds no state, so no own echo of a row is applied, however many
+     * frames of this process for that row are in flight, and a foreign frame spends
+     * nothing.
+     *
+     * @param ?string $emitter Emitter identity from the sync payload, null when unstamped
      * @return bool True if this was our broadcast, skip apply
      */
-    public function shouldSkipRtSyncApply(string $collectionKey, string $stateId): bool
+    public function shouldSkipRtSyncApply(?string $emitter): bool
     {
-        return $this->rtSelfBroadcast->consume($collectionKey, $stateId);
+        return $emitter !== null && $emitter === $this->emitter;
     }
 
     /** @return bool Whether a later dispatch must deliver queued signals, without consuming them */

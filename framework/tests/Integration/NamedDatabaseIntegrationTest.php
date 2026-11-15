@@ -1576,8 +1576,6 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame('committed', Hilos::$rt->namedRuntime['added']->label());
         self::assertSame(['remote', 'namedRuntime'], array_column($this->reaction->seen, 'sourceKey'));
         self::assertSame([SignalConstants::DB_SYNC_UPDATED, SignalConstants::RT_SYNC_CREATED], $this->drainFrames());
-        self::assertTrue(Hilos::$sr->shouldSkipRtSyncApply('namedRuntime', 'added'));
-        self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply('namedRuntime', 'added'));
         self::assertFalse(Database::hasOpenTransactions());
         $this->assertAmbientDefaultRestored(1);
     }
@@ -1713,17 +1711,14 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
             array_column(array_slice($this->mirror->seen, 5), SourceChange::FIELD_SOURCE_ID));
     }
 
-    /** No reaction, frame or row echo may survive an uncommitted or discarded transaction. */
+    /** No reaction or frame may survive an uncommitted or discarded transaction. */
     private function assertNoReleasedAnnouncements(): void
     {
         self::assertSame([], $this->reaction->seen);
         self::assertNull(Hilos::$sr->getNextQueuedSignal());
-        foreach (['kept', 'added', 'dropped'] as $id) {
-            self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply('namedRuntime', $id));
-        }
     }
 
-    /** Source order and exact wire keys retain the existing DB emitter and RT key echo rules. */
+    /** Source order and exact wire keys; DB and RT frames share one echo rule, the emitter stamp. */
     private function assertRemoteAnnouncementsReleased(): void
     {
         self::assertSame(['remote', 'remote', 'remote', 'namedRuntime', 'namedRuntime'],
@@ -1745,9 +1740,8 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
             self::assertSame($key, $payload[SyncSignalDataKey::COLLECTION_KEY]);
             self::assertSame($id, $payload[$db ? SyncSignalDataKey::ID_STRING : SyncSignalDataKey::STATE_ID]);
             $keys = [SyncSignalDataKey::COLLECTION_KEY, $db ? SyncSignalDataKey::ID_STRING : SyncSignalDataKey::STATE_ID,
-                SyncSignalDataKey::ROW, SyncSignalDataKey::ORIGIN, SyncSignalDataKey::ORIGIN_REQUEST_ID];
+                SyncSignalDataKey::ROW, SyncSignalDataKey::ORIGIN, SyncSignalDataKey::ORIGIN_REQUEST_ID, SyncSignalDataKey::EMITTER];
             if ($db) {
-                $keys[] = SyncSignalDataKey::EMITTER;
                 $keys[] = SyncSignalDataKey::RECEIPT_ID;
                 $keys[] = SyncSignalDataKey::WRITER_AGENT_ID;
             }
@@ -1758,15 +1752,15 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
             $actualKeys = array_keys($payload);
             sort($actualKeys);
             self::assertSame($keys, $actualKeys, 'Connection indexes must stay out of the wire contract');
+            self::assertSame(Hilos::$sr->getEmitter(), $payload[SyncSignalDataKey::EMITTER]);
             if ($db) {
                 self::assertNull($payload[SyncSignalDataKey::RECEIPT_ID]);
                 self::assertNull($payload[SyncSignalDataKey::WRITER_AGENT_ID]);
-                self::assertSame(Hilos::$sr->getEmitter(), $payload[SyncSignalDataKey::EMITTER]);
                 self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply('foreign-emitter'));
                 self::assertTrue(Hilos::$sr->shouldSkipDbSyncApply($payload[SyncSignalDataKey::EMITTER]));
             } else {
-                self::assertTrue(Hilos::$sr->shouldSkipRtSyncApply($key, $id));
-                self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply($key, $id));
+                self::assertFalse(Hilos::$sr->shouldSkipRtSyncApply('foreign-emitter'));
+                self::assertTrue(Hilos::$sr->shouldSkipRtSyncApply($payload[SyncSignalDataKey::EMITTER]));
             }
         }
         self::assertNull(Hilos::$sr->getNextQueuedSignal());

@@ -82,11 +82,8 @@ Two announcements wait, for a row and for a runtime state alike:
 
 - the sync frame to the other processes of the node and the cluster
   (`db_sync_created`, `db_sync_updated`, `db_sync_deleted`, `db_sync_cleared`,
-  `rt_sync_created`, `rt_sync_updated`, `rt_sync_deleted`); for a runtime state
-  that includes the registration that awaits its echo — a dropped frame leaves
-  no echo awaited. A DB frame registers nothing: the process that receives its
-  echo knows it by the `emitter` stamp the frame carries, so a dropped DB frame
-  leaves nothing behind;
+  `rt_sync_created`, `rt_sync_updated`, `rt_sync_deleted`); a dropped frame
+  leaves nothing awaited: a receiver tells its own echo by the `emitter` stamp;
 - the fact on the source bus for every subscriber that is a *reaction* — the
   log level, the setting presets, the legal acceptance projection, the outgoing
   RT sync, a project's own subscriber.

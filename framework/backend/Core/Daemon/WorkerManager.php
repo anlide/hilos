@@ -1942,7 +1942,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
      */
     private function handleRtSyncMessage(RtSyncSignalDataInterface $data): Generator
     {
-        if ($this->consumeIncomingRtSyncSelfBroadcast($data)) {
+        if ($this->isOwnRtSyncEcho($data)) {
             return;
         }
         if ($data instanceof RtSyncUpdatedSignalData) {
@@ -2366,7 +2366,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
-     * Consume an RT sync self-broadcast marker before applying a daemon echo.
+     * Recognize this worker's own RT echo before applying a daemon echo.
+     *
+     * Whose fact this is comes from the emitter stamp alone; nothing is spent.
      *
      * The emptiness check stays until HIL-532 rules on whether an incomplete
      * signal payload must be rejected by fromArray(): this side reads a payload
@@ -2376,13 +2378,13 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * @param RtSyncSignalDataInterface $signalData RT sync payload
      * @return bool True when this worker should ignore the daemon echo
      */
-    private function consumeIncomingRtSyncSelfBroadcast(RtSyncSignalDataInterface $signalData): bool
+    private function isOwnRtSyncEcho(RtSyncSignalDataInterface $signalData): bool
     {
         if ($signalData->collectionKey === '' || $signalData->stateId === '') {
             return false;
         }
 
-        return Hilos::$sr?->shouldSkipRtSyncApply($signalData->collectionKey, $signalData->stateId) ?? false;
+        return Hilos::$sr?->shouldSkipRtSyncApply($signalData->emitter) ?? false;
     }
 
     /**
@@ -2390,8 +2392,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
      *
      * Local writes are recorded when the worker first drains its queued sync
      * signal. Remote writes are recorded after the daemon sync message is
-     * accepted. Incoming self-broadcast echoes are recognized and dropped before this
-     * method, so one backend fact becomes one browser invalidation per worker.
+     * accepted. Incoming own echoes are recognized by their emitter stamp and dropped before
+     * this method, so one backend fact becomes one browser invalidation per worker.
      *
      * A runtime row is handed on in the form the payload holds it - segmented from a local
      * writer, an array off the wire - so forwarding it converts and materializes nothing.

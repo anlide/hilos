@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Constants\SignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
@@ -11,18 +12,29 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Daemon\ContainedFailure;
 use Hilos\Core\Daemon\Worker\WorkerTickUnit;
 use Hilos\Core\Daemon\WorkerManager;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeSet;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
+use Hilos\Runtime\Snapshot\RtWorkDriver;
+use Hilos\Socket\Worker\DTO\AgentStartDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
@@ -40,17 +52,22 @@ final class WorkerManagerBrowserContextTest extends TestCase
     /** Temporary main log file the flush-failure case reads its line back from */
     private string $logFile = '';
 
+    private ?HilosDbContext $previousDb = null;
+
     public function setUp(): void
     {
         $this->logFile = (string)tempnam(sys_get_temp_dir(), 'hilos-worker-browser-context');
         Logger::setLogFile($this->logFile);
         WorkerTickFailureLog::reset();
+        $this->previousDb = Hilos::$db;
 
         parent::setUp();
     }
 
     public function tearDown(): void
     {
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(WorkerManagerBrowserContextTestAgent::AGENT_TYPE));
+        Hilos::$db = $this->previousDb;
         Hilos::$browser = null;
         Hilos::$sr = null;
         Logger::resetLogFile();
@@ -222,6 +239,103 @@ final class WorkerManagerBrowserContextTest extends TestCase
             (string)file_get_contents($this->logFile),
         );
     }
+
+    /**
+     * Two own RT frames of one row come back from the daemon: neither is a fact for this worker's
+     * browsers or agents, because the worker recorded its write when it sent it. A foreign frame
+     * of the same row right after is one.
+     */
+    public function testOwnRtEchoesOfOneRowReachNeitherTheBrowserNorTheAgent(): void
+    {
+        $browser = new WorkerManagerBrowserContextTestBrowserContext();
+        Hilos::$browser = $browser;
+        $agent = new WorkerManagerBrowserContextTestAgent();
+        $manager = $this->startedManager($agent);
+        $handleRtSync = Closure::bind(
+            static function (WorkerManager $manager, RtSyncSignalDataInterface $signalData): void {
+                RtWorkDriver::runSynchronously($manager->handleRtSyncMessage($signalData));
+            },
+            null,
+            WorkerManager::class,
+        );
+        Hilos::$sr?->queueRtSyncSignal(
+            SignalConstants::RT_SYNC_UPDATED,
+            new RtSyncUpdatedSignalData('connections', 'ak-1', ['presence' => 'online'], previous: ['presence' => 'away']),
+        );
+        Hilos::$sr?->queueRtSyncSignal(
+            SignalConstants::RT_SYNC_UPDATED,
+            new RtSyncUpdatedSignalData('connections', 'ak-1', ['presence' => 'busy'], previous: ['presence' => 'online']),
+        );
+        $firstEcho = Hilos::$sr?->getNextQueuedSignal()?->data;
+        $secondEcho = Hilos::$sr?->getNextQueuedSignal()?->data;
+        $this->assertInstanceOf(RtSyncUpdatedSignalData::class, $firstEcho);
+        $this->assertInstanceOf(RtSyncUpdatedSignalData::class, $secondEcho);
+
+        $handleRtSync($manager, $firstEcho);
+        $handleRtSync($manager, $secondEcho);
+
+        $this->assertFalse($browser->hasChanges());
+        $this->assertSame(0, $agent->rtSyncCalls);
+
+        $handleRtSync($manager, new RtSyncUpdatedSignalData(
+            'connections',
+            'ak-1',
+            ['presence' => 'away'],
+            previous: ['presence' => 'busy'],
+            emitter: 'another-process',
+        ));
+
+        $this->assertSame(1, $agent->rtSyncCalls);
+        $browser->flushToSignalRouter();
+        $this->assertCount(1, $browser->emittedChangeSets);
+        $this->assertCount(1, $browser->emittedChangeSets[0]->all());
+    }
+
+    /**
+     * The DB half of the same contract, through the worker's own door for a daemon frame: an own
+     * row update and an own clear are dropped before they are applied, recorded or dispatched,
+     * and a foreign update of the same row goes all the way.
+     */
+    public function testOwnDbEchoesReachNeitherTheBrowserNorTheAgent(): void
+    {
+        Hilos::$db = new WorkerManagerBrowserContextTestDbContext();
+        $browser = new WorkerManagerBrowserContextTestBrowserContext();
+        Hilos::$browser = $browser;
+        $agent = new WorkerManagerBrowserContextTestAgent();
+        $manager = $this->startedManager($agent);
+        $ownEmitter = Hilos::$sr?->getEmitter();
+        $this->assertIsString($ownEmitter);
+
+        $manager->deliver(new WorkerDbSyncUpdatedMessageDTO(
+            new DbSyncUpdatedSignalData('users', '1', ['name' => 'Grace'], emitter: $ownEmitter, previous: ['name' => 'Ada']),
+        ));
+        $manager->deliver(new WorkerDbSyncClearedMessageDTO(new DbSyncClearedSignalData('users', emitter: $ownEmitter)));
+
+        $this->assertFalse($browser->hasChanges());
+        $this->assertSame(0, $agent->dbSyncCalls);
+
+        $manager->deliver(new WorkerDbSyncUpdatedMessageDTO(
+            new DbSyncUpdatedSignalData('users', '1', ['name' => 'Linus'], emitter: 'another-process', previous: ['name' => 'Grace']),
+        ));
+
+        $this->assertSame(1, $agent->dbSyncCalls);
+        $browser->flushToSignalRouter();
+        $this->assertCount(1, $browser->emittedChangeSets);
+        $this->assertCount(1, $browser->emittedChangeSets[0]->all());
+    }
+
+    /**
+     * @param WorkerManagerBrowserContextTestAgent $agent Agent the worker's factory hands out
+     * @return WorkerManagerBrowserContextTestManager Worker with that agent started the way the daemon starts one
+     */
+    private function startedManager(WorkerManagerBrowserContextTestAgent $agent): WorkerManagerBrowserContextTestManager
+    {
+        $manager = new WorkerManagerBrowserContextTestManager($agent);
+        $manager->attachClient(new WorkerManagerBrowserContextTestClient());
+        $manager->deliver(new AgentStartDTO(WorkerManagerBrowserContextTestAgent::AGENT_TYPE));
+
+        return $manager;
+    }
 }
 
 final class WorkerManagerBrowserContextTestBrowserContext extends BrowserContext
@@ -264,6 +378,12 @@ final class WorkerManagerBrowserContextTestManager extends WorkerManager
     public function attachClient(WorkerDaemonClient $client): void
     {
         $this->daemonClient = $client;
+    }
+
+    /** @param WorkerDTO $message Daemon frame delivered with the caller's execution context preserved */
+    public function deliver(WorkerDTO $message): void
+    {
+        ExecutionContext::run(new ExecutionFrame(), fn () => $this->handleDaemonMessage($message));
     }
 
     protected function createSignalRouter(): SignalRouter
@@ -324,7 +444,54 @@ final class WorkerManagerBrowserContextTestAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = 'unit_browser_context';
 
+    /** How many RT sync facts this agent was handed */
+    public int $rtSyncCalls = 0;
+
+    /** How many DB sync facts this agent was handed */
+    public int $dbSyncCalls = 0;
+
     public function onStop(): void
+    {
+    }
+
+    public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        $this->dbSyncCalls++;
+    }
+
+    public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
+    {
+        $this->dbSyncCalls++;
+    }
+
+    public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
+    {
+        $this->dbSyncCalls++;
+    }
+
+    public function onSignalRtSyncCreated(RtSyncCreatedSignalData $data, string $source, string $name): void
+    {
+        $this->rtSyncCalls++;
+    }
+
+    public function onSignalRtSyncUpdated(RtSyncUpdatedSignalData $data, string $source, string $name): void
+    {
+        $this->rtSyncCalls++;
+    }
+
+    public function onSignalRtSyncDeleted(RtSyncDeletedSignalData $data, string $source, string $name): void
+    {
+        $this->rtSyncCalls++;
+    }
+}
+
+/**
+ * Database context with nothing mounted: a row sync for it is a fact the worker records and
+ * dispatches, and there is no copy here to apply it to.
+ */
+final class WorkerManagerBrowserContextTestDbContext extends HilosDbContext
+{
+    public function configure(): void
     {
     }
 }

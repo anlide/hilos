@@ -63,6 +63,7 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Runtime\RtSnapshotRead;
 use Hilos\Runtime\Snapshot\RtWorkScheduler;
 use Hilos\Runtime\State\Collection\HilosSessionRotations;
@@ -869,6 +870,38 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $this->assertFalse($rotations->has(self::TICKET), 'A ticket spent on another node is spent here too');
         $this->assertSame([SignalTypeConstants::RT_SYNC_DELETED], $daemon->workerServer->frameTypes());
         $this->assertStringNotContainsString('truth sources on two nodes', $logged);
+    }
+
+    /**
+     * The same burn while a frame of this master's own about the ticket is still on its way back:
+     * whose frame it is comes from its stamp, so the neighbour's burn is applied rather than taken
+     * for that echo, and the echo that returns afterwards does not bring the spent ticket back.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testTheBurnOfATicketIsAppliedWhileAnOwnFrameOfItIsInFlight(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $rotations = $daemon->mountRotationStore();
+        $rotation = StateHilosSessionRotation::create(self::TICKET, 'session-token', [], 0.0);
+        $rotations->add($rotation);
+        $daemon->noteOwnAgent('session_agent', [StateHilosSessionRotation::RT_COLLECTION]);
+        Hilos::$sr = new SignalRouter();
+        Hilos::$sr->queueRtSyncSignal(
+            SignalConstants::RT_SYNC_CREATED,
+            new RtSyncCreatedSignalData(StateHilosSessionRotation::RT_COLLECTION, self::TICKET, $rotation->toArray()),
+        );
+        $ownEcho = Hilos::$sr->getNextQueuedSignal()?->data;
+        $this->assertInstanceOf(RtSyncCreatedSignalData::class, $ownEcho);
+
+        ob_start();
+        $daemon->receive($daemon->rotationBurned(self::TICKET));
+        $burned = !$rotations->has(self::TICKET);
+        RtSyncApplicator::applyCreated($ownEcho);
+        ob_end_clean();
+
+        $this->assertTrue($burned, 'A ticket spent on another node is spent here too');
+        $this->assertFalse($rotations->has(self::TICKET), 'The own echo does not bring the spent ticket back');
     }
 
     /**

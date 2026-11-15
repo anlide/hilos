@@ -156,7 +156,9 @@ final class RtSyncStreamTransportTest extends TestCase
         [$source, $sourceLink] = $this->link(1);
         $row = ['blob' => str_repeat("part \"of\" a row\n", 3000), 'count' => 3];
         $previous = ['blob' => 'before', 'count' => 2];
-        $source->stream->send(new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', $row, 'accept-1', 'request-1', $previous));
+        $source->stream->send(new RtSyncUpdatedSignalData(
+            self::COLLECTION, 'row-1', $row, 'accept-1', 'request-1', $previous, emitter: 'emitter-w1',
+        ));
 
         $this->assertCount(1, $source->written, 'One part is out before the master answers');
         while (!end($source->written)->final) {
@@ -192,8 +194,8 @@ final class RtSyncStreamTransportTest extends TestCase
         $operation = $this->reader->delivered[0];
         $data = $operation->signalData();
         $this->assertInstanceOf(RtSyncUpdatedSignalData::class, $data);
-        $this->assertSame([$row, $previous, 'accept-1', 'request-1', null], [$data->row, $data->previous, $data->origin,
-            $data->originRequestId, $operation->originNodeId]);
+        $this->assertSame([$row, $previous, 'accept-1', 'request-1', 'emitter-w1', null], [$data->row, $data->previous, $data->origin,
+            $data->originRequestId, $data->emitter, $operation->originNodeId]);
         $this->assertTrue($this->readerLink->rtSyncStream()->isIdle(), 'The reading worker answered applied');
 
         $stale = $this->staleFrame();
@@ -1336,7 +1338,7 @@ final class RtSyncStreamTransportTest extends TestCase
             },
         );
         $row = ['blob' => str_repeat('peer row ', 4000), 'nested' => ['a' => [1, 2.5, true, null]]];
-        $remote->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-2', $row, 'accept-2'), 'node-b', true);
+        $remote->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-2', $row, 'accept-2', emitter: 'emitter-n1'), 'node-b', true);
 
         $parts = 0;
         while (true) {
@@ -1362,12 +1364,20 @@ final class RtSyncStreamTransportTest extends TestCase
         $this->deliverToReader();
         $this->assertCount(1, $this->reader->delivered);
         $operation = $this->reader->delivered[0];
-        $this->assertSame([RtSyncStreamOperation::FIELD_ROW => $row, 'origin' => 'accept-2', 'node' => null, 'partial' => false], [
+        $this->assertSame([
+            RtSyncStreamOperation::FIELD_ROW => $row,
+            'origin' => 'accept-2',
+            RtSyncStreamOperation::FIELD_EMITTER => 'emitter-n1',
+            'node' => null,
+            'partial' => false,
+        ], [
             RtSyncStreamOperation::FIELD_ROW => RtRowValues::nativeMap($operation->row),
             'origin' => $operation->origin,
+            RtSyncStreamOperation::FIELD_EMITTER => $operation->emitter,
             'node' => $operation->originNodeId,
             'partial' => $operation->partialOwner,
         ]);
+        $this->assertSame('emitter-n1', $operation->signalData()->emitter, 'The worker\'s carrier names the process that sent the fact');
 
         $remote->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-3', ['blob' => 'third']), 'node-c');
         $this->drain($remote);

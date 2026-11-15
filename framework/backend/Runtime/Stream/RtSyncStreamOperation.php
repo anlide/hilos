@@ -44,6 +44,8 @@ final class RtSyncStreamOperation
     public const string FIELD_ORIGIN = 'origin';
     /** @var string Field: request id of the action behind the write */
     public const string FIELD_ORIGIN_REQUEST_ID = 'originRequestId';
+    /** @var string Field: identity of the process that sent the operation */
+    public const string FIELD_EMITTER = 'emitter';
     /** @var string Field: the peer node the write happened on */
     public const string FIELD_ORIGIN_NODE_ID = 'originNodeId';
     /** @var string Field: whether the origin holds only part of the right over the collection */
@@ -61,6 +63,7 @@ final class RtSyncStreamOperation
         self::FIELD_STATE_ID,
         self::FIELD_ORIGIN,
         self::FIELD_ORIGIN_REQUEST_ID,
+        self::FIELD_EMITTER,
         self::FIELD_ORIGIN_NODE_ID,
         self::FIELD_PARTIAL_OWNER,
         self::FIELD_ROW,
@@ -84,6 +87,7 @@ final class RtSyncStreamOperation
      * @param string $stateId State id
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null
+     * @param ?string $emitter Identity of the process that sent the operation, or null when unstamped
      * @param ?string $originNodeId Peer node the write happened on, or null on worker IPC
      * @param bool $partialOwner Whether the origin holds only part of the right over the collection
      * @param RtRowValues $row Full row, patch, or old row
@@ -98,6 +102,7 @@ final class RtSyncStreamOperation
         public readonly string $stateId,
         public readonly ?string $origin,
         public readonly ?string $originRequestId,
+        public readonly ?string $emitter,
         public readonly ?string $originNodeId,
         public readonly bool $partialOwner,
         public readonly RtRowValues $row,
@@ -145,6 +150,7 @@ final class RtSyncStreamOperation
             $data->stateId,
             $data->origin,
             $data->originRequestId,
+            $data->emitter,
             $originNodeId,
             $partialOwner,
             $data->rowValues(),
@@ -189,6 +195,7 @@ final class RtSyncStreamOperation
             (yield from self::text($values[self::FIELD_STATE_ID])),
             (yield from self::nullableText($values[self::FIELD_ORIGIN])),
             (yield from self::nullableText($values[self::FIELD_ORIGIN_REQUEST_ID])),
+            (yield from self::nullableText($values[self::FIELD_EMITTER])),
             (yield from self::nullableText($values[self::FIELD_ORIGIN_NODE_ID])),
             (yield from self::boolean($values[self::FIELD_PARTIAL_OWNER])),
             self::map($values[self::FIELD_ROW]),
@@ -206,12 +213,15 @@ final class RtSyncStreamOperation
         return match ($this->signalType) {
             SignalTypeConstants::RT_SYNC_CREATED => new RtSyncCreatedSignalData(
                 $this->collectionKey, $this->stateId, $this->row, $this->origin, $this->originRequestId,
+                emitter: $this->emitter,
             ),
             SignalTypeConstants::RT_SYNC_UPDATED => new RtSyncUpdatedSignalData(
                 $this->collectionKey, $this->stateId, $this->row, $this->origin, $this->originRequestId, $this->previous,
+                emitter: $this->emitter,
             ),
             default => new RtSyncDeletedSignalData(
                 $this->collectionKey, $this->stateId, $this->row, $this->origin, $this->originRequestId,
+                emitter: $this->emitter,
             ),
         };
     }

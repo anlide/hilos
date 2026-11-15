@@ -437,7 +437,8 @@ final class ProtectedModeRosterStepTest extends TestCase
         $this->pump();
         $checks = $this->server->diagnosticChecks;
         RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(StateProtectedModeRuntime::RT_ITEM,
-            StateProtectedModeRuntime::ID, [StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_ACTIVE]));
+            StateProtectedModeRuntime::ID, [StateProtectedModeRuntime::phase => StateProtectedModeRuntime::PHASE_ACTIVE],
+            emitter: Hilos::$sr?->getEmitter()));
         self::assertSame(StateProtectedModeRuntime::PHASE_INACTIVE, $source->hilosProtectedModeRuntime->phase);
         RtSyncApplicator::applyUpdated(new RtSyncUpdatedSignalData(TableLagRuntime::RT_ITEM,
             TableLagRuntime::ID, [TableLagRuntime::windowMs => 1]), false);

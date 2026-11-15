@@ -40,6 +40,7 @@ class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
      * @param ?string $origin Accept key of the writing connection, or null when unattended
      * @param ?string $originRequestId Request id of the action behind the write, or null when no action is behind it
      * @param array<string, mixed>|RtRowValues $previous Previous values of the changed fields
+     * @param ?string $emitter Identity of the process that sent this fact, or null when unstamped
      */
     public function __construct(
         public readonly string $collectionKey,
@@ -48,9 +49,32 @@ class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
         public readonly ?string $origin = null,
         public readonly ?string $originRequestId = null,
         array|RtRowValues $previous = [],
+        public readonly ?string $emitter = null,
     ) {
         $this->rowSource = $row;
         $this->previousSource = $previous;
+    }
+
+    /**
+     * Returns a copy stamped with the identity of the sending process.
+     *
+     * The row and the previous values go into the copy in the form this payload holds them,
+     * so a segmented carrier is not materialized by stamping it.
+     *
+     * @param string $emitter Identity of the sending process
+     * @return static Copy carrying the emitter stamp
+     */
+    public function withEmitter(string $emitter): static
+    {
+        return new static(
+            collectionKey: $this->collectionKey,
+            stateId: $this->stateId,
+            row: $this->carriedRow(),
+            origin: $this->origin,
+            originRequestId: $this->originRequestId,
+            previous: $this->carriedPrevious(),
+            emitter: $emitter,
+        );
     }
 
     /**
@@ -111,6 +135,7 @@ class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
             SyncSignalDataKey::PREVIOUS => $this->previous,
             SyncSignalDataKey::ORIGIN => $this->origin,
             SyncSignalDataKey::ORIGIN_REQUEST_ID => $this->originRequestId,
+            SyncSignalDataKey::EMITTER => $this->emitter,
         ];
     }
 
@@ -130,6 +155,7 @@ class RtSyncUpdatedSignalData extends BaseDTO implements RtSyncSignalDataInterfa
             origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
             originRequestId: self::optionalString($data, SyncSignalDataKey::ORIGIN_REQUEST_ID),
             previous: self::requireArray($data, SyncSignalDataKey::PREVIOUS),
+            emitter: self::optionalString($data, SyncSignalDataKey::EMITTER),
         );
     }
 }

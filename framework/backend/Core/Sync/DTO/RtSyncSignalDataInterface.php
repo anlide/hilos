@@ -7,7 +7,7 @@ namespace Hilos\Core\Sync\DTO;
 /**
  * State-scoped RT sync payload: a create, an update or a delete of one state item.
  */
-interface RtSyncSignalDataInterface extends SyncSignalDataInterface
+interface RtSyncSignalDataInterface extends EmitterStampedSyncSignalDataInterface
 {
     /** @var string State ID */
     public string $stateId { get; }

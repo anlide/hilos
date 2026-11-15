@@ -98,6 +98,7 @@ final class RtSyncStreamEncoder
             RtSyncStreamOperation::FIELD_STATE_ID => $operation->stateId,
             RtSyncStreamOperation::FIELD_ORIGIN => $operation->origin,
             RtSyncStreamOperation::FIELD_ORIGIN_REQUEST_ID => $operation->originRequestId,
+            RtSyncStreamOperation::FIELD_EMITTER => $operation->emitter,
             RtSyncStreamOperation::FIELD_ORIGIN_NODE_ID => $operation->originNodeId,
             RtSyncStreamOperation::FIELD_PARTIAL_OWNER => $operation->partialOwner,
         ];
