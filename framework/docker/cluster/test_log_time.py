@@ -57,6 +57,15 @@ class LogTimeTest(unittest.TestCase):
                           datetime(2026, 10, 24, 16, 10, 12, 123000, tzinfo=timezone.utc)],
                          scenarios.started_on_worker_at(text, "hilos_i18n_library"))
 
+    def test_agent_stop_prefix_takes_only_its_own_stops_in_order(self):
+        text = ("[2026-10-24T16:10:11.123Z] [INFO] Agent 'hilos_probe_fleet:0' stopped on worker #2\n"
+                "[2026-10-24T16:10:11.234Z] Agent 'hilos_probe_fleet:0' started on worker #3\n"
+                "[2026-10-24T16:10:11.456Z] Agent 'hilos_probe_fleet:1' stopped on worker #3\n"
+                "[2026-10-24T16:10:12.123Z] Agent 'hilos_probe_fleet:0' stopped on worker #3\n")
+        self.assertEqual([datetime(2026, 10, 24, 16, 10, 11, 123000, tzinfo=timezone.utc),
+                          datetime(2026, 10, 24, 16, 10, 12, 123000, tzinfo=timezone.utc)],
+                         scenarios.stopped_on_worker_at(text, "hilos_probe_fleet:0"))
+
     def test_placement_prefix_preserves_moments_and_destinations(self):
         text = ("[2026-10-24T16:10:11.123Z] [INFO] Placing agent 'hilos_probe_fleet:0' on node 's1'\n"
                 "[2026-10-24T16:10:11.456Z] Placing agent 'hilos_probe_fleet:1' on node 's2'\n"

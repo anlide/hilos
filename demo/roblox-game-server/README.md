@@ -266,13 +266,17 @@ library has checked the reader.
 Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
 the scenarios it names — 26, the database is one cluster of two data nodes and
-the arbitrator, and 49, a row written by one node is read by another through
-another data node, past the process copy and after that connection is lost. The
-framework's database probe is in this demo's `AGENTS` and starts only here; it
-keeps its values in the framework table `hilos_probe_value`, which this demo's
-schema carries as the framework unit `probe_value` (a migration pair from
-`db:framework:pull`, see [Database migrations](#database-migrations)). The full
-run has a step of its own, `roblox-game-server-cluster`.
+the arbitrator, 49, a row written by one node is read by another through
+another data node, past the process copy and after that connection is lost, 50,
+both data members hold one journal, and 51, a working master that does not lead
+is cut off and stops its work before it runs on another node. The framework's
+fleet and database probe are in this demo's `AGENTS` and start only here:
+scenario 51 reads the fleet, scenario 49 writes and reads through the database
+probe. The database probe keeps its values in the framework table
+`hilos_probe_value`, which this demo's schema carries as the framework unit
+`probe_value` (a migration pair from `db:framework:pull`, see
+[Database migrations](#database-migrations)). The full run has a step of its
+own, `roblox-game-server-cluster`.
 
 | Command | What it does |
 |---|---|
@@ -282,7 +286,7 @@ run has a step of its own, `roblox-game-server-cluster`.
 | `composer run test:cluster:inspect -- m1` | inspect one node as JSON |
 | `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
 | `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
-| `composer run test:cluster:scenarios` | scenarios 26 and 49 on a fresh stand; `-- 49` runs only the one named |
+| `composer run test:cluster:scenarios` | scenarios 26, 49, 50 and 51 on a fresh stand; `-- 51` runs only the one named |
 | `composer run test:cluster:e2e` | fresh browser suite: Daemon, one person's tabs, theme and protected mode on live masters, the daemon phase is parked (F-023); build first with `test:e2e-build`; `-- --grep 'cluster theme'` points it |
 | `composer run test:cluster:e2e-time-zone` | draw an explicit browser zone for a new cluster spec |
 | `composer run test:cluster:down-volumes` | take the stand down, database included |

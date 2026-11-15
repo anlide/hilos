@@ -404,12 +404,14 @@ $steps = array_merge($steps, [
     // The fleet of roblox-game-server (HIL-2029): three masters and one slave over a MariaDB
     // Galera cluster of two data members and an arbitrator behind HAProxy. Scenario 26 writes
     // through both data members, scenario 49 reads what one node wrote through the other one,
-    // and scenario 50 holds both data members to one journal.
+    // scenario 50 holds both data members to one journal, and scenario 51 cuts off a working
+    // master that does not lead, which stops its work before it runs on another node.
     // Beside the other fleets and any e2e step, in the group of its stand, so that a browser step
     // over the same compose project would not run beneath it (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
-    // demo's unit suite runs in roblox-game-server-php. Seconds: an estimate after
-    // online-testing-cluster, not a measurement (HIL-2043 measures it).
+    // demo's unit suite runs in roblox-game-server-php. Seconds: one measurement of this step on
+    // one stand (HIL-2036, 300 s with the stand's up and down); HIL-2043 measures it in the full
+    // run.
     [
         'id' => 'roblox-game-server-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -418,7 +420,7 @@ $steps = array_merge($steps, [
         'deps' => ['roblox-game-server-deps'],
         'group' => 'roblox-game-server-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 90,
+        'seconds' => 300,
         'downsStand' => true,
     ],
     // Daemon clock, environment mismatch and orphans, and section navigation; one

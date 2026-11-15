@@ -36,7 +36,7 @@ name: hilos-roblox-game-server-cluster${HILOS_STAND_SUFFIX:-}
 x-hilos-cluster:
   cli: roblox-game-server-cluster-cli
   entry: roblox-game-server-cluster-entry
-  scenarios: [26, 49, 50]
+  scenarios: [26, 49, 50, 51]
   e2e:
     runner: roblox-game-server-cluster-e2e-runner
     capabilities: [daemon, env-mismatch]

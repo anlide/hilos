@@ -213,16 +213,14 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
         }
     }
 
-    /** The database probe of the cluster stand is listed as the framework wrote it. */
+    /** The fleet and database probes of the cluster stand are listed as the framework wrote them. */
     public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void
     {
-        // The row is the framework's record, not this demo's copy of it: the flags every
+        // The rows are the framework's records, not this demo's copies of them: the flags every
         // cluster scenario stands on are pinned once, in the framework's own registry test.
-        self::assertSame(
-            ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_DB],
-            Hilos::AGENTS[HilosAgentType::HILOS_PROBE_DB],
-            HilosAgentType::HILOS_PROBE_DB . ' is listed as the framework wrote it',
-        );
+        foreach ([HilosAgentType::HILOS_PROBE_FLEET, HilosAgentType::HILOS_PROBE_DB] as $agentType) {
+            self::assertSame(ClusterProbe::AGENTS[$agentType], Hilos::AGENTS[$agentType], "{$agentType} is listed as the framework wrote it");
+        }
     }
 
     /** Server tables are concrete; browser tables, lists and data retain their declared keys. */

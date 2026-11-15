@@ -480,11 +480,12 @@ class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => ModerationRulesLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
-        // The probe of this demo's cluster stand - scenario 49 writes and reads through it, on
-        // both data members of the Galera database. A probe starts only on a clustered node of a
-        // non-production environment, so this demo on one node, on its Playwright stand and in
-        // production carries the row and runs none of it (docs/agents/testing.md, "The cluster
-        // stands").
+        // The probes of this demo's cluster stand - scenario 51 reads the fleet, scenario 49
+        // writes and reads through the database probe, on both data members of the Galera
+        // database. A probe starts only on a clustered node of a non-production environment, so
+        // this demo on one node, on its Playwright stand and in production carries the rows and
+        // runs none of them (docs/agents/testing.md, "The cluster stands").
+        HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
         HilosAgentType::HILOS_PROBE_DB => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_DB],
     ];
 

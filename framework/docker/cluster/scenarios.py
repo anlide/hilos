@@ -5379,6 +5379,41 @@ def started_on_worker_at(text, agent_id):
     return [log_time(stamp) for stamp in pattern.findall(text)]
 
 
+def stopped_on_worker_at(text, agent_id):
+    """The moments one agent was stopped on a worker in a piece of a node's log, oldest first."""
+    pattern = re.compile(rf"^\[([^\]]+)\].*Agent '{re.escape(agent_id)}' stopped on worker #\d+", re.M)
+    return [log_time(stamp) for stamp in pattern.findall(text)]
+
+
+def assert_one_executor(victim, stops, starts):
+    """The smallest gap in seconds between the victim stopping a member and another node starting it.
+
+    `stops` holds, by member, the moments the victim's log stopped it; `starts` holds, by member,
+    the node the leader's table runs it on and the moments that node's log started it since the
+    cut, both oldest first. A member the victim never stopped, or its new host has not started,
+    is a poll still waiting; a member that came up before, or at the very moment, the victim
+    stopped it ran on two executors at once. The order is checked for every member that has both
+    lines before a missing line of any member is waited for, so an overlap fails whatever order
+    the members come in.
+    """
+    for member, (host, started) in starts.items():
+        stopped = stops.get(member, [])
+        if stopped and started and started[0] <= stopped[0]:
+            raise AssertionError(f"{member} came up on {host} at {started[0].isoformat(timespec='milliseconds')} "
+                                 f"while {victim} stopped it only at {stopped[0].isoformat(timespec='milliseconds')}: "
+                                 "two executors at once")
+    gaps = []
+    for member, (host, started) in starts.items():
+        stopped = stops.get(member, [])
+        if not stopped:
+            raise ScenarioTimeout(f"{victim} never reported {member} stopped")
+        if not started:
+            raise ScenarioTimeout(f"{member} runs on {host} by the leader's table, but {host}'s log has not "
+                                  "started it since the cut")
+        gaps.append((started[0] - stopped[0]).total_seconds())
+    return min(gaps)
+
+
 def placed_on_node_at(text, agent_id):
     """Where and when a leader placed one agent in a piece of its log, as (moment, node), oldest first."""
     pattern = re.compile(rf"^\[([^\]]+)\].*Placing agent '{re.escape(agent_id)}' on node '([^']+)'", re.M)
@@ -5420,10 +5455,10 @@ def assert_leader_last_among_equals(views):
 
 
 def spread_fleet_over(carriers, views):
-    """Make both masters that do not lead carry fleet members, and answer the views that show it.
+    """Make both carriers that do not lead carry fleet members, and answer the views that show it.
 
     One of them carries none only when it was not there for the first placement. One worker of the
-    other is killed, and the leader places the members it hosted again - on the empty master,
+    other is killed, and the leader places the members it hosted again - on the empty carrier,
     which runs the fewest agents and so holds the lowest share.
     """
     empty = [node for node in carriers if not hosted_by(views, node)]
@@ -5970,6 +6005,173 @@ def scenario_36_slave_cut_off_with_its_leader_stops_its_work():
         wait_converge(ALL_NODES)
 
 
+def scenario_51_working_master_cut_off_stops_its_work():
+    """A working master that does not lead and is cut off stops its work before the leader moves it (HIL-2036).
+
+    On a stand whose masters are not alike - one declares no ram and carries no placed work, the
+    others carry the fleet beside a working slave - the node cut off is a follower that carries
+    fleet members, and the leader keeps its quorum. That is the shape none of its neighbors holds:
+    24 cuts off the LEADER on a stand of equal masters, and the majority's fresh leader waits for
+    the cut-off node in its rebuild; 36 cuts off a slave, which knows nothing of a quorum, together
+    with its leader; 4 kills a slave outright, and a dead node runs no copy. Here the leader never
+    changes and runs no rebuild: what keeps the follower's copy and the new one from running at
+    once is the order of two timers on two nodes, each counted from the moment its own node finds
+    the link timed out - the follower's fence fires after CLUSTER_SLAVE_WORK_GRACE_MS, the leader
+    moves the work after CLUSTER_FAILOVER_GRACE_MS, two seconds later on this stand as in production.
+
+    The follower learns two things at once and in an order nothing sets: the leader that placed its
+    work went offline (ClusterPlacement::noteNodeOffline() arms the fence for the isolation), and
+    the masters it votes with are gone (noteQuorumLost() arms the fence, or names the lost quorum as
+    the cause of the one already armed). Both armings are lawful, and either way the fence fires
+    for the lost quorum (selfFence(), "Self-fence: quorum lost, stopping N placed agent(s)").
+
+    The node is taken off the network whole (`partition`), not cut off as an island (`cut`): a cut
+    lays its blackhole routes by one docker run per node, the victim first (control.py
+    _route_island), so until that queue has run the victim still hears the leader while the leader
+    no longer hears it - a skew in the dangerous direction, against a margin of two seconds. A
+    partition takes the interface away at once, and the link breaks both ways together. The
+    database servers stay healthy meanwhile, the fleet does not use the database, and the victim's
+    log is read from the host, since the victim cannot be asked.
+
+    Asserted on the logs: the victim fired its fence for at least its fleet members, armed for one
+    of the two causes; the leader placed none of them before that fence fired; each came up on its
+    new host only after the victim stopped it - an earlier start is two executors at once; and the
+    rows of the moved members are written past their stop by the nodes still linked. A start the
+    new host's log never shows is waited for and retried, not failed: it is the symptom 24 is
+    parked for (F-013), not an order broken. The master that declares no ram hosts nothing, before
+    the cut and after it. A leader other than the one before the cut is a re-election of the
+    stand's own (P-459), not the product, and is retried. The victim is checked to be a follower
+    of that leader when it is cut off - a leader other than it once the fleet is spread, or a
+    leadership the victim's own log says it lost to the lost quorum, is the shape of 24 and is
+    retried too. The victim is recreated, as in 24.
+    """
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the cut")
+    leader = leaders(views)[0]
+    bare = [n for n in MASTERS if not STAND.members[n].ram]
+    working = [n for n in MASTERS if STAND.members[n].ram and n != leader]
+    victim = max(sorted(working), key=lambda node: len(hosted_by(views, node)))
+    slave = next(n for n in SLAVES if STAND.members[n].ram)
+    carriers = [victim, slave]
+    if not any(hosted_by(views, node) for node in carriers):
+        raise ScenarioPreconditionLost(f"neither {victim} nor {slave} carries a fleet member under {leader}: "
+                                       "the fleet is placed elsewhere, and there is nothing to move it from")
+    try:
+        views = spread_fleet_over(carriers, views)
+    except ScenarioTimeout as error:
+        raise ScenarioPreconditionLost(f"{victim} and {slave} do not both carry fleet members under {leader}: "
+                                       "the leader placed the moved ones elsewhere") from error
+    if leaders(views) != [leader]:
+        raise ScenarioPreconditionLost(f"{', '.join(leaders(views)) or 'no master'} leads once the fleet is spread "
+                                       f"over {victim} and {slave}, not {leader}: a re-election of the stand's own "
+                                       "(P-459)")
+    for node in bare:
+        assert live_on(views, node) == 0, (f"{node} declares no ram, yet the leader runs {live_on(views, node)} "
+                                           "placed agent(s) on it")
+    for member, row in sorted(worker_placements(views).items()):
+        assert STAND.members[row["nodeId"]].ram, f"{member} runs on {row['nodeId']}, which declares no ram"
+    members = hosted_by(views, victim)
+    others = [n for n in ALL_NODES if n != victim]
+    quorum = [n for n in MASTERS if n != victim]
+    marks = {n: node_log_mark(n) for n in ALL_NODES}
+    print(f"    partitioning {victim} with {len(members)} fleet member(s) under {leader}: {sorted(members)}")
+    ctl("partition", victim)
+    try:
+        def one_leads(v):
+            ls = leaders(v)
+            return len(ls) == 1 and v[ls[0]].get("hasQuorum") is True
+        views = wait_until(one_leads, ELECTION_TIMEOUT, "the rest of the stand has one leader with quorum",
+                           nodes=others)
+        if leaders(views) != [leader]:
+            raise ScenarioPreconditionLost(f"{leaders(views)[0]} leads after {victim} was cut off, not {leader}: a "
+                                           "re-election of the stand's own (P-459)")
+
+        def fence_fired(_views):
+            return QUORUM_FENCE_FIRED.search(node_log_since(victim, marks[victim])) is not None
+
+        try:
+            wait_until(fence_fired, CONVERGE_TIMEOUT, f"{victim} fences its work", nodes=others)
+        except ScenarioTimeout as error:
+            raise AssertionError(
+                f"{victim} carried {len(members)} fleet member(s) for {leader} and was cut off, yet never fenced "
+                f"them: no \"Self-fence: quorum lost\" line in {node_log_path(victim)}"
+            ) from error
+        tail = node_log_since(victim, marks[victim])
+        if LEADERSHIP_LOST_ON_QUORUM.search(tail):
+            raise ScenarioPreconditionLost(f"{victim} led when it was cut off, not {leader}: its log says it lost its "
+                                           "leadership to the lost quorum - a re-election of the stand's own (P-459)")
+        assert QUORUM_FENCE_ARMED.search(tail) or leader in ISOLATION_FENCE_ARMED.findall(tail), (
+            f"{victim} fired a quorum fence it armed neither for the lost quorum nor for {leader} going offline "
+            f"(read {node_log_path(victim)})")
+        fired_stamp, fired_count = QUORUM_FENCE_FIRED.findall(tail)[0]
+        assert int(fired_count) >= len(members), (f"{victim} fired its quorum fence for {fired_count} placed "
+                                                  f"agent(s), fewer than its {len(members)} fleet members")
+        fired_at = log_time(fired_stamp)
+
+        def fleet_moved_off(v):
+            return fleet_started(v) and all(row.get("nodeId") != victim for row in worker_placements(v).values())
+
+        views = wait_until(fleet_moved_off, CONVERGE_TIMEOUT, f"the whole fleet started, none of it on {victim}",
+                           nodes=others)
+        if leaders(views) != [leader]:
+            raise ScenarioPreconditionLost(f"{leaders(views)[0]} leads while {victim} is cut off, not {leader}: a "
+                                           "re-election of the stand's own (P-459)")
+        for node in bare:
+            assert live_on(views, node) == 0, (f"{node} declares no ram, yet the leader runs "
+                                               f"{live_on(views, node)} placed agent(s) on it after {victim} was cut off")
+        rows = worker_placements(views)
+        # A member the leader placed at all before the fence fired is the failover not waiting for the
+        # victim: the victim still ran its copy then.
+        placed = node_log_since(leader, marks[leader])
+        for member in sorted(members):
+            early = [(at, target) for at, target in placed_on_node_at(placed, member) if at <= fired_at]
+            assert not early, (f"{leader} placed {member} on {early[0][1]} at {early[0][0]} while {victim} "
+                               f"stopped its copy only at {fired_at}: the failover did not wait for {victim}")
+
+        def stops():
+            text = node_log_since(victim, marks[victim])
+            return {member: stopped_on_worker_at(text, member) for member in members}
+
+        def starts():
+            logs = {host: node_log_since(host, marks[host]) for host in {rows[member]["nodeId"] for member in members}}
+            return {member: (rows[member]["nodeId"], started_on_worker_at(logs[rows[member]["nodeId"]], member))
+                    for member in members}
+
+        # The victim logs a stop once its worker has let the agent go, and the new host logs a start
+        # once its worker reports the agent up, both a moment after the line that caused them.
+        try:
+            wait_until(lambda _views: all(stops().values()) and all(at for _host, at in starts().values()),
+                       CONVERGE_TIMEOUT, f"every moved member's stop in {victim}'s log and start in its new host's",
+                       nodes=others)
+        except ScenarioTimeout:
+            pass
+        stopped = stops()
+        gap = assert_one_executor(victim, stopped, starts())
+        stopped_at = {member: stopped[member][0].timestamp() for member in members}
+
+        def rows_written_on(v):
+            updates = newest_row_updates(v)
+            return all(updates.get(member.rsplit(":", 1)[1], 0) > stopped_at[member] for member in members)
+
+        try:
+            wait_until(rows_written_on, CONVERGE_TIMEOUT,
+                       f"the members moved off {victim} write their rows past their stop", nodes=others)
+        except ScenarioTimeout as error:
+            updates = newest_row_updates(inspect_all(others))
+            silent = sorted(member for member in members
+                            if updates.get(member.rsplit(":", 1)[1], 0) <= stopped_at[member])
+            if not silent:
+                raise
+            raise AssertionError(f"fleet member(s) {silent} moved off {victim} and write no row past their stop on "
+                                 f"{', '.join(others)}") from error
+        hosts = sorted({rows[member]["nodeId"] for member in members})
+        return (f"{victim} carried {len(members)} fleet member(s) and was partitioned: {leader} kept leading with a "
+                f"quorum of {', '.join(quorum)}; {victim} stopped them {gap:.2f}s before the first came up on "
+                f"{', '.join(hosts)}; {', '.join(bare)} hosted nothing")
+    finally:
+        ctl("recreate", victim)
+        wait_converge(ALL_NODES)
+
+
 # What scenario 26 asks every member of a clustered database about itself.
 CLUSTER_STATUS_SQL = ("SHOW GLOBAL STATUS WHERE Variable_name IN "
                       "('wsrep_cluster_size', 'wsrep_cluster_status', 'wsrep_local_state_comment')")
@@ -6488,14 +6690,15 @@ def scenario_28_database_member_comes_back_and_catches_up():
 
 
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
-                     "cluster_directory entry database_replicas database_votes",
-                     defaults=(0, 0, False, False, 0, False, 0, False, False, 0, 0))):
+                     "cluster_directory entry database_replicas database_votes working_masters bare_master",
+                     defaults=(0, 0, False, False, 0, False, 0, False, False, 0, 0, 0, False))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
     slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every master
     declaring ram - masters that carry placed work themselves - and a database of at least
     `database_members` members, a cluster directory, a browser entry the stand names, and at least
     `database_replicas` replicas of its database, and at least `database_votes` votes in the
-    database component, counting data members and voters but not replicas. What a
+    database component, counting data members and voters but not replicas, at least
+    `working_masters` masters that declare ram, and a master that declares none. What a
     scenario names by role - the third master, the second slave - is what it needs."""
 
 
@@ -6560,6 +6763,9 @@ SCENARIOS = [
     # the first placement laid it.
     Scenario("36 slave cut off with its leader stops its work",
              scenario_36_slave_cut_off_with_its_leader_stops_its_work, Need(masters=3, slaves=2, slave_ram=True)),
+    # Beside 36: it cuts a node off and recreates whom it cut.
+    Scenario("51 working master cut off stops its work", scenario_51_working_master_cut_off_stops_its_work,
+             Need(masters=3, slaves=1, slave_ram=True, working_masters=2, bare_master=True)),
     Scenario("9 daemon-crash self-heal", scenario_9_daemon_crash_selfheal, Need(slaves=2)),
     Scenario("39 person agents across nodes", scenario_39_person_agents_across_nodes, Need(masters=1, slaves=2)),
     Scenario("10 cross-node browser", scenario_10_cross_node_browser, Need(masters=2, slaves=1)),
@@ -6776,9 +6982,14 @@ def unmet_need(stand, scenario):
                               (need.nodes, len(stand.members), "nodes"),
                               (need.database_members, len(stand.database_members), "database members"),
                               (need.database_replicas, len(stand.database_replicas), "database replicas"),
-                              (need.database_votes, stand.database_votes, "database votes")):
+                              (need.database_votes, stand.database_votes, "database votes"),
+                              (need.working_masters,
+                               sum(1 for m in stand.masters if stand.members[m].ram) if need.working_masters else 0,
+                               "masters that declare ram")):
         if has < wanted:
             return f"it needs {wanted} {what}, the stand has {has}"
+    if need.bare_master and all(stand.members[m].ram for m in stand.masters):
+        return "it needs a master that declares no ram, the stand has none"
     if need.stranger and stand.stranger is None:
         return "it needs a stranger, the stand has none"
     if need.cluster_directory and stand.cluster_directory is None:
