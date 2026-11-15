@@ -688,8 +688,7 @@ describe('public HilosStatusPage', () => {
     },
   )
 
-  // FIXME(F-046, 2026-10-28): archive test timeout · чужой · попытка 1 · HIL-1634
-  it.skip('retains the confirmed empty archive when stale, then replaces it with published history', async () => {
+  it('retains the confirmed empty archive when stale, then replaces it with published history', async () => {
     const h = harness()
     expect(h.wrapper.find('[data-id="public-status-history"]').exists()).toBe(
       false,
@@ -702,7 +701,9 @@ describe('public HilosStatusPage', () => {
     h.fail()
     h.publish({ malformed: true }, NOW + 120000)
     await settle()
-    await vi.advanceTimersByTimeAsync(120001)
+    // The settled live reader has only clock callbacks; batch intermediate
+    // renders, then flush the final state below.
+    vi.advanceTimersByTime(120001)
     await nextTick()
     expect(h.wrapper.get('[data-id="public-status-banner"]').text()).toBe(
       `The system is not responding since ${formatMoment(NOW)}`,
@@ -969,8 +970,7 @@ describe('public HilosStatusPage', () => {
     expect(h.send).not.toHaveBeenCalled()
   })
 
-  // FIXME(F-094, 2026-11-12): keyboard-focused strip date test timeout · чужой · попытка 1 · HIL-1981
-  it.skip.each([90, 30])(
+  it.each([90, 30])(
     'keeps the keyboard-focused date in the %s-day strip through local silence, midnight and recovery',
     async (count) => {
       const aliveAt = Date.parse('2026-10-25T22:59:00Z')
@@ -999,7 +999,9 @@ describe('public HilosStatusPage', () => {
         detail.attributes('id'),
       )
 
-      await vi.advanceTimersByTimeAsync(120001)
+      // The settled live reader has only clock callbacks; batch intermediate
+      // renders, then flush the final state below.
+      vi.advanceTimersByTime(120001)
       await nextTick()
       const mixedLabel = `${date} · No data · Major outage recorded`
       expect(strip.get(`button[aria-label="${mixedLabel}"]`).element).toBe(

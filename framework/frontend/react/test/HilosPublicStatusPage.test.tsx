@@ -982,8 +982,7 @@ describe('public HilosStatusPage', () => {
     expect(h.sent).toEqual([])
   })
 
-  // FIXME(F-104, 2026-11-14): 30-day variant timed out in 15 s while the 90-day passed in 3.6 s; its open act() failed 12 later tests · чужой · попытка 1 · HIL-2103
-  it.skip.each([90, 30])(
+  it.each([90, 30])(
     'keeps the keyboard-focused date in the %s-day strip through local silence, midnight and recovery',
     async (count) => {
       const aliveAt = Date.parse('2026-10-25T22:59:00Z')
@@ -1011,7 +1010,7 @@ describe('public HilosStatusPage', () => {
       expect(words(detail)).toBe(`${date} · Major outage`)
       expect(button.getAttribute('aria-describedby')).toBe(detail.id)
 
-      await advance(120001)
+      elapse(120001)
       const mixedLabel = `${date} · No data · Major outage recorded`
       expect(within(strip).getByRole('button', { name: mixedLabel })).toBe(
         button,
