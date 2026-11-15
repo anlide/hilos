@@ -122,6 +122,10 @@ Plus scenarios beyond that matrix:
                                fresh inspect rejoins the roster
  31 replica keeps up with       a replica took every write the preceding scenarios made, stays
     the primary                read-only and is reached by nobody (HIL-1229)
+ 52 the leader of two lost     on a quorum of two masters the lost leader has no heir: every
+    stops the work             slave carrying work fences it itself, nobody leads, the other
+                               master holds no quorum; the returned pair leads one and restarts
+                               the fleet (HIL-2037)
 
 Scenario 48 is carried by online-testing's three-master stand and runs after
 scenarios 21, 24 and 40 there. It brings the watchdog's 60-second silence and
@@ -1248,6 +1252,100 @@ def scenario_8_split_brain():
         # not `start` — `start` deliberately reuses the container (see scenario 9).
         ctl("recreate", isolated)
         wait_converge(ALL_NODES)
+
+
+def scenario_52_the_leader_of_two_lost_stops_the_work():
+    """On a quorum of two masters the lost leader has no heir, and every slave stops its work (HIL-2037).
+
+    Two masters make a quorum of two, so the master left alone can elect nobody: the leader is
+    killed, and nothing takes over the work it placed. Every slave carrying fleet members then
+    stops them itself once CLUSTER_SLAVE_WORK_GRACE has passed without that leader - the isolation
+    fence firing, which no other scenario checks: 5 proves an heir cancels it, 24 and 36 are
+    parked. The unit tests prove the branches; this is the wiring of a live daemon.
+
+    Asserted: nobody leads while the leader is down, at any poll; every carrying slave's log,
+    read from the host, has the fired line naming the lost leader, for at least its fleet
+    members; the surviving master reports no quorum however many slaves are alive - a slave holds
+    no vote. The leader is started again, and the pair must come back to one leader with quorum
+    and the whole fleet started.
+
+    Losing the master that does not lead is the quorum condition of 7 and the stop of 36 (F-012).
+    That a start comes only after the fence is not checked here: nobody leads to start anything
+    until the leader is back.
+    """
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the leader is lost")
+    leader = leaders(views)[0]
+    survivor = next(node for node in MASTERS if node != leader)
+    carriers = {slave: members for slave, members in ((slave, hosted_by(views, slave)) for slave in SLAVES)
+                if members}
+    if not carriers:
+        raise ScenarioPreconditionLost(f"no slave carries a fleet member under {leader}")
+    live = [node for node in ALL_NODES if node != leader]
+    marks = {slave: node_log_mark(slave) for slave in carriers}
+    print(f"    killing {leader}, which leads {survivor}; the fleet is carried by "
+          + ", ".join(f"{slave} ({len(members)})" for slave, members in sorted(carriers.items())))
+    killed = False
+    try:
+        if leaders(inspect_all(MASTERS)) != [leader]:
+            raise ScenarioPreconditionLost(f"leadership moved off {leader} before it was killed: the stand "
+                                           "re-elected on its own (P-459)")
+        lost_at = time.time()
+        ctl("kill", leader)
+        killed = True
+
+        def fences_of(slave):
+            return [(stamp, int(count)) for stamp, said, count
+                    in ISOLATION_FENCE_FIRED.findall(node_log_since(slave, marks[slave])) if said == leader]
+
+        def every_carrier_fenced(v):
+            leading = leaders(v)
+            if leading:
+                raise AssertionError(f"{', '.join(sorted(leading))} leads while {leader} is down: one master "
+                                     "of two holds no quorum")
+            return all(fences_of(slave) for slave in carriers)
+
+        try:
+            wait_until(every_carrier_fenced, CONVERGE_TIMEOUT,
+                       f"every carrier fences its work after {leader} is lost", nodes=live)
+        except ScenarioTimeout:
+            pass
+        fired = {slave: fences_of(slave) for slave in sorted(carriers)}
+        stopped = []
+        for slave, fences in fired.items():
+            members = carriers[slave]
+            assert fences, (f"{slave} carried {len(members)} fleet member(s) for {leader}, which was lost with no "
+                            f"heir, yet never fenced them: no \"Self-fence: isolated from placing leader "
+                            f"'{leader}'\" line in {node_log_path(slave)}")
+            stamp, count = fences[0]
+            assert count >= len(members), (f"{slave} fired its isolation fence for {count} placed agent(s), "
+                                           f"fewer than its {len(members)} fleet members")
+            fired_after = log_time(stamp).timestamp() - lost_at
+            stopped.append(f"{slave} stopped {count} placed agent(s) {fired_after:.1f}s after the loss")
+
+        views = inspect_all(live)
+        leading = leaders(views)
+        assert not leading, (f"{', '.join(sorted(leading))} leads while {leader} is down: one master of two "
+                             "holds no quorum")
+        alone = views[survivor]
+        assert alone is not None, f"{survivor} did not answer the inspect after every carrier fenced its work"
+        assert alone.get("hasQuorum") is False, (f"{survivor} claims a quorum alone with "
+                                                 f"{in_words(len(SLAVES))} slaves alive: slaves hold no vote")
+
+        ctl("start", leader)
+        killed = False
+
+        def pair_leads_the_fleet(v):
+            return converged(ALL_NODES)(v) and fleet_started(v) and v[leaders(v)[0]].get("hasQuorum") is True
+
+        views = wait_until(pair_leads_the_fleet, CONVERGE_TIMEOUT,
+                           f"{leader} back: one leader with quorum and the whole fleet started")
+        new_leader = leaders(views)[0]
+        return (f"{leader} led and was lost: {survivor} holds no quorum with {in_words(len(SLAVES))} slaves "
+                f"alive and nobody leads; {', '.join(stopped)}; back, {new_leader} leads and the fleet runs again")
+    finally:
+        if killed:
+            ctl("start", leader)
+            wait_converge(ALL_NODES)
 
 
 def scenario_44_waiting_work_survives_leadership_changes():
@@ -5383,13 +5481,16 @@ QUORUM_FENCE_ARMED = re.compile(r"Self-fence armed: quorum lost, (\d+) placed ag
 QUORUM_FENCE_FIRED = re.compile(r"^\[([^\]]+)\].*Self-fence: quorum lost, stopping (\d+) placed agent\(s\)", re.M)
 # What a node writes when the leader it answers to tells it that it leads no more, and when that
 # fence fires (ClusterPlacement::onPlacementRelease() and selfFence()); what it writes when it arms
-# its fence because that leader went offline instead (ClusterPlacement::noteNodeOffline()); and
+# its fence because that leader went offline instead, and when that fence fires
+# (ClusterPlacement::noteNodeOffline() and selfFence()); and
 # what a leader writes when it loses its quorum (ClusterCoordinator::tickLeader(),
 # framework/backend/Cluster/Consensus/ClusterCoordinator.php) - HIL-1287.
 RELEASE_FENCE_ARMED = re.compile(r"Self-fence armed: placing leader '([^']+)' stopped leading, (\d+) placed agent\(s\)")
 RELEASE_FENCE_FIRED = re.compile(
     r"^\[([^\]]+)\].*Self-fence: placing leader '([^']+)' stopped leading, stopping (\d+) placed agent\(s\)", re.M)
 ISOLATION_FENCE_ARMED = re.compile(r"Self-fence armed: placing leader '([^']+)' went offline")
+ISOLATION_FENCE_FIRED = re.compile(
+    r"^\[([^\]]+)\].*Self-fence: isolated from placing leader '([^']+)', stopping (\d+) placed agent\(s\)", re.M)
 LEADERSHIP_LOST_ON_QUORUM = re.compile(r"^\[([^\]]+)\].*Consensus: lost leadership held in term \d+: quorum lost", re.M)
 CONSENSUS_WON_TERM = re.compile(r"^\[([^\]]+)\].*Consensus: won term \d+ with ", re.M)
 LOG_LINE_TIME = "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -6719,16 +6820,19 @@ def scenario_28_database_member_comes_back_and_catches_up():
 
 
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
-                     "cluster_directory entry database_replicas database_votes working_masters bare_master",
-                     defaults=(0, 0, False, False, 0, False, 0, False, False, 0, 0, 0, False))):
+                     "cluster_directory entry database_replicas database_votes working_masters bare_master "
+                     "masters_exactly",
+                     defaults=(0, 0, False, False, 0, False, 0, False, False, 0, 0, 0, False, 0))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
     slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every master
     declaring ram - masters that carry placed work themselves - and a database of at least
     `database_members` members, a cluster directory, a browser entry the stand names, and at least
     `database_replicas` replicas of its database, and at least `database_votes` votes in the
     database component, counting data members and voters but not replicas, at least
-    `working_masters` masters that declare ram, and a master that declares none. What a
-    scenario names by role - the third master, the second slave - is what it needs."""
+    `working_masters` masters that declare ram, a master that declares none, and exactly
+    `masters_exactly` masters when it is not 0 - a shape whose quorum is every master, so that
+    losing the leader leaves no heir. What a scenario names by role - the third master, the
+    second slave - is what it needs."""
 
 
 class Scenario(namedtuple("Scenario", "name run need")):
@@ -6782,6 +6886,10 @@ SCENARIOS = [
     Scenario("6 hot-join", scenario_6_hot_join, Need(slaves=2)),
     Scenario("7 quorum-loss", scenario_7_quorum_loss, Need(masters=3, slaves=2)),
     Scenario("8 split-brain prevention", scenario_8_split_brain, Need(masters=3, slaves=2)),
+    # Beside 7 and 8: on a quorum of two masters, losing the leader leaves no heir, and every slave
+    # that carries work stops it itself; the scenario returns the leader before the next one.
+    Scenario("52 the leader of two lost stops the work", scenario_52_the_leader_of_two_lost_stops_the_work,
+             Need(masters_exactly=2, slaves=1)),
     # After ordinary leadership changes: fill the slaves, inherit waiting demand through both
     # re-election and quorum loss, then restart the whole stand before its later scenarios.
     Scenario("44 waiting work survives leadership changes", scenario_44_waiting_work_survives_leadership_changes,
@@ -7005,6 +7113,8 @@ def unmet_need(stand, scenario):
                                "masters that declare ram")):
         if has < wanted:
             return f"it needs {wanted} {what}, the stand has {has}"
+    if need.masters_exactly and len(stand.masters) != need.masters_exactly:
+        return f"it needs exactly {need.masters_exactly} masters, the stand has {len(stand.masters)}"
     if need.bare_master and all(stand.members[m].ram for m in stand.masters):
         return "it needs a master that declares no ram, the stand has none"
     if need.stranger and stand.stranger is None:

@@ -99,6 +99,8 @@ use Demo\FileGalleryManager\Tables\FileGalleryManagerTableContext;
 use Demo\FileGalleryManager\Tables\HilosUser\HilosUsersTable;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
+use Hilos\Cluster\Probe\ClusterProbe;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\AgentRegistry;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -378,6 +380,11 @@ class Hilos extends HilosFacade
             AgentRegistryKey::DAEMON => LogAggregatorAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
+        // The fleet probe of this demo's cluster stand - scenario 52 reads the fleet. A probe starts
+        // only on a clustered node of a non-production environment, so this demo on one node, on
+        // its Playwright stand and in production carries the row and runs none of it
+        // (docs/agents/testing.md, "The cluster stands").
+        HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
     ];
 
     /** @var array<string, list<string>> Outstanding closed DB writer transitions. */
