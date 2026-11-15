@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Closure;
+use Generator;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException;
 
 use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
 use Hilos\TruthSource\RtReplicaConfirmation;
 use Hilos\HilosException;
+use LogicException as NativeLogicException;
 
 /**
  * Local port between the peer transport and the daemon's runtime state.
@@ -56,25 +63,66 @@ interface RtSyncSink
     public function captureRtSyncReceipt(string $originNodeId): RtReplicaConfirmation;
 
     /**
-     * Replaces this node's copy of one RT collection, or of the rows named, with the owner's.
+     * Stages one snapshot a linked node streamed of its area of an RT collection - the whole
+     * collection, or the rows or sets it owns - into this node's copy, and publishes it.
      *
-     * A whole-collection frame replaces the collection. A scoped frame replaces its carried
-     * rows and sweeps only missing rows from this sender within its named rows or sets.
+     * The snapshot is handed over at its head and its rows follow as the stream reads their parts;
+     * the staging is the stream's work, and the stream reads the link's next operation only once
+     * it is answered. The publication replaces the carried rows and sweeps only the missing rows of
+     * the area that came from the sender and are claimed by nobody here.
      *
-     * @param string $originNodeId Id of the node that owns the collection
-     * @param string $collectionKey RT collection being replaced
-     * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
-     * @param list<string> $scopeKeys Named rows the snapshot speaks for; empty for other widths
-     * @param list<string> $scopeSetKeys Sets the snapshot speaks for; empty for other widths
-     * @throws HilosException Whatever the applied write of the snapshot raises
+     * @param string $originNodeId Id of the node at the other end of the link, which owns the area
+     * @param RtSyncStreamSnapshot $snapshot Snapshot at its head
+     * @param Closure(bool): void $settled The stream's answer
+     * @param Closure(): void $recover Lifts the holds the link's stream keeps on the rows of the collection
+     * @param Closure(bool): bool $askAgain Asks the linked node for another snapshot of the collection, told
+     *     whether a live change of its area here canceled this one; answers whether another is still to come
+     * @return Generator<int, RtWork, int, void> The staging on the stream's share, answered at its end
+     * @throws LogicException While advanced: when a portion arrives beyond the generation's reserve, or the
+     *     generation is published inside a transaction
+     * @throws NativeLogicException While advanced: when a page lease or the selector broke under the generation
+     * @throws InvalidArgumentException Never: the allowances are not negative
+     * @throws HilosException While advanced: whatever a subscriber raises on an announcement of the published rows
      */
-    public function applyRemoteRtSnapshot(
+    public function stageRemoteRtSnapshot(
         string $originNodeId,
-        string $collectionKey,
-        array $rows,
-        array $scopeKeys = [],
-        array $scopeSetKeys = [],
-    ): void;
+        RtSyncStreamSnapshot $snapshot,
+        Closure $settled,
+        Closure $recover,
+        Closure $askAgain,
+    ): Generator;
+
+    /**
+     * Answers a linked node's request for one more snapshot of an RT collection: a snapshot of
+     * each area of it this node owns is cut into the stream of the link to that node, as at the
+     * hand-over; a node that owns nothing of it cuts none.
+     *
+     * @param string $nodeId Node that asked
+     * @param string $collectionKey RT collection it asked about
+     */
+    public function answerRtSnapshotRequest(string $nodeId, string $collectionKey): void;
+
+    /**
+     * Answers a linked node's announcement of what it reads: a snapshot of each area this node owns
+     * of the collections the announcement added is cut into the stream of the link to that node, and
+     * the answer naming the announcement follows them there ({@see RtSyncMesh::sendSourceInterestAnswered()}),
+     * one that added nothing included.
+     *
+     * @param string $nodeId Node that announced
+     * @param list<string> $addedCollectionKeys RT collections the announcement added to what that node reads
+     * @param int $announcement Number of the announcement
+     */
+    public function answerSourceInterest(string $nodeId, array $addedCollectionKeys, int $announcement): void;
+
+    /**
+     * Takes a linked node's answer to this node's announcement of what it reads: the copies that
+     * waited for that node no longer do, and a copy nothing is awaited of any more is handed to the
+     * workers that took its collection up meanwhile.
+     *
+     * @param string $nodeId Node that answered
+     * @param int $announcement Number of the announcement it answered
+     */
+    public function noteSourceInterestAnswered(string $nodeId, int $announcement): void;
 
     /**
      * Hands every RT collection this node owns to a node the mesh has just linked to.
@@ -120,7 +168,7 @@ interface RtSyncSink
     /**
      * Tops this node's copy of one RT collection up with rows it does not hold.
      *
-     * The other way round from {@see applyRemoteRtSnapshot()}: nothing is replaced and nothing
+     * The other way round from {@see stageRemoteRtSnapshot()}: nothing is replaced and nothing
      * is removed, because the sender owns none of what it sends and speaks for no scope. A row
      * already held, or claimed by an agent of this node, is passed over — the offer is a copy of
      * how things were on the holder, and anything already here is at least as current.

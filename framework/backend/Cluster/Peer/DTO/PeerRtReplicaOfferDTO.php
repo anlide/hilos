@@ -9,8 +9,9 @@ use Hilos\Cluster\Exception\PeerTransportException;
 /**
  * Addressed frame answering a {@see PeerRtSnapshotQueryDTO} with rows the asker does not hold.
  *
- * The holder's half of the ask-for-a-copy exchange, and deliberately not a flag on
- * {@see PeerRtSnapshotDTO}. That frame is applied by replacement within a scope, and the rule is
+ * The holder's half of the ask-for-a-copy exchange, and deliberately not a flag on the owner's
+ * snapshot, which the stream carries ({@see PeerRtSyncStreamDTO}). That one is applied by
+ * replacement within a scope, and the rule is
  * sound only because its sender owns what it sends: a row the snapshot leaves out is a row that
  * no longer exists. The sender of an offer owns nothing and says something else — "here are
  * copies, take what you are missing" — so the receiver tops its collection up row by row and
@@ -83,7 +84,7 @@ final class PeerRtReplicaOfferDTO extends PeerDTO
      * Restores a replica offer from its wire array.
      *
      * State ids are read back as strings because JSON gives digit-like keys back as integers,
-     * the way {@see PeerRtSnapshotDTO} reads them. Unlike a snapshot, an offer with no rows is
+     * the way every row map of this protocol is read. Unlike a snapshot, an offer with no rows is
      * not a statement a holder ever has to make — silence says the same thing and costs a hop
      * less — so an empty row map is refused rather than applied as a no-op.
      *

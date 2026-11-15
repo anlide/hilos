@@ -83,9 +83,10 @@ use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSnapshotRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerSourceInterestAnsweredDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
@@ -137,9 +138,12 @@ use Hilos\ProtectedMode\VerifierCircleSnapshot;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\TruthSource\RtReplicaConfirmation;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Runtime\Stream\RtSyncStreamSettle;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
 use Hilos\Socket\Client\ClientInterface;
 use Hilos\Socket\Server\AbstractTlsServer;
 use Hilos\Socket\SocketException;
@@ -147,6 +151,7 @@ use Hilos\Socket\Exception\SocketTlsHandshakeException;
 use Hilos\Socket\Transport\TlsSocketTransport;
 use Hilos\Socket\Transport\TlsContext;
 use Hilos\Utils\Logger;
+use LogicException;
 use SplQueue;
 use WeakReference;
 use Random\RandomException;
@@ -343,12 +348,38 @@ final class PeerServer extends AbstractTlsServer implements
     private array $announcedRtInterest = [];
 
     /**
+     * @var int Number of the announcement {@see $announcedRtInterest} came with, zero before the first.
+     *
+     * A frame repeating the announcement on a later link carries it too: what the linked node answers
+     * is the number, and the reader waits for the answer to the one that added a collection.
+     */
+    private int $announcedInterestNumber = 0;
+
+    /**
      * @var list<string> DB collections this node last told the mesh it reads.
      *
      * Kept beside the runtime list above and for the same reason: a peer that handshakes later
      * would otherwise filter every database frame away from this node.
      */
     private array $announcedDbInterest = [];
+
+    /**
+     * @var array<string, true> Linked nodes this node owes a hand-over of everything they read
+     *      ({@see self::noteRtHandOverOwed()}): a replaced link lost what they were to read of it - an answer
+     *      to their announcement dropped there, an operation its stream had not written whole when it began to
+     *      drain - or a hand-over to them found its route taken by the replacement. The node's repeat of its
+     *      announcement on the new link takes the debt ({@see self::answeredCollections()}). Framework-first:
+     *      process-local state of this master's links, as {@see $announcedInterestNumber} is; only this
+     *      server reads it, and it dies with the process.
+     */
+    private array $rtHandOversOwed = [];
+
+    /**
+     * @var array<string, true> Nodes whose link was replaced and whose first announcement on the new link has
+     *      not arrived yet: that one repeats what the node read on the old link ({@see self::activateCandidate()}).
+     *      Process-local like {@see $rtHandOversOwed}.
+     */
+    private array $interestRepeatsDue = [];
 
     /**
      * @param string $host Host to bind the peer listener
@@ -1299,18 +1330,22 @@ final class PeerServer extends AbstractTlsServer implements
                 $this->localIdentity->nodeId,
                 $this->announcedRtInterest,
                 $this->announcedDbInterest,
+                $this->announcedInterestNumber,
             ));
         }
 
         // Hand the peer the RT collections this node owns (HIL-586). Off the handshake and not
         // off the membership change for the same reason the line above is: the peer may be a
         // member already, but this link is what lets anything reach it. What of it actually goes
-        // out is what that peer reads ({@see sendRtSnapshotToNode()}), and a peer this node has
+        // out is what that peer reads ({@see streamRtSnapshotToNode()}), and a peer this node has
         // yet to hear from asks again with its own announcement a moment later.
         // Only the peer's router row thaws here. Its replicas remain marked until a snapshot,
         // delta, or holder offer confirms them; the hand-over is requested just below.
         Hilos::$cluster?->rtSyncSink()?->noteNodeReachable($remote->nodeId);
 
+        // A fresh link hands everything over here, so neither a repeat nor a hand-over owed to a
+        // replaced link is owed any more.
+        unset($this->interestRepeatsDue[$remote->nodeId], $this->rtHandOversOwed[$remote->nodeId]);
         Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($remote->nodeId);
 
         // And ask the peer for the collections this node holds nothing of (HIL-823). The
@@ -1462,11 +1497,18 @@ final class PeerServer extends AbstractTlsServer implements
         }
         // The old transport's pending inbound report is canceled by its exact source guard.
         // Both writers therefore announce their last complete pair afresh after ready/ack,
-        // including an empty pair. No cursor or full handshake hand-over moves to this link.
+        // including an empty pair. The node's repeat arriving here is answered behind a hand-over
+        // of everything it names when this node owes it one - the old link lost on its drain what
+        // the node was to read ({@see PeerLink::beginDrain()}), or a hand-over found its route gone
+        // ({@see self::noteRtHandOverOwed()}) - and as an ordinary announcement otherwise
+        // ({@see self::answeredCollections()}): a replacement is a routine step of a cluster's
+        // start, and nothing else moves to this link.
+        $this->interestRepeatsDue[$remote->nodeId] = true;
         $link->sendFrame(new PeerSourceInterestDTO(
             $this->localIdentity->nodeId,
             $this->announcedRtInterest,
             $this->announcedDbInterest,
+            $this->announcedInterestNumber,
         ));
         if ($remote->role === NodeRole::Slave) {
             $this->protectedMode?->onSlaveConnected($remote->nodeId);
@@ -2709,6 +2751,7 @@ final class PeerServer extends AbstractTlsServer implements
         // would be filtered out of every frame written during the gap - while a node that really
         // left announces itself again on the handshake if it ever comes back.
         $this->nodeReaderMap->release($identity->nodeId);
+        unset($this->rtHandOversOwed[$identity->nodeId], $this->interestRepeatsDue[$identity->nodeId]);
 
         Hilos::$cluster?->notifyNodeLeft(ClusterNode::fromIdentity($identity, false, $now));
     }
@@ -3073,17 +3116,36 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * The list is remembered as well as sent, because a broadcast only reaches the nodes linked
      * right now and a peer joining later would otherwise never hear it ({@see onHandshakeComplete()}).
+     * Its number goes with it; the nodes linked now are the ones whose answers to it the copies of
+     * the collections it adds wait for.
      *
      * @param list<string> $rtCollections RT collections the processes of this node read
      * @param list<string> $dbCollections DB collections the processes of this node read
+     * @param int $announcement Number of the announcement
+     * @return list<string> Nodes the announcement is written to
      */
-    public function announceSourceInterest(array $rtCollections, array $dbCollections): void
+    public function announceSourceInterest(array $rtCollections, array $dbCollections, int $announcement): array
     {
         $this->announcedRtInterest = $rtCollections;
         $this->announcedDbInterest = $dbCollections;
+        $this->announcedInterestNumber = $announcement;
         $this->broadcastToNodes(
-            new PeerSourceInterestDTO($this->localIdentity->nodeId, $rtCollections, $dbCollections),
+            new PeerSourceInterestDTO($this->localIdentity->nodeId, $rtCollections, $dbCollections, $announcement),
         );
+
+        return $this->linkedNodeIds();
+    }
+
+    /**
+     * Implements {@see SourceInterestMesh}: the lists announced last go out again under the new number,
+     * which the nodes linked later are told as well ({@see onHandshakeComplete()}).
+     *
+     * @param int $announcement Number of the announcement
+     * @return list<string> Nodes the announcement is written to
+     */
+    public function reannounceSourceInterest(int $announcement): array
+    {
+        return $this->announceSourceInterest($this->announcedRtInterest, $this->announcedDbInterest, $announcement);
     }
 
     /**
@@ -3114,6 +3176,95 @@ final class PeerServer extends AbstractTlsServer implements
         $this->applySourceInterest($frame);
     }
 
+    /**
+     * Strikes the linked node off what this node's copies wait for, once it answered an announcement
+     * of what this node reads. The frame is read here behind the writes the node streamed before it
+     * ({@see PeerLink::readsBehindRtWrites()}), so the snapshots it answers for are ahead of it. An
+     * answer naming another node than the link's is refused: a node answers for itself alone.
+     *
+     * @param PeerLink $link Link the answer arrived on
+     * @param PeerSourceInterestAnsweredDTO $frame Received answer
+     */
+    public function onSourceInterestAnsweredReceived(PeerLink $link, PeerSourceInterestAnsweredDTO $frame): void
+    {
+        $linkedNodeId = $link->remoteIdentity()?->nodeId;
+        if ($frame->nodeId !== $linkedNodeId) {
+            Logger::warning("Refusing an answer to this node's interest naming node '{$frame->nodeId}' on the link of '{$linkedNodeId}'");
+
+            return;
+        }
+        Hilos::$cluster?->rtSyncSink()?->noteSourceInterestAnswered($frame->nodeId, $frame->announcement);
+    }
+
+    /**
+     * Answers one node's announcement of what it reads, in its turn behind every write and snapshot
+     * this node streamed to it before ({@see PeerLink::readsBehindRtWrites()}). A node no longer
+     * linked is skipped: its next link repeats the announcement, and that one is answered.
+     *
+     * Implements {@see RtSyncMesh}.
+     *
+     * @param string $nodeId Node whose announcement is answered
+     * @param int $announcement Number of the announcement
+     */
+    public function sendSourceInterestAnswered(string $nodeId, int $announcement): void
+    {
+        $this->activeLinkToNode($nodeId)?->sendFrame(new PeerSourceInterestAnsweredDTO($this->localIdentity->nodeId, $announcement));
+    }
+
+    /**
+     * Notes that this node owes a linked node a hand-over of everything it reads: what the node was to
+     * read of a link the replacement drains is lost there ({@see PeerLink::beginDrain()}), or a hand-over
+     * to it found the route it was asked on gone ({@see DaemonManager::sendRtSnapshotsToNode()}). The
+     * node's repeat of its announcement on the new link takes the debt ({@see self::answeredCollections()}).
+     * A node with no working link is owed nothing: its next link hands everything over on its handshake.
+     *
+     * @param string $nodeId Node owed the hand-over
+     */
+    public function noteRtHandOverOwed(string $nodeId): void
+    {
+        if ($this->hasActiveLinkToNode($nodeId)) {
+            $this->rtHandOversOwed[$nodeId] = true;
+        }
+    }
+
+    /**
+     * Asks a node for one more snapshot of an RT collection through its working link, for a link that
+     * replaced the one the canceled snapshot came on ({@see PeerLink::requestRtSnapshotAgain()}).
+     *
+     * @param string $nodeId Node asked
+     * @param string $collectionKey Collection whose snapshot was canceled
+     * @param bool $byLiveChange Whether a live change of the snapshot's area here canceled it
+     * @return bool Whether another snapshot of the collection is asked for and still to come; false with no working link
+     */
+    public function requestRtSnapshotAgain(string $nodeId, string $collectionKey, bool $byLiveChange): bool
+    {
+        return $this->activeLinkToNode($nodeId)?->requestRtSnapshotAgain($collectionKey, $byLiveChange) ?? false;
+    }
+
+    /**
+     * Names the RT collections whose areas this node hands over before it answers a linked node's
+     * announcement: the ones the announcement added - or, for the first announcement on a link that
+     * replaced another, everything it names when this node owes the node a hand-over
+     * ({@see self::noteRtHandOverOwed()}). That one repeats the node's interest and adds nothing by now;
+     * what the old link lost - an answer, a snapshot, a delta - this node does not know the collections
+     * of, so it hands over all of them, as a handshake does. Owing nothing, the repeat is answered as an
+     * ordinary announcement: what the old link carried reached the node.
+     *
+     * @param PeerSourceInterestDTO $frame Announcement being answered
+     * @param list<string> $added RT collections it added to what that node reads
+     * @return list<string> RT collections whose areas go ahead of the answer
+     */
+    private function answeredCollections(PeerSourceInterestDTO $frame, array $added): array
+    {
+        if (!isset($this->interestRepeatsDue[$frame->nodeId])) {
+            return $added;
+        }
+        $owed = isset($this->rtHandOversOwed[$frame->nodeId]);
+        unset($this->interestRepeatsDue[$frame->nodeId], $this->rtHandOversOwed[$frame->nodeId]);
+
+        return $owed ? $frame->rtCollections : $added;
+    }
+
     /** @param Closure(Generator<int, void>): void $deliver Exact master's existing guarded source FIFO */
     public function setSourceInterestDelivery(Closure $deliver): void
     {
@@ -3142,30 +3293,66 @@ final class PeerServer extends AbstractTlsServer implements
      * ({@see self::rtSyncReceipt()}), and a link closed since then still has its operation applied
      * as the node that receipt was taken for: the loss it noted freezes what the operation writes.
      *
+     * A snapshot of the linked node's area of a collection arrives at its head, with no receipt
+     * yet, and is checked against the link the same way; the port hands its staging back, and the
+     * stream advances it as the snapshot's rows arrive ({@see RtSyncSink::stageRemoteRtSnapshot()}).
+     * Its publication lifts the holds of the collection's rows on this link, and its cancellation
+     * asks the linked node for another ({@see PeerLink::requestRtSnapshotAgain()}).
+     *
+     * An operation of a collection this node no longer says it reads is answered applied and not
+     * applied: the linked node streamed it before it learned of that, and this node's copy of the
+     * collection is being dropped ({@see RtSyncSink::stageRemoteRtSnapshot()} reads a snapshot of it
+     * out the same way). The collections no snapshot hands over are applied as before, and so is
+     * everything before this node's first announcement.
+     *
      * @param ?PeerLink $link Link the operation arrived on, or null once it closed after the final part arrived
-     * @param RtSyncStreamOperation $operation Operation read from its parts
+     * @param RtSyncStreamOperation|RtSyncStreamSnapshot $operation Operation read from its parts, or a snapshot at its head
      * @param Closure(bool): void $settled The stream's answer
      * @param ?RtReplicaConfirmation $receipt Taken when the final part arrived, or null to take it at the apply
+     * @return ?Generator<int, RtWork, int, void> The snapshot's staging, or null when answered here
      */
     public function onRtSyncStreamReceived(
         ?PeerLink $link,
-        RtSyncStreamOperation $operation,
+        RtSyncStreamOperation|RtSyncStreamSnapshot $operation,
         Closure $settled,
         ?RtReplicaConfirmation $receipt = null,
-    ): void {
+    ): ?Generator {
         $linkedNodeId = $link?->remoteIdentity()?->nodeId ?? $receipt?->nodeId;
         if ($linkedNodeId === null || $operation->originNodeId !== $linkedNodeId) {
             Logger::warning("Refusing a streamed RT write naming node '{$operation->originNodeId}' on the link of '{$linkedNodeId}'");
             $settled(false);
 
-            return;
+            return null;
         }
         $sink = Hilos::$cluster?->rtSyncSink();
         if ($sink === null) {
             Logger::warning("Dropping peer RT sync from node '{$linkedNodeId}': no local RT sync sink registered");
             $settled(false);
 
-            return;
+            return null;
+        }
+        if ($operation instanceof RtSyncStreamOperation && $this->announcedInterestNumber > 0
+            && !in_array($operation->collectionKey, $this->announcedRtInterest, true)
+            && DaemonManager::isHandedOverInSnapshot($operation->collectionKey)) {
+            $settled(true);
+
+            return null;
+        }
+        if ($operation instanceof RtSyncStreamSnapshot) {
+            $collectionKey = $operation->collectionKey;
+            $origin = $link === null ? null : WeakReference::create($link);
+
+            return $sink->stageRemoteRtSnapshot(
+                $linkedNodeId,
+                $operation,
+                $settled,
+                static function () use ($origin, $collectionKey): void {
+                    $origin?->get()?->recoverRtSyncStream($collectionKey);
+                },
+                static function (bool $byLiveChange) use ($origin, $collectionKey): bool {
+                    return $origin?->get()?->requestRtSnapshotAgain($collectionKey, $byLiveChange) ?? false;
+                },
+            );
         }
 
         try {
@@ -3175,6 +3362,8 @@ final class PeerServer extends AbstractTlsServer implements
         } catch (Throwable $e) {
             Logger::warning("Failed to apply peer RT sync from node '{$linkedNodeId}': {$e->getMessage()}");
         }
+
+        return null;
     }
 
     /**
@@ -3282,12 +3471,14 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Hands one RT collection, or the rows of it this node owns, to a node that reads it.
+     * Hands one area this node owns of an RT collection to a node that reads it, as a snapshot cut
+     * into the stream of the link to that node.
      *
-     * Implements {@see RtSyncMesh}. Addressed rather than broadcast: only the joining node is
-     * behind on this collection, and the others would be told to replace a copy that is already
-     * current. A node that is not linked is silently skipped — it cannot be behind on anything
-     * it is not connected for, and it will be offered the collection when it does join.
+     * Implements {@see RtSyncMesh}. Addressed rather than broadcast: only the joining node, or
+     * the one whose copy lost its base, is behind on this collection, and the others would be
+     * told to replace a copy that is already current. A node that is not linked is silently
+     * skipped — it cannot be behind on anything it is not connected for, and it will be offered
+     * the collection when it does join.
      *
      * A node that does not read the collection is skipped for a different reason, and it is the
      * one that makes the addressing whole (HIL-717): a copy sent there would be the last thing
@@ -3297,27 +3488,21 @@ final class PeerServer extends AbstractTlsServer implements
      * not lost by this: a node announces its interest as its handshake completes and again
      * whenever it moves, and either announcement asks for the hand-over again.
      *
-     * @param string $nodeId Node being handed the collection
-     * @param string $collectionKey RT collection this node owns
-     * @param array<string, array<string, mixed>> $rows Rows by state id, as this node holds them
-     * @param list<string> $scopeKeys Named rows this node speaks for; empty for other widths
-     * @param list<string> $scopeSetKeys Sets this node speaks for; empty for other widths
+     * @param string $nodeId Node being handed the area
+     * @param string $collectionKey RT collection this node owns all or part of
+     * @param RtSnapshotScope $scope The area this node owns
+     * @param bool $partialOwner Whether this node holds only part of the right over the collection
+     * @throws InvalidFormatException When a standalone row's set field is malformed
+     * @throws LogicException When the source's version pages have closed
      */
-    public function sendRtSnapshotToNode(
-        string $nodeId,
-        string $collectionKey,
-        array $rows,
-        array $scopeKeys = [],
-        array $scopeSetKeys = [],
-    ): void {
-        if (!$this->nodeReaderMap->holds($nodeId, SourceChange::KIND_RT, $collectionKey)) {
+    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void
+    {
+        $link = $this->activeLinks[$nodeId] ?? null;
+        if ($link === null || !$this->nodeReaderMap->holds($nodeId, SourceChange::KIND_RT, $collectionKey)) {
             return;
         }
 
-        $this->sendToNode(
-            $nodeId,
-            new PeerRtSnapshotDTO($this->localIdentity->nodeId, $collectionKey, $rows, $scopeKeys, $scopeSetKeys),
-        );
+        $link->rtSyncStream()->sendSnapshot($collectionKey, $scope, $this->localIdentity->nodeId, $partialOwner);
     }
 
     /**
@@ -3325,7 +3510,7 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * Implements {@see RtSyncMesh}. Addressed at the peer whose handshake just completed, and
      * sent after this node's interest and its own hand-over: the answer is filtered by the same
-     * reader map {@see sendRtSnapshotToNode()} consults, and a request that overtook the
+     * reader map {@see streamRtSnapshotToNode()} consults, and a request that overtook the
      * interest frame would reach a holder that has never heard this node reads the collection.
      *
      * An empty list is not a frame. It would say nothing a holder could act on — it does not
@@ -3485,40 +3670,36 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Replaces this node's copy of an RT collection with the one its owner handed over.
+     * Routes a linked node's request for one more snapshot of a collection to the local sink, so
+     * this node cuts its areas of the collection into the stream of the link to it.
      *
-     * The receiving twin of {@see sendRtSnapshotToNode()}, and it stops here in the same way
-     * {@see onRtSyncStreamReceived()} does: nothing is passed on, since the owner addressed the node
-     * that needed it. An unregistered sink or a failing apply is dropped and logged.
+     * The asker is read off the frame, the way {@see onRtSnapshotQueryReceived()} reads it: the
+     * snapshot is addressed through the reader map, which is keyed by what a node calls itself. A
+     * request naming another node than the link's is refused: a node asks for its own copy alone,
+     * and the snapshots go into the stream of the node it names.
      *
-     * @param PeerLink $link Link the snapshot arrived on
-     * @param PeerRtSnapshotDTO $frame Received RT snapshot frame
+     * @param PeerLink $link Link the request arrived on
+     * @param PeerRtSnapshotRequestDTO $frame Received RT-snapshot-request frame
      */
-    public function onRtSnapshotReceived(PeerLink $link, PeerRtSnapshotDTO $frame): void
+    public function onRtSnapshotRequestReceived(PeerLink $link, PeerRtSnapshotRequestDTO $frame): void
     {
+        $linkedNodeId = $link->remoteIdentity()?->nodeId;
+        if ($frame->nodeId !== $linkedNodeId) {
+            Logger::warning("Refusing a request for an RT snapshot naming node '{$frame->nodeId}' on the link of '{$linkedNodeId}'");
+
+            return;
+        }
         $sink = Hilos::$cluster?->rtSyncSink();
         if ($sink === null) {
-            Logger::warning(
-                "Dropping peer RT snapshot from node '{$frame->originNodeId}': no local RT sync sink registered",
-            );
+            Logger::warning("Dropping peer RT snapshot request from node '{$frame->nodeId}': no local RT sync sink registered");
+
             return;
         }
 
         try {
-            $sink->applyRemoteRtSnapshot(
-                $frame->originNodeId,
-                $frame->collectionKey,
-                $frame->rows,
-                $frame->scopeKeys,
-                $frame->scopeSetKeys,
-            );
-            // The owner's snapshot is a base again for the rows of it whose streamed operation
-            // this node refused: the link's later operations of them are applied.
-            $link->recoverRtSyncStream($frame->collectionKey);
+            $sink->answerRtSnapshotRequest($frame->nodeId, $frame->collectionKey);
         } catch (Throwable $e) {
-            Logger::warning(
-                "Failed to apply peer RT snapshot from node '{$frame->originNodeId}': {$e->getMessage()}",
-            );
+            Logger::warning("Failed to answer peer RT snapshot request from node '{$frame->nodeId}': {$e->getMessage()}");
         }
     }
 
@@ -3555,7 +3736,7 @@ final class PeerServer extends AbstractTlsServer implements
      * Tops this node's copy of a collection up with the rows a holder offered.
      *
      * The receiving twin of {@see sendRtReplicaOfferToNode()}, and it stops here exactly as
-     * {@see onRtSnapshotReceived()} does: what arrives is applied and never announced on.
+     * {@see onRtSyncStreamReceived()} does: what arrives is applied and never announced on.
      *
      * @param PeerLink $link Link the offer arrived on
      * @param PeerRtReplicaOfferDTO $frame Received RT-replica-offer frame
@@ -3965,7 +4146,7 @@ final class PeerServer extends AbstractTlsServer implements
      * Hands one node the whole set of browser connections this node holds.
      *
      * Implements {@see ClientMesh}. Addressed rather than broadcast for the same reason
-     * {@see sendRtSnapshotToNode()} is: only the node on the other end of the new link is
+     * {@see streamRtSnapshotToNode()} is: only the node on the other end of the new link is
      * behind on this set, and the others have been kept current by the deltas. A node that is
      * not linked is silently skipped — it will be handed the set when it links.
      *
@@ -4146,22 +4327,28 @@ final class PeerServer extends AbstractTlsServer implements
                 && ($owner->activeLinks[$nodeId] ?? null) === $original;
         };
         $map = WeakReference::create($this->nodeReaderMap);
-        return (static function () use ($map, $frame, $isCurrent): Generator {
+        return (static function () use ($map, $frame, $isCurrent, $server): Generator {
             yield;
             if (!$isCurrent() || $map->get() === null) {
                 return;
             }
             $delivery = $map->get()->noteReportDelivery($frame->nodeId, $frame->rtCollections, $frame->dbCollections, $isCurrent);
             $added = yield from $delivery;
-            if ($added[SourceChange::KIND_RT] !== [] && $isCurrent()) {
-                Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($frame->nodeId);
+            $owner = $server->get();
+            if ($isCurrent() && $owner !== null) {
+                Hilos::$cluster?->rtSyncSink()?->answerSourceInterest(
+                    $frame->nodeId,
+                    $owner->answeredCollections($frame, $added[SourceChange::KIND_RT]),
+                    $frame->announcement,
+                );
             }
             yield;
         })();
     }
 
     /**
-     * DB interest changes filtering alone; new RT interest also requests the existing hand-over.
+     * DB interest changes filtering alone; new RT interest also hands the new collections over, and
+     * the announcement is answered behind that hand-over.
      *
      * @param PeerSourceInterestDTO $frame Complete reader-interest values in original source order
      */
@@ -4169,9 +4356,7 @@ final class PeerServer extends AbstractTlsServer implements
     {
         $this->nodeReaderMap->note($frame->nodeId, SourceChange::KIND_DB, $frame->dbCollections);
         $added = $this->nodeReaderMap->note($frame->nodeId, SourceChange::KIND_RT, $frame->rtCollections);
-        if ($added !== []) {
-            Hilos::$cluster?->rtSyncSink()?->handOverRtSnapshots($frame->nodeId);
-        }
+        Hilos::$cluster?->rtSyncSink()?->answerSourceInterest($frame->nodeId, $this->answeredCollections($frame, $added), $frame->announcement);
     }
 
     /**

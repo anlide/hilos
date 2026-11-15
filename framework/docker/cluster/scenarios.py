@@ -1001,6 +1001,32 @@ def wait_fleet_rows():
                               f"\nreads the collection: {read}") from timeout
 
 
+def fleet_sight_evidence(views):
+    """What every node holds of the fleet's rows, and which worker of it runs which member.
+
+    Printed when a member never reports seeing the whole fleet, and the two halves of the
+    reply tell two different holes apart (HIL-1817). `rowsSeen` is what a member counted in
+    its OWN worker, so a row short of the fleet names the worker that missed a row; the age of
+    each row is read off the node's own copy, so a neighbour's row that stopped ageing says
+    the copy stopped being fed, not the worker. The writer of each row is the leader's
+    placement for that member, and the worker hosting it comes from the node's log.
+    """
+    now = int(time.time())
+    writers = {agent_id.split(":", 1)[1]: row.get("nodeId") for agent_id, row in worker_placements(views).items()}
+    lines = []
+    for node in ALL_NODES:
+        collection = rt_collection(views, node)
+        rows = " ".join(f"{row_id}@{writers.get(row_id)}:seen={row.get('rowsSeen')},"
+                        f"age={now - int(row.get('updatedAt', 0))}s"
+                        for row_id, row in sorted(rt_rows(views, node).items(), key=lambda item: item[0].zfill(4)))
+        hosted = fleet_workers_on(node, hosted_by(views, node))
+        workers = {index: sorted(agents) for index, agents in sorted(hosted.items())}
+        lines.append(f"{node}: owned={collection.get('owned')} read={collection.get('read')}"
+                     f" stale={sorted(rt_stale_rows(views, node))} applied={(views.get(node) or {}).get('rtApplied')}"
+                     f" workers={workers} rows: {rows or '(none)'}")
+    return "\n".join(lines)
+
+
 _NUMBER_WORDS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten")
 
 
@@ -2487,10 +2513,13 @@ def scenario_12_rt_replication():
         return all(row.get("rowsSeen") == WORKER_FLEET_SIZE
                    for node in readers for row in rt_rows(v, node).values())
 
-    wait_until(every_member_sees_the_fleet,
-               CONVERGE_TIMEOUT + WORKER_REPORT_INTERVAL_SEC,
-               "every fleet member reports seeing the whole fleet",
-               nodes=readers)
+    try:
+        wait_until(every_member_sees_the_fleet,
+                   CONVERGE_TIMEOUT + WORKER_REPORT_INTERVAL_SEC,
+                   "every fleet member reports seeing the whole fleet",
+                   nodes=readers)
+    except ScenarioTimeout as timeout:
+        raise ScenarioTimeout(f"{timeout}\n{fleet_sight_evidence(inspect_all())}") from timeout
 
     # The whole mesh again, not just the readers the poll above narrowed to: the placement table
     # the assertion below reads is the LEADER's, and the leader is a master, which reads none of
@@ -6855,18 +6884,6 @@ FLAKY_SKIP = {
     # fleet host, and a partitioned fleet host has its members re-placed onto its neighbour,
     # so the rows it is judged by must be the ones it does NOT own.
     "13 rt partition converges": "P-169: an owner with no claim hands over nothing",
-    # The one below runs on the ecommerce-shop stand now and is still parked. The owner's
-    # review of P-441 (2026-09-28) gave paying it off to a pending hotfix, P-441/2: find why a
-    # recreated node keeps a copy of the fleet statuses it no longer reads, and return 16. It
-    # is paid off by its line removed and `-- 16` green on the ecommerce-shop stand; until then
-    # 16 no longer guards HIL-719.
-    #
-    # 16 waits for the fleet rows after a recreate and times out at 180s: red in five full
-    # runs over two days and retried in two more, and the snapshot after the timeout is one and
-    # the same every time: the recreated node reads nothing and owns nothing, yet holds all ten
-    # rows.
-    "16 recreated node leaves no phantom fleet":
-        "P-441/2: a recreated node keeps a copy of the fleet rows it no longer reads",
     # The one below was parked on the owner's word on 2026-10-04, ahead of the HIL-1186 and
     # HIL-1232 full runs: a timing flake foreign to both, red in full runs and green on the
     # rerun of the same sha. It is paid off by finding the cause, its line removed, and

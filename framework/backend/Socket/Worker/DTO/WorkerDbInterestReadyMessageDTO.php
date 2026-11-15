@@ -7,16 +7,18 @@ namespace Hilos\Socket\Worker\DTO;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Context\DbContext;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /**
  * WorkerDbInterestReadyMessageDTO - the master's word that one DB collection is addressed here now.
  *
- * The database twin of {@see WorkerRtSnapshotMessageDTO}, and the difference between them is the
- * whole reason this one carries nothing: the rows of a DB collection sit in a database every
- * process shares, so a worker that has just asked to read one needs no copy handed to it. What it
- * does need is the moment after which frames about that collection are written to its link, and
- * that moment is this frame.
+ * The database twin of the snapshot of an RT collection the master puts into the worker's RT
+ * stream ({@see RtSyncStreamSnapshot}), and the difference between them is the whole reason this
+ * one carries nothing: the rows of a DB collection sit in a database every process shares, so a
+ * worker that has just asked to read one needs no copy handed to it. What it does need is the
+ * moment after which frames about that collection are written to its link, and that moment is
+ * this frame.
  *
  * Sent once per collection per worker, like the snapshot: the copy a worker keeps is worker-wide,
  * and a second page asking for a collection this worker already reads reads what is already there.

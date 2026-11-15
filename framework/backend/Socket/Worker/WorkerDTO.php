@@ -54,7 +54,7 @@ use Hilos\Socket\Worker\DTO\WorkerLogWriteLevelDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotRequestDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
@@ -169,7 +169,7 @@ abstract class WorkerDTO extends BaseDTO
             WorkerSourceInterestDTO::MESSAGE_TYPE => WorkerSourceInterestDTO::fromArray($data),
             WorkerGroupJoinDTO::MESSAGE_TYPE => WorkerGroupJoinDTO::fromArray($data),
             WorkerGroupLeaveAllDTO::MESSAGE_TYPE => WorkerGroupLeaveAllDTO::fromArray($data),
-            WorkerRtSnapshotMessageDTO::MESSAGE_TYPE => WorkerRtSnapshotMessageDTO::fromArray($data),
+            WorkerRtSnapshotRequestDTO::MESSAGE_TYPE => WorkerRtSnapshotRequestDTO::fromArray($data),
             WorkerDbInterestReadyMessageDTO::MESSAGE_TYPE => WorkerDbInterestReadyMessageDTO::fromArray($data),
             WorkerRtStalenessMessageDTO::MESSAGE_TYPE => WorkerRtStalenessMessageDTO::fromArray($data),
             WorkerAgentRestartRequestDTO::MESSAGE_TYPE => WorkerAgentRestartRequestDTO::fromArray($data),

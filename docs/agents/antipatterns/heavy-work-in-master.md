@@ -86,8 +86,12 @@ that needs no I/O — a random token — and let the worker persist and verify i
   `WebSocketServer::clientTarget()` resolves an address through its accept-key index and
   captures the exact socket slot and key generation. It never scans the browser roster
   for each addressed recipient. Physical fan-outs still spend one step per original
-  candidate. Packing remains one atomic operation; the browser's 8 MiB outbound cap does
-  not bound worker or peer source payloads.
+  candidate. An RT write is the exception: a write of this node, like a peer's, is
+  handed to every reading worker's stream and applied to the master's copy in one step,
+  since a snapshot cut between the two would miss a write a stream already carries
+  (HIL-1817). The step costs one enqueue per reading worker; the bytes leave later in
+  the stream's parts. Packing remains one atomic operation; the browser's 8 MiB outbound
+  cap does not bound worker or peer source payloads.
 - **Source hand-overs and replica answers retain their row construction.** The live
   master uses its existing effect FIFO; incoming peer RT writes, DB facts,
   agent signals, and page access re-decision announcements enter that

@@ -30,11 +30,17 @@ namespace Hilos\Cluster\Peer;
  * 26 — protected-mode quiesce and window descriptors require a barrier generation (HIL-1818).
  * 27 — ordinary RT replication is the acknowledged peer_rt_sync_stream; peer_rt_sync is gone.
  * 28 — peer_rt_sync_stream operations carry the emitter stamp (HIL-2104).
+ * 29 — the hand-over of an RT collection is a snapshot operation of peer_rt_sync_stream, asked again by
+ *      peer_rt_snapshot_request; peer_rt_snapshot is gone (HIL-1817).
+ * 30 — peer_source_interest carries the number of its announcement, answered by
+ *      peer_source_interest_answered behind the snapshots it owed; the head of an
+ *      rt_sync_snapshot names the worker's interest report it answers, null on a
+ *      peer link (HIL-1817).
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 28;
+    public const int VERSION = 30;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

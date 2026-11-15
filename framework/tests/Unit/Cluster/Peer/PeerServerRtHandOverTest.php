@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Closure;
+use Generator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
@@ -14,8 +15,8 @@ use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSnapshotRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\PeerLink;
@@ -34,6 +35,13 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\Stream\RtSyncStreamChannel;
+use Hilos\Runtime\Stream\RtSyncStreamFrame;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\Transport\PlainSocketTransport;
 use Hilos\TruthSource\RtNodeSourceMap;
@@ -57,6 +65,9 @@ use Socket;
  */
 final class PeerServerRtHandOverTest extends TestCase
 {
+    /** @var string What {@see self::frameTypesOf()} names a stream part opening a snapshot of a collection */
+    private const string SNAPSHOT_PART = PeerRtSyncStreamDTO::MESSAGE_TYPE . ' ' . RtSyncStreamSnapshot::SIGNAL_TYPE;
+
     /** @var ?EnvAccessor Previous env accessor to restore after the test */
     private ?EnvAccessor $previousEnv = null;
 
@@ -193,9 +204,186 @@ final class PeerServerRtHandOverTest extends TestCase
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->handshake($link, $far);
 
-        $this->feed($link, $far, new PeerRtSnapshotDTO('node-b', 'unitRows', [], [], ['42']));
+        $parts = [];
+        $owner = new RtSyncStreamChannel(
+            static function (RtSyncStreamFrame $frame) use (&$parts): void {
+                $parts[] = $frame;
+            },
+            static fn (): null => null,
+        );
+        $owner->sendSnapshot('unitRows', RtSnapshotScope::sets(['42']), 'node-b', true);
+        foreach ($parts as $part) {
+            $this->feed($link, $far, new PeerRtSyncStreamDTO($part));
+        }
 
         $this->assertSame([['node-b', 'unitRows', [], [], ['42']]], $sink->snapshots);
+    }
+
+    /**
+     * A linked node's request for one more snapshot of a collection reaches the daemon, which cuts
+     * the areas this node owns of it into the link's stream.
+     *
+     * @throws SocketException When the pair under test refuses the queued frame
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testASnapshotRequestReachesTheDaemon(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->handshake($link, $far);
+
+        $this->feed($link, $far, new PeerRtSnapshotRequestDTO('node-b', 'unitRows'));
+
+        $this->assertSame([['node-b', 'unitRows']], $sink->requested);
+    }
+
+    /**
+     * A request naming another node than the one at the other end of the link is refused: a node
+     * asks for its own copy alone, and the snapshot would go into the stream of the node it names.
+     *
+     * @throws SocketException When the pair under test refuses the queued frame
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testASnapshotRequestNamingAnotherNodeIsRefused(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->handshake($link, $far);
+
+        $this->feed($link, $far, new PeerRtSnapshotRequestDTO('node-c', 'unitRows'));
+
+        $this->assertSame([], $sink->requested);
+    }
+
+    /**
+     * The first row the link's stream holds of a collection asks the linked node for a snapshot of
+     * it, once: a second refusal waits for the one asked. A snapshot of the collection arriving on
+     * the link is the answer, and the next refusal asks again.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testAHeldRowAsksTheLinkedNodeForOneSnapshotUntilOneArrives(): void
+    {
+        $this->registerSink();
+        $local = NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->handshake($link, $far);
+        $link->write();
+        $this->drain($far);
+        $parts = [];
+        $node = new RtSyncStreamChannel(
+            static function (RtSyncStreamFrame $frame) use (&$parts): void {
+                $parts[] = $frame;
+            },
+            static fn (): null => null,
+        );
+        $refused = function (string $stateId) use ($node, &$parts, $link, $far): void {
+            // A write naming a third node is refused on this link, and its row is held.
+            $node->send(new RtSyncUpdatedSignalData('unitRows', $stateId, ['name' => 'x']), 'node-x');
+            foreach (array_splice($parts, 0) as $part) {
+                $this->feed($link, $far, new PeerRtSyncStreamDTO($part));
+            }
+        };
+
+        $refused('7');
+        $refused('8');
+        $link->write();
+        $requests = array_values(array_filter($this->frameTypesOf($far), static fn (string $type): bool => $type
+            === PeerRtSnapshotRequestDTO::MESSAGE_TYPE));
+        $this->assertSame([PeerRtSnapshotRequestDTO::MESSAGE_TYPE], $requests, 'One request per collection waits at a time');
+
+        $node->sendSnapshot('unitRows', RtSnapshotScope::rows(['7']), 'node-b', true);
+        foreach (array_splice($parts, 0) as $part) {
+            $this->feed($link, $far, new PeerRtSyncStreamDTO($part));
+        }
+        $refused('9');
+        $link->write();
+        $requests = array_values(array_filter($this->frameTypesOf($far), static fn (string $type): bool => $type
+            === PeerRtSnapshotRequestDTO::MESSAGE_TYPE));
+        $this->assertSame([PeerRtSnapshotRequestDTO::MESSAGE_TYPE], $requests, 'The snapshot answered the request; a new hold asks again');
+        RtStaleness::clear('unitRows', ['7', '8', '9']);
+    }
+
+    /**
+     * A snapshot canceled here before its publication asks the linked node for another, and a hold
+     * of the collection asks nothing more while that request waits. The second canceled in a row by
+     * a live change of its area here is a writer every cut of that node misses - two owners: it is
+     * logged and not asked again, and the next event, a hold, asks. A cancellation for another cause
+     * ends the run, as the publication of a snapshot of the collection does.
+     *
+     * @throws SocketException When the pair under test refuses the queued frames
+     * @throws HilosException When a queued frame refuses to become wire input
+     */
+    public function testASnapshotCanceledTwiceInARowByAWriteHereIsNotAskedForAgain(): void
+    {
+        $sink = $this->registerSink();
+        $local = NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []);
+        $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
+        [$link, $far] = $this->makeLinkedPair($server, $local);
+        $this->handshake($link, $far);
+        $link->write();
+        $this->drain($far);
+        $parts = [];
+        $node = new RtSyncStreamChannel(
+            static function (RtSyncStreamFrame $frame) use (&$parts): void {
+                $parts[] = $frame;
+            },
+            static fn (): null => null,
+        );
+        $feed = function () use (&$parts, $link, $far): void {
+            foreach (array_splice($parts, 0) as $part) {
+                $this->feed($link, $far, new PeerRtSyncStreamDTO($part));
+            }
+        };
+        $snapshot = static function () use ($node, $feed): string {
+            ob_start();
+            $node->sendSnapshot('unitRows', RtSnapshotScope::rows(['7']), 'node-b', true);
+            $feed();
+
+            return (string)ob_get_clean();
+        };
+        $held = static function (string $stateId) use ($node, $feed): void {
+            // A write naming a third node is refused on this link, and its row is held.
+            $node->send(new RtSyncUpdatedSignalData('unitRows', $stateId, ['name' => 'x']), 'node-x');
+            $feed();
+        };
+        $requests = function () use ($link, $far): int {
+            $link->write();
+
+            return count(array_filter($this->frameTypesOf($far), static fn (string $type): bool => $type
+                === PeerRtSnapshotRequestDTO::MESSAGE_TYPE));
+        };
+        $sink->cancellations = [true, true, true, false, true];
+
+        $snapshot();
+        $this->assertSame(1, $requests(), 'A snapshot canceled by a write here asks for another');
+        $held('7');
+        $this->assertSame(0, $requests(), 'A hold asks nothing while the request waits');
+        $logged = $snapshot();
+        $this->assertSame(0, $requests(), 'The second canceled in a row by a write here is not asked for again');
+        $this->assertStringContainsString("A write here canceled the RT snapshot of unitRows from node 'node-b' twice in a row:"
+            . ' two owners of its area', $logged);
+        $held('8');
+        $this->assertSame(1, $requests(), 'The next event asks');
+        $snapshot();
+        $this->assertSame(0, $requests(), 'The run goes on while writes here cancel the snapshots asked');
+        $held('9');
+        $this->assertSame(1, $requests());
+        $snapshot();
+        $this->assertSame(1, $requests(), 'A cancellation for another cause asks again, and ends the run');
+        $snapshot();
+        $this->assertSame(1, $requests(), 'A write here canceling the next one is the first of a new run');
+        $link->recoverRtSyncStream('unitRows');
+        $sink->cancellations = [true];
+        $snapshot();
+        $this->assertSame(1, $requests(), 'A publication ends the run as well');
+        RtStaleness::clear('unitRows', ['7', '8', '9']);
     }
 
     /**
@@ -362,12 +550,12 @@ final class PeerServerRtHandOverTest extends TestCase
         // the two frames these cases are about and nothing else.
         $this->drain($far);
 
-        $server->sendRtSnapshotToNode('node-b', 'unitRows', ['7' => ['id' => '7']], ['7']);
+        $server->streamRtSnapshotToNode('node-b', 'unitRows', RtSnapshotScope::rows(['7']), true);
         $server->broadcastRtSync(SignalTypeConstants::RT_SYNC_UPDATED, $this->rtSyncUpdated(), partialOwner: true);
         $link->write();
 
         $this->assertSame(
-            [PeerRtSnapshotDTO::MESSAGE_TYPE, PeerRtSyncStreamDTO::MESSAGE_TYPE],
+            [self::SNAPSHOT_PART, PeerRtSyncStreamDTO::MESSAGE_TYPE],
             $this->frameTypesOf($far),
             'One link, one buffer, FIFO: the delta cannot arrive before the snapshot it follows',
         );
@@ -395,7 +583,7 @@ final class PeerServerRtHandOverTest extends TestCase
         $this->drain($far);
 
         $link->discardAsDuplicate();
-        $server->sendRtSnapshotToNode('node-b', 'unitRows', ['7' => ['id' => '7']], ['7']);
+        $server->streamRtSnapshotToNode('node-b', 'unitRows', RtSnapshotScope::rows(['7']), true);
         $server->broadcastRtSync(SignalTypeConstants::RT_SYNC_UPDATED, $this->rtSyncUpdated(), partialOwner: true);
 
         $this->assertSame([], $this->frameTypesOf($far), 'A discarded link is nobody\'s address any more');
@@ -423,7 +611,7 @@ final class PeerServerRtHandOverTest extends TestCase
         $link->write();
         $this->drain($far);
 
-        $server->sendRtSnapshotToNode('node-b', 'unitRows', ['7' => ['id' => '7']], ['7']);
+        $server->streamRtSnapshotToNode('node-b', 'unitRows', RtSnapshotScope::rows(['7']), true);
         $server->broadcastRtSync(SignalTypeConstants::RT_SYNC_UPDATED, $this->rtSyncUpdated(), partialOwner: true);
         $link->write();
 
@@ -455,10 +643,10 @@ final class PeerServerRtHandOverTest extends TestCase
         $link->write();
         $this->drain($far);
 
-        $server->sendRtSnapshotToNode('node-b', 'unitRows', ['7' => ['id' => '7']], ['7']);
+        $server->streamRtSnapshotToNode('node-b', 'unitRows', RtSnapshotScope::rows(['7']), true);
         $link->write();
 
-        $this->assertSame([PeerRtSnapshotDTO::MESSAGE_TYPE], $this->frameTypesOf($far));
+        $this->assertSame([self::SNAPSHOT_PART], $this->frameTypesOf($far));
     }
 
     /**
@@ -480,7 +668,7 @@ final class PeerServerRtHandOverTest extends TestCase
         $this->attach($server, $link);
         $this->handshake($link, $far);
         $this->declareInterest($server, $link);
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', [], []));
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', [], [], 1));
         $link->write();
         $this->drain($far);
 
@@ -505,9 +693,9 @@ final class PeerServerRtHandOverTest extends TestCase
         $socket = $this->makeSocket();
         $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], [], 1));
 
-        $this->assertSame(['node-b'], $sink->handedOverTo);
+        $this->assertSame([['node-b', ['unitRows'], 1]], $sink->interestsAnswered);
     }
 
     /**
@@ -525,11 +713,11 @@ final class PeerServerRtHandOverTest extends TestCase
         $socket = $this->makeSocket();
         $link = new PeerLink($socket, $server, $local, dialer: false, transport: new PlainSocketTransport($socket));
 
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
-        $sink->handedOverTo = [];
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], [], 1));
+        $sink->interestsAnswered = [];
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], [], 2));
 
-        $this->assertSame([], $sink->handedOverTo);
+        $this->assertSame([['node-b', [], 2]], $sink->interestsAnswered, 'Answered, with nothing to hand over');
     }
 
     /**
@@ -547,7 +735,7 @@ final class PeerServerRtHandOverTest extends TestCase
         $this->registerSink();
         $local = NodeIdentity::of('node-a', 'Node node-a', NodeRole::Master, []);
         $server = new PeerServer('127.0.0.1', 0, $local, [], PeerTestTls::unread(), PeerTestMarkers::shared());
-        $server->announceSourceInterest(['unitRows'], []);
+        $server->announceSourceInterest(['unitRows'], [], 1);
 
         [$link, $far] = $this->makeLinkedPair($server, $local);
         $this->attach($server, $link);
@@ -570,7 +758,7 @@ final class PeerServerRtHandOverTest extends TestCase
      */
     private function declareInterest(PeerServer $server, PeerLink $link): void
     {
-        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], []));
+        $server->onSourceInterestReceived($link, new PeerSourceInterestDTO('node-b', ['unitRows'], [], 1));
     }
 
     /**
@@ -728,7 +916,9 @@ final class PeerServerRtHandOverTest extends TestCase
             $this->assertIsArray($frame, 'A link writes whole JSON frames or nothing');
             $type = $frame[PeerDTO::TYPE] ?? null;
             $this->assertIsString($type, 'Every peer frame names its own type');
-            $types[] = $type;
+            $part = $type === PeerRtSyncStreamDTO::MESSAGE_TYPE ? PeerRtSyncStreamDTO::fromArray($frame)->frame : null;
+            $types[] = $part !== null && $part->isPart() && $part->part === 0
+                && str_contains($part->data, '"' . RtSyncStreamSnapshot::SIGNAL_TYPE . '"') ? self::SNAPSHOT_PART : $type;
         }
 
         return $types;
@@ -776,6 +966,12 @@ final class PeerServerRtHandOverTest extends TestCase
             /** @var list<string> Nodes it was told were reachable again */
             public array $thawed = [];
 
+            /** @var list<array{string, list<string>, int}> Announcements of what a node reads it was asked to answer */
+            public array $interestsAnswered = [];
+
+            /** @var list<array{string, int}> Answers to this node's announcements it was handed */
+            public array $answersNoted = [];
+
             /**
              * @param string $originNodeId Id of the node the write happened on
              * @param string $signalType RT sync signal type the frame carried
@@ -802,21 +998,61 @@ final class PeerServerRtHandOverTest extends TestCase
                 return new RtReplicaOriginMap()->captureConfirmation($originNodeId, new RtNodeSourceMap());
             }
 
+            /** @var list<array{string, string}> Snapshot requests it was asked to answer, by node and collection */
+            public array $requested = [];
+
             /**
-             * @param string $originNodeId Id of the node that owns the collection
-             * @param string $collectionKey RT collection being replaced
-             * @param array<string, array<string, mixed>> $rows Rows by state id
-             * @param list<string> $scopeKeys Rows the snapshot speaks for
-             * @param list<string> $scopeSetKeys Sets the snapshot speaks for
+             * @var list<bool> How the stagings of the next snapshots end before their publication, each telling whether a
+             *      live change here canceled it; a snapshot with none left is kept
              */
-            public function applyRemoteRtSnapshot(
+            public array $cancellations = [];
+
+            /**
+             * Takes the snapshot's rows as they arrive and keeps them with its area once it is whole.
+             *
+             * @param string $originNodeId Id of the node that owns the area
+             * @param RtSyncStreamSnapshot $snapshot Snapshot at its head
+             * @param Closure(bool): void $settled The stream's answer
+             * @param Closure(): void $recover Lifts the link's holds of the collection
+             * @param Closure(bool): void $askAgain Asks the node for another snapshot, told whether a live change canceled this one
+             * @return Generator<int, RtWork, int, void> The staging
+             */
+            public function stageRemoteRtSnapshot(
                 string $originNodeId,
-                string $collectionKey,
-                array $rows,
-                array $scopeKeys = [],
-                array $scopeSetKeys = [],
-            ): void {
-                $this->snapshots[] = [$originNodeId, $collectionKey, $rows, $scopeKeys, $scopeSetKeys];
+                RtSyncStreamSnapshot $snapshot,
+                Closure $settled,
+                Closure $recover,
+                Closure $askAgain,
+            ): Generator {
+                $rows = [];
+                while (!$snapshot->isWhole() || $snapshot->hasRows()) {
+                    $portion = $snapshot->takeRows();
+                    if ($portion === null) {
+                        yield new RtWork();
+                        continue;
+                    }
+                    foreach ($portion->ids as $position => $stateId) {
+                        $rows[$stateId] = RtRowValues::nativeMap($portion->values[$position]);
+                    }
+                }
+                if ($this->cancellations !== []) {
+                    $settled(false);
+                    $askAgain(array_shift($this->cancellations));
+
+                    return;
+                }
+                $this->snapshots[] = [$originNodeId, $snapshot->collectionKey, $rows, $snapshot->scope->rowKeys() ?? [],
+                    $snapshot->scope->setKeys() ?? []];
+                $settled(true);
+            }
+
+            /**
+             * @param string $nodeId Node that asked
+             * @param string $collectionKey RT collection it asked about
+             */
+            public function answerRtSnapshotRequest(string $nodeId, string $collectionKey): void
+            {
+                $this->requested[] = [$nodeId, $collectionKey];
             }
 
             /**
@@ -825,6 +1061,25 @@ final class PeerServerRtHandOverTest extends TestCase
             public function handOverRtSnapshots(string $nodeId): void
             {
                 $this->handedOverTo[] = $nodeId;
+            }
+
+            /**
+             * @param string $nodeId Node that announced
+             * @param list<string> $addedCollectionKeys RT collections the announcement added
+             * @param int $announcement Number of the announcement
+             */
+            public function answerSourceInterest(string $nodeId, array $addedCollectionKeys, int $announcement): void
+            {
+                $this->interestsAnswered[] = [$nodeId, $addedCollectionKeys, $announcement];
+            }
+
+            /**
+             * @param string $nodeId Node that answered
+             * @param int $announcement Number of the announcement it answered
+             */
+            public function noteSourceInterestAnswered(string $nodeId, int $announcement): void
+            {
+                $this->answersNoted[] = [$nodeId, $announcement];
             }
 
             /**

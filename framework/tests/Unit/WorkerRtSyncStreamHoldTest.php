@@ -22,7 +22,9 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Hilos;
@@ -30,16 +32,22 @@ use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\Ordinary\RtOrdinaryQueue;
 use Hilos\Runtime\Row\RtRowArena;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\Snapshot\RtWorkScheduler;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Runtime\State\Collection\HilosProbeFleetStatuses;
+use Hilos\Runtime\State\Collection\HilosProbeNotes;
 use Hilos\Runtime\State\Item\HilosProbeFleetStatus;
+use Hilos\Runtime\State\Item\HilosProbeNote;
 use Hilos\Runtime\State\Item\RtState;
 use Hilos\Runtime\Stream\RtSyncStreamStatus;
 use Hilos\Runtime\View\Actions\Collection\RtActions;
+use Hilos\Runtime\View\Actions\Collection\HilosProbeNotesActions;
 use Hilos\Runtime\View\Actions\Item\RtActions as RtItemActions;
+use Hilos\Runtime\View\Actions\Item\HilosProbeNoteActions;
 use Hilos\Runtime\View\Collection\RtCollection;
+use Hilos\Runtime\View\Collection\HilosProbeNotes as ViewHilosProbeNotes;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\View\Item\RtItem;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -50,6 +58,7 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotRequestDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
@@ -57,6 +66,7 @@ use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use LogicException;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -70,15 +80,36 @@ use ReflectionProperty;
  */
 final class WorkerRtSyncStreamHoldTest extends TestCase
 {
-    private const string COLLECTION = 'streamRows';
+    public const string COLLECTION = 'streamRows';
 
     private const string SIGNAL = 'after-the-write';
 
+    /** Consumer reading the notes in the snapshot cases */
+    private const string READER = 'page:unit-rt-stream-reader';
+
+    /** Consumer reading the notes once the first has gone */
+    private const string READER_AGAIN = 'page:unit-rt-stream-reader-again';
+
+    /** @var int The most RT passes a case runs for what one hand-over of parts owes */
+    private const int MAX_OWED_PASSES = 16;
+
+    /** @var int The most RT passes a case runs for a snapshot while the stream has one step a round */
+    private const int MAX_STARVED_PASSES = 256;
+
+    /** @var int Number of the worker's first interest report, which a reader the cases set up stands for */
+    private const int FIRST_REPORT = 1;
+
+    /** @var string Another RT collection a consumer of the worker takes up */
+    private const string OTHER_COLLECTION = 'unitRtStreamOtherCollection';
+
     private ?SignalRouter $previousRouter;
+
+    private ?RtContext $previousRt;
 
     protected function setUp(): void
     {
         $this->previousRouter = Hilos::$sr;
+        $this->previousRt = Hilos::$rt;
         RtOrdinaryAdmission::reset();
         ExecutionContext::clear();
     }
@@ -88,8 +119,14 @@ final class WorkerRtSyncStreamHoldTest extends TestCase
         RtOrdinaryAdmission::reset();
         // run() states what kind of process this is, process-wide.
         SourceInterestRegistry::readsWhatItMounts();
+        SourceInterestRegistry::releaseConsumer(self::READER);
+        SourceInterestRegistry::releaseConsumer(self::READER_AGAIN);
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(WorkerRtSyncStreamHoldTestAgent::AGENT_TYPE));
+        // Process-wide, so the rows one case froze would otherwise be frozen for the next.
+        RtStaleness::reset();
         ExecutionContext::clear();
         Hilos::$sr = $this->previousRouter;
+        Hilos::$rt = $this->previousRt;
 
         parent::tearDown();
     }
@@ -503,6 +540,549 @@ final class WorkerRtSyncStreamHoldTest extends TestCase
     }
 
     /**
+     * The master's snapshot of a collection reaches a reading worker as an operation of the link's RT
+     * stream: staged into the worker's copy and published whole, rows the cut lacks swept, the marks
+     * of the master's copy taken over, and the collection readable from its publication on.
+     */
+    public function testAStreamedSnapshotIsPublishedHereAndMakesItsCollectionReadable(): void
+    {
+        $source = $this->notes();
+        $source->notes->add(HilosProbeNote::create('n1', 'node-a', 'the master\'s copy'));
+        $source->notes->add(HilosProbeNote::create('n2', 'node-a', 'a row of a node gone quiet'));
+        $master = $this->masterEnd($parts);
+        $master->sendSnapshot(WorkerRtSyncStreamHoldTestNotes::NOTES, RtSnapshotScope::whole(), staleRows: ['n2' => 12.5],
+            announcement: self::FIRST_REPORT);
+        $copy = $this->notes();
+        $copy->notes->add(HilosProbeNote::create('gone', 'node-a', 'not in the cut'));
+        $worker = $this->reader();
+        $this->assertFalse(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+
+        $this->hand($worker, $parts);
+
+        $this->assertSame(['n1' => 'the master\'s copy', 'n2' => 'a row of a node gone quiet'], $this->texts($copy));
+        $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES),
+            'Readiness comes with the publication');
+        $this->assertSame(12.5, RtStaleness::staleSince(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n2'));
+        $this->assertNull(RtStaleness::staleSince(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n1'));
+        $this->assertSame([RtSyncStreamStatus::Applied], $worker->client->answers());
+    }
+
+    /**
+     * Rows this worker's own agents hold are left out of the snapshot: the copy here is the one they
+     * write, and the master's may lag behind it. The rest of the copy is replaced as before.
+     */
+    public function testAStreamedSnapshotLeavesTheRowsOfThisWorkersAgentsAsTheyAre(): void
+    {
+        $source = $this->notes();
+        $source->notes->add(HilosProbeNote::create('own', 'node-a', 'the master\'s older copy'));
+        $source->notes->add(HilosProbeNote::create('n1', 'node-a', 'the master\'s copy'));
+        $master = $this->masterEnd($parts);
+        $master->sendSnapshot(WorkerRtSyncStreamHoldTestNotes::NOTES, RtSnapshotScope::whole(), announcement: self::FIRST_REPORT);
+        $copy = $this->notes();
+        $copy->notes->add(HilosProbeNote::create('own', 'node-a', 'written here by its owner'));
+        $copy->notes->add(HilosProbeNote::create('gone', 'node-a', 'not in the cut'));
+        $agent = new WorkerRtSyncStreamHoldTestAgent();
+        RtTruthSourceRegistry::register(WorkerRtSyncStreamHoldTestNotes::NOTES, TruthSourceKeys::listed('own'), $agent->getId());
+        try {
+            $worker = $this->reader($agent);
+
+            $this->hand($worker, $parts);
+        } finally {
+            RtTruthSourceRegistry::unregisterAgent($agent->getId());
+        }
+
+        $this->assertSame(['n1' => 'the master\'s copy', 'own' => 'written here by its owner'], $this->texts($copy));
+        $this->assertSame([RtSyncStreamStatus::Applied], $worker->client->answers());
+    }
+
+    /**
+     * An agent that starts on this worker while the master's snapshot still arrives in parts, and
+     * writes a row of the cut, is a writer the snapshot did not see - its rows were not left out
+     * when the staging began: the generation is canceled before it is merged, nothing of it is
+     * published, and the master is asked for one more snapshot, once.
+     */
+    public function testAnAgentStartedBetweenPartsWritingARowOfTheCutCancelsTheSnapshotAndAsksForAnother(): void
+    {
+        $source = $this->notes();
+        $source->notes->add(HilosProbeNote::create('own', 'node-a', 'the master\'s older copy'));
+        foreach (['n1', 'n2', 'n3'] as $id) {
+            $source->notes->add(HilosProbeNote::create($id, 'node-a', str_repeat($id, intdiv(RtSyncStreamFrame::MAX_PART_BYTES, 4))));
+        }
+        $master = $this->masterEnd($parts);
+        $master->sendSnapshot(WorkerRtSyncStreamHoldTestNotes::NOTES, RtSnapshotScope::whole(), announcement: self::FIRST_REPORT);
+        $copy = $this->notes();
+        $copy->notes->add(HilosProbeNote::create('own', 'node-a', 'the copy before'));
+        $worker = $this->reader();
+        $this->hand($worker, $parts);
+        $this->assertSame([RtSyncStreamStatus::Next], $worker->client->answers(), 'The snapshot still arrives');
+
+        $agent = new WorkerRtSyncStreamHoldTestAgent();
+        RtTruthSourceRegistry::register(WorkerRtSyncStreamHoldTestNotes::NOTES, TruthSourceKeys::listed('own'), $agent->getId());
+        try {
+            $copy->notes['own']->text = 'written here by an agent started meanwhile';
+            $copy->notes['own']->markRtSyncBaseline();
+            $this->relay($worker, $master, $parts);
+        } finally {
+            RtTruthSourceRegistry::unregisterAgent($agent->getId());
+        }
+
+        $this->assertSame(['own' => 'written here by an agent started meanwhile'], $this->texts($copy));
+        $this->assertSame([RtSyncStreamStatus::Refused], array_values(array_filter($worker->client->answers(),
+            static fn (RtSyncStreamStatus $status): bool => $status !== RtSyncStreamStatus::Next)));
+        $this->assertSame([WorkerRtSyncStreamHoldTestNotes::NOTES], $worker->client->snapshotsAsked());
+    }
+
+    /**
+     * A live change here that cancels the second snapshot in a row is a second owner of the rows -
+     * an agent writing them through a claim that leaves them in the cut - and every cut of the
+     * master would be canceled the same way: that snapshot is not asked for again. The next event
+     * asks once more, a hold of a row among them.
+     */
+    public function testASnapshotCanceledTwiceInARowByAWriteHereIsNotAskedForAgainUntilTheNextEvent(): void
+    {
+        $source = $this->notes();
+        $source->notes->add(HilosProbeNote::create('own', 'node-a', 'the master\'s older copy'));
+        foreach (['n1', 'n2', 'n3'] as $id) {
+            $source->notes->add(HilosProbeNote::create($id, 'node-a', str_repeat($id, intdiv(RtSyncStreamFrame::MAX_PART_BYTES, 4))));
+        }
+        $master = $this->masterEnd($parts);
+        $copy = $this->notes();
+        $copy->notes->add(HilosProbeNote::create('own', 'node-a', 'the copy before'));
+        $worker = $this->reader();
+
+        foreach (['written once', 'written again'] as $text) {
+            $this->cut($master, $source, $copy, $this->reported($worker));
+            $this->hand($worker, $parts);
+            $agent = new WorkerRtSyncStreamHoldTestAgent();
+            RtTruthSourceRegistry::register(WorkerRtSyncStreamHoldTestNotes::NOTES, TruthSourceKeys::listed('own'), $agent->getId());
+            try {
+                $copy->notes['own']->text = $text;
+                $copy->notes['own']->markRtSyncBaseline();
+                $this->relay($worker, $master, $parts);
+            } finally {
+                RtTruthSourceRegistry::unregisterAgent($agent->getId());
+            }
+        }
+
+        $this->assertSame(['own' => 'written again'], $this->texts($copy));
+        $this->assertSame([RtSyncStreamStatus::Refused, RtSyncStreamStatus::Refused], array_values(array_filter($worker->client->answers(),
+            static fn (RtSyncStreamStatus $status): bool => $status !== RtSyncStreamStatus::Next)));
+        $this->assertSame([WorkerRtSyncStreamHoldTestNotes::NOTES], $worker->client->snapshotsAsked(),
+            'The second cancellation in a row asks for nothing');
+
+        // An operation naming a node is refused by a worker at once, so its row is held.
+        $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n4', ['id' => 'n4']), 'unit-peer-node');
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame([WorkerRtSyncStreamHoldTestNotes::NOTES, WorkerRtSyncStreamHoldTestNotes::NOTES],
+            $worker->client->snapshotsAsked(), 'A hold is the next event, and asks');
+    }
+
+    /**
+     * The first row the worker's stream holds after refusing its operation asks the master for one
+     * snapshot of its collection, and no second request goes while that one waits. The snapshot
+     * gives the held rows a base again: the hold and its marks are lifted, and a later hold asks anew.
+     */
+    public function testARowTheStreamHoldsAsksTheMasterForOneSnapshotWhichLiftsTheHold(): void
+    {
+        $this->notes();
+        $worker = $this->reader();
+        $master = $this->masterEnd($parts);
+        // An operation naming a node is refused by a worker at once, so its row is held.
+        $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n1', ['id' => 'n1']), 'unit-peer-node');
+        $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n2', ['id' => 'n2']), 'unit-peer-node');
+
+        $this->hand($worker, $parts);
+
+        $this->assertNotNull(RtStaleness::staleSince(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n1'));
+        $this->assertNotNull(RtStaleness::staleSince(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n2'));
+        $this->assertSame([WorkerRtSyncStreamHoldTestNotes::NOTES], $worker->client->snapshotsAsked(), 'One request for both rows');
+
+        $master->sendSnapshot(WorkerRtSyncStreamHoldTestNotes::NOTES, RtSnapshotScope::whole(), announcement: self::FIRST_REPORT);
+        $this->hand($worker, $parts);
+
+        $this->assertNull(RtStaleness::staleSince(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n1'));
+        $this->assertNull(RtStaleness::staleSince(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n2'));
+        $this->assertSame([RtSyncStreamStatus::Refused, RtSyncStreamStatus::Refused, RtSyncStreamStatus::Applied],
+            $worker->client->answers());
+
+        $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'n3', ['id' => 'n3']), 'unit-peer-node');
+        $this->hand($worker, $parts);
+
+        $this->assertSame([WorkerRtSyncStreamHoldTestNotes::NOTES, WorkerRtSyncStreamHoldTestNotes::NOTES],
+            $worker->client->snapshotsAsked(), 'A hold after the snapshot asks again');
+    }
+
+    /**
+     * A row held while the snapshot answering the interest that added its collection is still to come
+     * asks for nothing: the master cuts that snapshot after the write the hold refused, so it is the
+     * base the row lacks, and it lifts the hold. A hold after it asks as usual.
+     */
+    public function testARowHeldBeforeTheAnswerToTheInterestThatAddedItsCollectionWaitsForThatAnswer(): void
+    {
+        $source = $this->notes();
+        $source->notes->add(HilosProbeNote::create('n1', 'node-a', 'kept'));
+        $master = $this->masterEnd($parts);
+        $copy = $this->notes();
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $worker = new WorkerRtSyncStreamHoldTestReader();
+        $this->takeUp($worker, self::READER);
+        // An operation naming a node is refused by a worker at once, so its row is held.
+        $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'held', ['id' => 'held']), 'unit-peer-node');
+        $this->relay($worker, $master, $parts);
+
+        $this->assertNotNull(RtStaleness::staleSince(WorkerRtSyncStreamHoldTestNotes::NOTES, 'held'));
+        $this->assertSame([], $worker->client->snapshotsAsked(), 'The answer to the interest is on the way');
+
+        $this->cut($master, $source, $copy, $this->reported($worker));
+        $this->relay($worker, $master, $parts);
+
+        $this->assertNull(RtStaleness::staleSince(WorkerRtSyncStreamHoldTestNotes::NOTES, 'held'));
+        $this->assertSame(['n1' => 'kept'], $this->texts($copy));
+        $this->assertSame([], $worker->client->snapshotsAsked());
+
+        $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'later', ['id' => 'later']), 'unit-peer-node');
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame([WorkerRtSyncStreamHoldTestNotes::NOTES], $worker->client->snapshotsAsked(), 'A hold after the answer asks');
+    }
+
+    /**
+     * A snapshot one row of which its validator refuses here is refused whole, and asks for nothing:
+     * the master's next cut of the same rows would be refused the same way. The next event asks, a
+     * hold of a row.
+     */
+    public function testASnapshotARowOfWhichItsValidatorRefusesIsNotAskedForAgainUntilTheNextEvent(): void
+    {
+        $source = $this->notes();
+        $source->notes->add(HilosProbeNote::create('n1', 'node-a', 'fine'));
+        $source->notes->add(HilosProbeNote::create('refused', 'not-a-number', 'refused'));
+        $master = $this->masterEnd($parts);
+        $copy = $this->notes();
+        $worker = $this->reader();
+        $this->cut($master, $source, $copy, $this->reported($worker));
+        // A node the master's copy holds as text and that reaches this worker as a number: its validator refuses it.
+        $parts = array_map(static fn (RtSyncStreamFrame $part): RtSyncStreamFrame => RtSyncStreamFrame::part(
+            $part->streamId,
+            $part->sequence,
+            $part->part,
+            $part->final,
+            str_replace('"not-a-number"', '7', $part->data),
+        ), $parts);
+
+        $this->hand($worker, $parts);
+
+        $this->assertSame([], $this->texts($copy));
+        $this->assertFalse(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+        $this->assertSame([RtSyncStreamStatus::Refused], $worker->client->answers());
+        $this->assertSame([], $worker->client->snapshotsAsked(), 'A refusal asks for nothing');
+
+        // An operation naming a node is refused by a worker at once, so its row is held.
+        $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'held', ['id' => 'held']), 'unit-peer-node');
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame([WorkerRtSyncStreamHoldTestNotes::NOTES], $worker->client->snapshotsAsked(), 'A hold is the next event, and asks');
+    }
+
+    /**
+     * A write the master addressed here before it learned the last reader went is taken and not
+     * applied, and answered applied: the copy it would land on is being dropped, and the snapshot
+     * of the next reader carries it. Once the collection is read again, writes are applied.
+     */
+    public function testAWriteOfACollectionNobodyHereReadsIsAnsweredAppliedAndNotApplied(): void
+    {
+        $copy = $this->notes();
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $worker = new WorkerRtSyncStreamHoldTestReader();
+        $master = $this->masterEnd($parts);
+
+        $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'late',
+            HilosProbeNote::create('late', 'node-a', 'written after the last reader went')->toArray()));
+        $this->hand($worker, $parts);
+
+        $this->assertSame([], $this->texts($copy));
+        $this->assertSame([RtSyncStreamStatus::Applied], $worker->client->answers());
+
+        SourceInterestRegistry::register(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES, self::READER);
+        $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'read',
+            HilosProbeNote::create('read', 'node-a', 'written for a reader')->toArray()));
+        $this->hand($worker, $parts);
+
+        $this->assertSame(['read' => 'written for a reader'], $this->texts($copy));
+    }
+
+    /**
+     * The copy nobody reads any more is dropped by an empty generation the RT passes stage and
+     * publish, not by one write of the whole: its readiness goes with the last reader at once, and
+     * its rows with the passes after.
+     */
+    public function testTheLastReaderLeavingDropsTheCopyOnTheRtPasses(): void
+    {
+        $copy = $this->notes();
+        $copy->notes->add(HilosProbeNote::create('n1', 'node-a', 'a row of the copy'));
+        $worker = $this->reader();
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES);
+
+        new ReflectionMethod(WorkerManager::class, 'releaseSourceInterest')->invoke($worker, self::READER);
+
+        $this->assertFalse(SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+        $this->assertSame(['n1' => 'a row of the copy'], $this->texts($copy), 'Nothing is written in the release itself');
+        $pass = new ReflectionMethod(WorkerManager::class, 'runRtPass');
+        $owes = new ReflectionMethod(WorkerManager::class, 'hasRtPassWork');
+        for ($passes = 0; $passes < 16 && $owes->invoke($worker); $passes++) {
+            $pass->invoke($worker);
+        }
+        $this->assertSame([], $this->texts($copy));
+        $this->assertSame([], new ReflectionProperty(WorkerManager::class, 'rtCopyDrops')->getValue($worker));
+    }
+
+    /**
+     * A snapshot the master cut while a reader here read the collection, and that arrives only after
+     * the reader went, is not the first answer of the next reader: the master may have stopped keeping
+     * its copy once it read that the reader went, and a row its source deleted since would stand on
+     * the next reader's first read. Its head names the report it answers, older than the one that
+     * added the collection again, so it is passed over, and nothing is asked for: the answer to that
+     * report is on its way. The next reader is Ready with that one only - whether the snapshot passed
+     * over answered the report that added the collection or a request for another.
+     *
+     * @param bool $asked Whether the snapshot in flight answered a request rather than the interest
+     */
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testASnapshotCutForAReaderThatLeftBeforeItCameIsPassedOverForTheNextReader(bool $asked): void
+    {
+        $source = $this->notes();
+        $source->notes->add(HilosProbeNote::create('n1', 'node-a', 'kept'));
+        $source->notes->add(HilosProbeNote::create('gone', 'node-a', 'deleted at its source'));
+        $master = $this->masterEnd($parts);
+        $copy = $this->notes();
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $worker = new WorkerRtSyncStreamHoldTestReader();
+        $this->takeUp($worker, self::READER);
+        if ($asked) {
+            $this->cut($master, $source, $copy, $this->reported($worker));
+            $this->hand($worker, $parts);
+            $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+            // An operation naming a node is refused by a worker at once, so its row is held.
+            $master->send(new RtSyncCreatedSignalData(WorkerRtSyncStreamHoldTestNotes::NOTES, 'held', ['id' => 'held']), 'unit-peer-node');
+            $this->relay($worker, $master, $parts);
+            $this->assertSame([WorkerRtSyncStreamHoldTestNotes::NOTES], $worker->client->snapshotsAsked());
+        }
+        $this->cut($master, $source, $copy, $this->reported($worker));
+
+        $this->letGo($worker, self::READER);
+        $source->notes->remove('gone');
+        $this->takeUp($worker, self::READER_AGAIN);
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame([], $this->texts($copy), 'Nothing of the snapshot cut for the reader that went is published');
+        $this->assertFalse(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+        $this->assertSame($asked ? [WorkerRtSyncStreamHoldTestNotes::NOTES] : [], $worker->client->snapshotsAsked(),
+            'Nothing more is asked for');
+
+        $this->cut($master, $source, $copy, $this->reported($worker));
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame(['n1' => 'kept'], $this->texts($copy));
+        $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+    }
+
+    /**
+     * Two answers to readers that went are still on their way when the next reader comes: both are
+     * passed over by the numbers their heads carry, neither asks for anything, and the next reader is
+     * Ready with the answer to the report that added the collection for it, the first that comes.
+     */
+    public function testTwoAnswersToReadersThatWentArePassedOverAndTheNextReaderIsReadyWithItsOwn(): void
+    {
+        $source = $this->notes();
+        $source->notes->add(HilosProbeNote::create('n1', 'node-a', 'kept'));
+        $master = $this->masterEnd($parts);
+        $copy = $this->notes();
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $worker = new WorkerRtSyncStreamHoldTestReader();
+        foreach ([self::READER, self::READER_AGAIN] as $consumerId) {
+            $this->takeUp($worker, $consumerId);
+            $this->cut($master, $source, $copy, $this->reported($worker));
+            $this->letGo($worker, $consumerId);
+        }
+        $this->takeUp($worker, self::READER);
+        $this->cut($master, $source, $copy, $this->reported($worker));
+        $this->assertCount(3, $parts, 'Each answer goes in one part, all three on their way');
+
+        foreach ([false, false, true] as $ready) {
+            $next = [array_shift($parts)];
+            $this->hand($worker, $next);
+            $this->assertSame($ready, SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES),
+                'Ready with the answer to the report that added the notes last, and with that one only');
+        }
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame(['n1' => 'kept'], $this->texts($copy));
+        $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+        $this->assertSame([], $worker->client->snapshotsAsked(), 'Nothing is asked for');
+        $this->assertSame([RtSyncStreamStatus::Applied, RtSyncStreamStatus::Applied, RtSyncStreamStatus::Applied],
+            $worker->client->answers());
+    }
+
+    /**
+     * The worker's report names everything it reads under one number. A report that adds another
+     * collection while the answer to the report that added the notes is still on its way leaves the
+     * notes to that answer: it is published, though its head carries the older number.
+     */
+    public function testAnAnswerToTheReportThatAddedTheCollectionIsPublishedBehindALaterReport(): void
+    {
+        $source = $this->notes();
+        $source->notes->add(HilosProbeNote::create('n1', 'node-a', 'kept'));
+        $master = $this->masterEnd($parts);
+        $copy = $this->notes();
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $worker = new WorkerRtSyncStreamHoldTestReader();
+        $this->takeUp($worker, self::READER);
+        $added = $this->reported($worker);
+        $this->cut($master, $source, $copy, $added);
+        new ReflectionMethod(WorkerManager::class, 'raiseSourceInterest')->invoke(
+            $worker,
+            self::READER_AGAIN,
+            [SourceChange::KIND_RT => [self::OTHER_COLLECTION]],
+        );
+        $this->assertGreaterThan($added, $this->reported($worker), 'A later report');
+
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame(['n1' => 'kept'], $this->texts($copy));
+        $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+        $this->assertSame([], $worker->client->snapshotsAsked());
+    }
+
+    /**
+     * A snapshot whose reader went while it still arrived in parts is not published, though a reader
+     * came again before its end: the reader that came has a snapshot of its own on the way, and the
+     * one staging was cut for an interest the master may have dropped its copy behind. It is answered
+     * applied and asks for nothing - whether the drop of the copy the reader left canceled it first,
+     * or the drop still waited for its share of the passes and the snapshot was ready ahead of it.
+     *
+     * @param bool $dropWaits Whether the drop of the copy is left without a share until the snapshot is through
+     */
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testASnapshotWhoseReaderWentWhileItStagedIsNotPublishedForTheReaderThatCameSince(bool $dropWaits): void
+    {
+        $source = $this->notes();
+        foreach (['n1', 'n2', 'n3'] as $id) {
+            $source->notes->add(HilosProbeNote::create($id, 'node-a', str_repeat($id, intdiv(RtSyncStreamFrame::MAX_PART_BYTES, 4))));
+        }
+        $master = $this->masterEnd($parts);
+        $copy = $this->notes();
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $worker = new WorkerRtSyncStreamHoldTestReader();
+        $this->takeUp($worker, self::READER);
+        $this->cut($master, $source, $copy, $this->reported($worker));
+        $this->hand($worker, $parts);
+        $this->assertSame([RtSyncStreamStatus::Next], $worker->client->answers(), 'The snapshot still arrives');
+
+        $this->letGo($worker, self::READER);
+        $this->takeUp($worker, self::READER_AGAIN);
+        if ($dropWaits) {
+            // Two steps a round: one for the stream, none for the snapshot share the drop advances on.
+            $shares = new ReflectionProperty(WorkerManager::class, 'rtWork');
+            $shares->setValue($worker, new RtWorkScheduler(2));
+            $pass = new ReflectionMethod(WorkerManager::class, 'runRtPass');
+            $through = static fn (): bool => in_array(RtSyncStreamStatus::Applied, $worker->client->answers(), true);
+            for ($passes = 0; $passes < self::MAX_STARVED_PASSES && !$through(); $passes++) {
+                foreach ($worker->client->takeStreamAnswers() as $answer) {
+                    $master->receive($answer);
+                }
+                foreach (array_splice($parts, 0) as $part) {
+                    $worker->handleDaemonMessage(new WorkerRtSyncStreamDTO($part));
+                }
+                $pass->invoke($worker);
+            }
+            $this->assertTrue($through(), 'The snapshot is through');
+            $this->assertNotSame([], new ReflectionProperty(WorkerManager::class, 'rtCopyDrops')->getValue($worker), 'The drop waits');
+            $this->assertSame([], $this->texts($copy), 'Ready ahead of the drop, and not published all the same');
+            $shares->setValue($worker, new RtWorkScheduler());
+        }
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame([], $this->texts($copy));
+        $this->assertFalse(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+        $this->assertSame([RtSyncStreamStatus::Applied], array_values(array_filter($worker->client->answers(),
+            static fn (RtSyncStreamStatus $status): bool => $status !== RtSyncStreamStatus::Next)));
+        $this->assertSame([], $worker->client->snapshotsAsked());
+
+        $source->notes->remove('n2');
+        $this->cut($master, $source, $copy, $this->reported($worker));
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame(['n1', 'n3'], array_keys($this->texts($copy)));
+        $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+    }
+
+    /**
+     * The first snapshot of a reader that came while the copy of the one before was still being
+     * dropped takes the drop's place: the drop is canceled at the snapshot's head, so its
+     * publication between the snapshot's parts does not cancel the snapshot.
+     */
+    public function testTheHeadOfTheNextReadersSnapshotCancelsTheDropOfTheCopy(): void
+    {
+        $source = $this->notes();
+        foreach (['n1', 'n2', 'n3'] as $id) {
+            $source->notes->add(HilosProbeNote::create($id, 'node-a', str_repeat($id, intdiv(RtSyncStreamFrame::MAX_PART_BYTES, 4))));
+        }
+        $master = $this->masterEnd($parts);
+        $copy = $this->notes();
+        SourceInterestRegistry::readsWhatIsDelivered();
+        $worker = new WorkerRtSyncStreamHoldTestReader();
+        $this->takeUp($worker, self::READER);
+        $this->cut($master, $source, $copy, $this->reported($worker));
+        $this->relay($worker, $master, $parts);
+        $this->letGo($worker, self::READER);
+        $this->takeUp($worker, self::READER_AGAIN);
+        $this->assertNotSame([], new ReflectionProperty(WorkerManager::class, 'rtCopyDrops')->getValue($worker), 'The drop waits');
+
+        $this->cut($master, $source, $copy, $this->reported($worker));
+        $this->relay($worker, $master, $parts);
+
+        $this->assertSame(['n1', 'n2', 'n3'], array_keys($this->texts($copy)));
+        $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+        $this->assertSame([RtSyncStreamStatus::Applied, RtSyncStreamStatus::Applied], array_values(array_filter($worker->client->answers(),
+            static fn (RtSyncStreamStatus $status): bool => $status !== RtSyncStreamStatus::Next)));
+        $this->assertSame([], $worker->client->snapshotsAsked());
+    }
+
+    /**
+     * A snapshot one part of which does not read is lost: nothing of it is published, and it asks for
+     * nothing - the next event does, as after a refusal.
+     */
+    public function testASnapshotLostBeforeItsEndAsksForNothing(): void
+    {
+        $source = $this->notes();
+        foreach (['n1', 'n2', 'n3'] as $id) {
+            $source->notes->add(HilosProbeNote::create($id, 'node-a', str_repeat($id, intdiv(RtSyncStreamFrame::MAX_PART_BYTES, 4))));
+        }
+        $master = $this->masterEnd($parts);
+        $copy = $this->notes();
+        $worker = $this->reader();
+        $this->cut($master, $source, $copy, $this->reported($worker));
+        $this->hand($worker, $parts);
+        foreach ($worker->client->takeStreamAnswers() as $answer) {
+            $master->receive($answer);
+        }
+        $part = array_shift($parts);
+        $parts = [];
+
+        // An escape no JSON knows, where the snapshot's next part goes: it does not read in a string or out of one.
+        $worker->handleDaemonMessage(new WorkerRtSyncStreamDTO(RtSyncStreamFrame::part($part->streamId, $part->sequence, $part->part,
+            true, '\\q"')));
+        $this->hand($worker, $parts);
+
+        $this->assertSame([], $this->texts($copy));
+        $this->assertFalse(SourceInterestRegistry::isReady(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES));
+        $this->assertSame([RtSyncStreamStatus::Next, RtSyncStreamStatus::Refused], $worker->client->answers());
+        $this->assertSame([], $worker->client->snapshotsAsked());
+    }
+
+    /**
      * @return RtSyncStreamFrame The one part of a small streamed create, as the master's end of the stream cuts it
      */
     private function createPart(): RtSyncStreamFrame
@@ -519,6 +1099,164 @@ final class WorkerRtSyncStreamHoldTest extends TestCase
         $this->assertTrue($frames[0]->final);
 
         return $frames[0];
+    }
+
+    /**
+     * @return WorkerRtSyncStreamHoldTestNotes Fresh runtime of this process, its names bound, current from now on
+     */
+    private function notes(): WorkerRtSyncStreamHoldTestNotes
+    {
+        $context = new WorkerRtSyncStreamHoldTestNotes();
+        $context->configure();
+        $context->bindStateCollectionNames();
+        Hilos::$rt = $context;
+
+        return $context;
+    }
+
+    /**
+     * @param AbstractAgent ...$agents Agents running on the worker
+     * @return WorkerRtSyncStreamHoldTestReader A worker that reads the notes, handed the master's frames one by one
+     */
+    private function reader(AbstractAgent ...$agents): WorkerRtSyncStreamHoldTestReader
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        SourceInterestRegistry::register(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTestNotes::NOTES, self::READER);
+        $worker = new WorkerRtSyncStreamHoldTestReader($agents);
+        // The notes were named by the worker's first report, and the answer to it came: what such a reader stands for.
+        new ReflectionProperty(WorkerManager::class, 'rtInterestNumber')->setValue($worker, self::FIRST_REPORT);
+        new ReflectionProperty(WorkerManager::class, 'rtInterestAddedAt')
+            ->setValue($worker, [WorkerRtSyncStreamHoldTestNotes::NOTES => self::FIRST_REPORT]);
+        new ReflectionProperty(WorkerManager::class, 'rtInterestAnswered')->setValue($worker, [WorkerRtSyncStreamHoldTestNotes::NOTES => true]);
+
+        return $worker;
+    }
+
+    /**
+     * @param WorkerRtSyncStreamHoldTestReader $worker Worker reporting what it reads
+     * @return int Number of the last interest report the worker sent, which its master marks an answer with
+     */
+    private function reported(WorkerRtSyncStreamHoldTestReader $worker): int
+    {
+        return new ReflectionProperty(WorkerManager::class, 'rtInterestNumber')->getValue($worker);
+    }
+
+    /**
+     * @param list<RtSyncStreamFrame>|null $parts Takes the parts the master's end writes, in order
+     * @return RtSyncStreamChannel The master's end of the worker's RT stream, pumped as it takes work
+     */
+    private function masterEnd(?array &$parts): RtSyncStreamChannel
+    {
+        $parts = [];
+
+        return new RtSyncStreamChannel(
+            static function (RtSyncStreamFrame $frame) use (&$parts): void {
+                $parts[] = $frame;
+            },
+            static fn (): null => null,
+        );
+    }
+
+    /**
+     * Hands the worker every part the master's end wrote and has not handed yet, then runs the RT
+     * passes the worker still owes for them. A pass ends at its wall-clock budget, so one pass under
+     * a loaded box may stop short of a publication an idle one reaches; the loop takes what the
+     * worker's next loop iterations would.
+     *
+     * @param WorkerRtSyncStreamHoldTestReader $worker Worker reading the stream
+     * @param list<RtSyncStreamFrame> $parts Parts written so far; emptied as they are handed over
+     */
+    private function hand(WorkerRtSyncStreamHoldTestReader $worker, array &$parts): void
+    {
+        foreach (array_splice($parts, 0) as $part) {
+            $worker->handleDaemonMessage(new WorkerRtSyncStreamDTO($part));
+        }
+        $pass = new ReflectionMethod(WorkerManager::class, 'runRtPass');
+        $owes = new ReflectionMethod(WorkerManager::class, 'hasRtPassWork');
+        for ($passes = 0; $passes < self::MAX_OWED_PASSES && $owes->invoke($worker); $passes++) {
+            $pass->invoke($worker);
+        }
+        $this->assertFalse($owes->invoke($worker), 'The passes the worker owed are run');
+    }
+
+    /**
+     * Hands the worker the master's parts and the master the worker's answers to them, until the
+     * master's end writes no more.
+     *
+     * @param WorkerRtSyncStreamHoldTestReader $worker Worker reading the stream
+     * @param RtSyncStreamChannel $master The master's end of the stream
+     * @param list<RtSyncStreamFrame> $parts Parts written so far; emptied as they are handed over
+     */
+    private function relay(WorkerRtSyncStreamHoldTestReader $worker, RtSyncStreamChannel $master, array &$parts): void
+    {
+        do {
+            $this->hand($worker, $parts);
+            foreach ($worker->client->takeStreamAnswers() as $answer) {
+                $master->receive($answer);
+            }
+        } while ($parts !== []);
+    }
+
+    /**
+     * Cuts the master's copy of the notes into its end of the stream, as the master does when it
+     * answers an interest or a request, marked with the worker's report it answers; the worker's
+     * runtime is current again afterwards.
+     *
+     * @param RtSyncStreamChannel $master The master's end of the stream
+     * @param WorkerRtSyncStreamHoldTestNotes $source The master's runtime
+     * @param WorkerRtSyncStreamHoldTestNotes $copy The worker's runtime
+     * @param int $announcement Number of the worker's interest report the snapshot answers
+     */
+    private function cut(
+        RtSyncStreamChannel $master,
+        WorkerRtSyncStreamHoldTestNotes $source,
+        WorkerRtSyncStreamHoldTestNotes $copy,
+        int $announcement,
+    ): void {
+        Hilos::$rt = $source;
+        $master->sendSnapshot(WorkerRtSyncStreamHoldTestNotes::NOTES, RtSnapshotScope::whole(), announcement: $announcement);
+        Hilos::$rt = $copy;
+    }
+
+    /**
+     * A consumer of the worker takes the notes up, and the worker reports it to the master.
+     *
+     * @param WorkerRtSyncStreamHoldTestReader $worker Worker the consumer runs on
+     * @param string $consumerId Consumer taking the notes up
+     */
+    private function takeUp(WorkerRtSyncStreamHoldTestReader $worker, string $consumerId): void
+    {
+        new ReflectionMethod(WorkerManager::class, 'raiseSourceInterest')->invoke(
+            $worker,
+            $consumerId,
+            [SourceChange::KIND_RT => [WorkerRtSyncStreamHoldTestNotes::NOTES]],
+        );
+    }
+
+    /**
+     * A consumer of the worker ends, and the worker reports what it reads without it.
+     *
+     * @param WorkerRtSyncStreamHoldTestReader $worker Worker the consumer ran on
+     * @param string $consumerId Consumer that ended
+     */
+    private function letGo(WorkerRtSyncStreamHoldTestReader $worker, string $consumerId): void
+    {
+        new ReflectionMethod(WorkerManager::class, 'releaseSourceInterest')->invoke($worker, $consumerId);
+    }
+
+    /**
+     * @param WorkerRtSyncStreamHoldTestNotes $context Runtime to read
+     * @return array<string, string> Texts of its notes by id, sorted by id
+     */
+    private function texts(WorkerRtSyncStreamHoldTestNotes $context): array
+    {
+        $texts = [];
+        foreach ($context->notes->toArray() as $id => $row) {
+            $texts[$id] = $row[HilosProbeNote::text];
+        }
+        ksort($texts);
+
+        return $texts;
     }
 }
 
@@ -621,6 +1359,8 @@ final class WorkerRtSyncStreamHoldTestManager extends WorkerRtSyncStreamHoldTest
         foreach ($others as $other) {
             $this->agentManager->addAgent($other->getId(), $other);
         }
+        // The agent reads the collection it hears the writes of: a worker applies the writes of what it reads.
+        SourceInterestRegistry::register(SourceChange::KIND_RT, WorkerRtSyncStreamHoldTest::COLLECTION, SourceConsumer::agent($agent->getId()));
     }
 
     protected function onTick(): void
@@ -751,6 +1491,9 @@ final class WorkerRtSyncStreamHoldTestClient extends WorkerDaemonClient
     /** @var list<WorkerDTO> Answers the master holds back */
     private array $unanswered = [];
 
+    /** Messages the worker sent that {@see self::takeStreamAnswers()} has gone past */
+    private int $relayed = 0;
+
     /**
      * @param list<WorkerDTO> $frames Frames to hand out, in order
      */
@@ -831,6 +1574,33 @@ final class WorkerRtSyncStreamHoldTestClient extends WorkerDaemonClient
         }
 
         return $written;
+    }
+
+    /** @return list<string> Collections the worker asked its master one more snapshot of, in order */
+    public function snapshotsAsked(): array
+    {
+        $asked = [];
+        foreach ($this->sent as $message) {
+            if ($message instanceof WorkerRtSnapshotRequestDTO) {
+                $asked[] = $message->collectionKey;
+            }
+        }
+
+        return $asked;
+    }
+
+    /** @return list<RtSyncStreamFrame> Answers the worker's stream gave since the last call, in order, for the master's end */
+    public function takeStreamAnswers(): array
+    {
+        $answers = [];
+        foreach (array_slice($this->sent, $this->relayed) as $message) {
+            if ($message instanceof WorkerRtSyncStreamDTO && !$message->frame->isPart()) {
+                $answers[] = $message->frame;
+            }
+        }
+        $this->relayed = count($this->sent);
+
+        return $answers;
     }
 
     /** @return list<RtSyncStreamStatus> Answers the worker's stream gave, in order */
@@ -1046,5 +1816,44 @@ final class WorkerRtSyncStreamHoldTestRtItemActions extends RtItemActions
     public function finish(array $diff): void
     {
         $this->applyDiffAsCleanup($diff);
+    }
+}
+
+/**
+ * A reading worker handed the master's frames one by one by the case, its loop not run.
+ */
+final class WorkerRtSyncStreamHoldTestReader extends WorkerRtSyncStreamHoldTestLoop
+{
+    /**
+     * @param list<AbstractAgent> $agents Agents running on the worker
+     */
+    public function __construct(array $agents = [])
+    {
+        parent::__construct([]);
+        $this->daemonClient = $this->client;
+        foreach ($agents as $agent) {
+            $this->agentManager->addAgent($agent->getId(), $agent);
+        }
+    }
+
+    protected function onTick(): void
+    {
+        $this->shouldExit = true;
+    }
+}
+
+/** Runtime of one end of the worker's stream in the snapshot cases: probe notes, cut into sets by node. */
+final class WorkerRtSyncStreamHoldTestNotes extends RtContext
+{
+    public const string NOTES = 'streamedNotes';
+
+    public readonly HilosProbeNotes $notes;
+
+    /** Registers the notes and their view. */
+    public function configure(): void
+    {
+        $this->notes = HilosProbeNotes::init();
+        $this->_stateCollections[self::NOTES] = $this->notes;
+        $this->setRepresent(self::NOTES, ViewHilosProbeNotes::class, HilosProbeNotesActions::class, HilosProbeNoteActions::class);
     }
 }

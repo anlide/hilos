@@ -140,20 +140,23 @@ final class WorkerConstants
      */
     public const string MESSAGE_SOURCE_INTEREST = 'source_interest';
 
-    /** @var string Initial state of one RT collection, sent to a worker that has just asked to read it */
-    public const string MESSAGE_RT_SNAPSHOT = 'rt_snapshot';
+    /**
+     * @var string Worker asking its master for one more snapshot of an RT collection it reads, its copy
+     *     having lost its base: the snapshot itself travels as an operation of the link's RT stream
+     */
+    public const string MESSAGE_RT_SNAPSHOT_REQUEST = 'rt_snapshot_request';
 
     /**
      * @var string Rows of one RT collection whose source became unreachable, or reachable again
-     *     (HIL-711). Beside the snapshot above because it answers about the same rows and travels
-     *     on the same interest filter: only the master sees a peer link open or close, and every
-     *     worker holds its own copy of what that link was keeping up to date.
+     *     (HIL-711). It answers about the rows a snapshot carries and travels on the same interest
+     *     filter: only the master sees a peer link open or close, and every worker holds its own
+     *     copy of what that link was keeping up to date.
      */
     public const string MESSAGE_RT_STALENESS = 'rt_staleness';
 
     /**
      * @var string Master confirming it has written a worker down as a reader of one DB collection
-     *     (HIL-750). The database twin of the snapshot above, and empty of rows on purpose: the
+     *     (HIL-750). The database twin of the RT snapshot, and empty of rows on purpose: the
      *     rows are in the shared database the worker reads itself, so all the master owes it is
      *     the word that frames about that collection are addressed here from now on.
      */

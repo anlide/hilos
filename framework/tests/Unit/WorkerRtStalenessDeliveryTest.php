@@ -26,13 +26,15 @@ use Hilos\Hilos;
 use Hilos\Runtime\DTO\RtStalenessSignalData;
 use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
-use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
+use ReflectionProperty;
 use RuntimeException;
 
 /**
@@ -51,6 +53,12 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
 
     /** @var float Microtime the rows froze at */
     private const float FROZE_AT = 1000.5;
+
+    /** @var int Number of the worker's interest report that named the collection, which the master's snapshot answers */
+    private const int REPORT = 1;
+
+    /** @var int The most RT passes a case runs for what one hand-over of parts owes */
+    private const int MAX_OWED_PASSES = 16;
 
     /** @var string A second collection the page under test also reads */
     private const string OTHER_COLLECTION = 'jobs';
@@ -145,42 +153,6 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
     }
 
     /**
-     * The case a worker respawning during a break would otherwise get wrong: the frame that
-     * froze the rows went out before this process existed, and nothing repeats it. So the
-     * snapshot that gives the worker the rows gives it their age along with them.
-     *
-     * @throws InvalidFormatException When the frame is not the object its DTO needs
-     */
-    public function testASnapshotCarriesWhichOfItsRowsAreAlreadyFrozen(): void
-    {
-        $dto = new WorkerRtSnapshotMessageDTO(
-            self::COLLECTION,
-            ['row-1' => ['id' => 'row-1'], 'row-2' => ['id' => 'row-2']],
-            ['row-1' => self::FROZE_AT],
-        );
-
-        $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
-
-        $this->assertInstanceOf(WorkerRtSnapshotMessageDTO::class, $parsed);
-        $this->assertSame(['row-1' => self::FROZE_AT], $parsed->staleRows);
-    }
-
-    /**
-     * Off a cluster nothing is ever frozen, so the field is absent from most frames on the wire
-     * and its absence has to read as "all of it is current" rather than as a malformed frame.
-     *
-     * @throws InvalidFormatException When the frame is not the object its DTO needs
-     */
-    public function testASnapshotWithoutTheFieldSaysNothingIsFrozen(): void
-    {
-        $parsed = WorkerRtSnapshotMessageDTO::fromArray([
-            WorkerRtSnapshotMessageDTO::FIELD_COLLECTION_KEY => self::COLLECTION,
-            WorkerRtSnapshotMessageDTO::FIELD_ROWS => ['row-1' => ['id' => 'row-1']],
-        ]);
-
-        $this->assertSame([], $parsed->staleRows);
-    }
-    /**
      * The snapshot is the whole truth about the collection, freshness included — so it REPLACES
      * what was held rather than adding to it. A worker whose last reader of a collection went
      * away stops being sent the thaw frames, since those are addressed by interest; a mark from
@@ -190,14 +162,17 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
      */
     public function testASnapshotReplacesTheMarksTheWorkerAlreadyHeld(): void
     {
+        // The master sends a snapshot to a worker that reads its collection, and to no other.
+        SourceInterestRegistry::register(SourceChange::KIND_RT, self::COLLECTION, SourceConsumer::agent('unit_rt_staleness:1'));
         $worker = new WorkerRtStalenessDeliveryTestManager();
+        self::reported($worker);
         $worker->handleDaemonMessage(
             new WorkerRtStalenessMessageDTO(self::COLLECTION, ['row-1'], self::FROZE_AT),
         );
+        $master = $this->master($parts);
 
-        $worker->handleDaemonMessage(
-            new WorkerRtSnapshotMessageDTO(self::COLLECTION, ['row-1' => ['id' => 'row-1']], []),
-        );
+        $master->sendSnapshot(self::COLLECTION, RtSnapshotScope::whole(), announcement: self::REPORT);
+        $this->deliver($worker, $parts);
 
         $this->assertNull(RtStaleness::staleSince(self::COLLECTION, 'row-1'));
     }
@@ -205,33 +180,32 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
     /**
      * A row whose streamed operation this worker refused is held, and its copy here is frozen
      * whatever the master says of its own: the master's thaw lifts the rows it names except that
-     * one, and the snapshot that gives it a base again lifts it too.
+     * one, and the snapshot that gives it a base again lifts it too - published behind the refused
+     * operation on the same stream.
      *
      * @throws InvalidFormatException When the frame is not the object its DTO needs
      */
     public function testARowTheWorkersStreamHoldsStaysFrozenThroughTheMastersThawUntilASnapshot(): void
     {
+        // The master sends a snapshot to a worker that reads its collection, and to no other.
+        SourceInterestRegistry::register(SourceChange::KIND_RT, self::COLLECTION, SourceConsumer::agent('unit_rt_staleness:1'));
         $worker = new WorkerRtStalenessDeliveryTestManager();
+        self::reported($worker);
         $worker->handleDaemonMessage(new WorkerRtStalenessMessageDTO(self::COLLECTION, ['row-2'], self::FROZE_AT));
-        $parts = [];
-        $master = new RtSyncStreamChannel(
-            static function (RtSyncStreamFrame $frame) use (&$parts): void {
-                $parts[] = $frame;
-            },
-            static fn (): null => null,
-        );
+        $master = $this->master($parts);
         // An operation naming a node is refused by a worker at once, so its row is held.
         $master->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['id' => 'row-1']), 'unit-peer-node');
         $this->assertCount(1, $parts);
 
-        $worker->handleDaemonMessage(new WorkerRtSyncStreamDTO($parts[0]));
+        $this->deliver($worker, $parts);
         $this->assertNotNull(RtStaleness::staleSince(self::COLLECTION, 'row-1'), 'The held row is frozen');
 
         $worker->handleDaemonMessage(new WorkerRtStalenessMessageDTO(self::COLLECTION, ['row-1', 'row-2'], null));
         $this->assertNotNull(RtStaleness::staleSince(self::COLLECTION, 'row-1'), 'The master\'s thaw does not lift a held row');
         $this->assertNull(RtStaleness::staleSince(self::COLLECTION, 'row-2'));
 
-        $worker->handleDaemonMessage(new WorkerRtSnapshotMessageDTO(self::COLLECTION, ['row-1' => ['id' => 'row-1']], []));
+        $master->sendSnapshot(self::COLLECTION, RtSnapshotScope::whole(), announcement: self::REPORT);
+        $this->deliver($worker, $parts);
         $this->assertNull(RtStaleness::staleSince(self::COLLECTION, 'row-1'));
     }
 
@@ -372,6 +346,58 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
         );
 
         $takeUp($worker, $page, self::ACCEPT_KEY);
+    }
+
+    /**
+     * The worker named the collection in its interest report, and the answer to it came: what a
+     * worker the master sends snapshots to stands for in these cases (HIL-1817).
+     *
+     * @param WorkerManager $worker Worker reading the collection
+     */
+    private static function reported(WorkerManager $worker): void
+    {
+        new ReflectionProperty(WorkerManager::class, 'rtInterestNumber')->setValue($worker, self::REPORT);
+        new ReflectionProperty(WorkerManager::class, 'rtInterestAddedAt')->setValue($worker, [self::COLLECTION => self::REPORT]);
+        new ReflectionProperty(WorkerManager::class, 'rtInterestAnswered')->setValue($worker, [self::COLLECTION => true]);
+    }
+
+    /**
+     * @param list<RtSyncStreamFrame>|null $parts Takes the parts the master's end writes, in order
+     * @return RtSyncStreamChannel The master's end of the worker's RT stream
+     */
+    private function master(?array &$parts): RtSyncStreamChannel
+    {
+        $parts = [];
+
+        return new RtSyncStreamChannel(
+            static function (RtSyncStreamFrame $frame) use (&$parts): void {
+                $parts[] = $frame;
+            },
+            static fn (): null => null,
+        );
+    }
+
+    /**
+     * Hands the worker every part the master's end wrote and has not handed yet, then runs the RT
+     * passes the worker still owes for them. A pass ends at its wall-clock budget, so one pass under
+     * a loaded box may stop short of a publication an idle one reaches; the loop takes what the
+     * worker's next loop iterations would.
+     *
+     * @param WorkerRtStalenessDeliveryTestManager $worker Worker reading the stream
+     * @param list<RtSyncStreamFrame> $parts Parts written so far; emptied as they are handed over
+     * @throws InvalidFormatException When a frame is not the object its DTO needs
+     */
+    private function deliver(WorkerRtStalenessDeliveryTestManager $worker, array &$parts): void
+    {
+        foreach (array_splice($parts, 0) as $part) {
+            $worker->handleDaemonMessage(new WorkerRtSyncStreamDTO($part));
+        }
+        $pass = new ReflectionMethod(WorkerManager::class, 'runRtPass');
+        $owes = new ReflectionMethod(WorkerManager::class, 'hasRtPassWork');
+        for ($passes = 0; $passes < self::MAX_OWED_PASSES && $owes->invoke($worker); $passes++) {
+            $pass->invoke($worker);
+        }
+        $this->assertFalse($owes->invoke($worker), 'The passes the worker owed are run');
     }
 
     /**

@@ -213,7 +213,7 @@ final class PeerLinkCertificateNameTest extends TestCase
             $this->assertNull($link->remoteIdentity());
             $this->assertNotContains(self::REMOTE_NODE, $this->registeredNodeIds());
         }
-        $this->assertSame(2, substr_count($this->log(), 'Incompatible peer protocol version 25, expected 28'));
+        $this->assertSame(2, substr_count($this->log(), 'Incompatible peer protocol version 25, expected 30'));
     }
 
     public function testAHelloNamingTheCertifiedNodeCompletesTheHandshake(): void

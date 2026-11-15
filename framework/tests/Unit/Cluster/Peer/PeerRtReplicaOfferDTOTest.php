@@ -7,14 +7,13 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use PHPUnit\Framework\TestCase;
 
 /**
  * Tests the frame a holder answers an RT snapshot query with (HIL-823).
  *
- * The row map has to survive the wire exactly, for the same reason it does in
- * {@see PeerRtSnapshotDTO}: an id lost or a row flattened is a row the asker tops its
+ * The row map has to survive the wire exactly, for the same reason the owner's snapshot has to:
+ * an id lost or a row flattened is a row the asker tops its
  * collection up with in a shape its owner never wrote. What differs is the origin id — here it
  * names the node that WROTE the rows rather than the one sending them — and the absence of a
  * scope, which the round trip pins down by leaving the frame's payload to exactly three keys.

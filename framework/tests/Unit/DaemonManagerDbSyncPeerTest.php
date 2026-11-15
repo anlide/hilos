@@ -414,7 +414,7 @@ final class DbSyncPeerTestManager extends DaemonManager
     public function workerReads(string ...$collectionKeys): void
     {
         $this->getAgentManagerDaemon()->handleSourceInterest(
-            new WorkerSourceInterestDTO([], array_values($collectionKeys)),
+            new WorkerSourceInterestDTO([], array_values($collectionKeys), 1),
             DbSyncPeerTestWorkerClient::WORKER_INDEX,
         );
     }

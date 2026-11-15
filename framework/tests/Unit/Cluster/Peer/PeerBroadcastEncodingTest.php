@@ -6,6 +6,12 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Closure;
 use Generator;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Stream\RtSyncStreamFrame;
+use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
+use Hilos\Runtime\Stream\RtSyncStreamStatus;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\NodeIdentity;
@@ -16,7 +22,6 @@ use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
@@ -77,6 +82,9 @@ use WeakReference;
  */
 final class PeerBroadcastEncodingTest extends TestCase
 {
+    /** @var string What {@see self::frameTypesOf()} names a stream part opening a snapshot of a collection */
+    private const string SNAPSHOT_PART = PeerRtSyncStreamDTO::MESSAGE_TYPE . ' ' . RtSyncStreamSnapshot::SIGNAL_TYPE;
+
     /** @var ?EnvAccessor Previous env accessor to restore after the test */
     private ?EnvAccessor $previousEnv = null;
 
@@ -364,8 +372,8 @@ final class PeerBroadcastEncodingTest extends TestCase
             $names[] = $name;
             $manager->getAgentManagerDaemon()->rtNodeSourceMap()->note('owner_' . $index, [$name]);
         }
-        $manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO($names, []), 0);
-        $server->onSourceInterestReceived($target[0], new PeerSourceInterestDTO('node-b', $names, []));
+        $manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO($names, [], 1), 0);
+        $server->onSourceInterestReceived($target[0], new PeerSourceInterestDTO('node-b', $names, [], 1));
         $loop = new EventLoop();
         new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
         new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($manager);
@@ -383,17 +391,29 @@ final class PeerBroadcastEncodingTest extends TestCase
                 $manager->dispatch();
             }
             self::assertSame(64, $ready);
-            $journal = $this->sentTo($target);
+            // The stream keeps a window of operations awaiting their answer: the snapshots past it go
+            // once the receiver answers the ones before them.
+            $journal = $fresh = $this->sentTo($target);
+            $passes = new ReflectionProperty(DaemonManager::class, 'rtWork')->getValue($manager);
+            for ($round = 0; $round < 256 && count($this->frameTypesOf($journal)) < 132; $round++) {
+                $this->answerParts($target, $fresh);
+                $loop->tick();
+                $passes->beginPass();
+                $manager->dispatch();
+                $fresh = $this->sentTo($target);
+                $journal .= $fresh;
+            }
             self::assertSame([
                 PeerRtClaimsDTO::MESSAGE_TYPE, PeerSourceInterestDTO::MESSAGE_TYPE,
-                ...array_fill(0, 130, PeerRtSnapshotDTO::MESSAGE_TYPE),
+                ...array_fill(0, 130, self::SNAPSHOT_PART),
             ], $this->frameTypesOf($journal));
-            $frames = array_map(static fn(string $line): array => json_decode($line, true), explode("\n", rtrim($journal, "\n")));
+            $lines = explode("\n", rtrim($journal, "\n"));
+            $frames = array_map(static fn(string $line): array => json_decode($line, true), $lines);
             self::assertCount(130, $frames[0][PeerRtClaimsDTO::FIELD_CLAIMS]);
             self::assertSame($names, $frames[1][PeerSourceInterestDTO::FIELD_RT_COLLECTIONS]);
-            self::assertSame('source_0', $frames[2][PeerRtSnapshotDTO::FIELD_COLLECTION_KEY]);
-            self::assertSame('source_129', $frames[131][PeerRtSnapshotDTO::FIELD_COLLECTION_KEY]);
-            self::assertSame([], $frames[131][PeerRtSnapshotDTO::FIELD_ROWS]);
+            self::assertSame('source_0', $this->snapshotOf($lines[2])[RtSyncStreamOperation::FIELD_COLLECTION_KEY]);
+            self::assertSame('source_129', $this->snapshotOf($lines[131])[RtSyncStreamOperation::FIELD_COLLECTION_KEY]);
+            self::assertSame([], $this->snapshotOf($lines[131])[RtSyncStreamSnapshot::FIELD_ROWS]);
             $due->close();
         } finally {
             new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($manager);
@@ -418,7 +438,7 @@ final class PeerBroadcastEncodingTest extends TestCase
         for ($index = 0; $index < 8192; $index++) {
             $names[] = 'missing-' . $index;
         }
-        $manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO($names, []), 0);
+        $manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO($names, [], 1), 0);
         $loop = new EventLoop();
         new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
         new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($manager);
@@ -433,7 +453,7 @@ final class PeerBroadcastEncodingTest extends TestCase
             $prefix = $state->browsers;
             self::assertNotNull($prefix);
             self::assertFalse($prefix->complete);
-            $manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO(['future'], []), 0);
+            $manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO(['future'], [], 1), 0);
             $manager->query($server, 'node-b');
             self::assertSame('', $this->sentTo($target));
             $journal = '';
@@ -462,7 +482,7 @@ final class PeerBroadcastEncodingTest extends TestCase
     {
         $server = $this->makeServer();
         $target = $this->linkTo($server, 'node-b', NodeRole::Master);
-        $server->onSourceInterestReceived($target[0], new PeerSourceInterestDTO('node-b', ['rows'], []));
+        $server->onSourceInterestReceived($target[0], new PeerSourceInterestDTO('node-b', ['rows'], [], 1));
         $this->clearQueued($target);
         $pending = new SplQueue();
         $binding = static function (Generator $delivery) use ($pending): void { $pending->enqueue($delivery); };
@@ -470,20 +490,20 @@ final class PeerBroadcastEncodingTest extends TestCase
         $snapshot = new SignalDispatch(null, static function () use ($server): Generator {
             yield;
             yield;
-            $server->sendRtSnapshotToNode('node-b', 'rows', ['a' => ['id' => 'a']]);
+            $server->streamRtSnapshotToNode('node-b', 'rows', RtSnapshotScope::whole(), false);
             yield;
         });
         $snapshot->runPortion(1);
-        socket_write($target[1], new PeerSourceInterestDTO('node-b', [], [])->toJson() . "\n");
+        socket_write($target[1], new PeerSourceInterestDTO('node-b', [], [], 1)->toJson() . "\n");
         $target[0]->read();
         self::assertCount(1, $pending);
         $snapshot->runPortion(64);
-        self::assertSame([PeerRtSnapshotDTO::MESSAGE_TYPE], $this->frameTypesOf($this->sentTo($target)));
+        self::assertSame([self::SNAPSHOT_PART], $this->frameTypesOf($this->sentTo($target)));
         $delivery = $pending->dequeue();
         $withdrawal = new SignalDispatch(null, static fn() => $delivery);
         $withdrawal->runPortion(64);
         self::assertFalse($withdrawal->hasWork());
-        $server->sendRtSnapshotToNode('node-b', 'rows', ['b' => ['id' => 'b']]);
+        $server->streamRtSnapshotToNode('node-b', 'rows', RtSnapshotScope::whole(), false);
         self::assertSame('', $this->sentTo($target));
         $server->removeSourceInterestDelivery($binding);
     }
@@ -495,7 +515,7 @@ final class PeerBroadcastEncodingTest extends TestCase
         $pending = new SplQueue();
         $binding = static function (Generator $delivery) use ($pending): void { $pending->enqueue($delivery); };
         $server->setSourceInterestDelivery($binding);
-        socket_write($old[1], new PeerSourceInterestDTO('node-b', ['rows'], [])->toJson() . "\n");
+        socket_write($old[1], new PeerSourceInterestDTO('node-b', ['rows'], [], 1)->toJson() . "\n");
         $old[0]->read();
         self::assertCount(1, $pending);
         $replacement = $this->linkTo($server, 'node-b', NodeRole::Master);
@@ -503,7 +523,7 @@ final class PeerBroadcastEncodingTest extends TestCase
         $delivery = $pending->dequeue();
         $dispatch = new SignalDispatch(null, static fn() => $delivery);
         $dispatch->runPortion(64);
-        $server->sendRtSnapshotToNode('node-b', 'rows', ['a' => ['id' => 'a']]);
+        $server->streamRtSnapshotToNode('node-b', 'rows', RtSnapshotScope::whole(), false);
         self::assertSame('', $this->sentTo($replacement));
         $server->removeSourceInterestDelivery($binding);
     }
@@ -513,7 +533,7 @@ final class PeerBroadcastEncodingTest extends TestCase
     {
         $server = $this->makeServer();
         $target = $this->linkTo($server, 'node-b', NodeRole::Master);
-        $server->onSourceInterestReceived($target[0], new PeerSourceInterestDTO('node-b', ['old-rt'], ['old-db']));
+        $server->onSourceInterestReceived($target[0], new PeerSourceInterestDTO('node-b', ['old-rt'], ['old-db'], 1));
         $this->clearQueued($target);
         $previousRouter = Hilos::$sr;
         $manager = new PeerSourceOrderTestManager();
@@ -531,7 +551,7 @@ final class PeerBroadcastEncodingTest extends TestCase
         $ready = 0;
         $due = $loop->createReadyWork(static function () use (&$ready): void { $ready++; });
         try {
-            $wire = new PeerSourceInterestDTO('node-b', $rt, $db)->toJson() . "\n";
+            $wire = new PeerSourceInterestDTO('node-b', $rt, $db, 1)->toJson() . "\n";
             self::assertSame(strlen($wire), socket_write($target[1], $wire));
             $target[0]->read();
             self::assertTrue($map->holds('node-b', SourceChange::KIND_DB, 'old-db'));
@@ -540,11 +560,10 @@ final class PeerBroadcastEncodingTest extends TestCase
             self::assertFalse($map->holds('node-b', SourceChange::KIND_RT, 'r-0'));
             $manager->dispatch();
             self::assertTrue($map->holds('node-b', SourceChange::KIND_DB, 'old-db'));
-            $server->sendRtSnapshotToNode('node-b', 'old-rt', ['old' => ['id' => 'old']]);
-            $server->sendRtSnapshotToNode('node-b', 'r-0', ['early' => ['id' => 'early']]);
-            $journal = $this->sentTo($target);
-            self::assertSame([PeerRtSnapshotDTO::MESSAGE_TYPE], $this->frameTypesOf($journal));
-            self::assertSame('old-rt', json_decode($journal, true)[PeerRtSnapshotDTO::FIELD_COLLECTION_KEY]);
+            // The filter answers when the snapshot is taken; the stream writes it out once the master's
+            // FIFO reaches its pump, behind the report being prepared.
+            $server->streamRtSnapshotToNode('node-b', 'old-rt', RtSnapshotScope::whole(), false);
+            $server->streamRtSnapshotToNode('node-b', 'r-0', RtSnapshotScope::whole(), false);
             $portions = 0;
             while ($map->holds('node-b', SourceChange::KIND_DB, 'old-db') && $portions < 128) {
                 $due->markReady();
@@ -559,11 +578,20 @@ final class PeerBroadcastEncodingTest extends TestCase
             self::assertSame($portions, $ready, 'Native readiness must progress between source-preparation portions');
             self::assertSame($db, $map->collections(SourceChange::KIND_DB));
             self::assertSame($rt, $map->collections(SourceChange::KIND_RT));
-            $server->sendRtSnapshotToNode('node-b', 'old-rt', ['late' => ['id' => 'late']]);
-            $server->sendRtSnapshotToNode('node-b', 'r-0', ['new' => ['id' => 'new']]);
             $journal = $this->sentTo($target);
-            self::assertSame([PeerRtSnapshotDTO::MESSAGE_TYPE], $this->frameTypesOf($journal));
-            self::assertSame(['new' => ['id' => 'new']], json_decode($journal, true)[PeerRtSnapshotDTO::FIELD_ROWS]);
+            self::assertSame([self::SNAPSHOT_PART], $this->frameTypesOf($journal));
+            self::assertSame('old-rt', $this->snapshotOf($journal)[RtSyncStreamOperation::FIELD_COLLECTION_KEY]);
+            $server->streamRtSnapshotToNode('node-b', 'old-rt', RtSnapshotScope::whole(), false);
+            $server->streamRtSnapshotToNode('node-b', 'r-0', RtSnapshotScope::whole(), false);
+            // The link's stream is pumped as work of the master's FIFO, on the share of an RT pass.
+            for ($portion = 0; $portion < 8; $portion++) {
+                $loop->tick();
+                new ReflectionProperty(DaemonManager::class, 'rtWork')->getValue($manager)->beginPass();
+                $manager->dispatch();
+            }
+            $journal = $this->sentTo($target);
+            self::assertSame([self::SNAPSHOT_PART], $this->frameTypesOf($journal));
+            self::assertSame('r-0', $this->snapshotOf($journal)[RtSyncStreamOperation::FIELD_COLLECTION_KEY]);
         } finally {
             $due->close();
             new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($manager);
@@ -580,7 +608,7 @@ final class PeerBroadcastEncodingTest extends TestCase
             $pending = new SplQueue();
             $binding = static function (Generator $delivery) use ($pending): void { $pending->enqueue($delivery); };
             $server->setSourceInterestDelivery($binding);
-            $server->onSourceInterestReceived($old[0], new PeerSourceInterestDTO('node-b', ['r-0', 'r-1'], ['d-0', 'd-1']));
+            $server->onSourceInterestReceived($old[0], new PeerSourceInterestDTO('node-b', ['r-0', 'r-1'], ['d-0', 'd-1'], 1));
             $delivery = $pending->dequeue();
             $dispatch = new SignalDispatch(null, static fn() => $delivery);
             $dispatch->runPortion(6);
@@ -597,7 +625,7 @@ final class PeerBroadcastEncodingTest extends TestCase
             $map = new ReflectionProperty(PeerServer::class, 'nodeReaderMap')->getValue($server);
             self::assertFalse($map->holds('node-b', SourceChange::KIND_DB, 'd-0'));
             self::assertFalse($map->holds('node-b', SourceChange::KIND_RT, 'r-0'));
-            $server->sendRtSnapshotToNode('node-b', 'r-0', ['a' => ['id' => 'a']]);
+            $server->streamRtSnapshotToNode('node-b', 'r-0', RtSnapshotScope::whole(), false);
             self::assertSame('', $this->sentTo($replacement));
         }
     }
@@ -830,10 +858,49 @@ final class PeerBroadcastEncodingTest extends TestCase
             $this->assertIsArray($frame, 'A link writes whole JSON frames or nothing');
             $type = $frame[PeerDTO::TYPE] ?? null;
             $this->assertIsString($type, 'Every peer frame names its own type');
-            $types[] = $type;
+            $part = $type === PeerRtSyncStreamDTO::MESSAGE_TYPE ? PeerRtSyncStreamDTO::fromArray($frame)->frame : null;
+            $types[] = $part !== null && $part->isPart() && $part->part === 0
+                && str_contains($part->data, '"' . RtSyncStreamSnapshot::SIGNAL_TYPE . '"') ? self::SNAPSHOT_PART : $type;
         }
 
         return $types;
+    }
+
+    /**
+     * Reads the snapshot a stream part carries whole.
+     *
+     * @param string $line One frame read off a far end: a stream part holding a whole snapshot
+     * @return array<string, mixed> The snapshot object, by field
+     */
+    private function snapshotOf(string $line): array
+    {
+        $frame = json_decode(rtrim($line, "\n"), true);
+        $this->assertIsArray($frame);
+        $snapshot = json_decode(PeerRtSyncStreamDTO::fromArray($frame)->frame->data, true);
+        $this->assertIsArray($snapshot, 'A small snapshot is one whole part');
+
+        return $snapshot;
+    }
+
+    /**
+     * Answers every stream part a far end read as the receiver does: a final part applied.
+     *
+     * @param array{0: PeerLink, 1: Socket} $pair Link and its far end
+     * @param string $bytes Frames the far end read
+     */
+    private function answerParts(array $pair, string $bytes): void
+    {
+        foreach (explode("\n", $bytes) as $line) {
+            $frame = $line === '' ? null : json_decode($line, true);
+            if (($frame[PeerDTO::TYPE] ?? null) !== PeerRtSyncStreamDTO::MESSAGE_TYPE) {
+                continue;
+            }
+            $part = PeerRtSyncStreamDTO::fromArray($frame)->frame;
+            $answer = new PeerRtSyncStreamDTO(RtSyncStreamFrame::ack($part->streamId, $part->sequence, $part->part,
+                $part->final ? RtSyncStreamStatus::Applied : RtSyncStreamStatus::Next))->toJson() . "\n";
+            $this->assertSame(strlen($answer), socket_write($pair[1], $answer));
+        }
+        $pair[0]->read();
     }
 }
 

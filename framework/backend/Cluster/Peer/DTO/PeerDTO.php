@@ -28,9 +28,10 @@ use Hilos\Cluster\Placement\PlacementRefusal;
  * ({@see PeerPlacementReleaseDTO}) is a former leader telling the nodes that answered to it that
  * it leads no more; the signal-forward frame
  * ({@see PeerSignalDTO}) carries one resolved signal to an agent on another node; the
- * RT replication frames ({@see PeerRtSyncStreamDTO}, {@see PeerRtSnapshotDTO}) carry one RT sync
- * fact, and one whole collection to a node that just joined, from the node that owns it to
- * the other nodes' read-only copies; the connection-index frames
+ * RT replication frame ({@see PeerRtSyncStreamDTO}) carries one RT sync fact, and the snapshot of
+ * a collection to a node that just joined, from the node that owns it to the other nodes'
+ * read-only copies, and the snapshot request ({@see PeerRtSnapshotRequestDTO}) asks the owner for
+ * another snapshot once a copy lost its base; the connection-index frames
  * ({@see PeerConnectionsSnapshotDTO}, {@see PeerConnectionsDeltaDTO}) tell the mesh which
  * browser connections each node holds, so a signal can be addressed to the node a browser is
  * attached to, and the client-forward frame ({@see PeerClientSignalDTO}) is what that
@@ -123,12 +124,13 @@ abstract class PeerDTO extends BaseDTO
             PeerUploadReleaseDTO::MESSAGE_TYPE => PeerUploadReleaseDTO::fromArray($data),
             PeerRtSyncStreamDTO::MESSAGE_TYPE => PeerRtSyncStreamDTO::fromArray($data),
             PeerDbSyncDTO::MESSAGE_TYPE => PeerDbSyncDTO::fromArray($data),
-            PeerRtSnapshotDTO::MESSAGE_TYPE => PeerRtSnapshotDTO::fromArray($data),
             PeerSourceInterestDTO::MESSAGE_TYPE => PeerSourceInterestDTO::fromArray($data),
+            PeerSourceInterestAnsweredDTO::MESSAGE_TYPE => PeerSourceInterestAnsweredDTO::fromArray($data),
             PeerRtClaimsDTO::MESSAGE_TYPE => PeerRtClaimsDTO::fromArray($data),
             PeerRtClaimsQueryDTO::MESSAGE_TYPE => PeerRtClaimsQueryDTO::fromArray($data),
             PeerRtClaimRefusedDTO::MESSAGE_TYPE => PeerRtClaimRefusedDTO::fromArray($data),
             PeerRtSnapshotQueryDTO::MESSAGE_TYPE => PeerRtSnapshotQueryDTO::fromArray($data),
+            PeerRtSnapshotRequestDTO::MESSAGE_TYPE => PeerRtSnapshotRequestDTO::fromArray($data),
             PeerRtReplicaOfferDTO::MESSAGE_TYPE => PeerRtReplicaOfferDTO::fromArray($data),
             PeerClientSignalDTO::MESSAGE_TYPE => PeerClientSignalDTO::fromArray($data),
             PeerClientFanoutDTO::MESSAGE_TYPE => PeerClientFanoutDTO::fromArray($data),

@@ -22,6 +22,10 @@ use LogicException;
  * text, and the reader takes a canonical integer key back as an integer, as a native array would.
  * Text is written byte for byte with JSON's escapes, so the bytes a row holds are the bytes the
  * receiver gets.
+ *
+ * A snapshot ({@see RtSyncStreamSnapshot}) writes its rows as its cut reads them out, on the
+ * allowance of the part being cut: neither the cut nor the object is held whole, only the rows of
+ * one read and the bytes of the part.
  */
 final class RtSyncStreamEncoder
 {
@@ -39,11 +43,13 @@ final class RtSyncStreamEncoder
     /** @var ?Generator<int, RtWork, int, void> The object's bytes, appended to the buffer as granted */
     private ?Generator $bytes = null;
     private string $buffer = '';
+    /** Allowance of the part being cut, which a snapshot's cut is read out on */
+    private ?RtWorkBudget $budget = null;
 
     /**
-     * @param RtSyncStreamOperation $operation Operation to write
+     * @param RtSyncStreamOperation|RtSyncStreamSnapshot $operation Operation to write
      */
-    public function __construct(private readonly RtSyncStreamOperation $operation)
+    public function __construct(private readonly RtSyncStreamOperation|RtSyncStreamSnapshot $operation)
     {
     }
 
@@ -53,13 +59,14 @@ final class RtSyncStreamEncoder
      * @param RtWorkBudget $budget Allowance of the current RT pass
      * @return ?string Bytes of the next part, at most {@see RtSyncStreamFrame::MAX_PART_BYTES},
      *     or null when the budget ran out before the part was whole
-     * @throws InvalidFormatException When a value cannot be written as JSON
+     * @throws InvalidFormatException When a value cannot be written as JSON, or a snapshot's cut holds a malformed identity
      * @throws LogicException When a segmented lease already closed or the work protocol is broken
      * @throws InvalidArgumentException Never: a work request is never negative
      */
     public function nextPart(RtWorkBudget $budget): ?string
     {
-        $this->bytes ??= $this->object($this->operation);
+        $this->budget = $budget;
+        $this->bytes ??= $this->operation instanceof RtSyncStreamSnapshot ? $this->snapshot($this->operation) : $this->object($this->operation);
         while (strlen($this->buffer) < RtSyncStreamFrame::MAX_PART_BYTES && $this->bytes->valid()) {
             $request = $this->bytes->current();
             if (!$request instanceof RtWork) {
@@ -116,6 +123,73 @@ final class RtSyncStreamEncoder
         }
         yield new RtWork();
         $this->buffer .= '}';
+    }
+
+    /**
+     * @param RtSyncStreamSnapshot $snapshot Snapshot to write
+     * @return Generator<int, RtWork, int, void> The object: its head in the sender's field order, the rows of its
+     *     cut as they are read out, then the stale marks
+     * @throws InvalidFormatException When a value cannot be written as JSON, or the cut holds a malformed identity
+     * @throws LogicException When a segmented lease or the cut's pages closed
+     * @throws InvalidArgumentException Never: a work request is never negative
+     */
+    private function snapshot(RtSyncStreamSnapshot $snapshot): Generator
+    {
+        $head = [
+            RtSyncStreamOperation::FIELD_SIGNAL_TYPE => RtSyncStreamSnapshot::SIGNAL_TYPE,
+            RtSyncStreamOperation::FIELD_REVISION => $snapshot->revision,
+            RtSyncStreamOperation::FIELD_COLLECTION_KEY => $snapshot->collectionKey,
+            RtSyncStreamSnapshot::FIELD_CUT_REVISION => $snapshot->cutRevision,
+        ];
+        $separator = '{';
+        foreach ($head as $field => $value) {
+            yield new RtWork();
+            $this->buffer .= $separator . self::quoted($field) . ':' . (is_string($value) ? self::quoted($value) : self::scalar($value));
+            $separator = ',';
+        }
+        $this->buffer .= ',' . self::quoted(RtSyncStreamSnapshot::FIELD_SCOPE) . ':{' . self::quoted(RtSyncStreamSnapshot::FIELD_WIDTH)
+            . ':' . self::quoted($snapshot->width()) . ',' . self::quoted(RtSyncStreamSnapshot::FIELD_KEYS) . ':';
+        $separator = '{';
+        foreach ($snapshot->scopeKeys() as $position => $key) {
+            yield new RtWork();
+            $this->buffer .= $separator . '"' . $position . '":' . self::quoted($key);
+            $separator = ',';
+        }
+        $this->buffer .= ($separator === '{' ? '{}' : '}') . '}';
+        $origin = [
+            RtSyncStreamOperation::FIELD_ORIGIN_NODE_ID => $snapshot->originNodeId,
+            RtSyncStreamOperation::FIELD_PARTIAL_OWNER => $snapshot->partialOwner,
+            RtSyncStreamSnapshot::FIELD_ANNOUNCEMENT => $snapshot->announcement,
+        ];
+        foreach ($origin as $field => $value) {
+            yield new RtWork();
+            $this->buffer .= ',' . self::quoted($field) . ':' . (is_string($value) ? self::quoted($value) : self::scalar($value));
+        }
+        $this->buffer .= ',' . self::quoted(RtSyncStreamSnapshot::FIELD_ROWS) . ':';
+        $separator = '{';
+        while (!$snapshot->isReadOut()) {
+            $rows = $snapshot->nextRows($this->budget);
+            if ($rows === null) {
+                // The read stopped on the part's allowance: wait for the next one.
+                yield new RtWork(1);
+                continue;
+            }
+            foreach ($rows->ids as $position => $id) {
+                yield new RtWork();
+                $this->buffer .= $separator . self::quoted($id) . ':';
+                $separator = ',';
+                yield from $this->value($rows->values[$position]->reader());
+            }
+        }
+        $this->buffer .= ($separator === '{' ? '{}' : '}') . ',' . self::quoted(RtSyncStreamSnapshot::FIELD_STALE_ROWS) . ':';
+        $separator = '{';
+        foreach ($snapshot->staleRows() as $id => $since) {
+            yield new RtWork();
+            $this->buffer .= $separator . self::quoted((string)$id) . ':' . self::scalar($since);
+            $separator = ',';
+        }
+        yield new RtWork();
+        $this->buffer .= ($separator === '{' ? '{}' : '}') . '}';
     }
 
     /**

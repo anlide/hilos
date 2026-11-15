@@ -444,7 +444,72 @@ A node joining the mesh is handed what each owner holds, because it has no histo
 for the deltas to apply to. That hand-over **replaces** the owner's rows within
 what it speaks for: a row previously received from this owner that lies in the
 scope but is not sent is removed. Rows from another node, of unknown origin, or
-owned by the receiver remain.
+owned by the receiver remain. Each area is a snapshot cut into the stream of the
+link to the reader, so every write streamed there before it arrives ahead of it.
+
+**A copy lives while its node reads it (HIL-1817).** A master holds the rows
+other nodes own of a collection only while a worker of its node reads that
+collection. The announcement that drops the last reader drops the copy: a
+generation with no portion, published on the master's FIFO, sweeps the rows of
+linked nodes, and the operations those nodes streamed before they heard are
+answered and not applied. The rows of a node out of reach stay, frozen, and so do
+the rows this node owns. The frozen rows go when their node links again, or when
+another node claims them, since either fact means nothing will keep them current
+here; the rows this node owns stay, as they are its own.
+
+**A new reader's copy is confirmed before its first snapshot.** The announcement
+of what a node reads is numbered, and every node it is written to answers that
+number behind the snapshots of its areas of the collections the announcement
+added, an answer with nothing behind it included. The copy waits for every such
+answer; a node whose link closes is struck out instead. A link replaced while an
+answer waits on it behind a snapshot it will never finish writing drops that
+answer - written on neither link, it would confirm a copy without the area. The
+node repeats its announcement on the new link, and the repeat is answered behind a
+hand-over of everything it names, as a handshake does, when this node owes the node
+what the old link lost: an answer dropped there, an operation of its stream not out
+whole when it began to drain, or a hand-over that found its route taken by the new
+link. Owing nothing, the repeat is answered as an ordinary announcement: a
+replacement is a routine step of a cluster's start, and a second hand-over on each
+would only repeat what was delivered. The snapshot this node was still reading on
+the old link is given up when that link closes. A snapshot canceled here
+and asked for again - on the link that replaced the one it came on, when that one
+drains - keeps its node awaited once more: the same list is announced
+again under the next number, behind the request, and the wait ends with the
+node's answer to it, which the node writes behind the snapshot the request asks
+for. Published or given up - canceled a second time, refused, lost, reaching for a
+second owner - no snapshot ends the wait itself, as none says which request it
+answers; the rows a given-up one left without a base keep their marks until the
+next event asks. The second cancellation in a row asks for nothing and announces
+nothing: the answer behind it is already on its way. Cancellations before the
+announcement goes out share it. On a
+mesh the wait starts before the first announcement: until it, the node reads
+nothing, so a worker that takes a collection up early waits for that
+announcement's answers like any later one. A worker that takes the collection up
+meanwhile is sent its snapshot once the copy is confirmed - the worker's own
+readiness is that publication, unchanged. The master hands a write to its
+workers' streams and to its own copy in one step, its own write as a peer's: the
+snapshot is cut from the copy, so nothing - a confirmation, an interest, a
+request for another snapshot - may come between the two. The worker's report of
+what it reads is numbered, and the master marks the snapshot it answers with by the report: the
+one that added the collection, at once or once the copy is confirmed, and the last
+one it read when the worker asks for another. The worker publishes a snapshot of a
+collection only for the report that added it or a later one, and passes over an
+older one without asking: it was cut for an interest that ended before it came,
+the master may have stopped keeping that copy, and the answer to the report that
+added the collection again is on its way.
+A collection owned here wholly, one no snapshot hands over, and everything
+off-cluster are confirmed at once. A confirmed copy with no rows is the owners'
+word that there is nothing; a node not linked when the announcement went has not
+answered, its rows are simply absent, and the handshake that links it later hands
+them over as usual. While the copy waits, the holders are not asked about it and
+a holder's offer of it is passed over, so a row an owner deleted is not brought
+back under a holder's name. A copy confirmed for the first time is asked about
+then, whatever rows it holds by now: the owners' snapshots carry nothing of a node
+whose link closed, and an owner short of an operation hands nothing over. Of what
+the holders offer, once a snapshot was published, a row a node linked now wrote is
+passed over - that node brings its own - and the rows of a node out of reach land;
+of a copy no snapshot came for, every origin lands. The wait has
+no timer: it ends with an answer or with the link, whose own heartbeat bounds it.
 
 **What travels is what an agent owns.** The node announces a write only for the
 collections its own agents registered, so a project's collection is replicated

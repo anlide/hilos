@@ -41,6 +41,7 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use RuntimeException;
 use WeakReference;
 
@@ -58,7 +59,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
 
     public function testLateCompletePairRemainsRunnableAfterTheLastFifoAndNativeTicketsDrain(): void
     {
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['7', '0', '7']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['7', '0', '7'], 1), 3);
         self::assertFalse($this->manager->getAgentManagerDaemon()->hasChangedReaderInterest());
         $this->phases();
         self::assertSame([], $this->manager->mesh->frames, 'No partial union reaches either business entry');
@@ -75,7 +76,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         $this->invoke('runGuardedIteration', microtime(true));
         $this->drain();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['7', '0']),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['7', '0'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
         ], $this->manager->mesh->frames);
         self::assertSame(['connections', 'interest', 'missing'], $this->manager->order);
@@ -99,7 +100,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
 
     public function testSecondReaderRepeatedReportAndLastReleasePreserveExactEmptyPair(): void
     {
-        $report = new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['db']);
+        $report = new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['db'], 1);
         $this->nativeReport($report, 3);
         $this->settle();
         $this->nativeReport($report, 4);
@@ -116,9 +117,9 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         self::assertTrue($this->manager->getAgentManagerDaemon()->hasChangedReaderInterest());
         $this->settle();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['db']),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['db'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
-            new PeerSourceInterestDTO('local', [], []),
+            new PeerSourceInterestDTO('local', [], [], 2),
             new PeerRtSnapshotQueryDTO('local', []),
         ], $this->manager->mesh->frames, 'The port records even an empty query invocation without filtering');
         self::assertSame(2, $this->manager->announcements);
@@ -128,24 +129,24 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
 
     public function testLaterReportsKeepOriginalCompletePairAndFifoOrder(): void
     {
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, 'old'), ['old-db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, 'old'), ['old-db'], 1), 3);
         $this->phases();
         $this->invoke('dispatchSignals');
         self::assertSame([], $this->manager->mesh->frames);
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, 'future'), ['future-db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, 'future'), ['future-db'], 1), 3);
         for ($portion = 0; $portion < 1000 && !$this->manager->getAgentManagerDaemon()->hasChangedReaderInterest(); ++$portion) {
             $this->invoke('dispatchSignals');
         }
         self::assertTrue($this->manager->getAgentManagerDaemon()->hasChangedReaderInterest());
         $this->phases();
         $this->drain();
-        self::assertEquals(new PeerSourceInterestDTO('local', ['old'], ['old-db']), $this->manager->mesh->frames[0]);
+        self::assertEquals(new PeerSourceInterestDTO('local', ['old'], ['old-db'], 1), $this->manager->mesh->frames[0]);
         self::assertTrue($this->invoke('hasRunnableReaderInterest'), 'Later completion survives draining the first sends');
         $this->settle();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', ['old'], ['old-db']),
+            new PeerSourceInterestDTO('local', ['old'], ['old-db'], 1),
             new PeerRtSnapshotQueryDTO('local', ['old']),
-            new PeerSourceInterestDTO('local', ['future'], ['future-db']),
+            new PeerSourceInterestDTO('local', ['future'], ['future-db'], 2),
             new PeerRtSnapshotQueryDTO('local', ['future']),
         ], $this->manager->mesh->frames);
     }
@@ -153,11 +154,11 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
     /** An announced pair still owns its query when a later complete pair becomes runnable. */
     public function testAnUnspentQueryKeepsItsOriginalPairUntilTheNextGuardedPhase(): void
     {
-        $this->nativeReport(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['old-db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['old-db'], 1), 3);
         $this->drain();
         $this->invoke('dispatchReaderInterest');
         $this->drain();
-        $this->nativeReport(new WorkerSourceInterestDTO([], ['future-db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO([], ['future-db'], 1), 3);
         $this->drain();
         self::assertTrue($this->manager->getAgentManagerDaemon()->hasChangedReaderInterest());
         $this->invoke('dispatchReaderInterest');
@@ -166,9 +167,9 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         $this->drain();
         $this->settle();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['old-db']),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['old-db'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
-            new PeerSourceInterestDTO('local', [], ['future-db']),
+            new PeerSourceInterestDTO('local', [], ['future-db'], 2),
             new PeerRtSnapshotQueryDTO('local', []),
         ], $this->manager->mesh->frames);
         self::assertSame(2, $this->manager->announcements);
@@ -180,7 +181,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
     {
         $servers = $this->get('servers');
         $this->set('servers', []);
-        $this->nativeReport(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['db'], 1), 3);
         $this->settle();
         self::assertSame(1, $this->manager->announcements);
         self::assertSame(1, $this->manager->queries);
@@ -209,11 +210,11 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
             $runtime[] = 'runtime-' . $position;
             $database[] = 'database-' . $position;
         }
-        $this->nativeReport(new WorkerSourceInterestDTO($runtime, $database), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO($runtime, $database, 1), 3);
         $this->settle();
         self::assertCount(2, $this->manager->mesh->frames);
         $database[511] = 'last-database';
-        $this->nativeReport(new WorkerSourceInterestDTO($runtime, $database), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO($runtime, $database, 1), 3);
         $comparison = $this->manager->getAgentManagerDaemon()->workerReaderMap()->unionPlan();
         for ($portion = 0; $portion < 1000 && !$comparison->ready; ++$portion) {
             $this->invoke('dispatchSignals');
@@ -228,9 +229,9 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         self::assertTrue($this->invoke('hasRunnableReaderInterest'));
         $this->settle();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', $runtime, array_map(static fn(int $position): string => 'database-' . $position, range(0, 511))),
+            new PeerSourceInterestDTO('local', $runtime, array_map(static fn(int $position): string => 'database-' . $position, range(0, 511)), 1),
             new PeerRtSnapshotQueryDTO('local', $runtime),
-            new PeerSourceInterestDTO('local', $runtime, $database),
+            new PeerSourceInterestDTO('local', $runtime, $database, 2),
             new PeerRtSnapshotQueryDTO('local', $runtime),
         ], $this->manager->mesh->frames);
         self::assertSame(2, $this->manager->announcements);
@@ -240,7 +241,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
     public function testSameSourceRebindPreservesCompletedPairAndMovedQueryWithoutTakingTheDeliverySlot(): void
     {
         $delivery = $this->get('sourceInterestDeliveryBinding');
-        $this->nativeReport(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['db'], 1), 3);
         $this->drain();
         $this->invoke('attachReaderInterestEventLoop');
         self::assertSame($delivery, $this->get('sourceInterestDeliveryBinding'));
@@ -253,7 +254,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         $this->invoke('dispatchMissingRtCollections');
         $this->drain();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['db']),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['db'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
         ], $this->manager->mesh->frames);
         self::assertSame(1, $this->manager->announcements);
@@ -263,21 +264,21 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
     public function testMapReplacementRejectsPreparingAndCompletedOldPairsAndRetainsCurrentObligation(): void
     {
         $agents = $this->manager->getAgentManagerDaemon();
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, 'retired'), ['retired-db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, 'retired'), ['retired-db'], 1), 3);
         $old = WeakReference::create($agents->workerReaderMap());
         new ReflectionProperty(AgentManagerDaemon::class, 'workerReaderMap')->setValue($agents, new SourceReaderMap());
         self::assertNull($old->get(), 'The original immutable roots do not retain their mutable map');
         $this->drain();
         self::assertFalse($this->invoke('hasRunnableReaderInterest'));
-        $this->nativeReport(new WorkerSourceInterestDTO(['complete-old'], ['old-db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(['complete-old'], ['old-db'], 1), 3);
         $this->drain();
         self::assertTrue($agents->hasChangedReaderInterest());
         new ReflectionProperty(AgentManagerDaemon::class, 'workerReaderMap')->setValue($agents, null);
         self::assertFalse($agents->hasChangedReaderInterest());
-        $this->nativeReport(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['current-db']), 4);
+        $this->nativeReport(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['current-db'], 1), 4);
         $this->settle();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['current-db']),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['current-db'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
         ], $this->manager->mesh->frames);
     }
@@ -285,32 +286,32 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
     public function testReceiverReplacementKeepsCurrentCompleteDebtAndDropsOldMovedQuery(): void
     {
         $old = $this->manager->getAgentManagerDaemon();
-        $this->nativeReport(new WorkerSourceInterestDTO(['old'], ['old-db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(['old'], ['old-db'], 1), 3);
         $this->drain();
         $this->invoke('dispatchReaderInterest');
         $this->drain();
         $current = new ReaderNativeAgents();
-        $current->handleSourceInterest(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['new-db']), 4);
+        $current->handleSourceInterest(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['new-db'], 1), 4);
         $this->set('agentManagerDaemon', $current);
         $this->invoke('reconcileReaderInterestSources');
         self::assertTrue($this->invoke('hasRunnableReaderInterest'));
-        $old->handleSourceInterest(new WorkerSourceInterestDTO(array_fill(0, 2048, 'escaped'), []), 3);
+        $old->handleSourceInterest(new WorkerSourceInterestDTO(array_fill(0, 2048, 'escaped'), [], 1), 3);
         $this->settle();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', ['old'], ['old-db']),
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['new-db']),
+            new PeerSourceInterestDTO('local', ['old'], ['old-db'], 1),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['new-db'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
         ], $this->manager->mesh->frames);
         self::assertSame(1, $this->manager->queries, 'The old announced receiver cannot query through its replacement');
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['native-db']), 4);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['native-db'], 1), 4);
         self::assertFalse($current->hasChangedReaderInterest(), 'The replacement uses the original bounded FIFO, not inline fallback');
         self::assertTrue($this->invoke('hasRunnableSignalDispatch'));
         $this->settle();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', ['old'], ['old-db']),
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['new-db']),
+            new PeerSourceInterestDTO('local', ['old'], ['old-db'], 1),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['new-db'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['native-db']),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['native-db'], 2),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
         ], $this->manager->mesh->frames);
     }
@@ -318,16 +319,16 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
     public function testPreparingReceiverReplacementCannotLeakOldCompletionAndRebindKeepsTheCurrentCohort(): void
     {
         $old = $this->manager->getAgentManagerDaemon();
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, 'old'), ['old-db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, 'old'), ['old-db'], 1), 3);
         $this->set('agentManagerDaemon', new ReaderNativeAgents());
         $this->invoke('reconcileReaderInterestSources');
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, ReaderNativeRuntime::EMPTY), ['current-db']), 4);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 2048, ReaderNativeRuntime::EMPTY), ['current-db'], 1), 4);
         $this->invoke('attachSignalDispatchEventLoop');
         $this->invoke('attachReaderInterestEventLoop');
         $this->settle();
         self::assertTrue($old->hasChangedReaderInterest(), 'An older FIFO cohort still belongs to its original live owner');
         self::assertEquals([
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['current-db']),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['current-db'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
         ], $this->manager->mesh->frames);
         self::assertFalse($this->invoke('hasRunnableReaderInterest'));
@@ -338,7 +339,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         $oldPeer = $this->get('servers')[0];
         $foreign = static function (Generator $delivery): void {};
         $oldPeer->setSourceInterestDelivery($foreign);
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['db'], 1), 3);
         $replacement = new PeerServer('127.0.0.1', 0, NodeIdentity::of('local', 'Local', NodeRole::Master, []), [],
             PeerTestTls::unread(), PeerTestMarkers::shared());
         $this->set('servers', [$replacement]);
@@ -350,7 +351,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         $this->invoke('attachReaderInterestEventLoop');
         $this->settle();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['db']),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['db'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
         ], $this->manager->mesh->frames);
         self::assertSame(1, $this->manager->announcements);
@@ -369,11 +370,11 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         self::assertSame(0, $visits, 'An old wake incarnation cannot enqueue work after replacement');
         $this->manager->getAgentManagerDaemon()->removeReaderInterestDelivery($escaped);
         self::assertSame($current, $this->get('sourceInterestDeliveryBinding'));
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['db']), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['db'], 1), 3);
         self::assertFalse($this->manager->getAgentManagerDaemon()->hasChangedReaderInterest());
         $this->settle();
         self::assertEquals([
-            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['db']),
+            new PeerSourceInterestDTO('local', [ReaderNativeRuntime::EMPTY], ['db'], 1),
             new PeerRtSnapshotQueryDTO('local', [ReaderNativeRuntime::EMPTY]),
         ], $this->manager->mesh->frames);
     }
@@ -382,7 +383,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
     {
         $delivery = $this->get('sourceInterestDeliveryBinding');
         $this->invoke('detachReaderInterestEventLoop');
-        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, 'late'), []), 3);
+        $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, 'late'), [], 1), 3);
         $delivery((static function (): Generator { yield; })());
         $this->drain();
         $this->phases();
@@ -403,7 +404,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         $agents = new ReaderNativeAgents();
         new ReflectionProperty(DaemonManager::class, 'agentManagerDaemon')->setValue($manager, $agents);
         new ReflectionMethod(DaemonManager::class, 'attachReaderInterestEventLoop')->invoke($manager);
-        $agents->handleSourceInterest(new WorkerSourceInterestDTO(['old'], ['old-db']), 3);
+        $agents->handleSourceInterest(new WorkerSourceInterestDTO(['old'], ['old-db'], 1), 3);
         new ReflectionMethod(DaemonManager::class, 'announceReaderInterest')->invoke($manager, null);
         $receiver = WeakReference::create($agents);
         $map = WeakReference::create($agents->workerReaderMap());
@@ -661,10 +662,33 @@ final class ReaderNativeMesh implements SourceInterestMesh, RtSyncMesh
     /**
      * @param list<string> $rtCollections Complete ordered runtime union
      * @param list<string> $dbCollections Complete ordered database union
+     * @param int $announcement Number of the announcement
+     * @return list<string> Nobody: these cases are about the order of the obligations, not about a copy waiting
      */
-    public function announceSourceInterest(array $rtCollections, array $dbCollections): void
+    public function announceSourceInterest(array $rtCollections, array $dbCollections, int $announcement): array
     {
-        $this->frames[] = new PeerSourceInterestDTO('local', $rtCollections, $dbCollections);
+        $this->frames[] = new PeerSourceInterestDTO('local', $rtCollections, $dbCollections, $announcement);
+
+        return [];
+    }
+
+    /**
+     * Not exercised here: these cases cancel no snapshot.
+     *
+     * @param int $announcement Number of the announcement
+     * @return list<string> Nobody
+     */
+    public function reannounceSourceInterest(int $announcement): array
+    {
+        return [];
+    }
+
+    /**
+     * @param string $nodeId Original addressee
+     * @param int $announcement Number of the announcement answered
+     */
+    public function sendSourceInterestAnswered(string $nodeId, int $announcement): void
+    {
     }
 
     /** @param list<string> $collectionKeys Actual missing collection query */
@@ -692,12 +716,10 @@ final class ReaderNativeMesh implements SourceInterestMesh, RtSyncMesh
     /**
      * @param string $nodeId Original addressee
      * @param string $collectionKey Original collection
-     * @param array $rows Original rows
-     * @param array $scopeKeys Original named scope
-     * @param array $scopeSetKeys Original set scope
+     * @param RtSnapshotScope $scope Original area
+     * @param bool $partialOwner Original right
      */
-    public function sendRtSnapshotToNode(string $nodeId, string $collectionKey, array $rows,
-        array $scopeKeys = [], array $scopeSetKeys = []): void
+    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void
     {
         throw new RuntimeException('Unexpected snapshot');
     }

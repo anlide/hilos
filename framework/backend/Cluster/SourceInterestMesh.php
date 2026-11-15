@@ -6,6 +6,7 @@ namespace Hilos\Cluster;
 
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
+use Hilos\Core\Daemon\RtCopyConfirmation;
 
 /**
  * Outbound peer port a node tells the mesh what it reads through.
@@ -36,8 +37,24 @@ interface SourceInterestMesh
      * one moment: two frames would have to be kept in agreement with each other, and they move
      * on the same events anyway.
      *
+     * The announcement carries its number, and every node it is written to answers it behind the
+     * snapshots it owes this node; the copy of a collection the announcement adds waits for those
+     * answers ({@see RtCopyConfirmation}).
+     *
      * @param list<string> $rtCollections RT collections the processes of this node read
      * @param list<string> $dbCollections DB collections the processes of this node read
+     * @param int $announcement Number of the announcement
+     * @return list<string> Nodes the announcement is written to
      */
-    public function announceSourceInterest(array $rtCollections, array $dbCollections): void;
+    public function announceSourceInterest(array $rtCollections, array $dbCollections, int $announcement): array;
+
+    /**
+     * Tells every peer once more what this node announced last, under a new number: nothing it reads
+     * changed, and a node it reaches answers the number behind whatever it owes this node by then - a
+     * snapshot this node asked it for again before ({@see RtCopyConfirmation::reopen()}).
+     *
+     * @param int $announcement Number of the announcement
+     * @return list<string> Nodes the announcement is written to
+     */
+    public function reannounceSourceInterest(int $announcement): array;
 }

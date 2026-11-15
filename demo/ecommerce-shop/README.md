@@ -211,7 +211,7 @@ Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
 the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused,
-16 recreated node leaves no phantom fleet (parked, P-441/2), 18 capacity is consumed,
+16 recreated node leaves no phantom fleet, 18 capacity is consumed,
 19 worker death on a live node, 37 costless agents consume slots, and
 39 person agents across nodes (skipped as flaky since 2026-10-17),
 43 waiting work retries when a node returns

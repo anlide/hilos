@@ -33,7 +33,11 @@ use Hilos\Database\DTO\DbReHydrateOutcome;
 use Hilos\Runtime\ConnectionRosterReconciler;
 use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\Snapshot\RtSnapshotImport;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtSnapshotStatus;
 use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Snapshot\RtWorkLane;
 use Hilos\Runtime\Snapshot\RtWorkScheduler;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
@@ -41,6 +45,7 @@ use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
 use Hilos\Runtime\View\Collection\RtCollection;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\DTO\RtStalenessSignalData;
@@ -87,10 +92,12 @@ use Hilos\Core\TruthSource\Exception\ClaimedRowKeysMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimedSetKeyMissingException;
 use Hilos\Core\TruthSource\Exception\ClaimWidthConflictException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\DaemonSection\DTO\DaemonAgentRestartRequestSignalData;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use LogicException as NativeLogicException;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\SocketException;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
@@ -139,7 +146,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydratedDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReHydrateMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbReReadMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotRequestDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbInterestReadyMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
@@ -252,6 +259,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /** Longest run of RT rounds one pass of this worker spends before the loop moves on. */
     private const int RT_PASS_BUDGET_NS = 2 * TimeConstants::NS_PER_MILLISECOND;
 
+    /** Steps a staged snapshot generation takes for each unit of work it asks of the stream's share */
+    private const int RT_SNAPSHOT_STEPS_PER_WORK = 8;
+
+    /** Logical bytes a staged snapshot generation asks of the stream's share for each unit of work */
+    private const int RT_SNAPSHOT_BYTES_PER_WORK = 4096;
+
     /** Worker index assigned by the daemon supervisor. */
     protected int $workerIndex;
 
@@ -273,6 +286,45 @@ abstract class WorkerManager extends BaseManager implements PageResender
     private bool $rtStreamOwed = false;
     /** Whether the arena's shared retirement was left when the last RT pass ran out of time */
     private bool $rtRetireOwed = false;
+    /**
+     * @var array<string, RtSnapshotImport> Copies of RT collections nobody here reads any more, each emptied by a
+     *      generation staged on the snapshot share of the RT passes until it is published, by collection
+     *      ({@see self::releaseSourceInterest()}). Process-local copy machinery, as the generations themselves are: a
+     *      snapshot of the collection arriving meanwhile supersedes the drop.
+     */
+    private array $rtCopyDrops = [];
+    /**
+     * @var array<string, true> RT collections this worker asked its master for one more snapshot of, until the
+     *      head of a snapshot of the collection that answers the interest read here reaches the stream's host
+     *      ({@see self::requestRtSnapshot()}) or the interest ends ({@see self::endRtInterest()}). Process-local like
+     *      the stream: gone with the connection, whose new interest asks again.
+     */
+    private array $rtSnapshotsAsked = [];
+    /**
+     * @var int Number of the last interest report this worker sent its master on this connection, zero before the
+     *      first ({@see self::notifySourceInterest()}). Process-local like the stream: the count of this connection.
+     */
+    private int $rtInterestNumber = 0;
+    /**
+     * @var array<string, int> RT collections the interest this worker reported last names, each with the number of the
+     *      report that added it - anew, after its interest here ended: a snapshot of the collection whose head carries
+     *      a lower number was cut for an interest that ended before it came, and is not published
+     *      ({@see self::stageStreamedRtSnapshot()}). Process-local like the stream: what this connection told its
+     *      master, gone with it.
+     */
+    private array $rtInterestAddedAt = [];
+    /**
+     * @var array<string, true> RT collections of {@see $rtInterestAddedAt} a snapshot answering the report that added
+     *      them has reached the stream's host for: until it does, a row held of the collection asks for nothing, as
+     *      that snapshot is its base ({@see self::markRtSyncStreamHold()}). Process-local like the stream.
+     */
+    private array $rtInterestAnswered = [];
+    /**
+     * @var array<string, true> RT collections whose last snapshot a live change here canceled, until one of them is
+     *      published or one is canceled for another cause ({@see self::stageStreamedRtSnapshot()}). Process-local like
+     *      the stream: gone with the connection.
+     */
+    private array $rtSnapshotsContested = [];
     /**
      * @var list<WorkerDTO> Daemon frames taken while the stream still read or applied a part, handled first once it is
      *      through, in arrival order ({@see self::waitsForRtSyncStream()}). Process-local like the parked frames: gone
@@ -865,6 +917,11 @@ abstract class WorkerManager extends BaseManager implements PageResender
         $this->daemonClient->connect();
         $this->rtSyncStream = null;
         $this->rtStreamOwed = false;
+        $this->rtSnapshotsAsked = [];
+        $this->rtInterestNumber = 0;
+        $this->rtInterestAddedAt = [];
+        $this->rtInterestAnswered = [];
+        $this->rtSnapshotsContested = [];
         $this->heldForRtSyncStream = [];
         $this->waitingInTurn = [];
 
@@ -1084,14 +1141,6 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 $this->handleDbReHydrateComplete($data);
                 break;
 
-            case WorkerConstants::MESSAGE_RT_SNAPSHOT:
-                if (!$data instanceof WorkerRtSnapshotMessageDTO) {
-                    Logger::error("handleRtSnapshotMessage - unexpected type: " . get_class($data));
-                    break;
-                }
-                $this->handleRtSnapshotMessage($data);
-                break;
-
             case WorkerConstants::MESSAGE_DB_INTEREST_READY:
                 if (!$data instanceof WorkerDbInterestReadyMessageDTO) {
                     Logger::error("handleDbInterestReadyMessage - unexpected type: " . get_class($data));
@@ -1268,7 +1317,8 @@ abstract class WorkerManager extends BaseManager implements PageResender
         ];
         $this->notifySourceInterest();
         // Held as a wait of the link's own and not in this call. Agent starts and their addressed
-        // frames wait behind it; snapshots still pass, so the loop can receive what releases them.
+        // frames wait behind it; the stream's parts still pass, so the loop can receive the
+        // snapshots that release them.
         if ($this->waitsForSources(self::PARKED_LINK_KEY, $mounted)) {
             $this->waitForSources(self::PARKED_LINK_KEY, $mounted);
         }
@@ -1467,55 +1517,13 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
-     * Writes the initial state of one RT collection this worker has just started reading.
-     *
-     * The moment a reader here becomes readable, and the only one: until this lands the process
-     * holds nothing of the collection, and answering a read out of that emptiness would look
-     * exactly like a collection whose rows are all gone. An empty snapshot is still an answer -
-     * a collection nobody has written yet is empty, and its readers must not wait for a row that
-     * is never coming.
-     *
-     * @param WorkerRtSnapshotMessageDTO $data Snapshot of one RT collection, as the master holds it
-     * @throws HilosException Whatever the applied write of the snapshot raises
-     */
-    private function handleRtSnapshotMessage(WorkerRtSnapshotMessageDTO $data): void
-    {
-        RtSnapshot::replace($data->collectionKey, $data->rows);
-        // Which of them are frozen arrives with them, and this is the only chance to learn it: a
-        // worker that came up during a break was not there for the frame that froze them, and
-        // nothing repeats that frame (HIL-711).
-        //
-        // Replacing what was held rather than adding to it, for the reason the rows themselves
-        // are replaced: the snapshot is the whole truth about this collection, freshness
-        // included. A worker whose last reader of it went away stops being sent the thaw frames -
-        // they are addressed by interest - so a mark from before would otherwise survive a
-        // snapshot that says the rows are current. Read before the stream lets go of its held
-        // rows below, so the rows that thaw with them are named to the tables too.
-        $wereFrozen = array_map(strval(...), array_keys(RtStaleness::staleRows($data->collectionKey)));
-        // The snapshot is a base again for every row of it, those whose streamed operation this
-        // worker refused included: their later operations are applied from here on.
-        $this->rtSyncStream?->recover($data->collectionKey);
-        RtStaleness::clear($data->collectionKey, $wereFrozen);
-        foreach ($data->staleRows as $stateId => $since) {
-            RtStaleness::mark($data->collectionKey, [$stateId], $since);
-        }
-        SourceInterestRegistry::markReady(SourceChange::KIND_RT, $data->collectionKey);
-        // Both halves of the replacement are named to the tables: the rows this snapshot thawed
-        // and the rows it froze. A window shows the mark per row, so it has to be told about a
-        // row leaving the frozen set exactly as loudly as about one joining it (HIL-800).
-        Hilos::$browser?->recordSourceStaleness(
-            $data->collectionKey,
-            [...$wereFrozen, ...array_map(strval(...), array_keys($data->staleRows))],
-        );
-    }
-
-    /**
      * Takes the master's word that one database collection is addressed here, and opens it for
      * reading (HIL-750).
      *
-     * The database twin of the snapshot handler above, and it carries no rows for the reason it
-     * needs none: the rows are in the database this worker reads for itself. What it does need
-     * is a copy that is not older than the map entry, and that is what the drop is for -
+     * The database twin of the RT snapshot's publication ({@see self::publishRtSnapshotMarks()}), and it
+     * carries no rows for the reason it needs none: the rows are in the database this worker reads
+     * for itself. What it does need is a copy that is not older than the map entry, and that is
+     * what the drop is for -
      * everything read into the cache before this frame was read while nothing was being
      * addressed here, so none of it can be trusted to still be true.
      *
@@ -1962,7 +1970,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /**
      * The ordinary RT stream of the current daemon connection, opened on first use. Its sender
      * consumes this process's ordinary FIFOs ({@see RtOrdinaryAdmission::consumeBy()}): committed
-     * cells are handed on while it has room.
+     * cells are handed on while it has room. Its receiver applies the master's writes and stages its
+     * snapshots ({@see self::applyStreamedRtSync()}); a row it holds after refusing a write is marked
+     * here and asks for a snapshot that gives it a base again ({@see self::markRtSyncStreamHold()}).
      *
      * @return RtSyncStreamChannel Both directions of the stream on this connection
      */
@@ -1976,6 +1986,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 },
                 $this->applyStreamedRtSync(...),
                 $this->wakeRtSyncStream(...),
+                staleness: $this->markRtSyncStreamHold(...),
             );
             RtOrdinaryAdmission::consumeBy(static fn (): bool => $stream->hasRoom());
             $this->rtSyncStream = $stream;
@@ -2165,6 +2176,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 $this->rtPassAgain = false;
                 $this->rtWork->beginPass();
                 $this->rtStreamOwed = $this->rtSyncStream?->pump($this->rtWork->budget(RtWorkLane::Ordinary)) ?? false;
+                $this->advanceRtCopyDrops($this->rtWork->budget(RtWorkLane::Snapshot));
                 RtRowArena::process()->advanceRetirement($this->rtWork->budget(RtWorkLane::Retire));
             } while (($this->rtPassAgain || $this->hasRtPassWork()) && hrtime(true) < $deadline);
             $this->rtRetireOwed = RtRowArena::process()->hasPendingRetirement();
@@ -2173,20 +2185,62 @@ abstract class WorkerManager extends BaseManager implements PageResender
         }
     }
 
-    /** @return bool Whether the RT pass owes more: a stream portion its share left, or the arena's shared retirement */
+    /**
+     * @return bool Whether the RT pass owes more: a stream portion its share left, a copy nobody reads still to drop, or
+     *     the arena's shared retirement
+     */
     private function hasRtPassWork(): bool
     {
-        return $this->rtPassAgain || $this->rtStreamOwed || RtRowArena::process()->hasPendingRetirement();
+        return $this->rtPassAgain || $this->rtStreamOwed || $this->rtCopyDrops !== [] || RtRowArena::process()->hasPendingRetirement();
     }
 
     /**
      * @return bool Whether the last RT pass ran out of time with work left: a wake that came while it ran, a stream
-     *     portion its share left, or the arena's shared retirement. Retirement released after it is work for the
-     *     next pass ({@see self::hasRtPassWork()}), not a debt of this one.
+     *     portion its share left, a copy nobody reads still to drop, or the arena's shared retirement. Retirement
+     *     released after it is work for the next pass ({@see self::hasRtPassWork()}), not a debt of this one.
      */
     private function rtPassOwes(): bool
     {
-        return $this->rtPassAgain || $this->rtStreamOwed || $this->rtRetireOwed;
+        return $this->rtPassAgain || $this->rtStreamOwed || $this->rtCopyDrops !== [] || $this->rtRetireOwed;
+    }
+
+    /**
+     * Advances the drops of copies nobody here reads any more on the snapshot share of the pass, each
+     * published once it is ready; one the share leaves unfinished goes on in the next pass.
+     *
+     * @param RtWorkBudget $share Snapshot share of the current pass
+     * @throws NativeLogicException When a page lease or the selector broke under a drop
+     * @throws LogicException When a drop is published inside a transaction
+     * @throws InvalidArgumentException Never: the allowances are not negative
+     * @throws HilosException Whatever a subscriber raises on an announcement of a dropped row
+     */
+    private function advanceRtCopyDrops(RtWorkBudget $share): void
+    {
+        foreach ($this->rtCopyDrops as $collectionKey => $drop) {
+            do {
+                $granted = $share->take(self::RT_SNAPSHOT_BYTES_PER_WORK);
+                if ($granted === null) {
+                    return;
+                }
+                $budget = new RtWorkBudget(self::RT_SNAPSHOT_STEPS_PER_WORK, $granted);
+                $status = $drop->advance($budget);
+                if ($status === RtSnapshotStatus::Ready) {
+                    $drop->publish();
+                }
+            } while ($status === RtSnapshotStatus::Ready || $status === RtSnapshotStatus::Building
+                || ($status === RtSnapshotStatus::Published && self::isRtWorkSpent($budget)));
+            unset($this->rtCopyDrops[$collectionKey]);
+        }
+    }
+
+    /**
+     * @param RtWorkBudget $budget Allowance a staged generation was advanced on alone
+     * @return bool Whether it ran out on either axis, so the generation may have work left it could not take
+     * @throws InvalidArgumentException Never: the probe asks for one byte
+     */
+    private static function isRtWorkSpent(RtWorkBudget $budget): bool
+    {
+        return $budget->take(1) === null;
     }
 
     /**
@@ -2226,7 +2280,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * waits too, so within one agent the order of arrival stays the order of handling (HIL-1012): a stop handled
      * ahead of a signal sent before it would leave the signal no agent to reach. A row's freeze waits behind a
      * waiting thaw of its collection the same way: handled ahead of it, the freeze would be undone by it. The other
-     * frames - DB sync, source readiness, snapshots, control frames, the stream's answers - are handled at once.
+     * frames - DB sync, source readiness, control frames, the stream's answers - are handled at once.
      *
      * @param WorkerDTO $message Frame just taken from the daemon queue
      * @return bool Whether it waits
@@ -2269,13 +2323,20 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * here, because the stream answer is the one thing the sender learns of it.
      *
      * The apply is handed back to the stream as work in portions: the stream advances it on the
-     * shares of this worker's RT passes and reads the next operation only after it.
+     * shares of this worker's RT passes and reads the next operation only after it. A snapshot of
+     * a collection is handed over at its head and staged as its rows arrive
+     * ({@see self::stageStreamedRtSnapshot()}).
      *
-     * @param RtSyncStreamOperation $operation Operation read from its parts
+     * A write of a collection nobody here reads any more is taken and not applied: the master
+     * addressed it here before it read that the last reader went, and the copy it would land on is
+     * being dropped ({@see self::releaseSourceInterest()}). It is answered applied - nothing of it is
+     * lost, the snapshot of the next reader carries it.
+     *
+     * @param RtSyncStreamOperation|RtSyncStreamSnapshot $operation Operation read from its parts, or a snapshot at its head
      * @param Closure(bool): void $settled The stream's answer
-     * @return ?Generator<int, RtWork, int, void> The apply and its answer, or null when refused at once
+     * @return ?Generator<int, RtWork, int, void> The apply or the staging and its answer, or null when answered at once
      */
-    private function applyStreamedRtSync(RtSyncStreamOperation $operation, Closure $settled): ?Generator
+    private function applyStreamedRtSync(RtSyncStreamOperation|RtSyncStreamSnapshot $operation, Closure $settled): ?Generator
     {
         if ($operation->originNodeId !== null) {
             Logger::error("Refusing a streamed RT write that names a node on a worker link [node={$operation->originNodeId}]");
@@ -2283,8 +2344,342 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
             return null;
         }
+        if ($operation instanceof RtSyncStreamSnapshot) {
+            return $this->stageStreamedRtSnapshot($operation, $settled);
+        }
+        if (!SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, $operation->collectionKey)) {
+            $settled(true);
+
+            return null;
+        }
 
         return $this->appliedStreamedRtSync($operation, $settled);
+    }
+
+    /**
+     * Stages one snapshot the daemon streamed into this worker's copy of its collection, then
+     * publishes it: the first answer a reader of the collection gets here, or the base again of a
+     * copy that lost it. The rows are taken as their parts are read and prepared on the stream's
+     * share before the next are taken, so the snapshot is never held whole; until the publication
+     * every reader of a ready copy sees it as it was.
+     *
+     * Rows this worker's own agents hold are left out ({@see self::rtRowsOwnedHere()}): the copy here
+     * is the one they write, and the master's may lag behind it. Nothing else writes the rest while
+     * the stream reads the snapshot - the master's later writes are read behind it, and a copy
+     * nobody reads takes none - so a live change there is a writer the cut did not see: it cancels
+     * the generation, and another snapshot is asked for. A live change that cancels the second
+     * snapshot in a row is a writer here every cut of the master misses - a second owner of the rows
+     * - and asking again would only be canceled again: that one is not asked again, and the next
+     * event asks (a new interest, a new hold), as after a refusal; a publication ends the run, and so
+     * does a cancellation for another cause. A generation one row of which failed its validator is not
+     * asked for again either, as the same cut would fail again. A collection this process does not
+     * hold has nothing to stage into: only its marks and readiness are published.
+     *
+     * The snapshot answers the interest here it was cut for, and is published only for that one: its
+     * head carries the number of the worker's interest report it answers, and the interest read here
+     * now is answered by the report that added the collection or a later one
+     * ({@see self::$rtInterestAddedAt}). A head with an older number was cut for an interest that
+     * ended before it arrived ({@see self::endRtInterest()}); it is read out and passed over, as a
+     * reader that came since would otherwise be handed the rows of a copy its master stopped keeping
+     * when the interest ended - and nothing is asked for, as the answer to the report that added the
+     * collection is on its way. So is the head of a collection nobody here reads. A snapshot whose
+     * interest ends while it stages is not published, read again or not: the interest that came since
+     * is answered by a snapshot of its own. Neither cancels the drop of the copy nobody reads.
+     *
+     * @param RtSyncStreamSnapshot $snapshot Snapshot handed over at its head
+     * @param Closure(bool): void $settled The stream's answer
+     * @return Generator<int, RtWork, int, void> The staging on the stream's share, answered at its end
+     * @throws LogicException When a portion arrives beyond the generation's reserve, or the generation is
+     *     published inside a transaction
+     * @throws NativeLogicException When a page lease or the selector broke under the generation
+     * @throws InvalidArgumentException Never: the allowances are not negative
+     * @throws HilosException Whatever a subscriber raises on an announcement of the published rows
+     */
+    private function stageStreamedRtSnapshot(RtSyncStreamSnapshot $snapshot, Closure $settled): Generator
+    {
+        $collectionKey = $snapshot->collectionKey;
+        $announcement = $snapshot->announcement;
+        if (!$this->answersRtInterest($collectionKey, $announcement)) {
+            $read = yield from self::readOutRtSnapshot($snapshot);
+            if ($read) {
+                $settled(true);
+            }
+            if (SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, $collectionKey)) {
+                Logger::info("An RT snapshot of {$collectionKey} answers an interest here that ended before it came; it is passed over");
+            }
+
+            return;
+        }
+        unset($this->rtSnapshotsAsked[$collectionKey]);
+        $this->rtInterestAnswered[$collectionKey] = true;
+        if (isset($this->rtCopyDrops[$collectionKey])) {
+            $this->rtCopyDrops[$collectionKey]->cancel();
+            unset($this->rtCopyDrops[$collectionKey]);
+        }
+        // The marks this copy carried before the snapshot came, which its own marks replace once it is
+        // published (HIL-711). Taken at its head and not at its publication: a row's freeze the master
+        // writes meanwhile is newer than the cut, and goes on standing over it.
+        $wereFrozen = array_map(strval(...), array_keys(RtStaleness::staleRows($collectionKey)));
+        $import = RtSnapshot::stage(
+            $collectionKey,
+            $snapshot->scope,
+            $snapshot->cutRevision,
+            leavesOut: $this->rtRowsOwnedHere($collectionKey),
+            liveChangeCancels: true,
+        );
+        // A generation for a source this process does not hold is canceled from its start.
+        $held = $import->advance(new RtWorkBudget(0, 0)) !== RtSnapshotStatus::Canceled;
+        while (!$snapshot->isWhole() || $snapshot->hasRows()) {
+            if ($snapshot->isLost()) {
+                $import->cancel();
+                Logger::warning("An RT snapshot of {$collectionKey} was lost before its end; the next event asks for another");
+
+                return;
+            }
+            $rows = $snapshot->takeRows(RtSnapshotImport::DEFAULT_RESERVE_BYTES);
+            if ($rows === null) {
+                yield new RtWork();
+                continue;
+            }
+            if ($held) {
+                $import->append($rows);
+                yield from self::prepareStagedRtSnapshot($import);
+            }
+        }
+        if (!$held) {
+            if ($this->answersRtInterest($collectionKey, $announcement)) {
+                unset($this->rtSnapshotsContested[$collectionKey]);
+                $this->publishRtSnapshotMarks($collectionKey, $wereFrozen, $snapshot->staleRows());
+            }
+            $settled(true);
+
+            return;
+        }
+        $import->finishInput();
+        while (true) {
+            $granted = yield new RtWork(self::RT_SNAPSHOT_BYTES_PER_WORK);
+            $budget = new RtWorkBudget(self::RT_SNAPSHOT_STEPS_PER_WORK, $granted);
+            $status = $import->advance($budget);
+            if ($status === RtSnapshotStatus::Ready && $this->answersRtInterest($collectionKey, $announcement)) {
+                $import->publish();
+            } elseif ($status !== RtSnapshotStatus::Building
+                && ($status !== RtSnapshotStatus::Published || !self::isRtWorkSpent($budget))) {
+                break;
+            }
+        }
+        if ($status === RtSnapshotStatus::Published) {
+            unset($this->rtSnapshotsContested[$collectionKey]);
+            $this->publishRtSnapshotMarks($collectionKey, $wereFrozen, $snapshot->staleRows());
+            $settled(true);
+
+            return;
+        }
+        $import->cancel();
+        if (!$this->answersRtInterest($collectionKey, $announcement)) {
+            $settled(true);
+
+            return;
+        }
+        $settled(false);
+        if ($status === RtSnapshotStatus::Refused) {
+            Logger::error("A row of the RT snapshot of {$collectionKey} failed its validator; another is asked for on the next event only");
+
+            return;
+        }
+        if (!$import->wasCanceledByLiveChange()) {
+            unset($this->rtSnapshotsContested[$collectionKey]);
+        } elseif (isset($this->rtSnapshotsContested[$collectionKey])) {
+            Logger::warning("A write here canceled the RT snapshot of {$collectionKey} twice in a row: two owners of its rows;"
+                . ' another is asked for on the next event only');
+
+            return;
+        } else {
+            $this->rtSnapshotsContested[$collectionKey] = true;
+        }
+        Logger::warning("The RT snapshot of {$collectionKey} was canceled before its publication; another is asked for");
+        $this->requestRtSnapshot($collectionKey);
+    }
+
+    /**
+     * Reads the parts of a snapshot out without staging them, for a snapshot that is not published here.
+     *
+     * @param RtSyncStreamSnapshot $snapshot Snapshot handed over at its head
+     * @return Generator<int, RtWork, int, bool> The reading on the stream's share: true once read to its end, false
+     *     when it was lost before
+     */
+    private static function readOutRtSnapshot(RtSyncStreamSnapshot $snapshot): Generator
+    {
+        while (!$snapshot->isWhole() || $snapshot->hasRows()) {
+            if ($snapshot->isLost()) {
+                return false;
+            }
+            if ($snapshot->takeRows(RtSnapshotImport::DEFAULT_RESERVE_BYTES) === null) {
+                yield new RtWork();
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * @param string $collectionKey RT collection a snapshot is of
+     * @param ?int $announcement Number of the interest report the snapshot answers, as its head carries it
+     * @return bool Whether the snapshot answers the interest read here now: the collection is read, and the report
+     *     that added it is the one the snapshot answers or an earlier one
+     */
+    private function answersRtInterest(string $collectionKey, ?int $announcement): bool
+    {
+        $addedAt = $this->rtInterestAddedAt[$collectionKey] ?? null;
+
+        return $announcement !== null && $addedAt !== null && $announcement >= $addedAt
+            && SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, $collectionKey);
+    }
+
+    /**
+     * Advances a generation over the portion just appended, on the stream's share, until its reserve
+     * is free for the next portion.
+     *
+     * @param RtSnapshotImport $import Generation staging a snapshot
+     * @return Generator<int, RtWork, int, void> Its preparation, one unit of work per request
+     * @throws NativeLogicException When a page lease or the selector broke under the generation
+     * @throws InvalidArgumentException Never: the allowances are not negative
+     * @throws HilosException Whatever the generation's preparation raises past its own refusals
+     */
+    private static function prepareStagedRtSnapshot(RtSnapshotImport $import): Generator
+    {
+        do {
+            $granted = yield new RtWork(self::RT_SNAPSHOT_BYTES_PER_WORK);
+            $budget = new RtWorkBudget(self::RT_SNAPSHOT_STEPS_PER_WORK, $granted);
+            $import->advance($budget);
+        } while (self::isRtWorkSpent($budget));
+    }
+
+    /**
+     * The freshness half of a snapshot's publication here, and the moment a reader of its
+     * collection may be answered: until it the process holds nothing of the collection, and
+     * answering a read out of that emptiness would look exactly like a collection whose rows are
+     * all gone. An empty snapshot is still an answer - a collection nobody has written yet is
+     * empty, and its readers must not wait for a row that is never coming.
+     *
+     * @param string $collectionKey Collection whose snapshot was published
+     * @param list<string> $wereFrozen Rows this copy marked frozen when the snapshot came
+     * @param array<string, float> $staleRows Moments the master's copy of rows froze, by id, as the snapshot carries them
+     */
+    private function publishRtSnapshotMarks(string $collectionKey, array $wereFrozen, array $staleRows): void
+    {
+        // Which rows are frozen arrives with them, and this is the only chance to learn it: a
+        // worker that came up during a break was not there for the frame that froze them, and
+        // nothing repeats that frame (HIL-711).
+        //
+        // Replacing what was held rather than adding to it, for the reason the rows themselves
+        // are replaced: the snapshot is the whole truth about this collection, freshness
+        // included. A worker whose last reader of it went away stops being sent the thaw frames -
+        // they are addressed by interest - so a mark from before would otherwise survive a
+        // snapshot that says the rows are current. Named before the stream lets go of its held
+        // rows below, so the rows that thaw with them are named to the tables too.
+        //
+        // The snapshot is a base again for every row of it, those whose streamed operation this
+        // worker refused included: their later operations are applied from here on.
+        $this->rtSyncStream?->recover($collectionKey);
+        RtStaleness::clear($collectionKey, $wereFrozen);
+        foreach ($staleRows as $stateId => $since) {
+            RtStaleness::mark($collectionKey, [(string)$stateId], $since);
+        }
+        SourceInterestRegistry::markReady(SourceChange::KIND_RT, $collectionKey);
+        // Both halves of the replacement are named to the tables: the rows this snapshot thawed
+        // and the rows it froze. A window shows the mark per row, so it has to be told about a
+        // row leaving the frozen set exactly as loudly as about one joining it (HIL-800).
+        Hilos::$browser?->recordSourceStaleness(
+            $collectionKey,
+            [...$wereFrozen, ...array_map(strval(...), array_keys($staleRows))],
+        );
+    }
+
+    /**
+     * Tells the rows of one RT collection this worker's own agents hold: named by a claim over rows,
+     * whatever it may do - such a claim is ready at once, its holder keeps the copy of what it writes
+     * ({@see OwnershipDeclaration::claimRtRows()}) - or covered by a claim over a set or the whole
+     * collection that may add rows. A borrowed claim, which may not add, edits rows somebody else
+     * brought into being and waits for their copy like a reader does, so its rows are not held here.
+     *
+     * @param string $collectionKey Collection to ask about
+     * @return ?Closure(string, ?string): bool Whether a row, by id and set, is held here; null when none is
+     */
+    private function rtRowsOwnedHere(string $collectionKey): ?Closure
+    {
+        $whole = false;
+        $rowKeys = [];
+        $setKeys = [];
+        foreach (array_keys($this->agentManager->getAgents()) as $agentId) {
+            $agentId = (string)$agentId;
+            $adds = RtTruthSourceRegistry::allowsOperation($collectionKey, $agentId, TruthSourceOperation::Add);
+            $setKey = RtTruthSourceRegistry::setKeyByCollectionOf($agentId)[$collectionKey] ?? null;
+            $listed = RtTruthSourceRegistry::keysByCollectionOf($agentId)[$collectionKey] ?? null;
+            if ($setKey !== null) {
+                if ($adds) {
+                    $setKeys[$setKey] = true;
+                }
+            } elseif ($listed !== null) {
+                foreach ($listed as $rowKey) {
+                    $rowKeys[$rowKey] = true;
+                }
+            } elseif ($adds) {
+                $whole = true;
+            }
+        }
+        if ($whole) {
+            return static fn (): bool => true;
+        }
+        if ($rowKeys === [] && $setKeys === []) {
+            return null;
+        }
+
+        return static fn (string $id, ?string $setKey): bool => isset($rowKeys[$id]) || ($setKey !== null && isset($setKeys[$setKey]));
+    }
+
+    /**
+     * Marks this worker's copy of rows its stream holds after refusing their operation, or lifts the
+     * mark once a snapshot gave them a base again. The first row held of a collection asks the master
+     * for that snapshot - unless the snapshot answering the report that added the collection is still
+     * to come ({@see self::$rtInterestAnswered}): the master cuts it after the write the hold refused,
+     * so it is that base, and a request beside it would put a second answer to the same interest in
+     * flight.
+     *
+     * @param string $collectionKey Collection of the rows
+     * @param list<string> $stateIds Rows the hold froze, or let go of
+     * @param ?float $since Microtime the hold began, or null when the rows have a base again
+     */
+    private function markRtSyncStreamHold(string $collectionKey, array $stateIds, ?float $since): void
+    {
+        if ($since === null) {
+            RtStaleness::clear($collectionKey, $stateIds);
+
+            return;
+        }
+        RtStaleness::mark($collectionKey, $stateIds, $since);
+        if (!isset($this->rtInterestAddedAt[$collectionKey]) || isset($this->rtInterestAnswered[$collectionKey])) {
+            $this->requestRtSnapshot($collectionKey);
+        }
+    }
+
+    /**
+     * Asks the master for one more snapshot of an RT collection this worker reads, its copy having lost
+     * its base; one request waits at a time, until a snapshot of the collection that answers the
+     * interest read here reaches the stream's host - the master marks its answer with the last
+     * report it read, never older than the one that added the collection. A collection nobody here
+     * reads is not asked for: its copy is being dropped.
+     *
+     * @param string $collectionKey Collection to ask a snapshot of
+     */
+    private function requestRtSnapshot(string $collectionKey): void
+    {
+        if (isset($this->rtSnapshotsAsked[$collectionKey])
+            || !SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, $collectionKey)
+            || $this->daemonClient === null || !$this->daemonClient->isConnected()) {
+            return;
+        }
+        $this->rtSnapshotsAsked[$collectionKey] = true;
+        $this->sendToDaemon(new WorkerRtSnapshotRequestDTO($collectionKey));
     }
 
     /**
@@ -3904,8 +4299,14 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * the next reader of the collection would be handed rows that stopped being true at a moment
      * nothing recorded, instead of waiting the one round trip a fresh snapshot costs.
      *
+     * An RT copy is dropped by an empty generation staged into it and published on the RT passes
+     * ({@see self::advanceRtCopyDrops()}), not by one write of the whole: the readiness goes at
+     * once, with the last reader, and a write of it the master addressed here before it learned of
+     * that is taken and not applied ({@see self::applyStreamedRtSync()}).
+     *
      * @param string $consumerId Consumer that ended, named by {@see SourceConsumer}
-     * @throws HilosException Whatever the applied write emptying a dropped collection raises
+     * @throws LogicException When an eager DB collection's entity class is not configured
+     * @throws DatabaseException If re-reading an eager DB collection from the database fails
      */
     private function releaseSourceInterest(string $consumerId): void
     {
@@ -3918,7 +4319,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
             if (SourceInterestRegistry::hasConsumers(SourceChange::KIND_RT, $collectionKey)) {
                 continue;
             }
-            RtSnapshot::replace($collectionKey, []);
+            $this->endRtInterest($collectionKey);
+            ($this->rtCopyDrops[$collectionKey] ?? null)?->cancel();
+            $this->rtCopyDrops[$collectionKey] = RtSnapshot::stage($collectionKey, RtSnapshotScope::whole(), 0);
+            $this->rtCopyDrops[$collectionKey]->finishInput();
             $dropped = true;
         }
 
@@ -3941,11 +4345,35 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
+     * Ends the interest here in an RT collection its last reader let go of. A snapshot of it staged
+     * now is no longer published ({@see self::stageStreamedRtSnapshot()}), and the answers the master
+     * may still be putting into the stream for it are passed over when their heads arrive: the
+     * snapshot answering the report that added the collection when none came yet, and the one a
+     * request still waits for. The master cut them while this worker read the collection; once it
+     * reads the report that the reader went, it may stop keeping its copy, and puts nothing of the
+     * collection into this stream until a report adds it again - so whatever of it comes before
+     * that answer may be older than what the next reader here must be handed first. They are told
+     * apart by the number their heads carry, which is older than that of the report adding the
+     * collection anew ({@see self::notifySourceInterest()}).
+     *
+     * @param string $collectionKey RT collection nobody here reads any more
+     */
+    private function endRtInterest(string $collectionKey): void
+    {
+        unset($this->rtInterestAddedAt[$collectionKey], $this->rtInterestAnswered[$collectionKey], $this->rtSnapshotsAsked[$collectionKey]);
+    }
+
+    /**
      * Reports to the daemon every collection this worker reads, of both kinds.
      *
      * Whole and not as a delta, for the reason {@see WorkerSourceInterestDTO} spells out. An
      * empty list is sent like any other: it is how the last reader of this worker announces
-     * that frames may stop coming.
+     * that frames may stop coming. An RT collection the report adds is answered by the master
+     * with a snapshot, now or once its copy is confirmed, marked with the number of the report; the
+     * number of the report that added each collection is kept ({@see self::$rtInterestAddedAt}), and
+     * the answer is noted as still to come until its head arrives ({@see self::$rtInterestAnswered}).
+     * One number for the whole report: a later report that adds another collection while the answer
+     * to this one is on its way leaves the collection this one added to that answer.
      *
      * Both kinds go in the one report because both are read off the same registry at the same
      * moment, and a report carrying one of them would leave the master's map of this worker
@@ -3957,9 +4385,18 @@ abstract class WorkerManager extends BaseManager implements PageResender
             return;
         }
 
+        $readsRt = SourceInterestRegistry::collections(SourceChange::KIND_RT);
+        $number = ++$this->rtInterestNumber;
+        $addedAt = [];
+        foreach ($readsRt as $collectionKey) {
+            $addedAt[$collectionKey] = $this->rtInterestAddedAt[$collectionKey] ?? $number;
+        }
+        $this->rtInterestAddedAt = $addedAt;
+        $this->rtInterestAnswered = array_intersect_key($this->rtInterestAnswered, $addedAt);
         $this->sendToDaemon(new WorkerSourceInterestDTO(
-            SourceInterestRegistry::collections(SourceChange::KIND_RT),
+            $readsRt,
             SourceInterestRegistry::collections(SourceChange::KIND_DB),
+            $number,
         ));
     }
 

@@ -31,6 +31,9 @@ use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Hilos;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Stream\RtSyncStreamChannel;
+use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Socket\WebSocket\DTO\DeliveryCompleteSignalData;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
@@ -39,10 +42,11 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\SystemSignalDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use ReflectionProperty;
 
 /**
@@ -65,6 +69,9 @@ final class WorkerParkedFrameTest extends TestCase
 
     private const string BOOTSTRAP_COLLECTION = 'test-bootstrap-state';
 
+    /** @var int Number of the worker's first interest report, the one its registration sends */
+    private const int FIRST_REPORT = 1;
+
     /**
      * The five seconds a worker gives a start the state it reads - not the ten its master gives a
      * worker to connect (HIL-1671). Written out rather than read from the shared constant, so a
@@ -74,6 +81,9 @@ final class WorkerParkedFrameTest extends TestCase
 
     /** How far either side of those five seconds a pass is taken. */
     private const float DATA_WAIT_MARGIN_SECONDS = 0.5;
+
+    /** @var int The most RT passes a case runs for what one hand-over of parts owes */
+    private const int MAX_OWED_PASSES = 16;
 
     /** @var class-string<Hilos> App class bound before this test touched it */
     private string $boundAppClass;
@@ -140,7 +150,11 @@ final class WorkerParkedFrameTest extends TestCase
             $this->manager->pass(microtime(true));
             $this->assertNull($this->manager->agent(WorkerParkedFrameTestAgent::AGENT_TYPE));
 
-            $this->manager->handleDaemonMessage(new WorkerRtSnapshotMessageDTO(self::BOOTSTRAP_COLLECTION, []));
+            $this->streamSnapshotOf(self::BOOTSTRAP_COLLECTION);
+            $this->assertTrue(
+                SourceInterestRegistry::isReady(SourceChange::KIND_RT, self::BOOTSTRAP_COLLECTION),
+                'The streamed snapshot is published, and readiness comes with it',
+            );
             $this->manager->pass(microtime(true));
 
             $this->assertSame(['after-start'], $this->manager->agent(WorkerParkedFrameTestAgent::AGENT_TYPE)?->heard);
@@ -384,6 +398,35 @@ final class WorkerParkedFrameTest extends TestCase
             new SignalName($page),
             new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, $page, deliveryId: $deliveryId),
         ));
+    }
+
+    /**
+     * The master's answer to the worker's first report: a snapshot of the collection, an operation of
+     * the link's RT stream, its parts handed to the worker as they are written.
+     *
+     * @param string $collectionKey Collection the snapshot is cut of
+     */
+    private function streamSnapshotOf(string $collectionKey): void
+    {
+        $parts = [];
+        $master = new RtSyncStreamChannel(
+            static function (RtSyncStreamFrame $frame) use (&$parts): void {
+                $parts[] = $frame;
+            },
+            static fn (): null => null,
+        );
+        $master->sendSnapshot($collectionKey, RtSnapshotScope::whole(), announcement: self::FIRST_REPORT);
+        foreach ($parts as $part) {
+            $this->manager->handleDaemonMessage(new WorkerRtSyncStreamDTO($part));
+        }
+        // A pass ends at its wall-clock budget, so one pass under a loaded box may stop short of
+        // the publication an idle one reaches; the loop takes what the worker's next iterations would.
+        $pass = new ReflectionMethod(WorkerManager::class, 'runRtPass');
+        $owes = new ReflectionMethod(WorkerManager::class, 'hasRtPassWork');
+        for ($passes = 0; $passes < self::MAX_OWED_PASSES && $owes->invoke($this->manager); $passes++) {
+            $pass->invoke($this->manager);
+        }
+        $this->assertFalse($owes->invoke($this->manager), 'The passes the worker owed are run');
     }
 
     /**

@@ -20,6 +20,7 @@ use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentDaemonNotRegisteredException;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\RtCopyConfirmation;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
@@ -35,8 +36,8 @@ use Hilos\Files\Upload\UploadMemoryPoolSink;
 use Hilos\Files\Upload\UploadMemoryDeliverySink;
 use Hilos\Log\LogWriteLevelApplier;
 use Hilos\ProtectedMode\ProtectedModeEntryGate;
-use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
@@ -77,7 +78,7 @@ use Hilos\Socket\Worker\DTO\WorkerProtectedModeSettingsDTO;
 use Hilos\Socket\Worker\DTO\WorkerProtectedModeVerifyDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotRequestDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
@@ -93,6 +94,7 @@ use Hilos\Utils\Logger;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
+use LogicException as NativeLogicException;
 use WeakReference;
 
 /**
@@ -117,6 +119,14 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
     /** @var bool Whether worker is registered */
     private bool $isRegistered = false;
+
+    /**
+     * Number of the last interest report the worker sent on this link, zero before its first: a snapshot this
+     * master sends the worker of a collection it reads is marked with the report it answers
+     * ({@see self::handleWorkerRtSnapshotRequestMessage()}). Framework-first: process-local state of this link
+     * instance, as the worker's own count is of its connection; nothing else reads it, and it ends with the link.
+     */
+    private int $sourceInterestNumber = 0;
 
     /**
      * Whether this link has closed: from then on its stream hands the dispatch nothing, and an operation whose parts it
@@ -417,6 +427,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             $workerDTO instanceof WorkerRtSourceRegisteredDTO => $this->handleWorkerRtSourceRegisteredMessage($workerDTO),
             $workerDTO instanceof WorkerRtSourceReleasedDTO => $this->handleWorkerRtSourceReleasedMessage($workerDTO),
             $workerDTO instanceof WorkerSourceInterestDTO => $this->handleWorkerSourceInterestMessage($workerDTO),
+            $workerDTO instanceof WorkerRtSnapshotRequestDTO => $this->handleWorkerRtSnapshotRequestMessage($workerDTO),
             $workerDTO instanceof WorkerGroupJoinDTO => $this->handleGroupJoinMessage($workerDTO),
             $workerDTO instanceof WorkerGroupLeaveAllDTO => $this->handleGroupLeaveAllMessage($workerDTO),
             $workerDTO instanceof WorkerAgentRestartRequestDTO => $this->handleAgentRestartRequestMessage($workerDTO),
@@ -930,34 +941,114 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     /**
      * Handle everything one worker reads, and answer the collections it has just taken up.
      *
-     * The two steps are one and nothing may be written to this worker between them: the map
-     * entry is what starts addressing deltas here, and a delta reaching the worker before the
-     * answer would land on a collection it holds nothing of. Sending the answer second is what
-     * makes that impossible - by the time the frame after it can be produced, the state it
-     * applies to is already queued ahead of it on this same socket.
+     * The map entry is what starts addressing deltas here. A collection whose copy is confirmed is
+     * answered in the same step, so every delta after it reaches the worker behind the state it
+     * applies to. One whose copy is still awaited is not: the worker is sent its deltas meanwhile,
+     * ahead of its first snapshot, and takes them onto a copy it holds nothing of - the rows they miss
+     * are held there until that snapshot gives them a base. The worker publishes nothing for the
+     * collection before that snapshot, so no reader is answered out of what those deltas left.
      *
      * What the answer carries is where the two kinds part (HIL-750). An RT collection is sent
-     * its rows, because the master's replica is the only copy the worker can be given. A DB
+     * its rows, because the master's replica is the only copy the worker can be given: a snapshot
+     * the link's RT stream cuts as it takes it ({@see self::streamRtSnapshot()}), so it reaches the
+     * worker behind every write the stream took before it and ahead of every write after it. The
+     * snapshot is cut once the master's copy is confirmed: a collection this node starts reading
+     * waits for every node its announcement reached to answer, and the worker waits with it
+     * ({@see RtCopyConfirmation}, {@see self::sendConfirmedRtSnapshot()}). A DB
      * collection is sent a bare confirmation: its rows are in the database the worker reads for
      * itself, so the only thing it is missing is the word that it is in the map.
      *
+     * The snapshot is marked with the number of the report, now or once the copy is confirmed: the
+     * worker publishes a snapshot of a collection only for the report that added it or a later one.
+     *
      * @param WorkerSourceInterestDTO $dto DTO with every RT and DB collection that worker reads
+     * @throws InvalidFormatException When a standalone row's set field is malformed
+     * @throws NativeLogicException When a collection's version pages have closed
+     * @throws InvalidArgumentException Never: a fresh allowance is valid
      */
     private function handleWorkerSourceInterestMessage(WorkerSourceInterestDTO $dto): void
     {
         $added = $this->agentManager->handleSourceInterest($dto, $this->workerIndex);
+        $this->sourceInterestNumber = $dto->announcement;
 
         foreach ($added[SourceChange::KIND_RT] as $collectionKey) {
-            $this->send((new WorkerRtSnapshotMessageDTO(
-                collectionKey: $collectionKey,
-                rows: RtSnapshot::rows($collectionKey),
-                staleRows: RtStaleness::staleRows($collectionKey),
-            ))->toJson());
+            if ($this->agentManager->rtCopyConfirmation()->admits($collectionKey, $this->workerIndex, $dto->announcement)) {
+                $this->streamRtSnapshot($collectionKey, $dto->announcement);
+            }
         }
 
         foreach ($added[SourceChange::KIND_DB] as $collectionKey) {
             $this->send((new WorkerDbInterestReadyMessageDTO(collectionKey: $collectionKey))->toJson());
         }
+    }
+
+    /**
+     * Answer a worker's request for one more snapshot of an RT collection it reads: its copy lost
+     * its base - its stream held a row, or a snapshot it staged was canceled. A collection the worker
+     * no longer reads is not sent: frames of it stopped being addressed there, and the snapshot of
+     * its next interest is cut then. A copy still awaited here is sent once it is confirmed. The
+     * snapshot is marked with the number of the last interest report of the worker: the request
+     * comes after the report that added the collection, so the number is never older than that one.
+     *
+     * @param WorkerRtSnapshotRequestDTO $dto DTO naming the collection
+     * @throws InvalidFormatException When a standalone row's set field is malformed
+     * @throws NativeLogicException When the collection's version pages have closed
+     * @throws InvalidArgumentException Never: a fresh allowance is valid
+     */
+    private function handleWorkerRtSnapshotRequestMessage(WorkerRtSnapshotRequestDTO $dto): void
+    {
+        if (!$this->agentManager->workerReaderMap()->holds(
+            AgentManagerDaemon::workerHolderId($this->workerIndex),
+            SourceChange::KIND_RT,
+            $dto->collectionKey,
+        )) {
+            return;
+        }
+        if ($this->agentManager->rtCopyConfirmation()->admits($dto->collectionKey, $this->workerIndex, $this->sourceInterestNumber)) {
+            $this->streamRtSnapshot($dto->collectionKey, $this->sourceInterestNumber);
+        }
+    }
+
+    /**
+     * Sends the worker the snapshot of an RT collection it waited for while this node's copy of it
+     * was awaited ({@see RtCopyConfirmation::admits()}), now that the copy is confirmed. A worker
+     * that stopped reading the collection meanwhile is sent nothing.
+     *
+     * @param string $collectionKey Collection whose copy was confirmed
+     * @param int $announcement Number of the interest report the worker waited with ({@see RtCopyConfirmation::admits()})
+     * @throws InvalidFormatException When a standalone row's set field is malformed
+     * @throws NativeLogicException When the collection's version pages have closed
+     * @throws InvalidArgumentException Never: a fresh allowance is valid
+     */
+    public function sendConfirmedRtSnapshot(string $collectionKey, int $announcement): void
+    {
+        if ($this->agentManager->workerReaderMap()->holds(
+            AgentManagerDaemon::workerHolderId($this->workerIndex),
+            SourceChange::KIND_RT,
+            $collectionKey,
+        )) {
+            $this->streamRtSnapshot($collectionKey, $announcement);
+        }
+    }
+
+    /**
+     * Puts a snapshot of one RT collection of this node into the worker's stream, cut now, with the
+     * moments this node's copy of its rows froze.
+     *
+     * @param string $collectionKey Collection to cut
+     * @param int $announcement Number of the worker's interest report the snapshot answers
+     * @throws InvalidFormatException When a standalone row's set field is malformed
+     * @throws NativeLogicException When the collection's version pages have closed
+     * @throws InvalidArgumentException Never: a fresh allowance is valid
+     */
+    private function streamRtSnapshot(string $collectionKey, int $announcement): void
+    {
+        $this->rtSyncStream()->sendSnapshot(
+            $collectionKey,
+            RtSnapshotScope::whole(),
+            staleRows: RtStaleness::staleRows($collectionKey),
+            announcement: $announcement,
+        );
     }
 
     /**
@@ -1130,7 +1221,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
     /**
      * Send message to worker, at once: the stream's own parts and answers, the agents' lifecycle,
-     * readiness of a source interest, snapshots, sync relays and control frames alike. Only what the
+     * readiness of a DB source interest, sync relays and control frames alike. Only what the
      * worker hands to an agent or to its pages to read against the RT copy waits for the writes
      * streamed before it ({@see self::sendInTurn()}), and so does a frame naming an agent such a
      * frame still waits for ({@see self::sendNamingAgent()}).

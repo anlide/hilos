@@ -136,7 +136,9 @@ the next read goes to the database.
 A claim that may not add is a **borrowed claim**, and it is not ready at once.
 Its holder only edits rows somebody else brought into being, so it holds no copy
 of them: its readiness arrives the way a reader's does — a snapshot for a runtime
-collection, the master's acknowledgement for a database one, which drops the
+collection, sent once the master's copy of it is confirmed
+([rt-context.md](../runtime/rt-context.md)), the master's acknowledgement for a
+database one, which drops the
 cache read before it — and the worker waits for it at the start, beside
 `READS_RT` and `READS_DB` and before the instance is built
 (`OwnershipDeclaration::borrowedRtCollectionsOf()`,

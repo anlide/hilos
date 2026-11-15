@@ -93,8 +93,6 @@ final class RtRowBinding
 
     /**
      * @internal Lets a snapshot generation of the collection this handle stands in reach it.
-     * SCAFFOLD: reached only by a staged snapshot import, which has no production caller until the
-     * initial-sync frames move onto it (HIL-1817).
      *
      * @param RtRowRoot $root Resolution root of that collection
      */

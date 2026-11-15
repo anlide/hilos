@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime;
 
+use Closure;
+use Hilos\Cluster\RtSyncSink;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Hilos;
@@ -84,6 +86,26 @@ final class RtSnapshot
     }
 
     /**
+     * Reads one row of a collection, or the row of a standalone item, as it stands now: what the
+     * daemon hands the workers that read a collection once a snapshot of it was published here.
+     *
+     * @param string $collectionKey RT collection or standalone item to read
+     * @param string $stateId Id of the row
+     * @return ?array<string, mixed> The row, null when this process holds none under the id
+     */
+    public static function row(string $collectionKey, string $stateId): ?array
+    {
+        $stateCollection = Hilos::$rt?->getStateCollection($collectionKey);
+        if ($stateCollection === null) {
+            $state = Hilos::$rt?->getStateItem($collectionKey);
+
+            return $state !== null && $state->getId() === $stateId ? $state->toArray() : null;
+        }
+
+        return $stateCollection->get($stateId)?->toArray();
+    }
+
+    /**
      * Cuts one source for a snapshot: its membership and committed values at one revision, read
      * out later in portions ({@see RtSnapshotExport::advance()}). The cut itself is constant work -
      * no row is visited, copied or serialized here - and the read holds no context, collection or
@@ -125,17 +147,37 @@ final class RtSnapshot
      * beside the live source and published whole ({@see RtSnapshotImport}). Until then every reader
      * sees the last whole version. Constant work; nothing is read here.
      *
-     * SCAFFOLD: no production caller until the initial-sync frames move onto staging (HIL-1817);
-     * {@see self::replace()}, {@see self::replaceScope()} and the standalone door stay until then.
+     * A worker stages the snapshots its master streams to it through here, and a master those a
+     * linked node streams of the areas it owns. {@see self::replaceScope()} and the standalone door
+     * stay the holders' offers' ({@see RtSyncSink::applyRemoteRtReplicaOffer()}).
      *
      * @param string $collectionKey Collection or standalone item to stage into
      * @param RtSnapshotScope $scope Rows the generation replaces
      * @param int $cutRevision Source revision the portions were cut at
+     * @param ?Closure(string, ?string): bool $leavesOut Tells, by row id and set, a row of the scope the generation
+     *     leaves out: never replaced or swept, its live changes carried; null leaves out none
+     * @param ?Closure(string, ?string): bool $maySweep Tells, by row id and set, a row of the scope missing from the
+     *     cut the generation may sweep; any other stays as it lives; null sweeps every one
+     * @param bool $liveChangeCancels Whether a live change of a row within the scope cancels the generation rather
+     *     than being superseded by it
      * @return RtSnapshotImport Building generation; one for a source this process does not hold is canceled
      */
-    public static function stage(string $collectionKey, RtSnapshotScope $scope, int $cutRevision): RtSnapshotImport
-    {
-        return new RtSnapshotImport($collectionKey, $scope, $cutRevision);
+    public static function stage(
+        string $collectionKey,
+        RtSnapshotScope $scope,
+        int $cutRevision,
+        ?Closure $leavesOut = null,
+        ?Closure $maySweep = null,
+        bool $liveChangeCancels = false,
+    ): RtSnapshotImport {
+        return new RtSnapshotImport(
+            $collectionKey,
+            $scope,
+            $cutRevision,
+            leavesOut: $leavesOut,
+            maySweep: $maySweep,
+            liveChangeCancels: $liveChangeCancels,
+        );
     }
 
     /**

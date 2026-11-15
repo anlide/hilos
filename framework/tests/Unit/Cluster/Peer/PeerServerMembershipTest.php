@@ -174,7 +174,7 @@ final class PeerServerMembershipTest extends TestCase
         $this->assertSame(['node-b'], $observer->joined);
         $this->assertSame([], $observer->left);
 
-        $this->assertTrue($server->sendToNode('node-b', new PeerSourceInterestDTO('node-a', [], [])));
+        $this->assertTrue($server->sendToNode('node-b', new PeerSourceInterestDTO('node-a', [], [], 1)));
         $this->assertSame([], $this->framesOf($this->drain($candidate, $candidateFar)));
         $this->assertCount(1, $this->framesOf($this->drain($old, $oldFar)));
     }
@@ -192,16 +192,16 @@ final class PeerServerMembershipTest extends TestCase
     {
         $observer = $this->registerObserver();
         $server = $this->makeServer();
-        $server->announceSourceInterest(['readRt'], ['readDb']);
+        $server->announceSourceInterest(['readRt'], ['readDb'], 1);
         [$old, $oldFar] = $this->linkTo($server, 'node-0');
         $this->drain($old, $oldFar);
-        $server->onSourceInterestReceived($old, new PeerSourceInterestDTO('node-0', ['unitRows'], []));
+        $server->onSourceInterestReceived($old, new PeerSourceInterestDTO('node-0', ['unitRows'], [], 1));
         $this->drain($old, $oldFar);
         [$candidate, $candidateFar] = $this->candidateTo($server, 'node-0');
 
-        $this->assertTrue($server->sendToNode('node-0', new PeerSourceInterestDTO('node-a', [], [])));
+        $this->assertTrue($server->sendToNode('node-0', new PeerSourceInterestDTO('node-a', [], [], 1)));
         $this->feed($candidate, $candidateFar, new PeerReadyDTO(true));
-        $this->assertTrue($server->sendToNode('node-0', new PeerSourceInterestDTO('node-a', [], [])));
+        $this->assertTrue($server->sendToNode('node-0', new PeerSourceInterestDTO('node-a', [], [], 1)));
 
         $oldFrames = $this->framesOf($this->drain($old, $oldFar));
         $newFrames = $this->framesOf($this->drain($candidate, $candidateFar));
@@ -209,8 +209,8 @@ final class PeerServerMembershipTest extends TestCase
         $this->assertInstanceOf(PeerDrainDTO::class, $oldFrames[1]);
         $this->assertInstanceOf(PeerReadyAckDTO::class, $newFrames[1]);
         $this->assertTrue($newFrames[1]->keepNew);
-        $this->assertEquals(new PeerSourceInterestDTO('node-a', ['readRt'], ['readDb']), $newFrames[2]);
-        $this->assertEquals(new PeerSourceInterestDTO('node-a', [], []), $newFrames[3]);
+        $this->assertEquals(new PeerSourceInterestDTO('node-a', ['readRt'], ['readDb'], 1), $newFrames[2]);
+        $this->assertEquals(new PeerSourceInterestDTO('node-a', [], [], 1), $newFrames[3]);
         $this->assertCount(4, $newFrames, 'An online duplicate sends one targeted reader repair without a full hand-over');
         $this->assertSame([], array_filter($newFrames, static fn(PeerDTO $frame): bool => $frame instanceof PeerRosterDTO));
 
@@ -225,7 +225,7 @@ final class PeerServerMembershipTest extends TestCase
         ));
         $this->assertTrue($online[0]->online);
         $server->broadcastToNodesHolding(
-            new PeerSourceInterestDTO('node-a', [], []),
+            new PeerSourceInterestDTO('node-a', [], [], 1),
             SourceChange::KIND_RT,
             'unitRows',
         );
@@ -275,7 +275,7 @@ final class PeerServerMembershipTest extends TestCase
     {
         $observer = $this->registerObserver();
         $server = $this->makeServer();
-        $server->announceSourceInterest(['readRt'], ['readDb']);
+        $server->announceSourceInterest(['readRt'], ['readDb'], 1);
         [$old, $oldFar] = $this->linkTo($server, 'node-b');
         $this->drain($old, $oldFar);
         $this->feed($old, $oldFar, new PeerNodeLeavingDTO('node-b', false, null));
@@ -294,7 +294,7 @@ final class PeerServerMembershipTest extends TestCase
         $this->assertSame(['node-b'], $server->linkedNodeIds());
         $this->assertSame(['node-b'], $observer->joined);
         $this->assertSame(['node-b'], $observer->left);
-        $this->assertTrue($server->sendToNode('node-b', new PeerSourceInterestDTO('node-a', [], [])));
+        $this->assertTrue($server->sendToNode('node-b', new PeerSourceInterestDTO('node-a', [], [], 1)));
         $this->assertCount(1, $this->framesOf($this->drain($old, $oldFar)));
     }
 
@@ -821,7 +821,7 @@ final class PeerServerMembershipTest extends TestCase
         try {
             $observer = $this->registerObserver();
             $server = $this->makeServer();
-            $server->announceSourceInterest(['readRt'], ['readDb']);
+            $server->announceSourceInterest(['readRt'], ['readDb'], 1);
             [$old, $oldFar] = $this->linkTo($server, 'node-0');
             $this->drain($old, $oldFar);
 
@@ -876,7 +876,7 @@ final class PeerServerMembershipTest extends TestCase
             $this->closeLink($server, $old);
             $this->assertTrue(Hilos::$cluster->registry()->isOnline('node-0'));
             $this->assertSame(['node-0'], $server->linkedNodeIds());
-            $this->assertTrue($server->sendToNode('node-0', new PeerSourceInterestDTO('node-a', [], [])));
+            $this->assertTrue($server->sendToNode('node-0', new PeerSourceInterestDTO('node-a', [], [], 1)));
             $routedFrames = $this->framesOf($this->drain($candidate, $candidateFar));
             $this->assertCount(1, $routedFrames);
             $this->assertInstanceOf(PeerSourceInterestDTO::class, $routedFrames[0]);

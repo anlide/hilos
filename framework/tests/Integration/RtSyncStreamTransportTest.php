@@ -60,11 +60,13 @@ use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\Row\RtRowArena;
 use Hilos\Runtime\RtRowValues;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Runtime\Stream\RtSyncStreamSettle;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
 use Hilos\Runtime\Stream\RtSyncStreamStatus;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Client\WorkerClient;
@@ -84,6 +86,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Socket\Worker\DTO\WorkerPageAccessReassessConnectionsMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRegisterDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotRequestDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
@@ -131,10 +134,13 @@ final class RtSyncStreamTransportTest extends TestCase
         RtOrdinaryAdmission::reset();
         $this->master = new RtSyncStreamTransportTestManager();
         [$this->reader, $this->readerLink] = $this->link(2);
-        $this->reader->send(new WorkerSourceInterestDTO([self::COLLECTION], []));
+        $this->reader->send(new WorkerSourceInterestDTO([self::COLLECTION], [], 1));
         $this->readerLink->read();
-        $this->readerLink->write();
-        $this->reader->read();
+        // The answer is a snapshot of the collection in the link's stream; the reader takes it before the case.
+        $this->master->drain();
+        $this->deliverToReader();
+        $this->assertSame(['snapshot ' . self::COLLECTION], $this->reader->applied);
+        $this->reader->applied = [];
     }
 
     protected function tearDown(): void
@@ -203,6 +209,40 @@ final class RtSyncStreamTransportTest extends TestCase
         $sourceLink->read();
         $this->assertFalse(Hilos::$sr->hasQueuedSignals(), 'A part of another generation is not read');
         $this->assertFalse($sourceLink->hasPendingWrite(), 'and is not answered');
+    }
+
+    /**
+     * A snapshot the master puts into a worker's stream stands behind the writes the stream took before
+     * it, over the socket pair as on the stream alone: the snapshot a reader asks for while a write too
+     * long for one part is still on its way goes out only behind the write's last part, where a frame
+     * written to the socket directly would have gone between its parts. A request for a collection the
+     * worker does not read is not answered.
+     */
+    public function testAnAskedForSnapshotReachesTheWorkerBehindTheLastPartOfTheWriteTakenBeforeIt(): void
+    {
+        $this->readerLink->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1',
+            ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]));
+        $this->master->drain();
+        $this->reader->send(new WorkerRtSnapshotRequestDTO(self::COLLECTION));
+        $this->reader->send(new WorkerRtSnapshotRequestDTO('notReadThere'));
+        $this->readerLink->read();
+        $this->master->drain();
+        $this->reader->received = [];
+        $this->readerLink->write();
+        $this->reader->read();
+        $this->assertSame([WorkerRtSyncStreamDTO::class], $this->reader->received,
+            'Only the write\'s first part is out: the snapshot waits behind its last');
+
+        for ($round = 0; $round < 64 && count($this->reader->applied) < 2; $round++) {
+            $this->readerLink->read();
+            $this->master->drain();
+            $this->readerLink->write();
+            $this->reader->read();
+        }
+
+        $this->assertSame(['write row-1', 'snapshot ' . self::COLLECTION], $this->reader->applied);
+        $this->readerLink->read();
+        $this->assertTrue($this->readerLink->rtSyncStream()->isIdle(), 'The reader answered both, and nothing else was sent');
     }
 
     /**
@@ -1399,7 +1439,7 @@ final class RtSyncStreamTransportTest extends TestCase
     public function testAWorkerWriteTheMasterRefusesFreezesTheRowForTheOtherWorkersThatReadIt(): void
     {
         [$source, $sourceLink] = $this->link(1);
-        $source->send(new WorkerSourceInterestDTO([self::COLLECTION], []));
+        $source->send(new WorkerSourceInterestDTO([self::COLLECTION], [], 1));
         $sourceLink->read();
         $sourceLink->write();
         $source->read();
@@ -2217,6 +2257,8 @@ final class RtSyncStreamTransportTestWorker
     public array $answers = [];
     /** @var list<RtSyncStreamOperation> Operations this end applied */
     public array $delivered = [];
+    /** @var list<string> What this end applied, in order: a write by its row, a snapshot by its collection */
+    public array $applied = [];
     /** @var list<class-string<WorkerDTO>> Parts and other frames this end read, in order; answers are not counted */
     public array $received = [];
     /** @var list<WorkerRtStalenessMessageDTO> Freshness frames this end read, in order */
@@ -2237,11 +2279,34 @@ final class RtSyncStreamTransportTestWorker
                 }
                 $this->writeRaw(new WorkerRtSyncStreamDTO($frame));
             },
-            function (RtSyncStreamOperation $operation, Closure $settled): void {
+            function (RtSyncStreamOperation|RtSyncStreamSnapshot $operation, Closure $settled): ?Generator {
+                if ($operation instanceof RtSyncStreamSnapshot) {
+                    return $this->take($operation, $settled);
+                }
                 $this->delivered[] = $operation;
+                $this->applied[] = 'write ' . $operation->stateId;
                 $settled(true);
+
+                return null;
             },
         );
+    }
+
+    /**
+     * Takes a snapshot's rows as they are read, and answers it once it is whole.
+     *
+     * @param RtSyncStreamSnapshot $snapshot Snapshot handed over at its head
+     * @param Closure(bool): void $settled Its answer
+     * @return Generator<int, RtWork, int, void> The taking, on the stream's allowance
+     */
+    private function take(RtSyncStreamSnapshot $snapshot, Closure $settled): Generator
+    {
+        while (!$snapshot->isWhole() || $snapshot->hasRows()) {
+            $snapshot->takeRows();
+            yield new RtWork();
+        }
+        $this->applied[] = 'snapshot ' . $snapshot->collectionKey;
+        $settled(true);
     }
 
     /**

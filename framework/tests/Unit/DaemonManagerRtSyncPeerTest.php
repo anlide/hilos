@@ -11,6 +11,18 @@ use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\RtRowValues;
+use LogicException;
+use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\Row\RtRowRole;
+use Hilos\Runtime\Row\RtRowKind;
+use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\RtRowReader;
+use Hilos\Runtime\RtRowCodec;
+use Hilos\Runtime\RtSnapshot;
+use Hilos\TruthSource\RtReplicaConfirmation;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use ReflectionClass;
 use Hilos\Cluster\ClusterContext;
@@ -23,7 +35,6 @@ use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Cluster\Peer\PeerLink;
-use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterCommandConstants;
@@ -45,7 +56,6 @@ use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
 use Hilos\Core\Agent\Exception\AgentException;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\RtReplicaOfferBuild;
-use Hilos\Core\Daemon\RtOwnedSnapshotBuild;
 use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -84,6 +94,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentStoppedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotRequestDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\Attributes\TestWith;
@@ -2703,6 +2714,14 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($daemon, $loop);
         new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
         try {
+            // Older work holds the head of the FIFO, so both hand-overs and the delete between them
+            // wait their turn behind it, in the order they came.
+            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon, static function (): Generator {
+                yield;
+                for ($step = 0; $step < 512; $step++) {
+                    yield;
+                }
+            });
             $daemon->handshaked('node-c');
             $this->assertSame([], $daemon->mesh->snapshots);
             $this->assertSame($serializations, $states->get('255')->serializations);
@@ -2725,29 +2744,6 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
             new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($daemon);
             $loop->close();
         }
-    }
-
-    public function testAWholeClearCannotPublishAnUnfinishedReplacementAsACompleteSnapshot(): void
-    {
-        $daemon = new DaemonManagerRtSyncPeerTestManager();
-        $daemon->mountCollection();
-        for ($id = 0; $id < 130; $id++) {
-            $daemon->writeOwnRow((string)$id, 'before');
-        }
-        $source = new RtSnapshotRead(DaemonManagerRtSyncPeerTestRtContext::ROWS);
-        $work = new RtWorkScheduler();
-        $delivery = new RtOwnedSnapshotBuild($daemon->mesh, 'node-c', [$source], static fn(): bool => true, $work)->delivery();
-        $dispatch = new SignalDispatch(null, static fn() => $delivery);
-        $dispatch->runPortion(64);
-        $this->assertSame([], $daemon->mesh->snapshots);
-        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, []);
-        for ($pass = 0; $pass < 64 && $dispatch->hasWork(); $pass++) {
-            $work->beginPass();
-            $dispatch->runPortion(64);
-        }
-        $this->assertFalse($source->isCurrent());
-        $this->assertSame([], $daemon->mesh->snapshots);
-        $this->assertFalse($dispatch->hasWork());
     }
 
     public function testADepartedReplicaRecipientReceivesNoPartOfAnUnfinishedOriginGroup(): void
@@ -2947,6 +2943,311 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * An offer of a collection nothing on this node reads is passed over whole: a copy landing
+     * after the last reader went would be kept current by nobody.
+     *
+     * @throws HilosException When the write of the missing rows fails
+     */
+    public function testAnOfferOfACollectionNobodyHereReadsIsPassedOver(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountSetCollection();
+
+        $daemon->receiveOffer(self::REMOTE_NODE, ['b' => ['id' => 'b', 'ownerId' => '7', 'name' => 'Grace']],
+            DaemonManagerRtSyncPeerTestRtContext::SET_ROWS);
+
+        $this->assertFalse($collection->has('b'));
+        $this->assertSame([], $daemon->workerServer->frameTypes());
+    }
+
+    /**
+     * A linked node's request for one more snapshot is answered with the areas this node owns of
+     * the collection it named, and of no other.
+     */
+    public function testASnapshotRequestIsAnsweredWithTheAreasOfTheAskedCollectionOnly(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mountSetCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+        $daemon->noteOwnAgent('owner', [DaemonManagerRtSyncPeerTestRtContext::ROWS, DaemonManagerRtSyncPeerTestRtContext::SET_ROWS]);
+
+        $daemon->answerRtSnapshotRequest(self::REMOTE_NODE, DaemonManagerRtSyncPeerTestRtContext::ROWS);
+
+        $this->assertSame([[
+            'nodeId' => self::REMOTE_NODE,
+            'collectionKey' => DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            'rows' => [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'Ada']],
+            'scopeKeys' => [],
+            'scopeSetKeys' => [],
+        ]], $daemon->mesh->snapshots);
+    }
+
+    /**
+     * A published snapshot is answered applied, and the holds the link's stream keeps on the
+     * collection's rows are lifted only after the workers were handed the rows (H4).
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAPublishedSnapshotLiftsTheLinksHoldsBehindTheWorkersRows(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('Ada'));
+
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, ['9' => ['id' => '9', 'name' => 'Grace']]);
+
+        $this->assertSame([true], $daemon->snapshotAnswers);
+        $this->assertSame([count($daemon->workerServer->frameTypes())], $daemon->recoveredAfterFrames);
+        $this->assertSame([], $daemon->snapshotsAskedAgain);
+    }
+
+    /**
+     * A live change of a row within the snapshot's area while it stages is a writer the cut did
+     * not see: the generation is canceled and answered refused, and the node is asked for another.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testALiveChangeWithinTheAreaCancelsTheSnapshotAndAsksForAnother(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        // Rows enough for the generation to prepare in several portions, and a write of another
+        // row of the area between every two of them: some land while the candidate is prepared.
+        for ($id = 0; $id < 64; $id++) {
+            $daemon->receive($daemon->rtSyncCreated('before', (string)$id));
+        }
+        $daemon->staging = static function (Generator $staging) use ($daemon): Generator {
+            for ($write = 0; $staging->valid(); $write++) {
+                $daemon->receive($daemon->rtSyncCreated('live', 'live-' . $write));
+                $staging->send(yield $staging->current());
+            }
+        };
+
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, ['carried' => ['id' => 'carried', 'name' => 'Grace']]);
+
+        $this->assertSame([false], $daemon->snapshotAnswers);
+        $this->assertSame([true], $daemon->snapshotsAskedAgain);
+        $this->assertSame([], $daemon->recoveredAfterFrames);
+        $this->assertFalse($collection->has('carried'), 'A canceled generation publishes nothing');
+    }
+
+    /**
+     * A snapshot reaching for what an agent here owns wholly is refused, and not asked for again:
+     * the same cut would be refused again.
+     */
+    public function testASnapshotRefusedAsASecondOwnerIsNotAskedForAgain(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, ['9' => ['id' => '9', 'name' => 'Grace']]);
+
+        $this->assertSame([false], $daemon->snapshotAnswers);
+        $this->assertSame([], $daemon->snapshotsAskedAgain);
+    }
+
+    /**
+     * A write of the snapshot's area here between two of its parts - a row another node writes, or
+     * one a worker of this node removes - is a writer the cut did not see: the generation is
+     * canceled from the snapshot's head on, not only once it is merged. The rest of the parts are
+     * read out, the snapshot is answered refused and publishes nothing, a removed row is not brought
+     * back, and the node is asked for another once, told a live change canceled this one.
+     *
+     * @param bool $removal Whether the write removes a row the cut carries rather than creating another
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testAWriteOfTheAreaBetweenPartsCancelsTheSnapshotAndAsksForAnotherOnce(bool $removal): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('before', 's1'));
+        $daemon->staging = self::betweenParts(static function () use ($daemon, $collection, $removal): void {
+            if ($removal) {
+                // A worker of this node removes a row of the area, as its write reaches this copy.
+                $collection->remove('s1');
+            } else {
+                $daemon->receiveFrom('node-c', $daemon->rtSyncCreated('foreign', 'f1'));
+            }
+        });
+
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::rowsInParts());
+
+        $this->assertSame([false], $daemon->snapshotAnswers, 'The rest of the parts are read out, and the snapshot answered refused');
+        $this->assertSame([true], $daemon->snapshotsAskedAgain, 'One request for another, told a live change canceled this one');
+        $this->assertSame([], $daemon->recoveredAfterFrames);
+        $this->assertFalse($collection->has('s0'), 'A canceled generation publishes nothing');
+        $this->assertSame(!$removal, $collection->has('f1'));
+        $this->assertSame(!$removal, $collection->has('s1'), 'A removed row is not brought back by the cut');
+    }
+
+    /**
+     * A write outside the snapshot's area between two of its parts cancels nothing, and the
+     * generation does not take it as its history before its candidate is begun: the copy holds the
+     * row once, as written, beside the area the snapshot replaced.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function testAWriteOutsideTheAreaBetweenPartsStandsBesideThePublishedSnapshot(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $rows = self::rowsInParts();
+        $daemon->staging = self::betweenParts(static function () use ($daemon): void {
+            $daemon->receiveFrom('node-c', $daemon->rtSyncCreated('outside', 'o1'));
+        });
+
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, $rows, array_keys($rows));
+
+        $this->assertSame([true], $daemon->snapshotAnswers);
+        $this->assertSame([], $daemon->snapshotsAskedAgain);
+        foreach ($rows as $stateId => $row) {
+            $this->assertSame($row, RtSnapshot::row(DaemonManagerRtSyncPeerTestRtContext::ROWS, $stateId));
+        }
+        $this->assertSame(['id' => 'o1', 'name' => 'outside'], RtSnapshot::row(DaemonManagerRtSyncPeerTestRtContext::ROWS, 'o1'));
+        $this->assertCount(count($rows) + 1, $collection->toArray(), 'Each row stands once');
+    }
+
+    /**
+     * The rows and sets an agent of this node claims are left out of a linked node's snapshot: a
+     * write of them between its parts is this node's own and cancels nothing, and at publication
+     * such a row is neither replaced by the cut nor swept for missing from it - even one the copy
+     * still knows as the sender's.
+     *
+     * @throws InvalidArgumentException When the signal name is empty
+     * @throws InvalidFormatException When a test row cannot be built
+     */
+    public function testRowsAndSetsThisNodeClaimsAreWrittenBetweenPartsAndLeftOutOfTheSnapshot(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->receive($daemon->rtSyncCreated('the sender\'s copy', self::NEIGHBOUR_ROW_ID));
+        $daemon->writeOwnRow(self::OWN_ROW_ID, 'ours');
+        $daemon->noteOwnAgent(
+            'row_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::NEIGHBOUR_ROW_ID, self::OWN_ROW_ID]],
+        );
+        $daemon->staging = self::betweenParts(static function () use ($collection): void {
+            foreach ([self::NEIGHBOUR_ROW_ID, self::OWN_ROW_ID] as $stateId) {
+                $collection[$stateId]->name = 'written here between parts';
+                $collection[$stateId]->markRtSyncBaseline();
+            }
+        });
+
+        $daemon->receiveSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            [...self::rowsInParts(), self::OWN_ROW_ID => ['id' => self::OWN_ROW_ID, 'name' => 'the sender\'s']],
+        );
+
+        $this->assertSame([true], $daemon->snapshotAnswers);
+        $this->assertSame([], $daemon->snapshotsAskedAgain);
+        foreach ([self::NEIGHBOUR_ROW_ID, self::OWN_ROW_ID] as $stateId) {
+            $this->assertSame(['id' => $stateId, 'name' => 'written here between parts'],
+                RtSnapshot::row(DaemonManagerRtSyncPeerTestRtContext::ROWS, $stateId), 'A claimed row is neither replaced nor swept');
+        }
+        $this->assertTrue($collection->has('s0'));
+
+        $sets = $daemon->mountSetCollection();
+        $daemon->writeSetRow('own', '42', 'ours');
+        $daemon->originMap()->note(self::REMOTE_NODE, DaemonManagerRtSyncPeerTestRtContext::SET_ROWS, ['own']);
+        $daemon->noteOwnAgent(
+            'set_agent',
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
+            [],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => []],
+            [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS => '42'],
+        );
+        $daemon->staging = self::betweenParts(static function () use ($daemon): void {
+            $daemon->writeSetRow('own-too', '42', 'ours, written between parts');
+        });
+
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::SET_ROWS, self::rowsInParts('7'));
+
+        $this->assertSame([true, true], $daemon->snapshotAnswers);
+        $this->assertSame([], $daemon->snapshotsAskedAgain);
+        foreach (['own', 'own-too', 's0'] as $stateId) {
+            $this->assertTrue($sets->has($stateId), "{$stateId} stands after the publication");
+        }
+    }
+
+    /**
+     * Another node's snapshot of its own area of the collection, published while this one still
+     * arrives in parts, leaves this one staging: nothing of it was built on what that publication
+     * replaced. Both areas stand, and nobody is asked again.
+     */
+    public function testAnotherNodesSnapshotPublishedBetweenPartsLeavesThisOneStaging(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $rows = self::rowsInParts();
+        $daemon->staging = self::betweenParts(static function () use ($daemon): void {
+            $daemon->staging = null;
+            $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, ['c1' => ['id' => 'c1', 'name' => 'theirs']], ['c1'],
+                [], 'node-c');
+        });
+
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, $rows, array_keys($rows));
+
+        $this->assertSame([true, true], $daemon->snapshotAnswers, 'The other snapshot is published between the parts, this one after them');
+        $this->assertSame([], $daemon->snapshotsAskedAgain);
+        foreach (['c1', ...array_keys($rows)] as $stateId) {
+            $this->assertTrue($collection->has($stateId), "{$stateId} stands after both publications");
+        }
+    }
+
+    /**
+     * A holder's offer of the collection made, between two parts of a snapshot, by the very node
+     * whose snapshot of it stages here carries the rows of the cut: it is passed over, and the
+     * snapshot is published. The same offer from another node is written, and as a writer of the
+     * area cancels the snapshot.
+     *
+     * @param string $offeredBy Node the offer is made by
+     * @param bool $published Whether the snapshot is published
+     * @throws HilosException When the write of the missing rows fails
+     */
+    #[TestWith([self::REMOTE_NODE, true])]
+    #[TestWith(['node-c', false])]
+    public function testAnOfferBetweenPartsByTheNodeWhoseSnapshotStagesIsPassedOver(string $offeredBy, bool $published): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $rows = self::rowsInParts();
+        $daemon->staging = self::betweenParts(static function () use ($daemon, $rows, $offeredBy): void {
+            $daemon->receiveOffer($offeredBy, ['s3' => $rows['s3']]);
+        });
+
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, $rows);
+
+        $this->assertSame([$published], $daemon->snapshotAnswers);
+        $this->assertSame($published ? [] : [true], $daemon->snapshotsAskedAgain);
+        $this->assertSame($published, $collection->has('s0'));
+        $this->assertTrue($collection->has('s3'));
+    }
+
+    /**
+     * A request for one more snapshot of a collection this node owns nothing of is answered with
+     * nothing, though it holds a copy: the asking link's request waits until the next snapshot of
+     * the collection reaches it, a hand-over, or the link is replaced.
+     *
+     * @throws InvalidFormatException When the test row cannot be built
+     */
+    public function testASnapshotRequestForACollectionThisNodeOwnsNothingOfCutsNone(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $collection->add(DaemonManagerRtSyncPeerTestState::fromRow(['id' => self::ROW_ID, 'name' => 'Ada']));
+
+        $daemon->answerRtSnapshotRequest(self::REMOTE_NODE, DaemonManagerRtSyncPeerTestRtContext::ROWS);
+
+        $this->assertSame([], $daemon->mesh->snapshots);
+    }
+
+    /**
      * A row of a set claimed here is passed over in an offer, as a row claimed by name is: this
      * node is where the rows of its set come from. A row of another set is taken as usual.
      *
@@ -2956,6 +3257,7 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     {
         $daemon = new DaemonManagerRtSyncPeerTestManager();
         $collection = $daemon->mountSetCollection();
+        $daemon->workerReads(DaemonManagerRtSyncPeerTestRtContext::SET_ROWS);
         $daemon->noteOwnAgent(
             'set_agent',
             [DaemonManagerRtSyncPeerTestRtContext::SET_ROWS],
@@ -3390,6 +3692,611 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     }
 
     /**
+     * The last reader of a collection going drops this node's copy of what linked nodes wrote of it:
+     * the mesh stops streaming it here, and a copy nobody keeps current would be the stale first
+     * answer of the next reader (HIL-1817). The rows of a node out of reach stay with their mark,
+     * and so does a row this node wrote itself.
+     */
+    public function testTheLastReaderGoingDropsTheLinkedNodesRowsAndKeepsAFrozenAndAnOwnRow(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        $daemon->announceInterest();
+        $daemon->askForMissing();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->receiveFrom('node-c', $daemon->rtSyncCreated('Ada', self::NEIGHBOUR_ROW_ID));
+        $daemon->noteNodeUnreachable('node-c', self::FROZE_AT);
+        $daemon->writeOwnRow(self::OWN_ROW_ID, 'Hedy');
+
+        $daemon->workerLinkClosed(DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX);
+        $daemon->announceInterest();
+
+        $this->assertFalse($collection->has(self::ROW_ID), 'A linked node\'s row is dropped with the last reader');
+        $this->assertNull($daemon->getAgentManagerDaemon()->rtReplicaOriginMap()->nodeOfRow(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            self::ROW_ID,
+        ), 'Its origin goes with it');
+        $this->assertTrue($collection->has(self::NEIGHBOUR_ROW_ID), 'A row of a node out of reach stays');
+        $this->assertSame(self::FROZE_AT, RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::NEIGHBOUR_ROW_ID));
+        $this->assertTrue($collection->has(self::OWN_ROW_ID), 'A row this node wrote is its own');
+    }
+
+    /**
+     * A link coming back drops what this node kept of that node's rows in a collection nothing here
+     * reads any more: they stayed frozen only because the node was out of reach.
+     */
+    public function testALinkComingBackDropsItsFrozenRowsOfACollectionNotReadHere(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        $daemon->announceInterest();
+        $daemon->askForMissing();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->mesh->linked = [];
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+        $daemon->workerLinkClosed(DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX);
+        $daemon->announceInterest();
+        $this->assertTrue($collection->has(self::ROW_ID), 'Kept while its node is out of reach');
+
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        $daemon->noteNodeReachable(self::REMOTE_NODE);
+
+        $this->assertFalse($collection->has(self::ROW_ID));
+        $this->assertNull(RtStaleness::staleSince(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::ROW_ID));
+    }
+
+    /**
+     * Another node claiming the rows a node out of reach wrote is the fact that the frozen copy will
+     * never be kept current again: where nothing reads the collection, it is dropped.
+     */
+    public function testAClaimFromAnotherNodeDropsTheFrozenRowsItClaimsWhereNothingReadsThem(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        $daemon->announceInterest();
+        $daemon->askForMissing();
+        $daemon->receive($daemon->rtSyncCreated('Grace'));
+        $daemon->receive($daemon->rtSyncCreated('Ada', self::NEIGHBOUR_ROW_ID));
+        $daemon->mesh->linked = [];
+        $daemon->noteNodeUnreachable(self::REMOTE_NODE, self::FROZE_AT);
+        $daemon->workerLinkClosed(DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX);
+        $daemon->announceInterest();
+
+        $daemon->applyRemoteRtClaims('node-c', [new PeerRtClaimEntry('fleet:7', 'fleet', '7',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS], [], [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]])]);
+
+        $this->assertFalse($collection->has(self::ROW_ID), 'The claimed row is dropped');
+        $this->assertTrue($collection->has(self::NEIGHBOUR_ROW_ID), 'A row nobody claimed anew stays frozen');
+    }
+
+    /**
+     * A collection this node starts reading waits for the answer of every node the announcement
+     * reached; a node whose link closes is struck out instead, as nothing more comes from it.
+     */
+    public function testANewlyReadCollectionWaitsForTheAnswerOfEveryNodeTheAnnouncementReached(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE, 'node-c'];
+        $confirmation = $daemon->getAgentManagerDaemon()->rtCopyConfirmation();
+
+        $daemon->announceInterest();
+
+        $this->assertSame([1], $daemon->mesh->announcementNumbers);
+        $this->assertTrue($confirmation->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS));
+        $this->assertFalse($confirmation->isAwaited(StateHilosSessionRotation::RT_COLLECTION), 'No snapshot hands the store over');
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+        $this->assertTrue($confirmation->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS));
+        $daemon->noteNodeUnreachable('node-c', self::FROZE_AT);
+        $this->assertFalse($confirmation->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS));
+    }
+
+    /**
+     * On a mesh, a worker that takes a collection up before this node announced anything waits for
+     * the answers of the first announcement like any later reader: until it, the copy is a copy of
+     * nothing, and handing it over would make an empty first read look like an empty collection.
+     */
+    public function testAWorkerTakingACollectionUpBeforeTheFirstAnnouncementWaitsForItsAnswers(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        new ReflectionMethod(DaemonManager::class, 'attachReaderInterestEventLoop')->invoke($daemon);
+        $confirmation = $daemon->getAgentManagerDaemon()->rtCopyConfirmation();
+        $reader = DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX + 1;
+
+        $this->assertFalse($confirmation->admits(DaemonManagerRtSyncPeerTestRtContext::ROWS, $reader, 1));
+        $this->assertFalse($confirmation->admits(StateHilosSessionRotation::RT_COLLECTION, $reader, 1));
+
+        $daemon->announceInterest();
+        $this->assertSame([], $confirmation->takeWaitingWorkers(StateHilosSessionRotation::RT_COLLECTION),
+            'A collection no snapshot hands over is handed to its reader on the first announcement');
+        $this->assertTrue($confirmation->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS));
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+
+        $this->assertSame([], $confirmation->takeWaitingWorkers(DaemonManagerRtSyncPeerTestRtContext::ROWS),
+            'The reader that waited is handed its first snapshot once the copy is confirmed');
+        $this->assertTrue($confirmation->admits(DaemonManagerRtSyncPeerTestRtContext::ROWS, $reader + 1, 1));
+    }
+
+    /**
+     * The move of the interest does not ask the holders about a collection whose copy waits for its
+     * owners; once confirmed with no snapshot of any area, it is asked about.
+     */
+    public function testACollectionWaitingForAnswersIsAskedAboutOnlyOnceConfirmedWithNoSnapshot(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        $daemon->announceInterest();
+
+        $daemon->askForMissing();
+        $this->assertSame([], $daemon->mesh->snapshotQueries);
+
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+        $this->assertSame([[DaemonManagerRtSyncPeerTestRtContext::ROWS]], $daemon->mesh->snapshotQueries);
+    }
+
+    /**
+     * A holder's offer of a row its owner deleted does not come back while the copy waits for the
+     * owner: written under the holder's name, it would survive the owner's snapshot.
+     */
+    public function testAHolderOfferDuringTheWaitDoesNotBringBackARowItsOwnerDeleted(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE, 'node-d'];
+        $daemon->announceInterest();
+
+        $daemon->receiveOffer('node-d', [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'deleted by its owner']]);
+        $daemon->receiveSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            [self::NEIGHBOUR_ROW_ID => ['id' => self::NEIGHBOUR_ROW_ID, 'name' => 'Ada']],
+        );
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+        $daemon->noteSourceInterestAnswered('node-d', 1);
+
+        $this->assertFalse($collection->has(self::ROW_ID));
+        $this->assertTrue($collection->has(self::NEIGHBOUR_ROW_ID));
+        $this->assertFalse($daemon->getAgentManagerDaemon()->rtCopyConfirmation()->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS));
+    }
+
+    /**
+     * A snapshot canceled here and asked for again keeps the copy waiting for its node, whatever
+     * answer was already behind it: the same list is announced again under the next number, behind
+     * the request, and the copy waits for the node's answer to that one. The next snapshot's
+     * publication does not end the wait - nothing says which request it answers.
+     */
+    public function testACanceledSnapshotKeepsTheCopyWaitingUntilItsNodeAnswersTheAnnouncementBehindTheRequest(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        $daemon->announceInterest();
+        $daemon->receive($daemon->rtSyncCreated('before', 's1'));
+        $daemon->staging = self::betweenParts(static function () use ($collection): void {
+            $collection->remove('s1');
+        });
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::rowsInParts());
+        $daemon->staging = null;
+        $confirmation = $daemon->getAgentManagerDaemon()->rtCopyConfirmation();
+
+        $this->assertSame([1, 2], $daemon->mesh->announcementNumbers);
+        $this->assertSame($daemon->mesh->interests[0], $daemon->mesh->interests[1], 'The same list, announced again');
+        $this->assertSame([1], $daemon->announcementsBeforeAsking, 'The request goes out ahead of the announcement');
+
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+        $this->assertTrue($confirmation->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS));
+
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::rowsInParts());
+        $this->assertTrue($collection->has('s0'));
+        $this->assertTrue($confirmation->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS), 'The publication ends no wait');
+
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 2);
+        $this->assertFalse($confirmation->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS));
+        $this->assertSame([[DaemonManagerRtSyncPeerTestRtContext::ROWS]], $daemon->mesh->snapshotQueries,
+            'Confirmed for the first time, a snapshot published or not: its holders are asked');
+    }
+
+    /**
+     * A copy confirmed for the first time asks its holders even when its owners' snapshots brought it
+     * rows: the rows of a node whose link closed come from them alone. Of what a holder offers, a row a
+     * node linked now wrote is passed over - that node brought its own, and the row may be one it
+     * deleted since - and a row of the node out of reach lands.
+     */
+    public function testAFirstConfirmationAsksTheHoldersForTheRowsOfANodeOutOfReach(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE, 'node-x'];
+        $daemon->announceInterest();
+        $daemon->receiveSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            [self::NEIGHBOUR_ROW_ID => ['id' => self::NEIGHBOUR_ROW_ID, 'name' => 'Ada']],
+        );
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+        $daemon->noteSourceInterestAnswered('node-x', 1);
+
+        $this->assertSame([[DaemonManagerRtSyncPeerTestRtContext::ROWS]], $daemon->mesh->snapshotQueries,
+            'Asked though the copy holds rows');
+        $daemon->receiveOffer(self::REMOTE_NODE, [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'deleted by its owner']]);
+        $daemon->receiveOffer('node-u', ['u1' => ['id' => 'u1', 'name' => 'Grace']]);
+        $this->assertFalse($collection->has(self::ROW_ID), 'A row a linked node wrote comes from that node');
+        $this->assertTrue($collection->has('u1'), 'A row of a node out of reach comes from its holders');
+        $this->assertTrue($collection->has(self::NEIGHBOUR_ROW_ID));
+    }
+
+    /**
+     * A node's snapshot speaks for that node's rows alone. One node hands over its own rows of the
+     * collection, none by now; a linked co-owner short of an operation hands nothing over. Of what a
+     * holder offers once the copy is confirmed, the co-owner's row lands - its holders are the one way
+     * it comes here - and a row of the node whose snapshot was published is passed over: that node
+     * brought its own, and the row may be one it deleted since.
+     */
+    public function testAHolderOfferOfALinkedNodeNoSnapshotCameFromLands(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE, 'node-y'];
+        $daemon->announceInterest();
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, [], [self::ROW_ID]);
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+        $daemon->noteSourceInterestAnswered('node-y', 1);
+
+        $this->assertSame([true], $daemon->snapshotAnswers, 'The empty snapshot of the node\'s own rows is published');
+        $daemon->receiveOffer('node-y', ['y1' => ['id' => 'y1', 'name' => 'Grace']]);
+        $daemon->receiveOffer(self::REMOTE_NODE, [self::ROW_ID => ['id' => self::ROW_ID, 'name' => 'deleted by its owner']]);
+        $this->assertTrue($collection->has('y1'), 'A row of a linked node no snapshot came from lands');
+        $this->assertFalse($collection->has(self::ROW_ID), 'A row of the node whose snapshot came is that node\'s word');
+    }
+
+    /**
+     * The master marks the snapshot it hands a worker with the worker's interest report it answers:
+     * the report that added the collection - once the copy is confirmed, though a later report came
+     * meanwhile, or at once - and the last report it read from the worker when the worker asks for
+     * another.
+     */
+    public function testTheSnapshotsAWorkerIsHandedNameTheReportTheyAnswer(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        $worker = $daemon->workerServer->worker();
+        new ReflectionProperty(WorkerClient::class, 'agentManager')->setValue($worker, $daemon->getAgentManagerDaemon());
+        $interest = static function (array $collectionKeys, int $announcement) use ($worker): void {
+            new ReflectionMethod(WorkerClient::class, 'handleWorkerSourceInterestMessage')
+                ->invoke($worker, new WorkerSourceInterestDTO($collectionKeys, [], $announcement));
+        };
+        $rows = DaemonManagerRtSyncPeerTestRtContext::ROWS;
+
+        // The worker's first report, made as the manager was built, already named the rows.
+        $interest([], 2);
+        $interest([$rows], 3);
+        $this->assertSame([3], $worker->snapshotAnnouncements(), 'Answered at once: before the first announcement nothing waits');
+        $daemon->announceInterest();
+        $interest([], 4);
+        $interest([$rows], 5);
+        $interest([$rows, DaemonManagerRtSyncPeerTestRtContext::SET_ROWS], 6);
+        $this->assertSame([3], $worker->snapshotAnnouncements(), 'The worker waits with the copy');
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+        new ReflectionMethod(WorkerClient::class, 'handleWorkerRtSnapshotRequestMessage')->invoke($worker, new WorkerRtSnapshotRequestDTO($rows));
+
+        $this->assertSame([3, 5, 6], $worker->snapshotAnnouncements());
+    }
+
+    /**
+     * A worker waiting with the copy is handed the writes of this node meanwhile, and the snapshot
+     * it is handed once the copy is confirmed replaces what they left: so that snapshot carries
+     * every write handed to the worker before it (HIL-1817). The answer that
+     * confirms the copy is read while a write of a neighbouring worker is being delivered - it
+     * is on the worker's stream already, and the master's effect turn comes before its next step.
+     * A snapshot cut there without the row would sweep it from the worker for good: the writer
+     * creates its row once and only updates it after, and an update of a row the worker does not
+     * hold is passed over.
+     */
+    public function testAWriteHandedToAWaitingWorkerIsInTheSnapshotItIsHandedAfter(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        $daemon->noteOwnAgent('fleet:7', [DaemonManagerRtSyncPeerTestRtContext::ROWS], [],
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]]);
+        $worker = $daemon->workerServer->worker();
+        new ReflectionProperty(WorkerClient::class, 'agentManager')->setValue($worker, $daemon->getAgentManagerDaemon());
+        $interest = static function (array $collectionKeys, int $announcement) use ($worker): void {
+            new ReflectionMethod(WorkerClient::class, 'handleWorkerSourceInterestMessage')
+                ->invoke($worker, new WorkerSourceInterestDTO($collectionKeys, [], $announcement));
+        };
+        $daemon->announceInterest();
+        $interest([], 2);
+        $interest([DaemonManagerRtSyncPeerTestRtContext::ROWS], 3);
+        $this->assertSame([], $worker->snapshotAnnouncements(), 'The worker waits with the copy');
+        $worker->onOperation = static function () use ($daemon, $worker): void {
+            $worker->onOperation = null;
+            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon, static function () use ($daemon): Generator {
+                $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+                yield;
+            });
+        };
+
+        $daemon->queueRtSyncCreated('Ada');
+        $daemon->dispatch();
+
+        $this->assertTrue($collection->has(self::ROW_ID), 'The write lands in the master copy');
+        $this->assertSame(
+            [[SignalTypeConstants::RT_SYNC_CREATED, self::ROW_ID], [DaemonManagerRtSyncPeerTestWorkerClient::SNAPSHOT, [self::ROW_ID]]],
+            $worker->streamed(),
+            'The snapshot cut behind the write carries its row',
+        );
+    }
+
+    /**
+     * A link closed while a snapshot of it is still being read lets go of the staging at once: what it
+     * staged is canceled, nothing of the snapshot is published, and the node's offers of the collection,
+     * passed over while its snapshot staged here, are applied again.
+     */
+    public function testALinkClosedInTheMiddleOfASnapshotCancelsItsStaging(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $receiver = $daemon->streamSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            self::rowsInParts(),
+            RtSnapshotScope::whole(),
+            static fn (RtSyncStreamSnapshot $snapshot, Closure $settled): Generator => $daemon->stageRemoteRtSnapshot(
+                self::REMOTE_NODE,
+                $snapshot,
+                $settled,
+                static function (): void {
+                },
+                static fn (bool $byLiveChange): bool => false,
+            ),
+            $daemon->wakeRtSyncStream(...),
+            partsArriving: 1,
+        );
+        $offer = [self::NEIGHBOUR_ROW_ID => ['id' => self::NEIGHBOUR_ROW_ID, 'name' => 'Grace']];
+        $daemon->receiveOffer(self::REMOTE_NODE, $offer);
+        $this->assertFalse($collection->has(self::NEIGHBOUR_ROW_ID), 'The node\'s snapshot of the collection stages here');
+
+        $receiver->close();
+
+        $daemon->receiveOffer(self::REMOTE_NODE, $offer);
+        $this->assertTrue($collection->has(self::NEIGHBOUR_ROW_ID), 'The staging was let go of when the link closed');
+        $this->assertFalse($collection->has('s0'), 'Nothing of the snapshot is published');
+        $this->assertFalse($receiver->isReading());
+    }
+
+    /**
+     * A link closed before the head of a snapshot that reached it is read: the master's pass reads the
+     * head all the same, hands the snapshot over and lets go of its staging, as the rest will never
+     * come. Nothing of the snapshot is published.
+     */
+    public function testALinkClosedBeforeTheHeadOfASnapshotIsReadLetsItsStagingGo(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $heads = 0;
+        $receiver = $daemon->streamSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            self::rowsInParts(),
+            RtSnapshotScope::whole(),
+            static function (RtSyncStreamSnapshot $snapshot, Closure $settled) use ($daemon, &$heads): Generator {
+                ++$heads;
+
+                return $daemon->stageRemoteRtSnapshot(
+                    self::REMOTE_NODE,
+                    $snapshot,
+                    $settled,
+                    static function (): void {
+                    },
+                    static fn (bool $byLiveChange): bool => false,
+                );
+            },
+            static function (): void {
+                // The master's pass does not come before the link closes.
+            },
+            partsArriving: 1,
+        );
+
+        $receiver->close();
+        $this->assertSame(0, $heads, 'The head is still to be read');
+        $daemon->wakeRtSyncStream($receiver);
+
+        $this->assertSame(1, $heads, 'The part that arrived is read first');
+        $daemon->receiveOffer(self::REMOTE_NODE, [self::NEIGHBOUR_ROW_ID => ['id' => self::NEIGHBOUR_ROW_ID, 'name' => 'Grace']]);
+        $this->assertTrue($collection->has(self::NEIGHBOUR_ROW_ID), 'The staging was let go of');
+        $this->assertFalse($collection->has('s0'), 'Nothing of the snapshot is published');
+        $this->assertFalse($receiver->isReading());
+    }
+
+    /**
+     * A link closed while a part of a snapshot it received is still unread: the master's pass reads the
+     * part into the staging first, and lets go of the staging then. Nothing of the snapshot is published,
+     * the rows of the late part neither.
+     */
+    public function testALinkClosedWithAPartOfASnapshotUnreadLetsItsStagingGoOnceThePartIsRead(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $passes = 1;
+        $receiver = $daemon->streamSnapshot(
+            DaemonManagerRtSyncPeerTestRtContext::ROWS,
+            self::rowsInParts(),
+            RtSnapshotScope::whole(),
+            static fn (RtSyncStreamSnapshot $snapshot, Closure $settled): Generator => $daemon->stageRemoteRtSnapshot(
+                self::REMOTE_NODE,
+                $snapshot,
+                $settled,
+                static function (): void {
+                },
+                static fn (bool $byLiveChange): bool => false,
+            ),
+            static function (RtSyncStreamChannel $channel) use ($daemon, &$passes): void {
+                // The master's pass reads the head; the next part arrives before the next pass.
+                if ($passes-- > 0) {
+                    $daemon->wakeRtSyncStream($channel);
+                }
+            },
+            partsArriving: 2,
+        );
+        $offer = [self::NEIGHBOUR_ROW_ID => ['id' => self::NEIGHBOUR_ROW_ID, 'name' => 'Grace']];
+        $daemon->receiveOffer(self::REMOTE_NODE, $offer);
+        $this->assertFalse($collection->has(self::NEIGHBOUR_ROW_ID), 'The node\'s snapshot of the collection stages here');
+        $this->assertTrue($receiver->isReading(), 'The second part waits to be read');
+
+        $receiver->close();
+        $daemon->wakeRtSyncStream($receiver);
+
+        $daemon->receiveOffer(self::REMOTE_NODE, $offer);
+        $this->assertTrue($collection->has(self::NEIGHBOUR_ROW_ID), 'The staging was let go of once the part was read');
+        $this->assertFalse($collection->has('s0'), 'Nothing of the snapshot is published');
+        $this->assertFalse($collection->has('s2'), 'The rows of the late part neither');
+        $this->assertFalse($receiver->isReading());
+    }
+
+    /**
+     * A copy awaiting a node again for the snapshot it asked for after a cancellation is not ended by
+     * the next one given up - the second cancellation in a row by a write here, a row refused by its
+     * validator, a snapshot lost before its end, a row an agent here owns wholly, the whole collection
+     * an agent here owns: the node writes its answer to the announcement behind the request after
+     * that snapshot all the same, and the answer ends the wait. A reader that took the collection up
+     * meanwhile is handed its first snapshot then. The second cancellation in a row asks for nothing
+     * and announces nothing.
+     *
+     * @param string $givenUp How the next snapshot is given up
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    #[TestWith(['canceled again'])]
+    #[TestWith(['refused'])]
+    #[TestWith(['lost'])]
+    #[TestWith(['owned here'])]
+    #[TestWith(['owned here wholly'])]
+    public function testAWaitReopenedForASnapshotGivenUpEndsWithTheAnswerBehindTheRequest(string $givenUp): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        $daemon->mesh->linked = [self::REMOTE_NODE];
+        $daemon->announceInterest();
+        $daemon->receive($daemon->rtSyncCreated('before', 's1'));
+        $daemon->staging = self::betweenParts(static function () use ($collection): void {
+            $collection->remove('s1');
+        });
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, self::rowsInParts());
+        $daemon->staging = null;
+        $confirmation = $daemon->getAgentManagerDaemon()->rtCopyConfirmation();
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+        $reader = DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX + 1;
+        $this->assertFalse($confirmation->admits(DaemonManagerRtSyncPeerTestRtContext::ROWS, $reader, 1), 'The new reader waits');
+
+        $rows = self::rowsInParts();
+        if ($givenUp === 'canceled again') {
+            $daemon->receive($daemon->rtSyncCreated('again', 's2'));
+            $daemon->staging = self::betweenParts(static function () use ($collection): void {
+                $collection->remove('s2');
+            });
+            $daemon->asksAgain = false;
+        } elseif ($givenUp === 'refused') {
+            // A name the owner's copy holds as text and that reaches this node as a number: its validator refuses it.
+            $rows['refused'] = ['id' => 'refused', 'name' => 'not a number'];
+            $daemon->rewritesParts = static fn (RtSyncStreamFrame $part): RtSyncStreamFrame => RtSyncStreamFrame::part(
+                $part->streamId,
+                $part->sequence,
+                $part->part,
+                $part->final,
+                str_replace('"not a number"', '7', $part->data),
+            );
+        } elseif ($givenUp === 'lost') {
+            $daemon->staging = static function (Generator $staging, RtSyncStreamSnapshot $snapshot): Generator {
+                while ($staging->valid()) {
+                    $work = $staging->current();
+                    if ($work instanceof RtWork && $work->bytes > 0 && !$snapshot->isWhole()) {
+                        // What the link's stream does when a later part of the snapshot does not read.
+                        $snapshot->lose();
+                    }
+                    $staging->send(yield $work);
+                }
+            };
+        } elseif ($givenUp === 'owned here') {
+            $daemon->noteOwnAgent('owner', [DaemonManagerRtSyncPeerTestRtContext::ROWS], [], [DaemonManagerRtSyncPeerTestRtContext::ROWS => ['s2']]);
+        } else {
+            $daemon->noteOwnAgent('owner', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
+        }
+        $daemon->receiveSnapshot(DaemonManagerRtSyncPeerTestRtContext::ROWS, $rows);
+
+        $this->assertNotContains(true, $daemon->snapshotAnswers, 'Neither snapshot is published');
+        $this->assertSame($givenUp === 'canceled again' ? [true, true] : [true], $daemon->snapshotsAskedAgain);
+        $this->assertSame([1, 2], $daemon->mesh->announcementNumbers, 'Only the request is followed by an announcement');
+        $this->assertTrue($confirmation->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS), 'No snapshot given up ends the wait');
+        $this->assertFalse($confirmation->admits(DaemonManagerRtSyncPeerTestRtContext::ROWS, $reader + 1, 1));
+
+        $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 2);
+        $this->assertFalse($confirmation->isAwaited(DaemonManagerRtSyncPeerTestRtContext::ROWS));
+        $this->assertSame([], $confirmation->takeWaitingWorkers(DaemonManagerRtSyncPeerTestRtContext::ROWS),
+            'The readers that waited were handed their first snapshot');
+        $this->assertTrue($confirmation->admits(DaemonManagerRtSyncPeerTestRtContext::ROWS, $reader + 2, 1));
+    }
+
+    /**
+     * An announcement is answered behind the snapshots of the collections it added, and of those only;
+     * one that added nothing is answered all the same.
+     */
+    public function testAnAnnouncementIsAnsweredBehindTheSnapshotsOfWhatItAdded(): void
+    {
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $daemon->mountCollection();
+        $daemon->getAgentManagerDaemon()->handleRtSourceRegistered(new WorkerRtSourceRegisteredDTO(
+            'owner',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS],
+        ));
+        $daemon->writeOwnRow(self::OWN_ROW_ID, 'Hedy');
+
+        $daemon->answerSourceInterest(self::REMOTE_NODE, ['elsewhere'], 4);
+        $this->assertSame([], $daemon->mesh->snapshots, 'A collection the announcement did not add is not handed over');
+        $daemon->answerSourceInterest(self::REMOTE_NODE, [DaemonManagerRtSyncPeerTestRtContext::ROWS], 5);
+
+        $this->assertCount(1, $daemon->mesh->snapshots);
+        $this->assertSame([[self::REMOTE_NODE, 4], [self::REMOTE_NODE, 5]], $daemon->mesh->interestAnswers);
+    }
+
+    /**
+     * An operation the linked node streamed before it heard this node stopped reading the collection
+     * is answered applied and not applied: the copy here is being dropped.
+     */
+    public function testAnOperationOfACollectionThisNodeNoLongerReadsIsAnsweredAndNotApplied(): void
+    {
+        $previousCluster = Hilos::$cluster;
+        $daemon = new DaemonManagerRtSyncPeerTestManager();
+        $collection = $daemon->mountCollection();
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerRtSyncSink($daemon);
+        try {
+            $daemon->peerServer->announceSourceInterest(['elsewhere'], [], 1);
+            $link = new ReflectionClass(PeerLink::class)->newInstanceWithoutConstructor();
+            new ReflectionProperty(PeerLink::class, 'remoteIdentity')
+                ->setValue($link, NodeIdentity::of(self::REMOTE_NODE, 'Remote', NodeRole::Master, []));
+            $signal = $daemon->rtSyncCreated('late');
+            $this->assertInstanceOf(RtSyncSignalDataInterface::class, $signal->data);
+            $answers = [];
+
+            $daemon->peerServer->onRtSyncStreamReceived(
+                $link,
+                RtSyncStreamOperation::fromSignalData($signal->data, 1, self::REMOTE_NODE),
+                static function (bool $applied) use (&$answers): void {
+                    $answers[] = $applied;
+                },
+            );
+
+            $this->assertSame([true], $answers);
+            $this->assertFalse($collection->has(self::ROW_ID));
+        } finally {
+            Hilos::$cluster = $previousCluster;
+        }
+    }
+
+    /**
      * @param DaemonManagerRtSyncPeerTestManager $daemon Real local sink and retained source FIFO
      * @param PeerLink $link Typed peer callback context; these four callbacks do not inspect the link
      * @param string $door RT source door to exercise
@@ -3405,8 +4312,17 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
     ): void {
         $rows = [self::ROW_ID => ['id' => self::ROW_ID, 'name' => $name]];
         if ($door === 'snapshot') {
-            $frame = new PeerRtSnapshotDTO(self::REMOTE_NODE, DaemonManagerRtSyncPeerTestRtContext::ROWS, $rows);
-            $daemon->peerServer->onRtSnapshotReceived($link, PeerRtSnapshotDTO::fromArray($frame->toArray()));
+            new ReflectionProperty(PeerLink::class, 'remoteIdentity')
+                ->setValue($link, NodeIdentity::of(self::REMOTE_NODE, 'Remote', NodeRole::Master, []));
+            $daemon->streamSnapshot(
+                DaemonManagerRtSyncPeerTestRtContext::ROWS,
+                $rows,
+                RtSnapshotScope::whole(),
+                static fn (RtSyncStreamSnapshot $snapshot, Closure $settled, ?object $receipt): ?Generator
+                    => $daemon->peerServer->onRtSyncStreamReceived($link, $snapshot, $settled),
+                $daemon->wakeRtSyncStream(...),
+                static fn (): RtReplicaConfirmation => $daemon->captureRtSyncReceipt(self::REMOTE_NODE),
+            );
         } elseif ($door === 'offer') {
             $frame = new PeerRtReplicaOfferDTO(self::REMOTE_NODE, DaemonManagerRtSyncPeerTestRtContext::ROWS, $rows);
             $daemon->peerServer->onRtReplicaOfferReceived($link, PeerRtReplicaOfferDTO::fromArray($frame->toArray()));
@@ -3425,6 +4341,45 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
                 },
             );
         }
+    }
+
+    /**
+     * Rows of an area too large for one part of the stream: a snapshot of them arrives in several.
+     *
+     * @param ?string $ownerId Set every row stands in, null for rows of the collection with no sets
+     * @return array<string, array<string, mixed>> Rows by state id, as the owner holds them
+     */
+    private static function rowsInParts(?string $ownerId = null): array
+    {
+        $rows = [];
+        foreach (['s0', 's1', 's2', 's3'] as $position => $stateId) {
+            $rows[$stateId] = ['id' => $stateId, ...($ownerId === null ? [] : ['ownerId' => $ownerId]),
+                'name' => str_repeat((string)$position, intdiv(RtSyncStreamFrame::MAX_PART_BYTES, 2))];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * A staging that lets something happen on this node once between two parts of its snapshot: at
+     * its first step after it took rows in, while the snapshot's later parts are still to come.
+     *
+     * @param Closure(): void $act What happens on this node meanwhile
+     * @return Closure(Generator, RtSyncStreamSnapshot): Generator Wraps the staging
+     */
+    private static function betweenParts(Closure $act): Closure
+    {
+        return static function (Generator $staging, RtSyncStreamSnapshot $snapshot) use ($act): Generator {
+            $acted = false;
+            while ($staging->valid()) {
+                $work = $staging->current();
+                if (!$acted && $work instanceof RtWork && $work->bytes > 0 && !$snapshot->isWhole()) {
+                    $acted = true;
+                    $act();
+                }
+                $staging->send(yield $work);
+            }
+        };
     }
 }
 
@@ -3448,6 +4403,27 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
 
     /** @var list<string> Nodes the mesh reports as departed */
     public array $departedNodes = [];
+
+    /** @var list<bool> Answers the stagings of received snapshots gave, in order */
+    public array $snapshotAnswers = [];
+
+    /** @var list<int> Frames the workers had been written when a staging lifted the link's holds, once per lift */
+    public array $recoveredAfterFrames = [];
+
+    /** @var list<bool> Requests the stagings made for another snapshot, each telling whether a live change canceled its own */
+    public array $snapshotsAskedAgain = [];
+
+    /** @var list<int> Announcements made to the mesh when each of those requests was made, in order */
+    public array $announcementsBeforeAsking = [];
+
+    /** @var ?Closure(Generator, RtSyncStreamSnapshot): Generator Wraps the staging of the next received snapshots, null to leave it */
+    public ?Closure $staging = null;
+
+    /** Whether the link asks for another snapshot when a staging asks it to, as a link that is not contested does */
+    public bool $asksAgain = true;
+
+    /** @var ?Closure(RtSyncStreamFrame): RtSyncStreamFrame Rewrites each part of the next snapshots on its way, null to leave it */
+    public ?Closure $rewritesParts = null;
 
     public function __construct()
     {
@@ -3484,7 +4460,7 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     public function workerReads(string ...$collectionKeys): void
     {
         $this->getAgentManagerDaemon()->handleSourceInterest(
-            new WorkerSourceInterestDTO(array_values($collectionKeys), []),
+            new WorkerSourceInterestDTO(array_values($collectionKeys), [], 1),
             DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX,
         );
     }
@@ -3500,7 +4476,7 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     public function anotherWorkerReads(string ...$collectionKeys): void
     {
         $this->getAgentManagerDaemon()->handleSourceInterest(
-            new WorkerSourceInterestDTO(array_values($collectionKeys), []),
+            new WorkerSourceInterestDTO(array_values($collectionKeys), [], 1),
             DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX + 1,
         );
     }
@@ -3854,26 +4830,110 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     }
 
     /**
-     * Delivers a whole collection the way the node that owns it hands it over.
+     * Delivers the area of a collection the node that owns it hands over: a snapshot cut of the
+     * owner's copy and streamed to this node's staging, the whole collection unless rows or sets
+     * are named.
      *
      * @param string $collectionKey RT collection the owner hands over
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
      * @param list<string> $scopeKeys Rows the owner speaks for; empty when it hands over the collection
+     * @param list<string> $scopeSetKeys Sets the owner speaks for; empty when it hands over the collection or rows
+     * @param string $originNodeId Node that owns the area and streams it
      */
     public function receiveSnapshot(
         string $collectionKey,
         array $rows,
         array $scopeKeys = [],
         array $scopeSetKeys = [],
+        string $originNodeId = DaemonManagerRtSyncPeerTest::REMOTE_NODE,
     ): void
     {
-        $this->applyRemoteRtSnapshot(
-            DaemonManagerRtSyncPeerTest::REMOTE_NODE,
+        $this->streamSnapshot(
             $collectionKey,
             $rows,
-            $scopeKeys,
-            $scopeSetKeys,
+            match (true) {
+                $scopeKeys !== [] => RtSnapshotScope::rows($scopeKeys),
+                $scopeSetKeys !== [] => RtSnapshotScope::sets($scopeSetKeys),
+                default => RtSnapshotScope::whole(),
+            },
+            fn (RtSyncStreamSnapshot $snapshot, Closure $settled): Generator => ($this->staging ?? static fn (Generator $staging) => $staging)(
+                $this->stageRemoteRtSnapshot(
+                    $originNodeId,
+                    $snapshot,
+                    function (bool $applied) use ($settled): void {
+                        $this->snapshotAnswers[] = $applied;
+                        $settled($applied);
+                    },
+                    function (): void {
+                        $this->recoveredAfterFrames[] = count($this->workerServer->frameTypes());
+                    },
+                    function (bool $byLiveChange): bool {
+                        $this->snapshotsAskedAgain[] = $byLiveChange;
+                        $this->announcementsBeforeAsking[] = count($this->mesh->announcementNumbers);
+
+                        return $this->asksAgain;
+                    },
+                ),
+                $snapshot,
+            ),
         );
+    }
+
+    /**
+     * Cuts a snapshot of rows the owner holds in a runtime of its own and streams it to a receiving
+     * end here, part by part, every answer handed back to the sending end.
+     *
+     * @param string $collectionKey RT collection the owner hands over
+     * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
+     * @param RtSnapshotScope $scope Area the owner hands over
+     * @param Closure(RtSyncStreamSnapshot, Closure(bool): void, ?object): ?Generator $deliver Receiving host
+     * @param ?Closure(RtSyncStreamChannel): void $wake Pump of the receiving end; null pumps at once
+     * @param ?Closure(): ?object $receipt Receipt the receiving end takes of the final part
+     * @param ?int $partsArriving How many parts reach the receiving end, null for all of them
+     * @return RtSyncStreamChannel The receiving end
+     */
+    public function streamSnapshot(
+        string $collectionKey,
+        array $rows,
+        RtSnapshotScope $scope,
+        Closure $deliver,
+        ?Closure $wake = null,
+        ?Closure $receipt = null,
+        ?int $partsArriving = null,
+    ): RtSyncStreamChannel {
+        $here = Hilos::$rt;
+        $owner = new DaemonManagerRtSyncPeerTestRtContext();
+        $owner->configure();
+        Hilos::$rt = $owner;
+        RtSnapshot::replace($collectionKey, $rows);
+        $parts = [];
+        $sender = new RtSyncStreamChannel(
+            static function (RtSyncStreamFrame $frame) use (&$parts): void {
+                $parts[] = $frame;
+            },
+            static fn (): null => null,
+        );
+        $sender->sendSnapshot($collectionKey, $scope, DaemonManagerRtSyncPeerTest::REMOTE_NODE, !$scope->isWhole());
+        Hilos::$rt = $here;
+        $receiver = new RtSyncStreamChannel(
+            static function (RtSyncStreamFrame $frame) use ($sender): void {
+                $sender->receive($frame);
+            },
+            $deliver,
+            $wake,
+            null,
+            $receipt,
+        );
+        while ($parts !== []) {
+            foreach (array_splice($parts, 0) as $part) {
+                if ($partsArriving !== null && $partsArriving-- === 0) {
+                    return $receiver;
+                }
+                $receiver->receive($this->rewritesParts === null ? $part : ($this->rewritesParts)($part));
+            }
+        }
+
+        return $receiver;
     }
 
     /**
@@ -3975,15 +5035,32 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     }
 
     /**
+     * Answers which nodes are linked out of the stand-in mesh, for the drops of the copy to judge by.
+     *
+     * @param string $nodeId Node asked about
+     * @return bool True when the stand-in mesh reports a link to it
+     */
+    protected function isNodeLinked(string $nodeId): bool
+    {
+        return in_array($nodeId, $this->mesh->linked, true);
+    }
+
+    /**
      * Redirects the snapshots this node hands over to the recording mesh, for the reason given
      * on {@see broadcastRtSyncToPeers()}.
      *
      * @param ?RtSyncMesh $mesh Peer server this node found, or null off-cluster
      * @param string $nodeId Node that joined
+     * @param ?list<string> $onlyCollectionKeys The collections whose areas go, or null for every collection
+     * @param ?int $answering Number of the node's announcement the hand-over answers, or null when it answers none
      */
-    protected function sendRtSnapshotsToNode(?RtSyncMesh $mesh, string $nodeId): void
-    {
-        parent::sendRtSnapshotsToNode($mesh === null ? null : $this->mesh, $nodeId);
+    protected function sendRtSnapshotsToNode(
+        ?RtSyncMesh $mesh,
+        string $nodeId,
+        ?array $onlyCollectionKeys = null,
+        ?int $answering = null,
+    ): void {
+        parent::sendRtSnapshotsToNode($mesh === null ? null : $this->mesh, $nodeId, $onlyCollectionKeys, $answering);
     }
 
     /**
@@ -3996,6 +5073,30 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
     protected function sendRtSnapshotQueryToNode(?RtSyncMesh $mesh, string $nodeId): void
     {
         parent::sendRtSnapshotQueryToNode($mesh === null ? null : $this->mesh, $nodeId);
+    }
+
+    /**
+     * Redirects the question asked once a copy is confirmed for the first time to the recording mesh,
+     * for the reason given on {@see broadcastRtSyncToPeers()}.
+     *
+     * @param ?RtSyncMesh $mesh Peer server this node found, or null off-cluster
+     * @param list<string> $collections Collections just confirmed for the first time
+     */
+    protected function askHoldersOfConfirmedRtCopies(?RtSyncMesh $mesh, array $collections): void
+    {
+        parent::askHoldersOfConfirmedRtCopies($mesh === null ? null : $this->mesh, $collections);
+    }
+
+    /**
+     * Redirects the announcement made once a canceled snapshot is asked for again to the recording
+     * mesh, for the reason given on {@see broadcastRtSyncToPeers()}.
+     *
+     * @param ?SourceInterestMesh $mesh Peer server of this node, or null off-cluster
+     * @param int $announcement Number of the announcement the reopened wait awaits the answer to
+     */
+    protected function reannounceReaderInterest(?SourceInterestMesh $mesh, int $announcement): void
+    {
+        parent::reannounceReaderInterest($mesh === null ? null : $this->mesh, $announcement);
     }
 
     /**
@@ -4138,14 +5239,49 @@ final class DaemonManagerRtSyncPeerTestMesh implements RtClaimMesh, RtSyncMesh, 
     /** @var list<list<string>> Database reader-interest lists announced to the mesh, in order */
     public array $dbInterests = [];
 
+    /** @var list<int> Numbers of the announcements made to the mesh, in order */
+    public array $announcementNumbers = [];
+
+    /** @var list<array{string, int}> Answers to another node's announcements, in order */
+    public array $interestAnswers = [];
+
     /**
      * @param list<string> $rtCollections RT collections the announcing node reads
      * @param list<string> $dbCollections DB collections the announcing node reads
+     * @param int $announcement Number of the announcement
+     * @return list<string> The nodes this stand-in reports a live link to
      */
-    public function announceSourceInterest(array $rtCollections, array $dbCollections): void
+    public function announceSourceInterest(array $rtCollections, array $dbCollections, int $announcement): array
     {
         $this->interests[] = $rtCollections;
         $this->dbInterests[] = $dbCollections;
+        $this->announcementNumbers[] = $announcement;
+
+        return $this->linked;
+    }
+
+    /**
+     * Names the lists announced last once more, as the peer server does; a copy awaits nothing before an announcement.
+     *
+     * @param int $announcement Number of the announcement
+     * @return list<string> The nodes this stand-in reports a live link to
+     */
+    public function reannounceSourceInterest(int $announcement): array
+    {
+        return $this->announceSourceInterest(
+            $this->interests[array_key_last($this->interests)],
+            $this->dbInterests[array_key_last($this->dbInterests)],
+            $announcement,
+        );
+    }
+
+    /**
+     * @param string $nodeId Node whose announcement is answered
+     * @param int $announcement Number of the announcement
+     */
+    public function sendSourceInterestAnswered(string $nodeId, int $announcement): void
+    {
+        $this->interestAnswers[] = [$nodeId, $announcement];
     }
 
     /** @var list<DaemonManagerRtSyncPeerTestAnnouncement> Facts offered to the mesh, in order */
@@ -4173,25 +5309,29 @@ final class DaemonManagerRtSyncPeerTestMesh implements RtClaimMesh, RtSyncMesh, 
     }
 
     /**
-     * @param string $nodeId Node that joined
-     * @param string $collectionKey RT collection this node owns
-     * @param array<string, array<string, mixed>> $rows Rows by state id
-     * @param list<string> $scopeKeys Named rows this node speaks for
-     * @param list<string> $scopeSetKeys Sets this node speaks for
+     * Takes the area the way the stream does - cut when it is taken - and keeps the rows the cut reads.
+     *
+     * @param string $nodeId Node being handed the area
+     * @param string $collectionKey RT collection this node owns all or part of
+     * @param RtSnapshotScope $scope The area this node owns
+     * @param bool $partialOwner Whether this node holds only part of the right over the collection
      */
-    public function sendRtSnapshotToNode(
-        string $nodeId,
-        string $collectionKey,
-        array $rows,
-        array $scopeKeys = [],
-        array $scopeSetKeys = [],
-    ): void {
+    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void
+    {
+        $export = RtSnapshot::capture($collectionKey, $scope);
+        $rows = [];
+        while (!$export->isFinished()) {
+            $portion = $export->advance(new RtWorkBudget());
+            foreach ($portion?->ids ?? [] as $position => $stateId) {
+                $rows[$stateId] = RtRowValues::nativeMap($portion->values[$position]);
+            }
+        }
         $this->snapshots[] = [
             'nodeId' => $nodeId,
             'collectionKey' => $collectionKey,
             'rows' => $rows,
-            'scopeKeys' => $scopeKeys,
-            'scopeSetKeys' => $scopeSetKeys,
+            'scopeKeys' => $scope->rowKeys() ?? [],
+            'scopeSetKeys' => $scope->setKeys() ?? [],
         ];
     }
 
@@ -4306,6 +5446,17 @@ final class DaemonManagerRtSyncPeerTestWorkerServer extends WorkerServer
     }
 
     /**
+     * @return DaemonManagerRtSyncPeerTestWorkerClient The one worker these cases fan out to
+     */
+    public function worker(): DaemonManagerRtSyncPeerTestWorkerClient
+    {
+        $worker = array_find($this->clients, static fn ($client): bool => $client instanceof DaemonManagerRtSyncPeerTestWorkerClient);
+        DaemonManagerRtSyncPeerTest::assertInstanceOf(DaemonManagerRtSyncPeerTestWorkerClient::class, $worker);
+
+        return $worker;
+    }
+
+    /**
      * @return list<string> Message type of each frame written to the pool, in order
      */
     public function frameTypes(): array
@@ -4364,12 +5515,25 @@ final class DaemonManagerRtSyncPeerTestWorkerClient extends WorkerClient
     /** @var int Index the daemon addresses this link by, and the key its reader interest is held under */
     public const int WORKER_INDEX = 1;
 
+    /** @var string What {@see self::streamed()} names a snapshot by */
+    public const string SNAPSHOT = 'snapshot';
+
+    /** @var ?Closure(): void Called once this end read each streamed operation, null for nothing */
+    public ?Closure $onOperation = null;
+
     /** @var list<string> Raw frames the daemon wrote to this link, in order */
     private array $written = [];
     /** @var list<string> Message type of each frame, a streamed RT write read back as its operation's type */
     private array $types = [];
     /** Reads the RT stream the daemon writes to this link back into whole operations */
     private ?RtSyncStreamChannel $reader = null;
+    /** @var list<?int> Interest reports the snapshots the daemon wrote to this link answer, as their heads name them */
+    private array $snapshotAnnouncements = [];
+    /**
+     * @var list<array{string, string|list<string>}> What the RT stream to this link carried, in the order this end read
+     *     it: an operation as its type and row, a snapshot as {@see self::SNAPSHOT} and the rows it carried
+     */
+    private array $streamed = [];
 
     public function __construct()
     {
@@ -4393,9 +5557,32 @@ final class DaemonManagerRtSyncPeerTestWorkerClient extends WorkerClient
             $this->reader ??= new RtSyncStreamChannel(
                 static function (): void {
                 },
-                function (RtSyncStreamOperation $operation, Closure $settled): void {
+                function (RtSyncStreamOperation|RtSyncStreamSnapshot $operation, Closure $settled): ?Generator {
+                    if ($operation instanceof RtSyncStreamSnapshot) {
+                        $this->snapshotAnnouncements[] = $operation->announcement;
+
+                        return (function () use ($operation, $settled): Generator {
+                            $rowIds = [];
+                            while (!$operation->isWhole() || $operation->hasRows()) {
+                                $rows = $operation->takeRows();
+                                if ($rows === null) {
+                                    yield new RtWork();
+                                } else {
+                                    $rowIds = [...$rowIds, ...$rows->ids];
+                                }
+                            }
+                            $this->streamed[] = [self::SNAPSHOT, $rowIds];
+                            $settled(true);
+                        })();
+                    }
                     $this->types[] = $operation->signalType;
+                    $this->streamed[] = [$operation->signalType, $operation->stateId];
                     $settled(true);
+                    if ($this->onOperation !== null) {
+                        ($this->onOperation)();
+                    }
+
+                    return null;
                 },
             );
             $this->reader->receive(WorkerRtSyncStreamDTO::fromArray($decoded)->frame);
@@ -4405,12 +5592,30 @@ final class DaemonManagerRtSyncPeerTestWorkerClient extends WorkerClient
     }
 
     /**
+     * @return list<?int> Interest reports the snapshots written to this link answer, in order
+     */
+    public function snapshotAnnouncements(): array
+    {
+        return $this->snapshotAnnouncements;
+    }
+
+    /**
+     * @return list<array{string, string|list<string>}> What the RT stream to this link carried, in the order this end
+     *     read it ({@see self::$streamed})
+     */
+    public function streamed(): array
+    {
+        return $this->streamed;
+    }
+
+    /**
      * Drops what has been written to this link so far.
      */
     public function forgetFrames(): void
     {
         $this->written = [];
         $this->types = [];
+        $this->streamed = [];
     }
 
     /**
@@ -4516,15 +5721,25 @@ final class DaemonManagerRtSyncPeerTestStates extends RtStates
 /**
  * The replicated row: an id and a label, which is all these cases read back.
  */
-final class DaemonManagerRtSyncPeerTestState extends RtState
+final class DaemonManagerRtSyncPeerTestState extends DaemonManagerRtSyncPeerTestCodecState
 {
     public const string id = 'id';
 
     public const string name = 'name';
 
-    private(set) string $id = '';
+    private(set) string $id {
+        get => $this->text(self::id);
+        set {
+            $this->setText(self::id, $value);
+        }
+    }
 
-    public string $name = '';
+    public string $name {
+        get => $this->text(self::name);
+        set {
+            $this->setText(self::name, $value);
+        }
+    }
 
     public int $serializations = 0;
 
@@ -4568,6 +5783,18 @@ final class DaemonManagerRtSyncPeerTestState extends RtState
             self::name => $this->name,
         ];
     }
+
+    /** @return array<string, string> Text fields by key, with their defaults */
+    protected static function textFields(): array
+    {
+        return [self::id => '', self::name => ''];
+    }
+
+    /** @return array<string, true> Fields a diff may change */
+    protected static function patchFields(): array
+    {
+        return [self::name => true];
+    }
 }
 
 final class DaemonManagerRtSyncPeerTestSetStates extends RtStates
@@ -4578,7 +5805,7 @@ final class DaemonManagerRtSyncPeerTestSetStates extends RtStates
 /**
  * A replicated row cut into sets by its owner: the set it is in is the value of that field.
  */
-final class DaemonManagerRtSyncPeerTestSetState extends RtState
+final class DaemonManagerRtSyncPeerTestSetState extends DaemonManagerRtSyncPeerTestCodecState
 {
     public const string id = 'id';
 
@@ -4588,11 +5815,26 @@ final class DaemonManagerRtSyncPeerTestSetState extends RtState
 
     public const string SET_VIA = self::ownerId;
 
-    private(set) string $id = '';
+    private(set) string $id {
+        get => $this->text(self::id);
+        set {
+            $this->setText(self::id, $value);
+        }
+    }
 
-    private(set) string $ownerId = '';
+    private(set) string $ownerId {
+        get => $this->text(self::ownerId);
+        set {
+            $this->setText(self::ownerId, $value);
+        }
+    }
 
-    public string $name = '';
+    public string $name {
+        get => $this->text(self::name);
+        set {
+            $this->setText(self::name, $value);
+        }
+    }
 
     public int $serializations = 0;
 
@@ -4631,6 +5873,172 @@ final class DaemonManagerRtSyncPeerTestSetState extends RtState
             self::ownerId => $this->ownerId,
             self::name => $this->name,
         ];
+    }
+
+    /** @return array<string, string> Text fields by key, with their defaults */
+    protected static function textFields(): array
+    {
+        return [self::id => '', self::ownerId => '', self::name => ''];
+    }
+
+    /** @return array<string, true> Fields a diff may change */
+    protected static function patchFields(): array
+    {
+        return [self::name => true];
+    }
+}
+
+/**
+ * A test row whose text fields live in its row values, as every production row's do, so a
+ * snapshot streamed to this node can be staged into its collection.
+ */
+abstract class DaemonManagerRtSyncPeerTestCodecState extends RtState
+{
+    /** @return RtRowCodec Codec restoring this row class from its values */
+    public function rowCodec(): RtRowCodec
+    {
+        return new DaemonManagerRtSyncPeerTestRowCodec(static::class);
+    }
+
+    /**
+     * @param RtRowReader $in Values of a row
+     * @return Generator<int, RtWork, int, static> The restored row
+     * @throws InvalidFormatException When a field is missing or not text
+     */
+    public static function fromValues(RtRowReader $in): Generator
+    {
+        $prepared = yield from static::prepareValues($in, null);
+        yield new RtWork();
+        $instance = new static();
+        $instance->replaceRowValues($prepared);
+
+        return $instance;
+    }
+
+    /**
+     * @param RtRowReader $diff Changed values
+     * @return Generator<int, RtWork, int, void> The patch
+     * @throws InvalidFormatException When a changed field is not text
+     */
+    public function patchValues(RtRowReader $diff): Generator
+    {
+        $prepared = yield from static::prepareValues($diff, $this->rowValues());
+        yield new RtWork();
+        $this->replaceRowValues($prepared);
+    }
+
+    /**
+     * @param RtRowWriter $out Writer of the row's values
+     * @return Generator<int, RtWork, int, void> The export
+     */
+    public function exportValues(RtRowWriter $out): Generator
+    {
+        return $this->frozenValues()->export($out);
+    }
+
+    /** @return array<string, string> Text fields by key, with their defaults */
+    abstract protected static function textFields(): array;
+
+    /** @return array<string, true> Fields a diff may change */
+    abstract protected static function patchFields(): array;
+
+    /** @return array<string, string> Defaults of the row's fields */
+    protected function rowFieldDefaults(): array
+    {
+        return static::textFields();
+    }
+
+    /**
+     * @param string $key Field to read
+     * @return string Its value
+     */
+    protected function text(string $key): string
+    {
+        return isset($this->rowValues()[$key]) ? $this->rowValues()[$key]->toNative() : static::textFields()[$key];
+    }
+
+    /**
+     * @param string $key Field to write
+     * @param string $value Its value
+     */
+    protected function setText(string $key, string $value): void
+    {
+        $this->setRowValue($key, RtRowValues::fromNative($value));
+    }
+
+    /**
+     * @param RtRowReader $input Values to read
+     * @param ?array<string, mixed> $current The row's values a diff patches, null for a whole row
+     * @return Generator<int, RtWork, int, array<string, mixed>> The prepared values
+     * @throws InvalidFormatException When a field is missing or not text
+     */
+    private static function prepareValues(RtRowReader $input, ?array $current): Generator
+    {
+        $prepared = $current ?? [];
+        foreach (array_keys(static::textFields()) as $key) {
+            yield new RtWork();
+            if ($current !== null && !isset(static::patchFields()[$key])) {
+                continue;
+            }
+            $value = yield from $input->field($key);
+            if ($value === null) {
+                if ($current !== null) {
+                    continue;
+                }
+                throw new InvalidFormatException('Runtime row is missing required key ' . $key);
+            }
+            $reader = $value->reader();
+            if ($reader->kind() !== RtRowKind::Text) {
+                throw new InvalidFormatException('Runtime row carries the wrong type under key ' . $key);
+            }
+            $prepared[$key] = yield from RtRowWriter::copy($reader, $input->arena(), RtRowRole::Candidate);
+        }
+
+        return $prepared;
+    }
+}
+
+/** Codec of the test rows: their own values, restored by their class. */
+final readonly class DaemonManagerRtSyncPeerTestRowCodec implements RtRowCodec
+{
+    /** @param class-string<DaemonManagerRtSyncPeerTestCodecState> $rowClass Row class restored */
+    public function __construct(private string $rowClass)
+    {
+    }
+
+    /**
+     * @param RtState $state Row to export
+     * @param RtRowWriter $out Writer of its values
+     * @return Generator<int, RtWork, int, void> The export
+     */
+    public function export(RtState $state, RtRowWriter $out): Generator
+    {
+        if (!$state instanceof DaemonManagerRtSyncPeerTestCodecState) {
+            throw new LogicException('The test codec exports its own rows only');
+        }
+        yield from $state->exportValues($out);
+    }
+
+    /**
+     * @param RtRowReader $in Values of a row
+     * @return Generator<int, RtWork, int, RtState> The restored row
+     */
+    public function restore(RtRowReader $in): Generator
+    {
+        return yield from ($this->rowClass)::fromValues($in);
+    }
+
+    /**
+     * @param RtState $draft Row to patch
+     * @param RtRowReader $diff Changed values
+     * @return Generator<int, RtWork, int, void> The patch
+     */
+    public function patch(RtState $draft, RtRowReader $diff): Generator
+    {
+        if (!$draft instanceof DaemonManagerRtSyncPeerTestCodecState) {
+            throw new LogicException('The test codec patches its own rows only');
+        }
+        yield from $draft->patchValues($diff);
     }
 }
 

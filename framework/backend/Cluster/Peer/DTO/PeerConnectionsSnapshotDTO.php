@@ -11,8 +11,9 @@ use Hilos\Cluster\Exception\PeerTransportException;
  *
  * The connection index is what lets a node answer a browser attached elsewhere, and a node
  * that has just linked knows nothing about the sockets the other one already holds. So the
- * first thing a link carries is the whole set, exactly as {@see PeerRtSnapshotDTO} carries a
- * whole RT collection: what arrives REPLACES everything the receiver held for this node — a
+ * first thing a link carries is the whole set, exactly as the snapshot operation of
+ * {@see PeerRtSyncStreamDTO} carries a whole RT collection: what arrives REPLACES everything the
+ * receiver held for this node — a
  * key the snapshot does not carry is a connection that is gone.
  *
  * Addressed rather than broadcast for the same reason: only the node on the other end of the

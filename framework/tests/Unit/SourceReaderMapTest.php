@@ -9,7 +9,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\Interest\SourceReaderMap;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Socket\Worker\DTO\WorkerDbInterestReadyMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerRtSnapshotMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSnapshotRequestDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\TestCase;
@@ -502,7 +502,7 @@ final class SourceReaderMapTest extends TestCase
      */
     public function testTheInterestReportRoundTripsToTheMaster(): void
     {
-        $dto = new WorkerSourceInterestDTO([self::COLLECTION, self::OTHER_COLLECTION], []);
+        $dto = new WorkerSourceInterestDTO([self::COLLECTION, self::OTHER_COLLECTION], [], 1);
 
         $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
 
@@ -519,7 +519,7 @@ final class SourceReaderMapTest extends TestCase
      */
     public function testTheInterestReportCarriesBothKindsWithoutMixingThem(): void
     {
-        $dto = new WorkerSourceInterestDTO([self::COLLECTION], [self::OTHER_COLLECTION]);
+        $dto = new WorkerSourceInterestDTO([self::COLLECTION], [self::OTHER_COLLECTION], 1);
 
         $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
 
@@ -540,6 +540,7 @@ final class SourceReaderMapTest extends TestCase
         $parsed = WorkerDTO::factoryWorkerDTO((string)json_encode([
             WorkerDTO::TYPE => WorkerSourceInterestDTO::MESSAGE_TYPE,
             WorkerSourceInterestDTO::FIELD_RT_COLLECTIONS => [self::COLLECTION],
+            WorkerSourceInterestDTO::FIELD_ANNOUNCEMENT => 1,
         ]));
 
         $this->assertInstanceOf(WorkerSourceInterestDTO::class, $parsed);
@@ -556,13 +557,32 @@ final class SourceReaderMapTest extends TestCase
      */
     public function testAnEmptyInterestReportSurvivesTheWire(): void
     {
-        $dto = new WorkerSourceInterestDTO([], []);
+        $dto = new WorkerSourceInterestDTO([], [], 1);
 
         $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
 
         $this->assertInstanceOf(WorkerSourceInterestDTO::class, $parsed);
         $this->assertSame([], $parsed->rtCollections);
         $this->assertSame([], $parsed->dbCollections);
+    }
+
+    /**
+     * The number of the report survives the wire: the master marks the snapshot it answers the
+     * report with by it (HIL-1817). A frame without one is refused, not read as a guess.
+     *
+     * @throws InvalidFormatException When the frame is not the object its DTO needs
+     */
+    public function testTheInterestReportCarriesItsNumber(): void
+    {
+        $parsed = WorkerDTO::factoryWorkerDTO((new WorkerSourceInterestDTO([self::COLLECTION], [], 7))->toJson());
+
+        $this->assertInstanceOf(WorkerSourceInterestDTO::class, $parsed);
+        $this->assertSame(7, $parsed->announcement);
+        $this->expectException(InvalidFormatException::class);
+        WorkerDTO::factoryWorkerDTO((string)json_encode([
+            WorkerDTO::TYPE => WorkerSourceInterestDTO::MESSAGE_TYPE,
+            WorkerSourceInterestDTO::FIELD_RT_COLLECTIONS => [self::COLLECTION],
+        ]));
     }
 
     /**
@@ -615,32 +635,18 @@ final class SourceReaderMapTest extends TestCase
     }
 
     /**
-     * @throws InvalidFormatException When the frame is not the object its DTO needs
-     */
-    public function testTheSnapshotRoundTripsToTheWorker(): void
-    {
-        $dto = new WorkerRtSnapshotMessageDTO(self::COLLECTION, ['7' => ['id' => '7', 'name' => 'row']]);
-
-        $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
-
-        $this->assertInstanceOf(WorkerRtSnapshotMessageDTO::class, $parsed);
-        $this->assertSame(self::COLLECTION, $parsed->collectionKey);
-        $this->assertSame(['7' => ['id' => '7', 'name' => 'row']], $parsed->rows);
-    }
-
-    /**
-     * An empty snapshot is an answer and not a missing one: a collection nobody has written yet
-     * exists and is empty, and the reader waiting on it has to be let go.
+     * The first snapshot of a collection is owed by the report itself; the master puts it into the
+     * worker's RT stream. A copy that lost its base there asks for one more, naming the collection.
      *
      * @throws InvalidFormatException When the frame is not the object its DTO needs
      */
-    public function testAnEmptySnapshotIsStillAnAnswer(): void
+    public function testARequestForOneMoreSnapshotRoundTripsToTheMaster(): void
     {
-        $dto = new WorkerRtSnapshotMessageDTO(self::COLLECTION, []);
+        $dto = new WorkerRtSnapshotRequestDTO(self::COLLECTION);
 
         $parsed = WorkerDTO::factoryWorkerDTO($dto->toJson());
 
-        $this->assertInstanceOf(WorkerRtSnapshotMessageDTO::class, $parsed);
-        $this->assertSame([], $parsed->rows);
+        $this->assertInstanceOf(WorkerRtSnapshotRequestDTO::class, $parsed);
+        $this->assertSame(self::COLLECTION, $parsed->collectionKey);
     }
 }

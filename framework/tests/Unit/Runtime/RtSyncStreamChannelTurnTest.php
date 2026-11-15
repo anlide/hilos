@@ -6,6 +6,8 @@ namespace Hilos\Tests\Unit\Runtime;
 
 use Closure;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Hilos;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
@@ -58,6 +60,30 @@ final class RtSyncStreamChannelTurnTest extends TestCase
         $channel->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]));
         $this->signal($channel);
         $this->assertSame([], $this->wire, 'The pass did not run yet, so the signal waits for the write');
+
+        while ($channel->pump(new RtWorkBudget())) {
+        }
+        $this->assertSame(['final part 1.0', self::SIGNAL], $this->wire);
+    }
+
+    /**
+     * A snapshot is an operation of the stream like a write: a frame the host writes after the
+     * snapshot was taken - the thaw of a row, a signal to an agent - goes behind its final part.
+     */
+    public function testAFrameWrittenAfterASnapshotWasTakenGoesBehindItsFinalPart(): void
+    {
+        $channel = $this->channel(static function (): void {
+        });
+        // Cut where this process holds no RT state, so the snapshot is one empty part.
+        $previous = Hilos::$rt;
+        Hilos::$rt = null;
+        try {
+            $channel->sendSnapshot(self::COLLECTION, RtSnapshotScope::whole());
+        } finally {
+            Hilos::$rt = $previous;
+        }
+        $this->signal($channel);
+        $this->assertSame([], $this->wire, 'The pass did not cut the snapshot yet, so the signal waits for it');
 
         while ($channel->pump(new RtWorkBudget())) {
         }

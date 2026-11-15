@@ -304,7 +304,7 @@ final class PeerInboundOrderTestManager extends DaemonManager
     private function declareWorkerReads(): void
     {
         $this->getAgentManagerDaemon()->handleSourceInterest(
-            new WorkerSourceInterestDTO([], [DaemonManagerPeerInboundOrderTest::COLLECTION]),
+            new WorkerSourceInterestDTO([], [DaemonManagerPeerInboundOrderTest::COLLECTION], 1),
             PeerInboundOrderTestWorkerClient::WORKER_INDEX,
         );
     }

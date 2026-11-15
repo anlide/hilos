@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Cluster\Peer;
 
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerSourceInterestAnsweredDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use PHPUnit\Framework\TestCase;
 
@@ -29,6 +30,7 @@ final class PeerSourceInterestDTOTest extends TestCase
             nodeId: 'node-A',
             rtCollections: ['rooms', 'connections'],
             dbCollections: ['sessions'],
+            announcement: 7,
         );
 
         $parsed = PeerDTO::fromWire($frame->toJson());
@@ -38,6 +40,7 @@ final class PeerSourceInterestDTOTest extends TestCase
         $this->assertSame('node-A', $parsed->nodeId);
         $this->assertSame(['rooms', 'connections'], $parsed->rtCollections);
         $this->assertSame(['sessions'], $parsed->dbCollections);
+        $this->assertSame(7, $parsed->announcement);
     }
 
     /**
@@ -46,7 +49,7 @@ final class PeerSourceInterestDTOTest extends TestCase
      */
     public function testAnEmptyListIsAnAnnouncementAndNotAnAbsence(): void
     {
-        $frame = new PeerSourceInterestDTO('node-A', [], []);
+        $frame = new PeerSourceInterestDTO('node-A', [], [], 1);
 
         $parsed = PeerDTO::fromWire($frame->toJson());
 
@@ -59,6 +62,7 @@ final class PeerSourceInterestDTOTest extends TestCase
     {
         $parsed = PeerSourceInterestDTO::fromArray([
             PeerSourceInterestDTO::FIELD_NODE_ID => 'node-A',
+            PeerSourceInterestDTO::FIELD_ANNOUNCEMENT => 1,
         ]);
 
         $this->assertSame([], $parsed->rtCollections);
@@ -74,6 +78,7 @@ final class PeerSourceInterestDTOTest extends TestCase
     {
         $parsed = PeerSourceInterestDTO::fromArray([
             PeerSourceInterestDTO::FIELD_NODE_ID => 'node-A',
+            PeerSourceInterestDTO::FIELD_ANNOUNCEMENT => 1,
             PeerSourceInterestDTO::FIELD_RT_COLLECTIONS => ['rooms'],
             PeerSourceInterestDTO::FIELD_DB_COLLECTIONS => ['rooms', 'sessions'],
         ]);
@@ -86,6 +91,7 @@ final class PeerSourceInterestDTOTest extends TestCase
     {
         $parsed = PeerSourceInterestDTO::fromArray([
             PeerSourceInterestDTO::FIELD_NODE_ID => 'node-A',
+            PeerSourceInterestDTO::FIELD_ANNOUNCEMENT => 1,
             PeerSourceInterestDTO::FIELD_RT_COLLECTIONS => ['rooms', '', 17, ['nested'], 'connections'],
         ]);
 
@@ -100,5 +106,35 @@ final class PeerSourceInterestDTOTest extends TestCase
         PeerSourceInterestDTO::fromArray([
             PeerSourceInterestDTO::FIELD_RT_COLLECTIONS => ['rooms'],
         ]);
+    }
+
+    /**
+     * The number is what the answer names, and a reader waiting for the answer to nothing would wait
+     * for ever: a frame without one is refused, a node of an older build included (HIL-1817).
+     */
+    public function testRejectsAMissingAnnouncementNumber(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerSourceInterestDTO::fromArray([
+            PeerSourceInterestDTO::FIELD_NODE_ID => 'node-A',
+            PeerSourceInterestDTO::FIELD_RT_COLLECTIONS => ['rooms'],
+        ]);
+    }
+
+    public function testTheAnswerRoundTripsThroughTheWire(): void
+    {
+        $parsed = PeerDTO::fromWire(new PeerSourceInterestAnsweredDTO('node-A', 3)->toJson());
+
+        $this->assertInstanceOf(PeerSourceInterestAnsweredDTO::class, $parsed);
+        $this->assertSame('node-A', $parsed->nodeId);
+        $this->assertSame(3, $parsed->announcement);
+    }
+
+    public function testAnAnswerWithoutItsNumberIsRefused(): void
+    {
+        $this->expectException(PeerTransportException::class);
+
+        PeerSourceInterestAnsweredDTO::fromArray([PeerSourceInterestAnsweredDTO::FIELD_NODE_ID => 'node-A']);
     }
 }

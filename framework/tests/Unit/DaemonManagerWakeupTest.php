@@ -14,7 +14,6 @@ use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\SignalConstants;
@@ -37,6 +36,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
+use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\State\Collection\RtStates;
@@ -259,9 +259,8 @@ final class DaemonManagerWakeupTest extends TestCase
      */
     #[TestWith(['RT sync'])]
     #[TestWith(['DB sync'])]
-    #[TestWith(['RT snapshot'])]
     #[TestWith(['RT replica offer'])]
-    #[TestWith(['RT snapshot', true])]
+    #[TestWith(['RT replica offer', true])]
     public function testDeferredPeerApplyFailureStaysInsideItsOriginalGuard(string $door, bool $metadataFailure = false): void
     {
         $this->guard();
@@ -294,10 +293,9 @@ final class DaemonManagerWakeupTest extends TestCase
                 new SignalName(SignalConstants::DB_SYNC_CREATED), new RtSyncCreatedSignalData($key, '7', ['id' => '7']));
             $frame = new PeerDbSyncDTO('node-b', SignalTypeConstants::DB_SYNC_CREATED, $signal);
             $peer->onDbSyncReceived($link, PeerDbSyncDTO::fromArray($frame->toArray()));
-        } elseif ($door === 'RT snapshot') {
-            $frame = new PeerRtSnapshotDTO('node-b', $key, ['7' => ['id' => '7', 'name' => 'bad']]);
-            $peer->onRtSnapshotReceived($link, PeerRtSnapshotDTO::fromArray($frame->toArray()));
         } else {
+            // An offer lands only where a worker reads its collection.
+            $this->manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO([$key], [], 1), 0);
             $frame = new PeerRtReplicaOfferDTO('node-b', $key, ['7' => ['id' => '7', 'name' => 'bad']]);
             $peer->onRtReplicaOfferReceived($link, PeerRtReplicaOfferDTO::fromArray($frame->toArray()));
         }

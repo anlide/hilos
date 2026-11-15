@@ -20,7 +20,7 @@ final class AgentManagerReaderInterestTest extends TestCase
     {
         $manager = new ReaderInterestAgentManager();
         self::assertFalse($manager->hasChangedReaderInterest());
-        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['old'], ['old-db']), 3);
+        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['old'], ['old-db'], 1), 3);
         self::assertTrue($manager->hasChangedReaderInterest());
         self::assertTrue($manager->hasChangedReaderInterest(), 'Readiness does not consume the pair');
         self::assertSame([SourceChange::KIND_RT => ['old'], SourceChange::KIND_DB => ['old-db']],
@@ -35,7 +35,7 @@ final class AgentManagerReaderInterestTest extends TestCase
             $database[] = 'db-' . $index;
         }
         self::assertSame([SourceChange::KIND_RT => $runtime, SourceChange::KIND_DB => $database],
-            $manager->handleSourceInterest(new WorkerSourceInterestDTO($runtime, $database), 3));
+            $manager->handleSourceInterest(new WorkerSourceInterestDTO($runtime, $database, 1), 3));
         self::assertCount(1, $queue);
         self::assertFalse($manager->hasChangedReaderInterest(), 'Queued preparation is owned by the existing source FIFO');
         self::assertNull($manager->consumeChangedReaderInterest(), 'Enqueue cannot construct or publish the whole AFTER union');
@@ -45,7 +45,7 @@ final class AgentManagerReaderInterestTest extends TestCase
         }
         self::assertTrue($queue[0]->valid(), 'One master portion cannot finish the original large pair');
         self::assertNull($manager->consumeChangedReaderInterest(), 'A prefix of one kind is not an announced union');
-        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['future'], ['future-db']), 3);
+        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['future'], ['future-db'], 1), 3);
         self::assertCount(2, $queue);
         while ($queue[0]->valid()) {
             $queue[0]->next();
@@ -56,7 +56,7 @@ final class AgentManagerReaderInterestTest extends TestCase
         }
         self::assertSame([SourceChange::KIND_RT => ['future'], SourceChange::KIND_DB => ['future-db']],
             $manager->consumeChangedReaderInterest());
-        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['future'], ['future-db']), 4);
+        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['future'], ['future-db'], 1), 4);
         foreach ($queue[2] as $_) {
         }
         self::assertNull($manager->consumeChangedReaderInterest(), 'A second holder of the same ordered union is still silent');
@@ -78,7 +78,7 @@ final class AgentManagerReaderInterestTest extends TestCase
         $manager = new ReaderInterestAgentManager();
         $queue = [];
         $manager->setReaderInterestDelivery(static function (Generator $delivery) use (&$queue): void { $queue[] = $delivery; });
-        $manager->handleSourceInterest(new WorkerSourceInterestDTO(array_fill(0, 8192, 'duplicate'), ['db']), 3);
+        $manager->handleSourceInterest(new WorkerSourceInterestDTO(array_fill(0, 8192, 'duplicate'), ['db'], 1), 3);
         $queue[0]->rewind();
         $queue[0]->next();
         $queue[0]->next();
@@ -99,7 +99,7 @@ final class AgentManagerReaderInterestTest extends TestCase
         $manager->setReaderInterestDelivery($old);
         $manager->setReaderInterestDelivery($current);
         $manager->removeReaderInterestDelivery($old);
-        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['0', '7'], ['db']), 3);
+        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['0', '7'], ['db'], 1), 3);
         self::assertSame([], $first);
         self::assertCount(1, $second);
         foreach ($second[0] as $_) {
@@ -107,7 +107,7 @@ final class AgentManagerReaderInterestTest extends TestCase
         self::assertSame([SourceChange::KIND_RT => ['0', '7'], SourceChange::KIND_DB => ['db']],
             $manager->consumeChangedReaderInterest());
         $manager->removeReaderInterestDelivery($current);
-        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['7', '0'], []), 3);
+        $manager->handleSourceInterest(new WorkerSourceInterestDTO(['7', '0'], [], 1), 3);
         self::assertCount(1, $second);
         self::assertSame([SourceChange::KIND_RT => ['7', '0'], SourceChange::KIND_DB => []],
             $manager->consumeChangedReaderInterest(), 'The consuming adapter retains the exact ordered pair');

@@ -7,10 +7,12 @@ namespace Hilos\Runtime\Stream;
 use Generator;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\Row\RtRowKind;
 use Hilos\Runtime\Row\RtRowPage;
 use Hilos\Runtime\Row\RtRowRole;
 use Hilos\Runtime\RtRowValues;
 use Hilos\Runtime\RtRowWriter;
+use Hilos\Runtime\Snapshot\RtSnapshotPortion;
 use Hilos\Runtime\Snapshot\RtWork;
 use LogicException;
 
@@ -23,6 +25,11 @@ use LogicException;
  * three literals. An object key that is a canonical integer is read back as an integer, as a
  * native array would hold it. Anything else - an array, a surrogate escape, a trailing byte, an
  * unfinished value - is refused rather than guessed at.
+ *
+ * The first field tells the object's kind. A snapshot ({@see RtSyncStreamSnapshot}) is not built
+ * whole: its head - the fields before its rows - closes as an object of its own once the rows
+ * begin ({@see self::head()}), each row is handed over as it closes ({@see self::takeRows()}), and
+ * what follows the rows closes as the object {@see self::finish()} returns.
  */
 final class RtSyncStreamDecoder
 {
@@ -95,6 +102,18 @@ final class RtSyncStreamDecoder
     /** Escape read so far: empty, a backslash, or the start of a unicode escape */
     private string $escape = '';
     private ?RtRowValues $object = null;
+    /** Whether the object is a snapshot, known once its first field is read */
+    private ?bool $snapshot = null;
+    /** Whether the key just read is a snapshot's rows */
+    private bool $rowsNext = false;
+    /** Whether the object open one level below the top holds a snapshot's rows */
+    private bool $inRows = false;
+    /** Id of the snapshot row being read */
+    private ?string $rowId = null;
+    /** A snapshot's fields before its rows, once the rows began */
+    private ?RtRowValues $head = null;
+    /** @var list<array{string, RtRowValues, int}> Snapshot rows closed and not taken yet, each with its logical bytes */
+    private array $rows = [];
     private readonly RtRowArena $arena;
 
     public function __construct()
@@ -139,8 +158,43 @@ final class RtSyncStreamDecoder
         }
     }
 
+    /** @return ?RtRowValues A snapshot's fields before its rows once the rows began, null before or for another object */
+    public function head(): ?RtRowValues
+    {
+        return $this->head;
+    }
+
+    /** @return bool Whether a snapshot row closed and waits to be taken */
+    public function hasRows(): bool
+    {
+        return $this->rows !== [];
+    }
+
     /**
-     * @return RtRowValues The whole logical object
+     * Hands over the snapshot rows closed so far, in their order.
+     *
+     * @param int $maxBytes Logical bytes the portion holds at most; its first row is taken whatever its size
+     * @return ?RtSnapshotPortion Rows taken, null when none waits
+     */
+    public function takeRows(int $maxBytes): ?RtSnapshotPortion
+    {
+        $ids = [];
+        $values = [];
+        $bytes = 0;
+        $taken = 0;
+        $count = count($this->rows);
+        while ($taken < $count && ($ids === [] || $bytes + $this->rows[$taken][2] <= $maxBytes)) {
+            [$ids[], $values[], $rowBytes] = $this->rows[$taken++];
+            $bytes += $rowBytes;
+        }
+        // One slice for the portion, not a shift per row: a shift moves every row left behind it.
+        $this->rows = array_slice($this->rows, $taken);
+
+        return $ids === [] ? null : new RtSnapshotPortion($ids, $values, $bytes);
+    }
+
+    /**
+     * @return RtRowValues The whole logical object; of a snapshot, the fields after its head, its rows handed over
      * @throws InvalidFormatException When the bytes read so far do not close one object
      */
     public function finish(): RtRowValues
@@ -162,13 +216,20 @@ final class RtSyncStreamDecoder
     {
         switch ($this->state) {
             case self::EXPECT_VALUE:
+                $opensRows = $this->rowsNext;
+                $this->rowsNext = false;
                 if ($byte === '{') {
                     if (count($this->openObjects) >= self::MAX_DEPTH) {
                         throw new InvalidFormatException('An RT stream value nests too deep');
                     }
-                    $this->openObjects[] = new RtRowWriter($this->arena, $this->openObjects === [] ? RtRowRole::Wire : RtRowRole::Transient);
+                    // The object and each snapshot row are values of their own, held from the wire.
+                    $wire = $this->openObjects === [] || ($this->inRows && count($this->openObjects) === 2);
+                    $this->openObjects[] = new RtRowWriter($this->arena, $wire ? RtRowRole::Wire : RtRowRole::Transient);
                     $this->keys[] = null;
+                    $this->inRows = $this->inRows || $opensRows;
                     $this->state = self::EXPECT_KEY_OR_END;
+                } elseif ($opensRows) {
+                    throw new InvalidFormatException('An RT stream snapshot carries its rows as an object');
                 } elseif ($this->openObjects === []) {
                     throw new InvalidFormatException('An RT stream operation is an object');
                 } elseif ($byte === '"') {
@@ -300,6 +361,18 @@ final class RtSyncStreamDecoder
         $bytes = $this->pending;
         $this->pending = '';
         if ($this->readingKey) {
+            if ($this->inRows && count($this->openObjects) === 2) {
+                $this->rowId = $bytes;
+                $this->state = self::EXPECT_COLON;
+
+                return;
+            }
+            if ($this->snapshot === true && $this->head === null && count($this->openObjects) === 1
+                && $bytes === RtSyncStreamSnapshot::FIELD_ROWS) {
+                $this->head = yield from $this->openObjects[0]->finish();
+                $this->openObjects[0] = new RtRowWriter($this->arena, RtRowRole::Wire);
+                $this->rowsNext = true;
+            }
             $key = preg_match(self::INTEGER_KEY_PATTERN, $bytes) === 1 ? filter_var($bytes, FILTER_VALIDATE_INT) : false;
             $this->keys[array_key_last($this->keys)] = yield from RtRowWriter::encode(
                 $key === false ? $bytes : $key,
@@ -340,6 +413,9 @@ final class RtSyncStreamDecoder
      */
     private function closeObject(): Generator
     {
+        if ($this->inRows && count($this->openObjects) === 2) {
+            $this->inRows = false;
+        }
         $object = array_pop($this->openObjects);
         array_pop($this->keys);
         yield from $this->completeValue((yield from $object->finish()));
@@ -347,7 +423,8 @@ final class RtSyncStreamDecoder
 
     /**
      * @param RtRowValues $value Completed value
-     * @return Generator<int, RtWork, int, void> Its entry in the open object, or the whole object
+     * @return Generator<int, RtWork, int, void> Its entry in the open object, a snapshot row handed over, or the whole object
+     * @throws InvalidFormatException When a snapshot row is not an object
      * @throws LogicException When a page preparation breaks a writer's lifetime
      */
     private function completeValue(RtRowValues $value): Generator
@@ -359,6 +436,20 @@ final class RtSyncStreamDecoder
             return;
         }
         $last = array_key_last($this->openObjects);
+        if ($this->inRows && $last === 1) {
+            if ($value->reader()->kind() !== RtRowKind::Map) {
+                throw new InvalidFormatException('An RT stream snapshot row is an object');
+            }
+            $this->rows[] = [$this->rowId, $value, $value->rootIn($this->arena)->logicalBytes];
+            $this->rowId = null;
+            $this->state = self::EXPECT_COMMA_OR_END;
+
+            return;
+        }
+        if ($this->snapshot === null && $last === 0) {
+            $this->snapshot = (yield from $this->keys[0]->reader()->equals(RtSyncStreamOperation::FIELD_SIGNAL_TYPE))
+                && (yield from $value->reader()->equals(RtSyncStreamSnapshot::SIGNAL_TYPE));
+        }
         yield from $this->openObjects[$last]->writeEntry($this->keys[$last], $value);
         $this->keys[$last] = null;
         $this->state = self::EXPECT_COMMA_OR_END;

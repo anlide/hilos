@@ -10,6 +10,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Runtime\RtStaleness;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -53,6 +54,16 @@ use Throwable;
  * applies in portions hands the apply back as work: the channel advances it on the budget of its
  * pumps, the host answers at its end, and the next operation is read only after it.
  *
+ * A snapshot of a collection is an operation of the same stream ({@see self::sendSnapshot()}): cut
+ * when the channel takes it, it is read on the other end behind every write taken before it and
+ * ahead of every write taken after it. The receiving host is handed it at its head, before its
+ * rows, and hands its staging back as work; each row reaches it once the part holding it is read,
+ * and the next part is read only once the host has taken the rows before it, so neither end holds
+ * the snapshot whole. The host answers once it has published or refused the snapshot; a refusal
+ * before the end gives up the rest of it, and the next operation is read only after the answer.
+ * A master streams them to its workers, and a node hands the areas it owns of a collection to a
+ * linked node's master through them.
+ *
  * A refused operation holds its row: the row's later operations would land on a base that missed
  * it, so they are refused unread until the row has a base again - a snapshot of its collection
  * published on this end ({@see self::recover()}) or a new channel instance. Operations of other
@@ -77,7 +88,7 @@ final class RtSyncStreamChannel
     /** Stream id of this instance's sending direction */
     public readonly string $streamId;
 
-    /** @var SplQueue<RtSyncStreamOperation> Operations taken and not begun */
+    /** @var SplQueue<RtSyncStreamOperation|RtSyncStreamSnapshot> Operations taken and not begun */
     private SplQueue $outbox;
     private int $revision = 0;
     private int $nextSequence = 1;
@@ -115,23 +126,36 @@ final class RtSyncStreamChannel
     private ?RtSyncStreamDecoder $decoder = null;
     /** @var ?Generator<int, RtWork, int, mixed> Reading of the part at the head of the incoming queue */
     private ?Generator $step = null;
-    private bool $reading = false;
     /** @var ?Generator<int, RtWork, int, mixed> A whole operation's apply the host handed back, until it ends */
     private ?Generator $delivering = null;
     /** @var ?Closure(bool): void Answer of the operation being applied, for an apply that raised */
     private ?Closure $deliveringAnswer = null;
+    /** Snapshot handed to the host at its head, until it is answered or given up */
+    private ?RtSyncStreamSnapshot $receiving = null;
+    /** The host's answer to that snapshot, null until it gave one */
+    private ?bool $receivingVerdict = null;
+    /** Final part of that snapshot once it was read, null while its parts are still read */
+    private ?RtSyncStreamFrame $receivingFinal = null;
 
     private bool $pumping = false;
     private bool $pumpAgain = false;
+    /**
+     * Whether the host's link closed, so no part comes any more ({@see self::close()}). Framework-first: state of
+     * this channel instance, as {@see $pumping} and {@see $emitting} are; only the channel reads it, and it ends
+     * with the channel - the link that owns it.
+     */
+    private bool $closed = false;
     /** Whether the channel is writing a frame of its own */
     private bool $emitting = false;
 
     /**
      * @param Closure(RtSyncStreamFrame): void $write Writes one frame to the channel
-     * @param Closure(RtSyncStreamOperation, Closure(bool): void, ?object): ?Generator $deliver Applies a received
-     *        operation and queues its further delivery, then settles it: true once applied, false when refused;
-     *        a host applying in portions returns that work, yielding RtWork, and settles at its end. The third
-     *        argument is the host's receipt of the operation's final part, null without one
+     * @param Closure(RtSyncStreamOperation|RtSyncStreamSnapshot, Closure(bool): void, ?object): ?Generator $deliver Applies
+     *        a received operation and queues its further delivery, then settles it: true once applied, false when
+     *        refused; a host applying in portions returns that work, yielding RtWork, and settles at its end. The third
+     *        argument is the host's receipt of the operation's final part, null without one. A snapshot comes at its
+     *        head with no receipt yet ({@see RtSyncStreamSnapshot::receipt()}); its rows follow as they are read, so
+     *        its host returns its staging as work, and one that returns none refuses a snapshot not read whole
      * @param ?Closure(self): void $wake Schedules {@see self::pump()} on the host's RT pass; null pumps at once
      * @param ?Closure(): void $readAll Told when a pump has read every part received and handed on their operations,
      *        for a host that holds its other input behind them ({@see self::isReading()})
@@ -173,6 +197,37 @@ final class RtSyncStreamChannel
     }
 
     /**
+     * Takes one snapshot of a collection for this channel's sending direction, cut here and now: every
+     * write taken before it reaches the other end ahead of it, and every write taken after it is read
+     * there only behind it. Its rows are read out of the cut as its parts are written.
+     *
+     * @param string $collectionKey Collection to cut
+     * @param RtSnapshotScope $scope Rows the snapshot covers
+     * @param ?string $originNodeId Peer node the rows come from, or null on worker IPC
+     * @param bool $partialOwner Whether the origin holds only part of the right over the collection
+     * @param array<string, float> $staleRows Moments this end's copy of rows froze, by id; only a master's stream to its
+     *     worker carries any
+     * @param ?int $announcement Number of the worker's interest report the snapshot answers; only a master's stream
+     *     to its worker carries one
+     * @throws InvalidFormatException When a standalone row's set field is malformed
+     * @throws LogicException When the source's version pages have closed
+     * @throws InvalidArgumentException Never: a fresh allowance is valid
+     */
+    public function sendSnapshot(
+        string $collectionKey,
+        RtSnapshotScope $scope,
+        ?string $originNodeId = null,
+        bool $partialOwner = false,
+        array $staleRows = [],
+        ?int $announcement = null,
+    ): void {
+        $this->outbox->enqueue(
+            RtSyncStreamSnapshot::cut(++$this->revision, $collectionKey, $scope, $originNodeId, $partialOwner, $staleRows, $announcement),
+        );
+        $this->wakeUp();
+    }
+
+    /**
      * Writes a frame of another kind to this channel's link in its turn: at once when every
      * operation taken before it is out to its final part, otherwise right behind the final part of
      * the last of them, before any operation taken after it - the frame never waits for those. An
@@ -206,6 +261,23 @@ final class RtSyncStreamChannel
         while (!$this->behind->isEmpty()) {
             [, $write] = $this->behind->dequeue();
             $write();
+        }
+    }
+
+    /**
+     * Takes the closure of the host's link: no part comes any more. A snapshot whose parts are still
+     * being read is given up once the parts that did arrive are read and its staging waits for the
+     * next one: the snapshot is lost, and the staging the host handed back runs on to its end and
+     * cancels what it staged, instead of standing until the stream is let go of. A snapshot read
+     * whole goes on to its answer, and so does an operation whose final part arrived. The host's RT
+     * pass is woken for it; a host that pumps the stream at once, with no pass to wake, reads on at
+     * its next pump.
+     */
+    public function close(): void
+    {
+        $this->closed = true;
+        if ($this->readsSnapshot() && $this->wake !== null) {
+            ($this->wake)($this);
         }
     }
 
@@ -310,20 +382,30 @@ final class RtSyncStreamChannel
     }
 
     /**
-     * @return bool Whether a received part still waits to be read or its operation to be applied: a
-     *     host reading other frames from the same link holds them back meanwhile, so the operation the
-     *     part closes is handed on ahead of what the other end sent after it
+     * @return bool Whether a received part still waits to be read, its operation to be applied, or a
+     *     snapshot handed to the host its later parts: a host reading other frames from the same link
+     *     holds them back meanwhile, so the operation the part closes is handed on ahead of what the
+     *     other end sent after it
      */
     public function isReading(): bool
     {
-        return !$this->incoming->isEmpty() || $this->delivering !== null;
+        return !$this->incoming->isEmpty() || $this->delivering !== null || $this->readsSnapshot();
+    }
+
+    /**
+     * @return bool Whether an operation this channel took is not out to its final part yet: queued, or being cut.
+     *     One whose final part went out and that waits for its answer is not among them - it is on the wire
+     */
+    public function isWriting(): bool
+    {
+        return $this->encoder !== null || !$this->outbox->isEmpty();
     }
 
     /** @return bool Whether nothing is queued, in flight, being applied or awaiting an answer in either direction */
     public function isIdle(): bool
     {
         return $this->outbox->isEmpty() && $this->encoder === null && $this->awaiting === [] && $this->incoming->isEmpty()
-            && $this->delivering === null;
+            && $this->delivering === null && $this->receiving === null;
     }
 
     /**
@@ -420,50 +502,53 @@ final class RtSyncStreamChannel
             return false;
         }
         while ($this->isReading()) {
-            if ($this->delivering !== null) {
-                if (!$this->advanceDelivery($budget)) {
-                    return true;
+            if ($this->step === null) {
+                if ($this->readsSnapshot() && $this->receivingVerdict === false && !$this->incoming->isEmpty()) {
+                    $this->giveUp($this->incoming->dequeue(), 'its snapshot was refused before its end');
+                    continue;
                 }
-                continue;
+                if ($this->delivering !== null && !$this->waitsForSnapshotPart()) {
+                    if (!$this->advanceDelivery($budget)) {
+                        return true;
+                    }
+                    continue;
+                }
+                if ($this->closed && $this->incoming->isEmpty() && $this->readsSnapshot()) {
+                    // The rest of the snapshot will never come: its staging cancels what it staged.
+                    $this->receiving->lose();
+                    $this->endSnapshot();
+                    continue;
+                }
+                if ($this->incoming->isEmpty() || ($this->readsSnapshot() && $this->receiving->hasRows())) {
+                    return false;
+                }
             }
             $part = $this->incoming->bottom();
             try {
-                if ($this->step === null) {
-                    if ($part->part === 0) {
-                        $this->decoder = new RtSyncStreamDecoder();
-                    }
-                    $this->step = $this->decoder->feed($part->data);
-                    $this->reading = false;
-                }
+                $this->step ??= $this->read($part);
                 if (!self::advance($this->step, $budget)) {
                     return true;
                 }
-                if ($part->final && !$this->reading) {
-                    $this->step = RtSyncStreamOperation::read($this->decoder->finish());
-                    $this->reading = true;
-                    continue;
-                }
-                $operation = $this->step->getReturn();
+                $read = $this->step->getReturn();
             } catch (InvalidFormatException $malformed) {
-                $this->incoming->dequeue();
-                $this->step = null;
-                $this->decoder = null;
-                if (!$part->final && $part->sequence === $this->expectedSequence) {
-                    ++$this->expectedSequence;
-                    $this->expectedPart = 0;
-                }
-                unset($this->receipts[$part->sequence]);
-                $this->refuse($part, RtSyncStreamStatus::Refused, $malformed->getMessage());
+                $this->giveUp($this->incoming->dequeue(), $malformed->getMessage());
                 continue;
             }
             $this->incoming->dequeue();
             $this->step = null;
+            if ($read instanceof RtSyncStreamSnapshot) {
+                $this->deliverSnapshot($read);
+            }
+            if ($this->readsSnapshot()) {
+                $this->answerSnapshotPart($part);
+                continue;
+            }
             if (!$part->final) {
                 $this->emit(RtSyncStreamFrame::ack($part->streamId, $part->sequence, $part->part, RtSyncStreamStatus::Next));
                 continue;
             }
             $this->decoder = null;
-            $this->settle($part, $operation);
+            $this->settle($part, $read);
         }
         if ($this->readAll !== null) {
             ($this->readAll)();
@@ -617,14 +702,19 @@ final class RtSyncStreamChannel
     /**
      * @param Generator<int, RtWork, int, mixed> $operation Suspended reading
      * @param RtWorkBudget $budget Allowance of the current RT pass
-     * @return bool Whether the reading completed within the allowance
+     * @param ?Closure(): bool $pauses Tells, before each request is granted, that the work is to wait for input
+     *     instead; null never
+     * @return bool Whether the reading completed within the allowance, or paused
      * @throws InvalidFormatException When the bytes or the object do not read
      * @throws LogicException When a page preparation breaks a writer's lifetime or a step is no work request
      * @throws InvalidArgumentException Never: a work request is never negative
      */
-    private static function advance(Generator $operation, RtWorkBudget $budget): bool
+    private static function advance(Generator $operation, RtWorkBudget $budget, ?Closure $pauses = null): bool
     {
         while ($operation->valid()) {
+            if ($pauses !== null && $pauses()) {
+                return true;
+            }
             $request = $operation->current();
             if (!$request instanceof RtWork) {
                 throw new LogicException('An RT stream reading yields RtWork requests only');
@@ -688,6 +778,174 @@ final class RtSyncStreamChannel
     }
 
     /**
+     * Reads one part: an ordinary operation closes with its final part; a snapshot's head is read as
+     * soon as its rows begin, and what follows its rows with its final part.
+     *
+     * @param RtSyncStreamFrame $part Part at the head of the incoming queue
+     * @return Generator<int, RtWork, int, RtSyncStreamOperation|RtSyncStreamSnapshot|null> The operation the part
+     *     closes, the snapshot whose head it read, or nothing yet
+     * @throws InvalidFormatException When the bytes or the object do not read
+     * @throws LogicException When a page preparation breaks a writer's lifetime
+     */
+    private function read(RtSyncStreamFrame $part): Generator
+    {
+        if ($part->part === 0) {
+            $this->decoder = new RtSyncStreamDecoder();
+        }
+        $decoder = $this->decoder;
+        yield from $decoder->feed($part->data);
+        $snapshot = $this->readsSnapshot() ? $this->receiving : null;
+        $head = null;
+        if ($snapshot === null && $decoder->head() !== null) {
+            $snapshot = $head = yield from RtSyncStreamSnapshot::read($decoder);
+        }
+        if ($part->final) {
+            if ($snapshot === null) {
+                return yield from RtSyncStreamOperation::read($decoder->finish());
+            }
+            yield from $snapshot->finishReading($this->receipts[$part->sequence] ?? null);
+            unset($this->receipts[$part->sequence]);
+        }
+
+        return $head;
+    }
+
+    /**
+     * Hands a snapshot to the host at its head, its rows to follow as they are read. The host's answer
+     * settles it once its final part is read; a refusal given before gives up the rest of it. One whose
+     * revision does not follow the last one is refused without reaching the host, which is not told:
+     * no row is held for it, as it names none, so nothing here asks for another - the next event of
+     * its collection does (a hold, a new interest).
+     *
+     * @param RtSyncStreamSnapshot $snapshot Snapshot whose head was read
+     * @throws InvalidFormatException Never: the answers this end writes are within their domain
+     */
+    private function deliverSnapshot(RtSyncStreamSnapshot $snapshot): void
+    {
+        $this->receiving = $snapshot;
+        $this->receivingVerdict = null;
+        $this->receivingFinal = null;
+        if ($snapshot->revision <= $this->lastRevision) {
+            Logger::warning("Refusing an RT stream snapshot whose revision does not follow the last one [revision={$snapshot->revision}]");
+            $this->receivingVerdict = false;
+
+            return;
+        }
+        $this->lastRevision = $snapshot->revision;
+        $settled = false;
+        $answer = function (bool $applied) use (&$settled, $snapshot): void {
+            if ($settled || $this->receiving !== $snapshot || $this->receivingVerdict === false) {
+                return;
+            }
+            $settled = true;
+            $this->receivingVerdict = $applied;
+            $this->answerSnapshot();
+        };
+        $work = ($this->deliver)($snapshot, $answer, null);
+        if ($work instanceof Generator) {
+            $this->delivering = $work;
+            $this->deliveringAnswer = $answer;
+        } elseif (!$snapshot->isWhole() && $this->receiving === $snapshot && $this->receivingVerdict !== false) {
+            Logger::warning('An RT stream snapshot is staged as its rows arrive; a host handing back no work for it refuses it');
+            $this->receivingVerdict = false;
+        }
+    }
+
+    /**
+     * Answers a part of the snapshot handed to the host: a non-final one with the credit for the
+     * next, the final one with the host's answer once there is one. A part read after the host
+     * refused the snapshot carries that refusal, and the rest of the snapshot is given up.
+     *
+     * @param RtSyncStreamFrame $part Part just read
+     * @throws InvalidFormatException Never: the answers this end writes are within their domain
+     */
+    private function answerSnapshotPart(RtSyncStreamFrame $part): void
+    {
+        if ($this->receivingVerdict === false) {
+            $this->giveUp($part, 'its snapshot was refused before its end');
+
+            return;
+        }
+        if (!$part->final) {
+            $this->emit(RtSyncStreamFrame::ack($part->streamId, $part->sequence, $part->part, RtSyncStreamStatus::Next));
+
+            return;
+        }
+        $this->decoder = null;
+        $this->receivingFinal = $part;
+        $this->answerSnapshot();
+    }
+
+    /**
+     * Writes the host's answer to the snapshot once both the answer and the snapshot's final part are in.
+     *
+     * @throws InvalidFormatException Never: the answer names a received, valid position
+     */
+    private function answerSnapshot(): void
+    {
+        $final = $this->receivingFinal;
+        $applied = $this->receivingVerdict;
+        if ($final === null || $applied === null) {
+            return;
+        }
+        $this->endSnapshot();
+        $this->emit(RtSyncStreamFrame::ack(
+            $final->streamId,
+            $final->sequence,
+            $final->part,
+            $applied ? RtSyncStreamStatus::Applied : RtSyncStreamStatus::Refused,
+        ));
+    }
+
+    /**
+     * Refuses a part that does not read, or need not be read, and gives up the rest of its sequence; a
+     * snapshot whose parts were still being read is lost with it.
+     *
+     * @param RtSyncStreamFrame $part Part taken off the incoming queue
+     * @param string $reason Why, for the log
+     * @throws InvalidFormatException Never: the answer names a received, valid position
+     */
+    private function giveUp(RtSyncStreamFrame $part, string $reason): void
+    {
+        $this->step = null;
+        $this->decoder = null;
+        if (!$part->final && $part->sequence === $this->expectedSequence) {
+            ++$this->expectedSequence;
+            $this->expectedPart = 0;
+        }
+        unset($this->receipts[$part->sequence]);
+        if ($this->readsSnapshot()) {
+            $this->receiving->lose();
+            $this->endSnapshot();
+        }
+        $this->refuse($part, RtSyncStreamStatus::Refused, $reason);
+    }
+
+    /** Lets go of the snapshot handed to the host: answered, or given up. */
+    private function endSnapshot(): void
+    {
+        $this->receiving = null;
+        $this->receivingVerdict = null;
+        $this->receivingFinal = null;
+    }
+
+    /** @return bool Whether a snapshot was handed to the host and its later parts are still read */
+    private function readsSnapshot(): bool
+    {
+        return $this->receiving !== null && $this->receivingFinal === null;
+    }
+
+    /**
+     * @return bool Whether the host's staging of a snapshot waits for its next part: it asked for rows and found
+     *     every row read so far taken, and more are to come. It is not advanced meanwhile, so the wait spends
+     *     no pass; the part's arrival wakes the pump
+     */
+    private function waitsForSnapshotPart(): bool
+    {
+        return $this->readsSnapshot() && $this->receivingVerdict !== false && $this->receiving->awaitsRows();
+    }
+
+    /**
      * Holds the row of a refused operation, and marks this end's copy of it frozen since now. A row
      * held already keeps the moment it first froze ({@see RtStaleness::mark()}).
      *
@@ -719,17 +977,22 @@ final class RtSyncStreamChannel
 
     /**
      * Advances the apply the host handed back. An apply that raises instead of answering is
-     * answered refused here, so its window slot comes back and the stream does not stall.
+     * answered refused here, so its window slot comes back and the stream does not stall. A
+     * snapshot's staging that waits for the next part is left where it stands until the part is
+     * read ({@see self::waitsForSnapshotPart()}).
      *
      * @param RtWorkBudget $budget Allowance of the current RT pass
-     * @return bool Whether the apply ended within the allowance
+     * @return bool Whether the apply ended within the allowance, or waits for the next part of its snapshot
      * @throws InvalidFormatException Never: the answers this end writes are within their domain
      */
     private function advanceDelivery(RtWorkBudget $budget): bool
     {
         try {
-            if (!self::advance($this->delivering, $budget)) {
+            if (!self::advance($this->delivering, $budget, $this->waitsForSnapshotPart(...))) {
                 return false;
+            }
+            if ($this->delivering->valid() && $this->waitsForSnapshotPart()) {
+                return true;
             }
         } catch (Throwable $raised) {
             Logger::warning('An RT stream operation\'s apply raised instead of answering: ' . $raised->getMessage());

@@ -11,7 +11,6 @@ use Hilos\Cluster\Connections\ClusterClientLocation;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\RtClaimMesh;
 use Hilos\Cluster\RtSyncMesh;
@@ -33,6 +32,10 @@ use Hilos\Database\Database;
 use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Runtime\RtMembershipVersion;
+use Hilos\Runtime\RtRowValues;
+use Hilos\Runtime\RtSnapshot;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\RtSyncApplicator;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
@@ -83,8 +86,8 @@ final class DaemonManagerRtOwnershipNativeTest extends TestCase
         self::assertSame(1, $this->manager->offers);
         self::assertSame(1, $this->runtime->named->presenceReads);
         self::assertEquals([
-            new PeerRtSnapshotDTO('local', OwnershipNativeRuntime::NAMED, [], ['a']),
-            new PeerRtSnapshotDTO('local', OwnershipNativeRuntime::SETS, [], [], ['owner']),
+            new OwnershipNativeSnapshot('local', OwnershipNativeRuntime::NAMED, [], ['a']),
+            new OwnershipNativeSnapshot('local', OwnershipNativeRuntime::SETS, [], [], ['owner']),
         ], $this->peer->snapshots);
 
         $this->runtime->view(OwnershipNativeRuntime::SETS)->actions->put('set-a', 'owner', 'first');
@@ -109,7 +112,7 @@ final class DaemonManagerRtOwnershipNativeTest extends TestCase
         $this->dispatch();
         self::assertSame(2, $this->manager->offers);
         self::assertSame(2, $this->runtime->named->presenceReads);
-        self::assertEquals(new PeerRtSnapshotDTO('local', OwnershipNativeRuntime::NAMED,
+        self::assertEquals(new OwnershipNativeSnapshot('local', OwnershipNativeRuntime::NAMED,
             ['a' => ['id' => 'a', 'owner' => 'owner', 'text' => 'Ada']], ['a']), $this->peer->snapshots[2]);
         self::assertCount(4, $this->peer->snapshots, 'Both declared scopes retain their original handover order');
 
@@ -123,7 +126,7 @@ final class DaemonManagerRtOwnershipNativeTest extends TestCase
         $this->dispatch();
         self::assertSame(3, $this->manager->offers);
         self::assertSame(3, $this->runtime->named->presenceReads);
-        self::assertEquals(new PeerRtSnapshotDTO('local', OwnershipNativeRuntime::NAMED, [], ['a']), $this->peer->snapshots[4]);
+        self::assertEquals(new OwnershipNativeSnapshot('local', OwnershipNativeRuntime::NAMED, [], ['a']), $this->peer->snapshots[4]);
         self::assertCount(6, $this->peer->snapshots);
     }
 
@@ -309,7 +312,7 @@ final class DaemonManagerRtOwnershipNativeTest extends TestCase
         Hilos::$cluster->registerClientConnections(new ClusterClientLocation('local'));
         Hilos::$cluster->clientConnections()->attachLocal('phase-order');
         $this->invoke('attachConnectionChangesEventLoop');
-        $this->manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO([OwnershipNativeRuntime::NAMED], []), 7);
+        $this->manager->getAgentManagerDaemon()->handleSourceInterest(new WorkerSourceInterestDTO([OwnershipNativeRuntime::NAMED], [], 1), 7);
         Hilos::$sr->queueRtSyncSignal(SignalConstants::RT_SYNC_UPDATED,
             new RtSyncUpdatedSignalData(OwnershipNativeRuntime::NAMED, 'a', ['text' => 'delivered']));
         $this->invoke('runGuardedIteration', microtime(true));
@@ -343,7 +346,7 @@ final class DaemonManagerRtOwnershipNativeTest extends TestCase
         $this->dispatch();
         Hilos::$rt = null;
         $this->dispatch();
-        self::assertEquals(new PeerRtSnapshotDTO('local', OwnershipNativeRuntime::NAMED, [], ['a']), $this->peer->snapshots[1]);
+        self::assertEquals(new OwnershipNativeSnapshot('local', OwnershipNativeRuntime::NAMED, [], ['a']), $this->peer->snapshots[1]);
         Hilos::$rt = new OwnershipNativeRuntime();
         Hilos::$rt->configure();
         Hilos::$rt->bindStateCollectionNames();
@@ -378,7 +381,7 @@ final class DaemonManagerRtOwnershipNativeTest extends TestCase
             OwnershipNativeActions::class, OwnershipNativeItemActions::class);
         $this->runtime->bindStateCollectionNames();
         $this->dispatch();
-        self::assertEquals(new PeerRtSnapshotDTO('local', OwnershipNativeRuntime::NAMED, [], ['b']), $this->peer->snapshots[2]);
+        self::assertEquals(new OwnershipNativeSnapshot('local', OwnershipNativeRuntime::NAMED, [], ['b']), $this->peer->snapshots[2]);
         $oldStates->remove('b');
         $this->dispatch();
         self::assertSame(3, $this->manager->offers);
@@ -410,7 +413,7 @@ final class DaemonManagerRtOwnershipNativeTest extends TestCase
         $this->dispatch();
         self::assertSame([], $this->peer->snapshots, 'A late peer does not invent a local ownership change');
         $this->manager->handOverRtSnapshots('remote');
-        self::assertEquals([new PeerRtSnapshotDTO('local', OwnershipNativeRuntime::NAMED,
+        self::assertEquals([new OwnershipNativeSnapshot('local', OwnershipNativeRuntime::NAMED,
             ['a' => ['id' => 'a', 'owner' => 'owner', 'text' => 'Ada']], ['a'])], $this->peer->snapshots);
         self::assertCount(1, $this->peer->claims);
         $this->dispatch();
@@ -631,10 +634,16 @@ final class OwnershipNativeManager extends DaemonManager
     /**
      * @param ?RtSyncMesh $mesh Actual registered snapshot port
      * @param string $nodeId Original handover addressee
+     * @param ?list<string> $onlyCollectionKeys The collections whose areas go, or null for every collection
+     * @param ?int $answering Number of the node's announcement the hand-over answers, or null when it answers none
      */
-    protected function sendRtSnapshotsToNode(?RtSyncMesh $mesh, string $nodeId): void
-    {
-        parent::sendRtSnapshotsToNode($mesh === null ? null : $this->mesh, $nodeId);
+    protected function sendRtSnapshotsToNode(
+        ?RtSyncMesh $mesh,
+        string $nodeId,
+        ?array $onlyCollectionKeys = null,
+        ?int $answering = null,
+    ): void {
+        parent::sendRtSnapshotsToNode($mesh === null ? null : $this->mesh, $nodeId, $onlyCollectionKeys, $answering);
     }
 
     /** @param ?ClientMesh $mesh Connection announcement port */
@@ -721,7 +730,15 @@ final class OwnershipNativeWorkers extends WorkerServer
 
 final class OwnershipNativePeer implements RtSyncMesh, RtClaimMesh
 {
-    /** @var list<PeerRtSnapshotDTO> Every real snapshot send, without filtering */
+    /**
+     * @param string $nodeId Node whose announcement is answered
+     * @param int $announcement Number of the announcement
+     */
+    public function sendSourceInterestAnswered(string $nodeId, int $announcement): void
+    {
+    }
+
+    /** @var list<OwnershipNativeSnapshot> Every real snapshot send, without filtering */
     public array $snapshots = [];
     /** @var list<array> Whole original claim announcements */
     public array $claims = [];
@@ -742,19 +759,27 @@ final class OwnershipNativePeer implements RtSyncMesh, RtClaimMesh
     }
 
     /**
+     * Takes the area the way the stream does - cut when it is taken - and keeps the rows the cut reads.
+     *
      * @param string $nodeId Addressed original peer
      * @param string $collectionKey Snapshot source
-     * @param array<string, array<string, mixed>> $rows Actual built rows
-     * @param list<string> $scopeKeys Named ownership scope
-     * @param list<string> $scopeSetKeys Set ownership scope
+     * @param RtSnapshotScope $scope Area this node owns
+     * @param bool $partialOwner Whether this node holds only part of the right
      */
-    public function sendRtSnapshotToNode(string $nodeId, string $collectionKey, array $rows,
-        array $scopeKeys = [], array $scopeSetKeys = []): void
+    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void
     {
         if ($this->refuseSnapshot) {
             throw new RuntimeException('snapshot refused');
         }
-        $this->snapshots[] = new PeerRtSnapshotDTO('local', $collectionKey, $rows, $scopeKeys, $scopeSetKeys);
+        $export = RtSnapshot::capture($collectionKey, $scope);
+        $rows = [];
+        while (!$export->isFinished()) {
+            $portion = $export->advance(new RtWorkBudget());
+            foreach ($portion?->ids ?? [] as $position => $stateId) {
+                $rows[$stateId] = RtRowValues::nativeMap($portion->values[$position]);
+            }
+        }
+        $this->snapshots[] = new OwnershipNativeSnapshot('local', $collectionKey, $rows, $scope->rowKeys() ?? [], $scope->setKeys() ?? []);
         $this->snapshotSeen?->__invoke();
     }
 
@@ -977,5 +1002,25 @@ final class OwnershipNativeItemActions extends RtItemActions
     public function erase(): void
     {
         $this->remove();
+    }
+}
+
+/** One area this node handed to a peer, as the cut read it. */
+final readonly class OwnershipNativeSnapshot
+{
+    /**
+     * @param string $originNodeId Node that owns the area
+     * @param string $collectionKey Collection of the area
+     * @param array<string, array<string, mixed>> $rows Rows the cut read, by id
+     * @param list<string> $scopeKeys Rows the area names; empty for other widths
+     * @param list<string> $scopeSetKeys Sets the area names; empty for other widths
+     */
+    public function __construct(
+        public string $originNodeId,
+        public string $collectionKey,
+        public array $rows,
+        public array $scopeKeys = [],
+        public array $scopeSetKeys = [],
+    ) {
     }
 }

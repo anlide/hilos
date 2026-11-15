@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Socket\Worker\DTO;
 
 use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Socket\Worker\WorkerDTO;
 
@@ -23,6 +24,11 @@ use Hilos\Socket\Worker\WorkerDTO;
  * Both halves travel in the one frame rather than in a frame each (HIL-750). The two lists are
  * moved by the same events - an agent starting, a page subscribing, a feature mounting - so
  * splitting them would only create two reports that have to be kept in agreement with each other.
+ *
+ * Each report carries its number, counted by the worker's connection from one (HIL-1817). The
+ * master marks the snapshot it answers a report with by that number, in the snapshot's head, and
+ * the worker publishes a snapshot of a collection only for the report that added the collection or
+ * a later one: a snapshot cut for an interest that ended before it came is told apart by its number.
  */
 class WorkerSourceInterestDTO extends WorkerDTO
 {
@@ -35,13 +41,18 @@ class WorkerSourceInterestDTO extends WorkerDTO
     /** @var string Payload key: DB collections this worker reads */
     public const string FIELD_DB_COLLECTIONS = 'dbCollections';
 
+    /** @var string Payload key: number of the report, counted by the worker's connection from one */
+    public const string FIELD_ANNOUNCEMENT = 'announcement';
+
     /**
      * @param list<string> $rtCollections RT collections every consumer of this worker reads, each named once
      * @param list<string> $dbCollections DB collections every consumer of this worker reads, each named once
+     * @param int $announcement Number of the report, counted by the worker's connection from one
      */
     public function __construct(
         public readonly array $rtCollections,
         public readonly array $dbCollections,
+        public readonly int $announcement,
     ) {
     }
 
@@ -62,6 +73,7 @@ class WorkerSourceInterestDTO extends WorkerDTO
             self::TYPE => self::MESSAGE_TYPE,
             self::FIELD_RT_COLLECTIONS => $this->rtCollections,
             self::FIELD_DB_COLLECTIONS => $this->dbCollections,
+            self::FIELD_ANNOUNCEMENT => $this->announcement,
         ];
     }
 
@@ -72,14 +84,18 @@ class WorkerSourceInterestDTO extends WorkerDTO
      * is the ordinary state of a worker running no page and no agent, and it is exactly what a
      * worker of an older build says by not naming the field at all.
      *
-     * @param array<string, mixed> $data Source data (rtCollections, dbCollections)
+     * The number is required: the master marks its answer with it.
+     *
+     * @param array<string, mixed> $data Source data (rtCollections, dbCollections, announcement)
      * @return static DTO instance
+     * @throws InvalidFormatException When the number of the report is absent or not an integer
      */
     public static function fromArray(array $data): static
     {
         return new static(
             rtCollections: self::collectionList($data, self::FIELD_RT_COLLECTIONS),
             dbCollections: self::collectionList($data, self::FIELD_DB_COLLECTIONS),
+            announcement: self::requireInt($data, self::FIELD_ANNOUNCEMENT),
         );
     }
 

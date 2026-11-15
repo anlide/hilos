@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Cluster;
 
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\TruthSource\RtReplicaOriginMap;
 use Hilos\Core\Router\DTO\SignalDTO;
+use LogicException;
 
 /**
  * Outbound peer port the daemon announces its own RT writes through.
@@ -42,24 +45,32 @@ interface RtSyncMesh
     public function linkedNodeIds(): array;
 
     /**
-     * Hands one RT collection this node owns, or the rows of it it owns, to a node that joined.
+     * Hands one area this node owns of an RT collection - the whole collection, or the rows or
+     * sets of it it owns - to one node, as a snapshot cut into the stream of the link to it.
      *
-     * Addressed, unlike the announcement above: a node that has just come up is the only one
-     * behind on the collection, and the others hold a copy the deltas have kept current.
+     * Addressed, unlike the announcement above: a node that has just come up, or whose copy lost
+     * its base, is the only one behind on the collection, and the others hold a copy the deltas
+     * have kept current. Cut where the stream takes it, so every write streamed there before
+     * reaches the node ahead of it and every write after behind it.
      *
-     * @param string $nodeId Node that joined
-     * @param string $collectionKey RT collection this node owns
-     * @param array<string, array<string, mixed>> $rows Rows by state id, as this node holds them
-     * @param list<string> $scopeKeys Named rows this node speaks for; empty for other widths
-     * @param list<string> $scopeSetKeys Sets this node speaks for; empty for other widths
+     * @param string $nodeId Node being handed the area
+     * @param string $collectionKey RT collection this node owns all or part of
+     * @param RtSnapshotScope $scope The area this node owns
+     * @param bool $partialOwner Whether this node holds only part of the right over the collection
+     * @throws InvalidFormatException When a standalone row's set field is malformed
+     * @throws LogicException When the source's version pages have closed
      */
-    public function sendRtSnapshotToNode(
-        string $nodeId,
-        string $collectionKey,
-        array $rows,
-        array $scopeKeys = [],
-        array $scopeSetKeys = [],
-    ): void;
+    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void;
+
+    /**
+     * Answers one node's announcement of what it reads, behind every write and snapshot this node
+     * streamed to it before: the node reads it as the word that the snapshots owed for the
+     * announcement are ahead of it.
+     *
+     * @param string $nodeId Node whose announcement is answered
+     * @param int $announcement Number of the announcement
+     */
+    public function sendSourceInterestAnswered(string $nodeId, int $announcement): void;
 
     /**
      * Asks one node for the collections this one holds nothing of.

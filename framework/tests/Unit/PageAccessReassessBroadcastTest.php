@@ -372,7 +372,7 @@ final class PageAccessReassessBroadcastTestManager extends DaemonManager
     {
         foreach ($this->workerServer?->workerIndexes() ?? [] as $workerIndex) {
             $this->agentManagerDaemon->handleSourceInterest(
-                new WorkerSourceInterestDTO([], [$collectionKey]),
+                new WorkerSourceInterestDTO([], [$collectionKey], 1),
                 $workerIndex,
             );
         }

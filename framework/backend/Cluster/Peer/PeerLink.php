@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer;
 
 use Closure;
+use Generator;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\EventLoopTimer;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
@@ -68,8 +69,8 @@ use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtReplicaOfferDTO;
-use Hilos\Cluster\Peer\DTO\PeerRtSnapshotDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSnapshotQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtSnapshotRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
@@ -77,6 +78,7 @@ use Hilos\Cluster\Peer\DTO\PeerUploadReserveDTO;
 use Hilos\Cluster\Peer\DTO\PeerUploadGrantedDTO;
 use Hilos\Cluster\Peer\DTO\PeerUploadAcceptedDTO;
 use Hilos\Cluster\Peer\DTO\PeerUploadReleaseDTO;
+use Hilos\Cluster\Peer\DTO\PeerSourceInterestAnsweredDTO;
 use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerVoteReplyDTO;
@@ -91,9 +93,11 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
+use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
 use Hilos\Socket\Client\AbstractClient;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Exception\SocketTlsHandshakeException;
@@ -136,6 +140,17 @@ final class PeerLink extends AbstractClient
     /** The ordinary RT stream of this link instance */
     private ?RtSyncStreamChannel $rtSyncStream = null;
     /**
+     * @var array<string, true> RT collections the linked node was asked one more snapshot of, until a snapshot of the
+     *      collection reaches the stream's host ({@see self::requestRtSnapshot()}); process-local like the stream, and
+     *      ending with this link instance as the stream does
+     */
+    private array $rtSnapshotsAsked = [];
+    /**
+     * @var array<string, true> RT collections whose last snapshot from the linked node a live change here canceled,
+     *      until one of them is published ({@see self::requestRtSnapshotAgain()}); ending with this link instance
+     */
+    private array $rtSnapshotsContested = [];
+    /**
      * @var array<string, int> Frames naming each agent that wait for their turn behind this link's RT stream, until
      *      written ({@see self::queueFrame()}); the stream is this link instance's, so the count ends with it
      */
@@ -164,6 +179,15 @@ final class PeerLink extends AbstractClient
 
     /** @var bool Whether this old link has queued its drain marker */
     private bool $draining = false;
+
+    /**
+     * Whether the answers to the linked node's announcements still waiting for their turn are dropped
+     * rather than written: the link is being drained, and the snapshots they answer for will never be
+     * written to it ({@see self::beginDrain()}). A dropped answer leaves this node owing the linked node
+     * a hand-over ({@see PeerServer::noteRtHandOverOwed()}). Framework-first: process-local state of this
+     * link instance; nothing else reads it, and it ends with the link.
+     */
+    private bool $dropsWaitingAnswers = false;
 
     /** @var bool Whether the peer's drain marker arrived on this old link */
     private bool $peerDrained = false;
@@ -257,7 +281,9 @@ final class PeerLink extends AbstractClient
      * and another node's claim to the same rows then stands. A command's reply: its caller acts on
      * the outcome. An access re-decision of pages, which reads who is behind a connection from the
      * RT copy. An order to place an agent: the linked node starts the new instance, which reads and
-     * writes the rows the old one wrote when it ran on this node. Every other frame - keepalive,
+     * writes the rows the old one wrote when it ran on this node. The answer to the linked node's
+     * announcement of what it reads: the linked node takes it as the word that every snapshot owed for
+     * that announcement is ahead of it. Every other frame - keepalive,
      * consensus, membership, the drain marker, uploads, snapshots and their queries, DB sync, answers
      * to browsers and HTTP, protected mode - goes at once: none of them is read against a write sent
      * before it. A stop or a restart of an agent goes at once too, unless a frame naming the same agent
@@ -274,7 +300,7 @@ final class PeerLink extends AbstractClient
 
         return $frame instanceof PeerAgentStatusDTO || $frame instanceof PeerPlacementReportDTO || $frame instanceof PeerRtClaimsDTO
             || $frame instanceof PeerCommandReplyDTO || $frame instanceof PeerPageAccessReassessDTO
-            || $frame instanceof PeerPlaceAgentDTO;
+            || $frame instanceof PeerPlaceAgentDTO || $frame instanceof PeerSourceInterestAnsweredDTO;
     }
 
     /**
@@ -440,7 +466,8 @@ final class PeerLink extends AbstractClient
      * agent a frame still waiting for its turn names ({@see self::agentIdOf()}) - then it goes behind that
      * frame, as on a worker's link ({@see WorkerClient::sendInTurn()}). The agent counts as waited for
      * until the frame naming it is written; the stream writes every frame waiting in it in the end,
-     * behind an operation dropped or refused as well, and a draining link writes them at once.
+     * behind an operation dropped or refused as well, and a draining link writes them at once - all but
+     * an answer to the linked node's announcement, which a draining link drops ({@see self::beginDrain()}).
      *
      * @param PeerDTO $frame Frame to send
      * @param string $frameJson The same frame packed, without the newline delimiter
@@ -448,6 +475,7 @@ final class PeerLink extends AbstractClient
     private function queueFrame(PeerDTO $frame, string $frameJson): void
     {
         $agentId = self::agentIdOf($frame);
+        $answers = $frame instanceof PeerSourceInterestAnsweredDTO;
         $inTurn = self::readsBehindRtWrites($frame) || ($agentId !== null && isset($this->waitingInTurn[$agentId]));
         if ($this->rtSyncStream === null || !$inTurn) {
             $this->queueOutbound($frameJson, $frame instanceof PeerSignalDTO && $frame->uploadReservation !== null);
@@ -458,7 +486,7 @@ final class PeerLink extends AbstractClient
             $this->waitingInTurn[$agentId] = ($this->waitingInTurn[$agentId] ?? 0) + 1;
         }
         $link = WeakReference::create($this);
-        $this->rtSyncStream->writeInTurn(static function () use ($link, $frameJson, $agentId): void {
+        $this->rtSyncStream->writeInTurn(static function () use ($link, $frameJson, $agentId, $answers): void {
             $owner = $link->get();
             if ($owner === null) {
                 return;
@@ -466,8 +494,26 @@ final class PeerLink extends AbstractClient
             if ($agentId !== null && --$owner->waitingInTurn[$agentId] === 0) {
                 unset($owner->waitingInTurn[$agentId]);
             }
+            if ($answers && $owner->dropsWaitingAnswers) {
+                $owner->oweHandOver();
+
+                return;
+            }
             $owner->queueOutbound($frameJson, false);
         });
+    }
+
+    /**
+     * Tells the server this link loses on its drain what the linked node was to read: the node's repeat
+     * of its announcement on the replacement link is answered behind a hand-over of everything it names
+     * ({@see PeerServer::noteRtHandOverOwed()}).
+     */
+    private function oweHandOver(): void
+    {
+        $nodeId = $this->remoteIdentity?->nodeId;
+        if ($nodeId !== null) {
+            $this->server->noteRtHandOverOwed($nodeId);
+        }
     }
 
     /** @return int Absolute FIFO end, including staged bytes that have not reached the native buffer */
@@ -593,13 +639,23 @@ final class PeerLink extends AbstractClient
      * go out first: a draining link writes no more parts of its stream, so the writes they wait for would
      * never go out here. For the same reason the waits for the stream's answers end
      * ({@see self::afterRtWritesAnswered()}) - once the link drains, so a frame a wait sends takes the
-     * draining route. The marker goes out and the deadline is armed even when a wait raised, and what the
-     * wait raised goes on to the caller.
+     * draining route. An answer to the linked node's announcement among the waiting frames is dropped
+     * instead, neither written here nor handed to the replacement: it would tell the node that snapshots
+     * this link will never write are ahead of it. What the link loses so leaves this node owing the node a
+     * hand-over: the dropped answer, and an operation of the stream not out to its final part - its rest
+     * is never written here ({@see self::rtSyncStream()}). The node repeats its announcement on the
+     * replacement link, and owed, the repeat is answered there behind a hand-over of everything it names
+     * ({@see PeerServer::answeredCollections()}); owing nothing, it is an ordinary one. The marker goes out
+     * and the deadline is armed even when a wait raised, and what the wait raised goes on to the caller.
      *
      * @throws EventLoopException When the remaining silence deadline cannot be armed
      */
     public function beginDrain(): void
     {
+        if ($this->rtSyncStream?->isWriting() === true) {
+            $this->oweHandOver();
+        }
+        $this->dropsWaitingAnswers = true;
         $this->rtSyncStream?->releaseWaiting();
         $this->peerDrainAllowed = true;
         $this->draining = true;
@@ -761,9 +817,12 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Ends the waits for the RT stream's answers - a closed link brings no more
+     * Gives up the snapshot the RT stream was still reading - its rest will never come, and the
+     * staging of it here cancels what it staged ({@see RtSyncStreamChannel::close()}). Ends the
+     * waits for the RT stream's answers - a closed link brings no more
      * ({@see self::afterRtWritesAnswered()}) - and notifies the server so it can mark the peer offline.
-     * The server is notified even when a wait raised, and what the wait raised goes on to the closer.
+     * The server is notified even when the stream's close or a wait raised, and what they raised goes on
+     * to the closer.
      *
      * @throws HilosException When unused upload peer capacity cannot be canceled
      */
@@ -773,6 +832,7 @@ final class PeerLink extends AbstractClient
         $this->readBuffer = '';
         $this->discardOutbound();
         try {
+            $this->rtSyncStream?->close();
             $this->rtSyncStream?->endAnswerWaits();
         } finally {
             $this->server->onLinkClosed($this);
@@ -916,12 +976,13 @@ final class PeerLink extends AbstractClient
             $frame instanceof PeerUploadAcceptedDTO, $frame instanceof PeerUploadReleaseDTO => $this->onUploadControl($frame),
             $frame instanceof PeerRtSyncStreamDTO => $this->onRtSyncStream($frame),
             $frame instanceof PeerDbSyncDTO => $this->onDbSync($frame),
-            $frame instanceof PeerRtSnapshotDTO => $this->onRtSnapshot($frame),
             $frame instanceof PeerSourceInterestDTO => $this->onSourceInterest($frame),
+            $frame instanceof PeerSourceInterestAnsweredDTO => $this->onSourceInterestAnswered($frame),
             $frame instanceof PeerRtClaimsDTO => $this->onRtClaims($frame),
             $frame instanceof PeerRtClaimsQueryDTO => $this->onRtClaimsQuery($frame),
             $frame instanceof PeerRtClaimRefusedDTO => $this->onRtClaimRefused($frame),
             $frame instanceof PeerRtSnapshotQueryDTO => $this->onRtSnapshotQuery($frame),
+            $frame instanceof PeerRtSnapshotRequestDTO => $this->onRtSnapshotRequest($frame),
             $frame instanceof PeerRtReplicaOfferDTO => $this->onRtReplicaOffer($frame),
             $frame instanceof PeerClientSignalDTO => $this->onClientSignal($frame),
             $frame instanceof PeerClientFanoutDTO => $this->onClientFanout($frame),
@@ -1352,12 +1413,15 @@ final class PeerLink extends AbstractClient
      * replaced link is a new epoch.
      *
      * An operation is received with the receipt taken when its final part arrived, and applied
-     * by the server even if this link closed in between: a loss of its node then freezes it.
+     * by the server even if this link closed in between: a loss of its node then freezes it. A
+     * snapshot of a collection is handed to the server at its head, and the server hands its
+     * staging back as the stream's work ({@see PeerServer::onRtSyncStreamReceived()}).
      *
      * A row the stream holds after refusing the linked node's write is marked by the master, which
      * tells the workers that read the row, since their copies came from this node's and froze with
      * it; there is no writing worker to leave out. Without a master's mark it is marked in this
-     * process alone.
+     * process alone. Either way the first row held of a collection asks the linked node for a
+     * snapshot of it ({@see self::requestRtSnapshot()}).
      *
      * A draining link writes nothing more of its stream. Its positions belong to this instance:
      * handed to the replacement route as other frames are, a part would open the new link's
@@ -1379,11 +1443,17 @@ final class PeerLink extends AbstractClient
                     }
                     $owner->sendFrame(new PeerRtSyncStreamDTO($frame));
                 },
-                static function (RtSyncStreamOperation $operation, Closure $settled, ?RtReplicaConfirmation $receipt = null) use (
-                    $link,
-                    $server,
-                ): void {
-                    $server->onRtSyncStreamReceived($link->get(), $operation, $settled, $receipt);
+                static function (
+                    RtSyncStreamOperation|RtSyncStreamSnapshot $operation,
+                    Closure $settled,
+                    ?RtReplicaConfirmation $receipt = null,
+                ) use ($link, $server): ?Generator {
+                    $owner = $link->get();
+                    if ($owner !== null && $operation instanceof RtSyncStreamSnapshot) {
+                        unset($owner->rtSnapshotsAsked[$operation->collectionKey]);
+                    }
+
+                    return $server->onRtSyncStreamReceived($owner, $operation, $settled, $receipt);
                 },
                 $this->server->rtSyncStreamWake(),
                 null,
@@ -1392,8 +1462,17 @@ final class PeerLink extends AbstractClient
 
                     return $owner === null ? null : $server->rtSyncReceipt($owner);
                 },
-                $hold === null ? null : static function (string $collectionKey, array $stateIds, ?float $since) use ($hold): void {
-                    $hold(null, $collectionKey, $stateIds, $since);
+                static function (string $collectionKey, array $stateIds, ?float $since) use ($link, $hold): void {
+                    if ($hold !== null) {
+                        $hold(null, $collectionKey, $stateIds, $since);
+                    } elseif ($since === null) {
+                        RtStaleness::clear($collectionKey, $stateIds);
+                    } else {
+                        RtStaleness::mark($collectionKey, $stateIds, $since);
+                    }
+                    if ($since !== null) {
+                        $link->get()?->requestRtSnapshot($collectionKey);
+                    }
                 },
             );
         }
@@ -1403,14 +1482,77 @@ final class PeerLink extends AbstractClient
 
     /**
      * Lifts the hold this link's stream keeps on the rows of a collection whose operation it
-     * refused, once the linked node's snapshot of the collection was applied here. A link that
-     * never opened its stream holds nothing.
+     * refused, once the linked node's snapshot of the collection was applied here; the snapshot
+     * also ends a run of its canceled predecessors ({@see self::requestRtSnapshotAgain()}). A link
+     * that never opened its stream holds nothing.
      *
      * @param string $collectionKey Collection the snapshot replaced
      */
     public function recoverRtSyncStream(string $collectionKey): void
     {
+        unset($this->rtSnapshotsContested[$collectionKey]);
         $this->rtSyncStream?->recover($collectionKey);
+    }
+
+    /**
+     * Asks the linked node for one more snapshot of an RT collection whose last snapshot was canceled
+     * here before its publication ({@see self::requestRtSnapshot()}). A live change of the area that
+     * cancels the second snapshot in a row is a writer here every cut of that node misses - a second
+     * owner of the area - and asking again would only be canceled again: that one is not asked
+     * again, and the next event asks (a hold, a hand-over), as after a refusal. A publication of the
+     * collection's snapshot ends the run ({@see self::recoverRtSyncStream()}), and so does a
+     * cancellation for another cause.
+     *
+     * A draining link asks through the link that replaced it, and the run is that link's: the next
+     * snapshot comes there ({@see PeerServer::requestRtSnapshotAgain()}). Without one nothing is asked,
+     * and nothing is to come: the node is struck out of what the copies wait for once its last link closed.
+     *
+     * @param string $collectionKey Collection whose snapshot was canceled
+     * @param bool $byLiveChange Whether a live change of the snapshot's area here canceled it
+     * @return bool Whether another snapshot of the collection is asked for and still to come
+     */
+    public function requestRtSnapshotAgain(string $collectionKey, bool $byLiveChange): bool
+    {
+        if ($this->draining) {
+            $nodeId = $this->remoteIdentity?->nodeId;
+
+            return $nodeId !== null && $this->server->requestRtSnapshotAgain($nodeId, $collectionKey, $byLiveChange);
+        }
+        if ($byLiveChange && isset($this->rtSnapshotsContested[$collectionKey])) {
+            Logger::warning("A write here canceled the RT snapshot of {$collectionKey} from node '{$this->remoteIdentity?->nodeId}'"
+                . ' twice in a row: two owners of its area; another is asked for on the next event only');
+
+            return false;
+        }
+        if ($byLiveChange) {
+            $this->rtSnapshotsContested[$collectionKey] = true;
+        } else {
+            unset($this->rtSnapshotsContested[$collectionKey]);
+        }
+        $this->requestRtSnapshot($collectionKey);
+
+        return isset($this->rtSnapshotsAsked[$collectionKey]);
+    }
+
+    /**
+     * Asks the linked node for one more snapshot of an RT collection, this node's copy of its rows
+     * having lost its base: the stream holds a row of it after refusing its operation, or a
+     * snapshot of it was canceled before its publication. One request waits per collection, until
+     * a snapshot of it reaches the stream's host; a draining or closed link asks nothing - a snapshot
+     * canceled on a draining link is asked for on its replacement ({@see self::requestRtSnapshotAgain()}),
+     * and a new link after a closed one hands the collection over on its handshake. A linked node that
+     * owns nothing of the collection any more answers with no snapshot, and the request goes on waiting
+     * until the next hand-over of the collection on this link or the link's replacement.
+     *
+     * @param string $collectionKey Collection to ask a snapshot of
+     */
+    public function requestRtSnapshot(string $collectionKey): void
+    {
+        if (isset($this->rtSnapshotsAsked[$collectionKey]) || $this->draining || $this->shouldClose || $this->remoteIdentity === null) {
+            return;
+        }
+        $this->rtSnapshotsAsked[$collectionKey] = true;
+        $this->sendFrame(new PeerRtSnapshotRequestDTO($this->localIdentity->nodeId, $collectionKey));
     }
 
     /**
@@ -1446,18 +1588,6 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Hands a received RT collection to the server for this node's copy to be replaced.
-     *
-     * @param PeerRtSnapshotDTO $frame Incoming RT snapshot frame
-     * @throws PeerTransportException When the frame arrives before the handshake
-     */
-    private function onRtSnapshot(PeerRtSnapshotDTO $frame): void
-    {
-        $this->requireHandshaked('RT snapshot');
-        $this->server->onRtSnapshotReceived($this, $frame);
-    }
-
-    /**
      * Hands a received request for a collection to the server so this node answers with what it holds.
      *
      * @param PeerRtSnapshotQueryDTO $frame Incoming RT-snapshot-query frame
@@ -1467,6 +1597,19 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('RT snapshot query');
         $this->server->onRtSnapshotQueryReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received request for one more snapshot of a collection to the server, so this node
+     * cuts its areas of the collection into this link's stream.
+     *
+     * @param PeerRtSnapshotRequestDTO $frame Incoming RT-snapshot-request frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onRtSnapshotRequest(PeerRtSnapshotRequestDTO $frame): void
+    {
+        $this->requireHandshaked('RT snapshot request');
+        $this->server->onRtSnapshotRequestReceived($this, $frame);
     }
 
     /**
@@ -1491,6 +1634,18 @@ final class PeerLink extends AbstractClient
     {
         $this->requireHandshaked('source interest');
         $this->server->onSourceInterestReceived($this, $frame);
+    }
+
+    /**
+     * Hands a received answer to this node's announcement of what it reads to the server.
+     *
+     * @param PeerSourceInterestAnsweredDTO $frame Incoming answer to an interest frame
+     * @throws PeerTransportException When the frame arrives before the handshake
+     */
+    private function onSourceInterestAnswered(PeerSourceInterestAnsweredDTO $frame): void
+    {
+        $this->requireHandshaked('source interest answer');
+        $this->server->onSourceInterestAnsweredReceived($this, $frame);
     }
 
     /**

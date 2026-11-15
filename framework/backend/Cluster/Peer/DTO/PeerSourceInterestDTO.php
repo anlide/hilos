@@ -25,6 +25,11 @@ use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
  * Both kinds are named (HIL-750). A DB row is read out of the shared database, so no node owes
  * another a copy of it - but a node that holds none of a collection has nothing to apply a frame
  * about it into, and telling the sender so is what stops the hop.
+ *
+ * Each announcement carries its number, and every node it reaches answers that number
+ * ({@see PeerSourceInterestAnsweredDTO}) behind the snapshots of the collections it newly owes
+ * the reader: the reader's copy of a collection it started reading waits for those answers
+ * (HIL-1817). A frame repeated on a new link carries the number of the announcement it repeats.
  */
 final class PeerSourceInterestDTO extends PeerDTO
 {
@@ -40,15 +45,20 @@ final class PeerSourceInterestDTO extends PeerDTO
     /** @var string Payload key: DB collections that node reads */
     public const string FIELD_DB_COLLECTIONS = 'dbCollections';
 
+    /** @var string Payload key: number of the announcement, answered by every node it reaches */
+    public const string FIELD_ANNOUNCEMENT = 'announcement';
+
     /**
      * @param string $nodeId Id of the node that reads these collections
      * @param list<string> $rtCollections RT collections its processes read, each named once
      * @param list<string> $dbCollections DB collections its processes read, each named once
+     * @param int $announcement Number of the announcement, zero before the node's first
      */
     public function __construct(
         public readonly string $nodeId,
         public readonly array $rtCollections,
         public readonly array $dbCollections,
+        public readonly int $announcement,
     ) {
     }
 
@@ -74,6 +84,7 @@ final class PeerSourceInterestDTO extends PeerDTO
             self::FIELD_NODE_ID => $this->nodeId,
             self::FIELD_RT_COLLECTIONS => $this->rtCollections,
             self::FIELD_DB_COLLECTIONS => $this->dbCollections,
+            self::FIELD_ANNOUNCEMENT => $this->announcement,
         ];
     }
 
@@ -84,11 +95,12 @@ final class PeerSourceInterestDTO extends PeerDTO
      * nothing that reads reports exactly that, and so does a node of an older build that does not
      * know the field. What cannot be missing is the node id - a list with nobody behind it could
      * not be written into the map, and treating it as anonymous would let it replace somebody
-     * else's ({@see PeerServer::onSourceInterestReceived()}).
+     * else's ({@see PeerServer::onSourceInterestReceived()}). Nor can the number: it is what the
+     * answer names, and a reader waiting for it would wait for an answer to nothing.
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored interest frame
-     * @throws PeerTransportException When the node id is missing
+     * @throws PeerTransportException When the node id or the announcement number is missing
      */
     public static function fromArray(array $data): static
     {
@@ -96,11 +108,16 @@ final class PeerSourceInterestDTO extends PeerDTO
         if (!is_string($nodeId) || $nodeId === '') {
             throw new PeerTransportException('Peer source interest is missing the node id');
         }
+        $announcement = $data[self::FIELD_ANNOUNCEMENT] ?? null;
+        if (!is_int($announcement) || $announcement < 0) {
+            throw new PeerTransportException('Peer source interest is missing the announcement number');
+        }
 
         return new static(
             nodeId: $nodeId,
             rtCollections: self::collectionList($data, self::FIELD_RT_COLLECTIONS),
             dbCollections: self::collectionList($data, self::FIELD_DB_COLLECTIONS),
+            announcement: $announcement,
         );
     }
 

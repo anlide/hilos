@@ -214,13 +214,17 @@ use Hilos\Runtime\Row\RtRowArena;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\RtSnapshotBasis;
 use Hilos\Runtime\RtSnapshotRead;
+use Hilos\Runtime\Snapshot\RtSnapshotImport;
 use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtSnapshotStatus;
+use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Snapshot\RtWorkLane;
 use Hilos\Runtime\Snapshot\RtWorkScheduler;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Runtime\Stream\RtSyncStreamSettle;
+use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
 use Hilos\Runtime\RtMembershipVersion;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Runtime\RtStaleness;
@@ -290,6 +294,7 @@ use Hilos\Utils\ClientReadFailureLog;
 use Hilos\Utils\Logger;
 use Random\RandomException;
 use JsonException;
+use LogicException as NativeLogicException;
 use Throwable;
 use WeakMap;
 use WeakReference;
@@ -445,6 +450,10 @@ abstract class DaemonManager extends BaseManager implements
     private const int SIGNAL_DISPATCH_STEPS_PER_PORTION = 64;
 
     private const int AGENT_REPORT_STEPS_PER_PORTION = 64;
+    /** Steps a staged snapshot generation takes for each unit of work it asks of its link stream's share */
+    private const int RT_SNAPSHOT_STEPS_PER_WORK = 8;
+    /** Logical bytes a staged snapshot generation asks of its link stream's share for each unit of work */
+    private const int RT_SNAPSHOT_BYTES_PER_WORK = 4096;
 
     /** Maximum dispatch time before returning to the iteration's I/O and due owners. */
     private const int SIGNAL_DISPATCH_BUDGET_NS = 2 * TimeConstants::NS_PER_MILLISECOND;
@@ -1060,6 +1069,27 @@ abstract class DaemonManager extends BaseManager implements
     private readonly RtWorkScheduler $rtWork;
     /** @var ?WeakMap<RtSyncStreamChannel, int> Wakes of each link stream whose pump is queued on this master's FIFO */
     private ?WeakMap $rtSyncStreamWakes = null;
+    /**
+     * @var array<string, array<string, int>> Snapshots linked nodes' streams stage here now, counted by RT collection
+     *     and the node that cut them ({@see self::stageRemoteRtSnapshot()}); process-local copy machinery of the
+     *     streams, each count ending with its staging
+     */
+    private array $rtSnapshotsStaging = [];
+    /**
+     * @var ?WeakMap<RtSnapshotImport, array{string, string}> Generations the linked nodes' snapshots stage here,
+     *     each with its RT collection and what this node claimed of the collection when it began
+     *     ({@see self::cancelRtStagingsCrossedByClaims()}); process-local copy machinery, each entry ending with
+     *     its generation
+     */
+    private ?WeakMap $rtSnapshotImports = null;
+    /**
+     * @var array<string, RtSnapshotImport> Drops of this node's copy of RT collections, by collection, staged and
+     *     published on this master's FIFO ({@see self::dropRtCopy()}); process-local copy machinery, each ending
+     *     with its publication, or with the collection read here again
+     */
+    private array $rtCopyDrops = [];
+    /** @var array<string, Closure(string): bool> Which rows each drop of {@see $rtCopyDrops} sweeps, by collection */
+    private array $rtCopyDropSweeps = [];
 
     /**
      * Initializes daemon manager.
@@ -6603,9 +6633,16 @@ abstract class DaemonManager extends BaseManager implements
                 $this->agentManagerDaemon->rtReplicaOriginMap()->forget($signal->data->collectionKey, $signal->data->stateId);
                 $thawed = $this->liftStaleness($signal->data->collectionKey, [$signal->data->stateId]);
             }
-            yield from $this->syncFrameDelivery($workerServer, $signal);
             if ($signal->data instanceof RtSyncSignalDataInterface) {
+                // The workers' streams and this master's copy take an RT write in one step, as a
+                // peer's write is taken ({@see self::applyRemoteRtSync()}): the snapshot a worker is
+                // handed is cut from the copy, and a cut between the two - a copy confirmed on the
+                // effect turn, an interest read off a link - would miss a write its stream already
+                // carries or a reader the walk had passed, for good (HIL-1817).
+                $this->sendSyncToWorkers($workerServer, $signal);
                 $this->thawOnWorkers($signal->data->collectionKey, $thawed);
+            } else {
+                yield from $this->syncFrameDelivery($workerServer, $signal);
             }
             $this->handleDaemonSignal($signal);
             yield from $this->peerAnnouncementDelivery($peerServer, function () use ($peerServer, $signal): void {
@@ -7181,9 +7218,15 @@ abstract class DaemonManager extends BaseManager implements
      * The same reader map as {@see self::workerFrameDelivery()}: a worker that has not said it
      * reads the collection holds nothing the write could land on.
      *
+     * Every caller - {@see self::sendSyncToWorkers()} and {@see self::streamRtSyncToWorkers()} -
+     * drains the walk whole, in one step: the write reaches the workers' streams and the master's
+     * copy together, since a snapshot cut between the two would miss a write a stream already
+     * carries (HIL-1817). Do not hand it to `yield from` for an RT write: that reopens the window.
+     *
      * @param WorkerServer $server Owning worker server
      * @param RtSyncSignalDataInterface $data RT sync carrier
-     * @return Generator<int, void> Effect-free initial yield, then one worker link per step
+     * @return Generator<int, void> Effect-free initial yield, then one worker link per yield; the
+     *     callers do not spend a step on them, they drain the walk in one
      */
     private function workerRtSyncDelivery(WorkerServer $server, RtSyncSignalDataInterface $data): Generator
     {
@@ -7191,9 +7234,13 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Hands the write to each reading worker's stream, one worker link per yield. The yields are
+     * not steps of the master's work: every caller drains the walk whole (HIL-1817), see
+     * {@see self::workerRtSyncDelivery()}.
+     *
      * @param Generator<int, ?ClientInterface> $clients Original worker roster slots
      * @param RtSyncSignalDataInterface $data RT sync carrier, shared by every stream that takes it
-     * @return Generator<int, void> One worker link per step after the initial yield
+     * @return Generator<int, void> One worker link per yield after the initial yield, drained whole by the caller
      */
     private function walkWorkerRtSync(Generator $clients, RtSyncSignalDataInterface $data): Generator
     {
@@ -7526,18 +7573,40 @@ abstract class DaemonManager extends BaseManager implements
      * written during a broken link was lost for good.
      *
      * An owner of a set sends its set keys as a separate scope (HIL-1116), even when it holds no
-     * rows. The receiver sweeps only missing rows it received from this sender. The scope of a
-     * partial owner is nonempty by construction, so an empty carried row map cannot be mistaken
-     * for a whole-collection frame.
+     * rows. The receiver sweeps only missing rows it received from this sender. An empty scope
+     * sends nothing: it would sweep nothing.
+     *
+     * Each area is a snapshot cut into the stream of the link to that node
+     * ({@see RtSyncMesh::streamRtSnapshotToNode()}): cut when the stream takes it, so every write
+     * of this node streamed there before reaches the node ahead of it and every later one behind
+     * it, and its rows are read out of the cut as its parts are written. The walk of the claims is
+     * the work of this master's FIFO, one area per step.
+     *
+     * An answer to the node's announcement of what it reads goes behind the areas it owed, when the
+     * hand-over answers one ({@see RtSyncMesh::sendSourceInterestAnswered()}): the node reads it as
+     * the word that they are ahead of it.
+     *
+     * The walk goes to the link the node was reached through when the hand-over was asked for. A walk
+     * whose link was replaced meanwhile skips what is left - the area and the answer would reach the
+     * node out of turn on the new link - and leaves this node owing the node, while it is linked, a
+     * hand-over of everything it reads: the node's repeat of its announcement on the new link is
+     * answered behind it ({@see PeerServer::noteRtHandOverOwed()}). A walk asked for on the old link is
+     * ahead of that repeat in this master's FIFO.
      *
      * Protected for the reason {@see broadcastRtSyncToPeers()} is: it is how a subclass sees
      * what this node hands over.
      *
      * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
      * @param string $nodeId Node the collections go to
+     * @param ?list<string> $onlyCollectionKeys The collections whose areas go, or null for every collection
+     * @param ?int $answering Number of the node's announcement the hand-over answers, or null when it answers none
      */
-    protected function sendRtSnapshotsToNode(?RtSyncMesh $mesh, string $nodeId): void
-    {
+    protected function sendRtSnapshotsToNode(
+        ?RtSyncMesh $mesh,
+        string $nodeId,
+        ?array $onlyCollectionKeys = null,
+        ?int $answering = null,
+    ): void {
         if ($mesh === null) {
             return;
         }
@@ -7545,33 +7614,165 @@ abstract class DaemonManager extends BaseManager implements
         $route = $mesh instanceof PeerServer ? $mesh->nodeRouteGuard($nodeId) : static fn(): bool => true;
         $mesh = WeakReference::create($mesh);
         $claims = $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports();
-        $rtWork = $this->rtWork;
-        $work = static function () use ($mesh, $claims, $nodeId, $route, $rtWork): Generator {
-            $transport = $mesh->get();
-            if ($transport === null || !$route()) {
+        $routeLost = static function () use ($mesh, $nodeId): void {
+            $server = $mesh->get();
+            if ($server instanceof PeerServer) {
+                $server->noteRtHandOverOwed($nodeId);
+            }
+        };
+        $work = static function () use ($mesh, $claims, $nodeId, $route, $routeLost, $onlyCollectionKeys, $answering): Generator {
+            yield;
+            if ($mesh->get() === null) {
                 return;
             }
-            $basis = new RtSnapshotBasis();
-            $sources = (static function () use ($claims, $basis): Generator {
-                $plan = $claims->plan();
-                yield from $plan->build();
-                foreach ($plan->fullyOwnedCollections as $collectionKey) {
-                    yield self::isHandedOverInSnapshot($collectionKey) ? new RtSnapshotRead($collectionKey, basis: $basis) : null;
+            if (!$route()) {
+                $routeLost();
+
+                return;
+            }
+            $stream = static function (string $collectionKey, RtSnapshotScope $scope, bool $partialOwner) use (
+                $mesh,
+                $nodeId,
+                $route,
+                $routeLost,
+                $onlyCollectionKeys,
+            ): void {
+                if (($onlyCollectionKeys !== null && !in_array($collectionKey, $onlyCollectionKeys, true))
+                    || !self::isHandedOverInSnapshot($collectionKey) || $scope->isEmpty()) {
+                    return;
                 }
-                foreach ($plan->keyScopes as $collectionKey => $scopeKeys) {
-                    yield self::isHandedOverInSnapshot($collectionKey)
-                        ? new RtSnapshotRead($collectionKey, RtSnapshotScope::rows($scopeKeys), $basis) : null;
+                if ($route()) {
+                    $mesh->get()?->streamRtSnapshotToNode($nodeId, $collectionKey, $scope, $partialOwner);
+                } else {
+                    $routeLost();
                 }
-                foreach ($plan->setScopes as $collectionKey => $setKeys) {
-                    yield self::isHandedOverInSnapshot($collectionKey)
-                        ? new RtSnapshotRead($collectionKey, RtSnapshotScope::sets($setKeys), $basis) : null;
-                }
-            })();
-            $delivery = new RtOwnedSnapshotBuild($transport, $nodeId, $sources, $route, $rtWork)->delivery();
-            unset($transport);
-            yield from $delivery;
+            };
+            if ($onlyCollectionKeys !== []) {
+                yield from self::streamOwnedRtAreas($claims, $stream);
+            }
+            if ($answering === null) {
+                return;
+            }
+            if ($route()) {
+                $mesh->get()?->sendSourceInterestAnswered($nodeId, $answering);
+            } else {
+                $routeLost();
+            }
         };
         $this->dispatchSourceWork($work);
+    }
+
+    /**
+     * Walks the areas this node owns of every RT collection, one area per step.
+     *
+     * @param RtSourceReports $claims Ownership basis the walk reads
+     * @param Closure(string, RtSnapshotScope, bool): void $stream Hands one area on
+     * @return Generator<int, void> The walk
+     */
+    private static function streamOwnedRtAreas(RtSourceReports $claims, Closure $stream): Generator
+    {
+        $plan = $claims->plan();
+        yield from $plan->build();
+        foreach ($plan->fullyOwnedCollections as $collectionKey) {
+            $stream($collectionKey, RtSnapshotScope::whole(), false);
+            yield;
+        }
+        foreach ($plan->keyScopes as $collectionKey => $scopeKeys) {
+            $stream($collectionKey, RtSnapshotScope::rows($scopeKeys), true);
+            yield;
+        }
+        foreach ($plan->setScopes as $collectionKey => $setKeys) {
+            $stream($collectionKey, RtSnapshotScope::sets($setKeys), true);
+            yield;
+        }
+    }
+
+    /**
+     * Answers a linked node's request for one more snapshot of a collection: its copy of the rows
+     * this node owns there lost its base. Implements {@see RtSyncSink}. The areas this node owns of
+     * the collection are cut into the stream of the link to it as the hand-over cuts them
+     * ({@see self::sendRtSnapshotsToNode()}); a node that owns nothing of it cuts none, and one
+     * that stopped reading it is passed over by the transport.
+     *
+     * @param string $nodeId Node that asked
+     * @param string $collectionKey RT collection it asked about
+     */
+    public function answerRtSnapshotRequest(string $nodeId, string $collectionKey): void
+    {
+        $this->sendRtSnapshotsToNode($this->findPeerServer(), $nodeId, [$collectionKey]);
+    }
+
+    /**
+     * Answers a linked node's announcement of what it reads. Implements {@see RtSyncSink}. The areas
+     * this node owns of the collections the announcement added are cut into the stream of the link to
+     * it as the hand-over cuts them ({@see self::sendRtSnapshotsToNode()}), and the answer follows
+     * them there - one that added nothing, or added only what this node owns nothing of, included:
+     * the node's copy of a collection it started reading waits for that answer from every node the
+     * announcement reached ({@see RtCopyConfirmation}).
+     *
+     * @param string $nodeId Node that announced
+     * @param list<string> $addedCollectionKeys RT collections the announcement added to what that node reads
+     * @param int $announcement Number of the announcement
+     */
+    public function answerSourceInterest(string $nodeId, array $addedCollectionKeys, int $announcement): void
+    {
+        $this->sendRtSnapshotsToNode($this->findPeerServer(), $nodeId, $addedCollectionKeys, $announcement);
+        // What this node claims goes with a new reading, as with the hand-over of a new link.
+        if ($addedCollectionKeys !== []) {
+            $this->reportRtClaims($nodeId);
+        }
+    }
+
+    /**
+     * Takes a linked node's answer to this node's announcement of what it reads. Implements
+     * {@see RtSyncSink}. Read in this master's effect queue behind the work queued before it, so the
+     * snapshots the node streamed ahead of the answer are published here first; then the node is struck
+     * off what the copies await, and a copy awaited of nobody any more goes to the workers that took
+     * its collection up meanwhile ({@see self::sendConfirmedRtCopies()}).
+     *
+     * @param string $nodeId Node that answered
+     * @param int $announcement Number of the announcement it answered
+     */
+    public function noteSourceInterestAnswered(string $nodeId, int $announcement): void
+    {
+        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
+            $owner = WeakReference::create($this);
+            $this->queueSignalEffect(static function () use ($owner, $nodeId, $announcement): Generator {
+                $owner->get()?->noteSourceInterestAnswered($nodeId, $announcement);
+                yield;
+            });
+
+            return;
+        }
+        $this->sendConfirmedRtCopies($this->agentManagerDaemon->rtCopyConfirmation()->noteAnswered($nodeId, $announcement));
+    }
+
+    /**
+     * Hands the copies just confirmed to the workers that took their collections up while they were
+     * awaited: each is sent its first snapshot of them, cut into its stream now
+     * ({@see WorkerClient::sendConfirmedRtSnapshot()}).
+     *
+     * @param list<string> $collectionKeys Collections whose copy was confirmed
+     */
+    private function sendConfirmedRtCopies(array $collectionKeys): void
+    {
+        $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
+        $first = $confirmation->takeFirstConfirmed($collectionKeys);
+        if ($first !== []) {
+            $this->askHoldersOfConfirmedRtCopies($this->findPeerServer(), $first);
+        }
+        $workerServer = $this->findWorkerServer();
+        foreach ($collectionKeys as $collectionKey) {
+            $waiting = $confirmation->takeWaitingWorkers($collectionKey);
+            if ($waiting === [] || $workerServer === null) {
+                continue;
+            }
+            foreach ($workerServer->clientCandidates() as $client) {
+                if ($client instanceof WorkerClient && isset($waiting[$client->getWorkerIndex()])) {
+                    $client->sendConfirmedRtSnapshot($collectionKey, $waiting[$client->getWorkerIndex()]);
+                }
+            }
+        }
     }
 
     /**
@@ -7932,141 +8133,375 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Replaces this node's copy of one RT collection, or of the rows named, with the owner's.
+     * Stages one snapshot a linked node streamed of its area of an RT collection - the whole
+     * collection, or the rows or sets it owns - into this node's copy, and publishes it.
      *
-     * Implements {@see RtSyncSink}. A whole-collection frame replaces the copy. A scoped frame
-     * replaces carried rows and sweeps missing rows of this sender in its named rows or sets.
-     * The workers delete affected old rows and create carried rows, so a changed row is replaced
-     * there as well as in the master's copy.
+     * Implements {@see RtSyncSink}. The staging is the work of the link's stream, run inside this
+     * master's pump of the link ({@see self::pumpRtSyncStream()}) on its share: the rows are taken
+     * as their parts are read and prepared before the next are taken, so the snapshot is never held
+     * whole, and the stream reads the link's next operation only once the snapshot is answered - a
+     * write the node made after the cut lands on the published copy, never under it. Until the
+     * publication every reader of the copy sees it as it was.
      *
-     * Rows from another origin, unknown origins, and local claims survive a scoped frame even
-     * when absent from it. An empty row map under a nonempty scope is a valid hand-over that may
-     * sweep every missing row this sender wrote there.
+     * A whole-collection snapshot for a collection an agent of this node owns wholly, or one
+     * carrying a row such an agent owns, is refused exactly as a delta is, and for the same reason:
+     * two owners is the defect, not an input (HIL-589). The exemption a delta of the co-written
+     * collection gets ({@see isMasterCoWritten()}) has no place here: a snapshot is only ever cut by
+     * the node whose own agent owns its area ({@see sendRtSnapshotsToNode()}).
      *
-     * A row carried outside the declared scope is dropped before anything is written, here and
-     * not only in the runtime, so the workers are not told to create it either.
+     * The rows and sets an agent of this node claims are left out of the area, as on a worker's own
+     * staging: never replaced and never swept, and a write of them here is this node's own (HIL-1178).
+     * Within the rest of the area the carried rows replace the copy's, and a missing row is swept
+     * only when it came from the sender - on every width, the whole collection included: rows of
+     * another origin and of no known origin stay. A live change of a row of the area from the
+     * snapshot's head on - between its parts as well, while the head of this master's FIFO serves
+     * other links, this node's workers and holders' offers - is a writer the cut did not see: it
+     * cancels the generation, and the sender is asked for another; the link asks no more after a
+     * second such cancellation in a row, as that writer is a second owner of the area
+     * ({@see PeerLink::requestRtSnapshotAgain()}). A holder's offer of the collection made by the
+     * node whose snapshot of it stages here is passed over meanwhile
+     * ({@see self::applyRemoteRtReplicaOffer()}). A snapshot whose runtime or owners changed since
+     * its final part arrived is asked for again as well. One a row of which failed its validator is
+     * not asked for again, as the same cut would fail again - the next event asks (a new hold, a new
+     * hand-over). A collection this process does not hold is read out and answered, as there is
+     * nothing to stage it into.
      *
-     * A snapshot for what this node owns is refused exactly as a delta is, and for the same
-     * reason: two owners is the defect, not an input. Refused by the rows the frame carries,
-     * rather than by a claim that may be moving between nodes (HIL-589).
-     * The exemption a delta of the co-written collection gets ({@see isMasterCoWritten()}) has no
-     * place here: a snapshot is only ever offered by the node whose own agent owns what it sends
-     * ({@see sendRtSnapshotsToNode()}), so one arriving for what this node's agent owns is that
-     * split and not a master's half of a shared store.
+     * A snapshot canceled here and asked for again leaves the copy awaiting its node once more
+     * ({@see RtCopyConfirmation::reopen()}): an answer the node already sent behind it does not cover
+     * what the cancellation left out. The wait ends with the node's answer to the announcement made
+     * after the request ({@see self::reannounceReaderInterest()}), which the node writes behind the
+     * snapshot the request asks for - published, canceled a second time, refused, lost or reaching for
+     * what an agent here owns, the answer behind it comes all the same, and the rows it left without a
+     * base stay with their marks until the next event asks. No snapshot ends the wait itself: none
+     * says which request it answers.
      *
-     * @param string $originNodeId Id of the node that owns the collection
-     * @param string $collectionKey RT collection being replaced
-     * @param array<string, array<string, mixed>> $rows Rows by state id, as the owner holds them
-     * @param list<string> $scopeKeys Named rows the snapshot speaks for; empty for other widths
-     * @param list<string> $scopeSetKeys Sets the snapshot speaks for; empty for other widths
-     * @throws HilosException Whatever the applied write of the snapshot raises
+     * The publication writes down the origin of the rows that arrived and forgets that of the rows
+     * swept, confirms the arrived rows as of the receipt of the snapshot's final part, and names the
+     * swept rows that were frozen. Then the workers that read the collection are handed the change
+     * row by row - a swept row deleted, an arrived one created, deleted first where the copy held it,
+     * so a changed row is replaced there as well - and told of the thaw behind it; then the holds the link's stream keeps
+     * on the collection's rows are lifted, and the snapshot is answered.
+     *
+     * @param string $originNodeId Id of the node at the other end of the link, which owns the area
+     * @param RtSyncStreamSnapshot $snapshot Snapshot at its head
+     * @param Closure(bool): void $settled The stream's answer
+     * @param Closure(): void $recover Lifts the holds the link's stream keeps on the rows of the collection
+     * @param Closure(bool): bool $askAgain Asks the linked node for another snapshot of the collection, told
+     *     whether a live change of its area here canceled this one, and answers whether another is still to come
+     * @return Generator<int, RtWork, int, void> The staging on the stream's share, answered at its end
+     * @throws LogicException When a portion arrives beyond the generation's reserve, or the generation is
+     *     published inside a transaction
+     * @throws NativeLogicException When a page lease or the selector broke under the generation
+     * @throws InvalidArgumentException Never: the allowances are not negative
+     * @throws HilosException Whatever a subscriber raises on an announcement of the published rows
      */
-    public function applyRemoteRtSnapshot(
+    public function stageRemoteRtSnapshot(
         string $originNodeId,
-        string $collectionKey,
-        array $rows,
-        array $scopeKeys = [],
-        array $scopeSetKeys = [],
-    ): void {
-        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
-            $owner = WeakReference::create($this);
-            $this->queueSignalEffect(static function () use ($owner, $originNodeId, $collectionKey, $rows, $scopeKeys, $scopeSetKeys): Generator {
-                $owner->get()?->applyRemoteRtSnapshot($originNodeId, $collectionKey, $rows, $scopeKeys, $scopeSetKeys);
-                yield;
-            }, peerApplyContext: "RT snapshot from node '{$originNodeId}'", rtConfirmation:
-                $this->agentManagerDaemon->rtReplicaOriginMap()->captureConfirmation($originNodeId, $this->agentManagerDaemon->rtNodeSourceMap()));
-            return;
-        }
-        $wholeCollection = $scopeKeys === [] && $scopeSetKeys === [];
-        if (!$wholeCollection) {
-            if ($scopeKeys !== []) {
-                $rows = array_intersect_key($rows, array_flip($scopeKeys));
-            } else {
-                $rows = array_filter(
-                    $rows,
-                    static fn (array $row): bool => in_array(
-                        RtSnapshot::setKeyOfRow($collectionKey, $row),
-                        $scopeSetKeys,
-                        true,
-                    ),
-                );
+        RtSyncStreamSnapshot $snapshot,
+        Closure $settled,
+        Closure $recover,
+        Closure $askAgain,
+    ): Generator {
+        $collectionKey = $snapshot->collectionKey;
+        $this->rtSnapshotsStaging[$collectionKey][$originNodeId] = ($this->rtSnapshotsStaging[$collectionKey][$originNodeId] ?? 0) + 1;
+        try {
+            yield from $this->stageRemoteRtSnapshotArea($originNodeId, $snapshot, $settled, $recover, $askAgain);
+        } finally {
+            if (--$this->rtSnapshotsStaging[$collectionKey][$originNodeId] === 0) {
+                unset($this->rtSnapshotsStaging[$collectionKey][$originNodeId]);
+            }
+            if ($this->rtSnapshotsStaging[$collectionKey] === []) {
+                unset($this->rtSnapshotsStaging[$collectionKey]);
             }
         }
+    }
 
-        $arrived = array_map(strval(...), array_keys($rows));
-        if (($wholeCollection || $arrived !== []) && $this->ownsAnyOfSnapshotScope($collectionKey, $arrived)) {
-            Logger::warning(
-                "RT collection {$collectionKey} has truth sources on two nodes:"
-                . " local and {$originNodeId}",
-            );
-
-            return;
-        }
-
-        if ($wholeCollection) {
-            $held = RtSnapshot::rows($collectionKey);
-            RtSnapshot::replace($collectionKey, $rows);
-            $swept = array_map(strval(...), array_keys(array_diff_key($held, $rows)));
-        } else {
-            $withinScope = $scopeKeys !== []
-                ? array_intersect_key(RtSnapshot::rows($collectionKey), array_flip($scopeKeys))
-                : RtSnapshot::setRows($collectionKey, $scopeSetKeys);
-            $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
-            $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
-            $ownSetKeys = $sourceMap->claimedSetKeys($collectionKey);
-            $swept = [];
-            foreach ($withinScope as $stateId => $heldRow) {
-                if (
-                    isset($rows[$stateId])
-                    || $originMap->nodeOfRow($collectionKey, (string)$stateId) !== $originNodeId
-                    || $sourceMap->owns($collectionKey, (string)$stateId)
-                    || in_array(RtSnapshot::setKeyOfRow($collectionKey, $heldRow), $ownSetKeys, true)
-                ) {
-                    continue;
-                }
-
-                $swept[] = (string)$stateId;
-            }
-
-            $affected = array_values(array_unique(array_merge($arrived, $swept)));
-            $held = array_intersect_key($withinScope, array_flip($affected));
-            RtSnapshot::replaceScope($collectionKey, $affected, $rows);
-        }
-
-        // A hand-over confirms these replicas at receipt; a subsequent loss still applies when
-        // this retained work reaches them. Swept rows lose their origin and stale mark, so the
-        // next dropped link cannot freeze a row that no longer exists. The readers are told of the
-        // thaw behind the rows streamed to them below.
+    /**
+     * The staging of {@see self::stageRemoteRtSnapshot()}, counted there among the snapshots the node
+     * stages here for as long as it runs.
+     *
+     * @param string $originNodeId Id of the node at the other end of the link, which owns the area
+     * @param RtSyncStreamSnapshot $snapshot Snapshot at its head
+     * @param Closure(bool): void $settled The stream's answer
+     * @param Closure(): void $recover Lifts the holds the link's stream keeps on the rows of the collection
+     * @param Closure(bool): bool $askAgain Asks the linked node for another snapshot, told whether a live change canceled this one,
+     *     and answers whether another is still to come
+     * @return Generator<int, RtWork, int, void> The staging on the stream's share, answered at its end
+     * @throws LogicException When a portion arrives beyond the generation's reserve, or the generation is
+     *     published inside a transaction
+     * @throws NativeLogicException When a page lease or the selector broke under the generation
+     * @throws InvalidArgumentException Never: the allowances are not negative
+     * @throws HilosException Whatever a subscriber raises on an announcement of the published rows
+     */
+    private function stageRemoteRtSnapshotArea(
+        string $originNodeId,
+        RtSyncStreamSnapshot $snapshot,
+        Closure $settled,
+        Closure $recover,
+        Closure $askAgain,
+    ): Generator {
+        $collectionKey = $snapshot->collectionKey;
+        $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
         $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
-        $originMap->note($originNodeId, $collectionKey, $arrived);
-        foreach ($swept as $stateId) {
-            $originMap->forget($collectionKey, $stateId);
+        $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
+        if ($snapshot->scope->isWhole() && $sourceMap->ownsFully($collectionKey)) {
+            self::refuseSplitRtSnapshot($collectionKey, $originNodeId, $settled);
+
+            return;
         }
-        $thawed = [...$this->liftStaleness($collectionKey, $swept), ...$this->confirmRemoteRtRows($collectionKey, $arrived)];
+        $ownSetKeys = $sourceMap->claimedSetKeys($collectionKey);
+        $import = RtSnapshot::stage(
+            $collectionKey,
+            $snapshot->scope,
+            $snapshot->cutRevision,
+            leavesOut: static fn (string $stateId, ?string $setKey): bool => $sourceMap->owns($collectionKey, $stateId)
+                || in_array($setKey, $ownSetKeys, true),
+            maySweep: static fn (string $stateId): bool => $originMap->nodeOfRow($collectionKey, $stateId) === $originNodeId,
+            liveChangeCancels: true,
+        );
+        $this->watchRtClaimsUnder($import, $collectionKey);
+        // A generation for a source this process does not hold is canceled from its start, and one
+        // for a collection this node no longer reads is canceled here: its copy is being dropped.
+        $held = $confirmation->isRead($collectionKey) && $import->advance(new RtWorkBudget(0, 0)) !== RtSnapshotStatus::Canceled;
+        if (!$held) {
+            $import->cancel();
+        }
+        $carried = [];
+        while (!$snapshot->isWhole() || $snapshot->hasRows()) {
+            if ($snapshot->isLost()) {
+                $import->cancel();
+                Logger::warning("An RT snapshot of {$collectionKey} from node '{$originNodeId}' was lost before its end;"
+                    . ' the next event asks for another');
+
+                return;
+            }
+            $rows = $snapshot->takeRows(RtSnapshotImport::DEFAULT_RESERVE_BYTES);
+            if ($rows === null) {
+                yield new RtWork();
+                continue;
+            }
+            foreach ($rows->ids as $stateId) {
+                if ($sourceMap->ownsFully($collectionKey, $stateId)) {
+                    $import->cancel();
+                    self::refuseSplitRtSnapshot($collectionKey, $originNodeId, $settled);
+
+                    return;
+                }
+            }
+            if ($held) {
+                array_push($carried, ...$rows->ids);
+                $import->append($rows);
+                yield from self::prepareStagedRtSnapshot($import);
+            }
+        }
+        if (!$held) {
+            $settled(true);
+
+            return;
+        }
+        $import->finishInput();
+        $receipt = $snapshot->receipt();
+        $receipt = $receipt instanceof RtReplicaConfirmation ? $receipt : null;
+        $wereFrozen = [];
+        $wereHeld = [];
+        $published = null;
+        $import->whenPublished(function (array $arrived, array $swept) use (
+            $collectionKey,
+            $originNodeId,
+            $originMap,
+            $receipt,
+            &$wereFrozen,
+            &$wereHeld,
+            &$published,
+        ): void {
+            $arrivedIds = array_map(strval(...), array_keys($arrived));
+            $sweptIds = array_map(strval(...), array_keys($swept));
+            $replacedIds = array_values(array_filter($arrivedIds, static fn (string $stateId): bool => isset($wereHeld[$stateId])));
+            $originMap->note($originNodeId, $collectionKey, $arrivedIds);
+            foreach ($sweptIds as $stateId) {
+                $originMap->forget($collectionKey, $stateId);
+            }
+            // The publication installed the marks less those of the rows it swept, so the swept rows
+            // that thawed are named by the marks taken right before it.
+            $thawed = [
+                ...array_values(array_filter($sweptIds, static fn (string $stateId): bool => isset($wereFrozen[$stateId]))),
+                ...$this->confirmRemoteRtRows($collectionKey, $arrivedIds, $receipt),
+            ];
+            $published = [$arrivedIds, [...$sweptIds, ...$replacedIds], $thawed];
+        });
+        while (true) {
+            $granted = yield new RtWork(self::RT_SNAPSHOT_BYTES_PER_WORK);
+            $budget = new RtWorkBudget(self::RT_SNAPSHOT_STEPS_PER_WORK, $granted);
+            $status = $import->advance($budget);
+            if ($status === RtSnapshotStatus::Ready) {
+                if ($receipt !== null && !$receipt->isCurrent($originMap, $sourceMap)) {
+                    $status = RtSnapshotStatus::Canceled;
+                    break;
+                }
+                $wereFrozen = RtStaleness::staleRows($collectionKey);
+                $wereHeld = array_flip(RtSnapshot::heldKeys($collectionKey, $carried));
+                $import->publish();
+            } elseif ($status !== RtSnapshotStatus::Building
+                && ($status !== RtSnapshotStatus::Published || !self::isRtWorkSpent($budget))) {
+                break;
+            }
+        }
+        if ($status !== RtSnapshotStatus::Published || $published === null) {
+            $import->cancel();
+            $settled(false);
+            if ($status === RtSnapshotStatus::Refused) {
+                Logger::error("A row of the RT snapshot of {$collectionKey} from node '{$originNodeId}' failed its validator;"
+                    . ' another is asked for on the next event only');
+
+                return;
+            }
+            $byLiveChange = $import->wasCanceledByLiveChange();
+            Logger::warning("The RT snapshot of {$collectionKey} from node '{$originNodeId}' was canceled "
+                . ($byLiveChange ? 'by a write of its area here' : 'before its publication') . '; its link asks for another');
+            // The node's answer to the announcement may already be on its way behind this snapshot,
+            // and it would confirm a copy this cancellation left without the node's area: the copy
+            // awaits the node's answer to an announcement made behind the request instead. With no
+            // request - the second cancellation in a row - the answer to the first one's announcement
+            // is behind this very snapshot.
+            if ($askAgain($byLiveChange) === true) {
+                $reopened = $confirmation->reopen($collectionKey, $originNodeId);
+                if ($reopened !== null) {
+                    $this->reannounceReaderInterest($this->findPeerServer(), $reopened);
+                }
+            }
+
+            return;
+        }
+        [$arrivedIds, $droppedIds, $thawed] = $published;
         $this->onIdentitySourceChanged($collectionKey);
         if ($collectionKey === StateHilosUpload::RT_COLLECTION) {
             $this->uploadMemory?->onUploadsChanged();
         }
-
         $workerServer = $this->findWorkerServer();
-        if ($workerServer === null) {
-            return;
-        }
-
-        foreach (array_keys($held) as $stateId) {
-            $this->streamRtSyncToWorkers($workerServer, new RtSyncDeletedSignalData($collectionKey, (string)$stateId));
-        }
-
-        foreach ($rows as $stateId => $row) {
-            $this->streamRtSyncToWorkers($workerServer, new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row));
+        if ($workerServer !== null) {
+            foreach ($droppedIds as $stateId) {
+                yield new RtWork();
+                $this->streamRtSyncToWorkers($workerServer, new RtSyncDeletedSignalData($collectionKey, $stateId));
+            }
+            foreach ($arrivedIds as $stateId) {
+                yield new RtWork();
+                $row = RtSnapshot::row($collectionKey, $stateId);
+                if ($row !== null) {
+                    $this->streamRtSyncToWorkers($workerServer, new RtSyncCreatedSignalData($collectionKey, $stateId, $row));
+                }
+            }
         }
         $this->thawOnWorkers($collectionKey, $thawed);
+        // The snapshot is a base again for the rows of it whose streamed operation this node refused:
+        // the link's later operations of them are applied, and their copy here thaws (H4).
+        $recover();
+        $confirmation->notePublished($collectionKey, $originNodeId);
+        $settled(true);
+    }
+
+    /**
+     * Notes a generation staging into an RT collection here with what this node claims of the
+     * collection as it begins: the rows it claims are left out of the generation as it stages, so a
+     * claim that moves meanwhile cancels it ({@see self::cancelRtStagingsCrossedByClaims()}).
+     *
+     * @param RtSnapshotImport $import Generation that begins staging
+     * @param string $collectionKey RT collection it stages into
+     */
+    private function watchRtClaimsUnder(RtSnapshotImport $import, string $collectionKey): void
+    {
+        $this->rtSnapshotImports ??= new WeakMap();
+        $this->rtSnapshotImports[$import] = [$collectionKey, $this->rtClaimSignature($collectionKey)];
+    }
+
+    /**
+     * @param string $collectionKey RT collection to describe
+     * @return string What this node claims of it - the whole, rows by key, sets - in a form two claims compare by
+     */
+    private function rtClaimSignature(string $collectionKey): string
+    {
+        $map = $this->agentManagerDaemon->rtNodeSourceMap();
+
+        return serialize([
+            $map->owns($collectionKey),
+            $map->ownsFully($collectionKey),
+            $map->keyScopedCollections()[$collectionKey] ?? null,
+            $map->claimedSetKeys($collectionKey),
+        ]);
+    }
+
+    /**
+     * Cancels the generations staging here whose collection this node claims otherwise than when they
+     * began: one carrying a row an agent of this node has claimed since would publish the other
+     * node's row over this node's own - two owners of it. A linked node's snapshot is asked for
+     * again as every canceled one is ({@see self::stageRemoteRtSnapshot()}); a drop of the copy is
+     * staged anew ({@see self::dropRtCopy()}). Run on the guarded ownership pass, which a new report
+     * of what the agents here claim wakes, whether the head of the FIFO is busy or not.
+     */
+    private function cancelRtStagingsCrossedByClaims(): void
+    {
+        $crossed = [];
+        foreach ($this->rtSnapshotImports ?? [] as $import => [$collectionKey, $signature]) {
+            if ($this->rtClaimSignature($collectionKey) !== $signature) {
+                $crossed[] = [$import, $collectionKey];
+            }
+        }
+        foreach ($crossed as [$import, $collectionKey]) {
+            unset($this->rtSnapshotImports[$import]);
+            if (($this->rtCopyDrops[$collectionKey] ?? null) === $import) {
+                $this->dropRtCopy($collectionKey, $this->rtCopyDropSweeps[$collectionKey]);
+            } else {
+                $import->cancel();
+            }
+        }
+    }
+
+    /**
+     * Refuses a snapshot that reaches for what an agent of this node owns wholly, with the line a
+     * delta of it is refused with ({@see self::stageRemoteRtSnapshot()}).
+     *
+     * @param string $collectionKey RT collection the snapshot is for
+     * @param string $originNodeId Node that cut it
+     * @param Closure(bool): void $settled The stream's answer
+     */
+    private static function refuseSplitRtSnapshot(string $collectionKey, string $originNodeId, Closure $settled): void
+    {
+        Logger::warning("RT collection {$collectionKey} has truth sources on two nodes: local and {$originNodeId}");
+        $settled(false);
+    }
+
+    /**
+     * Advances a generation over the portion just appended, on the stream's share, until its reserve
+     * is free for the next portion.
+     *
+     * @param RtSnapshotImport $import Generation staging a snapshot
+     * @return Generator<int, RtWork, int, void> Its preparation, one unit of work per request
+     * @throws NativeLogicException When a page lease or the selector broke under the generation
+     * @throws InvalidArgumentException Never: the allowances are not negative
+     * @throws HilosException Whatever the generation's preparation raises past its own refusals
+     */
+    private static function prepareStagedRtSnapshot(RtSnapshotImport $import): Generator
+    {
+        do {
+            $granted = yield new RtWork(self::RT_SNAPSHOT_BYTES_PER_WORK);
+            $budget = new RtWorkBudget(self::RT_SNAPSHOT_STEPS_PER_WORK, $granted);
+            $import->advance($budget);
+        } while (self::isRtWorkSpent($budget));
+    }
+
+    /**
+     * @param RtWorkBudget $budget Allowance a generation advanced on
+     * @return bool Whether it ran out on either axis, so the generation may have work left it could not take
+     * @throws InvalidArgumentException Never: the probe asks for one byte
+     */
+    private static function isRtWorkSpent(RtWorkBudget $budget): bool
+    {
+        return $budget->take(1) === null;
     }
 
     /**
      * Tops this node's copy of one RT collection up with rows a holder offered it.
      *
-     * Implements {@see RtSyncSink}. The other way round from {@see applyRemoteRtSnapshot()} in
+     * Implements {@see RtSyncSink}. The other way round from {@see stageRemoteRtSnapshot()} in
      * every respect that matters (HIL-823): the sender owns none of what it sends, speaks for no
      * scope, and therefore nothing here is replaced and nothing is deleted. Rows already present
      * are passed over, so several holders answering one query cost nothing after the first, and a
@@ -8085,6 +8520,23 @@ abstract class DaemonManager extends BaseManager implements
      * The origin map records the replicas that land. The receipt confirms freshness as a
      * hand-over does; a later loss of that origin still freezes a retained offer's rows.
      *
+     * An offer of a collection nothing on this node reads is passed over whole, when its turn in
+     * the effect queue comes: the answer was asked while a reader was there, and a copy landing
+     * after the last one went would be kept current by nobody - the owners stop addressing its
+     * deltas here once they hear of it. So is an offer made by a node whose snapshot of the
+     * collection stages here then ({@see self::stageRemoteRtSnapshot()}): the snapshot carries the
+     * rows the offer does, and a write of them under it would cancel it as a writer of its area.
+     * And so is an offer of a collection whose copy waits for the nodes this node's announcement
+     * reached ({@see RtCopyConfirmation}): a row a holder still keeps after its owner deleted it
+     * would be written under the holder's name, and the owner's snapshot sweeps only its own. Once a
+     * snapshot of the collection by a node linked now was published here, an offer of rows that node
+     * wrote is passed over too ({@see RtCopyConfirmation::wasHandedOver()}): that node brings its own
+     * rows - on the handshake and in answer to the announcement - and a holder's copy of one may be a
+     * row it deleted since. The rows of a node whose link closed come from the holders alone, and so do
+     * the rows of a linked node no snapshot of the collection came from: an owner short of an operation
+     * hands nothing over (HIL-696) - even beside another node's snapshot of its own area of the same
+     * collection - and its rows have no other way here.
+     *
      * @param string $originNodeId Id of the node that wrote these rows
      * @param string $collectionKey RT collection being topped up
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the holder keeps them
@@ -8099,6 +8551,25 @@ abstract class DaemonManager extends BaseManager implements
                 yield;
             }, peerApplyContext: "RT replica offer from node '{$originNodeId}'", rtConfirmation:
                 $this->agentManagerDaemon->rtReplicaOriginMap()->captureConfirmation($originNodeId, $this->agentManagerDaemon->rtNodeSourceMap()));
+            return;
+        }
+        if ($this->agentManagerDaemon->workerReaderMap()->holders(SourceChange::KIND_RT, $collectionKey) === []) {
+            return;
+        }
+        // The same node's snapshot of the collection stages here: it carries these very rows, and
+        // writing them under it would cancel it as a writer of its area.
+        if (isset($this->rtSnapshotsStaging[$collectionKey][$originNodeId])) {
+            return;
+        }
+        // The copy waits for its owners' snapshots: a holder's row the owner deleted would land under
+        // the holder's name, which no snapshot of the owner sweeps.
+        $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
+        if ($confirmation->isAwaited($collectionKey)) {
+            return;
+        }
+        // The node spoke for its rows of the collection: linked, it brings what it wrote itself, and its row
+        // a holder still keeps may be one it deleted since.
+        if ($confirmation->wasHandedOver($collectionKey, $originNodeId) && $this->isNodeLinked($originNodeId)) {
             return;
         }
         $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
@@ -8286,6 +8757,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->rtOwnershipWork?->cancel();
         $this->rtOwnershipDue = false;
         try {
+            $this->cancelRtStagingsCrossedByClaims();
             $this->offerRtSnapshotsOnOwnershipChange($this->findPeerServer());
         } catch (Throwable $failure) {
             $this->rtOwnershipDue = true;
@@ -8453,6 +8925,12 @@ abstract class DaemonManager extends BaseManager implements
      * refuse claims nobody asked it about. Ignored as well when the report comes from a node the
      * mesh has already lost, which is the one case where a stale report does real damage.
      *
+     * Every node reads one thing out of it before that: a claim over a collection this node does
+     * not read drops what it holds of the rows claimed, frozen rows of an owner that went away
+     * included, and the rows of linked nodes with them - the drop a link's return makes
+     * ({@see self::noteNodeReachable()}). A new owner of those rows is the fact that the copy of the
+     * old one will not be kept current again; the new owner hands them over when this node reads.
+     *
      * @param string $nodeId Node whose agents hold the claims
      * @param list<PeerRtClaimEntry> $claims What each agent of that node owns
      */
@@ -8466,6 +8944,7 @@ abstract class DaemonManager extends BaseManager implements
             });
             return;
         }
+        $this->dropRtCopiesClaimedElsewhere($claims);
         if (!$this->amLeader()) {
             return;
         }
@@ -8494,6 +8973,34 @@ abstract class DaemonManager extends BaseManager implements
             // after the verdict on purpose: the node marks the agent unstartable as it reads the
             // refusal, so the stop cannot be undone by a start racing it.
             Hilos::$cluster?->placement()?->refusePlacement($refusal->agentType, $refusal->agentIndex, $nodeId);
+        }
+    }
+
+    /**
+     * Drops what this node holds of the rows a node's agents claim in collections this node neither
+     * reads nor owns any part of ({@see self::applyRemoteRtClaims()}).
+     *
+     * @param list<PeerRtClaimEntry> $claims What each agent of the claiming node owns
+     */
+    private function dropRtCopiesClaimedElsewhere(array $claims): void
+    {
+        $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
+        if (!$confirmation->awaitsPeers()) {
+            return;
+        }
+        $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
+        foreach ($claims as $claim) {
+            foreach ($claim->collectionKeys as $collectionKey) {
+                if ($confirmation->isRead($collectionKey) || $sourceMap->owns($collectionKey) || !self::isHandedOverInSnapshot($collectionKey)
+                    || !RtSnapshot::hasRows($collectionKey)) {
+                    continue;
+                }
+                $claimedKeys = $claim->claimedKeys($collectionKey);
+                $this->dropRtCopy($collectionKey, $this->linkedOriginSweep(
+                    $collectionKey,
+                    static fn (string $stateId): bool => $claimedKeys === null || in_array($stateId, $claimedKeys, true),
+                ));
+            }
         }
     }
 
@@ -8555,9 +9062,17 @@ abstract class DaemonManager extends BaseManager implements
         return $refusal->stateIds === [] ? '' : ' over rows [' . implode(', ', $refusal->stateIds) . ']';
     }
 
-    /** Same-source attachment retains complete announcement and query debt; no second delivery binding is needed. */
+    /**
+     * Same-source attachment retains complete announcement and query debt; no second delivery binding is needed.
+     *
+     * A node with a mesh awaits its nodes' answers from here on, before its first announcement: until
+     * that one, nothing is read here and every node owes this one what it reads, so a worker taking a
+     * collection up meanwhile waits for the announcement's answers like any later one
+     * ({@see RtCopyConfirmation::admits()}) instead of being handed the empty copy.
+     */
     private function attachReaderInterestEventLoop(): void
     {
+        $this->agentManagerDaemon->rtCopyConfirmation()->awaitPeers($this->findPeerServer() !== null);
         $this->readerInterestAttached = true;
         $this->reconcileReaderInterestSources();
     }
@@ -8640,6 +9155,16 @@ abstract class DaemonManager extends BaseManager implements
      * An unspent query retains its original names; another pair is consumed only after that
      * query enters the source FIFO, preserving the order of both completed obligations.
      *
+     * The announcement is numbered, and the copy of each RT collection it adds waits for every node
+     * it is written to to answer that number ({@see RtCopyConfirmation}); a collection this node owns
+     * wholly, or one no snapshot hands over, is confirmed at once, and so is everything off-cluster.
+     * A collection it stops naming has this node's copy of the other nodes' rows dropped, in the same
+     * FIFO work behind the frame ({@see self::dropRtCopy()}): the mesh stops streaming it here once it
+     * hears, the operations streamed before that are not applied any more
+     * ({@see PeerServer::onRtSyncStreamReceived()}), and a copy nobody keeps current would be the stale
+     * first answer of the next reader. A drop still running when the collection is read again is
+     * canceled.
+     *
      * Protected for the reason {@see offerRtSnapshotsOnOwnershipChange()} is: it is how a
      * subclass sees what this node tells the mesh.
      *
@@ -8661,17 +9186,240 @@ abstract class DaemonManager extends BaseManager implements
         $this->readerInterestQueryOwner = WeakReference::create($this->agentManagerDaemon);
         $this->readerInterestQueryMap = WeakReference::create($this->agentManagerDaemon->workerReaderMap());
 
+        $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
+        $wasRead = $confirmation->readCollections();
+        $announcement = $this->moveRtCopies($reads[SourceChange::KIND_RT], $mesh !== null);
         if ($mesh === null) {
+            $this->sendConfirmedRtCopies($confirmation->addressed($announcement, []));
+
             return;
         }
 
+        $owner = WeakReference::create($this);
         $mesh = WeakReference::create($mesh);
-        $this->dispatchSourceWork(static fn(): Generator => self::sourceBroadcastDelivery(
-            $mesh,
-            static function (SourceInterestMesh $transport) use ($reads): void {
-                $transport->announceSourceInterest($reads[SourceChange::KIND_RT], $reads[SourceChange::KIND_DB]);
-            },
-        ));
+        $this->dispatchSourceWork(static function () use ($mesh, $owner, $reads, $announcement, $wasRead): Generator {
+            $addressed = null;
+            yield from self::sourceBroadcastDelivery(
+                $mesh,
+                static function (SourceInterestMesh $transport) use ($reads, $announcement, &$addressed): void {
+                    $addressed = $transport->announceSourceInterest($reads[SourceChange::KIND_RT], $reads[SourceChange::KIND_DB], $announcement);
+                },
+            );
+            $manager = $owner->get();
+            if ($manager === null) {
+                return;
+            }
+            $confirmation = $manager->agentManagerDaemon->rtCopyConfirmation();
+            $manager->sendConfirmedRtCopies($confirmation->addressed($announcement, $addressed ?? []));
+            foreach (array_diff($wasRead, $reads[SourceChange::KIND_RT]) as $collectionKey) {
+                if (!$confirmation->isRead($collectionKey) && self::isHandedOverInSnapshot($collectionKey)) {
+                    $manager->dropRtCopy($collectionKey, $manager->linkedOriginSweep($collectionKey));
+                }
+            }
+        });
+    }
+
+    /**
+     * Tells the mesh once more what this node reads, under the next number, once a snapshot canceled
+     * here was asked for again and the copy awaits its node anew ({@see RtCopyConfirmation::reopen()}).
+     * The list is the one announced last, so the nodes it reaches add nothing and answer it with no
+     * snapshot ({@see self::answerSourceInterest()}); the asked node answers it behind the snapshot the
+     * request asks for. That is why it goes through this master's FIFO and not at once: the request
+     * is written to the link before, and the asked node queues the snapshot it owes ahead of the answer.
+     * An announcement taken meanwhile in the ordinary way goes out behind the request too, and this one
+     * is not taken then ({@see RtCopyConfirmation::reannounce()}), so several cancellations before the
+     * FIFO reaches it make one announcement. Not through the change of the interest
+     * ({@see AgentManagerDaemon::consumeChangedReaderInterest()}): what this node reads did not change.
+     *
+     * Protected for the reason {@see announceReaderInterest()} is: it is how a subclass sees what this
+     * node tells the mesh.
+     *
+     * @param ?SourceInterestMesh $mesh Peer server of this node, or null off-cluster
+     * @param int $announcement Number of the announcement the reopened wait awaits the answer to
+     */
+    protected function reannounceReaderInterest(?SourceInterestMesh $mesh, int $announcement): void
+    {
+        if ($mesh === null) {
+            return;
+        }
+        $owner = WeakReference::create($this);
+        $mesh = WeakReference::create($mesh);
+        $this->dispatchSourceWork(static function () use ($mesh, $owner, $announcement): Generator {
+            yield from self::sourceBroadcastDelivery(
+                $mesh,
+                static function (SourceInterestMesh $transport) use ($owner, $announcement): void {
+                    $number = $owner->get()?->agentManagerDaemon->rtCopyConfirmation()->reannounce($announcement);
+                    if ($number !== null) {
+                        $transport->reannounceSourceInterest($number);
+                    }
+                },
+            );
+        });
+    }
+
+    /**
+     * Takes the collections an announcement of what this node reads names into the confirmation of
+     * this node's copies ({@see RtCopyConfirmation::announce()}), and cancels the drop of a copy whose
+     * collection is read again. A collection the announcement adds waits for the nodes it reaches
+     * unless there are none to wait for: off-cluster, owned here wholly, or never handed over in a
+     * snapshot - those are handed to the workers waiting for them at once.
+     *
+     * @param list<string> $reads RT collections the announcement names
+     * @param bool $meshed Whether the announcement goes to a mesh
+     * @return int Number of the announcement
+     */
+    private function moveRtCopies(array $reads, bool $meshed): int
+    {
+        $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
+        $confirmation->awaitPeers($meshed);
+        $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
+        $added = array_values(array_diff($reads, $confirmation->readCollections()));
+        $awaiting = [];
+        foreach ($added as $collectionKey) {
+            $drop = $this->rtCopyDrops[$collectionKey] ?? null;
+            unset($this->rtCopyDrops[$collectionKey], $this->rtCopyDropSweeps[$collectionKey]);
+            $drop?->cancel();
+            if ($meshed && self::isHandedOverInSnapshot($collectionKey) && !$sourceMap->ownsFully($collectionKey)) {
+                $awaiting[] = $collectionKey;
+            }
+        }
+        $announcement = $confirmation->announce($reads, $awaiting);
+        $this->sendConfirmedRtCopies(array_values(array_diff($added, $awaiting)));
+
+        return $announcement;
+    }
+
+    /**
+     * Drops this node's copy of the rows of an RT collection the sweep names - rows of other nodes
+     * this node no longer needs - by a generation staged with no portion and published on this
+     * master's FIFO, one bounded step per turn, never by one write of the whole. The rows and sets an
+     * agent of this node claims are left out of it, as they are of every snapshot staged here; the
+     * origin of the rows it sweeps is forgotten at its publication, and their marks go with them.
+     *
+     * Canceled once the collection is read here again ({@see self::moveRtCopies()}); a drop another
+     * generation of the collection canceled is staged anew while the collection holds rows, so a
+     * snapshot of it that was already on its way here does not bring the copy back.
+     *
+     * @param string $collectionKey RT collection whose copy is dropped
+     * @param Closure(string): bool $maySweep Whether the drop sweeps a row, by its id
+     */
+    private function dropRtCopy(string $collectionKey, Closure $maySweep): void
+    {
+        ($this->rtCopyDrops[$collectionKey] ?? null)?->cancel();
+        $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
+        $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
+        $ownSetKeys = $sourceMap->claimedSetKeys($collectionKey);
+        $drop = RtSnapshot::stage(
+            $collectionKey,
+            RtSnapshotScope::whole(),
+            0,
+            leavesOut: static fn (string $stateId, ?string $setKey): bool => $sourceMap->owns($collectionKey, $stateId)
+                || in_array($setKey, $ownSetKeys, true),
+            maySweep: $maySweep,
+        );
+        $drop->whenPublished(static function (array $arrived, array $swept) use ($originMap, $collectionKey): void {
+            foreach (array_keys($swept) as $stateId) {
+                $originMap->forget($collectionKey, (string)$stateId);
+            }
+        });
+        $drop->finishInput();
+        $this->watchRtClaimsUnder($drop, $collectionKey);
+        $this->rtCopyDrops[$collectionKey] = $drop;
+        $this->rtCopyDropSweeps[$collectionKey] = $maySweep;
+        $owner = WeakReference::create($this);
+        $this->dispatchSourceWork(static fn (): Generator => self::rtCopyDropWork($owner, $collectionKey, $drop));
+    }
+
+    /**
+     * @param WeakReference<self> $owner Master the drop belongs to
+     * @param string $collectionKey RT collection whose copy is dropped
+     * @param RtSnapshotImport $drop The drop's generation
+     * @return Generator<int, void> One bounded step of the drop per FIFO turn, until it is published or let go of
+     * @throws NativeLogicException When a page lease or the selector broke under the generation
+     * @throws InvalidArgumentException Never: the allowances are not negative
+     * @throws HilosException Whatever a subscriber raises on an announcement of the swept rows
+     */
+    private static function rtCopyDropWork(WeakReference $owner, string $collectionKey, RtSnapshotImport $drop): Generator
+    {
+        do {
+            yield;
+        } while ($owner->get()?->advanceRtCopyDrop($collectionKey, $drop) ?? false);
+    }
+
+    /**
+     * One bounded step of a drop of this node's copy of a collection ({@see self::dropRtCopy()}).
+     *
+     * @param string $collectionKey RT collection whose copy is dropped
+     * @param RtSnapshotImport $drop The drop's generation
+     * @return bool Whether the drop owes another step
+     * @throws NativeLogicException When a page lease or the selector broke under the generation
+     * @throws InvalidArgumentException Never: the allowances are not negative
+     * @throws HilosException Whatever a subscriber raises on an announcement of the swept rows
+     */
+    private function advanceRtCopyDrop(string $collectionKey, RtSnapshotImport $drop): bool
+    {
+        if (($this->rtCopyDrops[$collectionKey] ?? null) !== $drop) {
+            return false;
+        }
+        $budget = new RtWorkBudget(self::RT_SNAPSHOT_STEPS_PER_WORK, self::RT_SNAPSHOT_BYTES_PER_WORK);
+        $status = $drop->advance($budget);
+        if ($status === RtSnapshotStatus::Ready) {
+            $drop->publish();
+
+            return true;
+        }
+        if ($status === RtSnapshotStatus::Building || ($status === RtSnapshotStatus::Published && self::isRtWorkSpent($budget))) {
+            return true;
+        }
+        $maySweep = $this->rtCopyDropSweeps[$collectionKey];
+        unset($this->rtCopyDrops[$collectionKey], $this->rtCopyDropSweeps[$collectionKey]);
+        if ($status === RtSnapshotStatus::Published) {
+            $this->onIdentitySourceChanged($collectionKey);
+            if ($collectionKey === StateHilosUpload::RT_COLLECTION) {
+                $this->uploadMemory?->onUploadsChanged();
+            }
+        } elseif ($status === RtSnapshotStatus::Canceled && RtSnapshot::hasRows($collectionKey)) {
+            $this->dropRtCopy($collectionKey, $maySweep);
+        }
+
+        return false;
+    }
+
+    /**
+     * The sweep of a drop of this node's copy of a collection: the rows another node wrote while that
+     * node is linked here. The rows of a node this one cannot reach stay, frozen as their link's
+     * closure left them, until the node comes back ({@see self::noteNodeReachable()}) or another node
+     * claims them ({@see self::applyRemoteRtClaims()}); rows of no known origin are this node's own.
+     *
+     * @param string $collectionKey RT collection whose copy is dropped
+     * @param ?Closure(string): bool $alsoSweeps Rows swept whatever their origin's link, by id; null for none
+     * @return Closure(string): bool Whether the drop sweeps a row, by its id
+     */
+    private function linkedOriginSweep(string $collectionKey, ?Closure $alsoSweeps = null): Closure
+    {
+        $originMap = $this->agentManagerDaemon->rtReplicaOriginMap();
+        $owner = WeakReference::create($this);
+
+        return static function (string $stateId) use ($originMap, $collectionKey, $owner, $alsoSweeps): bool {
+            $origin = $originMap->nodeOfRow($collectionKey, $stateId);
+
+            return $origin !== null && (($owner->get()?->isNodeLinked($origin) ?? false)
+                || ($alsoSweeps !== null && $alsoSweeps($stateId)));
+        };
+    }
+
+    /**
+     * Whether this node holds a link to another one now.
+     *
+     * Protected for the reason {@see nodeHasLeftTheMesh()} is: it is the seam a subclass answers for
+     * the mesh at.
+     *
+     * @param string $nodeId Node asked about
+     * @return bool True when a handshaked link to it is up
+     */
+    protected function isNodeLinked(string $nodeId): bool
+    {
+        return $this->findPeerServer()?->hasActiveLinkToNode($nodeId) ?? false;
     }
 
     /**
@@ -8691,6 +9439,14 @@ abstract class DaemonManager extends BaseManager implements
      * The debt is spent whether or not there is a mesh to tell, the way the interest behind it is
      * consumed: a node running off-cluster would otherwise ask about a move made long ago on the
      * first pass a mesh appeared.
+     *
+     * A collection whose copy still waits for the nodes the announcement reached is not asked about
+     * ({@see RtCopyConfirmation}): its owners hand their areas over and answer, and a holder's offer
+     * of it would bring back what an owner deleted. Judged as the query takes its turn in the FIFO,
+     * behind the announcement - one that reached nobody leaves nothing to wait for, and the
+     * collection is asked about as before. The handshake asks as before ({@see self::askRtSnapshotsFromNode()}),
+     * and a copy is asked about once it is confirmed for the first time
+     * ({@see self::askHoldersOfConfirmedRtCopies()}).
      *
      * Protected for the reason {@see announceReaderInterest()} is: it is how a subclass sees what
      * this node asks the mesh for.
@@ -8713,9 +9469,14 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $mesh = WeakReference::create($mesh);
+        $confirmation = WeakReference::create($this->agentManagerDaemon->rtCopyConfirmation());
         $delivery = self::missingRtCollectionsDelivery(
             $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports(),
-            $collections,
+            (static function () use ($collections, $confirmation): Generator {
+                foreach ($collections as $collectionKey) {
+                    yield $confirmation->get()?->isAwaited($collectionKey) === true ? null : $collectionKey;
+                }
+            })(),
             static function (array $missing) use ($mesh): Generator {
                 yield from self::sourceBroadcastDelivery($mesh, static function (RtSyncMesh $transport) use ($missing): void {
                     $transport->broadcastRtSnapshotQuery($missing);
@@ -8726,12 +9487,51 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * Asks every linked node for the collections whose copy was just confirmed for the first time
+     * ({@see RtCopyConfirmation::takeFirstConfirmed()}), whether this node holds rows of them by now or
+     * not: the move of the interest did not ask while the copy waited
+     * ({@see self::askRtSnapshotsForMissingCollections()}), the owners' snapshots carry nothing of a
+     * node whose link closed - a node that never held that node's rows has no other way to them - and
+     * an owner short of an operation hands nothing over (HIL-696). What the holders offer of rows a
+     * linked node wrote is passed over once a snapshot was published, as that node brings its own
+     * ({@see self::applyRemoteRtReplicaOffer()}).
+     *
+     * Protected for the reason {@see askRtSnapshotsForMissingCollections()} is: it is how a subclass
+     * sees what this node asks the mesh for.
+     *
+     * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
+     * @param list<string> $collections Collections just confirmed for the first time
+     */
+    protected function askHoldersOfConfirmedRtCopies(?RtSyncMesh $mesh, array $collections): void
+    {
+        if ($mesh === null) {
+            return;
+        }
+        $mesh = WeakReference::create($mesh);
+        $delivery = self::missingRtCollectionsDelivery(
+            $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports(),
+            $collections,
+            static function (array $missing) use ($mesh): Generator {
+                if ($missing !== []) {
+                    yield from self::sourceBroadcastDelivery($mesh, static function (RtSyncMesh $transport) use ($missing): void {
+                        $transport->broadcastRtSnapshotQuery($missing);
+                    });
+                }
+            },
+            evenHeld: true,
+        );
+        $this->dispatchSourceWork(static fn(): Generator => $delivery);
+    }
+
+    /**
      * Names the RT collections this node reads, holds nothing of, and does not own outright.
      *
      * The list both asks are built from. Four questions, and each of them rules out a way the
      * question could be pointless. A collection this node's workers do not read has nowhere to be
      * shown even if a copy arrived, and the copy would be the last thing this node heard about it,
-     * since deltas go only to readers. A collection it already holds rows of is not missing. A
+     * since deltas go only to readers. A collection it already holds rows of is not missing - save
+     * for the ask on a copy's first confirmation, which is after the rows of a node the owners'
+     * snapshots do not carry ({@see self::askHoldersOfConfirmedRtCopies()}). A
      * collection it owns whole has no truth above its own, so an empty one is the answer rather
      * than a gap. And a collection nobody hands over is not asked about for the same reason it is
      * not offered ({@see isHandedOverInSnapshot()}).
@@ -8745,16 +9545,21 @@ abstract class DaemonManager extends BaseManager implements
      * @param RtSourceReports $claims Original finite ownership basis
      * @param iterable<?string> $collections Original reader names; null pays for a duplicate or holder transition
      * @param Closure(list<string>): Generator<int, void> $send Existing complete query and its physical delivery
+     * @param bool $evenHeld Whether a collection this node holds rows of is asked about all the same
      * @return Generator<int, void> One name/presence visit per step, followed by the whole query
      */
-    private static function missingRtCollectionsDelivery(RtSourceReports $claims, iterable $collections, Closure $send): Generator
-    {
+    private static function missingRtCollectionsDelivery(
+        RtSourceReports $claims,
+        iterable $collections,
+        Closure $send,
+        bool $evenHeld = false,
+    ): Generator {
         $plan = $claims->plan();
         yield from $plan->build();
         $missing = [];
         foreach ($collections as $collectionKey) {
             if ($collectionKey !== null && self::isHandedOverInSnapshot($collectionKey) && !isset($plan->fullWholeClaims[$collectionKey])
-                && !RtSnapshot::hasRows($collectionKey)) {
+                && ($evenHeld || !RtSnapshot::hasRows($collectionKey))) {
                 $missing[] = $collectionKey;
             }
             yield;
@@ -9017,6 +9822,10 @@ abstract class DaemonManager extends BaseManager implements
      * went away. The mark goes on unconditionally, exactly as it does for the replicas: a node
      * this one held a link to is in the registry, and therefore in the published collection.
      *
+     * The node is struck out of what this node's copies wait for ({@see RtCopyConfirmation}): it
+     * will answer no announcement any more, and the copy of a collection nothing else is awaited of
+     * goes to the workers that took it up meanwhile, behind the marks written here.
+     *
      * @param string $nodeId Node that can no longer be reached
      * @param float $at Microtime of this node's clock when the link closed
      * @throws InvalidFormatException When the recovery page or params are malformed
@@ -9050,6 +9859,10 @@ abstract class DaemonManager extends BaseManager implements
                 StateHilosClusterNode::RT_COLLECTION,
             );
         }
+
+        // Nothing more will come from it, so the copies that waited for its answer wait no more.
+        // Last, so the first snapshot a waiting worker is sent carries the marks written above.
+        $this->sendConfirmedRtCopies($this->agentManagerDaemon->rtCopyConfirmation()->noteUnreachable($nodeId));
     }
 
     /**
@@ -9063,11 +9876,26 @@ abstract class DaemonManager extends BaseManager implements
      * {@see self::clearStaleness()} decides by itself whether a frame is owed, so there is no
      * need to ask first whether that row was ever frozen.
      *
+     * The rows of that node this one holds of a collection it does not read are dropped
+     * ({@see self::dropRtCopy()}): they stayed, frozen, when the last reader here went while the node
+     * was out of reach, and now that it is back nothing here needs them, or their mark. The link by
+     * itself lifts no mark; only that drop takes the rows nobody needs.
+     *
      * @param string $nodeId Node this one can reach again
      */
     public function noteNodeReachable(string $nodeId): void
     {
         $this->clearStaleness(StateHilosClusterNode::RT_COLLECTION, [$nodeId]);
+        $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
+        if (!$confirmation->awaitsPeers()) {
+            return;
+        }
+        foreach (array_keys($this->agentManagerDaemon->rtReplicaOriginMap()->rowsOfNode($nodeId)) as $collectionKey) {
+            $collectionKey = (string)$collectionKey;
+            if (!$confirmation->isRead($collectionKey) && self::isHandedOverInSnapshot($collectionKey)) {
+                $this->dropRtCopy($collectionKey, $this->linkedOriginSweep($collectionKey));
+            }
+        }
     }
 
     /**
@@ -9109,6 +9937,10 @@ abstract class DaemonManager extends BaseManager implements
      * snapshot that gave the rows a base again: its apply may still wait in the effect queue, and
      * hands the rows to their streams there, so the thaw is queued behind it
      * ({@see self::thawOnWorkers()}).
+     *
+     * The first row a peer link holds of a collection also asks the linked node for a snapshot of
+     * it; the link asks, as it is the one that knows the node and keeps one request per collection
+     * until a snapshot arrives ({@see PeerLink::requestRtSnapshot()}).
      *
      * Implements the hold the worker and peer servers hand their links' streams.
      *
@@ -14112,7 +14944,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $collectionKey Runtime collection a hand-over would carry
      * @return bool True when a node linking to this one is offered the collection
      */
-    private static function isHandedOverInSnapshot(string $collectionKey): bool
+    public static function isHandedOverInSnapshot(string $collectionKey): bool
     {
         return $collectionKey !== StateHilosSessionRotation::RT_COLLECTION;
     }

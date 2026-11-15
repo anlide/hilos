@@ -86,7 +86,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     /** Root the row handles read a published snapshot generation through, created by the first one staged */
     private ?RtRowRoot $rowRoot = null;
 
-    /** @var ?WeakMap<RtSnapshotImport, true> Snapshot generations being staged into this collection */
+    /** @var ?WeakMap<RtSnapshotImport, bool> Snapshot generations being staged into this collection, each with whether its candidate is begun */
     private ?WeakMap $stagings = null;
 
     /**
@@ -460,6 +460,21 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
     }
 
     /**
+     * @internal Hands every committed row change to a snapshot generation from its start, before
+     * its candidate is begun ({@see RtSnapshotImport::noteLive()}): a generation a live change of its
+     * scope cancels learns of one between the portions of its cut too, while the cut still arrives.
+     * Nothing is built on the source yet, so a publication of another generation leaves it staging
+     * ({@see self::installStaged()}). Constant work.
+     *
+     * @param RtSnapshotImport $import Generation that begins staging
+     */
+    public function watchStaging(RtSnapshotImport $import): void
+    {
+        $this->stagings ??= new WeakMap();
+        $this->stagings[$import] = false;
+    }
+
+    /**
      * @internal Opens a snapshot generation's view of this collection at one committed point: the
      * rows as they stand, a detached candidate selector branched from the committed one, and the
      * root the row handles read a published generation through. From now until the generation
@@ -519,8 +534,11 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      * selector and the values its kept rows read through their handles become current together,
      * and no row is visited. The membership cue goes first, as for any write; a whole replacement
      * also starts a new incarnation of the source, so every older read of it ends. Every other
-     * generation still staging here was built on what this one replaces and is canceled; a retry
-     * takes a new cut. The publishing generation closes its own staging first.
+     * generation whose candidate is begun here was built on what this one replaces and is canceled;
+     * a retry takes a new cut. One whose candidate is not begun yet has built nothing and stages on,
+     * to begin it on what this one installs - unless this one replaces the whole source: the new
+     * incarnation cancels it too, at its next advance ({@see RtSnapshotImport::isCurrent()}). The
+     * publishing generation closes its own staging first.
      *
      * @param array<string, T> $states Rows of the generation, in their order
      * @param RtVersionStore $versions Its selector, already holding every change of the generation
@@ -530,7 +548,7 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
      */
     public function installStaged(array $states, RtVersionStore $versions, WeakMap $generation, bool $whole): void
     {
-        foreach ($this->openStagings() as $outdated) {
+        foreach ($this->openStagings(true) as $outdated) {
             $outdated->cancel();
         }
         RtMembershipVersion::advance($this);
@@ -758,12 +776,17 @@ abstract class RtStates implements IteratorAggregate, ArrayAccess, Countable
         });
     }
 
-    /** @return list<RtSnapshotImport> Generations staging into this collection now */
-    private function openStagings(): array
+    /**
+     * @param bool $begunOnly Whether to name only the generations whose candidate is begun
+     * @return list<RtSnapshotImport> Generations staging into this collection now
+     */
+    private function openStagings(bool $begunOnly = false): array
     {
         $open = [];
-        foreach ($this->stagings ?? [] as $import => $_) {
-            $open[] = $import;
+        foreach ($this->stagings ?? [] as $import => $begun) {
+            if ($begun || !$begunOnly) {
+                $open[] = $import;
+            }
         }
 
         return $open;

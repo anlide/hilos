@@ -31,6 +31,7 @@ use Hilos\Core\Source\Interest\SourceReaderUnion;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Daemon\AgentLossSink;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\RtCopyConfirmation;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Database\DTO\ReHydrateVerdict;
@@ -143,6 +144,14 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * answer between the frames arriving on one loop pass and the link closing on another.
      */
     private ?RtReplicaOriginMap $rtReplicaOriginMap = null;
+
+    /**
+     * @var ?RtCopyConfirmation Whether this node's copy of each collection it reads may be handed to
+     *      a worker yet, built lazily. Here beside the origin map for the reason that one is: the
+     *      worker links ask it as a worker takes a collection up, the daemon answers it as the mesh
+     *      answers this node's announcements.
+     */
+    private ?RtCopyConfirmation $rtCopyConfirmation = null;
 
     /**
      * @var ?SourceReaderMap What RT collections the workers of this node read, built lazily.
@@ -1240,6 +1249,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     {
         $announced = $this->workerReaderMap()->unionPlan();
         $this->workerReaderMap()->release(self::workerHolderId($workerIndex));
+        $this->rtCopyConfirmation()->forgetWorker($workerIndex);
         $this->noteReaderInterestChange($announced);
     }
 
@@ -1516,6 +1526,16 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function rtReplicaOriginMap(): RtReplicaOriginMap
     {
         return $this->rtReplicaOriginMap ??= new RtReplicaOriginMap();
+    }
+
+    /**
+     * Returns whether this node's copy of each RT collection it reads may be handed to a worker yet.
+     *
+     * @return RtCopyConfirmation This master's confirmation of its copies
+     */
+    public function rtCopyConfirmation(): RtCopyConfirmation
+    {
+        return $this->rtCopyConfirmation ??= new RtCopyConfirmation();
     }
 
     /**

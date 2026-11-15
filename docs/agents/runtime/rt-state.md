@@ -411,16 +411,19 @@ link's own `WorkerClient::sendAgentStart()`, `sendRtStaleness()` and
 |---|---|---|---|
 | (a) A signal to an agent | an agent's signal | a signal to an agent (`DaemonAgentMessageDTO`) | `PeerSignalDTO`, but the budgeted portion of an upload |
 | (b) Work or a role is over, and another may start writing the same rows | the release of what a stopped agent owned in RT, the report of its stop | an agent's start (`AgentStartDTO`) | the status of an agent of the node (`PeerAgentStatusDTO`), the report of what the node hosts (`PeerPlacementReportDTO`), the claims of its agents (`PeerRtClaimsDTO`), an order to place an agent (`PeerPlaceAgentDTO`) |
-| (c) An answer confirming the work is done | an agent's command reply, the outcome of a cron rule a console asked to fire, the response to a browser's handshake and what goes to the same socket behind it | - | a forwarded command reply (`PeerCommandReplyDTO`) |
+| (c) An answer confirming the work is done | an agent's command reply, the outcome of a cron rule a console asked to fire, the response to a browser's handshake and what goes to the same socket behind it | - | a forwarded command reply (`PeerCommandReplyDTO`), the answer to a node's announcement of what it reads (`PeerSourceInterestAnsweredDTO`), behind the snapshots it owed |
 | (d) A decision that reads RT | an access re-decision of pages - by user, by connection, by session | the relays of those re-decisions | an access re-decision of pages (`PeerPageAccessReassessDTO`) |
 | (e) The freshness the write gave back | - | the thaw of a row (`WorkerRtStalenessMessageDTO` without a moment) | - |
 | Only behind a waiting frame of the same agent | the report of its start or stop | its stop, the answer to its protected-mode entry, the verdict on its re-hydrate announcement | its stop (`PeerStopAgentDTO`), its restart (`PeerAgentRestartDTO`) |
 
 Everything else goes at once on either end, and may reach the other end first:
 transport control - ping and pong, heartbeat and votes, the clock, membership and a
-node's leave, the drain marker; the stream's own frames; snapshots with a cut of
-their own - RT snapshots and replica offers, the placement view, the browser
-connections a node holds; DB sync and re-hydrate; uploads; HTTP replies and the
+node's leave, the drain marker; the stream's own frames - an RT snapshot is an
+operation of the stream, cut when the stream takes it, and so already in its turn;
+the requests and queries for a snapshot (`PeerRtSnapshotRequestDTO`,
+`PeerRtSnapshotQueryDTO`) and the announcement of what a node reads; snapshots with
+a cut of their own - replica offers, the placement view, the browser connections a
+node holds; DB sync and re-hydrate; uploads; HTTP replies and the
 answers to browsers, which read no RT - all but the response to a browser's handshake,
 which waits in row (c): the browser acts on it with frames judged against RT, joining
 its groups on a worker that reads who the socket is from its copy of the connection row
@@ -486,8 +489,9 @@ nodes. A claim the agent reports anew meanwhile stands. A node's word that an ag
 stopped - its status to the leader, the leader's own note of an agent it hosted, the
 report of a node that fenced itself - leaves only once every active link to a peer
 has answered the RT operations the node handed it before
-(`PlacementMesh::afterRtWritesAnswered()`, `RtSyncStreamChannel::afterAnswered()`), so
-the node the leader picks next has the old instance's last write before it starts the
+(`PlacementMesh::afterRtWritesAnswered()`, `RtSyncStreamChannel::afterAnswered()`) - a
+snapshot the node handed a link's stream before counts among them: it is answered once
+the peer published or refused it - so the node the leader picks next has the old instance's last write before it starts the
 agent. Any answer, a close or a drain of the link ends the wait; no timer does. On the
 leader's order the answer first waits for the worker's report of the stop
 (`PlacementExecutor::revokePlacement()`).

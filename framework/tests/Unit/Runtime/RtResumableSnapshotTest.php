@@ -2098,6 +2098,299 @@ final class RtResumableSnapshotTest extends TestCase
     }
 
     /**
+     * A generation answers only for what its caller leaves it: a row it leaves out is neither
+     * replaced by the cut nor swept, and its live change is carried; of the rows the cut lacks,
+     * only those the caller allows are swept, and the others stay as they live.
+     */
+    public function testRowsLeftOutOfTheGenerationLiveOnAndOnlyAllowedRowsAreSwept(): void
+    {
+        $source = $this->mounted();
+        foreach (['b1' => 'b one new', 'b3' => 'b three new', 'o1' => 'not the generation\'s to bring'] as $id => $text) {
+            $source->notes->add(HilosProbeNote::create($id, 'node-b', $text));
+        }
+        $cut = RtSnapshot::capture(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::whole());
+
+        $receiver = $this->mounted();
+        foreach (['b1' => 'b one', 'o1' => 'ours', 'o2' => 'ours too', 'gone' => 'swept', 'kept' => 'not to be swept'] as $id => $text) {
+            $receiver->notes->add(HilosProbeNote::create($id, 'node-b', $text));
+        }
+        $handed = [];
+        $import = RtSnapshot::stage(
+            ResumableSnapshotRtContext::NOTES,
+            RtSnapshotScope::whole(),
+            $cut->revision(),
+            static fn (string $id): bool => str_starts_with($id, 'o'),
+            static fn (string $id): bool => $id !== 'kept',
+        );
+        $import->whenPublished(static function (array $arrived, array $swept) use (&$handed): void {
+            $handed = [array_keys($arrived), array_keys($swept)];
+        });
+        foreach ($this->portions($cut) as $portion) {
+            $import->append($portion);
+        }
+        $import->finishInput();
+        $this->drive($import);
+        $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($import));
+        $receiver->notes['o1']->text = 'ours written meanwhile';
+        $receiver->notes['o1']->markRtSyncBaseline();
+        $this->drive($import);
+        $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($import));
+        $import->publish();
+
+        $notes = $this->notesOf($receiver->notes);
+        $this->assertSame(['b1', 'b3', 'kept', 'o1', 'o2'], array_keys($notes));
+        $this->assertSame('b one new', $notes['b1'][HilosProbeNote::text]);
+        $this->assertSame('ours written meanwhile', $notes['o1'][HilosProbeNote::text], 'A row left out keeps its live change, not the cut');
+        $this->assertSame('ours too', $notes['o2'][HilosProbeNote::text], 'A row left out is not swept');
+        $this->assertSame('not to be swept', $notes['kept'][HilosProbeNote::text]);
+        $this->assertSame($notes, $this->cutNotes($receiver->notes));
+        $this->assertSame([['b1', 'b3'], ['gone']], $handed, 'Only the allowed row is swept, and nothing left out arrives');
+    }
+
+    /**
+     * A row of the scope the cut lacks and the generation may not sweep was never the cut's: its
+     * live change - a removal too - is carried rather than lost under the generation, and a
+     * generation built to be canceled by a live change within its scope is canceled by it instead.
+     */
+    public function testARowTheGenerationMayNotSweepKeepsItsLiveChangeOrCancelsTheGeneration(): void
+    {
+        $source = $this->mounted();
+        $source->notes->add(HilosProbeNote::create('b1', 'node-b', 'b one new'));
+        $cut = RtSnapshot::capture(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::whole());
+        $portions = $this->portions($cut);
+        $maySweep = static fn (string $id): bool => $id === 'b1';
+
+        foreach ([false, true] as $liveChangeCancels) {
+            $receiver = $this->mounted();
+            foreach (['b1' => 'b one', 'kept' => 'kept', 'removed' => 'removed live'] as $id => $text) {
+                $receiver->notes->add(HilosProbeNote::create($id, 'node-b', $text));
+            }
+            $import = RtSnapshot::stage(
+                ResumableSnapshotRtContext::NOTES,
+                RtSnapshotScope::whole(),
+                $cut->revision(),
+                maySweep: $maySweep,
+                liveChangeCancels: $liveChangeCancels,
+            );
+            foreach ($portions as $portion) {
+                $import->append($portion);
+            }
+            $import->finishInput();
+            $this->drive($import);
+            $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($import));
+            $receiver->notes['kept']->text = 'kept written meanwhile';
+            $receiver->notes['kept']->markRtSyncBaseline();
+            $receiver->notes->remove('removed');
+
+            if ($liveChangeCancels) {
+                $this->assertSame(RtSnapshotStatus::Canceled, $this->statusOf($import));
+                $expected = ['b1' => 'b one', 'kept' => 'kept written meanwhile'];
+            } else {
+                $this->drive($import);
+                $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($import));
+                $import->publish();
+                $expected = ['b1' => 'b one new', 'kept' => 'kept written meanwhile'];
+            }
+            $notes = $this->notesOf($receiver->notes);
+            $this->assertSame($expected, array_map(static fn (array $row): string => $row[HilosProbeNote::text], $notes),
+                'The live change stands and the removed row is not brought back');
+            $this->assertSame($notes, $this->cutNotes($receiver->notes));
+        }
+    }
+
+    /**
+     * A generation built to be canceled by a live change within its scope is canceled by one, while
+     * a change outside the scope is carried as ever; nothing of it is published. Its status - the
+     * one a retry answers - stays apart from a validator's refusal, which no retry answers.
+     */
+    public function testALiveChangeWithinTheScopeCancelsAndARefusalStaysApart(): void
+    {
+        $source = $this->mounted();
+        foreach (['b1' => 'b one new', 'b2' => 'b two new'] as $id => $text) {
+            $source->notes->add(HilosProbeNote::create($id, 'node-b', $text));
+        }
+        $cut = RtSnapshot::capture(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-b']));
+
+        $receiver = $this->mounted();
+        $receiver->notes->add(HilosProbeNote::create('b1', 'node-b', 'b one'));
+        $receiver->notes->add(HilosProbeNote::create('a1', 'node-a', 'a one'));
+        $import = RtSnapshot::stage(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-b']), $cut->revision(), liveChangeCancels: true);
+        foreach ($this->portions($cut) as $portion) {
+            $import->append($portion);
+        }
+        $import->finishInput();
+        $this->drive($import);
+        $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($import));
+
+        $receiver->notes['a1']->text = 'a one written meanwhile';
+        $receiver->notes['a1']->markRtSyncBaseline();
+        $this->drive($import);
+        $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($import), 'A change outside the scope is carried');
+
+        $receiver->notes['b1']->text = 'b one written meanwhile';
+        $receiver->notes['b1']->markRtSyncBaseline();
+        $this->assertSame(RtSnapshotStatus::Canceled, $this->statusOf($import));
+        $receiver->notes->add(HilosProbeNote::create('b3', 'node-b', 'b three written meanwhile'));
+        $this->assertSame(RtSnapshotStatus::Canceled, $this->statusOf($import));
+        $notes = $this->notesOf($receiver->notes);
+        $this->assertSame(
+            ['a1' => 'a one written meanwhile', 'b1' => 'b one written meanwhile', 'b3' => 'b three written meanwhile'],
+            array_map(static fn (array $row): string => $row[HilosProbeNote::text], $notes),
+            'Nothing of the canceled generation is published',
+        );
+        $this->assertSame($notes, $this->cutNotes($receiver->notes));
+
+        $invalid = RtRowValues::fromNative([HilosProbeNote::noteId => 'b4', HilosProbeNote::nodeId => 7, HilosProbeNote::text => 'refused']);
+        $refused = RtSnapshot::stage(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-b']), 1, liveChangeCancels: true);
+        $refused->append(new RtSnapshotPortion(['b4'], [$invalid], 64));
+        $refused->finishInput();
+        $this->drive($refused);
+        $this->assertSame(RtSnapshotStatus::Refused, $this->statusOf($refused));
+        $receiver->notes['b1']->text = 'b one written again';
+        $receiver->notes['b1']->markRtSyncBaseline();
+        $this->assertSame(RtSnapshotStatus::Refused, $this->statusOf($refused), 'A live change does not turn a refusal into a retry');
+    }
+
+    /**
+     * A generation a live change of its scope cancels hears of the source's changes from its start,
+     * while its cut still arrives in portions: an edit or a removal of a row of the scope between two
+     * portions cancels it, the rest of the cut is taken in and ignored, and a removed row is not
+     * brought back. A change outside the scope before the candidate is begun is not retained - the
+     * rows the candidate begins at hold it already - so a history allowance too small for a single
+     * change takes it, and the published rows and selector hold it once.
+     */
+    public function testALiveChangeBetweenPortionsCancelsOrStandsInTheRowsTheCandidateBeginsAt(): void
+    {
+        $source = $this->mounted();
+        for ($index = 0; $index < 6; ++$index) {
+            $source->notes->add(HilosProbeNote::create('b' . $index, 'node-b', 'owner ' . $index));
+        }
+        $cut = RtSnapshot::capture(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-b']));
+        $portions = $this->portions($cut);
+        $this->assertGreaterThan(1, count($portions), 'The cut arrives in several portions');
+        $texts = static fn (array $notes): array => array_map(static fn (array $row): string => $row[HilosProbeNote::text], $notes);
+
+        foreach (['edited', 'removed'] as $change) {
+            $receiver = $this->mounted();
+            $receiver->notes->add(HilosProbeNote::create('b1', 'node-b', 'replica of b1'));
+            $import = RtSnapshot::stage(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-b']), $cut->revision(),
+                liveChangeCancels: true);
+            $this->takeIn($import, $portions[0]);
+            if ($change === 'edited') {
+                $receiver->notes['b1']->text = 'b1 edited between portions';
+                $receiver->notes['b1']->markRtSyncBaseline();
+            } else {
+                $receiver->notes->remove('b1');
+            }
+            $this->assertSame(RtSnapshotStatus::Canceled, $this->statusOf($import), "A row of the scope {$change} between portions");
+            $this->assertTrue($import->wasCanceledByLiveChange());
+            foreach (array_slice($portions, 1) as $portion) {
+                $import->append($portion);
+            }
+            $import->finishInput();
+            $this->assertSame(RtSnapshotStatus::Canceled, $this->statusOf($import), 'The rest of the cut is taken in and ignored');
+            $notes = $this->notesOf($receiver->notes);
+            $this->assertSame($change === 'edited' ? ['b1' => 'b1 edited between portions'] : [], $texts($notes),
+                'Nothing of the cut is published, and a removed row is not brought back');
+            $this->assertSame($notes, $this->cutNotes($receiver->notes));
+        }
+
+        $receiver = $this->mounted();
+        $receiver->notes->add(HilosProbeNote::create('a1', 'node-a', 'a one'));
+        $import = new RtSnapshotImport(
+            ResumableSnapshotRtContext::NOTES,
+            RtSnapshotScope::sets(['node-b']),
+            $cut->revision(),
+            historyLimit: RtRowPage::OVERHEAD_BYTES,
+            liveChangeCancels: true,
+        );
+        $this->takeIn($import, $portions[0]);
+        $receiver->notes['a1']->text = 'a one written between portions';
+        $receiver->notes['a1']->markRtSyncBaseline();
+        $receiver->notes->add(HilosProbeNote::create('a2', 'node-a', 'a two written between portions'));
+        foreach (array_slice($portions, 1) as $portion) {
+            $this->takeIn($import, $portion);
+        }
+        $import->finishInput();
+        $this->drive($import);
+        $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($import), 'A change before the candidate is begun is not retained');
+        $import->publish();
+
+        $this->assertFalse($import->wasCanceledByLiveChange());
+        $notes = $this->notesOf($receiver->notes);
+        $this->assertSame([
+            'a1' => 'a one written between portions',
+            'a2' => 'a two written between portions',
+            'b0' => 'owner 0',
+            'b1' => 'owner 1',
+            'b2' => 'owner 2',
+            'b3' => 'owner 3',
+            'b4' => 'owner 4',
+            'b5' => 'owner 5',
+        ], $texts($notes));
+        $this->assertSame($notes, $this->cutNotes($receiver->notes), 'The selector holds each row once, as the rows do');
+    }
+
+    /**
+     * A publication cancels only the generations whose candidate is begun on what it replaces - no
+     * live change's cancellation, and a retry takes a new cut. One still taking its cut in has built
+     * nothing yet and stages on, to begin its candidate on what the publication installed - two
+     * partial owners of a collection handing their areas to one node.
+     */
+    public function testAPublicationLeavesAGenerationWhoseCandidateIsNotBegunStaging(): void
+    {
+        $source = $this->mounted();
+        $source->notes->add(HilosProbeNote::create('a1', 'node-a', 'a one new'));
+        for ($index = 0; $index < 6; ++$index) {
+            $source->notes->add(HilosProbeNote::create('b' . $index, 'node-b', 'owner ' . $index));
+        }
+        $aCut = RtSnapshot::capture(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-a']));
+        $bCut = RtSnapshot::capture(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-b']));
+        $bPortions = $this->portions($bCut);
+        $this->assertGreaterThan(1, count($bPortions), 'The cut arrives in several portions');
+
+        $receiver = $this->mounted();
+        $receiver->notes->add(HilosProbeNote::create('a1', 'node-a', 'a one'));
+        $receiver->notes->add(HilosProbeNote::create('b0', 'node-b', 'replica of b0'));
+        $taking = RtSnapshot::stage(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-b']), $bCut->revision(),
+            liveChangeCancels: true);
+        $this->takeIn($taking, array_shift($bPortions));
+        $begun = RtSnapshot::stage(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-c']), $aCut->revision(),
+            liveChangeCancels: true);
+        $begun->finishInput();
+        $this->drive($begun);
+        $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($begun));
+        $published = RtSnapshot::stage(ResumableSnapshotRtContext::NOTES, RtSnapshotScope::sets(['node-a']), $aCut->revision(),
+            liveChangeCancels: true);
+        foreach ($this->portions($aCut) as $portion) {
+            $published->append($portion);
+        }
+        $published->finishInput();
+        $this->drive($published);
+        $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($published));
+        $published->publish();
+
+        $this->assertSame(RtSnapshotStatus::Canceled, $this->statusOf($begun), 'A candidate begun on what the publication replaced');
+        $this->assertFalse($begun->wasCanceledByLiveChange());
+        $this->assertSame(RtSnapshotStatus::Building, $this->statusOf($taking), 'Nothing of it was built on what the publication replaced');
+        foreach ($bPortions as $portion) {
+            $this->takeIn($taking, $portion);
+        }
+        $taking->finishInput();
+        $this->drive($taking);
+        $this->assertSame(RtSnapshotStatus::Ready, $this->statusOf($taking));
+        $taking->publish();
+
+        $notes = $this->notesOf($receiver->notes);
+        $this->assertSame(
+            ['a1' => 'a one new', 'b0' => 'owner 0', 'b1' => 'owner 1', 'b2' => 'owner 2', 'b3' => 'owner 3', 'b4' => 'owner 4',
+                'b5' => 'owner 5'],
+            array_map(static fn (array $row): string => $row[HilosProbeNote::text], $notes),
+        );
+        $this->assertSame($notes, $this->cutNotes($receiver->notes));
+    }
+
+    /**
      * @return ResumableSnapshotRtContext Fresh runtime of this process, with names bound
      */
     private function mounted(): ResumableSnapshotRtContext
@@ -2163,6 +2456,24 @@ final class RtResumableSnapshotTest extends TestCase
         } while ($status === RtSnapshotStatus::Building || ($status === RtSnapshotStatus::Published && $budget->usedSteps() > 0));
 
         return $passes;
+    }
+
+    /**
+     * Takes one portion of a cut in and prepares it under a small allowance, the cut's further
+     * portions still to come; a closed generation takes it in and ignores it.
+     *
+     * @param RtSnapshotImport $import Generation under test
+     * @param RtSnapshotPortion $portion Next portion of its cut
+     */
+    private function takeIn(RtSnapshotImport $import, RtSnapshotPortion $portion): void
+    {
+        $import->append($portion);
+        $passes = 0;
+        do {
+            $budget = new RtWorkBudget(7, 509);
+            $import->advance($budget);
+            $this->assertLessThan(200000, ++$passes, 'A generation must keep progressing');
+        } while ($budget->usedSteps() > 0);
     }
 
     /**

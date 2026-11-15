@@ -53,6 +53,17 @@ use WeakReference;
  * candidate. They are its history, and a history outgrowing its allowance cancels this generation
  * alone - writes and ordinary delivery go on, and a retry takes a new cut.
  *
+ * The caller may narrow what the generation answers for ({@see self::__construct()}): rows of the
+ * scope it leaves out stand as rows outside the scope do - never replaced or swept, their live
+ * changes carried - and a row of the scope missing from the cut is swept only where the caller
+ * allows it; one it may not sweep stays as it lives, its live changes carried as well. A caller
+ * may also have a live change within the scope cancel the generation instead of being superseded:
+ * the source then changed under a cut that no longer describes it, and a retry takes a new one.
+ * Such a generation hears of the source's changes from its start, while the cut still arrives in
+ * portions; one before the candidate is begun cancels it or is passed over, as the rows the
+ * candidate begins at hold it already. A refusal stays a refusal - the cut itself is broken, and
+ * taking it again would refuse again.
+ *
  * The stale marks of the source are prepared beside the candidate as well, last: the live marks
  * less those of the rows the generation sweeps, prepared again when either changes.
  *
@@ -65,8 +76,9 @@ use WeakReference;
  * Generations, candidates and their history are process-local copy machinery of one source, not
  * a replicated collection of Hilos::$rt (docs/agents/framework-first.md,
  * docs/agents/runtime/rt-context.md).
- * SCAFFOLD: no production caller until the initial-sync frames move onto staging (HIL-1817);
- * {@see RtSnapshot::replace()} and its twins stay the doors until then.
+ * A worker stages the snapshots its master streams to it through here, and drops the copy of a
+ * collection nobody reads there any more with an empty one; a master stages through here the
+ * snapshots a linked node streams of the areas it owns.
  */
 final class RtSnapshotImport
 {
@@ -112,6 +124,9 @@ final class RtSnapshotImport
     /** @var array<string, array{?RtState, ?RtRowValues}> Restored row and its values per id, nulls for a deletion */
     private array $staged = [];
 
+    /** @var array<string, true> Rows of the scope missing from the cut that may not be swept: they stay as they live */
+    private array $unswept = [];
+
     private ?RtWorkDriver $step = null;
 
     /** @var ?array<string, RtState> Rows of the source at the staging point, null until the candidate is begun */
@@ -150,12 +165,20 @@ final class RtSnapshotImport
 
     private ?Closure $whenPublished = null;
 
+    private bool $canceledByLiveChange = false;
+
     /**
      * @param string $collectionKey Collection or standalone item to stage into
      * @param RtSnapshotScope $scope Rows the generation replaces
      * @param int $cutRevision Source revision the portions were cut at; later changes follow it in order
      * @param int $reserveBytes Unprepared portion bytes this generation accepts at most
-     * @param int $historyBytes Later-change and live-history bytes it retains before it cancels itself
+     * @param int $historyLimit Later-change and live-history bytes it retains before it cancels itself
+     * @param ?Closure(string, ?string): bool $leavesOut Tells, by row id and set, a row of the scope the generation
+     *     leaves out: it is never replaced or swept, and its live changes are carried; null leaves out none
+     * @param ?Closure(string, ?string): bool $maySweep Tells, by row id and set, a row of the scope missing from the
+     *     cut the generation may sweep; any other stays as it lives, its live changes carried; null sweeps every one
+     * @param bool $liveChangeCancels Whether a live change of a row within the scope cancels the generation rather
+     *     than being superseded by it, from the generation's start on
      */
     public function __construct(
         public readonly string $collectionKey,
@@ -163,6 +186,9 @@ final class RtSnapshotImport
         public readonly int $cutRevision,
         private readonly int $reserveBytes = self::DEFAULT_RESERVE_BYTES,
         private readonly int $historyLimit = self::DEFAULT_HISTORY_BYTES,
+        private readonly ?Closure $leavesOut = null,
+        private readonly ?Closure $maySweep = null,
+        private readonly bool $liveChangeCancels = false,
     ) {
         $this->basis = new RtSnapshotBasis();
         $this->acceptKey = ExecutionContext::currentAcceptKey();
@@ -171,6 +197,9 @@ final class RtSnapshotImport
         if ($collection !== null) {
             $this->collection = WeakReference::create($collection);
             $this->epoch = $collection->snapshotEpoch();
+            if ($liveChangeCancels) {
+                $collection->watchStaging($this);
+            }
 
             return;
         }
@@ -240,7 +269,10 @@ final class RtSnapshotImport
 
     /**
      * @internal A committed change of the live source while this generation stages into it, handed
-     * over by the source itself; carried into the candidate unless the generation supersedes it.
+     * over by the source itself; carried into the candidate unless the generation supersedes it. A
+     * generation built to be canceled by a live change within its scope is canceled by it instead,
+     * and hears of the changes from its start: one before its candidate is begun is not retained, as
+     * the rows the candidate begins at hold it already.
      *
      * @param string $id Row id
      * @param ?RtState $previous Row before the change
@@ -251,6 +283,15 @@ final class RtSnapshotImport
     public function noteLive(string $id, ?RtState $previous, ?RtState $next, ?RtRowValues $values): void
     {
         if ($this->isClosed() || $this->status === RtSnapshotStatus::Published) {
+            return;
+        }
+        if ($this->liveChangeCancels && $this->covers($id, self::setKeyOf($next ?? $previous))) {
+            $this->close(RtSnapshotStatus::Canceled);
+            $this->canceledByLiveChange = true;
+
+            return;
+        }
+        if ($this->live === null) {
             return;
         }
         $bytes = RtRowPage::OVERHEAD_BYTES + ($values?->rootIn(RtRowArena::process())->logicalBytes ?? 0);
@@ -382,6 +423,15 @@ final class RtSnapshotImport
         $this->releaseCandidate();
     }
 
+    /**
+     * @return bool Whether a live change within the scope canceled the generation: a writer of its
+     *     area the cut did not see, rather than a lost cut, an outgrown history or a changed source
+     */
+    public function wasCanceledByLiveChange(): bool
+    {
+        return $this->canceledByLiveChange;
+    }
+
     /** Ends an unpublished generation at once; what it held retires with its last reference. */
     public function cancel(): void
     {
@@ -499,7 +549,7 @@ final class RtSnapshotImport
     {
         $restored = yield from $this->restore($values);
         $this->reserved -= $reserve;
-        if ($this->scope->admits($id, self::setKeyOf($restored))) {
+        if ($this->covers($id, self::setKeyOf($restored))) {
             $this->stage($id, $restored, $values);
         }
     }
@@ -526,7 +576,7 @@ final class RtSnapshotImport
             yield new RtWork();
             $setKey = $this->setKeyIn($record->values());
         }
-        if (!$this->scope->admits($id, $setKey)) {
+        if (!$this->covers($id, $setKey)) {
             return;
         }
         if ($this->item !== null) {
@@ -557,8 +607,8 @@ final class RtSnapshotImport
 
     /**
      * Begins the candidate at one committed point and walks the source's rows of that point once:
-     * rows outside the scope stay, rows inside it are kept, replaced or swept, then the rows that
-     * are new follow.
+     * rows outside the scope or left out of it stay, rows inside it are kept, replaced or swept -
+     * or stay as well where the caller does not allow the sweep - then the rows that are new follow.
      *
      * @param RtStates<RtState> $collection Source staged into
      * @return Generator<int, RtWork, int, void> Candidate preparation, one row per step at least
@@ -578,15 +628,18 @@ final class RtSnapshotImport
             yield new RtWork();
             $id = (string)$id;
             $this->candidate[$id] = $row;
-            if (!$this->scope->admits($id, self::setKeyOf($row))) {
+            $setKey = self::setKeyOf($row);
+            if (!$this->covers($id, $setKey)) {
                 continue;
             }
             if (array_key_exists($id, $this->staged)) {
                 [$restored, $values] = $this->staged[$id];
                 unset($this->staged[$id]);
                 yield from $this->place($id, $restored, $values);
-            } else {
+            } elseif ($this->maySweep === null || ($this->maySweep)($id, $setKey)) {
                 yield from $this->place($id, null, null);
+            } else {
+                $this->unswept[$id] = true;
             }
         }
         foreach ($this->staged as $id => [$restored, $values]) {
@@ -613,7 +666,7 @@ final class RtSnapshotImport
     {
         $collection = $this->collection?->get();
         $current = $this->candidate[$id] ?? null;
-        unset($this->arrived[$id]);
+        unset($this->arrived[$id], $this->unswept[$id]);
         $this->staleRevision = null;
         if ($restored === null) {
             if ($current !== null) {
@@ -641,7 +694,8 @@ final class RtSnapshotImport
     }
 
     /**
-     * Carries one committed live change into the candidate, unless the generation supersedes it.
+     * Carries one committed live change into the candidate, unless the generation supersedes it: a
+     * row of the scope it neither brought nor swept is not superseded.
      *
      * @param string $id Row id
      * @param ?RtState $previous Row before the change
@@ -656,7 +710,7 @@ final class RtSnapshotImport
     {
         yield new RtWork();
         $this->historyBytes -= $bytes;
-        if ($this->scope->admits($id, self::setKeyOf($next ?? $previous))) {
+        if ($this->covers($id, self::setKeyOf($next ?? $previous)) && !isset($this->unswept[$id])) {
             return;
         }
         if ($next === null) {
@@ -821,6 +875,16 @@ final class RtSnapshotImport
         return true;
     }
 
+    /**
+     * @param string $id Row id
+     * @param ?string $setKey Set the row stands in, null for nobody's set
+     * @return bool Whether the generation answers for the row: within its scope and not left out of it
+     */
+    private function covers(string $id, ?string $setKey): bool
+    {
+        return $this->scope->admits($id, $setKey) && ($this->leavesOut === null || !($this->leavesOut)($id, $setKey));
+    }
+
     /** @return bool Whether everything up to publication is done and nothing is pending */
     private function isComplete(): bool
     {
@@ -894,6 +958,7 @@ final class RtSnapshotImport
     {
         $this->live = null;
         $this->candidate = [];
+        $this->unswept = [];
         $this->batch = null;
         $this->versions = null;
         $this->generation = null;

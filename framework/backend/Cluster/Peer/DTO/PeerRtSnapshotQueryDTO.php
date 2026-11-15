@@ -10,8 +10,9 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * Frame a node with an empty copy sends to ask the mesh for the rows of a collection.
  *
  * The second way to come by a copy of an RT collection, beside the owner handing one out. The
- * regular path is owner-driven — {@see PeerRtSnapshotDTO} travels on a handshake and on a change
- * of the ownership signature — and it has a window it cannot cover: while a node's worker fleet
+ * regular path is owner-driven — its snapshot operation travels on the link's stream
+ * ({@see PeerRtSyncStreamDTO}) on a handshake and on a change of the ownership signature — and it
+ * has a window it cannot cover: while a node's worker fleet
  * is being replaced, the collection is claimed by nobody, so every neighbour answers a rejoining
  * node with silence while holding ten rows of it. This frame is the other direction of the same
  * conversation: the node that holds nothing asks, and any holder may answer with
