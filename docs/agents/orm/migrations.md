@@ -146,6 +146,26 @@ holds where it already ran under its old number — a database built from scratc
 it in order (`CREATE TABLE IF NOT EXISTS`, `ADD KEY IF NOT EXISTS`). There is no command that
 marks a migration applied: the same hole stands on every database at that level.
 
+**That SQL is owed to the databases the merged track built.** A file `total-refac` carried under its
+old number ran on the databases built from it — the stands of every later branch, and the demo
+installations once a build carries it — and SQL that holds is what lets those databases come up by
+themselves (*Whose Data Is Owed Compatibility* below). A file `total-refac` never carried under that
+number ran only on the test databases of the branch that wrote it: renumber it as a number alone and
+keep its SQL as written; for a pair `db:framework:pull` generated, delete the branch's copies and
+pull again — the command numbers the pair after every occupied number. Reset those test databases
+with `test:db:reset` instead of migrating them: the migrator keys a migration by its number, so a
+database that ran the old file reads the base's file of that number as applied, and the next
+migration that leans on it fails. No transfer of such a database is claimed or prepared. The refusal
+above advises SQL that holds; that advice is for the first case only.
+
+One question tells the two cases apart — has `total-refac` ever carried the old path:
+`git log --oneline total-refac -- <old path>` prints nothing for a file only the branch had. Ask
+the history, not the tip: a file the track carried and later renumbered still stands under its old
+number in the databases built before that. The case this is written from is HIL-1886 (2026-11-12):
+its Chat pair waited on the branch as `115_framework_install_status_silence_period.sql` while the
+base gave 115 to `115_framework_install_account_erasure_operation.sql`; the pull put it at `166_…`,
+and the branch's test databases were reset.
+
 ## A Key Onto A Table That Already Holds Rows
 
 A migration that adds a foreign key to a table that already holds rows cleans, in
@@ -167,6 +187,55 @@ and write it down, so similar cases do the same.*
 Examples: `demo/chat/backend/Database/Migration/Schema/051_add_passkey_credential_identity_foreign_key.sql`
 (HIL-1111) and the person keys of HIL-1202 (`NNN_add_person_foreign_keys.sql`
 in each demo).
+
+## Whose Data Is Owed Compatibility
+
+Until the owner declares a production installation, no data an earlier version of the code wrote is
+owed compatibility — not database rows of an older shape, not journal records, not the wire between
+a browser and a server, not files on a disk, not backup archives. Do not write a reader, a
+conversion or a bridge for an older format. Do not stop the work to ask whether compatibility is
+owed: this section is the answer.
+
+The owner's frame, in the owner's words rendered in English:
+*no backward compatibility before production* (2026-11-14, HIL-2118), on the decision of 2026-10-03
+(HIL-1156): *when there is some production, we will do backward compatibility; not yet.* The
+section exists so that the question stops reaching the owner (2026-11-12).
+
+### What every change still owes
+
+- **A rollout comes up by itself.** An installation running a build of the merged track — the demo
+  installations today — starts and migrates without an operator. A change never asks for a manual
+  reset of such a database, nor for a step run by hand before or after the rollout. This is why a
+  migration number the merged track carried keeps SQL that holds where it already ran
+  (*The cure is in code* above), and why a foreign key cleans the rows it would refuse
+  (*A Key Onto A Table That Already Holds Rows* above).
+- **What the new code cannot read is skipped, and the loss is counted.** An old row, record, file or
+  frame the new reader does not recognize is passed over with a counter or a log line carrying the
+  number, and it is never a reason to refuse a start. Old analytics journal records carrying row
+  numbers are the worked case: they are counted as malformed
+  ([analytics.md](../architecture/analytics.md)).
+
+### What this leaves free
+
+- **A branch's own data and stand data** — test people, messages, settings, history, the test
+  databases a branch built — are recreated, never carried over; a migration number only one branch
+  had follows *The cure is in code* above.
+- **A backup archive taken by older code** may be refused by newer code. Today's restore migrates an
+  archive taken behind the code forward and refuses one taken before the journal database existed
+  (`framework/backend/Backup/RestoreMigrationGuard.php`); both are properties of the restore, not a
+  debt a change owes.
+
+### Who declares production
+
+Only the owner, by a line in the list below: `from <date>, <installation> is production.` While the
+list holds no line, there is no production. An agent adds a line only on the owner's word and never
+infers one: not from `APP_ENV` — the demo installations run with the production environment, which
+names their configuration, not an obligation to their data; not from "a production caller", which
+means code reached outside tests; not from open registration, people signed up, or a build of the
+merged track running somewhere. The demo installations, on builds of the merged track since
+2026-11-06 to 2026-11-08 and with open registration, are not production.
+
+Declared production installations: none.
 
 ## Framework Tables In A Project (HIL-1326)
 
@@ -235,9 +304,10 @@ it across the migration. If a failed write observes that the type changed, it
 retries once using the newly observed type. Numeric reads are epoch
 milliseconds; the legacy SQL datetime read and write paths explicitly use UTC.
 
-Old stand data may be recreated without a preserving conversion. This does not
-permit rewriting genesis, published changes, old project SQL or their hashes;
-the immutable delivery and `introducesUnit` rules below still apply.
+Old stand data may be recreated without a preserving conversion
+(*Whose Data Is Owed Compatibility* above). This does not permit rewriting
+genesis, published changes, old project SQL or their hashes; the immutable
+delivery and `introducesUnit` rules below still apply.
 
 A transition closes every writer and reader of its source, including replication,
 queries, exports and its own checks. Its leaf searches all of `docs/` for its
@@ -422,7 +492,9 @@ php cli.php db:seed:apply 001
 
 ## Important rules
 
-- Never modify an already-applied migration file — create a new one instead
+- Never modify a migration file the merged track carries — create a new one
+  instead. A file only this branch has is still the branch's: change or renumber
+  it and reset the branch's test databases (*The cure is in code* above)
 - Migration runs in transaction where possible
 - Test migrations in test environment before applying to production
 - A foreign key onto a table that already holds rows cleans the rows it would

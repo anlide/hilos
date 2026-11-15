@@ -291,6 +291,7 @@ rule — still goes back to the interview.
 11. When you land behavior a doc marks as not written yet, clear its markers in the same commit — grep `docs/` for your `HIL-<n>` key (see [rule-authoring.md](docs/agents/rule-authoring.md))
 12. Outside tests, do not use or propose ORM forget for approval; use it only when the owner explicitly asks. This covers CLI, direct API, and indirect use; see [Forgetting loaded ORM state](docs/agents/testing.md#forgetting-loaded-orm-state).
 13. The tree and its history are public. A machine name, a host's directory, a private pipeline or a link into a private note that came with the task never enters a tracked file or a commit message; keep the meaning in a public shape (see [public-repository-hygiene.md](docs/agents/public-repository-hygiene.md))
+14. Until the owner declares a production installation, no data an earlier version of the code wrote is owed compatibility: write no reader, conversion or bridge for an old format, and do not stop to ask. What every change still owes, and where production is declared: [orm/migrations.md](docs/agents/orm/migrations.md#whose-data-is-owed-compatibility)
 
 ## Project docs (existing)
 

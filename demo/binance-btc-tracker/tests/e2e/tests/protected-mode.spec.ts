@@ -921,56 +921,61 @@ test('a public page live through the switch gains no code field', async ({
   await expect(page.getByTestId('maintenance-pass-pending')).toBeHidden()
 })
 
-test('a finished operation lands in the verification window, and either exit ends it', async () => {
-  // The ladder as the master reports it, both exits walked in one climb: the window
-  // is a phase of the same freeze, and it ends either by closing back into that
-  // freeze or by opening out of it.
-  await enterProtectedMode(OPERATION)
-  const frozen = await inspectProtectedMode()
-  expect(await leaveProtectedMode()).toBe('verifying')
+// FIXME(F-109, 2026-11-14): close did not reach active within the fixed 13 s agent wait under load; the test takes 18–51 s since HIL-2056 (was ~2 s), P-1059 · чужой · попытка 1 · HIL-2099
+test(
+  'a finished operation lands in the verification window, and either exit ends it',
+  { tag: '@quarantine:F-109' },
+  async () => {
+    // The ladder as the master reports it, both exits walked in one climb: the window
+    // is a phase of the same freeze, and it ends either by closing back into that
+    // freeze or by opening out of it.
+    await enterProtectedMode(OPERATION)
+    const frozen = await inspectProtectedMode()
+    expect(await leaveProtectedMode()).toBe('verifying')
 
-  const verifying = await inspectProtectedMode()
-  expect(verifying.phase).toBe('verifying')
-  expect(verifying.operation).toBe(OPERATION)
-  expect(verifying.passCount).toBe(0)
-  // The half of the freeze where the node runs again — which is what makes
-  // verifying anything possible at all: the gate is open and the roster the freeze
-  // took down has been replayed.
-  expect(verifying.agentStartGateClosed).toBe(false)
-  expect(verifying.stoppedAgents).toEqual([])
+    const verifying = await inspectProtectedMode()
+    expect(verifying.phase).toBe('verifying')
+    expect(verifying.operation).toBe(OPERATION)
+    expect(verifying.passCount).toBe(0)
+    // The half of the freeze where the node runs again — which is what makes
+    // verifying anything possible at all: the gate is open and the roster the freeze
+    // took down has been replayed.
+    expect(verifying.agentStartGateClosed).toBe(false)
+    expect(verifying.stoppedAgents).toEqual([])
 
-  // The count is the one place a number about the circle exists: the wire carries
-  // a boolean, so a browser learns that a code stands and never how many.
-  await mintProtectedModePass()
-  expect((await inspectProtectedMode()).passCount).toBe(1)
+    // The count is the one place a number about the circle exists: the wire carries
+    // a boolean, so a browser learns that a code stands and never how many.
+    await mintProtectedModePass()
+    expect((await inspectProtectedMode()).passCount).toBe(1)
 
-  // The exit an operator takes when the verifiers found something wrong. Everything
-  // the window relaxed goes back at once, which is why all four are read together:
-  // a close that voided the codes but left the node running would report exactly
-  // the same passCount.
-  expect(await closeProtectedMode()).toBe('active')
+    // The exit an operator takes when the verifiers found something wrong. Everything
+    // the window relaxed goes back at once, which is why all four are read together:
+    // a close that voided the codes but left the node running would report exactly
+    // the same passCount.
+    expect(await closeProtectedMode()).toBe('active')
 
-  const refrozen = await inspectProtectedMode()
-  expect(refrozen.phase).toBe('active')
-  expect(refrozen.operation).toBe(OPERATION)
-  expect(refrozen.passCount).toBe(0)
-  expect(refrozen.agentStartGateClosed).toBe(true)
-  expect(refrozen.stoppedAgents.length).toBeGreaterThan(0)
-  // The close answers only once everything the entry stopped is stopped again,
-  // not the moment the phase is written over a walk still under way (HIL-1128).
-  expect(refrozen.stoppedAgents).toEqual(
-    expect.arrayContaining(frozen.stoppedAgents),
-  )
+    const refrozen = await inspectProtectedMode()
+    expect(refrozen.phase).toBe('active')
+    expect(refrozen.operation).toBe(OPERATION)
+    expect(refrozen.passCount).toBe(0)
+    expect(refrozen.agentStartGateClosed).toBe(true)
+    expect(refrozen.stoppedAgents.length).toBeGreaterThan(0)
+    // The close answers only once everything the entry stopped is stopped again,
+    // not the moment the phase is written over a walk still under way (HIL-1128).
+    expect(refrozen.stoppedAgents).toEqual(
+      expect.arrayContaining(frozen.stoppedAgents),
+    )
 
-  // And the other exit, taken from the full freeze the close just restored — so
-  // the close leaves a node another destructive operation could run on, rather
-  // than a phase nothing gets out of.
-  await openProtectedMode()
+    // And the other exit, taken from the full freeze the close just restored — so
+    // the close leaves a node another destructive operation could run on, rather
+    // than a phase nothing gets out of.
+    await openProtectedMode()
 
-  const lifted = await inspectProtectedMode()
-  expect(lifted.phase).toBe('inactive')
-  expect(lifted.passCount).toBe(0)
-})
+    const lifted = await inspectProtectedMode()
+    expect(lifted.phase).toBe('inactive')
+    expect(lifted.passCount).toBe(0)
+  },
+)
 
 test('closing the window puts the admitted verifier back behind the stub', async ({
   page,

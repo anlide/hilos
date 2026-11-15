@@ -844,6 +844,5 @@ discarded by restore fall with the old database period and are not copied to the
 new one.
 
 Old journal records carrying row numbers are not loaded after this change; they
-are counted as malformed. The owner settled compatibility on 03.10.2026:
-«Нет. Когда будет продакшн какой-то, мы будем делать обратную совместимость, а пока нет.»
-— “No. When there is some production, we will do backward compatibility; not yet.”
+are counted as malformed. No compatibility is owed to them — see
+[Whose Data Is Owed Compatibility](../orm/migrations.md#whose-data-is-owed-compatibility).
