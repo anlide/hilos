@@ -16,6 +16,7 @@ use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergePreparation;
+use Hilos\Auth\AccountOperation\AccountMergeRelease;
 use Hilos\Auth\AccountOperation\AccountOperationActivation;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
@@ -676,12 +677,24 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * @param int $assignmentId Release assignment the coordinator gave this agent
+     * @return AccountOperationResult Committed release or the saved result of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or stage refuses new work
+     * @throws ValidationException When the assignment is not this person's release of an open cancelling merge
+     * @throws Throwable When reading or recording fails, preserving the original failure
+     */
+    public function releaseMergePreparation(int $assignmentId): AccountOperationResult
+    {
+        return AccountMergeRelease::run($assignmentId, $this->userId);
+    }
+
+    /**
      * Writes one edit of the person and answers the coordinator that asked for it.
      *
      * A frame naming another person never reached the right agent, and is refused as such rather
      * than written: the claims of this agent cover its own person alone.
      *
-     * Account operation steps answer after start, capture, personal erasure, final or merge preparation; begun and folded
+     * Account operation steps answer after start, capture, personal erasure, final, merge preparation or release; begun and folded
      * accounts still serve these frames. The folded account stops after queuing its answer.
      * A frame of the second factor is answered by {@see SecondFactorPersonEdits}, whatever came of
      * it: the browser action, the sweep or the operator's command waits on the answer (HIL-1406).
@@ -731,6 +744,8 @@ abstract class AbstractUserAgent extends AbstractAgent
                         AccountErasureFinal::personalKey($this->userId) => $this->finishAccountErasure($assignment->id),
                         AccountMergeDuty::PrepareSurvivor->value,
                         AccountMergeDuty::PrepareLoser->value => $this->prepareForMerge($assignment->id),
+                        AccountMergeDuty::ReleaseLoser->value,
+                        AccountMergeDuty::ReleaseSurvivor->value => $this->releaseMergePreparation($assignment->id),
                         default => AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
                             && AccountOperationExpectation::participantOf($assignment->payload) === AccountErasureParticipantCatalog::PERSONAL
                                 ? $this->eraseAccountPersonalPart($assignment->id)

@@ -12,7 +12,8 @@ use Hilos\HilosException;
 use JsonException;
 
 /**
- * Persistence CAS only; a business driver must prove the stage transition and terminal outcome.
+ * General CAS methods persist the caller's transition and outcome. The merge cancellation entry
+ * additionally excludes a committed give fact under the caller's transaction lock.
  *
  * @extends DbActions<AccountOperation, ObjectAccountOperation>
  * @property-read ObjectAccountOperation $object
@@ -20,6 +21,19 @@ use JsonException;
  */
 class AccountOperationActions extends DbActions
 {
+    /**
+     * Joins the caller's PRIMARY transaction; does not open one.
+     *
+     * @return bool Whether the merge is cancelling without a give fact
+     * @throws HilosException When ownership, transaction, validation, storage or synchronization refuses cancellation
+     */
+    public function beginMergeCancellation(): bool
+    {
+        $this->ensureCanWrite();
+
+        return $this->getObjectCollection()->beginMergeCancellation($this->object);
+    }
+
     /**
      * @param string $expectedStage Stage required in the database
      * @param string $nextStage Literal stage to store

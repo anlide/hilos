@@ -38,6 +38,16 @@ class AccountOperations extends DbCollection
     }
 
     /**
+     * @param int $operationId Persisted operation id
+     * @return ?AccountOperation Current row, sharing its lock until the caller's transaction ends
+     * @throws HilosException When the storage reader or item wrapper refuses the lookup
+     */
+    public function fresh(int $operationId): ?AccountOperation
+    {
+        return $this->itemFor($this->objectCollection->fresh($operationId));
+    }
+
+    /**
      * @param int $loserUserId Immutable loser account id
      * @return ?AccountOperation Open merge for this loser
      * @throws HilosException When the storage reader or item wrapper refuses the lookup

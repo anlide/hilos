@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Database\Object\Collection;
 
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\AccountOperationCircle;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
@@ -21,6 +22,8 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\AccountOperations as EntityAccountOperations;
 use Hilos\Database\Entity\Item\AccountOperation as EntityAccountOperation;
+use Hilos\Database\Entity\Item\AccountOperationAssignment as EntityAccountOperationAssignment;
+use Hilos\Database\Entity\Item\AccountOperationResult as EntityAccountOperationResult;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\AccountOperation as ObjectAccountOperation;
@@ -303,6 +306,55 @@ class AccountOperations extends Objects
         if ($afterId < 0 || $limit < 1 || $limit > self::PAGE_LIMIT_MAX) {
             throw new ValidationException('The account operation page requires a nonnegative cursor and a bounded positive limit.');
         }
+    }
+
+    /**
+     * The operation's exclusive lock excludes a concurrent give through the shared storage gate.
+     * The result read is locking too, so an older consistent snapshot cannot hide the fact.
+     *
+     * @param ObjectAccountOperation $operation Already issued object to synchronize
+     * @return bool Whether the open merge is cancelling without a give fact
+     * @throws HilosException When transaction, ownership, validation, storage or synchronization refuses the entry
+     */
+    public function beginMergeCancellation(ObjectAccountOperation $operation): bool
+    {
+        if (!Database::hasOpenTransactions()) {
+            throw new ValidationException('Merge cancellation requires an open PRIMARY transaction.');
+        }
+        $this->guardUpdate($operation);
+        $rows = Database::sql(
+            'SELECT * FROM ' . static::entityClass()::getSqlTableName() . ' WHERE `id` = ? FOR UPDATE',
+            [$operation->id],
+            index: EntityAccountOperation::getDatabase()->connectionIndex,
+        )->rows();
+        if ($rows === []) {
+            throw new ValidationException('The account operation no longer exists.');
+        }
+        $operation->acceptStored(static::entityClass()::fromRow($rows[0]));
+        if ($operation->kind !== AccountOperationKind::Merge) {
+            throw new ValidationException('Only a merge can enter merge cancellation.');
+        }
+        if ($operation->finishedAt !== null) {
+            return false;
+        }
+        if (!in_array($operation->stage, [
+            AccountMergeStage::Preparing->value, AccountMergeStage::Go->value, AccountMergeStage::Cancelling->value,
+        ], true)) {
+            throw new ValidationException('The merge stage does not support cancellation.');
+        }
+        $fact = Database::sql(
+            'SELECT r.`id` FROM ' . EntityAccountOperationResult::getSqlTableName() . ' r'
+            . ' JOIN ' . EntityAccountOperationAssignment::getSqlTableName() . ' a ON a.`id` = r.`assignment_id`'
+            . ' WHERE a.`operation_id` = ? AND a.`stage` = ? AND a.`assignment_key` = ? LIMIT 1 LOCK IN SHARE MODE',
+            [$operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Give->value],
+            index: EntityAccountOperation::getDatabase()->connectionIndex,
+        )->rows();
+        if ($fact !== []) {
+            return false;
+        }
+
+        return $operation->stage === AccountMergeStage::Cancelling->value
+            || $this->advance($operation, $operation->stage, AccountMergeStage::Cancelling->value);
     }
 
     /**

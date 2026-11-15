@@ -35,9 +35,12 @@ final class AccountMergePreparation
         return AccountOperationParticipantStep::run(
             $assignmentId,
             static function (AccountOperationAssignment $assignment) use ($userId): AccountOperationResultPayload {
-                $operation = $assignment->operation;
+                $operation = Hilos::$db->accountOperations->fresh($assignment->operationId);
                 if ($operation?->kind !== AccountOperationKind::Merge) {
                     throw new ValidationException('An account merge preparation must belong to a merge.');
+                }
+                if ($operation->stage !== AccountMergeStage::Preparing->value || $operation->finishedAt !== null) {
+                    throw new ValidationException('An account merge preparation requires an open preparing merge.');
                 }
                 if ($assignment->assignmentKey !== AccountMergeDuty::PrepareSurvivor->value
                     && $assignment->assignmentKey !== AccountMergeDuty::PrepareLoser->value) {
@@ -47,6 +50,9 @@ final class AccountMergePreparation
                 if ($assignment->userId !== $userId
                     || $userId !== ($survivor ? $operation->survivorUserId : $operation->loserUserId)) {
                     throw new ValidationException('An account merge preparation must name its own side of the merge.');
+                }
+                if (AccountMergeReleaseResult::forAccount($operation, $userId)) {
+                    throw new ValidationException('This account merge preparation has been released.');
                 }
                 if (!isset(Hilos::$db->users[$userId])) {
                     return AccountMergePreparationResult::refused(AccountMergeRefusal::Missing);
@@ -101,14 +107,15 @@ final class AccountMergePreparation
 
     /**
      * @param int $userId Account whose reservation is being read
-     * @return ?AccountOperation First open merge with a saved reservation of this account
+     * @return ?AccountOperation First open merge with an unreleased saved reservation of this account
      * @throws HilosException When an operation, assignment or result cannot be read or has an invalid shape
-     * @throws JsonException When a saved preparation cannot be decoded
+     * @throws JsonException When a saved preparation or release cannot be decoded
      */
     public static function heldBy(int $userId): ?AccountOperation
     {
         foreach (Hilos::$db->accountOperations->openMergesNaming($userId) as $operation) {
-            if (AccountMergePreparationResult::forAccount($operation, $userId)?->isReserved()) {
+            if (AccountMergePreparationResult::forAccount($operation, $userId)?->isReserved()
+                && !AccountMergeReleaseResult::forAccount($operation, $userId)) {
                 return $operation;
             }
         }

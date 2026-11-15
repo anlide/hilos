@@ -442,8 +442,10 @@ final class AccountOperationStorageTest extends TestCase
         self::assertSame(['Erasure' => 'erasure', 'Merge' => 'merge'], array_column(AccountOperationKind::cases(), 'value', 'name'));
         self::assertSame(['Preparing' => 'preparing', 'Go' => 'go', 'Cancelling' => 'cancelling'],
             array_column(AccountMergeStage::cases(), 'value', 'name'));
-        self::assertSame(['PrepareSurvivor' => 'prepare_survivor', 'PrepareLoser' => 'prepare_loser', 'Give' => 'give'],
-            array_column(AccountMergeDuty::cases(), 'value', 'name'));
+        self::assertSame([
+            'PrepareSurvivor' => 'prepare_survivor', 'PrepareLoser' => 'prepare_loser', 'Give' => 'give',
+            'ReleaseLoser' => 'release_loser', 'ReleaseSurvivor' => 'release_survivor',
+        ], array_column(AccountMergeDuty::cases(), 'value', 'name'));
     }
 
     public function testMergeFieldsAreTypedOnObjectAndViewWithoutExposingTheOpenSlot(): void
