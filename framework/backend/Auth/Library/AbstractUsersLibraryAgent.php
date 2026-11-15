@@ -3772,8 +3772,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * Calling a deletion off gives back rather than takes away, so it asks no confirmation. The
      * card waits on a signal, not on an action of this library, so the cancel is
      * {@see sendToAgent()} and the card is answered from {@see finishAdminDeletionCancel()} once
-     * the agent has written. A person who is already gone is refused in the words of
-     * {@see AddressablePerson::require()}, and the agent is not raised.
+     * the agent has written. A person who is gone, was merged, or whose erasure has begun ("This
+     * account is being deleted.", HIL-1939) is refused before the hop in the words of
+     * {@see AddressablePerson::require()}, and the agent is not raised. A start that overtakes the
+     * cancel on the hop is refused by the agent in the same words (HIL-1959).
      *
      * @param AccountDeletionSetSignalData $request Target deletion and waiting administrator
      * @throws WiringRefusal When this worker cannot access a required source
@@ -3843,9 +3845,10 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
     /**
      * Answers the administrator's card once the person's agent has looked at the cancel (HIL-1409).
      *
-     * A failure of the write is said in the agent's words. A request that no longer stood is the
-     * sentence the card has always shown, and nothing is fanned. A cancel that landed tells the
-     * person's tabs and then the card.
+     * A refusal or a failure of the write is said in the agent's words, an erasure that has begun
+     * among them, and no state is fanned. A request that no longer stood is the sentence the card
+     * has always shown, and nothing is fanned. A cancel that landed tells the person's tabs and
+     * then the card.
      *
      * @param UserAccountDeletionCancelDoneSignalData $done The agent's answer, carrying the ask back
      * @throws InvalidArgumentException When the answer frame cannot be named or queued

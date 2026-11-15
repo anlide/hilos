@@ -3417,6 +3417,57 @@ describe('HilosUserPage erasing account (HIL-1957)', () => {
     )
   })
 
+  it('says the refusal in the cancel-deletion window opened before the erasure began and closes it when the erasure arrives (HIL-1959)', async () => {
+    const { context, standingFrame } = userContext()
+    await mountCard(context)
+    standingFrame({
+      userId: 1,
+      accountStanding: standing({
+        shown: 'deletion_scheduled',
+        deletionEffectiveAt: 100_000_000,
+      }),
+    })
+    await settle()
+    expect(modalEl('hilos-user-deletion-open')?.textContent).toContain(
+      'Cancel deletion',
+    )
+
+    modalEl('hilos-user-deletion-open')?.click()
+    await settle()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-user-lifecycle-step-up')).toBeNull()
+
+    vi.spyOn(context.actions, 'dispatch').mockImplementation(() => ({
+      requestId: 'cancel-deletion-req',
+      loading: createSignal(false),
+      done: Promise.reject<ActionResult>(
+        new ActionError(
+          'hilos_user_deletion_set',
+          'fail',
+          'This account is being deleted.',
+        ),
+      ),
+    }))
+    modalEl('hilos-user-lifecycle-confirm')?.click()
+    await settle()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-user-lifecycle-error')?.textContent).toContain(
+      'This account is being deleted.',
+    )
+    expect(
+      modalEl('hilos-user-lifecycle-confirm')?.hasAttribute('disabled'),
+    ).toBe(false)
+    expect(modalEl('hilos-user-deletion-state')?.textContent).not.toContain(
+      'No deletion is scheduled',
+    )
+
+    standingFrame({ userId: 1, accountStanding: erasing })
+    await settle()
+    expect(modalEl('modal')).toBeNull()
+    expect(modalEl('hilos-user-erasing')).not.toBeNull()
+    expect(modalEl('hilos-user-deletion-open')).toBeNull()
+  })
+
   it('shows a viewer of the admin view mode the same section, with nothing hidden', async () => {
     const listeners: ((signal: ProjectSignal) => void)[] = []
     const sessionConnection = {

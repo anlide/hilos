@@ -1670,8 +1670,15 @@ switches neither live erasure entry:
   `hilos_account_deletion_state` is fanned, and the browser says the sentence
   in the window's error line or as a toast. The refusal is built and stays
   inert until HIL-1952 (HIL-1939, HIL-1958).
-  Administrator cancellation has the same boundary
-  (not in the code yet — HIL-1959).
+- "Cancel deletion" on the administrator's card is the action
+  `hilos_user_deletion_set` with `scheduled` false. Before start it keeps the
+  conditional cancel/start race. After start it is refused with "This account
+  is being deleted." — before the hop, or at the person's agent when the start
+  overtakes the cancel on the hop: the request stays begun and no
+  `hilos_account_deletion_state` is fanned. A window opened before the start
+  says the sentence in its error line, and the arriving `erasing` standing
+  closes it (HIL-1957). The refusal is built and stays inert until HIL-1952
+  (HIL-1939, HIL-1959).
 - The existing merge refuses when any affected account is in the circle of an
   open erasure operation, from preparation on (owner's decision 2026-11-12,
   HIL-1938); this prepares no new merge, transfer right or receipt protocol

@@ -260,10 +260,34 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
 
     private function adminDeletion(int $userId, bool $scheduled, string $acceptKey = self::ADMIN_ACCEPT_KEY): HandoverAnswerSignalData
     {
+        $this->askAdminDeletion($userId, $scheduled, $acceptKey);
+
+        return $this->adminDeletionAnswer();
+    }
+
+    /**
+     * Hands the card's ask to the library and stops there: whatever the library queued stays queued.
+     *
+     * @param int $userId Person whose deletion the card sets
+     * @param bool $scheduled True to schedule, false to call the deletion off
+     * @param string $acceptKey Connection the ask arrives on
+     */
+    private function askAdminDeletion(int $userId, bool $scheduled, string $acceptKey = self::ADMIN_ACCEPT_KEY): void
+    {
         $this->library->onSignalAgent(new AgentSignalData(new AccountDeletionSetSignalData(
             $userId, $scheduled, HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE,
             $acceptKey, 'admin-deletion', HilosSignalConstants::HILOS_USER_DELETION_SET, null,
         )), 'page', HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET);
+    }
+
+    /**
+     * Carries a queued cancel to the person's agent and its answer back to the library, and takes
+     * the card's answer off the queue; every other signal goes back onto it.
+     *
+     * @return HandoverAnswerSignalData The one answer the card received
+     */
+    private function adminDeletionAnswer(): HandoverAnswerSignalData
+    {
         $other = [];
         $answer = null;
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
@@ -704,6 +728,56 @@ final class AccountDeletionIntegrationTest extends ProfileIntegrationTestCase
             }
         }
         self::assertTrue($refused, 'The cancel action must be refused');
+        self::assertSame($request->id, Hilos::$db->accountDeletions->startedOf(self::USER_ID)?->id);
+    }
+
+    /**
+     * Once the erasure has begun, the card's "Cancel deletion" is refused in the library in the
+     * words of "Keep my account": no ask leaves for the person's agent, no state is fanned and the
+     * request stays begun (HIL-1959).
+     */
+    public function testAdministratorCancelAfterTheStartIsRefusedBeforeTheHop(): void
+    {
+        $request = Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
+        Database::sqlRun('UPDATE `hilos_account_deletion` SET `started_at` = ? WHERE `id` = ?', [TimeHelper::nowMs(), $request->id]);
+
+        $this->askAdminDeletion(self::USER_ID, false);
+
+        $answers = [];
+        foreach ($this->drainSignals() as $signal) {
+            self::assertNotSame(HilosSignalConstants::HILOS_USER_ACCOUNT_DELETION_CANCEL, $signal->signalName->getName());
+            self::assertNotSame(HilosSignalConstants::HILOS_ACCOUNT_DELETION_STATE, $signal->signalName->getName());
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof HandoverAnswerSignalData) {
+                $answers[] = $signal->data->data;
+            }
+        }
+        self::assertCount(1, $answers);
+        self::assertSame('admin-deletion', $answers[0]->requestId);
+        self::assertSame(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE, $answers[0]->error);
+        self::assertSame($request->id, Hilos::$db->accountDeletions->startedOf(self::USER_ID)?->id);
+    }
+
+    /**
+     * A card's "Cancel deletion" that left before the start and reaches the person's agent after
+     * it is refused there in the same words: the card is told so, no state is fanned and the
+     * request stays begun (HIL-1959).
+     */
+    public function testAdministratorCancelThatTheStartOvertakesOnTheHopIsRefusedInTheSameWords(): void
+    {
+        $request = Hilos::$db->accountDeletions->actions->request(
+            self::USER_ID,
+            TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
+
+        $this->askAdminDeletion(self::USER_ID, false);
+        Database::sqlRun('UPDATE `hilos_account_deletion` SET `started_at` = ? WHERE `id` = ?', [TimeHelper::nowMs(), $request->id]);
+        $answer = $this->adminDeletionAnswer();
+
+        self::assertSame(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE, $answer->error);
+        self::assertSame([], $this->stateFrames());
         self::assertSame($request->id, Hilos::$db->accountDeletions->startedOf(self::USER_ID)?->id);
     }
 

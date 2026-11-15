@@ -119,7 +119,9 @@ answered after the write. Both publish the same state to the person; either
 the administrator or the person may call it off.
 Scheduling asks the administrator's fresh confirmation first (the step-up
 operation `delete_other_account`, see [step-up.md](step-up.md)); calling it off
-asks none.
+asks none. Once the erasure has begun, the card's cancel is refused in the same
+words as "Keep my account" above — before the hop, or at the person's agent —
+and fans no `hilos_account_deletion_state`.
 
 ## The Erasure
 
