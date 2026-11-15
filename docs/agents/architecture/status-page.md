@@ -1572,16 +1572,17 @@ screen, gives the page DOM a second interaction state while the shell's dialogs
 keep the caller's policy, and never draws the verification banner on this
 route. While the freeze is active or the first frame is held, the brand stays
 here as passive text where other routes drop it; otherwise it is the ordinary
-link. `HilosView.tsx` clears the departure copy of the previous page when the
-route becomes `/status`, even while the lazy reader code loads.
+link. The core's `bindPageDeparture`, one binding for every SDK, clears the
+departure copy of the previous page when the route becomes `/status`, even
+while the lazy reader code loads.
 `HilosMaintenance.tsx` carries the **Service status** link in every branch of
 the stub. The Angular layout keeps the public reader outside the maintenance
 stub and blocked/frozen cards, omits the verification banner and leaves the
 brand as passive text. The public page region has its own interaction state
 while the shell keeps its caller's `HILOS_CONNECTION_INTERACTION` policy; it
 does not enable shell controls or use global `allowDisconnectedInteraction`.
-Its `HilosView` clears the departure copy on entry, and `HilosMaintenance`
-carries the native **Service status** link in every branch.
+The core's `bindPageDeparture` clears the departure copy on entry, and
+`HilosMaintenance` carries the native **Service status** link in every branch.
 
 Do not show the subscription button without a usable live connection. Every
 subscription action and subscriber or work mail pass checks that the Status

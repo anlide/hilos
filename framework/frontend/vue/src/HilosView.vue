@@ -23,7 +23,8 @@ on screen and raises no skeleton.
 
 On navigation, the old page remains as an inert copy in the same place until
 the new answer, error, or skeleton arrives (HIL-1146). The router announces
-departure before the live view changes; the core binding owns that copy.
+departure before the live view changes; the core binding owns that copy and
+dims it with the Bootstrap classes it sets over the template's fade show.
 
 It also hosts the auth gate (HIL-165): when the project registers an
 `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
@@ -149,17 +150,6 @@ watch(sessionEnded, async (ended) => {
     focusInitial(root)
   }
 })
-// This reader has no server wait to toggle loading and clear a departure copy.
-// Drop the previous page even while the public reader's lazy code is pending.
-watch(
-  route,
-  (current) => {
-    if (current.page === HilosPages.PUBLIC_STATUS) {
-      pageDeparture.value?.replaceChildren()
-    }
-  },
-  { flush: 'sync' },
-)
 let unbindPageDeparture: (() => void) | null = null
 onMounted(() => {
   if (pageSlot.value && pageDeparture.value) {
@@ -246,7 +236,7 @@ function onModalToggle(open: boolean): void {
   </div>
   <div
     ref="pageDeparture"
-    class="hilos-page-departure position-relative h-100"
+    class="fade show position-relative z-0 h-100 d-none"
     data-id="hilos-page-departure"
     aria-hidden="true"
     inert

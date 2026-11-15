@@ -24,7 +24,8 @@
 //
 // Navigation leaves an inert copy of the old page in place until the new
 // answer, error, or skeleton arrives (HIL-1146). The router announces departure
-// before Angular replaces the live view; the core binding owns the copy.
+// before Angular replaces the live view; the core binding owns the copy and
+// dims it with the Bootstrap classes it sets over the template's fade show.
 //
 // It also hosts the auth gate (HIL-165): when the project registers an
 // `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
@@ -136,7 +137,7 @@ const ACCESS_LOST = computedSignal(() => hilosAccessLossReason.get() !== null)
     </div>
     <div
       #pageDeparture
-      class="hilos-page-departure position-relative h-100"
+      class="fade show position-relative z-0 h-100 d-none"
       data-id="hilos-page-departure"
       aria-hidden="true"
       inert
@@ -310,13 +311,6 @@ export class HilosView {
     })
     effect(() => {
       this.pageViewState.setPages(this.pages())
-    })
-    // Public Status has no server wait to clear the previous page's copy.
-    // Clear it on route entry even while the lazy reader code is pending.
-    effect(() => {
-      if (this.route().page === HilosPages.PUBLIC_STATUS) {
-        this.pageDeparture().nativeElement.replaceChildren()
-      }
     })
     effect(() => {
       this.skeletonFlag.set(this.pageLoading())

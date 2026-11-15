@@ -118,7 +118,10 @@ core keeps the previous view settled until all departure listeners have copied
 it. `bindPageDeparture` accepts optional composed `loading` and `error` signals
 (defaulting to the router's server-only signals). The adapters supply them, so
 the inert, `aria-hidden` copy stays until readiness, refusal or the existing
-300 ms delayed skeleton replaces it. One continuous code/data wait has one
+300 ms delayed skeleton replaces it. `bindPageDeparture` also owns the copy's
+visibility (`d-none`) and its dimming (`opacity-25` over the permanent
+`fade show` of the view template), and it clears the copy on entering
+`PUBLIC_STATUS`. One continuous code/data wait has one
 skeleton deadline: finishing code while data is pending, or vice versa, does
 not restart the timer. A reconnect resubscription does not hide an already shown
 page or raise a fresh skeleton.

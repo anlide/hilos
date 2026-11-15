@@ -356,8 +356,10 @@ The rules to apply when building a view or an SDK component:
 - **Reduced motion** — Bootstrap guards its own animations per component (and
   disables smooth scroll) under `prefers-reduced-motion: reduce`. The toast host
   omits `hilos-toast-life` when the core's `bindReducedMotion` reports that
-  request. The veil over a departing page keeps its nearby reduced-motion
-  variant (HIL-1146). Do **not** add a blanket reset.
+  request. The copy of a departing page dims through Bootstrap's `.fade`
+  transition and `opacity-25`, and the core's `bindPageDeparture` does not set
+  `opacity-25` while `bindReducedMotion` reports that request, so the copy
+  stands still. Do **not** add a blanket reset.
 - **Contrast** — Bootstrap's stock colors target AA in both modes. A few stock
   combinations (muted or secondary text on a tinted surface) sit near the 4.5:1
   line; tuning them means a full Bootstrap Sass recompile, which

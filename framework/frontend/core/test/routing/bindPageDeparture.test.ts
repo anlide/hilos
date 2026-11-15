@@ -117,6 +117,7 @@ describe('bindPageDeparture', () => {
     departure.innerHTML = '<article>Private copy</article>'
     const release = bindPageDeparture({
       router: {
+        currentRoute: createSignal({ page: 'old', params: {}, admin: false }),
         onLeave: () => () => {},
         pageLoading: createSignal(false),
         pageError: createSignal(null),

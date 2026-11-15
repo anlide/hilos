@@ -23,9 +23,10 @@
 //
 // Navigation leaves an inert copy of the old page in place until the new
 // answer, error, or skeleton arrives (HIL-1146). The router announces departure
-// before React replaces the live view; the core binding owns the copy. The
-// public Status file reader awaits no answer, so its route drops the copy at
-// once, even while the reader's lazy code is still loading.
+// before React replaces the live view; the core binding owns the copy and dims
+// it with the Bootstrap classes it sets over the template's fade show. The
+// public Status file reader awaits no answer, so the binding drops the copy on
+// entering that route, even while the reader's lazy code is still loading.
 //
 // It also hosts the auth gate (HIL-165): when the project registers an
 // `authSurface`, an anonymous 401 mounts that surface IN PLACE of ErrorPage, and
@@ -61,7 +62,6 @@ import {
   hilosAccessLossReason,
   HilosPages,
   isEndedSessionReason,
-  subscribeSignal,
   type AuthGate,
   type DeferredFlagState,
   type PageView,
@@ -179,19 +179,6 @@ export function HilosView({
       })
     }
   }, [router, skeletonFlag, pageViewState])
-  // This reader has no server wait to toggle loading and clear a departure copy.
-  // Drop the previous page even while the public reader's lazy code is pending:
-  // the route is published right after the departure listeners copied the page,
-  // and this listener runs at that moment rather than at the next render.
-  useLayoutEffect(
-    () =>
-      subscribeSignal(router.currentRoute, (current) => {
-        if (current.page === HilosPages.PUBLIC_STATUS) {
-          departureRef.current?.replaceChildren()
-        }
-      }),
-    [router],
-  )
   useEffect(() => {
     skeletonFlag.set(pageLoading)
   }, [skeletonFlag, pageLoading])
@@ -269,7 +256,7 @@ export function HilosView({
       </div>
       <div
         ref={departureRef}
-        className="hilos-page-departure position-relative h-100"
+        className="fade show position-relative z-0 h-100 d-none"
         data-id="hilos-page-departure"
         aria-hidden="true"
         inert
