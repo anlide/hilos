@@ -184,8 +184,10 @@ the marker.
 
 Tests can bring a request due with `test:account:force-purge <userId>`: the
 session holder moves its moment to now and erases it through this path,
-returning the sum of the project's tallies for the circle. A failed erasure
-leaves the request due for the next sweep.
+returning the outcome `completed` with the sum of the project's tallies for the
+circle. A failed erasure leaves the request due for the next sweep. The reply
+by stage — `starting` or `erasing` for an erasure that has not finished — is
+prepared and switches on in HIL-1952.
 
 After the commit, the agent of every account in the circle stops itself, on
 whichever node it was up. One that was not up does not rise.

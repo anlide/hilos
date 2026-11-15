@@ -369,7 +369,9 @@ install references already name them; the restore mechanism is unchanged.
 **The erasure coordinator.** `AccountErasureCoordinator::begin()` and
 `afterAnswer()` coordinate an open erasure from its operation, assignment and
 result records. `AbstractSessionsLibraryAgent::driveAccountErasure()` is the
-prepared entry: it calls `begin()` and sends the returned assignments. The due
+prepared entry: it calls `begin()` and sends the returned assignments. When an
+operation closes, `driveAccountErasure()` and the answer handling reply to the
+`test:account:force-purge` commands parked on it (`ForcePurgeWaits`). The due
 and force-purge paths still use the old flow until HIL-1952, which opens an
 erasure for the first time; the holder's recovery pass and an owner's start enter
 one that is already open (*The erasure recovery*). `begin()` checks saved finals
@@ -1626,10 +1628,18 @@ approval of the implementation map; this document grants no such exception.
 The following leaves prepare the surrounding behavior; their presence alone
 switches neither live erasure entry:
 
-- The existing `test:account:force-purge` triggers the live owners and prints
-  the actual outcome, distinguishing start, waiting and completion. The CLI
-  writes no DB row and introduces no universal clock; the exact new response
-  belongs to its implementing contract (not in the code yet — HIL-1953).
+- The existing `test:account:force-purge` triggers the live owners and holds
+  its reply until the request's operation closes, for at most
+  `CommandChannelWindows::AGENT_WAIT_SECONDS`. The reply's `outcome` is
+  `completed` with `rowsErased`, `starting` while the root's start is
+  unanswered, or `erasing` with the `erasure` block below; an operation closed
+  as `NotStarted` keeps the earlier refusal "The deletion of user N was canceled
+  before it could be carried out". Running the command again watches the same
+  operation: an open one continues, and an erased request answers `completed`
+  from its saved results without new work. The CLI prints "Erased" only for
+  `completed`; an unfinished erasure prints the stage it reached and exits 6,
+  and a lost reply says the outcome is unknown. The CLI writes no DB row and
+  introduces no universal clock (prepared, no live caller until HIL-1952).
 - The card's first `page_response` and existing `hilos_account_standing_state`
   frame carry `accountErasure`: `null`, or `{startedAt, parts:
   [{participant, owner, userId, done}], waits: [{participant, userId}],

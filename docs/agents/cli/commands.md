@@ -505,10 +505,12 @@ a delay before an answer. The command ages the one moment the feature reads — 
 it holds — so the logic fires now. For example `test:account:force-purge` initiates and prints;
 the live sessions holder moves the request's moment to now and runs the existing erasure.
 In the split erasure, the same command triggers the live owners, which write and move the
-moment, and reports the actual start, wait or end without a direct CLI database write
-(not in the code yet — HIL-1953). Its live entry switches together with due erasure
-(not in the code yet — HIL-1952); exact new response forms belong to HIL-1953, under the
+moment, and reports the actual outcome without a direct CLI database write: "Erased" only
+for a completed erasure, the stage reached with exit code 6 for one not yet begun or not
+finished, and an unknown outcome when no reply arrives; running it again watches the same
+erasure. The outcomes are listed in the
 [erasure canon](../architecture/account-operations.md#erasure-cutover-and-observation).
+Its live entry switches together with due erasure (not in the code yet — HIL-1952).
 Write these per-feature and carefully; never generalise them into a shared time-travel
 utility. The Status heartbeat and
 its stale limit, and an announced maintenance start, have theirs, with a batch of settings

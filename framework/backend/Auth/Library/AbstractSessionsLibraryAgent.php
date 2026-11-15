@@ -28,6 +28,8 @@ use Hilos\Auth\StepUp\StepUpConfirmations;
 use Hilos\Auth\AccessLog\AccessLogEvent;
 use Hilos\Auth\AccessLog\AccessLogPolicy;
 use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
+use Hilos\Auth\AccountDeletion\AccountDeletionCommandOutcome;
+use Hilos\Auth\AccountDeletion\ForcePurgeReply;
 use Hilos\Auth\Impersonation\ImpersonationMessages;
 use Hilos\Auth\Impersonation\ImpersonationSettings;
 use Hilos\Auth\Code\DTO\CodeSendProgressSignalData;
@@ -932,6 +934,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** @var ?AdminCreateWaits Creation commands parked in this process */
     private ?AdminCreateWaits $adminCreateWaits = null;
 
+    /** @var ?ForcePurgeWaits Force-purge commands parked in this process until their erasure ends */
+    private ?ForcePurgeWaits $forcePurgeWaits = null;
+
     /**
      * The results of the holder's account operation steps are keyed by its full id, the owner
      * their assignment names (HIL-1943); any other set is the base's refusal.
@@ -1198,6 +1203,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->republishChangedStanding();
         // Before the sign-in surface check: this command is the way out of an installation with every sign-in method off.
         $this->sweepAdminCreates(microtime(true));
+        $this->sweepForcePurges(microtime(true));
         if (!$this->hasSignInSurface()) {
             return;
         }
@@ -2378,6 +2384,78 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     private function adminCreateWaits(): AdminCreateWaits
     {
         return $this->adminCreateWaits ??= new AdminCreateWaits();
+    }
+
+    /**
+     * Answers every parked force-purge command whose deadline passed with the stage its erasure
+     * reached now; each command gets exactly one answer, here or when its erasure ends.
+     *
+     * @param float $now Current time in seconds; tests can bring the deadline forward
+     * @throws InvalidArgumentException When a parked command's correlation id is empty
+     */
+    protected function sweepForcePurges(float $now): void
+    {
+        foreach ($this->forcePurgeWaits()->expired($now) as [$correlationId, $operationId]) {
+            try {
+                $operation = Hilos::$db->accountOperations[$operationId] ?? null;
+                $reply = $operation === null
+                    ? CommandReplyDTO::error($correlationId, "The erasure operation {$operationId} no longer exists")
+                    : ForcePurgeReply::of($correlationId, $operation);
+            } catch (WiringRefusal $refusal) {
+                $this->logAgentError("Force purge could not read its erasure here: {$refusal->getMessage()}");
+                $reply = CommandReplyDTO::error($correlationId, $refusal->getMessage());
+            } catch (Throwable $e) {
+                $reply = CommandReplyDTO::error($correlationId, $e->getMessage());
+            }
+            $this->replyToCommand($reply);
+        }
+    }
+
+    /**
+     * Answers the commands parked on this erasure once it has ended; an open one keeps them parked.
+     * Reads nothing while no command watches the erasure.
+     *
+     * @param int $operationId Erasure the coordinator just moved
+     * @throws InvalidArgumentException When a parked command's correlation id is empty
+     */
+    private function settleForcePurges(int $operationId): void
+    {
+        if (!$this->forcePurgeWaits()->isWaitingOn($operationId)) {
+            return;
+        }
+        try {
+            $operation = Hilos::$db->accountOperations[$operationId];
+            if ($operation->finishedAt === null) {
+                return;
+            }
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError("Force purge could not read its erasure here: {$refusal->getMessage()}");
+            foreach ($this->forcePurgeWaits()->settle($operationId) as $correlationId) {
+                $this->replyToCommand(CommandReplyDTO::error($correlationId, $refusal->getMessage()));
+            }
+
+            return;
+        } catch (Throwable $e) {
+            foreach ($this->forcePurgeWaits()->settle($operationId) as $correlationId) {
+                $this->replyToCommand(CommandReplyDTO::error($correlationId, $e->getMessage()));
+            }
+
+            return;
+        }
+        foreach ($this->forcePurgeWaits()->settle($operationId) as $correlationId) {
+            try {
+                $reply = ForcePurgeReply::of($correlationId, $operation);
+            } catch (Throwable $e) {
+                $reply = CommandReplyDTO::error($correlationId, $e->getMessage());
+            }
+            $this->replyToCommand($reply);
+        }
+    }
+
+    /** @return ForcePurgeWaits Parked force-purge commands private to this holder process */
+    private function forcePurgeWaits(): ForcePurgeWaits
+    {
+        return $this->forcePurgeWaits ??= new ForcePurgeWaits();
     }
 
     /**
@@ -4497,6 +4575,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     throw new InvalidAgentSignalPayloadException($name, AccountOperationAnswerSignalData::class, $answer);
                 }
                 $this->askAccountOperation($this->afterAccountOperationAnswer($answer));
+                $this->settleForcePurges($answer->operationId);
 
                 return;
 
@@ -6451,8 +6530,56 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [
             AccountDeletionCommandConstants::FIELD_USER_ID => $userId,
+            AccountDeletionCommandConstants::FIELD_OUTCOME => AccountDeletionCommandOutcome::Completed->value,
             AccountDeletionCommandConstants::FIELD_ROWS_ERASED => $erasure->rowsErased,
         ]));
+    }
+
+    /**
+     * Enters the erasure a force-purge command watches and answers it once that erasure ends;
+     * a still open one parks the command until its end or its deadline.
+     * SCAFFOLD: the force-purge entry calls it from HIL-1952; until then only tests do.
+     *
+     * @param CommandRequestDTO $command Command waiting for the erasure
+     * @param AccountOperation $operation Erasure of the command's request
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    protected function answerForcePurge(CommandRequestDTO $command, AccountOperation $operation): void
+    {
+        try {
+            if ($operation->finishedAt === null) {
+                $this->driveAccountErasure($operation);
+            }
+            $current = Hilos::$db->accountOperations[$operation->id];
+            if ($current->finishedAt !== null) {
+                $this->replyToCommand(ForcePurgeReply::of($command->correlationId, $current));
+
+                return;
+            }
+            $this->forcePurgeWaits()->park($command->correlationId, $operation->id, microtime(true));
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError("Force purge could not read its erasure here: {$refusal->getMessage()}");
+            $this->replyToCommand(CommandReplyDTO::error($command->correlationId, $refusal->getMessage()));
+        } catch (Throwable $e) {
+            $this->replyToCommand(CommandReplyDTO::error($command->correlationId, $e->getMessage()));
+        }
+    }
+
+    /**
+     * The erasure a force-purge command for this account watches: the standing request's, else
+     * the erased request's, whose saved results still answer it.
+     * SCAFFOLD: the force-purge entry calls it from HIL-1952; until then only tests do.
+     *
+     * @param int $userId Account the command names
+     * @return ?AccountOperation The request's erasure, or null when no request or no erasure exists yet
+     * @throws DatabaseException When a request lookup fails
+     * @throws HilosException When the storage reader, validation or item wrapper refuses the request
+     */
+    protected function forcePurgeOperation(int $userId): ?AccountOperation
+    {
+        $request = Hilos::$db->accountDeletions->liveOf($userId) ?? Hilos::$db->accountDeletions->erasedOf($userId);
+
+        return $request === null ? null : Hilos::$db->accountOperations->byRequest($request->id);
     }
 
     /**
@@ -7517,6 +7644,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     protected function driveAccountErasure(AccountOperation $operation): void
     {
         $this->askAccountOperation(AccountErasureCoordinator::begin($operation, AccountErasureParticipantCatalog::installation()));
+        $this->settleForcePurges($operation->id);
     }
 
     /**

@@ -675,6 +675,10 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             $outcome->reply->payload[AccountDeletionCommandConstants::FIELD_USER_ID] ?? null,
         );
         self::assertSame(
+            'completed',
+            $outcome->reply->payload[AccountDeletionCommandConstants::FIELD_OUTCOME] ?? null,
+        );
+        self::assertSame(
             ['projectRows' => 2],
             $outcome->reply->payload[AccountDeletionCommandConstants::FIELD_ROWS_ERASED] ?? null,
         );

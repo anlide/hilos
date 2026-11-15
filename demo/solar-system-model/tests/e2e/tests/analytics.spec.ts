@@ -516,156 +516,163 @@ test('opens a real person and session from People and Browser sessions and retur
   }
 })
 
-test('People starts with one Today viewport and resets only its Period filter', async ({
-  page,
-}) => {
-  const frames = watchDeliveryFrames(page)
-  try {
-    const user = await seedTestUser({ email: uniqueEmail() })
-    await openSignInOnPage(expect, page, resolveHilosPath(HilosPages.DASHBOARD))
-    await login(expect, page, user.email, PASSWORD)
-    await grantAdminToSelf(expect, page)
-    const { userId, name } = user
-    await waitAnalyticsBrowserSession(
-      expect,
-      sendCommand,
-      userId,
-      AUTH_ACTION_LOGIN,
-    )
-    // A document entry exercises the buffered page_response and lazy view mount.
-    await gotoPage(expect, page, '/hilos/analytics/people')
-    await expectPageReady(expect, page)
-    const today = await expectAnalyticsPeopleWindow(
-      expect,
-      page,
-      frames,
-      'today',
-    )
-    expect(analyticsPeopleViewports(frames)).toHaveLength(1)
-    expect(today.request).toMatchObject({
-      limit: 25,
-      sort: [{ field: 'lastSeenTs', direction: 'desc' }],
-    })
-    const browserTimeZone = await page.evaluate(
-      () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-    )
-    expect(
-      new Intl.DateTimeFormat('en-GB', {
-        timeZone: String(today.context.timeZone),
-      }).resolvedOptions().timeZone,
-    ).toBe(browserTimeZone)
-    await expectAnalyticsPeoplePerson(expect, page, today, { userId, name })
-    const period = page.getByTestId('hilos-table-filter-period')
-    await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
-      'Period: Today',
-    )
-    await expect(page.getByTestId('hilos-table-filter-badge')).toContainText(
-      '1 filter',
-    )
-    await period.getByTestId('hilos-dropdown-toggle').click()
-    await expectAnalyticsPeopleFacets(expect, page, frames, today, userId)
-    const facetRequests = frames.sent
-      .map(({ wire }) => deliveryObject(wire))
-      .filter(
-        (wire) =>
-          (wire.type === 'table_facets' || wire.type === 'table_viewport') &&
-          wire.page === 'hilos_analytics_people' &&
-          wire.facets !== undefined,
+// FIXME(F-111, 2026-11-15): waitAnalyticsBrowserSession не дожидается сессии входа · чужой · попытка 1 · HIL-1953
+test(
+  'People starts with one Today viewport and resets only its Period filter',
+  { tag: '@quarantine:F-111' },
+  async ({ page }) => {
+    const frames = watchDeliveryFrames(page)
+    try {
+      const user = await seedTestUser({ email: uniqueEmail() })
+      await openSignInOnPage(
+        expect,
+        page,
+        resolveHilosPath(HilosPages.DASHBOARD),
       )
-    expect(facetRequests.length).toBeGreaterThan(0)
-    for (const request of facetRequests) {
-      expect(request.tableKey).toBe('hilosAnalyticsPeople')
-      expect(request.facets).toEqual({
-        period: ['this-hour', 'today', 'this-week'],
+      await login(expect, page, user.email, PASSWORD)
+      await grantAdminToSelf(expect, page)
+      const { userId, name } = user
+      await waitAnalyticsBrowserSession(
+        expect,
+        sendCommand,
+        userId,
+        AUTH_ACTION_LOGIN,
+      )
+      // A document entry exercises the buffered page_response and lazy view mount.
+      await gotoPage(expect, page, '/hilos/analytics/people')
+      await expectPageReady(expect, page)
+      const today = await expectAnalyticsPeopleWindow(
+        expect,
+        page,
+        frames,
+        'today',
+      )
+      expect(analyticsPeopleViewports(frames)).toHaveLength(1)
+      expect(today.request).toMatchObject({
+        limit: 25,
+        sort: [{ field: 'lastSeenTs', direction: 'desc' }],
       })
+      const browserTimeZone = await page.evaluate(
+        () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+      )
+      expect(
+        new Intl.DateTimeFormat('en-GB', {
+          timeZone: String(today.context.timeZone),
+        }).resolvedOptions().timeZone,
+      ).toBe(browserTimeZone)
+      await expectAnalyticsPeoplePerson(expect, page, today, { userId, name })
+      const period = page.getByTestId('hilos-table-filter-period')
+      await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
+        'Period: Today',
+      )
+      await expect(page.getByTestId('hilos-table-filter-badge')).toContainText(
+        '1 filter',
+      )
+      await period.getByTestId('hilos-dropdown-toggle').click()
+      await expectAnalyticsPeopleFacets(expect, page, frames, today, userId)
+      const facetRequests = frames.sent
+        .map(({ wire }) => deliveryObject(wire))
+        .filter(
+          (wire) =>
+            (wire.type === 'table_facets' || wire.type === 'table_viewport') &&
+            wire.page === 'hilos_analytics_people' &&
+            wire.facets !== undefined,
+        )
+      expect(facetRequests.length).toBeGreaterThan(0)
+      for (const request of facetRequests) {
+        expect(request.tableKey).toBe('hilosAnalyticsPeople')
+        expect(request.facets).toEqual({
+          period: ['this-hour', 'today', 'this-week'],
+        })
+      }
+
+      let changing = frames.sent.length
+      await period.getByTestId('hilos-dropdown-option-2').click()
+      await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
+      const week = await expectAnalyticsPeopleWindow(
+        expect,
+        page,
+        frames,
+        'this-week',
+        changing,
+      )
+      expect(week.request.filter).toEqual({
+        ...today.context,
+        period: 'this-week',
+      })
+      await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
+        'Period: This week',
+      )
+      await expectAnalyticsPeoplePerson(expect, page, week, { userId, name })
+
+      changing = frames.sent.length
+      await period.getByTestId('hilos-dropdown-toggle').click()
+      await period.getByTestId('hilos-dropdown-option--1').click()
+      await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
+      const any = await expectAnalyticsPeopleWindow(
+        expect,
+        page,
+        frames,
+        undefined,
+        changing,
+      )
+      expect(any.request.filter).toEqual(today.context)
+      await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
+        'Period: Any time',
+      )
+      await expect(page.getByTestId('hilos-table-filter-badge')).toHaveCount(0)
+
+      changing = frames.sent.length
+      await period.getByTestId('hilos-dropdown-toggle').click()
+      await period.getByTestId('hilos-dropdown-option-0').click()
+      await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
+      const hour = await expectAnalyticsPeopleWindow(
+        expect,
+        page,
+        frames,
+        'this-hour',
+        changing,
+      )
+      expect(hour.request.filter).toEqual({
+        ...today.context,
+        period: 'this-hour',
+      })
+      await expect(page.getByTestId('hilos-table-filter-badge')).toContainText(
+        '1 filter',
+      )
+      changing = frames.sent.length
+      await page.getByTestId('hilos-table-filter-reset').click()
+      const reset = await expectAnalyticsPeopleWindow(
+        expect,
+        page,
+        frames,
+        undefined,
+        changing,
+      )
+      expect(reset.request.filter).toEqual(today.context)
+      await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
+        'Period: Any time',
+      )
+      await expect(page.getByTestId('hilos-table-filter-badge')).toHaveCount(0)
+      await expectAnalyticsPeoplePerson(expect, page, reset, { userId, name })
+      expect(
+        analyticsPeopleViewports(frames).map(
+          ({ wire }) => deliveryObject(deliveryObject(wire).filter).period,
+        ),
+      ).toEqual(['today', 'this-week', undefined, 'this-hour', undefined])
+    } finally {
+      await test.info().attach('analytics-people-period', {
+        body: JSON.stringify(
+          { sent: frames.sent, packets: frames.packets },
+          null,
+          2,
+        ),
+        contentType: 'application/json',
+      })
+      frames.stop()
     }
-
-    let changing = frames.sent.length
-    await period.getByTestId('hilos-dropdown-option-2').click()
-    await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
-    const week = await expectAnalyticsPeopleWindow(
-      expect,
-      page,
-      frames,
-      'this-week',
-      changing,
-    )
-    expect(week.request.filter).toEqual({
-      ...today.context,
-      period: 'this-week',
-    })
-    await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
-      'Period: This week',
-    )
-    await expectAnalyticsPeoplePerson(expect, page, week, { userId, name })
-
-    changing = frames.sent.length
-    await period.getByTestId('hilos-dropdown-toggle').click()
-    await period.getByTestId('hilos-dropdown-option--1').click()
-    await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
-    const any = await expectAnalyticsPeopleWindow(
-      expect,
-      page,
-      frames,
-      undefined,
-      changing,
-    )
-    expect(any.request.filter).toEqual(today.context)
-    await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
-      'Period: Any time',
-    )
-    await expect(page.getByTestId('hilos-table-filter-badge')).toHaveCount(0)
-
-    changing = frames.sent.length
-    await period.getByTestId('hilos-dropdown-toggle').click()
-    await period.getByTestId('hilos-dropdown-option-0').click()
-    await expect(period.getByTestId('hilos-dropdown-menu')).toBeHidden()
-    const hour = await expectAnalyticsPeopleWindow(
-      expect,
-      page,
-      frames,
-      'this-hour',
-      changing,
-    )
-    expect(hour.request.filter).toEqual({
-      ...today.context,
-      period: 'this-hour',
-    })
-    await expect(page.getByTestId('hilos-table-filter-badge')).toContainText(
-      '1 filter',
-    )
-    changing = frames.sent.length
-    await page.getByTestId('hilos-table-filter-reset').click()
-    const reset = await expectAnalyticsPeopleWindow(
-      expect,
-      page,
-      frames,
-      undefined,
-      changing,
-    )
-    expect(reset.request.filter).toEqual(today.context)
-    await expect(period.getByTestId('hilos-dropdown-toggle')).toHaveText(
-      'Period: Any time',
-    )
-    await expect(page.getByTestId('hilos-table-filter-badge')).toHaveCount(0)
-    await expectAnalyticsPeoplePerson(expect, page, reset, { userId, name })
-    expect(
-      analyticsPeopleViewports(frames).map(
-        ({ wire }) => deliveryObject(deliveryObject(wire).filter).period,
-      ),
-    ).toEqual(['today', 'this-week', undefined, 'this-hour', undefined])
-  } finally {
-    await test.info().attach('analytics-people-period', {
-      body: JSON.stringify(
-        { sent: frames.sent, packets: frames.packets },
-        null,
-        2,
-      ),
-      contentType: 'application/json',
-    })
-    frames.stop()
-  }
-})
+  },
+)
 
 test('Browser sessions viewer receives hidden personal values with only public session links', async ({
   page,

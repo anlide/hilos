@@ -6,6 +6,7 @@ namespace Hilos\Auth\AccountDeletion;
 
 use Hilos\Constants\CliCommands;
 use Hilos\Core\CLI\Commands\AccountTestForcePurgeCommand;
+use Hilos\Users\AccountErasureProgress;
 
 /**
  * AccountDeletionCommandConstants - the wire vocabulary of
@@ -13,7 +14,9 @@ use Hilos\Core\CLI\Commands\AccountTestForcePurgeCommand;
  *
  * The CLI side ({@see AccountTestForcePurgeCommand}) sends the person whose standing
  * deletion request must be carried out, and the session holder answers with the project's
- * own tally under the names that project chose.
+ * own tally under the names that project chose. The reply names its outcome
+ * ({@see AccountDeletionCommandOutcome}); an erasure still under way travels as the block the
+ * people card reads ({@see AccountErasureProgress}).
  */
 final class AccountDeletionCommandConstants
 {
@@ -22,4 +25,10 @@ final class AccountDeletionCommandConstants
 
     /** @var string Reply key: the project's rows erased, counted per family it names */
     public const string FIELD_ROWS_ERASED = 'rowsErased';
+
+    /** @var string Reply key: the stage the erasure reached when the holder answered */
+    public const string FIELD_OUTCOME = 'outcome';
+
+    /** @var string Reply key: the progress of an erasure still under way */
+    public const string FIELD_ERASURE = 'erasure';
 }
