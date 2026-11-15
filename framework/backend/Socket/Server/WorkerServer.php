@@ -165,8 +165,11 @@ abstract class WorkerServer extends AbstractServer implements
         HilosAgentType::HILOS_STATUS,
     ];
 
-    /** Bounds preparation independently of the single stop or replay effect. */
+    /** Bounds preparation independently of the portion of stops or replays. */
     private const int PROTECTED_MODE_PREPARATION_PER_PORTION = 64;
+
+    /** Maximum agents one roster portion stops or brings back, like {@see self::SECOND_WAVE_STOPS_PER_PORTION} (HIL-2122). */
+    private const int PROTECTED_MODE_WALK_PER_PORTION = 64;
 
     /** Failure address when a channel cannot describe its delivery owners. */
     private const string DELIVERY_CHANNEL_FAILURE_ADDRESS = 'delivery channel ';
@@ -3567,8 +3570,8 @@ abstract class WorkerServer extends AbstractServer implements
      * protected-mode freeze ({@see ProtectedModeAgentFreezer}).
      *
      * Snapshots this node's agent roster exactly like {@see onLostSingletonHost()} and queues it;
-     * bounded preparation and then one stop per native portion run through {@see advanceProtectedModeRoster()},
-     * and the switch hears {@see ProtectedModeSwitch::onRosterStopped()} when the last one is.
+     * bounded preparation and then portions of up to PROTECTED_MODE_WALK_PER_PORTION stops run through
+     * {@see advanceProtectedModeRoster()}, and the switch hears {@see ProtectedModeSwitch::onRosterStopped()} when the last one is.
      * Walking the whole roster inside this call used to hold the master's loop for as long as the
      * roster was long, and every client of the node waited on it (HIL-1012). The initiator agent is
      * left running so it can carry out the destructive operation the freeze protects, and so is
@@ -3774,8 +3777,8 @@ abstract class WorkerServer extends AbstractServer implements
      * Asks for the agents {@see stopAgentsForProtectedMode()} stopped for this freeze to be brought
      * back, when it lifts ({@see ProtectedModeAgentFreezer}).
      *
-     * Queues exactly the remembered set; {@see advanceProtectedModeRoster()} replays it one agent
-     * per master pass through the same local start bootstrap and placement use, so each agent
+     * Queues exactly the remembered set; {@see advanceProtectedModeRoster()} replays it in portions of up to
+     * PROTECTED_MODE_WALK_PER_PORTION agents per master pass through the same local start bootstrap and placement use, so each agent
      * comes back on this node as it was, and the placement and worker gates silently drop any that
      * no longer belong here (e.g. a cluster-singleton whose node lost leadership during the
      * freeze). The replay carries the placement sanction, because the remembered set is itself the
@@ -3866,7 +3869,8 @@ abstract class WorkerServer extends AbstractServer implements
     /**
      * Takes one step of the protected-mode roster walk in flight, if there is one.
      *
-     * Preparation examines a finite bounded prefix, then each portion stops or replays one agent.
+     * Preparation examines a finite bounded prefix, then each portion stops or replays up to
+     * PROTECTED_MODE_WALK_PER_PORTION agents and checks the epoch before each next one.
      * A runnable tail joins the native FIFO again without waiting for another input or timer.
      * A stop and a lift are never both in flight. External hooks may replace the epoch; the old
      * portion must not finish or cancel its replacement.
@@ -3904,7 +3908,7 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Stops the next queued agent for the freeze being entered, and closes the walk after the last.
+     * Stops the next portion of queued agents for the freeze being entered, and closes the walk after the last.
      *
      * An agent that left the roster before its turn is not remembered: it was not running when the
      * freeze reached it, which is what the snapshot would have said had it been taken a pass later.
@@ -3920,23 +3924,29 @@ abstract class WorkerServer extends AbstractServer implements
         $epoch = $this->protectedModeRosterEpoch;
         $this->protectedModeWalkPasses++;
 
-        $agentId = array_key_first($this->protectedModeStopQueue);
-        $candidate = $agentId === null ? null : $this->protectedModeStopQueue[$agentId];
-        unset($this->protectedModeStopQueue[$agentId]);
-        if ($agentId !== null && $this->agentManager->hasAgent($agentId) && $this->agentManager->getAgent($agentId) === $candidate) {
-            $parsed = $this->parseAgentId($agentId);
+        for (
+            $left = self::PROTECTED_MODE_WALK_PER_PORTION;
+            $left > 0 && $this->protectedModeRosterEpoch === $epoch && $this->protectedModeStopQueue !== [];
+            $left--
+        ) {
+            $agentId = array_key_first($this->protectedModeStopQueue);
+            $candidate = $this->protectedModeStopQueue[$agentId];
+            unset($this->protectedModeStopQueue[$agentId]);
+            if ($this->agentManager->hasAgent($agentId) && $this->agentManager->getAgent($agentId) === $candidate) {
+                $parsed = $this->parseAgentId($agentId);
 
-            // Read before the stop, not after: stopAgent() takes the agent off the roster, and with
-            // it the only record of the worker the lift should hand it back to.
-            $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
-            $this->protectedModeStoppedAgents[] = new FrozenAgentPlacement(
-                $parsed,
-                $workerInfo === null
-                    ? null
-                    : $this->agentManager->calculateWorkerId($workerInfo->workerIndex, $workerInfo->isMonopolistic),
-            );
-            $this->protectedModeWalkAgents++;
-            $this->stopAgent($parsed->type, $parsed->index);
+                // Read before the stop, not after: stopAgent() takes the agent off the roster, and with
+                // it the only record of the worker the lift should hand it back to.
+                $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
+                $this->protectedModeStoppedAgents[] = new FrozenAgentPlacement(
+                    $parsed,
+                    $workerInfo === null
+                        ? null
+                        : $this->agentManager->calculateWorkerId($workerInfo->workerIndex, $workerInfo->isMonopolistic),
+                );
+                $this->protectedModeWalkAgents++;
+                $this->stopAgent($parsed->type, $parsed->index);
+            }
         }
 
         if ($this->protectedModeRosterEpoch !== $epoch || $this->protectedModeStopQueue !== []) {
@@ -3958,7 +3968,7 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * Brings the next queued agent back for the lift in flight, and closes the walk after the last.
+     * Brings the next portion of queued agents back for the lift in flight, and closes the walk after the last.
      *
      * @throws StatusComponentDeclarationException When the lift reads an invalid enabled Status catalog
      */
@@ -3967,10 +3977,14 @@ abstract class WorkerServer extends AbstractServer implements
         $epoch = $this->protectedModeRosterEpoch;
         $this->protectedModeWalkPasses++;
 
-        $key = array_key_first($this->protectedModeResumeQueue);
-        $frozen = $key === null ? null : $this->protectedModeResumeQueue[$key];
-        unset($this->protectedModeResumeQueue[$key]);
-        if ($frozen !== null) {
+        for (
+            $left = self::PROTECTED_MODE_WALK_PER_PORTION;
+            $left > 0 && $this->protectedModeRosterEpoch === $epoch && $this->protectedModeResumeQueue !== [];
+            $left--
+        ) {
+            $key = array_key_first($this->protectedModeResumeQueue);
+            $frozen = $this->protectedModeResumeQueue[$key];
+            unset($this->protectedModeResumeQueue[$key]);
             $this->protectedModeWalkAgents++;
             try {
                 $this->startAgentInternal($frozen->agent->type, $frozen->agent->index, true, $frozen->workerId);

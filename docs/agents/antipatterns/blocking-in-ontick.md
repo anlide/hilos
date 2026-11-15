@@ -53,8 +53,9 @@ public function onTick(): void {
 ```
 
 The framework walks the protected-mode roster this way: a freeze or a lift only
-queues its agents, and `WorkerServer::onTick()` stops or brings back one of them
-per master pass (HIL-1012).
+queues its agents, and its ready portion
+(`WorkerServer::advanceProtectedModeRoster()`) stops or brings back up to 64 of
+them per master pass (HIL-1012, HIL-2122).
 
 ### Park the request, not the loop
 

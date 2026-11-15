@@ -153,7 +153,7 @@ interface ProtectedModeSwitch
     /**
      * Hears that this node's roster has stopped for the freeze being entered (HIL-1012).
      *
-     * The roster is stopped one agent per master pass ({@see ProtectedModeAgentFreezer}), so the
+     * The roster is stopped in portions of up to 64 agents per master pass ({@see ProtectedModeAgentFreezer}), so the
      * moment the node may say "frozen" is no longer the moment the stop was asked for: it is this
      * one. Whatever a switch says about the freeze taking hold - ready to the initiator, quiesced
      * to the leader, the leader counting itself - is said from here, including a repeat enable from

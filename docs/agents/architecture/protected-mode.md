@@ -401,8 +401,8 @@ The two guards are the same check in different contexts — one-walk single-node
 entry against a leader round that commits followers — so they are written twice
 on purpose and are not merged into a shared helper.
 
-The roster is stopped over several passes of each node's daemon master process,
-one agent per pass, and a node reports itself frozen only at the END of that walk
+The roster is stopped in portions of up to 64 agents per pass of each node's
+daemon master process, and a node reports itself frozen only at the END of that walk
 (`ProtectedModeSwitch::onRosterStopped()`, HIL-1012): on a single node it tells the
 initiator ready, on a follower it sends `quiesced` to the leader, and the leader
 counts itself among the nodes it waits for until its own roster has stopped. The

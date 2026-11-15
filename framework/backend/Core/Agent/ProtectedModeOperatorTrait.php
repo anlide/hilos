@@ -304,12 +304,11 @@ trait ProtectedModeOperatorTrait
             return;
         }
 
-        $waited = CommandChannelWindows::AGENT_WAIT_SECONDS;
         $correlationId = $this->protectedModeOperatorCorrelationId;
         $ask = $this->protectedModeOperatorAsk;
         $expired = $this->protectedModeOperatorPassHash !== ''
             ? $this->passWaitExpiredReason($phase)
-            : "protected mode did not reach '{$this->protectedModeOperatorAwaitedPhase}' within {$waited}s (phase: {$phase})";
+            : $this->phaseWaitExpiredReason($phase);
         $this->clearProtectedModeOperator();
         $this->replyProtectedModeRefusal($correlationId, $ask, $expired);
     }
@@ -348,6 +347,24 @@ trait ProtectedModeOperatorTrait
     {
         return $this->protectedModeOperatorAwaiting()
             && $this->protectedModeOperatorAwaitedPhase === StateProtectedModeRuntime::PHASE_ACTIVE;
+    }
+
+    /**
+     * The refusal an expired phase wait gets while the switch continues (HIL-2122).
+     *
+     * Expiry clears the waiter, not the switch: the roster walk continues and the row may
+     * reach the awaited phase later. The refusal tells the operator to check status before
+     * asking again rather than claiming the switch failed.
+     *
+     * @param string $phase Phase the row reads as the wait expires
+     * @return string Reason text handed to the operator
+     */
+    private function phaseWaitExpiredReason(string $phase): string
+    {
+        $waited = CommandChannelWindows::AGENT_WAIT_SECONDS;
+
+        return "protected mode did not reach '{$this->protectedModeOperatorAwaitedPhase}' within {$waited}s (phase: {$phase}) "
+            . '— the switch is not undone and goes on by itself; check the protected-mode status before asking again';
     }
 
     /**

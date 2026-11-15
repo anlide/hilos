@@ -43,12 +43,12 @@ use Closure;
 use WeakReference;
 
 /**
- * Unit tests for the protected-mode roster walk taken one agent per master pass (HIL-1012).
+ * Unit tests for the protected-mode roster walk in portions of up to 64 agents per master pass (HIL-1012, HIL-2122).
  *
  * The freeze used to stop the whole roster inside one call from the master's loop, and the lift
  * used to bring it back the same way, so every client of the node stood behind a walk as long as
- * the roster. What is pinned here is the native step: a request only queues, each portion moves one
- * agent, and the switch hears the end of a walk once and only on the pass that empties it. Two
+ * the roster. What is pinned here is the native step: a request only queues, each portion moves up to
+ * 64 agents, and the switch hears the end of a walk once and only on the pass that empties it. Two
  * requests can overlap now that a walk takes time, and the case that could lose an agent for good
  * - a stop over an unfinished lift - is named by the agent it would lose.
  *
@@ -102,7 +102,7 @@ final class ProtectedModeRosterStepTest extends TestCase
         parent::tearDown();
     }
 
-    public function testEachPassStopsExactlyOneAgent(): void
+    public function testAShortRosterStopsInOnePortion(): void
     {
         $this->seedRoster(self::ROSTER);
 
@@ -110,19 +110,38 @@ final class ProtectedModeRosterStepTest extends TestCase
         $this->assertSame([], $this->server->getProtectedModeStoppedAgents(), 'The request only queues.');
 
         $this->server->rosterStepPublic();
-        $this->assertSame(['chat'], $this->server->getProtectedModeStoppedAgents());
-
-        $this->steps(4);
         $this->assertSame(self::ROSTER, $this->server->getProtectedModeStoppedAgents());
+        $this->assertSame(['stopped'], $this->switch->heard);
+    }
+
+    public function testALongRosterStopsInBoundedPortionsAfterPreparation(): void
+    {
+        $roster = array_map(static fn(int $id): string => 'agent-' . $id, range(0, 129));
+        $this->seedRoster($roster);
+        $this->server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
+
+        foreach ([0, 0, 64, 128, 130] as $stoppedCount) {
+            $this->server->rosterStepPublic();
+            $this->assertCount($stoppedCount, $this->server->getProtectedModeStoppedAgents());
+            $this->assertSame(array_slice($roster, 0, $stoppedCount), $this->server->getProtectedModeStoppedAgents());
+            $this->assertSame($stoppedCount === 130 ? ['stopped'] : [], $this->switch->heard);
+        }
+
+        $this->steps(3);
+        $this->assertSame($roster, $this->server->getProtectedModeStoppedAgents());
+        $this->assertSame(['stopped'], $this->switch->heard);
     }
 
     public function testTheSwitchHearsTheStoppedRosterOnceAndOnlyOnTheLastPass(): void
     {
-        $this->seedRoster(self::ROSTER);
+        $roster = array_map(static fn(int $id): string => 'agent-' . $id, range(0, 129));
+        $this->seedRoster($roster);
         $this->server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
 
-        $this->steps(4);
-        $this->assertSame([], $this->switch->heard, 'Four agents of five stopped is not a frozen node.');
+        for ($step = 0; $step < 4; $step++) {
+            $this->server->rosterStepPublic();
+            $this->assertSame([], $this->switch->heard, 'A partially stopped roster is not a frozen node.');
+        }
 
         $this->server->rosterStepPublic();
         $this->assertSame(['stopped'], $this->switch->heard);
@@ -131,23 +150,32 @@ final class ProtectedModeRosterStepTest extends TestCase
         $this->assertSame(['stopped'], $this->switch->heard);
     }
 
-    public function testTheLiftBringsOneAgentBackPerPassAndFinishesOnce(): void
+    public function testTheLiftBringsAgentsBackInBoundedPortionsAndFinishesOnce(): void
     {
-        $this->freezeWholeRoster();
+        $roster = array_map(static fn(int $id): string => 'agent-' . $id, range(0, 129));
+        $this->freezeWholeRoster($roster);
 
         $this->server->resumeAgentsForProtectedMode();
         $this->assertSame([], $this->manager->askedFor, 'The request only queues.');
 
-        $this->steps(4);
-        $this->assertSame(['chat', 'poll', 'todo', 'presence'], $this->manager->askedFor);
+        $this->server->rosterStepPublic();
+        $this->assertCount(64, $this->manager->askedFor);
+        $this->assertSame(array_slice($roster, 0, 64), $this->manager->askedFor);
         $this->assertSame([], $this->switch->heard);
 
         $this->server->rosterStepPublic();
-        $this->assertSame(self::ROSTER, $this->manager->askedFor);
+        $this->assertCount(128, $this->manager->askedFor);
+        $this->assertSame(array_slice($roster, 0, 128), $this->manager->askedFor);
+        $this->assertSame([], $this->switch->heard);
+
+        $this->server->rosterStepPublic();
+        $this->assertCount(130, $this->manager->askedFor);
+        $this->assertSame($roster, $this->manager->askedFor);
         // The application's own hook runs after the replay and before the switch finishes the lift.
         $this->assertSame(['lifted', 'resumed'], $this->switch->heard);
 
         $this->steps(3);
+        $this->assertSame($roster, $this->manager->askedFor);
         $this->assertSame(['lifted', 'resumed'], $this->switch->heard);
     }
 
@@ -180,62 +208,65 @@ final class ProtectedModeRosterStepTest extends TestCase
         $this->seedRoster(['chat', self::INITIATOR_TYPE, HilosAgentType::HILOS_MAIL, HilosAgentType::HILOS_STATUS, 'poll']);
 
         $this->server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
-        $this->steps(2);
+        $this->steps(1);
 
         $this->assertSame(['chat', 'poll'], $this->server->getProtectedModeStoppedAgents());
-        // Two passes close the walk: preserved entries do not cost a stop effect of their own.
+        // One portion closes the walk: preserved entries do not cost a stop effect of their own.
         $this->assertSame(['stopped'], $this->switch->heard);
     }
 
     public function testAStopOverAnUnfinishedLiftKeepsTheAgentsTheLiftHadNotAskedFor(): void
     {
-        $this->freezeWholeRoster();
+        $roster = array_map(static fn(int $id): string => 'agent-' . $id, range(0, 129));
+        $this->freezeWholeRoster($roster);
         $this->server->resumeAgentsForProtectedMode();
-        $this->steps(2);
+        $this->steps(1);
 
         // Closing the verification window back re-freezes the node, and nothing holds it until the
-        // lift is done. Only chat and poll were asked for; todo, presence and search are on no
+        // lift is done. Only agents 0 through 63 were asked for; agents 64 through 129 are on no
         // roster yet, so the snapshot cannot see them.
         $this->manager->forgetRoster();
-        $this->seedRoster(['chat', 'poll']);
+        $this->seedRoster(array_slice($roster, 0, 64));
         $this->server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
-        $this->steps(2);
+        $this->pump();
 
         $this->assertSame(
-            ['todo', 'presence', 'search', 'chat', 'poll'],
+            [...array_slice($roster, 64), ...array_slice($roster, 0, 64)],
             $this->server->getProtectedModeStoppedAgents(),
-            'Without the carry-over the next lift would never ask for todo, presence or search again.',
+            'Without the carry-over the next lift would never ask for agents 64 through 129 again.',
         );
         $this->assertSame(['stopped'], $this->switch->heard, 'The overtaken lift is never finished.');
     }
 
     public function testALiftOverAnUnfinishedStopDropsWhatTheStopHadNotReached(): void
     {
-        $this->seedRoster(self::ROSTER);
+        $roster = array_map(static fn(int $id): string => 'agent-' . $id, range(0, 129));
+        $this->seedRoster($roster);
         $this->server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
-        $this->steps(2);
+        $this->steps(3);
 
         $this->manager->forgetRoster();
         $this->server->resumeAgentsForProtectedMode();
-        $this->steps(5);
+        $this->pump();
 
-        // todo, presence and search were never stopped, so they are still running and nothing
+        // Agents 64 through 129 were never stopped, so they are still running and nothing
         // about them was remembered.
-        $this->assertSame(['chat', 'poll'], $this->manager->askedFor);
+        $this->assertSame(array_slice($roster, 0, 64), $this->manager->askedFor);
         $this->assertSame(['lifted', 'resumed'], $this->switch->heard, 'The overtaken stop is never finished.');
     }
 
     public function testALiftOverAnUnfinishedLiftKeepsWhatTheFirstHadNotAskedFor(): void
     {
         // The window opened and the mode lifted before the window's replay was done.
-        $this->freezeWholeRoster();
+        $roster = array_map(static fn(int $id): string => 'agent-' . $id, range(0, 129));
+        $this->freezeWholeRoster($roster);
         $this->server->resumeAgentsForProtectedMode();
-        $this->steps(2);
+        $this->steps(1);
 
         $this->server->resumeAgentsForProtectedMode();
-        $this->steps(3);
+        $this->pump();
 
-        $this->assertSame(self::ROSTER, $this->manager->askedFor);
+        $this->assertSame($roster, $this->manager->askedFor);
         $this->assertSame(['lifted', 'resumed'], $this->switch->heard);
     }
 
@@ -282,17 +313,18 @@ final class ProtectedModeRosterStepTest extends TestCase
 
     public function testRebindKeepsTheTailAndOldTicketsCannotReplayIt(): void
     {
-        $this->freezeWholeRoster();
+        $roster = array_map(static fn(int $id): string => 'agent-' . $id, range(0, 129));
+        $this->freezeWholeRoster($roster);
         $this->server->resumeAgentsForProtectedMode();
-        $this->steps(2);
+        $this->steps(1);
         $oldWork = new ReflectionProperty(WorkerServer::class, 'protectedModeRosterWork')->getValue($this->server);
         new ReflectionMethod(WorkerServer::class, 'detachProtectedModeEventLoop')->invoke($this->server);
         $oldWork->run();
-        self::assertSame(['chat', 'poll'], $this->manager->askedFor);
+        self::assertSame(array_slice($roster, 0, 64), $this->manager->askedFor);
         new ReflectionMethod(WorkerServer::class, 'attachProtectedModeEventLoop')->invoke($this->server, $this->loop);
         $oldWork->markReady();
         $this->pump();
-        self::assertSame(self::ROSTER, $this->manager->askedFor);
+        self::assertSame($roster, $this->manager->askedFor);
         self::assertSame(['lifted', 'resumed'], $this->switch->heard);
     }
 
@@ -562,12 +594,14 @@ final class ProtectedModeRosterStepTest extends TestCase
 
     /**
      * Stops the whole seeded roster and forgets it, leaving only the remembered set to lift.
+     *
+     * @param list<string> $roster Singleton agent types to stop and remember
      */
-    private function freezeWholeRoster(): void
+    private function freezeWholeRoster(array $roster = self::ROSTER): void
     {
-        $this->seedRoster(self::ROSTER);
+        $this->seedRoster($roster);
         $this->server->stopAgentsForProtectedMode(self::INITIATOR_TYPE, null);
-        $this->steps(count(self::ROSTER));
+        $this->pump();
         $this->manager->forgetRoster();
         $this->switch->heard = [];
     }
@@ -583,7 +617,7 @@ final class ProtectedModeRosterStepTest extends TestCase
     }
 
     /**
-     * @param int $count Roster steps to take, one per master pass
+     * @param int $count Roster steps to take, one portion per master pass
      */
     private function steps(int $count): void
     {

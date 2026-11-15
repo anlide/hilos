@@ -22,8 +22,8 @@ use Hilos\Core\Exception\InvalidFormatException;
  * lifts ({@see DaemonProtectedModeExecutor::enterInactive()}).
  *
  * Both are requests, not walks (HIL-1012). The master's loop is the one every client of the node
- * stands behind, so the roster is stopped and brought back one agent per pass, and the end of each
- * walk is told to the node's switch - {@see ProtectedModeSwitch::onRosterStopped()} and
+ * stands behind, so the roster is stopped and brought back in portions of up to 64 agents per master pass,
+ * and the end of each walk is told to the node's switch - {@see ProtectedModeSwitch::onRosterStopped()} and
  * {@see ProtectedModeSwitch::onRosterResumed()} - which is where anything owed after it is said. A
  * request that arrives while the other walk is unfinished takes it over: a lift drops the agents a
  * stop had not reached, and a stop inherits the agents a lift had not asked for yet.

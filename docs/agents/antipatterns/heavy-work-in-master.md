@@ -59,8 +59,11 @@ that needs no I/O — a random token — and let the worker persist and verify i
   protected-mode freeze used to stop the node's whole roster inside one call of
   the loop, and a lift brought it back the same way; at nine agents that pass took
   seconds, and every client of the node stood behind it. The roster is now queued
-  and stepped one agent per pass (`WorkerServer::advanceProtectedModeRoster()`),
-  and whatever the walk owes someone is said when it ends (HIL-1012).
+  and walked in portions of at most 64 agents per pass
+  (`WorkerServer::advanceProtectedModeRoster()`), and whatever the walk owes
+  someone is said when it ends (HIL-1012). One agent per pass made a freeze as
+  long as the roster times the pass, and a pass under an RT burst takes tens of
+  milliseconds (HIL-2122).
 - **The door out is named: `MasterSignalSender`** (HIL-618), implemented by
   `DaemonManager`. `sendToAgent()` reaches one named agent, `sendToWorkers()`
   every worker of this node; both put a frame in a write buffer and return. Master

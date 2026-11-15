@@ -358,6 +358,39 @@ final class ProtectedModeOperatorTest extends TestCase
         );
     }
 
+    /**
+     * Expiring the reply wait leaves the refreeze running and tells the operator how to proceed.
+     */
+    public function testAPhaseNotReachedInTimeSaysTheSwitchGoesOn(): void
+    {
+        $this->freeze(StateProtectedModeRuntime::PHASE_VERIFYING, self::INITIATOR_TYPE, null, []);
+        $agent = new OperatorTestAgent(null);
+
+        $agent->handle($this->request(CliCommands::PROTECTED_MODE_CLOSE));
+
+        $this->assertSame(SignalTypeConstants::PROTECTED_MODE_REFREEZE, $this->nextExitRequest());
+
+        $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVATING, self::INITIATOR_TYPE, null, []);
+        $agent->onTick();
+        $this->assertSame([], $this->replies(), 'The window has not run out yet.');
+
+        $agent->ageProtectedModeOperatorWait();
+        $agent->onTick();
+
+        $this->assertSame(
+            1,
+            Hilos::$sr->getQueuedSignalCount(),
+            'The expired wait queues only its refusal; the switch is not withdrawn.',
+        );
+        $reply = $this->singleReply();
+        $this->assertRefused($reply, 'the switch is not undone and goes on by itself');
+        $this->assertStringContainsString(
+            "did not reach 'active'",
+            (string)$reply->payload[CommandConstants::FIELD_MESSAGE],
+        );
+        $this->assertNull($this->nextExitRequest(), 'An expired wait must not withdraw the switch.');
+    }
+
     public function testCloseIsRefusedOutsideTheVerificationWindow(): void
     {
         $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE, self::INITIATOR_TYPE, null, []);

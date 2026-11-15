@@ -41,7 +41,7 @@ use JsonException;
  * worker hosting it through {@see ProtectedModeInitiatorRelay}, reading the initiator identity back from
  * the runtime row this node wrote on entry. On entry it stops this node's own agents through
  * {@see ProtectedModeAgentFreezer}, leaving the initiator agent running; on exit ({@see enterInactive()})
- * the same freezer brings back exactly the agents it stopped. The freezer does both one agent per
+ * the same freezer brings back exactly the agents it stopped. The freezer does both in portions of up to 64 agents per
  * master pass, so the two transitions that bring agents back are split in two: the phase write, the
  * request and the stub broadcast here, and the frames that send browsers onto pages in
  * {@see finishVerifying()} and {@see finishLift()}, which the switch calls once the roster is back

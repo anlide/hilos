@@ -417,16 +417,13 @@ final class WorkerServerProtectedModeGateTest extends TestCase
         $this->assertSame(0, $this->heldCount($server), 'Agents still waiting to be stopped are not held yet.');
 
         $this->passes($server, 1);
-        $this->assertSame(1, $this->heldCount($server));
-
-        $this->passes($server, 1);
         $this->assertSame(2, $this->heldCount($server));
 
         $server->resumeAgentsForProtectedMode();
         $this->assertSame(2, $this->heldCount($server), 'Moving the held set into the resume queue keeps the count.');
 
         $this->passes($server, 1);
-        $this->assertSame(1, $this->heldCount($server), 'A start the walk has asked for has left the hold.');
+        $this->assertSame(0, $this->heldCount($server), 'A start the walk has asked for has left the hold.');
     }
 
     /**
