@@ -12,8 +12,12 @@
 // address. An account folded into another one wears a gray "Merged" badge
 // beside its name (HIL-1292). The presence badge says one of three words
 // (HIL-1566) and holds the room of the widest one, so a presence changing live
-// neither moves the row nor spills out of its column. Bootstrap classes only
-// (styling-rules.md).
+// neither moves the row nor spills out of its column. An account being erased
+// wears "Being deleted" beside its name (a merged one stays Merged), and every
+// account of its circle carries a caption above its row bar: the summary, then
+// the parts not done, the owners awaited, and the refusals, three entries a
+// line and "+N more" (hilosUsersErasureCaption, HIL-1962). A bar about other
+// work gets no caption. Bootstrap classes only (styling-rules.md).
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -23,16 +27,22 @@ import {
   effect,
   inject,
   input,
+  signal,
 } from '@angular/core'
 import type { TemplateRef } from '@angular/core'
 import { HilosPages } from '@hilos/core/base'
 import {
   HILOS_PRESENCE_WIDEST_LABEL,
+  HILOS_USER_ERASURE_COPY,
   createHilosUsersTable,
   hilosPresenceBadge,
   hilosStandingBadge,
 } from '@hilos/core/admin/users'
-import type { HilosUserRow, HilosUsersContext } from '@hilos/core/admin/users'
+import type {
+  HilosUserRow,
+  HilosUsersContext,
+  HilosUsersErasureCaption,
+} from '@hilos/core/admin/users'
 
 import {
   HilosAdminPage,
@@ -40,6 +50,7 @@ import {
   HilosTableText,
   HilosViewportTable,
   HILOS_ROUTER,
+  mirrorHilosSignal,
 } from '@hilos/angular/base'
 
 /** The context a HilosUsersPage `#rowActions` template receives. */
@@ -80,6 +91,18 @@ export interface UsersRowActionsContext {
                 ></i
                 >{{ mergedBadge.label }}</span
               >
+            } @else if (erasureOf(row.id) && erasingBadge !== null) {
+              <span
+                class="badge flex-shrink-0"
+                [class]="'text-bg-' + erasingBadge.tone"
+                data-id="hilos-users-erasing"
+                ><i
+                  class="bi me-1"
+                  [class]="erasingBadge.icon"
+                  aria-hidden="true"
+                ></i
+                >{{ erasingBadge.label }}</span
+              >
             }
           </div>
         </ng-template>
@@ -108,6 +131,81 @@ export interface UsersRowActionsContext {
             />
           }
         </ng-template>
+        <ng-template #rowProgress let-rowKey="rowKey">
+          @if (erasureOf(rowKey); as caption) {
+            <div data-id="hilos-users-erasure-summary">
+              {{ caption.summary }}
+            </div>
+            @if (caption.expected.shown.length > 0) {
+              <div data-id="hilos-users-erasure-expected">
+                {{ erasureCopy.expected }}:
+                @for (
+                  part of caption.expected.shown;
+                  track part.key;
+                  let index = $index
+                ) {
+                  <ng-container
+                    >{{ index > 0 ? '; ' : ''
+                    }}<code>{{ part.participant }}</code
+                    >{{
+                      part.account !== null ? ' · #' + part.account : ''
+                    }}</ng-container
+                  >
+                }
+                @if (caption.expected.more !== null) {
+                  <ng-container>{{
+                    '; ' + caption.expected.more
+                  }}</ng-container>
+                }
+              </div>
+            }
+            @if (caption.waits.shown.length > 0) {
+              <div data-id="hilos-users-erasure-waits">
+                {{ erasureCopy.waits }}:
+                @for (
+                  wait of caption.waits.shown;
+                  track wait.key;
+                  let index = $index
+                ) {
+                  <ng-container
+                    >{{ index > 0 ? '; ' : ''
+                    }}<code>{{ wait.participant }}</code
+                    >{{
+                      wait.account !== null ? ' · #' + wait.account : ''
+                    }}</ng-container
+                  >
+                }
+                @if (caption.waits.more !== null) {
+                  <ng-container>{{ '; ' + caption.waits.more }}</ng-container>
+                }
+              </div>
+            }
+            @if (caption.refusals.shown.length > 0) {
+              <div data-id="hilos-users-erasure-refusals">
+                {{ erasureCopy.refusals }}:
+                @for (
+                  refusal of caption.refusals.shown;
+                  track refusal.key;
+                  let index = $index
+                ) {
+                  <ng-container
+                    >{{ index > 0 ? '; ' : ''
+                    }}{{
+                      refusal.account !== null
+                        ? '#' + refusal.account + ' · '
+                        : ''
+                    }}{{ refusal.text }}</ng-container
+                  >
+                }
+                @if (caption.refusals.more !== null) {
+                  <ng-container>{{
+                    '; ' + caption.refusals.more
+                  }}</ng-container>
+                }
+              </div>
+            }
+          }
+        </ng-template>
       </hilos-viewport-table>
     </hilos-admin-page>
   `,
@@ -117,9 +215,15 @@ export class HilosUsersPage {
   readonly context = input.required<HilosUsersContext>()
 
   protected readonly page = HilosPages.USERS
-  // The one badge the list draws: the merged standing, read off the row's merge
-  // slot rather than off a standing the list does not carry.
+  // The two badges the list draws: the merged standing and the erasing standing,
+  // read off the row's merge slot and the live erasure bars rather than off a
+  // standing the list does not carry.
   protected readonly mergedBadge = hilosStandingBadge('merged')
+  protected readonly erasingBadge = hilosStandingBadge('erasing')
+  protected readonly erasureCopy = HILOS_USER_ERASURE_COPY
+  protected readonly erasures = signal<
+    ReadonlyMap<string, HilosUsersErasureCaption>
+  >(new Map())
   // The presence badge: the word and tone of a row's presence, drawn over an
   // invisible twin of the widest word.
   protected readonly presenceBadge = hilosPresenceBadge
@@ -134,12 +238,19 @@ export class HilosUsersPage {
   protected readonly rowActions =
     contentChild<TemplateRef<UsersRowActionsContext>>('rowActions')
 
+  protected erasureOf(
+    rowKey: string | number,
+  ): HilosUsersErasureCaption | undefined {
+    return this.erasures().get(String(rowKey))
+  }
+
   constructor() {
     // Bind the server-windowed table to the connection and request the first
     // window once the context input is bound; unbind on destroy or context swap.
     effect((onCleanup) => {
       const users = this.users()
       users.start()
+      onCleanup(mirrorHilosSignal(users.erasures, this.erasures))
       onCleanup(() => users.dispose())
     })
   }

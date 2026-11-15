@@ -1720,9 +1720,10 @@ switches neither live erasure entry:
   HIL-1938); this prepares no new merge, transfer right or receipt protocol
   (`AbstractSessionsLibraryAgent::assertMergeable()`, HIL-1960).
 - React carries the corresponding states and actions (Vue: HIL-1956 (list),
-  HIL-1957 (card); React: HIL-1961; Angular: HIL-1962). Angular carries them too
-  (not in the code yet — HIL-1962). Their interviews choose the appearance of
-  missing states; this document declares no design.
+  HIL-1957 (card); React: HIL-1961; Angular: HIL-1962). Angular is built: its
+  list and card show the same states as Vue (HIL-1956, HIL-1957), and modals
+  show server refusals as they are; inert until HIL-1952. Their interviews
+  choose the appearance of missing states; this document declares no design.
 
 **Evidence belongs with the behavior.** Each business leaf carries its own
 unit/integration checks and clears only the markers its behavior makes true.

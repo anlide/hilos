@@ -13,6 +13,7 @@ import {
   bindAdminAccess,
   bindSessionScope,
   formatCalendarDate,
+  formatMoment,
   HIDDEN_VALUE,
   HILOS_VIEW_MODE_STRIP_TEXT_ID,
   HilosConnection,
@@ -35,6 +36,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HilosUserPage } from '../src/admin/users/HilosUserPage.js'
 import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
+import { bindTestTimeZone } from './timeZoneTestHarness.js'
 
 function router(overrides: Partial<HilosRouter> = {}): HilosRouter {
   return {
@@ -2400,6 +2402,264 @@ describe('HilosUserPage merged account (HIL-1292)', () => {
 
     expect(el(fixture, 'modal')).toBeNull()
     expect(el(fixture, 'hilos-user-merged')).not.toBeNull()
+  })
+})
+
+describe('HilosUserPage erasing account (HIL-1962)', () => {
+  afterEach(() => {
+    document.body.classList.remove('modal-open')
+  })
+
+  function merged(
+    facts: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      shown: 'merged',
+      blocked: true,
+      frozen: false,
+      deletionEffectiveAt: null,
+      deletionGraceDays: null,
+      lapsed: [],
+      window: [],
+      mergedInto: 9,
+      mergedIntoName: 'Bob',
+      ...facts,
+    }
+  }
+
+  function mountCard(context: HilosUsersContext): {
+    fixture: ComponentFixture<HilosUserPage>
+    change: (fn: () => void) => Promise<void>
+  } {
+    TestBed.resetTestingModule()
+    TestBed.configureTestingModule({
+      providers: [{ provide: HILOS_ROUTER, useValue: router() }],
+    })
+    const fixture = TestBed.createComponent(HilosUserPage)
+    fixture.componentRef.setInput('context', context)
+    fixture.detectChanges()
+
+    return {
+      fixture,
+      async change(fn: () => void): Promise<void> {
+        fn()
+        await Promise.resolve()
+        fixture.detectChanges()
+        await fixture.whenStable()
+        fixture.detectChanges()
+      },
+    }
+  }
+
+  function lines(fixture: ComponentFixture<unknown>, id: string): string[] {
+    return Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(
+        `[data-id="${id}"]`,
+      ),
+    ).map((line) => (line.textContent ?? '').replace(/\s+/g, ' ').trim())
+  }
+
+  it('draws Being deleted, the erasure notice and section, hides actions and tracks time zone', async () => {
+    const timeZone = bindTestTimeZone('UTC')
+    try {
+      timeZone.receive('UTC')
+      const { context, standingFrame } = userContext(true, 'skip', {
+        impersonation: impersonationSettings(),
+      })
+      const { fixture, change } = mountCard(context)
+      const find = (id: string) => el(fixture, id)
+
+      expect(find('hilos-user-edit')).not.toBeNull()
+      expect(find('hilos-user-merge-zone')).not.toBeNull()
+      expect(find('hilos-user-erasure')).toBeNull()
+
+      const startedAt = 1000
+      await change(() => {
+        standingFrame({
+          userId: 1,
+          accountStanding: standing({ shown: 'erasing' }),
+          accountErasure: {
+            startedAt,
+            parts: [
+              { participant: 'profile', owner: '1', userId: 1, done: true },
+              { participant: 'chat', owner: '1', userId: 1, done: false },
+              { participant: 'chat', owner: '2', userId: 2, done: false },
+            ],
+            waits: [{ participant: 'delivery:email', userId: 2 }],
+            refusals: [],
+          },
+        })
+      })
+
+      const badge = find('user-standing-badge')
+      expect(badge?.textContent?.trim()).toBe('Being deleted')
+      expect(badge?.classList.contains('text-bg-danger')).toBe(true)
+
+      const notice = find('hilos-user-erasing')
+      expect(notice).not.toBeNull()
+      expect(notice?.textContent).toContain('This account is being deleted.')
+
+      expect(find('hilos-user-edit')).toBeNull()
+      expect(find('hilos-user-rights')).toBeNull()
+      expect(find('hilos-user-access')).toBeNull()
+      expect(find('hilos-user-merge-zone')).toBeNull()
+      expect(find('hilos-user-impersonate-open')).toBeNull()
+
+      const section = find('hilos-user-erasure')
+      expect(section).not.toBeNull()
+      expect(section?.querySelector('h2')?.textContent).toBe('Account erasure')
+      expect(section?.textContent).toContain('Erasure in progress')
+      expect(find('hilos-user-erasure-started')?.textContent?.trim()).toBe(
+        `Started ${String(formatMoment(startedAt, { kind: 'dateTime' }))} — it cannot be canceled`,
+      )
+      expect(lines(fixture, 'hilos-user-erasure-part')).toEqual([
+        'profile — Done',
+        'chat — Expected',
+        'chat · #2 — Expected',
+      ])
+      expect(lines(fixture, 'hilos-user-erasure-wait')).toEqual([
+        'delivery:email · #2',
+      ])
+      expect(lines(fixture, 'hilos-user-erasure-refusal')).toEqual([])
+
+      // Switch reader zone: recalculated in new zone without a new frame
+      await change(() => {
+        timeZone.receive('America/New_York')
+      })
+      expect(find('hilos-user-erasure-started')?.textContent?.trim()).toBe(
+        `Started ${String(formatMoment(startedAt, { kind: 'dateTime' }))} — it cannot be canceled`,
+      )
+    } finally {
+      timeZone.release()
+    }
+  })
+
+  it('says which table refused the final and whose, keeps a merged account merged', async () => {
+    const { context, standingFrame } = userContext(true)
+    const { fixture, change } = mountCard(context)
+    const find = (id: string) => el(fixture, id)
+
+    const erasureBlock = {
+      startedAt: 1000,
+      parts: [{ participant: 'chat', owner: '1', userId: 1, done: false }],
+      waits: [],
+      refusals: [
+        { userId: 1, table: 'chat_message' },
+        { userId: 7, table: null },
+      ],
+    }
+
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({ shown: 'erasing' }),
+        accountErasure: erasureBlock,
+      })
+    })
+
+    expect(lines(fixture, 'hilos-user-erasure-refusal')).toEqual([
+      'Table chat_message still references the account',
+      '#7 · Another table still references the account',
+    ])
+
+    // Frame merged() with the same block: hilos-user-merged present, hilos-user-erasing absent, section present
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: merged(),
+        accountErasure: erasureBlock,
+      })
+    })
+
+    expect(find('hilos-user-merged')).not.toBeNull()
+    expect(find('hilos-user-erasing')).toBeNull()
+    expect(find('hilos-user-erasure')).not.toBeNull()
+
+    // 'erasing' with accountErasure: null -> badge and notice present, section absent
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({ shown: 'erasing' }),
+        accountErasure: null,
+      })
+    })
+
+    expect(find('user-standing-badge')?.textContent?.trim()).toBe(
+      'Being deleted',
+    )
+    expect(find('hilos-user-erasing')).not.toBeNull()
+    expect(find('hilos-user-erasure')).toBeNull()
+  })
+
+  it('closes an idle window when the erasure begins and keeps a cancel in flight with its refusal (HIL-1959)', async () => {
+    TestBed.resetTestingModule()
+    const opened = userContext()
+    const openedFixture = openModal(opened.context)
+    expect(el(openedFixture, 'modal')).not.toBeNull()
+
+    opened.standingFrame({
+      userId: 1,
+      accountStanding: standing({ shown: 'erasing' }),
+    })
+    await settle(openedFixture)
+    expect(el(openedFixture, 'modal')).toBeNull()
+    expect(el(openedFixture, 'hilos-user-erasing')).not.toBeNull()
+
+    TestBed.resetTestingModule()
+    const { context, standingFrame } = userContext(true, 'skip')
+    const { fixture, change } = mountCard(context)
+    const find = (id: string) => el(fixture, id)
+    const click = async (id: string) => {
+      find(id)?.click()
+      await settle(fixture)
+    }
+
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({
+          shown: 'deletion_scheduled',
+          deletionEffectiveAt: 100_000_000,
+        }),
+      })
+    })
+    expect(find('hilos-user-deletion-open')).not.toBeNull()
+
+    let reject!: (reason: unknown) => void
+    vi.spyOn(context.actions, 'dispatch').mockImplementation(() => ({
+      requestId: 'erasing-req',
+      loading: createSignal(false),
+      done: new Promise<ActionResult>((_, no) => {
+        reject = no
+      }),
+    }))
+
+    await click('hilos-user-deletion-open')
+    expect(find('modal')).not.toBeNull()
+
+    await click('hilos-user-lifecycle-confirm')
+
+    await change(() => {
+      standingFrame({
+        userId: 1,
+        accountStanding: standing({ shown: 'erasing' }),
+      })
+    })
+    expect(find('modal')).not.toBeNull()
+
+    await change(() => {
+      reject(
+        new ActionError(
+          'hilos_user_deletion_set',
+          'fail',
+          'This account is being deleted.',
+        ),
+      )
+    })
+    expect(find('modal')).not.toBeNull()
+    expect(find('hilos-user-lifecycle-error')?.textContent).toContain(
+      'This account is being deleted.',
+    )
   })
 })
 

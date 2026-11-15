@@ -31,8 +31,13 @@
 // the admin view mode opens every window at once, without the confirmation
 // step, and the confirmation in the window stands disabled by the mode
 // (HIL-1263). Beside the header a link opens the person's browser sessions in
-// Analytics when the project serves that page (HIL-1420). Bootstrap classes
-// only (styling-rules.md).
+// Analytics when the project serves that page (HIL-1420).
+// An account whose erasure has begun (HIL-1962) is offered no action at all, as
+// a merged one is not: the card wears the "Being deleted" badge, the "This
+// account is being deleted." notice, and the progress section instead — its
+// parts, the owners it waits for and the refused finals; when the erasure ends,
+// the card ends in the common 404 of a deleted page.
+// Bootstrap classes only (styling-rules.md).
 import {
   afterRenderEffect,
   ChangeDetectionStrategy,
@@ -48,6 +53,7 @@ import {
 } from '@angular/core'
 import {
   ACCOUNT_DELETION_TICK_MS,
+  computedSignal,
   focusInitial,
   HILOS_STEP_UP_COPY,
   HilosPages,
@@ -63,6 +69,7 @@ import {
   createHilosUserLifecycle,
   createHilosUserStanding,
   HILOS_USER_ANALYTICS_LINK_LABEL,
+  HILOS_USER_ERASURE_COPY,
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
   HILOS_USER_LIFECYCLE_COPY,
@@ -72,9 +79,12 @@ import {
   hilosStandingBadge,
   hilosUserAnalyticsEnabled,
   hilosUserAnalyticsPath,
+  hilosUserErasingNotice,
+  hilosUserErasureSection,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
   hilosUserMergedNotice,
+  hilosUserOffersActions,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   hilosUserLifecyclePromptOffered,
@@ -107,6 +117,7 @@ import type {
   HilosPasswordFate,
   HilosUserCardStepUp,
   HilosUserDetailRow,
+  HilosUserErasureSection,
   HilosUserImpersonationSection,
   HilosUserImpersonationSettings,
   HilosUserRename,
@@ -210,7 +221,7 @@ function focusWindow(body: HTMLElement | undefined): void {
                   >{{ analyticsLinkLabel }}</a
                 >
               }
-              @if (mergedNotice() === null) {
+              @if (offersActions()) {
                 <button
                   type="button"
                   class="btn btn-outline-primary btn-sm"
@@ -247,8 +258,9 @@ function focusWindow(body: HTMLElement | undefined): void {
             </dl>
           </div>
         </div>
-        <!-- A merged account says where it went and offers nothing to press:
-        every action over it is refused by the server (HIL-1292). -->
+        <!-- A merged account (HIL-1292) or one being erased (HIL-1962) says
+        what happened and offers nothing to press: every action over it is
+        refused by the server. -->
         @if (mergedNotice(); as merged) {
           <div
             class="alert alert-secondary mt-4"
@@ -269,6 +281,14 @@ function focusWindow(body: HTMLElement | undefined): void {
             } @else {
               {{ mergedCopy.gone }}
             }
+          </div>
+        } @else if (erasingNotice(); as notice) {
+          <div
+            class="alert alert-secondary mt-4"
+            role="status"
+            data-id="hilos-user-erasing"
+          >
+            {{ notice }}
           </div>
         }
         @for (section of lifecycleSections(); track section.key) {
@@ -362,7 +382,61 @@ function focusWindow(body: HTMLElement | undefined): void {
             </div>
           </section>
         }
-        @if (context().accountMerge && mergedNotice() === null) {
+        @if (erasure(); as erasure) {
+          <section class="card mt-4" data-id="hilos-user-erasure">
+            <div class="card-body">
+              <h2 class="h5">{{ erasureCopy.title }}</h2>
+              <p class="fw-medium mb-1">{{ erasureCopy.inProgress }}</p>
+              <p
+                class="small text-body-secondary"
+                data-id="hilos-user-erasure-started"
+              >
+                {{ erasure.started }}
+              </p>
+              @if (erasure.parts.length > 0) {
+                <h3 class="h6">{{ erasureCopy.parts }}</h3>
+                <ul class="list-unstyled">
+                  @for (part of erasure.parts; track part.key) {
+                    <li data-id="hilos-user-erasure-part">
+                      <code>{{ part.participant }}</code>
+                      @if (part.account !== null) {
+                        · #{{ part.account }}
+                      }
+                      — {{ part.state }}
+                    </li>
+                  }
+                </ul>
+              }
+              @if (erasure.waits.length > 0) {
+                <h3 class="h6">{{ erasureCopy.waits }}</h3>
+                <ul class="list-unstyled">
+                  @for (wait of erasure.waits; track wait.key) {
+                    <li data-id="hilos-user-erasure-wait">
+                      <code>{{ wait.participant }}</code>
+                      @if (wait.account !== null) {
+                        · #{{ wait.account }}
+                      }
+                    </li>
+                  }
+                </ul>
+              }
+              @if (erasure.refusals.length > 0) {
+                <h3 class="h6">{{ erasureCopy.refusals }}</h3>
+                <ul class="list-unstyled mb-0">
+                  @for (refusal of erasure.refusals; track refusal.key) {
+                    <li data-id="hilos-user-erasure-refusal">
+                      @if (refusal.account !== null) {
+                        #{{ refusal.account }} ·
+                      }
+                      {{ refusal.text }}
+                    </li>
+                  }
+                </ul>
+              }
+            </div>
+          </section>
+        }
+        @if (context().accountMerge && offersActions()) {
           <section
             class="card border-danger mt-4"
             data-id="hilos-user-merge-zone"
@@ -1064,11 +1138,20 @@ export class HilosUserPage {
   protected readonly frozenRow = computed(() =>
     hilosUserFrozenRow(this.standing()),
   )
-  // A merged account (HIL-1292): the notice under the header stands in for every
-  // action section, which the core leaves empty for it.
+  // A merged account (HIL-1292) or one being erased (HIL-1962): the notice under
+  // the header stands in for every action section, which the core leaves empty
+  // for it.
+  protected readonly offersActions = computed(() =>
+    hilosUserOffersActions(this.standing()),
+  )
   protected readonly mergedNotice = computed(() =>
     hilosUserMergedNotice(this.standing()),
   )
+  protected readonly erasingNotice = computed(() =>
+    hilosUserErasingNotice(this.standing()),
+  )
+  protected readonly erasure = signal<HilosUserErasureSection | null>(null)
+  protected readonly erasureCopy = HILOS_USER_ERASURE_COPY
   protected readonly mergedCopy = HILOS_USER_MERGED_COPY
   protected readonly overviewCopy = HILOS_USER_OVERVIEW_COPY
   protected readonly lifecycleSections = computed<
@@ -1368,6 +1451,18 @@ export class HilosUserPage {
           hilosUserAnalyticsEnabled(context.scopes),
           this.analyticsEnabled,
         ),
+        // The start of an erasure progress is in the reader's time zone; the
+        // core's computedSignal tracks the zone, while Angular computed does
+        // not see core signals.
+        mirrorHilosSignal(
+          computedSignal(() =>
+            hilosUserErasureSection(
+              userStanding.erasure.get(),
+              detailSignal.get()?.id,
+            ),
+          ),
+          this.erasure,
+        ),
       ]
       const tick = setInterval(
         () => this.lifecycleNow.set(Date.now()),
@@ -1461,11 +1556,12 @@ export class HilosUserPage {
       })
     })
 
-    // A merge that lands under an open window closes it (HIL-1292): there is
-    // nothing left to do over the account. A window whose action is in flight
-    // stays, and the server's answer comes as usual - a refusal.
+    // A merge (HIL-1292) or a begun erasure (HIL-1962) that lands under an open
+    // window closes it: there is nothing left to do over the account. A window
+    // whose action is in flight stays, and the server's answer comes as usual -
+    // a refusal.
     effect(() => {
-      if (this.mergedNotice() === null) {
+      if (this.offersActions()) {
         return
       }
       untracked(() => {

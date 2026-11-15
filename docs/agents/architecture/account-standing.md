@@ -328,19 +328,21 @@ costs an array comparison.
 The core binds the session's standing once, in `bootHilos`
 (`session/accountStanding.ts`); each SDK's shell only reads it.
 
-`erasing` is drawn by Vue's card (HIL-1957) and Vue's list (HIL-1956), and by
-React's card and list (HIL-1961); Angular belongs to HIL-1962. Vue's list puts
-"Being deleted" beside the name of an account whose row bar is the erasure's —
-instead of Blocked and You; a merged account stays "Merged" — and a caption above
-the bar of every account of the circle: the summary, then the parts not done, the
-owners awaited and the refusals, at most three entries a line and "+N more"
-past them (`hilosUsersErasureCaption`, read through `HilosUsersTable.erasures`).
-React's list puts "Being deleted" beside the name (Blocked and You are not on
-React's list) and the same caption above the bar; React's card draws the "Being
-deleted" badge, the "This account is being deleted." notice, the progress
-section, and closes its modals ("React account deletion in progress", HIL-1961).
-Angular still draws only the shared row bar of the window table
-(`HilosViewportTable` of each SDK), with its common label and count.
+`erasing` is drawn by Vue's card (HIL-1957) and Vue's list (HIL-1956), by
+React's card and list (HIL-1961), and by Angular's card and list (HIL-1962).
+Vue's list puts "Being deleted" beside the name of an account whose row bar is
+the erasure's — instead of Blocked and You; a merged account stays "Merged" —
+and a caption above the bar of every account of the circle: the summary, then
+the parts not done, the owners awaited and the refusals, at most three entries
+a line and "+N more" past them (`hilosUsersErasureCaption`, read through
+`HilosUsersTable.erasures`). React's list puts "Being deleted" beside the name
+(Blocked and You are not on React's list) and the same caption above the bar;
+React's card draws the "Being deleted" badge, the "This account is being deleted."
+notice, the progress section, and closes its modals ("React account deletion in
+progress", HIL-1961). Angular's card (without the shared header yet) puts the
+erasure row in place of the merged row, draws the "Being deleted" badge, the
+progress section, and closes its modals; Angular's list puts "Being deleted"
+beside the name and the same caption above the bar (`hilosUsersErasureCaption`).
 
 - **Deletion strip** (`hilosDeletionStrip`) — the standing the session acts as
   is `deletion_scheduled` with a known `deletionEffectiveAt`. It is shown during
