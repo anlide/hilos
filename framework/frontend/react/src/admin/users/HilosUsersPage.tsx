@@ -12,14 +12,20 @@
 // account folded into another one wears a gray "Merged" badge beside its name
 // (HIL-1292). The presence badge says one of three words (HIL-1566) and holds the
 // room of the widest one, so a presence changing live neither moves the row nor
-// spills out of its column. Bootstrap classes only (styling-rules.md).
-import { useContext, useEffect, useMemo } from 'react'
+// spills out of its column. An account being erased wears "Being deleted" beside
+// its name (a merged one stays Merged), and every account of its circle carries
+// a caption above its row bar: the summary, then the parts not done, the
+// owners awaited, and the refusals, three entries a line and "+N more"
+// (hilosUsersErasureCaption, HIL-1961). A bar about other work gets no
+// caption. Bootstrap classes only (styling-rules.md).
+import { Fragment, useContext, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
 import {
   USER_OPEN_SESSION_COUNT_FIELD,
   USER_PRESENCE_FIELD,
   HILOS_PRESENCE_WIDEST_LABEL,
+  HILOS_USER_ERASURE_COPY,
   createHilosUsersTable,
   hilosPresenceBadge,
   hilosStandingBadge,
@@ -30,10 +36,13 @@ import { HilosAdminPage } from '../../HilosAdminPage.js'
 import { HilosTableText } from '../../HilosTableText.js'
 import { HilosViewportTable } from '../../HilosViewportTable.js'
 import { HilosRouterContext } from '../../hilosRouterContext.js'
+import { useSignal } from '../../useSignal.js'
 
-// The one badge the list draws: the merged standing, read off the row's merge
-// slot rather than off a standing the list does not carry.
+// The badges the list draws: the merged standing and an account being erased,
+// read off the row's merge slot and the live erasures map rather than off a
+// standing the list does not carry.
 const mergedBadge = hilosStandingBadge('merged')
+const erasingBadge = hilosStandingBadge('erasing')
 
 /** Props for {@link HilosUsersPage}. */
 export interface HilosUsersPageProps {
@@ -57,6 +66,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
     () => createHilosUsersTable(context, router ?? undefined),
     [context, router],
   )
+  const erasures = useSignal(users.erasures)
 
   // Bind the server-windowed table to the connection on mount, request the first
   // window, and unbind on unmount.
@@ -70,6 +80,65 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
     <HilosAdminPage page={HilosPages.USERS}>
       <HilosViewportTable
         controller={users.controller}
+        rowProgress={(_bar, rowKey) => {
+          const caption = erasures.get(rowKey)
+          if (caption === undefined) {
+            return null
+          }
+
+          return (
+            <>
+              <div data-id="hilos-users-erasure-summary">{caption.summary}</div>
+              {caption.expected.shown.length > 0 ? (
+                <div data-id="hilos-users-erasure-expected">
+                  {HILOS_USER_ERASURE_COPY.expected}:{' '}
+                  {caption.expected.shown.map((part, index) => (
+                    <Fragment key={part.key}>
+                      {index > 0 ? '; ' : null}
+                      <code>{part.participant}</code>
+                      {part.account !== null ? ` · #${part.account}` : null}
+                    </Fragment>
+                  ))}
+                  {caption.expected.more !== null
+                    ? `; ${caption.expected.more}`
+                    : null}
+                </div>
+              ) : null}
+              {caption.waits.shown.length > 0 ? (
+                <div data-id="hilos-users-erasure-waits">
+                  {HILOS_USER_ERASURE_COPY.waits}:{' '}
+                  {caption.waits.shown.map((wait, index) => (
+                    <Fragment key={wait.key}>
+                      {index > 0 ? '; ' : null}
+                      <code>{wait.participant}</code>
+                      {wait.account !== null ? ` · #${wait.account}` : null}
+                    </Fragment>
+                  ))}
+                  {caption.waits.more !== null
+                    ? `; ${caption.waits.more}`
+                    : null}
+                </div>
+              ) : null}
+              {caption.refusals.shown.length > 0 ? (
+                <div data-id="hilos-users-erasure-refusals">
+                  {HILOS_USER_ERASURE_COPY.refusals}:{' '}
+                  {caption.refusals.shown.map((refusal, index) => (
+                    <Fragment key={refusal.key}>
+                      {index > 0 ? '; ' : null}
+                      {refusal.account !== null
+                        ? `#${refusal.account} · `
+                        : null}
+                      {refusal.text}
+                    </Fragment>
+                  ))}
+                  {caption.refusals.more !== null
+                    ? `; ${caption.refusals.more}`
+                    : null}
+                </div>
+              ) : null}
+            </>
+          )
+        }}
         cells={{
           id: (row) => row.id,
           name: (row) => (
@@ -87,6 +156,20 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
                     aria-hidden="true"
                   />
                   {mergedBadge.label}
+                </span>
+              ) : null}
+              {!row.merged &&
+              erasures.has(String(row.id)) &&
+              erasingBadge !== null ? (
+                <span
+                  className={`badge text-bg-${erasingBadge.tone} flex-shrink-0`}
+                  data-id="hilos-users-erasing"
+                >
+                  <i
+                    className={`bi ${erasingBadge.icon} me-1`}
+                    aria-hidden="true"
+                  />
+                  {erasingBadge.label}
                 </span>
               ) : null}
             </div>

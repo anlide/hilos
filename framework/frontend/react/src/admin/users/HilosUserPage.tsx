@@ -26,6 +26,11 @@
 // (hilosUserImpersonationSection). A success needs no word: the session rebinds
 // and the strip rises. The buttons that only open a window stay live in a
 // takeover that only looks; the confirmation in the window does not.
+// An account whose erasure has begun (HIL-1961) is offered no action at all, as
+// a merged one is not: the card wears the "Being deleted" badge, the "This
+// account is being deleted." notice, and the progress section instead — its
+// parts, the owners it waits for and the refused finals; when the erasure ends,
+// the card ends in the common 404 of a deleted page.
 // Bootstrap classes only (styling-rules.md).
 import {
   Fragment,
@@ -37,6 +42,7 @@ import {
 } from 'react'
 import {
   ACCOUNT_DELETION_TICK_MS,
+  computedSignal,
   focusInitial,
   HILOS_STEP_UP_COPY,
   type HilosStepUpOpenOutcome,
@@ -52,6 +58,7 @@ import {
   createHilosUserLifecycle,
   createHilosUserStanding,
   HILOS_USER_ANALYTICS_LINK_LABEL,
+  HILOS_USER_ERASURE_COPY,
   HILOS_USER_IMPERSONATION_COPY,
   HILOS_USER_MERGED_COPY,
   HILOS_USER_OVERVIEW_COPY,
@@ -61,9 +68,12 @@ import {
   hilosStandingBadge,
   hilosUserAnalyticsEnabled,
   hilosUserAnalyticsPath,
+  hilosUserErasingNotice,
+  hilosUserErasureSection,
   hilosUserImpersonationSection,
   hilosUserFrozenRow,
   hilosUserMergedNotice,
+  hilosUserOffersActions,
   hilosUserLifecycleSections,
   hilosUserLifecyclePrompt,
   hilosUserLifecyclePromptOffered,
@@ -194,6 +204,25 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
   // The header draws it only under a row, so the absent row's word is never seen.
   const presenceBadge = hilosPresenceBadge(detail?.presence ?? 'offline')
   const frozenRow = hilosUserFrozenRow(standing)
+  // A merged account (HIL-1292) or one being erased (HIL-1957): the line under
+  // the header stands in for every action, and the core leaves the action
+  // sections empty for it.
+  const offersActions = hilosUserOffersActions(standing)
+  const erasingNotice = hilosUserErasingNotice(standing)
+  // The progress of a begun erasure (HIL-1957); its start reads the reader's zone.
+  const erasure = useSignal(
+    useMemo(
+      () =>
+        computedSignal(() =>
+          hilosUserErasureSection(
+            userStanding.erasure.get(),
+            userDetail.get()?.id,
+          ),
+        ),
+      [userStanding, userDetail],
+    ),
+  )
+  const erasureCopy = HILOS_USER_ERASURE_COPY
   // A merged account (HIL-1292): the notice under the header stands in for
   // every action section, which the core leaves empty for it.
   const mergedNotice = hilosUserMergedNotice(standing)
@@ -704,12 +733,13 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     editor.close()
   }
 
-  // A merge that lands under an open window closes it (HIL-1292): there is
-  // nothing left to do over the account. A window whose action is in flight
-  // stays, and the server's answer comes as usual - a refusal.
-  const merged = mergedNotice !== null
+  // A merge (HIL-1292) or a begun erasure (HIL-1961) that lands under an open
+  // window closes it: there is nothing left to do over the account. A window
+  // whose action is in flight stays, and the server's answer comes as usual -
+  // a refusal.
+  const closed = !offersActions
   useEffect(() => {
-    if (!merged) {
+    if (!closed) {
       return
     }
     if (!loading) closeEdit()
@@ -718,7 +748,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
     closeImpersonate()
     // Only the merge landing closes the windows; the flags it reads are the
     // ones the windows themselves move, so they are not what this effect follows.
-  }, [merged])
+  }, [closed])
 
   // Save and Enter go through the window's one door: it refuses, closes an
   // unchanged name without a round-trip, or sends the trimmed name and waits for
@@ -771,7 +801,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                     {HILOS_USER_ANALYTICS_LINK_LABEL}
                   </HilosLink>
                 ) : null}
-                {mergedNotice === null ? (
+                {offersActions ? (
                   <button
                     type="button"
                     className="btn btn-outline-primary btn-sm"
@@ -810,8 +840,9 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               </dl>
             </div>
           </div>
-          {/* A merged account says where it went and offers nothing to press:
-          every action over it is refused by the server (HIL-1292). */}
+          {/* A merged account (HIL-1292) or one being erased (HIL-1961) says
+          where it went and offers nothing to press: every action over it is
+          refused by the server. */}
           {mergedNotice !== null ? (
             <div
               className="alert alert-secondary mt-4"
@@ -835,6 +866,14 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               ) : (
                 mergedCopy.gone
               )}
+            </div>
+          ) : erasingNotice !== null ? (
+            <div
+              className="alert alert-secondary mt-4"
+              role="status"
+              data-id="hilos-user-erasing"
+            >
+              {erasingNotice}
             </div>
           ) : null}
           {lifecycleSections.map((section) => (
@@ -927,7 +966,67 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
               </div>
             </section>
           ))}
-          {context.accountMerge && mergedNotice === null ? (
+          {erasure !== null ? (
+            <section className="card mt-4" data-id="hilos-user-erasure">
+              <div className="card-body">
+                <h2 className="h5">{erasureCopy.title}</h2>
+                <p className="fw-medium mb-1">{erasureCopy.inProgress}</p>
+                <p
+                  className="small text-body-secondary"
+                  data-id="hilos-user-erasure-started"
+                >
+                  {erasure.started}
+                </p>
+                {erasure.parts.length > 0 ? (
+                  <>
+                    <h3 className="h6">{erasureCopy.parts}</h3>
+                    <ul className="list-unstyled">
+                      {erasure.parts.map((part) => (
+                        <li key={part.key} data-id="hilos-user-erasure-part">
+                          <code>{part.participant}</code>
+                          {part.account !== null ? ` · #${part.account}` : ''}
+                          {' — '}
+                          {part.state}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+                {erasure.waits.length > 0 ? (
+                  <>
+                    <h3 className="h6">{erasureCopy.waits}</h3>
+                    <ul className="list-unstyled">
+                      {erasure.waits.map((wait) => (
+                        <li key={wait.key} data-id="hilos-user-erasure-wait">
+                          <code>{wait.participant}</code>
+                          {wait.account !== null ? ` · #${wait.account}` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+                {erasure.refusals.length > 0 ? (
+                  <>
+                    <h3 className="h6">{erasureCopy.refusals}</h3>
+                    <ul className="list-unstyled mb-0">
+                      {erasure.refusals.map((refusal) => (
+                        <li
+                          key={refusal.key}
+                          data-id="hilos-user-erasure-refusal"
+                        >
+                          {refusal.account !== null
+                            ? `#${refusal.account} · `
+                            : ''}
+                          {refusal.text}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+          {context.accountMerge && offersActions ? (
             <section
               className="card border-danger mt-4"
               data-id="hilos-user-merge-zone"

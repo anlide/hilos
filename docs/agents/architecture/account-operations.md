@@ -1693,8 +1693,8 @@ switches neither live erasure entry:
   open erasure operation, from preparation on (owner's decision 2026-11-12,
   HIL-1938); this prepares no new merge, transfer right or receipt protocol
   (`AbstractSessionsLibraryAgent::assertMergeable()`, HIL-1960).
-- React carries the corresponding states and actions
-  (not in the code yet — HIL-1961). Angular carries them too
+- React carries the corresponding states and actions (Vue: HIL-1956 (list),
+  HIL-1957 (card); React: HIL-1961; Angular: HIL-1962). Angular carries them too
   (not in the code yet — HIL-1962). Their interviews choose the appearance of
   missing states; this document declares no design.
 

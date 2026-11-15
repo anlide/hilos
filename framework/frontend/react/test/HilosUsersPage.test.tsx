@@ -62,6 +62,7 @@ interface UserSeed {
   presence: string
   onlineSessionCount: number
   openSessionCount?: number | null
+  block?: boolean
   /** Whether the account was folded into another one (HIL-1292); the merge slot carries it. */
   merged?: boolean
 }
@@ -111,6 +112,12 @@ interface LiveUsers {
    * @param staleSources The row's slot keys gone quiet; empty means current again.
    */
   stale(id: number, staleSources: string[]): void
+  /**
+   * A row bar moved, came up or came down (`table_progress`).
+   *
+   * @param bar The bar's body, without the table's address.
+   */
+  progress(bar: Record<string, unknown>): void
 }
 
 // A users context whose connection answers each viewport request with a window
@@ -132,7 +139,15 @@ function liveUsers(users: UserSeed[]): LiveUsers {
   scopes.openPage('hilos_users')
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const progressListeners = new Set<(signal: { data: unknown }) => void>()
   let viewportRequestCount = 0
+  const progress = (data: Record<string, unknown>): void => {
+    for (const listener of progressListeners) {
+      listener({
+        data: { page: 'hilos_users', tableKey: 'hilosUsers', ...data },
+      })
+    }
+  }
   const delta = (data: Record<string, unknown>): void => {
     for (const listener of deltaListeners) {
       listener({
@@ -209,7 +224,9 @@ function liveUsers(users: UserSeed[]): LiveUsers {
           ? windowListeners
           : event === 'tableViewportDelta'
             ? deltaListeners
-            : null
+            : event === 'tableProgress'
+              ? progressListeners
+              : null
       listeners?.add(listener)
 
       return () => listeners?.delete(listener)
@@ -231,6 +248,7 @@ function liveUsers(users: UserSeed[]): LiveUsers {
     stale(id: number, staleSources: string[]): void {
       delta({ kind: 'row_stale', rowKey: id, staleSources })
     },
+    progress,
   }
 }
 
@@ -776,5 +794,207 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     expect(tone(presence(container, 1).badge)).toEqual(['text-bg-secondary'])
     expect(presence(container, 1).twin?.textContent).toBe('probably offline')
     expect(container.textContent).toContain('Oct 21, 2026, 10:00:00 AM')
+  })
+})
+
+describe('HilosUsersPage erasure (HIL-1961)', () => {
+  const startedAt = 1_800_000_000_000
+  const alice: UserSeed = {
+    id: 1,
+    name: 'Alice',
+    lastActivity: null,
+    presence: 'offline',
+    onlineSessionCount: 0,
+    block: true,
+  }
+  const bob: UserSeed = { ...alice, id: 2, name: 'Bob', block: false }
+  const detail = {
+    startedAt,
+    parts: [
+      { participant: 'profile', owner: 'user', userId: 1, done: true },
+      { participant: 'chat', owner: 'room', userId: 1, done: false },
+      { participant: 'chat', owner: 'room', userId: 2, done: false },
+    ],
+    waits: [{ participant: 'delivery:email', userId: 2 }],
+    refusals: [{ userId: 2, table: null }],
+  }
+
+  /**
+   * The erasure bar of one row as the server sends it.
+   *
+   * @param rowKey The account the row shows.
+   * @param fields What differs from a running bar three of five parts along.
+   */
+  function erasureBar(
+    rowKey: string,
+    fields: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      scope: 'row',
+      progressKey: 'hilos-account-erasure',
+      rowKey,
+      current: 3,
+      total: 5,
+      detail,
+      ...fields,
+    }
+  }
+
+  /**
+   * Mount the list over Alice and Bob.
+   *
+   * @param seeds The people of the first window.
+   */
+  async function mountCircle(seeds: UserSeed[] = [alice, bob]) {
+    const live = liveUsers(seeds)
+    live.context.scopes.session.data.set('currentUser', {
+      type: USER_ENTITY_TYPE,
+      id: 1,
+    })
+    const { container } = render(
+      <HilosRouterContext.Provider value={router()}>
+        <HilosUsersPage context={live.context} />
+      </HilosRouterContext.Provider>,
+    )
+    const progressRow = (id: number): Element | null =>
+      container.querySelector(`[data-id="hilos-table-progress-row-${id}"]`)
+    const caption = (id: number, line: string): Element | null =>
+      progressRow(id)?.querySelector(
+        `[data-id="hilos-users-erasure-${line}"]`,
+      ) ?? null
+
+    return { live, container, progressRow, caption }
+  }
+
+  it('wears Being deleted and captions the bar when it arrives live', async () => {
+    const { live, container, progressRow, caption } = await mountCircle()
+    const name1 = (): Element | null =>
+      container.querySelector('[data-id="hilos-table-row-1"] td:nth-child(2)')
+
+    expect(name1()?.querySelector('[data-id="hilos-users-erasing"]')).toBeNull()
+    expect(progressRow(1)).toBeNull()
+
+    await act(async () => {
+      live.progress(erasureBar('1'))
+    })
+
+    const erasing = name1()?.querySelector('[data-id="hilos-users-erasing"]')
+    expect(erasing).not.toBeNull()
+    expect(erasing?.textContent).toBe('Being deleted')
+    expect(erasing?.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    )
+    expect(caption(1, 'summary')?.textContent).toBe(
+      `Erasure in progress · 3 of 5 parts done · started ${String(formatMoment(startedAt, { kind: 'dateTime' }))}`,
+    )
+    expect(caption(1, 'expected')?.textContent).toBe(
+      'Expected: chat; chat · #2',
+    )
+    expect(caption(1, 'expected')?.querySelectorAll('code')).toHaveLength(2)
+    expect(caption(1, 'waits')?.textContent).toBe(
+      'Waiting for an owner: delivery:email · #2',
+    )
+    expect(caption(1, 'refusals')?.textContent).toBe(
+      'Refused: #2 · Another table still references the account',
+    )
+    expect(
+      progressRow(1)
+        ?.querySelector('[role="progressbar"]')
+        ?.getAttribute('aria-valuenow'),
+    ).toBe('60')
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-row-2"] td:nth-child(2)')
+        ?.querySelector('[data-id="hilos-users-erasing"]'),
+    ).toBeNull()
+
+    const row1 = container.querySelector('[data-id="hilos-table-row-1"]')
+    await act(async () => {
+      live.progress(erasureBar('1', { current: 4 }))
+    })
+
+    expect(caption(1, 'summary')?.textContent).toContain('4 of 5 parts done')
+    expect(caption(1, 'expected')?.textContent).toBe(
+      'Expected: chat; chat · #2',
+    )
+    expect(caption(1, 'waits')?.textContent).toBe(
+      'Waiting for an owner: delivery:email · #2',
+    )
+    expect(caption(1, 'refusals')?.textContent).toBe(
+      'Refused: #2 · Another table still references the account',
+    )
+    expect(container.querySelector('[data-id="hilos-table-row-1"]')).toBe(row1)
+  })
+
+  it('keeps Merged on a merged account of the circle and still captions its bar', async () => {
+    const { live, container, caption } = await mountCircle([
+      alice,
+      { ...bob, merged: true },
+    ])
+
+    await act(async () => {
+      live.progress(erasureBar('2'))
+    })
+
+    const name2 = container.querySelector(
+      '[data-id="hilos-table-row-2"] td:nth-child(2)',
+    )
+    expect(
+      name2?.querySelector('[data-id="hilos-users-merged"]')?.textContent,
+    ).toBe('Merged')
+    expect(name2?.querySelector('[data-id="hilos-users-erasing"]')).toBeNull()
+    expect(caption(2, 'summary')?.textContent).toContain('3 of 5 parts done')
+    expect(caption(2, 'expected')?.textContent).toBe(
+      'Expected: chat · #1; chat',
+    )
+  })
+
+  it('takes the badge and the caption down when the erasure ends, and gives a bar about other work neither', async () => {
+    const { live, container, progressRow, caption } = await mountCircle()
+
+    await act(async () => {
+      live.progress(erasureBar('1'))
+    })
+
+    const name1 = (): Element | null =>
+      container.querySelector('[data-id="hilos-table-row-1"] td:nth-child(2)')
+
+    expect(
+      name1()?.querySelector('[data-id="hilos-users-erasing"]'),
+    ).not.toBeNull()
+    expect(progressRow(1)).not.toBeNull()
+
+    await act(async () => {
+      live.progress(erasureBar('1', { current: 5, ended: true }))
+    })
+
+    expect(name1()?.querySelector('[data-id="hilos-users-erasing"]')).toBeNull()
+    expect(progressRow(1)).toBeNull()
+
+    await act(async () => {
+      live.progress(erasureBar('1', { progressKey: 'other-work' }))
+    })
+
+    expect(progressRow(1)?.querySelector('[role="progressbar"]')).not.toBeNull()
+    expect(caption(1, 'summary')).toBeNull()
+    expect(name1()?.querySelector('[data-id="hilos-users-erasing"]')).toBeNull()
+  })
+
+  it('says only that the erasure is in progress when its block cannot be read', async () => {
+    const { live, container, caption } = await mountCircle()
+
+    await act(async () => {
+      live.progress(erasureBar('1', { detail: {} }))
+    })
+
+    expect(caption(1, 'summary')?.textContent).toBe('Erasure in progress')
+    expect(caption(1, 'expected')).toBeNull()
+    expect(caption(1, 'waits')).toBeNull()
+    expect(caption(1, 'refusals')).toBeNull()
+    expect(
+      container
+        .querySelector('[data-id="hilos-table-row-1"] td:nth-child(2)')
+        ?.querySelector('[data-id="hilos-users-erasing"]')?.textContent,
+    ).toBe('Being deleted')
   })
 })

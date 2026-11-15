@@ -2555,3 +2555,251 @@ describe('HilosUserPage presence (HIL-1566)', () => {
     expect(sessions()).toBe('0')
   })
 })
+
+describe('HilosUserPage erasure (HIL-1961)', () => {
+  afterEach(() => {
+    cleanup()
+    document.body.classList.remove('modal-open')
+    hilosToasts.clear()
+  })
+
+  const startedAt = Date.parse('2026-01-01T00:30:05Z')
+  const erasing = standing({ shown: 'erasing' })
+
+  /**
+   * The progress of a begun erasure as the wire carries it: the card's own
+   * part and that of an account merged into it (#74), one owner awaited.
+   *
+   * @param facts The facts that differ from that progress.
+   */
+  function erasure(
+    facts: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      startedAt,
+      parts: [
+        { participant: 'sessions', owner: 'auth', userId: 1, done: true },
+        { participant: 'messages', owner: 'chat', userId: 74, done: false },
+      ],
+      waits: [{ participant: 'messages', userId: 74 }],
+      refusals: [],
+      ...facts,
+    }
+  }
+
+  function lines(id: string): string[] {
+    return Array.from(document.querySelectorAll(`[data-id="${id}"]`)).map(
+      (line) => (line.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    )
+  }
+
+  it('draws Being deleted, the notice and the progress section when erasing with an accountErasure block', async () => {
+    const context = userContext(true, true, 'skip', {
+      impersonation: impersonationSettings(),
+    })
+    renderPage(context)
+    const change = async (fn: () => void) => {
+      await act(async () => {
+        fn()
+      })
+    }
+
+    expect(byId('hilos-user-edit')).not.toBeNull()
+    expect(byId('hilos-user-erasure')).toBeNull()
+
+    await change(() => {
+      context.standingFrame({
+        userId: 1,
+        accountStanding: erasing,
+        accountErasure: erasure(),
+      })
+    })
+
+    expect(byId('user-standing-badge')?.textContent?.trim()).toBe(
+      'Being deleted',
+    )
+    expect(byId('hilos-user-erasing')?.textContent?.trim()).toBe(
+      'This account is being deleted.',
+    )
+    expect(byId('hilos-user-edit')).toBeNull()
+    expect(byId('hilos-user-rights')).toBeNull()
+    expect(byId('hilos-user-access')).toBeNull()
+    expect(byId('hilos-user-merge-zone')).toBeNull()
+    expect(byId('hilos-user-impersonate-open')).toBeNull()
+    expect(byId('hilos-user-sessions')).not.toBeNull()
+
+    const section = byId('hilos-user-erasure')!
+    expect(section.querySelector('h2')?.textContent).toBe('Account erasure')
+    expect(section.textContent).toContain('Erasure in progress')
+    expect(
+      Array.from(section.querySelectorAll('h3')).map((h) => h.textContent),
+    ).toEqual(['Parts', 'Waiting for an owner'])
+    expect(byId('hilos-user-erasure-started')?.textContent?.trim()).toBe(
+      `Started ${String(formatMoment(startedAt, { kind: 'dateTime' }))} — it cannot be canceled`,
+    )
+    expect(lines('hilos-user-erasure-part')).toEqual([
+      'sessions — Done',
+      'messages · #74 — Expected',
+    ])
+    expect(lines('hilos-user-erasure-wait')).toEqual(['messages · #74'])
+    expect(lines('hilos-user-erasure-refusal')).toEqual([])
+    expect(section.querySelectorAll('button')).toHaveLength(0)
+  })
+
+  it('says the refused finals with the table and without it', async () => {
+    const context = userContext(true)
+    renderPage(context)
+    const change = async (fn: () => void) => {
+      await act(async () => {
+        fn()
+      })
+    }
+
+    await change(() => {
+      context.standingFrame({
+        userId: 1,
+        accountStanding: erasing,
+        accountErasure: erasure({
+          waits: [],
+          refusals: [
+            { userId: 1, table: 'chat_message' },
+            { userId: 74, table: null },
+          ],
+        }),
+      })
+    })
+
+    expect(
+      Array.from(byId('hilos-user-erasure')!.querySelectorAll('h3')).map(
+        (h) => h.textContent,
+      ),
+    ).toEqual(['Parts', 'Refused'])
+    expect(lines('hilos-user-erasure-refusal')).toEqual([
+      'Table chat_message still references the account',
+      '#74 · Another table still references the account',
+    ])
+    expect(lines('hilos-user-erasure-part')).toContain(
+      'messages · #74 — Expected',
+    )
+  })
+
+  it('closes an idle window when the erasure begins and keeps one whose action is in flight', async () => {
+    const opened = userContext(true)
+    openModal(opened)
+    expect(byId('modal')).not.toBeNull()
+
+    const change = async (fn: () => void) => {
+      await act(async () => {
+        fn()
+      })
+    }
+    const click = async (id: string) => {
+      await change(() => {
+        fireEvent.click(byId(id) as Element)
+      })
+    }
+
+    await change(() => {
+      opened.standingFrame({ userId: 1, accountStanding: erasing })
+    })
+    expect(byId('modal')).toBeNull()
+    expect(byId('hilos-user-erasing')).not.toBeNull()
+
+    cleanup()
+    const flying = userContext(true)
+    renderPage(flying)
+    await click('hilos-user-block-open')
+    expect(byId('modal')).not.toBeNull()
+
+    let reject!: (reason: unknown) => void
+    vi.spyOn(flying.actions, 'dispatch').mockImplementation(() => ({
+      requestId: 'erasing-req',
+      loading: createSignal(false),
+      done: new Promise<ActionResult>((_, no) => {
+        reject = no
+      }),
+    }))
+    await click('hilos-user-lifecycle-confirm')
+
+    await change(() => {
+      flying.standingFrame({ userId: 1, accountStanding: erasing })
+    })
+    expect(byId('modal')).not.toBeNull()
+
+    await change(() => {
+      reject(
+        new ActionError(
+          'hilos_user_block_set',
+          'fail',
+          'This account is being deleted.',
+        ),
+      )
+    })
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('hilos-user-lifecycle-error')?.textContent).toContain(
+      'This account is being deleted.',
+    )
+  })
+
+  it('says the refusal in the cancel-deletion window opened before the erasure began and closes it when the erasure arrives (HIL-1959)', async () => {
+    const context = userContext(true)
+    renderPage(context)
+    const change = async (fn: () => void) => {
+      await act(async () => {
+        fn()
+      })
+    }
+    const click = async (id: string) => {
+      await change(() => {
+        fireEvent.click(byId(id) as Element)
+      })
+    }
+
+    await change(() => {
+      context.standingFrame({
+        userId: 1,
+        accountStanding: standing({
+          shown: 'deletion_scheduled',
+          deletionEffectiveAt: 100_000_000,
+        }),
+      })
+    })
+    expect(byId('hilos-user-deletion-open')?.textContent).toContain(
+      'Cancel deletion',
+    )
+
+    await click('hilos-user-deletion-open')
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('hilos-user-lifecycle-step-up')).toBeNull()
+
+    vi.spyOn(context.actions, 'dispatch').mockImplementation(() => ({
+      requestId: 'cancel-deletion-req',
+      loading: createSignal(false),
+      done: Promise.reject<ActionResult>(
+        new ActionError(
+          'hilos_user_deletion_set',
+          'fail',
+          'This account is being deleted.',
+        ),
+      ),
+    }))
+    await click('hilos-user-lifecycle-confirm')
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('hilos-user-lifecycle-error')?.textContent).toContain(
+      'This account is being deleted.',
+    )
+    expect(
+      (byId('hilos-user-lifecycle-confirm') as HTMLButtonElement).disabled,
+    ).toBe(false)
+    expect(byId('hilos-user-deletion-state')?.textContent).not.toContain(
+      'No deletion is scheduled',
+    )
+
+    await change(() => {
+      context.standingFrame({ userId: 1, accountStanding: erasing })
+    })
+    expect(byId('modal')).toBeNull()
+    expect(byId('hilos-user-erasing')).not.toBeNull()
+    expect(byId('hilos-user-deletion-open')).toBeNull()
+  })
+})
