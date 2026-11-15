@@ -139,7 +139,7 @@ import sys
 import threading
 import time
 import uuid
-from collections import namedtuple
+from collections import Counter, defaultdict, namedtuple
 from datetime import datetime, timezone
 
 import control
@@ -3726,15 +3726,17 @@ def journal_trigger_sources():
     return expected
 
 
-def journal_trigger_catalog():
-    """Snapshot every primary-schema trigger, including its complete server-reported body.
+def journal_trigger_catalog(member=None):
+    """Snapshot every primary-schema trigger, including its complete server-reported body: on the
+    stand's database, or on the member of a clustered one that `member` names by service.
 
     db_sql uses MariaDB's batch output: embedded newlines and tabs in a body are escaped,
     so each trigger occupies one tab-separated line and can be kept verbatim across starts.
     """
     output = db_sql("SELECT TRIGGER_NAME,EVENT_OBJECT_TABLE,EVENT_MANIPULATION,ACTION_TIMING,ACTION_STATEMENT "
-                    "FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() ORDER BY TRIGGER_NAME")
-    assert output, "the primary trigger catalog is empty or could not be read"
+                    "FROM INFORMATION_SCHEMA.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE() ORDER BY TRIGGER_NAME",
+                    member)
+    assert output, f"the {member or 'primary'} trigger catalog is empty or could not be read"
     catalog = {}
     for line in output.splitlines():
         fields = line.split("\t", 4)
@@ -3758,6 +3760,525 @@ def journal_trigger_ddl_status():
     assert set(counters) == {"Com_create_trigger", "Com_drop_trigger"}, \
         f"trigger DDL status is incomplete: {output!r}"
     return counters
+
+
+# The journal oracle (HIL-2039) writes settings through the settings library's test command and
+# reads back what each database server journaled for them. The command writes its pairs in order,
+# each one a journaled write of hilos_setting under the receipt of the call (SettingsTestWriteCommand).
+SETTINGS_TEST_WRITE = "test:settings:write"
+# The agent that answers the command; mirrors HilosAgentType::HILOS_SETTINGS_LIBRARY
+# (framework/backend/Constants/HilosAgentType.php).
+SETTINGS_LIBRARY_AGENT_TYPE = "hilos_settings_library"
+# The keys a batch writes: SettingsLibraryAgent::TEST_WRITE_KEYS
+# (framework/backend/Database/Settings/Library/SettingsLibraryAgent.php) less the boolean one,
+# whose two values cannot give every write a value its row has not held.
+JOURNAL_EXAMPLE_KEYS = ("example_string", "example_integer")
+# A key the command does not write: the library refuses a batch carrying it whole, before the
+# first write of the batch.
+JOURNAL_ORACLE_REFUSED_KEY = "journal_oracle_refused"
+# The journal's tables in the order create_hilos_change_log.sql creates them
+# (framework/backend/Database/Migration/Stub/), each with the columns it declares there, in order.
+JOURNAL_COLUMNS = {
+    "hilos_change_log_table": ("id", "name"),
+    "hilos_change_log_field": ("id", "table_id", "name"),
+    "hilos_change_log_receipt": ("id", "created_at", "actor_user_id", "subject_user_id", "session_id",
+                                 "channel", "action", "agent", "source", "open_handovers"),
+    "hilos_change_log": ("id", "created_at", "receipt_id", "table_id", "record_key", "record_key_hash",
+                         "mutation_type"),
+    "hilos_change_log_change": ("id", "created_at", "log_id", "field_id", "kind", "old_present",
+                                "new_present", "old_value", "new_value"),
+    "hilos_change_log_value": ("id", "created_at", "change_id", "old_value", "new_value"),
+}
+JOURNAL_TABLES = tuple(JOURNAL_COLUMNS)
+# What a batch came to, by the command's exit code and streams: every pair acknowledged in order,
+# the batch refused whole, or anything else - a call that may have written a prefix of its pairs.
+JOURNAL_CONFIRMED = "confirmed"
+JOURNAL_REFUSED = "refused"
+JOURNAL_AMBIGUOUS = "ambiguous"
+# The line the command prints on stdout for each pair it wrote (SettingsTestWriteCommand), and the
+# prefix CommandChannelClientTrait::refusalText() gives the refusal it prints on stderr.
+JOURNAL_WROTE_LINE = "Wrote {key} = {value}, accepted at epoch ms "
+JOURNAL_REFUSAL_PREFIX = "Refused: "
+# The channel a test write's receipt names (JournalReceiptData): the command comes in over the CLI
+# channel, and its name is both the action and the source of the receipt.
+JOURNAL_RECEIPT_CHANNEL = "cli"
+# The one change the hilos_setting update trigger journals when a write changes the value: the fact
+# that it changed, without the values, its field read as table.field.
+JOURNAL_VALUE_CHANGE = {"field": "hilos_setting.value", "kind": "fact", "old_present": "1", "new_present": "1",
+                        "old_value": "NULL", "new_value": "NULL"}
+
+
+class JournalBatch(namedtuple("JournalBatch", "number pairs started_ms finished_ms outcome detail")):
+    """One call of the test write: its (key, value) pairs in order, the host clock in epoch ms just
+    before the call and just after its answer - the clock the containers read, so the window holds
+    the created_at of any receipt the call opened - what it came to, and its exit code and streams."""
+
+
+class JournalOracle:
+    """Writes the example settings in batches and reads back what every database server journaled.
+
+    start() fixes the base the writes are judged against: where the settings library runs, and the
+    receipts and example rows the database held before. write_batch() records each call with its
+    window and outcome, settle() waits until every replica holds what the primary wrote,
+    catalog() and journal() read one server, in values that compare as they are with another
+    server's, and verify() judges what every server journaled against what the calls came to.
+    write_batch() may be called from another thread than the one that reads, but one call at a
+    time: verify() binds each receipt to the window of exactly one batch, and the windows of calls
+    that overlap would each hold it. Call verify() after the load has stopped. The fault scenarios of
+    HIL-2040, HIL-2041 and HIL-2042 build their own load on write_batch() within that.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._batches = []
+        self._calls = 0
+        self._writes = 0
+        self.agent_id = None
+        self.node_id = None
+        self.server = None
+        self.receipts_before = frozenset()
+        self.settings_before = {}
+        self.integer_seed = None
+        self.label = None
+
+    def start(self):
+        """Wait for the settings library to start, then read the base off the first SQL server:
+        the ids of the test write's receipts, the example rows and the integer the writes count up
+        from, and a label that keeps this run's string values apart from every earlier run's."""
+        views = wait_until(lambda v: placement_row(v, SETTINGS_LIBRARY_AGENT_TYPE).get("state") == "started",
+                           CONVERGE_TIMEOUT, f"{SETTINGS_LIBRARY_AGENT_TYPE} started before the journal oracle writes")
+        row = placement_row(views, SETTINGS_LIBRARY_AGENT_TYPE)
+        self.agent_id, self.node_id = row["agentId"], row["nodeId"]
+        self.server = STAND.database_sql_backends[0]
+        receipts = self._rows(self.server, f"SELECT `id` FROM {self._journal(self.server)}.`hilos_change_log_receipt` "
+                                           f"WHERE `action` = '{SETTINGS_TEST_WRITE}' ORDER BY `id`", 1)
+        self.receipts_before = frozenset(row[0] for row in receipts)
+        self.settings_before = self._example_settings(self.server)
+        integer_key = JOURNAL_EXAMPLE_KEYS[1]
+        _, current = self.settings_before.get(integer_key, (None, "NULL"))
+        current = "0" if current == "NULL" else current
+        assert re.fullmatch(r"-?\d+", current), \
+            f"{self.server.service} holds no integer under {integer_key}: {current!r}"
+        self.integer_seed = int(current) + 1
+        self.label = uuid.uuid4().hex[:8]
+
+    def next_pairs(self):
+        """The next batch of example writes, each under a value its row has not held: the trigger
+        journals no update that leaves the row as it was."""
+        with self._lock:
+            n = self._writes
+            self._writes += 1
+        string_key, integer_key = JOURNAL_EXAMPLE_KEYS
+        return ((string_key, f"journal-{self.label}-{n}"), (integer_key, str(self.integer_seed + n)))
+
+    def refused_pairs(self):
+        """A batch the library refuses whole: an example write beside a key the command does not
+        write. The library judges the batch before its first write and drops the empty receipt."""
+        return ((JOURNAL_EXAMPLE_KEYS[0], f"journal-{self.label}-refused"), (JOURNAL_ORACLE_REFUSED_KEY, "1"))
+
+    def write_batch(self, pairs):
+        """Write one batch of (key, value) pairs through the first node, and record what it came to."""
+        pairs = tuple((key, value) for key, value in pairs)
+        with self._lock:
+            self._calls += 1
+            number = self._calls
+        started_ms = int(time.time() * 1000)
+        outcome = control.client(STAND, ALL_NODES[0], SETTINGS_TEST_WRITE, *[f"{key}={value}" for key, value in pairs])
+        finished_ms = int(time.time() * 1000)
+        detail = f"exit {outcome.code}, stdout {outcome.out.strip()!r}, stderr {outcome.err.strip()!r}"
+        batch = JournalBatch(number, pairs, started_ms, finished_ms, self._outcome(pairs, outcome), detail)
+        with self._lock:
+            self._batches.append(batch)
+        return batch
+
+    def batches(self):
+        """Every batch recorded so far, in the order the calls answered."""
+        with self._lock:
+            return list(self._batches)
+
+    def settle(self):
+        """Wait until every replica holds all its primary had written, the way scenario 31 waits.
+        A replica that stands still says why: the error its own log names.
+
+        A Galera member needs no wait of its own: db-sql reads it under wsrep_sync_wait=1, the
+        session default galera.cnf sets, so each read waits for the writes the member has received.
+        """
+        for replica in STAND.database_replicas:
+            primary = replica.replica_of
+            position = db_sql(PRIMARY_POSITION_SQL, primary)
+            assert position, (f"{primary} writes no binary log: @@gtid_binlog_pos is empty, "
+                              f"so nothing reaches {replica.service}")
+            waited = db_sql(f"SELECT MASTER_GTID_WAIT('{position}', {REPLICA_CATCH_UP_TIMEOUT:.0f})",
+                            replica.service)
+            if waited != "0":
+                at = db_sql(REPLICA_POSITION_SQL, replica.service)
+                reason = replication_log_reason(replica.service)
+                raise ScenarioTimeout(f"{replica.service} did not take the journal writes within "
+                                      f"{REPLICA_CATCH_UP_TIMEOUT:.0f} s: it stands at {at or '?'}, "
+                                      f"{primary} at {position}; {reason}")
+
+    def catalog(self, server):
+        """What one server declares for the journal, as a dict: `triggers` by name as
+        journal_trigger_catalog() gives them, and tuples of rows for the `columns` of both schemas,
+        the journal's `partitions` and the application user's `grants`.
+
+        Its triggers must be the project's trigger files - the same names, each AFTER its event on
+        its table and writing to this server's journal - and the grants must reach the journal;
+        everything else is for comparing one server with another.
+        """
+        service = server.service
+        journal = self._journal(server)
+        triggers = journal_trigger_catalog(service)
+        expected = journal_trigger_sources()
+        assert set(triggers) == set(expected), \
+            f"{service}: live triggers differ from source files: missing {sorted(set(expected) - set(triggers))}, " \
+            f"extra {sorted(set(triggers) - set(expected))}"
+        for name, coordinates in expected.items():
+            assert triggers[name][:3] == coordinates, f"{service}: wrong coordinates for {name}: {triggers[name][:3]}"
+            assert f"{journal}.`hilos_change_log`" in triggers[name][3], \
+                f"{service}: {name} does not address the journal {journal}: {triggers[name][3]}"
+        literal = self._journal_literal(server)
+        columns = self._rows(server, "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION, COLUMN_TYPE, "
+                                     "IS_NULLABLE, COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS "
+                                     f"WHERE TABLE_SCHEMA IN (DATABASE(), {literal}) "
+                                     "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION", 7)
+        partitions = self._rows(server, "SELECT TABLE_NAME, PARTITION_NAME, PARTITION_DESCRIPTION "
+                                        f"FROM INFORMATION_SCHEMA.PARTITIONS WHERE TABLE_SCHEMA = {literal} "
+                                        "AND PARTITION_NAME IS NOT NULL "
+                                        "ORDER BY TABLE_NAME, PARTITION_ORDINAL_POSITION", 3)
+        grants = tuple(row[0] for row in self._rows(server, "SHOW GRANTS FOR CURRENT_USER()", 1))
+        # GRANT escapes '_' and '%' of a database name, and the batch output escapes that backslash.
+        assert any(f" ON {journal}.* " in grant.replace("\\", "") for grant in grants), \
+            f"{service}: the application user holds no grant on {journal}: {grants}"
+        return {"triggers": triggers, "columns": tuple(columns), "partitions": tuple(partitions), "grants": grants}
+
+    def journal(self, server):
+        """Every row of the journal's tables on one server, as a dict of JOURNAL_TABLES to tuples of
+        rows in id order; each row a dict of the columns JOURNAL_COLUMNS names, as mariadb -B prints
+        them: NULL as the text NULL, record_key_hash in hex, line breaks and tabs escaped."""
+        journal = self._journal(server)
+        dump = {}
+        for table, columns in JOURNAL_COLUMNS.items():
+            selected = ", ".join("HEX(`record_key_hash`)" if column == "record_key_hash" else f"`{column}`"
+                                 for column in columns)
+            order = "`id`, `created_at`" if "created_at" in columns else "`id`"
+            rows = self._rows(server, f"SELECT {selected} FROM {journal}.`{table}` ORDER BY {order}", len(columns))
+            dump[table] = tuple(dict(zip(columns, row)) for row in rows)
+        return dump
+
+    def verify(self, batches):
+        """Judge what every database server journaled for `batches` against what each call came to,
+        once settle() has run, and answer what was judged in one line.
+
+        (a) Every server of the stand holds the same catalog and the same journal, and (b) catalog()
+        holds each one to the project's trigger files. On the first server, (c) each receipt of the
+        test write the base did not hold falls in the window of exactly one batch - one receipt for
+        a confirmed batch, none for a refused one, at most one for an ambiguous one - (d) carries
+        the command's attribution, and (e) holds one write of hilos_setting per pair, in the order
+        of the pairs: every pair of a confirmed batch, a prefix of an ambiguous one's. (f) Every
+        server's example rows hold the values of the last confirmed batch, the one whose receipt
+        came last. A failure is an AssertionError naming the server, the batch where there is one,
+        what was expected and what was found.
+        """
+        batches = tuple(batches)
+        servers = STAND.database_servers
+        catalogs = {server.service: self.catalog(server) for server in servers}
+        journals = {server.service: self.journal(server) for server in servers}
+        first = servers[0]
+        for server in servers[1:]:
+            self._same_catalog(first, server, catalogs)
+            self._same_journal(first, server, journals, batches)
+        bound = self._bound_receipts(first, journals[first.service], batches)
+        for batch, receipt in bound:
+            self._judge_receipt(first, batch, receipt)
+        rows = self._example_settings(first)
+        writes = self._judge_writes(first, journals[first.service], bound, rows)
+        confirmed = [batch for batch, _ in bound if batch.outcome == JOURNAL_CONFIRMED]
+        if confirmed:
+            for server in servers:
+                self._holds_values(server, rows if server is first else self._example_settings(server),
+                                   rows, confirmed[-1])
+        outcomes = Counter(batch.outcome for batch in batches)
+        return (f"batches {len(batches)}: confirmed {outcomes[JOURNAL_CONFIRMED]}, refused "
+                f"{outcomes[JOURNAL_REFUSED]}, ambiguous {outcomes[JOURNAL_AMBIGUOUS]}; receipts {len(bound)}, "
+                f"writes {writes}; journaled alike on {', '.join(server.service for server in servers)}")
+
+    @staticmethod
+    def _outcome(pairs, outcome):
+        """Classify one call: confirmed when it exited 0 and stdout acknowledges every pair, one line
+        each and in order; refused when it failed with the daemon's refusal on stderr; else ambiguous."""
+        if outcome.code == 0:
+            lines = outcome.out.splitlines()
+            acknowledged = len(lines) == len(pairs) and all(
+                line.startswith(prefix) and line[len(prefix):].isdigit()
+                for line, prefix in zip(lines, (JOURNAL_WROTE_LINE.format(key=key, value=value)
+                                                for key, value in pairs)))
+            return JOURNAL_CONFIRMED if acknowledged else JOURNAL_AMBIGUOUS
+        return JOURNAL_REFUSED if outcome.err.startswith(JOURNAL_REFUSAL_PREFIX) else JOURNAL_AMBIGUOUS
+
+    @staticmethod
+    def _journal(server):
+        """The journal database of a server, quoted as an identifier."""
+        return "`" + (server.name + "-change-log").replace("`", "``") + "`"
+
+    @staticmethod
+    def _journal_literal(server):
+        """The journal database of a server, as a string literal."""
+        return "'" + (server.name + "-change-log").replace("'", "''") + "'"
+
+    def _example_settings(self, server):
+        """The hilos_setting rows of the example keys on one server: {key: (id, value)}."""
+        keys = ", ".join(f"'{key}'" for key in JOURNAL_EXAMPLE_KEYS)
+        rows = self._rows(server, f"SELECT `id`, `key`, `value` FROM hilos_setting WHERE `key` IN ({keys}) "
+                                  "ORDER BY `id`", 3)
+        return {key: (row_id, value) for row_id, key, value in rows}
+
+    @staticmethod
+    def _rows(server, statement, width):
+        """One statement's rows on one server, each a tuple of its `width` fields as printed.
+
+        Unlike db_sql, a failed read raises rather than answering '' - an unreadable server must not
+        pass for an empty journal - and nothing is stripped, so an empty last field stays a field.
+        """
+        outcome = control.execute(STAND, "db-sql", statement, server.service)
+        assert outcome.code == 0, (f"{server.service} could not be read: "
+                                   f"{outcome.err.strip() or outcome.out.strip() or 'no error text'}; {statement}")
+        lines = outcome.out.split("\n")
+        if lines[-1] == "":
+            lines.pop()
+        rows = []
+        for line in lines:
+            fields = tuple(line.split("\t"))
+            assert len(fields) == width, f"{server.service} answered a row of {len(fields)} fields, not {width}: " \
+                                         f"{line!r}; {statement}"
+            rows.append(fields)
+        return rows
+
+    @staticmethod
+    def _batch_text(batch):
+        """One batch as a failure names it: its number, outcome, pairs and window."""
+        pairs = " ".join(f"{key}={value}" for key, value in batch.pairs)
+        return f"batch {batch.number} ({batch.outcome}: {pairs}; {batch.started_ms}..{batch.finished_ms} ms)"
+
+    @staticmethod
+    def _first_difference(expected, found):
+        """The index of the first entry two sequences differ at, or None when they are equal."""
+        index = next((i for i, (want, got) in enumerate(zip(expected, found)) if want != got), None)
+        if index is None and len(expected) != len(found):
+            index = min(len(expected), len(found))
+        return index
+
+    @staticmethod
+    def _entry_at(entries, index):
+        """The entry at an index as a failure prints it, or that there is none."""
+        return repr(entries[index]) if index < len(entries) else "no row"
+
+    def _same_catalog(self, first, server, catalogs):
+        """The catalog of a server is the first server's: every trigger body, then the columns,
+        partitions and grants row by row. catalog() has already held both to the trigger files'
+        names and coordinates, so a trigger can differ only by its body."""
+        expected, found = catalogs[first.service], catalogs[server.service]
+        for name, (table, event, timing, body) in expected["triggers"].items():
+            other = found["triggers"][name][3]
+            at = self._first_difference(body, other)
+            assert at is None, (f"{server.service}: the body of trigger {name} ({timing} {event} on {table}) differs "
+                                f"from {first.service} at character {at}: expected {body[max(0, at - 40):at + 80]!r}, "
+                                f"found {other[max(0, at - 40):at + 80]!r}")
+        for part in ("columns", "partitions", "grants"):
+            index = self._first_difference(expected[part], found[part])
+            assert index is None, (f"{server.service}: the {part} differ from {first.service} at row {index + 1}: "
+                                   f"expected {self._entry_at(expected[part], index)}, "
+                                   f"found {self._entry_at(found[part], index)}; {len(expected[part])} rows on "
+                                   f"{first.service}, {len(found[part])} on {server.service}")
+
+    def _same_journal(self, first, server, journals, batches):
+        """The journal of a server is the first server's, table by table and row by row; a failure
+        names the table, its first differing row, the rows the table holds on every server, and the
+        receipt and batch the row belongs to when it belongs to one."""
+        for table in JOURNAL_TABLES:
+            expected, found = journals[first.service][table], journals[server.service][table]
+            index = self._first_difference(expected, found)
+            if index is None:
+                continue
+            row = expected[index] if index < len(expected) else found[index]
+            counts = ", ".join(f"{service} {len(journal[table])}" for service, journal in journals.items())
+            raise AssertionError(f"{server.service}: the journal differs from {first.service} in {table} at row "
+                                 f"{index + 1}{self._row_owner(table, row, journals, batches)}: expected "
+                                 f"{self._entry_at(expected, index)}, found {self._entry_at(found, index)}; "
+                                 f"rows of {table}: {counts}")
+
+    def _row_owner(self, table, row, journals, batches):
+        """The receipt a journal row belongs to, followed up its parents on whichever server holds
+        them, and the batch whose window holds that receipt; '' for a row of no receipt."""
+        by_id = {name: {} for name in JOURNAL_TABLES}
+        for journal in journals.values():
+            for name, entries in journal.items():
+                for entry in entries:
+                    by_id[name].setdefault(entry["id"], entry)
+        for child, column, parent in (("hilos_change_log_value", "change_id", "hilos_change_log_change"),
+                                      ("hilos_change_log_change", "log_id", "hilos_change_log"),
+                                      ("hilos_change_log", "receipt_id", "hilos_change_log_receipt")):
+            if table == child and row is not None:
+                table, row = parent, by_id[parent].get(row[column])
+        if table != "hilos_change_log_receipt" or row is None:
+            return ""
+        if row["action"] != SETTINGS_TEST_WRITE or row["id"] in self.receipts_before:
+            return f", under receipt {row['id']} of {row['action']}"
+        at = int(row["created_at"])
+        holders = [batch for batch in batches if batch.started_ms <= at <= batch.finished_ms]
+        return f", under receipt {row['id']} of " + (" and ".join(self._batch_text(batch) for batch in holders)
+                                                     or "no batch")
+
+    def _bound_receipts(self, server, journal, batches):
+        """The receipts of the test write the base did not hold, in (created_at, id) order, each with
+        the one batch whose window holds its created_at; every batch holds as many receipts as its
+        outcome allows."""
+        receipts = sorted((row for row in journal["hilos_change_log_receipt"]
+                           if row["action"] == SETTINGS_TEST_WRITE and row["id"] not in self.receipts_before),
+                          key=lambda row: (int(row["created_at"]), int(row["id"])))
+        bound = []
+        for receipt in receipts:
+            at = int(receipt["created_at"])
+            holders = [batch for batch in batches if batch.started_ms <= at <= batch.finished_ms]
+            found = (f"the windows of {len(holders)}: " if holders else "none of the windows: ") + \
+                (", ".join(self._batch_text(batch) for batch in (holders or batches)) or "no batch")
+            assert len(holders) == 1, (f"{server.service}: unexplained receipt {receipt['id']} of "
+                                       f"{SETTINGS_TEST_WRITE} created at {at} ms: expected the window of exactly "
+                                       f"one batch, found {found}")
+            bound.append((holders[0], receipt))
+        allowed = {JOURNAL_CONFIRMED: (1, 1, "exactly one receipt"), JOURNAL_REFUSED: (0, 0, "no receipt"),
+                   JOURNAL_AMBIGUOUS: (0, 1, "at most one receipt")}
+        for batch in batches:
+            ids = [receipt["id"] for holder, receipt in bound if holder is batch]
+            low, high, expected = allowed[batch.outcome]
+            assert low <= len(ids) <= high, (f"{server.service}: {self._batch_text(batch)}: expected {expected}, "
+                                             f"found {len(ids)}: {ids}")
+        return bound
+
+    def _judge_receipt(self, server, batch, receipt):
+        """A receipt of the test write carries the command's attribution: the CLI channel, the
+        command as action and source, no actor, subject or session, the settings library's agent,
+        and no handover left open."""
+        expected = {"channel": JOURNAL_RECEIPT_CHANNEL, "action": SETTINGS_TEST_WRITE, "source": SETTINGS_TEST_WRITE,
+                    "actor_user_id": "NULL", "subject_user_id": "NULL", "session_id": "NULL",
+                    "agent": self.agent_id, "open_handovers": "0"}
+        differing = [column for column in expected if receipt[column] != expected[column]]
+        assert not differing, (f"{server.service}: receipt {receipt['id']} of {self._batch_text(batch)}: expected "
+                               f"{ {column: expected[column] for column in differing} }, "
+                               f"found { {column: receipt[column] for column in differing} }")
+
+    def _judge_writes(self, server, journal, bound, rows):
+        """Each bound receipt holds one write of hilos_setting per pair it wrote, in pair order, under
+        the record key of the pair's row: a create for the first write of a row the base did not
+        hold, carrying no change, else an update carrying the value change alone. Answers how many
+        writes the receipts hold."""
+        tables = {entry["id"]: entry["name"] for entry in journal["hilos_change_log_table"]}
+        fields = {entry["id"]: f"{tables.get(entry['table_id'], entry['table_id'])}.{entry['name']}"
+                  for entry in journal["hilos_change_log_field"]}
+        logs = defaultdict(list)
+        for entry in journal["hilos_change_log"]:
+            logs[entry["receipt_id"]].append(entry)
+        changes = defaultdict(list)
+        for entry in journal["hilos_change_log_change"]:
+            changes[entry["log_id"]].append(entry)
+        records = {key: f"[{row_id}]" for key, (row_id, _) in rows.items()}
+        written = set(self.settings_before)
+        count = 0
+        for batch, receipt in bound:
+            where = f"{server.service}: {self._batch_text(batch)}, receipt {receipt['id']}"
+            own = logs[receipt["id"]]
+            for log in own:
+                assert tables.get(log["table_id"]) == "hilos_setting", \
+                    f"{where}: expected writes of hilos_setting, found a write of {tables.get(log['table_id'])}: {log}"
+            seen = [log["record_key"] for log in own]
+            repeated = next((record for i, record in enumerate(seen) if record in seen[:i]), None)
+            assert repeated is None, (f"{where}: duplicate write of hilos_setting {repeated}: expected one write per "
+                                      f"pair, found {seen.count(repeated)}")
+            expected = [records.get(key) for key, _ in batch.pairs]
+            if batch.outcome == JOURNAL_CONFIRMED:
+                missing = [f"{key} {record or '(no row)'}" for (key, _), record in zip(batch.pairs, expected)
+                           if record is None or record not in seen]
+                assert not missing, (f"{where}: missing write of {', '.join(missing)}: expected one write per pair "
+                                     f"{expected}, found {seen}")
+                assert seen == expected, f"{where}: expected the writes in pair order {expected}, found {seen}"
+            else:
+                assert seen == expected[:len(seen)], \
+                    f"{where}: expected the writes of a prefix of the pairs {expected}, found {seen}"
+            for log, (key, _) in zip(own, batch.pairs):
+                mutation = "update" if key in written else "create"
+                written.add(key)
+                assert log["mutation_type"] == mutation, \
+                    f"{where}: expected a {mutation} of {key} {log['record_key']}, found a {log['mutation_type']}"
+                carried = [{"field": fields.get(change["field_id"], change["field_id"]), "kind": change["kind"],
+                            "old_present": change["old_present"], "new_present": change["new_present"],
+                            "old_value": change["old_value"], "new_value": change["new_value"]}
+                           for change in changes[log["id"]]]
+                assert carried == ([JOURNAL_VALUE_CHANGE] if mutation == "update" else []), \
+                    (f"{where}: expected the {mutation} of {key} {log['record_key']} to carry "
+                     f"{'the value change ' + repr(JOURNAL_VALUE_CHANGE) if mutation == 'update' else 'no change'}, "
+                     f"found {carried or 'none'}")
+            count += len(own)
+        return count
+
+    def _holds_values(self, server, rows, first_rows, batch):
+        """A server's example rows are the first server's rows holding the values of `batch`."""
+        for key, value in batch.pairs:
+            expected = (first_rows[key][0], value)
+            assert rows.get(key) == expected, (f"{server.service}: hilos_setting {key} after the last confirmed "
+                                               f"{self._batch_text(batch)}: expected (id, value) {expected}, "
+                                               f"found {rows.get(key)}")
+
+
+def scenario_50_journal_is_one_logical_set_on_every_server():
+    """The journal and its triggers reached every database server once, and no copy's triggers
+    journaled what it received (HIL-2039).
+
+    Write the example settings through the settings library's test command in batches, one at a
+    time - confirmed ones and a refused one between them - and let every replica take them; then
+    hold every server of the stand to one catalog and one journal with the JournalOracle. That
+    proves each server holds the project's triggers, the same schema, partitions and grants and the
+    same logical set of journal entries; that a confirmed batch journaled one receipt with one write
+    per pair and a refused one none; and that a copy's own triggers did not fire on what reached it
+    - a replica reading the ROW binary log, a Galera data node applying a write-set - since a second
+    journal entry on any server would part it from the first. Physical copies of one entry on
+    different servers are not duplicates.
+
+    It restarts nothing and builds no load. An ordinary restart of a node is scenario 40's (on
+    online-testing); a database server lost and caught up again is HIL-2040, HIL-2041 and HIL-2042's;
+    exactly-once business operations when a reply is lost are not promised here.
+    """
+    wait_converge(ALL_NODES)
+    oracle = JournalOracle()
+    oracle.start()
+    # A replica that no Hilos node depends on gets the application user, both schemas and the
+    # triggers by replication alone, so on a fresh stand it may not hold them when the mesh has
+    # converged: read its catalog only after it answers as that user and holds what its primary wrote.
+    for replica in STAND.database_replicas:
+        wait_replica_answers(replica.service)
+    oracle.settle()
+    for server in STAND.database_servers:
+        oracle.catalog(server)
+    # One refused batch between confirmed ones: a refusal that left a receipt or a write behind
+    # sits between two batches that each left exactly one.
+    for expected in (JOURNAL_CONFIRMED, JOURNAL_CONFIRMED, JOURNAL_REFUSED, JOURNAL_CONFIRMED, JOURNAL_CONFIRMED):
+        batch = oracle.write_batch(oracle.refused_pairs() if expected == JOURNAL_REFUSED else oracle.next_pairs())
+        assert batch.outcome == expected, (f"{JournalOracle._batch_text(batch)} came to {batch.outcome}, "
+                                           f"expected {expected}: {batch.detail}")
+    oracle.settle()
+    judged = oracle.verify(oracle.batches())
+
+    library = f"{SETTINGS_LIBRARY_AGENT_TYPE} on {oracle.node_id}"
+    if len(STAND.database_sql_backends) > 1:
+        hostname = application_session(oracle.node_id, "primary")["databaseMember"]
+        library += f" via {database_members_by_hostname().get(hostname, hostname)}"
+    copies = []
+    for server in STAND.database_servers:
+        journal = oracle.journal(server)
+        receipts = {row["id"] for row in journal["hilos_change_log_receipt"]
+                    if row["action"] == SETTINGS_TEST_WRITE and row["id"] not in oracle.receipts_before}
+        writes = sum(1 for row in journal["hilos_change_log"] if row["receipt_id"] in receipts)
+        copies.append(f"{server.service} {len(receipts)} receipt(s), {writes} write(s)")
+    return f"{library}; {judged}; {', '.join(copies)}"
 
 
 def scenario_40_journal_triggers_are_installed_once():
@@ -6010,6 +6531,10 @@ SCENARIOS = [
     Scenario("40 journal triggers are installed once", scenario_40_journal_triggers_are_installed_once, Need(nodes=2)),
     Scenario("49 application connections read what was written",
              scenario_49_application_connections_read_what_was_written, Need(nodes=2)),
+    # After 49 and long before 31, which on Gallery then finds these writes caught up by the
+    # replica too. Two database members, because one server has no copy to compare.
+    Scenario("50 journal is one logical set on every server", scenario_50_journal_is_one_logical_set_on_every_server,
+             Need(nodes=2, database_members=2)),
     Scenario("1 master-slave mesh", scenario_1_master_slave_mesh, Need(masters=1, slaves=1)),
     Scenario("2 master-master", scenario_2_master_master, Need(masters=1)),
     Scenario("3 placement", scenario_3_placement, Need(slaves=1)),

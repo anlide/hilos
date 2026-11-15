@@ -21,7 +21,7 @@ name: hilos-file-gallery-manager-cluster${HILOS_STAND_SUFFIX:-}
 x-hilos-cluster:
   cli: file-gallery-manager-cluster-cli
   entry: file-gallery-manager-cluster-entry
-  scenarios: [31]
+  scenarios: [31, 50]
   e2e:
     runner: file-gallery-manager-cluster-e2e-runner
 

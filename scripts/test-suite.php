@@ -368,7 +368,8 @@ $steps = array_merge($steps, [
         'downsStand' => true,
     ],
     // The file-gallery-manager fleet: two masters without capacity and three slave workers,
-    // on a MariaDB primary with a read-only replica. Scenario 31 checks the replica only.
+    // on a MariaDB primary with a read-only replica. Scenario 50 holds the primary and the
+    // replica to one journal, and scenario 31 checks the replica.
     // The stand group keeps a browser step from running beneath the scenario matrix; takes
     // its stand down at any outcome, for the reason binance-btc-tracker-cluster does.
     // Seconds: a rough estimate after online-testing, allowing for five nodes and a replica;
@@ -402,7 +403,8 @@ $steps = array_merge($steps, [
     ],
     // The fleet of roblox-game-server (HIL-2029): three masters and one slave over a MariaDB
     // Galera cluster of two data members and an arbitrator behind HAProxy. Scenario 26 writes
-    // through both data members, scenario 49 reads what one node wrote through the other one.
+    // through both data members, scenario 49 reads what one node wrote through the other one,
+    // and scenario 50 holds both data members to one journal.
     // Beside the other fleets and any e2e step, in the group of its stand, so that a browser step
     // over the same compose project would not run beneath it (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The

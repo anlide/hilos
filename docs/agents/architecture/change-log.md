@@ -1006,13 +1006,24 @@ concert-tickets (not in the code yet — HIL-2041). The shared harness keeps the
 shape guards of all four; the carriers are in
 [The cluster stands](../testing.md#the-cluster-stands--six-demos-six-shapes).
 This leaf (HIL-1621) does not establish non-duplication on Galera or trigger
-behavior on a replica; those guarantees need their future carriers as well as
-journal scenarios.
+behavior on a replica; those guarantees needed carriers of their own as well as
+journal scenarios, and scenario 50 below carries them.
 
-Every Galera data member and replica must have the same schema, grants,
-trigger definitions and logical set of journal entries before and after an
-ordinary restart and catch-up; physical copies of one entry on different
-servers do not count as duplicates (not in the code yet — HIL-2039).
+Every Galera data member and replica holds the same schema, grants, trigger
+definitions, journal partitions and logical set of journal entries; physical
+copies of one entry on different servers do not count as duplicates. Scenario
+50 in `framework/docker/cluster/scenarios.py` proves it on file-gallery-manager,
+a primary and its replica reading the ROW binary log, and on
+roblox-game-server, a Galera of two data nodes and `garbd`. It writes the
+settings library's example settings through `test:settings:write`, in
+confirmed batches with a refused one between them, and holds every server to
+one catalog and one journal: one receipt with one write per pair for each
+confirmed batch, none for the refused one, and no entry of a copy's own
+triggers. Concert-tickets carries no scenario 50: its three-data-node Galera
+replicates by the same mechanism as roblox-game-server's, and the same oracle
+holds its three servers in the proof below that a member is lost and returned
+(not in the code yet — HIL-2041). An ordinary restart of a node is scenario
+40's, on online-testing.
 Roblox proves the journal after Galera data-node and arbitrator failures
 (not in the code yet — HIL-2040). Concert-tickets proves it after a member is
 lost and returned (not in the code yet — HIL-2041). File-gallery-manager proves
