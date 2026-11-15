@@ -857,9 +857,9 @@ or a container memory limit.
 | file-gallery-manager | Hilos | One slave is lost, masters healthy | Its work moves to the remaining capacity. | (not in the code yet — HIL-2037) |
 | file-gallery-manager | DB | Replica is lost | The primary is unaffected. | (not in the code yet — HIL-2042) |
 | file-gallery-manager | DB | Primary is lost | The database is unavailable until the primary is safely restored; no promotion and no read from the replica. | (not in the code yet — HIL-2042) |
-| concert-tickets | Hilos | Two of five masters are lost | Quorum 3 of 5 holds and work continues. | (not in the code yet — HIL-2038) |
-| concert-tickets | Hilos | Three masters are lost | Work stops. | (not in the code yet — HIL-2038) |
-| concert-tickets | Hilos | 3:2 partition, with the old leader and its working agents in the minority | The majority continues; the minority leader stops its work; one executor after recovery. | (not in the code yet — HIL-2038) |
+| concert-tickets | Hilos | Two of five masters are lost | Quorum 3 of 5 holds and work continues. | `ClusterConsensusConfigTest` (a set of five takes a quorum of three); 5 leader-kill re-election on binance-btc-tracker |
+| concert-tickets | Hilos | Three masters are lost | Work stops. | `ClusterConsensusConfigTest`; 7 quorum-loss on binance-btc-tracker; a master left without a quorum stops its placed work — the working-master cut-off scenario of roblox-game-server (not in the code yet — HIL-2036); with no leader possible the stand's placed work stops — the leader-of-two-lost scenario of file-gallery-manager (not in the code yet — HIL-2037) |
+| concert-tickets | Hilos | 3:2 partition, with the old leader and its working agents in the minority | The majority continues; the minority leader stops its work; one executor after recovery. | 24 cut-off leader stops its work on online-testing (parked, F-013); a working follower master cut off stops its work — the working-master cut-off scenario of roblox-game-server (not in the code yet — HIL-2036) |
 | concert-tickets | DB | One of three data nodes is lost and returned | Writes continue through the survivors without restarting Hilos; the returned member catches up and takes new connections only when Synced. | (not in the code yet — HIL-2041) |
 
 Acceptance proves Hilos and database failures separately, keeping the other
