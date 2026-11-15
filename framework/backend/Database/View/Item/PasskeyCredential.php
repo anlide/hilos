@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Database\Actions\Item\PasskeyCredentialActions;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
@@ -19,6 +20,7 @@ use Hilos\HilosException;
  * a field the list shows has to be readable here.
  *
  * @extends DbItem<ObjectPasskeyCredential>
+ * @property-read PasskeyCredentialActions $actions
  * @property-read ?int $id
  * @property-read int $identityId
  * @property-read int $userId

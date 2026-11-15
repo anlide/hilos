@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Auth\AccountOperation\AccountMergeTransfer;
+use Hilos\HilosException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
@@ -64,6 +66,25 @@ abstract class DbActions
     protected function getObjectCollection(): ?Objects
     {
         return $this->item->getObjectCollection();
+    }
+
+    /**
+     * Transfers a clean selected row without widening its ordinary write grant.
+     *
+     * @param AccountMergeTransfer $transfer Active give capability
+     * @throws WriteNotAllowedException When the action is detached, dirty, new or outside the right
+     * @throws HilosException When the row guard or scoped save fails
+     */
+    protected function transferSelectedForMerge(AccountMergeTransfer $transfer): void
+    {
+        $object = $this->object;
+        $collection = $this->getObjectCollection();
+        if ($collection === null || !$object->isRelated() || $object->hasChanges()) {
+            throw new WriteNotAllowedException('A merge transfer action requires a clean saved row.');
+        }
+        $transfer->guardRow($collection->getCollectionKey(), $object);
+        $object->userId = $transfer->survivorUserId;
+        $object->syncForMerge($transfer);
     }
 
     /**

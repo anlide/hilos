@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Auth\AccountOperation\AccountMergeTransfer;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -14,6 +15,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
+use Hilos\HilosException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
 use Hilos\Database\View\Item\SecondFactor;
@@ -27,6 +29,17 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 class SecondFactorActions extends DbActions
 {
+    /**
+     * Gives this selected row to the survivor of the admitted merge.
+     *
+     * @param AccountMergeTransfer $transfer Active give capability
+     * @throws HilosException When the row, capability or scoped save refuses the transfer
+     */
+    public function transferForMerge(AccountMergeTransfer $transfer): void
+    {
+        $this->transferSelectedForMerge($transfer);
+    }
+
     /**
      * Finishes the enrolment: the authenticator becomes part of the person's second factor.
      *

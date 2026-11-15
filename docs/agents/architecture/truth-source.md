@@ -420,14 +420,11 @@ keeps a set key and not a list of rows collected at the start.
 **A row given from one set to another is the account merge's case.** The
 refusal above — a set claim does not move a row, only the holder of the whole
 table does — is why the merge of two accounts is the sessions holder's today
-([A Merged Account](people-table.md#a-merged-account)). The approved research
-design names a narrower right for the loser's agent: to give its rows away
-under one operation, judged by that operation's record and not by the width of
-a claim ([The Transfer Right](account-operations.md#the-transfer-right)). That
-operation-scoped door is prepared over the strict guard
-(not in the code yet — HIL-1991). It remains design and not code: no door for
-it exists in the tree, no width or mode is added here, and a set claim moving
-a row is refused as this section says.
+([A Merged Account](people-table.md#a-merged-account)). The narrow,
+operation-scoped entry and its selected item action are described in
+[The Transfer Right](account-operations.md#the-transfer-right). They add no
+claim width or mode; ordinary set writes still refuse a move as this section
+says.
 
 **One statement over one set asks for that set whole.** An UPDATE or DELETE cut
 by one value of the set column — every notification of one recipient, every

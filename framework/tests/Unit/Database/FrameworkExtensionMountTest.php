@@ -6,15 +6,20 @@ namespace Hilos\Tests\Unit\Database;
 
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Item\IdentityActions;
+use Hilos\Database\Actions\Item\PasskeyCredentialActions;
 use Hilos\Database\Actions\Item\SettingActions;
 use Hilos\Database\Context\FrameworkExtension;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Collection\Identities as EntityIdentities;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
+use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
+use Hilos\Database\Entity\Collection\PasskeyCredentials as EntityPasskeyCredentials;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
 use Hilos\Database\Exception\FrameworkExtensionException;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
+use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredentials;
 use Hilos\Database\Object\Collection\VerifierCircleMembers as ObjectVerifierCircleMembers;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
@@ -61,6 +66,7 @@ use Hilos\Database\View\Collection\UserVerifications as DbCollectionUserVerifica
 use Hilos\Database\View\Collection\VerifierCircleMembers as DbCollectionVerifierCircleMembers;
 use Hilos\Database\View\Collection\AccountOperationResults as DbCollectionAccountOperationResults;
 use Hilos\Database\View\Item\Identity;
+use Hilos\Database\View\Item\PasskeyCredential;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Tests\Unit\Database\Fixtures\Extension\NotedMemberObjects;
@@ -182,6 +188,38 @@ final class FrameworkExtensionMountTest extends TestCase
         $this->assertSame(self::FRAMEWORK_VIEWS, $mounted);
         $this->assertCount(count(self::FRAMEWORK_VIEWS), $context->getObjectCollectionClasses());
         $this->assertSame(IdentityActions::class, $context->getDbItemCollection(HilosDbContext::identities)->getItemActionsClass());
+        $this->assertSame(PasskeyCredentialActions::class,
+            $context->getDbItemCollection(HilosDbContext::passkeyCredentials)->getItemActionsClass());
+    }
+
+    public function testPasskeyItemActionsSurviveAWholeProjectExtension(): void
+    {
+        $context = new DeclaringDbContext([
+            HilosDbContext::passkeyCredentials => new FrameworkExtension(
+                ExtendedPasskeyViews::class,
+                itemActions: ExtendedPasskeyActions::class,
+            ),
+        ]);
+        $context->configure();
+        $previousDb = Hilos::$db;
+        Hilos::$db = $context;
+        try {
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
+        } finally {
+            Hilos::$db = $previousDb;
+        }
+        /** @var ExtendedPasskeyViews $view */
+        $view = $context->getDbItemCollection(HilosDbContext::passkeyCredentials);
+        $object = ExtendedPasskeyObject::create();
+        $credential = $view->wrap($object);
+        self::assertInstanceOf(ExtendedPasskeyItem::class, $credential);
+        self::assertInstanceOf(PasskeyCredentialActions::class, $credential->actions);
+        self::assertInstanceOf(ExtendedPasskeyActions::class, $credential->actions);
+        self::assertSame($object, $credential->actions->object);
+        self::assertSame(ExtendedPasskeyEntity::class, $object::ENTITY_CLASS);
+        self::assertSame(ExtendedPasskeyActions::class, $view->getItemActionsClass());
+        self::assertSame(Objects::LAZY_STRATEGY_KEY,
+            $context->mountedObjectCollection(HilosDbContext::passkeyCredentials)->getLazyStrategy());
     }
 
     public function testIdentityItemActionsSurviveAWholeProjectExtension(): void
@@ -406,6 +444,51 @@ final class ExtendedIdentityViews extends DbCollectionIdentities
      * @return Identity Item built by the real collection factory with its mounted actions
      */
     public function wrap(ExtendedIdentityObject $object): Identity
+    {
+        return $this->createDbItem($object);
+    }
+}
+
+/** A complete project passkey chain extends the framework's newly mounted item actions. */
+final class ExtendedPasskeyEntity extends EntityPasskeyCredential
+{
+}
+
+final class ExtendedPasskeyEntities extends EntityPasskeyCredentials
+{
+    public const string ENTITY_CLASS = ExtendedPasskeyEntity::class;
+}
+
+final class ExtendedPasskeyObject extends ObjectPasskeyCredential
+{
+    public const string ENTITY_CLASS = ExtendedPasskeyEntity::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedPasskeyObjects::class;
+}
+
+final class ExtendedPasskeyObjects extends ObjectPasskeyCredentials
+{
+    public const string OBJECT_CLASS = ExtendedPasskeyObject::class;
+    public const string ENTITY_COLLECTION_CLASS = ExtendedPasskeyEntities::class;
+}
+
+final class ExtendedPasskeyItem extends PasskeyCredential
+{
+}
+
+final class ExtendedPasskeyActions extends PasskeyCredentialActions
+{
+}
+
+final class ExtendedPasskeyViews extends DbCollectionPasskeyCredentials
+{
+    public const string DB_ITEM_CLASS = ExtendedPasskeyItem::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedPasskeyObjects::class;
+
+    /**
+     * @param ExtendedPasskeyObject $object Unpersisted test row
+     * @return PasskeyCredential Item built by the real mounted collection factory
+     */
+    public function wrap(ExtendedPasskeyObject $object): PasskeyCredential
     {
         return $this->createDbItem($object);
     }

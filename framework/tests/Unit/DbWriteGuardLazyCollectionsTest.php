@@ -55,6 +55,7 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
     private const string OWN_SET = '42';
     private const string FOREIGN_SET = '7';
     private const string EXTERNAL = 'unit_guard_external';
+    private const string OTHER_AGENT = 'unit_guard_other_agent';
 
     private ?HilosDbContext $previousDb;
 
@@ -226,6 +227,116 @@ final class DbWriteGuardLazyCollectionsTest extends TestCase
         $this->expectException(WriteNotAllowedException::class);
         $this->expectExceptionMessage("may not update rows of set '42'");
         $actions->writeSetPublic(self::OWN_SET);
+    }
+
+    /** @param int $strategy Mounted loading strategy that must not become a read */
+    #[DataProvider('lazyStrategies')]
+    public function testGiveSetAcceptsAnExactOwnedSetWithUpdateAlone(int $strategy): void
+    {
+        $context = new GuardedDbContext();
+        $context->mountFixture($strategy, external: false);
+        Hilos::$db = $context;
+        SourceInterestRegistry::readsWhatIsDelivered();
+        TruthSourceRegistry::register(
+            self::COLLECTION,
+            TruthSourceKeys::set(self::OWN_SET),
+            self::AGENT,
+            TruthSourceOperations::of(TruthSourceOperation::Update),
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+        $grants = new ReflectionProperty(TruthSourceRegistry::class, 'sources')->getValue();
+        $sql = new ReflectionProperty(Database::class, 'lastSql')->getValue();
+
+        TruthSourceRegistry::checkCanGiveSet(self::COLLECTION, self::OWN_SET);
+
+        self::assertSame($grants, new ReflectionProperty(TruthSourceRegistry::class, 'sources')->getValue());
+        self::assertSame($sql, new ReflectionProperty(Database::class, 'lastSql')->getValue());
+        self::assertFalse(SourceInterestRegistry::isDeclared(SourceChange::KIND_DB, self::COLLECTION));
+    }
+
+    /** @return iterable<string, array{?TruthSourceKeys, ?string}> Width and executor cases that cannot give the source set */
+    public static function refusedGiveSetClaims(): iterable
+    {
+        yield 'whole table' => [TruthSourceKeys::all(), self::AGENT];
+        yield 'listed rows' => [TruthSourceKeys::listed('1', '2'), self::AGENT];
+        yield 'empty width' => [TruthSourceKeys::listed(), self::AGENT];
+        yield 'foreign set' => [TruthSourceKeys::set(self::FOREIGN_SET), self::AGENT];
+        yield 'different spelling' => [TruthSourceKeys::set('042'), self::AGENT];
+        yield 'ambient set' => [TruthSourceKeys::set(self::OWN_SET), null];
+        yield 'ambient whole table' => [TruthSourceKeys::all(), null];
+        yield 'no grant' => [null, self::AGENT];
+        yield 'no executor' => [null, null];
+        yield 'another executor owns the set' => [TruthSourceKeys::set(self::OWN_SET), self::OTHER_AGENT];
+    }
+
+    /**
+     * @param ?TruthSourceKeys $keys Grant registered for the set owner, or none
+     * @param ?string $executor Current execution identity, or no executing agent
+     */
+    #[DataProvider('refusedGiveSetClaims')]
+    public function testGiveSetRefusesBroaderForeignOrAmbientClaims(?TruthSourceKeys $keys, ?string $executor): void
+    {
+        if ($keys !== null) {
+            TruthSourceRegistry::register(
+                self::COLLECTION,
+                $keys,
+                self::AGENT,
+                TruthSourceOperations::of(TruthSourceOperation::Update),
+            );
+        }
+        ExecutionContext::setCurrentAgentId($executor);
+
+        $this->expectException(WriteNotAllowedException::class);
+        TruthSourceRegistry::checkCanGiveSet(self::COLLECTION, self::OWN_SET);
+    }
+
+    /** @return iterable<string, array{string, int}> Revocations and external metadata changes on every mounted strategy */
+    public static function giveSetChanges(): iterable
+    {
+        foreach (['remove only', 'unregistered', 'executor changed', 'external writer', 'external without executor'] as $change) {
+            foreach (self::lazyStrategies() as $strategyName => [$strategy]) {
+                yield "{$change}, {$strategyName}" => [$change, $strategy];
+            }
+        }
+    }
+
+    /**
+     * @param string $change Fact changed after a successful check
+     * @param int $strategy Mounted loading strategy
+     */
+    #[DataProvider('giveSetChanges')]
+    public function testGiveSetRechecksTheLiveGrantExecutorAndWriter(string $change, int $strategy): void
+    {
+        $external = str_starts_with($change, 'external');
+        $collection = $external ? self::EXTERNAL : self::COLLECTION;
+        TruthSourceRegistry::register(
+            $collection,
+            TruthSourceKeys::set(self::OWN_SET),
+            self::AGENT,
+            TruthSourceOperations::of(TruthSourceOperation::Update),
+        );
+        ExecutionContext::setCurrentAgentId(self::AGENT);
+        TruthSourceRegistry::checkCanGiveSet($collection, self::OWN_SET);
+
+        $context = new GuardedDbContext();
+        $context->mountFixture($strategy, external: $external);
+        Hilos::$db = $context;
+        SourceInterestRegistry::readsWhatIsDelivered();
+        match ($change) {
+            'remove only' => TruthSourceRegistry::register(
+                $collection,
+                TruthSourceKeys::set(self::OWN_SET),
+                self::AGENT,
+                TruthSourceOperations::of(TruthSourceOperation::Remove),
+            ),
+            'unregistered' => TruthSourceRegistry::unregisterAgent(self::AGENT),
+            'executor changed' => ExecutionContext::setCurrentAgentId(self::OTHER_AGENT),
+            'external without executor' => ExecutionContext::setCurrentAgentId(null),
+            'external writer' => null,
+        };
+
+        $this->expectException($external ? ExternalWriterException::class : WriteNotAllowedException::class);
+        TruthSourceRegistry::checkCanGiveSet($collection, self::OWN_SET);
     }
 
     /**

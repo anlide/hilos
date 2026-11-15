@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Closure;
+use Hilos\Auth\AccountOperation\AccountMergeTransfer;
 use Hilos\Constants\SignalConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -197,42 +199,18 @@ abstract class Object_
      */
     public function sync(): void
     {
-        $isCreate = !$this->entity->isRelated();
-        $before = $isCreate ? $this->entity->toArray() : $this->entitySync->toArray();
+        $this->save(fn () => $this->guardWrite(!$this->entity->isRelated()));
+    }
 
-        try {
-            Database::assertCanWrite($this->entity::getDatabase()->connectionIndex);
-            $this->guardWrite($isCreate);
-
-            if ($isCreate) {
-                $previous = [];
-                $this->entity->save();
-                $result = $this->entity->toArray();
-            } else {
-                $changedColumns = array_flip($this->getChangedColumns());
-                $result = array_intersect_key($this->entity->toArray(), $changedColumns);
-                $previous = array_intersect_key($this->entitySync->toArray(), $changedColumns);
-                $this->entity->saveDiff($this->entitySync);
-            }
-        } catch (HilosException $failure) {
-            if (!$isCreate) {
-                $this->revert();
-            }
-
-            throw $failure;
-        }
-
-        Database::onRollback(function () use ($isCreate, $before, $result, $previous): void {
-            $this->restoreSaved($before, related: !$isCreate);
-            if (!$isCreate) {
-                $this->announceUndoneUpdate($result, $previous);
-            }
-        }, index: $this->entity::getDatabase()->connectionIndex);
-        $this->entitySync = clone $this->entity;
-
-        // Outside the failure path on purpose: the row stands in the table by now, and an
-        // announcement that fails does not take the object back from it.
-        $this->broadcastDbSyncAfterSync($isCreate, $result, $previous);
+    /**
+     * Saves one selected source row through the scoped merge right and the ordinary save journal.
+     *
+     * @param AccountMergeTransfer $transfer Active give capability for this exact Object
+     * @throws HilosException When the right, mounted row, database or announcement refuses the save
+     */
+    public function syncForMerge(AccountMergeTransfer $transfer): void
+    {
+        $this->save(fn () => DbWriteGuard::guardMergeTransfer(static::getCollectionKey(), $this, $transfer));
     }
 
     /**
@@ -779,5 +757,48 @@ abstract class Object_
     public function __set(string $property, mixed $value): void
     {
         throw new DatabaseException("Property [{$property}] cannot be set or does not exist");
+    }
+
+    /**
+     * @param Closure(): void $guard Write door to judge inside the failure/revert boundary
+     */
+    private function save(Closure $guard): void
+    {
+        $isCreate = !$this->entity->isRelated();
+        $before = $isCreate ? $this->entity->toArray() : $this->entitySync->toArray();
+
+        try {
+            Database::assertCanWrite($this->entity::getDatabase()->connectionIndex);
+            $guard();
+
+            if ($isCreate) {
+                $previous = [];
+                $this->entity->save();
+                $result = $this->entity->toArray();
+            } else {
+                $changedColumns = array_flip($this->getChangedColumns());
+                $result = array_intersect_key($this->entity->toArray(), $changedColumns);
+                $previous = array_intersect_key($this->entitySync->toArray(), $changedColumns);
+                $this->entity->saveDiff($this->entitySync);
+            }
+        } catch (HilosException $failure) {
+            if (!$isCreate) {
+                $this->revert();
+            }
+
+            throw $failure;
+        }
+
+        Database::onRollback(function () use ($isCreate, $before, $result, $previous): void {
+            $this->restoreSaved($before, related: !$isCreate);
+            if (!$isCreate) {
+                $this->announceUndoneUpdate($result, $previous);
+            }
+        }, index: $this->entity::getDatabase()->connectionIndex);
+        $this->entitySync = clone $this->entity;
+
+        // Outside the failure path on purpose: the row stands in the table by now, and an
+        // announcement that fails does not take the object back from it.
+        $this->broadcastDbSyncAfterSync($isCreate, $result, $previous);
     }
 }

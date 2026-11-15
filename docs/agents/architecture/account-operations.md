@@ -1933,12 +1933,50 @@ afterwards, not `ALL` over the table, not a new `INSERT` under a new id — the
 ids are the point of the owner's decision. A transfer already performed under
 the same operation answers with the stored result and moves nothing twice. It
 is no general bypass of the write guard, and it changes neither `_setVia` nor
-the width of any claim (not in the code yet — HIL-1991). The door is built
-over HIL-1892's strict guard; ordinary `Update` still cannot write a foreign set.
+the width of any claim. The door is built over HIL-1892's strict guard;
+ordinary `Update` still cannot write a foreign set.
 
-The exact interface of that door, and of the metadata the record hands it, is
-a code leaf's, HIL-1991, at its own interview. This page has no standing to
-declare it built: the door does not exist in the tree today.
+Implemented in HIL-1991, the narrow entry is
+`AccountMergeTransfer::run()`. It accepts `int $assignmentId`,
+`AccountMergeTransferRows $rows`, and `Closure $work`; it returns
+`AccountOperationResult`.
+`AccountMergeTransferRows` is a final readonly value object with four explicit
+`list<int>` selections: `identities`, `passkeyCredentials`, `secondFactors`,
+and `secondFactorBackupCodes`. Each list accepts positive integers only and is
+normalized to ascending unique ids; empty lists are valid. `$work` is a
+synchronous `Closure(AccountMergeTransfer): AccountOperationResultPayload`,
+invoked once inside the participant transaction. For a selected row, item
+actions expose `transferForMerge(AccountMergeTransfer $transfer): void` on
+`IdentityActions`, `PasskeyCredentialActions`, `SecondFactorActions`, and
+`SecondFactorBackupCodeActions`. The action takes no collection or target. The
+right creates no `ALL`, `OWNS_DB_ROWS`, or ambient claim.
+
+The entry requires the loser's `go/give` assignment and its canonical owner as
+the current executor; source and target come only from the operation. It
+requires the exact reserved `prepare_survivor` and `prepare_loser` assignments
+and owner results for those accounts. It reads the operation fresh before the
+callback. Inside the participant's single `PRIMARY` transaction, it reads it
+fresh again under the existing metadata shared lock, held through the result's
+commit or rollback.
+A repeated step returns its stored result without running the callback or
+transferring rows again, including after the operation finishes.
+
+Admission names only clean, existing rows in the loser's set. It checks the
+live exact source-set `Update` grant at admission and on every row-action use;
+it captures the selected Object identities and passkey identity anchors, not
+secrets. Each transfer changes only `user_id` from loser to survivor, keeping
+row ids and anchors. A passkey follows only after its captured identity is
+persisted in the survivor's set. A factor must be confirmed and present in the
+loser's preparation snapshot. Factors and backup codes are admitted only when
+`secondFactorFate === SecondFactorFate::BOTH`; backup codes also require a
+nonempty confirmed-factor snapshot. On any other fate, both factor and
+backup-code lists must be empty. The synchronous callback joins the transaction
+and must not open or end a transaction or yield. The right closes in `finally`
+and on both commit and rollback. `syncForMerge()` uses the common
+ORM save path, including its memory rollback and commit-only announcements;
+ordinary `sync()` and `Update` keep their existing refusal. This API does not
+switch the administrator merge or `account:merge`; the old merge path and its
+borrowed grants remain until the live cutover.
 
 ### Merge Cutover And Observation
 

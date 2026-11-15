@@ -5,6 +5,17 @@ declare(strict_types=1);
 namespace Hilos\Core\TruthSource;
 
 use Closure;
+use Hilos\Auth\AccountOperation\AccountMergeTransfer;
+use Hilos\Database\Entity\Item\Identity as EntityIdentity;
+use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
+use Hilos\Database\Entity\Item\SecondFactor as EntitySecondFactor;
+use Hilos\Database\Entity\Item\SecondFactorBackupCode as EntitySecondFactorBackupCode;
+use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
+use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
+use Hilos\Database\Object\Item\SecondFactorBackupCode as ObjectSecondFactorBackupCode;
+use Hilos\Hilos;
+use Hilos\HilosException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\ExternalWriterException;
@@ -34,6 +45,51 @@ use Hilos\Notification\Delivery\NotificationDeliveryWriteGuard;
  */
 class DbWriteGuard
 {
+    /** @var array<string, class-string<Object_>> The only rows the merge door may save */
+    private const array MERGE_ROWS = [
+        HilosDbContext::identities => ObjectIdentity::class,
+        HilosDbContext::passkeyCredentials => ObjectPasskeyCredential::class,
+        HilosDbContext::secondFactors => ObjectSecondFactor::class,
+        HilosDbContext::secondFactorBackupCodes => ObjectSecondFactorBackupCode::class,
+    ];
+
+    /**
+     * Judges the narrow source-to-survivor update of a captured, mounted row.
+     *
+     * @param string $collection Key supplied by the Object's own collection declaration
+     * @param Object_ $item Proposed existing row
+     * @param AccountMergeTransfer $transfer Active give capability
+     * @throws WriteNotAllowedException When the mount, membership, source grant, target or changed columns refuse the save
+     * @throws HilosException When the saved source or passkey anchor cannot be read
+     */
+    public static function guardMergeTransfer(string $collection, Object_ $item, AccountMergeTransfer $transfer): void
+    {
+        $base = self::MERGE_ROWS[$collection] ?? null;
+        $mounted = Hilos::$db?->mountedObjectCollection($collection);
+        if ($base === null || $mounted === null || !$item instanceof $base
+            || $mounted::COLLECTION_KEY !== $collection || $mounted::OBJECT_CLASS !== $item::class
+            || $item::OBJECT_COLLECTION_CLASS === '' || !is_a($mounted, $item::OBJECT_COLLECTION_CLASS)) {
+            throw new WriteNotAllowedException('The merge transfer requires its actual mounted framework row chain.');
+        }
+        $entities = $mounted::ENTITY_COLLECTION_CLASS;
+        if ($entities::ENTITY_CLASS !== $item::ENTITY_CLASS
+            || !is_a($item::ENTITY_CLASS, $base::ENTITY_CLASS, true)) {
+            throw new WriteNotAllowedException('The merge transfer requires its mounted entity chain.');
+        }
+        $transfer->guardRow($collection, $item);
+        $allowed = match ($collection) {
+            HilosDbContext::identities => [EntityIdentity::user_id, EntityIdentity::updated_at],
+            HilosDbContext::passkeyCredentials => [EntityPasskeyCredential::user_id],
+            HilosDbContext::secondFactors => [EntitySecondFactor::user_id],
+            HilosDbContext::secondFactorBackupCodes => [EntitySecondFactorBackupCode::user_id],
+        };
+        $entity = $item::ENTITY_CLASS;
+        if ($item->valueForColumn($entity::user_id) !== $transfer->survivorUserId
+            || array_diff($item->getChangedColumns(), $allowed) !== []) {
+            throw new WriteNotAllowedException('A merge transfer may only move its source row to the survivor.');
+        }
+    }
+
     /**
      * Judges creating a row in a collection.
      *

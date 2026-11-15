@@ -73,14 +73,14 @@ it does not own. Finding an expired row does not make it the writer of that
 row. A library with no personal owner beside it may itself be the only writer,
 as with `settings`; see [entity-libraries.md](entity-libraries.md).
 
-The current set guard grants a cross-set move only to a whole-table claimant,
+The ordinary set guard grants a cross-set move only to a whole-table claimant,
 because one set claim cannot cover both origin and destination. This is the
 mechanism today, not a license to add such a claimant. The agreed terminal
 direction is each owner deleting its own rows in its own transaction, and
 the loser giving rows away under a narrow
 [operation right](account-operations.md#the-transfer-right), judged against
 the operation and both preparations without a new claim width or `_setVia`
-change (not in the code yet — HIL-1991). The old erasure
+change. The transfer door is built but has no live merge caller. The old erasure
 remains live until HIL-1952 (not in the code yet — HIL-1952), and the old merge
 until HIL-1999 (not in the code yet — HIL-1999); preparation stays inert.
 

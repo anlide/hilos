@@ -301,6 +301,12 @@ Use item actions when the operation naturally belongs to an existing item and
 needs that item's object state. Do not put update/delete logic in a page handler
 when an item action should own it.
 
+For a selected account-merge row, the scoped item action is called inside
+`AccountMergeTransfer::run()`, for example
+`Hilos::$db->identities[$id]->actions->transferForMerge($transfer)`; see
+[The Transfer Right](../architecture/account-operations.md#the-transfer-right).
+This entry does not widen ordinary item `Update`.
+
 ## Accessors And Settings
 
 The settings collection is available through `Hilos::$db->settings`.

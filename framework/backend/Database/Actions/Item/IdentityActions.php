@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Auth\AccountOperation\AccountMergeTransfer;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -21,6 +22,17 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 class IdentityActions extends DbActions
 {
+    /**
+     * Gives this selected row to the survivor of the admitted merge.
+     *
+     * @param AccountMergeTransfer $transfer Active give capability
+     * @throws HilosException When the row, capability or scoped save refuses the transfer
+     */
+    public function transferForMerge(AccountMergeTransfer $transfer): void
+    {
+        $this->transferSelectedForMerge($transfer);
+    }
+
     /**
      * Records an actual password change; rehashing alone does not call this action.
      *

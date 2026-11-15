@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Auth\AccountOperation\AccountMergeTransfer;
+use Hilos\HilosException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -71,15 +73,18 @@ class Identity extends Object_
      */
     public function sync(): void
     {
-        $now = TimeHelper::nowMs();
-        if (!$this->entity->isRelated()) {
-            $this->entity->created_at = $now;
-            $this->entity->updated_at = $now;
-        } elseif ($this->getChangedColumns() !== []) {
-            $this->entity->updated_at = $now;
-        }
-
+        $this->stamp();
         parent::sync();
+    }
+
+    /**
+     * @param AccountMergeTransfer $transfer Active give capability for this identity
+     * @throws HilosException When the scoped save refuses or fails
+     */
+    public function syncForMerge(AccountMergeTransfer $transfer): void
+    {
+        $this->stamp();
+        parent::syncForMerge($transfer);
     }
 
     /**
@@ -330,6 +335,18 @@ class Identity extends Object_
             self::passwordChangedAt => $this->entity->password_changed_at,
             self::providerName => $this->entity->provider_name,
         ];
+    }
+
+    /** Stamps creation and edits identically for both save doors. */
+    private function stamp(): void
+    {
+        $now = TimeHelper::nowMs();
+        if (!$this->entity->isRelated()) {
+            $this->entity->created_at = $now;
+            $this->entity->updated_at = $now;
+        } elseif ($this->getChangedColumns() !== []) {
+            $this->entity->updated_at = $now;
+        }
     }
 
     /**

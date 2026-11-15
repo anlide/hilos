@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\TruthSource;
 
 use Closure;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\ExternalWriterException;
@@ -457,6 +458,33 @@ class TruthSourceRegistry extends AbstractTruthSourceRegistry
             "with operations [" . $grant->operations->asText() . "] and may not " .
             "{$operation->value} rows of set '{$setKey}'."
         );
+    }
+
+    /**
+     * Giving a set requires the executing agent's own exact set grant with Update.
+     *
+     * @param string $collection Collection whose source set is being given
+     * @param string $sourceSetKey Exact key of the source set
+     * @throws ExternalWriterException When the collection is written outside the application
+     * @throws WriteNotAllowedException When no executing agent holds that exact set with Update
+     * @throws LogicException When the registered set key cannot be read
+     */
+    public static function checkCanGiveSet(string $collection, string $sourceSetKey): void
+    {
+        self::assertApplicationWritable($collection);
+        $agentId = ExecutionContext::currentAgentId();
+        if ($agentId === null) {
+            throw new WriteNotAllowedException('Give operation not allowed: an executing agent is required.');
+        }
+
+        $grant = self::grantOf($collection, $agentId);
+        if ($grant === null || !$grant->keys->coversSet() || $grant->keys->setKey() !== $sourceSetKey
+            || !$grant->allows(TruthSourceOperation::Update)) {
+            throw new WriteNotAllowedException(
+                "Give operation not allowed: agent '{$agentId}' must hold its own exact set '{$sourceSetKey}' " .
+                "with update on collection '{$collection}'."
+            );
+        }
     }
 
     /**

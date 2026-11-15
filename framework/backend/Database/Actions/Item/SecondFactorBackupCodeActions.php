@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Auth\AccountOperation\AccountMergeTransfer;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
+use Hilos\HilosException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\SecondFactorBackupCode as ObjectSecondFactorBackupCode;
 use Hilos\Database\View\Item\SecondFactorBackupCode;
@@ -22,6 +24,17 @@ use Hilos\Database\View\Item\SecondFactorBackupCode;
  */
 class SecondFactorBackupCodeActions extends DbActions
 {
+    /**
+     * Gives this selected row to the survivor of the admitted merge.
+     *
+     * @param AccountMergeTransfer $transfer Active give capability
+     * @throws HilosException When the row, capability or scoped save refuses the transfer
+     */
+    public function transferForMerge(AccountMergeTransfer $transfer): void
+    {
+        $this->transferSelectedForMerge($transfer);
+    }
+
     /**
      * Burns this code, if nobody burned it first.
      *
