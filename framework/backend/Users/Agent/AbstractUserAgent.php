@@ -14,6 +14,8 @@ use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalFinal;
 use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
+use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergePreparation;
 use Hilos\Auth\AccountOperation\AccountOperationActivation;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
@@ -218,6 +220,8 @@ use Throwable;
  * merge row, its rename journal, its capture and its own row, completes the deletion request, and
  * the agent stops after this last write ({@see finishAccountErasure()}, HIL-1942); the right to
  * delete the person's row, journal and merge row it receives at the switch (HIL-1952).
+ * The agent also checks its own side of a merge and records a reservation or refusal
+ * ({@see prepareForMerge()}, HIL-1988).
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -656,12 +660,28 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * Checks the person's own side of a merge and records the preparation in the participant transaction;
+     * a repeat returns the saved result without checking again.
+     * SCAFFOLD: the merge coordinator sends the preparation in HIL-2000.
+     *
+     * @param int $assignmentId Preparation assignment the coordinator gave this agent
+     * @return AccountOperationResult Committed preparation or the saved result of an earlier attempt
+     * @throws AccountOperationStepRefusedException When the caller, assignment or stage refuses new work
+     * @throws ValidationException When the assignment is not this person's own side of a merge preparation
+     * @throws Throwable When reading or recording fails, preserving the original failure
+     */
+    public function prepareForMerge(int $assignmentId): AccountOperationResult
+    {
+        return AccountMergePreparation::run($assignmentId, $this->userId);
+    }
+
+    /**
      * Writes one edit of the person and answers the coordinator that asked for it.
      *
      * A frame naming another person never reached the right agent, and is refused as such rather
      * than written: the claims of this agent cover its own person alone.
      *
-     * Account operation steps answer after start, capture, personal erasure or final; begun and folded
+     * Account operation steps answer after start, capture, personal erasure, final or merge preparation; begun and folded
      * accounts still serve these frames. The folded account stops after queuing its answer.
      * A frame of the second factor is answered by {@see SecondFactorPersonEdits}, whatever came of
      * it: the browser action, the sweep or the operator's command waits on the answer (HIL-1406).
@@ -709,6 +729,8 @@ abstract class AbstractUserAgent extends AbstractAgent
                         AccountErasureStart::personalKey($this->userId) => AccountErasureStart::run($assignment->id),
                         AccountErasureCapture::personalKey($this->userId) => $this->captureForErasure($assignment->id),
                         AccountErasureFinal::personalKey($this->userId) => $this->finishAccountErasure($assignment->id),
+                        AccountMergeDuty::PrepareSurvivor->value,
+                        AccountMergeDuty::PrepareLoser->value => $this->prepareForMerge($assignment->id),
                         default => AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
                             && AccountOperationExpectation::participantOf($assignment->payload) === AccountErasureParticipantCatalog::PERSONAL
                                 ? $this->eraseAccountPersonalPart($assignment->id)

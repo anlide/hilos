@@ -25,11 +25,12 @@ final class AccountErasureOpening
 {
     /**
      * A repeat for the same request records nothing new unless the census grew. An account of the
-     * circle already in another open erasure defers the opening without writing anything.
+     * circle in another open erasure, or named by an open merge, defers the opening without writing
+     * anything.
      *
      * @param AccountDeletion $request Deletion request the erasure answers
      * @param AccountErasureParticipantCatalog $catalog Participants of the installation
-     * @return AccountErasureOpeningResult Opened or recorded erasure with the assignments written, or the covering erasure's id
+     * @return AccountErasureOpeningResult Opened or recorded erasure and assignments, or the open erasure or merge id that defers it
      * @throws ValidationException When the request is no longer live and has no erasure yet
      * @throws Throwable When reading or recording fails; the operation and its assignments roll back together
      */
@@ -52,6 +53,9 @@ final class AccountErasureOpening
                 $covering = Hilos::$db->accountOperations->openErasureCovering($userId);
                 if ($covering !== null) {
                     return new AccountErasureOpeningResult(null, $covering->id, []);
+                }
+                foreach (Hilos::$db->accountOperations->openMergesNaming($userId) as $merge) {
+                    return new AccountErasureOpeningResult(null, $merge->id, []);
                 }
             }
             $operation = Hilos::$db->accountOperations->actions->recordErasure($request->id, $request->userId, $circle);

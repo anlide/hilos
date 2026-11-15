@@ -73,6 +73,16 @@ class AccountOperations extends DbCollection
     }
 
     /**
+     * @param int $userId Account named on either side of the merge
+     * @return static All open merges naming the account, in ascending primary id order
+     * @throws HilosException When the storage reader, a stored circle or the selection wrapper refuses the lookup
+     */
+    public function openMergesNaming(int $userId): static
+    {
+        return $this->selectionFor($this->objectCollection->openMergesNaming($userId));
+    }
+
+    /**
      * @param ?ObjectAccountOperation $object Persisted object, or domain absence
      * @return ?AccountOperation Its wrapper, retaining already issued object identity
      * @throws InvalidArgumentException When the object type does not match

@@ -272,6 +272,28 @@ class AccountOperations extends Objects
     }
 
     /**
+     * @param int $userId Account named on either side of the merge
+     * @return static All open merges naming the account, in ascending primary id order
+     * @throws HilosException When a page cannot be read or a stored circle is malformed
+     */
+    public function openMergesNaming(int $userId): static
+    {
+        $selection = static::initEmpty();
+        $afterId = 0;
+        do {
+            $page = $this->openPage(AccountOperationKind::Merge, $afterId, self::PAGE_LIMIT_MAX);
+            foreach ($page as $operationId => $operation) {
+                if ($operation->circle()->contains($userId)) {
+                    $selection->hydrate($operationId, $operation);
+                }
+                $afterId = (int)$operationId;
+            }
+        } while (count($page) === self::PAGE_LIMIT_MAX);
+
+        return $selection;
+    }
+
+    /**
      * @param int $afterId Exclusive primary id cursor
      * @param int $limit Maximum rows in this page
      * @throws ValidationException When the cursor or page size is invalid

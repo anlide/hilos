@@ -338,6 +338,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Refusal when an account of the merge is in the circle of an open erasure, from preparation on (HIL-1960). */
     public const string ACCOUNT_MERGE_BEING_DELETED_MESSAGE = '%s is being deleted';
 
+    /**
+     * Refusal when another open merge holds the account reservation (HIL-1988).
+     * The request judge uses the same sentence (HIL-2000).
+     */
+    public const string ACCOUNT_MERGE_OCCUPIED_MESSAGE = '%s is already being merged';
+
     /** Named end of a merge chain when that chain has no live account (HIL-1294). */
     public const string ACCOUNT_MERGE_ANOTHER_ACCOUNT = 'another account';
 

@@ -10,6 +10,8 @@ use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureFixedOwner;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeOpening;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountOperationCircle;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
@@ -503,6 +505,37 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
         self::assertNull($opened->deferredByOperationId);
         self::assertSame([self::FOLDED_ID, self::ROOT_ID], $opened->operation?->circle->toArray());
         self::assertCount(4, $opened->recorded);
+    }
+
+    /** An open merge naming the circle defers erasure until the merged loser joins the circle. */
+    public function testOpenIsDeferredBehindAnOpenMergeNamingAnAccountOfTheCircle(): void
+    {
+        AccountErasureCensusHilos::initBrowser();
+        self::seedMerge(self::FOLDED_ID, self::ROOT_ID);
+        $merge = AccountMergeOpening::open(
+            self::ROOT_ID,
+            self::OUTSIDER_ID,
+            new AccountMergeChoice(PasswordFate::SURVIVOR, SecondFactorFate::SURVIVOR, true, false),
+        );
+        $request = self::requestDeletion(self::ROOT_ID);
+        $stored = self::storedRows();
+
+        $deferred = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework());
+
+        self::assertNull($deferred->operation);
+        self::assertSame($merge->id, $deferred->deferredByOperationId);
+        self::assertSame([], $deferred->recorded);
+        self::assertNull(Hilos::$db->accountOperations->byRequest($request->id));
+        self::assertSame($stored, self::storedRows());
+
+        self::assertTrue($merge->actions->advance($merge->stage, AccountMergeStage::Go->value));
+        self::seedMerge(self::OUTSIDER_ID, self::ROOT_ID);
+        self::assertTrue($merge->actions->finish($merge->stage, AccountOperationOutcome::Completed));
+        $opened = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework());
+
+        self::assertNull($opened->deferredByOperationId);
+        self::assertSame([self::OUTSIDER_ID, self::FOLDED_ID, self::ROOT_ID], $opened->operation?->circle->toArray());
+        self::assertCount(6, $opened->recorded);
     }
 
     /** A failure on an assignment rolls the operation back together with the assignments written before it. */

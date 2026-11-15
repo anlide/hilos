@@ -135,8 +135,8 @@ co-owners. Old erasure rights remain until its live switch
 [erasure](account-operations.md#erasure) and [merge](account-operations.md#merge)
 canons give each prepared capability its own address. For merge, each owner
 checks its protection, shown flag and pending-removal refusals at preparation
-(not in the code yet — HIL-1988). Reservation restrictions cover protection
-changes and affected policy entrances, including late service frames
+(built, but with no live sender until HIL-2000). Reservation restrictions
+cover protection changes and affected policy entrances, including late service frames
 (not in the code yet — HIL-1989). The loser transfers or deletes its factor
 and backup codes by fate, preserving spent status, and removes its other
 second-factor rows with its result (not in the code yet — HIL-1992). The
