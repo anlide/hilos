@@ -433,6 +433,20 @@ The graph is where the safety lives, and two kinds of constraint carry it:
   same time, but a red one does not skip the others: `<demo>-php` is backend-only
   and keeps its own verdict when `<demo>-check` fails.
 
+**The built SDK packages — `fe-dist`.** Right after `fe-build`, one step checks what
+the build shipped: `test:dist` of `@hilos/vue`, `@hilos/react` and `@hilos/angular`
+(`test/packaging.smoke.mjs` in each) and `test:dist:consumer` of `@hilos/angular`
+(`test/packaging.consumer.mjs`), a real Angular CLI AOT build over the finalized APF.
+The consumer compiles with the toolchain installed in `demo/online-testing/frontend`
+and has no install of its own, so the step depends on `online-testing-check`, which
+installs it; when that check is red, `fe-dist` is skipped and the run carries no
+packaging verdict. The step runs all four under `--- dist:` headers and fails at the
+end, so one red check hides no other. `CI=1` turns the Angular disk cache off, and the
+consumer build leaves no root-owned `.angular/cache` in the demo. Its hint stays below
+90 s, which ranks it behind the integration catalog, into the free end of the run. A
+leaf that changes what a package exports updates these checks in the same leaf
+([frontend/sdk-packaging.md](frontend/sdk-packaging.md#public-entrypoints-and-their-graph)).
+
 **A database per piece.** Framework integration runs as four graph steps against
 the primary and remote database services. `framework-up` starts both, and
 `framework:databases` recreates each piece's separate databases on both servers;

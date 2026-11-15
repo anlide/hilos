@@ -121,6 +121,13 @@ Vue and React each have 23 runtime entries. Angular's source wrapper has no
 `admin-views/`, `status/` and `admin/<section>/package.json` forwarders point
 to the corresponding dist FESM and declaration.
 
+**Whoever changes an export updates the packaging checks, in the same leaf.**
+`test/packaging.smoke.mjs` of Vue, React and Angular and Angular's
+`test/packaging.consumer.mjs` assert what each built package exports and ships. A
+leaf that adds, removes or renames a public entry or an export updates those
+expectations itself; the full run checks them in step `fe-dist`
+([testing.md](../testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)).
+
 Angular uses real ng-packagr/APF secondary entries. Its required primary input,
 `src/apf-primary.ts`, contains only `export {}` and is internal, not a public
 entry. After ng-packagr generates the APF, `bin/finalize-apf.mjs` removes `.`

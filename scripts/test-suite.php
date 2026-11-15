@@ -264,6 +264,25 @@ $steps = array_merge($steps, [
         'tags' => ['framework', 'frontend'],
         'seconds' => 495,
     ],
+    // The four checks of what fe-build shipped (HIL-2119): `test:dist` of @hilos/vue,
+    // @hilos/react and @hilos/angular, and `test:dist:consumer`, a real Angular CLI AOT
+    // consumer of the finalized APF. The consumer compiles with the toolchain installed in
+    // demo/online-testing/frontend and has no install of its own: online-testing-check
+    // installs it with its first command, and a red check skips this step. No group: every
+    // check writes only to a temporary directory, and nothing writes the SDK dist after
+    // fe-build. CI=1 turns the Angular disk cache off, so the consumer build leaves no
+    // root-owned .angular/cache in the demo beside its dev server. Seconds: 50s, kept
+    // below 90 so the step ranks behind the integration catalog, into the free end of the run.
+    [
+        'id' => 'fe-dist',
+        'command' => 'composer run test:framework:frontend:dist',
+        'cwd' => '.',
+        'stand' => 'frontend',
+        'deps' => ['fe-build', 'online-testing-check'],
+        'group' => null,
+        'tags' => ['framework', 'frontend'],
+        'seconds' => 50,
+    ],
     // The fleet of binance-btc-tracker (HIL-1215): five nodes of the whole demo on one
     // database, and a stranger scenario 17 raises. It may run beside the other fleets and any
     // e2e step - no edge keeps them apart (the head of this file). It shares a group only with
