@@ -135,6 +135,23 @@ final class WorkerServerLeadershipGateTest extends TestCase
         }
     }
 
+    /** The delivery door waits for an order only in the follower's policy-placement cell. */
+    public function testOnlyAPolicyPlacedAgentOnAFollowerNeedsThePlacementOrder(): void
+    {
+        $server = $this->buildServer(new GateTestAgentManagerDaemon());
+        $this->installLeadership(new PendingLeadership());
+
+        $this->assertTrue($server->needsPlacementOrder(self::POLICY_TYPE));
+        $this->assertFalse($server->needsPlacementOrder(self::LEADER_TYPE));
+        $this->assertFalse($server->needsPlacementOrder(self::PER_NODE_TYPE));
+
+        $this->installLeadership(new StandaloneLeadership());
+        $this->assertFalse($server->needsPlacementOrder(self::POLICY_TYPE));
+
+        Hilos::$cluster = null;
+        $this->assertFalse($server->needsPlacementOrder(self::POLICY_TYPE));
+    }
+
     public function testStandaloneWithoutClusterContextStartsTheAgent(): void
     {
         $server = $this->buildServer(new GateTestAgentManagerDaemon());

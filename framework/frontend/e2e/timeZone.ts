@@ -94,7 +94,11 @@ export async function openProfileTimeZone(
   expect: Expect,
   page: Page,
 ): Promise<void> {
-  await clickSubmit(expect, page.getByTestId('profile-time-zone-change'))
+  // This button opens local state; its completion is the named, focused dialog.
+  // A scheduled-navigation wait can outlive an already open picker.
+  await clickSubmit(expect, page.getByTestId('profile-time-zone-change'), {
+    noWaitAfter: true,
+  })
   await expect(page.getByTestId('profile-time-zone-modal')).toBeVisible()
   await expect(page.getByTestId('modal')).toHaveAccessibleName('Time zone')
   await expect(page.getByTestId('profile-time-zone-search')).toBeFocused()

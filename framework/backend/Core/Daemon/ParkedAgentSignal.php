@@ -25,6 +25,9 @@ use Hilos\Core\Router\GroupOperationAuthority;
  * for the lift to bring that agent back, then for its start report like any start under way; it
  * is dropped only when the walk passed the agent without starting it here.
  *
+ * A policy-placed agent whose view names this node waits for the leader's start order (HIL-2121).
+ * Once the order starts it here, the hold waits for the ordinary start report.
+ *
  * A frame that arrived over the peer mesh is marked, because the sender already decided which
  * node hosts the agent and a hold must not reopen that question: released back into the placing
  * walk it could be forwarded a second time, and two nodes disagreeing about the host would pass
@@ -44,6 +47,7 @@ final readonly class ParkedAgentSignal
      * @param bool $awaitingPlacement Whether the wait is for a placement verdict rather than a start here
      * @param bool $localOnly Whether this frame already crossed the mesh, so it is never placed again
      * @param bool $awaitingResume Whether the frame is a connection's close waiting for the protected-mode lift to bring its agent back
+     * @param bool $awaitingPlacementOrder Whether this node awaits the leader's order to start the agent here
      * @param ?GroupOperationAuthority $groupOperation Original prepared authority, never recaptured at release
      */
     public function __construct(
@@ -53,6 +57,7 @@ final readonly class ParkedAgentSignal
         public bool $awaitingPlacement,
         public bool $localOnly = false,
         public bool $awaitingResume = false,
+        public bool $awaitingPlacementOrder = false,
         public ?GroupOperationAuthority $groupOperation = null,
     ) {
     }
@@ -69,6 +74,7 @@ final readonly class ParkedAgentSignal
             false,
             $this->localOnly,
             $this->awaitingResume,
+            $this->awaitingPlacementOrder,
             $this->groupOperation,
         );
     }
@@ -84,6 +90,24 @@ final readonly class ParkedAgentSignal
             $this->parkedAt,
             $this->awaitingPlacement,
             $this->localOnly,
+            false,
+            $this->awaitingPlacementOrder,
+            $this->groupOperation,
+        );
+    }
+
+    /**
+     * @return self The same hold, waiting on a start here rather than on the leader's order
+     */
+    public function withoutPlacementOrderWait(): self
+    {
+        return new self(
+            $this->signal,
+            $this->agentId,
+            $this->parkedAt,
+            $this->awaitingPlacement,
+            $this->localOnly,
+            $this->awaitingResume,
             false,
             $this->groupOperation,
         );

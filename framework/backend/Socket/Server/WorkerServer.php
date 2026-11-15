@@ -2493,7 +2493,7 @@ abstract class WorkerServer extends AbstractServer implements
         // is a no-op off-cluster.
         $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
         if (AgentRegistry::scope($registryEntry) === AgentScope::CLUSTER && !$this->amClusterLeader()) {
-            $placedByPolicy = AgentRegistry::placement($registryEntry) === AgentPlacement::POLICY;
+            $placedByPolicy = $this->needsPlacementOrder($agentType);
             if (!$placedByPolicy || !$placedByLeader) {
                 // Roll back the temporary record so a later promotion starts it cleanly.
                 if (!$agentExisted) {
@@ -3016,6 +3016,19 @@ abstract class WorkerServer extends AbstractServer implements
     public function isAgentAwaitingStopReport(string $agentId): bool
     {
         return isset($this->agentsAwaitingStopReport[$agentId]);
+    }
+
+    /**
+     * @param string $agentType Agent type whose start is addressed to this node
+     * @return bool Whether starting it here requires the cluster leader's placement order
+     */
+    public function needsPlacementOrder(string $agentType): bool
+    {
+        $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
+
+        return AgentRegistry::scope($registryEntry) === AgentScope::CLUSTER
+            && AgentRegistry::placement($registryEntry) === AgentPlacement::POLICY
+            && !$this->amClusterLeader();
     }
 
     /**

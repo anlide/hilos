@@ -447,7 +447,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
-     * A start the freeze or a placement gate refuses leaves no start under way, so there is nothing
+     * A start the freeze refuses leaves no start under way, so there is nothing
      * to wait for: the frame goes on to the delivery that answers it the way it always has.
      */
     public function testAFrameWhoseStartWasRefusedQuietlyIsNotHeld(): void
@@ -462,6 +462,161 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
             [HeldAgentSignalTestRouter::FROZEN_PUSH . '@' . HeldAgentSignalTestRouter::FROZEN_AGENT],
             $manager->workerServer->deliveries,
         );
+    }
+
+    /** The placement view can name this node before the leader's start order reaches it. */
+    public function testAFrameFromAnotherNodeAheadOfTheLeadersOrderWaitsAndReachesTheAgentAfterItsStart(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->placeOrderedAgent(AgentLocation::here());
+
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::ORDERED_AGENT, null, $this->forwardedSignal());
+        $manager->drainQueue();
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacementOrder);
+        $this->assertTrue($manager->heldFrames()[0]->localOnly);
+        $this->assertFalse($manager->heldFrames()[0]->awaitingPlacement);
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $this->assertSame([], $manager->refusedStarts);
+
+        $manager->workerServer->seatAgentUnderWay(HeldAgentSignalTestRouter::ORDERED_AGENT);
+        $manager->drainQueue();
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertFalse($manager->heldFrames()[0]->awaitingPlacementOrder);
+        $this->assertTrue($manager->heldFrames()[0]->localOnly);
+        $this->assertSame([], $manager->workerServer->deliveries);
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::ORDERED_AGENT);
+        $manager->drainQueue();
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame(
+            [self::FORWARDED_SIGNAL . '@' . HeldAgentSignalTestRouter::ORDERED_AGENT],
+            $manager->workerServer->deliveries,
+        );
+        $this->assertSame([], $manager->refusedStarts);
+    }
+
+    /** A frame originating here waits on the same order and start report. */
+    public function testAFrameOfThisNodeAheadOfTheLeadersOrderWaitsTheSameWay(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->placeOrderedAgent(AgentLocation::here());
+        $this->queuePush(HeldAgentSignalTestRouter::ORDERED_PUSH);
+        $manager->drainQueue();
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacementOrder);
+        $this->assertFalse($manager->heldFrames()[0]->localOnly);
+        $this->assertFalse($manager->heldFrames()[0]->awaitingPlacement);
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $this->assertSame([], $manager->refusedStarts);
+
+        $manager->workerServer->seatAgentUnderWay(HeldAgentSignalTestRouter::ORDERED_AGENT);
+        $manager->drainQueue();
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertFalse($manager->heldFrames()[0]->awaitingPlacementOrder);
+        $this->assertFalse($manager->heldFrames()[0]->localOnly);
+        $this->assertSame([], $manager->workerServer->deliveries);
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::ORDERED_AGENT);
+        $manager->drainQueue();
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame(
+            [HeldAgentSignalTestRouter::ORDERED_PUSH . '@' . HeldAgentSignalTestRouter::ORDERED_AGENT],
+            $manager->workerServer->deliveries,
+        );
+        $this->assertSame([], $manager->refusedStarts);
+    }
+
+    /** A local frame waiting for an order returns to placement when the view moves its agent. */
+    public function testAFrameOfThisNodeWaitingForTheOrderGoesWhereTheViewMovesTheAgent(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->placeOrderedAgent(AgentLocation::here());
+        $this->queuePush(HeldAgentSignalTestRouter::ORDERED_PUSH);
+        $manager->drainQueue();
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacementOrder);
+        $manager->placedReleases = [];
+
+        $this->placeOrderedAgent(AgentLocation::onNode(self::OTHER_NODE));
+        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')
+            ->invoke($manager, HeldAgentSignalTestRouter::ORDERED_AGENT, true);
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame([HeldAgentSignalTestRouter::ORDERED_AGENT], $manager->placedReleases);
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $this->assertSame([], $manager->refusedStarts);
+    }
+
+    /** A forwarded frame ahead of the local view is held before the placement ask can answer. */
+    public function testAFrameFromAnotherNodeAheadOfTheViewWaitsOnAPlacementVerdict(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->placeOrderedAgent(AgentLocation::unknown());
+
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::ORDERED_AGENT, null, $this->forwardedSignal());
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacement);
+        $this->assertTrue($manager->heldFrames()[0]->localOnly);
+        $this->assertFalse($manager->heldFrames()[0]->awaitingPlacementOrder);
+        $this->assertSame(1, $manager->placementAsks);
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $this->assertSame([], $manager->refusedStarts);
+        $manager->drainQueue();
+
+        $this->placeOrderedAgent(AgentLocation::here());
+        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')
+            ->invoke($manager, HeldAgentSignalTestRouter::ORDERED_AGENT, true);
+        $manager->drainQueue();
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertFalse($manager->heldFrames()[0]->awaitingPlacement);
+        $this->assertTrue($manager->heldFrames()[0]->awaitingPlacementOrder);
+        $this->assertTrue($manager->heldFrames()[0]->localOnly);
+        $this->assertSame([], $manager->workerServer->deliveries);
+
+        $manager->workerServer->seatAgentUnderWay(HeldAgentSignalTestRouter::ORDERED_AGENT);
+        $manager->drainQueue();
+
+        $this->assertCount(1, $manager->heldFrames());
+        $this->assertFalse($manager->heldFrames()[0]->awaitingPlacementOrder);
+        $this->assertSame([], $manager->workerServer->deliveries);
+
+        $manager->reportStarted(HeldAgentSignalTestRouter::ORDERED_AGENT);
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame(
+            [self::FORWARDED_SIGNAL . '@' . HeldAgentSignalTestRouter::ORDERED_AGENT],
+            $manager->workerServer->deliveries,
+        );
+        $this->assertSame([], $manager->refusedStarts);
+    }
+
+    /** A forwarded frame for another host is dropped without recording a failed local start. */
+    public function testAFrameFromAnotherNodeForAnAgentPlacedElsewhereIsDroppedWithoutARefusedStart(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $this->placeOrderedAgent(AgentLocation::onNode(self::OTHER_NODE));
+
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::ORDERED_AGENT, null, $this->forwardedSignal());
+        $manager->drainQueue();
+
+        $this->assertSame([], $manager->heldFrames());
+        $this->assertSame([], $manager->workerServer->deliveries);
+        $this->assertSame([], $manager->placedReleases);
+        $this->assertSame([], $manager->refusedStarts);
     }
 
     /**
@@ -1411,6 +1566,34 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
     }
 
     /**
+     * @param AgentLocation $location View of the agent whose start needs a leader's order
+     */
+    private function placeOrderedAgent(AgentLocation $location): void
+    {
+        $context = new ClusterContext();
+        $context->registerWorkerPlacement(new class ($location) implements WorkerPlacement {
+            /** @param AgentLocation $location Placement view this fixture reports */
+            public function __construct(private readonly AgentLocation $location)
+            {
+            }
+
+            /**
+             * @param string $agentType Agent type to look up
+             * @param ?string $agentIndex Agent index, or null for a singleton agent
+             * @return AgentLocation Configured view for the ordered agent, here for all others
+             */
+            public function locate(string $agentType, ?string $agentIndex): AgentLocation
+            {
+                return $agentType === HeldAgentSignalTestRouter::ORDERED_AGENT
+                    ? $this->location
+                    : AgentLocation::here();
+            }
+        });
+
+        Hilos::$cluster = $context;
+    }
+
+    /**
      * @return SignalDTO One frame shaped the way the peer transport hands one over
      */
     private function forwardedSignal(): SignalDTO
@@ -1545,6 +1728,9 @@ final class HeldAgentSignalTestManager extends DaemonManager
 
     /** @var list<string> Agent types the placing door was asked to reach, in order */
     public array $placedReleases = [];
+
+    /** @var list<string> Agents whose failed local start the delivery door recorded */
+    public array $refusedStarts = [];
 
     /** @var int Placement asks the release repeated while a frame waited on a verdict */
     public int $placementAsks = 0;
@@ -1700,6 +1886,8 @@ final class HeldAgentSignalTestManager extends DaemonManager
                 $parked->awaitingPlacement,
                 $parked->localOnly,
                 $parked->awaitingResume,
+                $parked->awaitingPlacementOrder,
+                $parked->groupOperation,
             );
         }
     }
@@ -1770,6 +1958,24 @@ final class HeldAgentSignalTestManager extends DaemonManager
         }
     }
 
+    /**
+     * @param string $agentId Agent whose refused start is observed
+     * @param string $agentLabel Agent as the journal names it
+     * @param string $signalType Type of the signal that asked for it
+     * @param string $signalName Name of the signal that asked for it
+     * @param HilosException $failure Failure the delivery door caught
+     */
+    protected function answerRefusedAgentStart(
+        string $agentId,
+        string $agentLabel,
+        string $signalType,
+        string $signalName,
+        HilosException $failure,
+    ): void {
+        $this->refusedStarts[] = $agentId;
+        parent::answerRefusedAgentStart($agentId, $agentLabel, $signalType, $signalName, $failure);
+    }
+
     protected function createSignalRouter(): SignalRouter
     {
         return new HeldAgentSignalTestRouter();
@@ -1800,6 +2006,8 @@ final class HeldAgentSignalTestRouter extends SignalRouter
 
     public const string FROZEN_AGENT = 'held_frozen_agent';
 
+    public const string ORDERED_AGENT = 'held_ordered_agent';
+
     public const string COLD_PUSH = 'cold_push';
 
     public const string COLD_FOLLOW_UP = 'cold_follow_up';
@@ -1812,11 +2020,15 @@ final class HeldAgentSignalTestRouter extends SignalRouter
 
     public const string FROZEN_CLOSE = 'frozen_close';
 
+    public const string ORDERED_PUSH = 'ordered_push';
+
     public const string COLD_COMMAND = 'cold:command';
 
     public const string COLD_HTTP_PATH = '/_test/cold';
 
     public const string COLD_PAGE = 'cold_room';
+
+    public const string ORDERED_PAGE = 'ordered_room';
 
     public const string UNPLACED_PAGE = 'unplaced_room';
 
@@ -1864,6 +2076,7 @@ final class HeldAgentSignalTestRouter extends SignalRouter
             self::SHARED_PUSH => [new AgentDestination(self::UP_AGENT), new AgentDestination(self::COLD_AGENT)],
             self::UP_PUSH => [new AgentDestination(self::UP_AGENT)],
             self::FROZEN_PUSH, self::FROZEN_CLOSE => [new AgentDestination(self::FROZEN_AGENT)],
+            self::ORDERED_PUSH, self::ORDERED_PAGE => [new AgentDestination(self::ORDERED_AGENT)],
             self::UNPLACED_PAGE => [new UnknownAgentDestination(self::COLD_AGENT)],
             self::UNPLACED_UP_PAGE => [new UnknownAgentDestination(self::UP_AGENT)],
             default => [],
@@ -1899,7 +2112,7 @@ final class HeldAgentSignalTestAgentManagerDaemon extends AgentManagerDaemon
 
 /**
  * A worker server whose start registers a record linked to a worker, as a start under way does,
- * except for the frozen agent, whose start it refuses quietly the way the freeze does.
+ * except for the frozen and ordered agents, whose starts the freeze or placement gate refuses quietly.
  */
 final class HeldAgentSignalTestWorkerServer extends WorkerServer
 {
@@ -1927,11 +2140,20 @@ final class HeldAgentSignalTestWorkerServer extends WorkerServer
     public function ensureAgentUp(string $agentType, ?string $agentIndex): void
     {
         $this->startedAgentTypes[] = $agentType;
-        if ($agentType === HeldAgentSignalTestRouter::FROZEN_AGENT) {
+        if ($agentType === HeldAgentSignalTestRouter::FROZEN_AGENT || $agentType === HeldAgentSignalTestRouter::ORDERED_AGENT) {
             return;
         }
 
         $this->seatAgentUnderWay($agentType);
+    }
+
+    /**
+     * @param string $agentType Agent type whose start needs the leader's order in this fixture
+     * @return bool Whether this is the fixture's ordered policy agent
+     */
+    public function needsPlacementOrder(string $agentType): bool
+    {
+        return $agentType === HeldAgentSignalTestRouter::ORDERED_AGENT;
     }
 
     /**

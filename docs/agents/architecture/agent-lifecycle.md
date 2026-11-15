@@ -118,7 +118,16 @@ not written behind the start, where a start that failed inside the worker would
 take it along: the master holds it until the worker reports `agent_started`, then
 hands it to that agent ahead of anything sent after it. A frame that met an empty
 address is held the same way, until the agent is up here or the placement view
-names the node that runs it. A start the worker refuses before it holds the agent
+names the node that runs it. A frame for a `CLUSTER`+`POLICY` agent can also reach
+a follower while its placement view names this node, before the leader's start
+order; it waits for that order (HIL-2121). Once a start is under way here, the
+frame joins the ordinary start-report wait and is delivered on `agent_started`;
+if the agent is already up, it goes straight to the agent. The hold has no timer.
+If the view names another node, a local frame returns through the delivery door
+to that node, while an already-forwarded frame is dropped with a warning. A
+forwarded frame whose view is unknown waits for the placement verdict; if the
+view becomes empty while a frame is waiting for the order, it returns through
+the delivery door. A start the worker refuses before it holds the agent
 — the state the agent reads did not arrive, the factory failed, a claim was
 refused — comes back as `agent_start_failed`: the master forgets the record it
 wrote, answers the held frames as a start refused on this node, and the next

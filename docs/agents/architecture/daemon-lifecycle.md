@@ -976,6 +976,9 @@ bootstrap-list path and direct project starts: a `NODE` replica starts anywhere,
 `CLUSTER`+`LEADER` singleton only where leadership sits, and a `CLUSTER`+`POLICY`
 singleton only where placement put it. Both defaults are fail-safe — an undeclared axis
 under-runs an agent (safe) rather than double-running a truth source (a correctness bug).
+On a follower whose placement view names this node, the gate refuses the start, not the
+frame: a `CLUSTER`+`POLICY` frame arriving before the leader's order waits at the master
+signal door, as described in [agent-lifecycle.md](agent-lifecycle.md).
 
 **Placing the policy agents.** `DaemonManager::ensurePolicyAgentsPlaced()` runs inside
 the leader gate, next to `ensureSingletonsStarted()`, and places every `CLUSTER`+`POLICY`

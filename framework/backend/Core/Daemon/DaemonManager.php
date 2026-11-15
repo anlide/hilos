@@ -12593,6 +12593,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param bool $awaitingPlacement Whether the wait is for a placement verdict rather than a start here
      * @param bool $localOnly Whether the frame arrived over the mesh, so the release never places it again
      * @param bool $awaitingResume Whether the frame is a connection's close waiting for the lift to bring its agent back
+     * @param bool $awaitingPlacementOrder Whether the leader's order to start the agent here has not arrived
      * @throws LogicException When a retained obligation changes its addressed agent
      */
     private function parkUntilAgentUp(
@@ -12601,6 +12602,7 @@ abstract class DaemonManager extends BaseManager implements
         bool $awaitingPlacement = false,
         bool $localOnly = false,
         bool $awaitingResume = false,
+        bool $awaitingPlacementOrder = false,
     ): void {
         $payload = $signal->data;
         if ($this->currentSignalDispatch !== null && !$this->currentSignalDispatch->hasWork()
@@ -12615,6 +12617,7 @@ abstract class DaemonManager extends BaseManager implements
             $awaitingPlacement,
             $localOnly,
             $awaitingResume,
+            $awaitingPlacementOrder,
             $this->currentSignalDispatch?->getSignal() === $signal ? $this->currentSignalDispatch->groupOperation : null,
         );
         $existing = $this->currentSignalDispatch?->heldId;
@@ -12963,6 +12966,30 @@ abstract class DaemonManager extends BaseManager implements
                 unset($parked, $hold);
                 yield;
                 continue;
+            }
+
+            if ($parked->awaitingPlacementOrder) {
+                if ($this->agentManagerDaemon->isAgentStarted($parked->agentId)) {
+                    $this->agentSignalHolds()->release($holdId);
+                    if ($preempted !== null) {
+                        $preempted->preemptHoldId = $holdId;
+                    }
+                    unset($parked, $hold);
+                    yield;
+                    continue;
+                }
+
+                if ($this->isAgentStartUnderWay($workerServer, $parked->agentId)) {
+                    $parked = $parked->withoutPlacementOrderWait();
+                } elseif (!$destination instanceof AgentDestination) {
+                    $this->agentSignalHolds()->release($holdId);
+                    if ($preempted !== null) {
+                        $preempted->preemptHoldId = $holdId;
+                    }
+                    unset($parked, $hold);
+                    yield;
+                    continue;
+                }
             }
 
             if ($parked->awaitingResume && !$workerServer->awaitsProtectedModeResume($agent->type, $agent->index)) {
@@ -13330,7 +13357,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param SignalDTO $signal Signal to deliver
      * @param bool $localOnly Whether a frame held here must never be placed again, which a forwarded one must not
      * @return AgentDeliveryOutcome Delivered, Held while the agent's start is under way or while a connection's
-     *     close waits for the protected-mode lift, ShutdownSkipped when the node is on its way out, or StartRefused
+     *     close waits for the protected-mode lift or placement awaits the leader, ShutdownSkipped on exit, or StartRefused
      * @throws InvalidArgumentException When a local report-now refusal cannot be named
      */
     private function sendSignalToAgentDestination(
@@ -13353,10 +13380,10 @@ abstract class DaemonManager extends BaseManager implements
             // An agent that has not reported its start is started here, as being addressed always
             // started it, and the frame waits in the master for the report instead of being written
             // behind the start: a start that fails inside the worker takes with it every frame
-            // written after it (HIL-629). Held only while a start is under way, and then for as
-            // long as it runs: the wait ends on a fact, never on a clock (HIL-1040). A start the
-            // freeze or a placement gate refuses quietly is not under way, and the frame goes on to
-            // the delivery below, which answers it the way it always has.
+            // written after it (HIL-629). A frame waits for as long as the start runs: the wait
+            // ends on a fact, never on a clock (HIL-1040). A policy agent
+            // whose view names this node also waits for the leader's start order (HIL-2121).
+            // A start the freeze refuses quietly goes on to the delivery below as before.
             if (!$this->agentManagerDaemon->isAgentStarted($agentId)) {
                 // The one frame a stopped agent is still owed: its worker keeps the subscription mirror,
                 // the reader interest, the page router's pages and the agent's subscriber sets through
@@ -13381,6 +13408,33 @@ abstract class DaemonManager extends BaseManager implements
                     $this->parkUntilAgentUp($signal, $agentId, false, $localOnly);
 
                     return AgentDeliveryOutcome::Held;
+                }
+
+                if ($workerServer->needsPlacementOrder($agentType)) {
+                    $placed = Hilos::$sr->placeAgentDestination(new AgentDestination($agentType, $agentIndex));
+                    if ($placed instanceof AgentDestination) {
+                        Logger::info("Signal {$signalType}/{$signalName} held for agent {$agentLabel}"
+                            . " until the leader's order to start it here arrives");
+                        $this->parkUntilAgentUp($signal, $agentId, false, $localOnly, false, true);
+
+                        return AgentDeliveryOutcome::Held;
+                    }
+
+                    if ($placed instanceof UnknownAgentDestination && $localOnly) {
+                        Logger::info("Signal {$signalType}/{$signalName} held for agent {$agentLabel}"
+                            . ' until the leader names its node');
+                        $this->parkUntilAgentUp($signal, $agentId, true, true);
+                        $this->requireOnDemandPlacement($agentType, $agentIndex);
+
+                        return AgentDeliveryOutcome::Held;
+                    }
+
+                    if ($placed instanceof RemoteAgentDestination && $localOnly) {
+                        Logger::warning("Peer signal dropped: {$signalType}/{$signalName} -> agent {$agentLabel}"
+                            . " is placed on node {$placed->nodeId}, not here");
+
+                        return AgentDeliveryOutcome::StartRefused;
+                    }
                 }
             }
 

@@ -15,13 +15,16 @@ export async function typeInto(field: Locator, value: string): Promise<void> {
  * Prepare an actionable submit button, then click it once. A render can replace
  * the DOM during scrolling or focus, so preparation retries independently of the
  * click. The caller waits for its own form's success or refusal afterwards.
+ * Navigation waiting can be disabled for controls whose outcome stays in place.
  *
  * @param expect The calling spec's Playwright expect.
  * @param button The submit-button locator.
+ * @param options Whether to skip the click's automatic navigation wait.
  */
 export async function clickSubmit(
   expect: Expect,
   button: Locator,
+  options: { noWaitAfter?: boolean } = {},
 ): Promise<void> {
   await expect(async () => {
     await button.scrollIntoViewIfNeeded()
@@ -29,5 +32,5 @@ export async function clickSubmit(
     await expect(button).toBeEnabled()
     await button.focus()
   }).toPass()
-  await button.click()
+  await button.click(options)
 }
