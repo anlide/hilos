@@ -665,6 +665,14 @@ export interface HilosUsersTable {
   readonly controller: TableViewportController<HilosUserRow>
   /** The current session's user id, or null before identity is known. */
   readonly currentUserId: ReadonlySignal<number | null>
+  /**
+   * The erasure caption above each row bar about an account being erased, by
+   * row key (the account's id as a string); a row whose bar is about other work
+   * has no entry (HIL-1956).
+   */
+  readonly erasures: ReadonlySignal<
+    ReadonlyMap<string, HilosUsersErasureCaption>
+  >
   /** Bind the table to the connection and request the first window — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
@@ -878,11 +886,27 @@ export function createHilosUsersTable<TUser extends User>(
 
     return typeof value === 'string' ? value : ''
   })
+  const erasures = computedSignal(() => {
+    const captions = new Map<string, HilosUsersErasureCaption>()
+
+    for (const [rowKey, bar] of controller.progress.rows.get()) {
+      const rowId = Number(rowKey)
+      const caption = Number.isInteger(rowId)
+        ? hilosUsersErasureCaption(bar, rowId)
+        : null
+
+      if (caption !== null) {
+        captions.set(rowKey, caption)
+      }
+    }
+    return captions
+  })
   const teardown: Array<() => void> = []
 
   return {
     controller,
     currentUserId: sessionUserId(context.scopes),
+    erasures,
     start() {
       teardown.push(
         bindTableViewport(
@@ -1845,6 +1869,102 @@ export function createHilosUserLifecycle(
  * Presentation copy for the users list.
  */
 export const HILOS_USERS_LIST_COPY = { you: 'You' } as const
+
+/**
+ * What the users list says above the bar of an account being erased
+ * (HIL-1956), beside the card's {@link HILOS_USER_ERASURE_COPY}.
+ */
+export const HILOS_USERS_ERASURE_COPY = {
+  count: '{done} of {total} parts done',
+  started: 'started {dateTime}',
+  more: '+{count} more',
+} as const
+
+/** How many entries one line of the list's erasure caption shows before "+N more". */
+export const HILOS_USERS_ERASURE_LIMIT = 3
+
+/** One line of the list's erasure caption: the entries it shows and what it leaves out. */
+export interface HilosUsersErasureList<L> {
+  /** The first entries, at most {@link HILOS_USERS_ERASURE_LIMIT}, in the wire's order. */
+  readonly shown: readonly L[]
+  /** "+N more" for the entries left to the card, or null when none are left out. */
+  readonly more: string | null
+}
+
+/** The caption the users list draws above the bar of an account being erased. */
+export interface HilosUsersErasureCaption {
+  /** "Erasure in progress", then the count of parts done and the start when known. */
+  readonly summary: string
+  /** The parts not done yet. */
+  readonly expected: HilosUsersErasureList<HilosUserErasurePartLine>
+  /** The owners still awaited. */
+  readonly waits: HilosUsersErasureList<HilosUserErasureWaitLine>
+  /** The refused finals. */
+  readonly refusals: HilosUsersErasureList<HilosUserErasureRefusalLine>
+}
+
+/**
+ * The caption above a users-list row's bar, or `null` when the bar is about
+ * other work. Only what stands in the way is listed: parts not done, owners
+ * awaited, refusals — the done parts are what the bar counts. A block that
+ * cannot be read leaves the summary alone and every list empty. An entry about
+ * another account of the row's circle names that account. The start is
+ * presented in the reader's zone, so call this inside a computed signal.
+ *
+ * @param progress The row's bar, as the table's viewport controller holds it.
+ * @param rowId The account the row shows.
+ */
+export function hilosUsersErasureCaption(
+  progress: HilosTableProgress,
+  rowId: number,
+): HilosUsersErasureCaption | null {
+  if (progress.progressKey !== HILOS_USERS_ERASURE_PROGRESS_KEY) {
+    return null
+  }
+  const erasure = readHilosUsersErasureBar(progress)
+  const summary: string[] = [HILOS_USER_ERASURE_COPY.inProgress]
+
+  if (erasure !== null && progress.total !== null) {
+    summary.push(
+      HILOS_USERS_ERASURE_COPY.count
+        .replace('{done}', String(progress.current))
+        .replace('{total}', String(progress.total)),
+    )
+  }
+  if (erasure !== null) {
+    summary.push(
+      HILOS_USERS_ERASURE_COPY.started.replace(
+        '{dateTime}',
+        formatMoment(erasure.startedAt, { kind: 'dateTime' }) ?? '—',
+      ),
+    )
+  }
+  const section = hilosUserErasureSection(erasure, rowId)
+
+  return {
+    summary: summary.join(' · '),
+    expected: erasureList(section?.parts.filter((part) => !part.done) ?? []),
+    waits: erasureList(section?.waits ?? []),
+    refusals: erasureList(section?.refusals ?? []),
+  }
+}
+
+/**
+ * Cut one caption line down to {@link HILOS_USERS_ERASURE_LIMIT} entries.
+ *
+ * @param entries Every entry of the line, in the wire's order.
+ */
+function erasureList<L>(entries: readonly L[]): HilosUsersErasureList<L> {
+  const rest = entries.length - HILOS_USERS_ERASURE_LIMIT
+
+  return {
+    shown: entries.slice(0, HILOS_USERS_ERASURE_LIMIT),
+    more:
+      rest > 0
+        ? HILOS_USERS_ERASURE_COPY.more.replace('{count}', String(rest))
+        : null,
+  }
+}
 
 /** Presentation copy for the user Overview, without changing lifecycle verdicts. */
 export const HILOS_USER_OVERVIEW_COPY = {

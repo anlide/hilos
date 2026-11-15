@@ -611,7 +611,7 @@ describe('HilosTableRecordCard inside the real viewport table', () => {
     f.owner.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
-      reason: 'left_set',
+      reason: 'deleted',
     })
     await nextTick()
     const reserve = f.card().get('.hilos-table-work-reserve')
@@ -630,7 +630,7 @@ describe('HilosTableRecordCard inside the real viewport table', () => {
       '--hilos-table-record-px: 260;',
     )
     expect(f.card().get('[data-id="hilos-table-placeholder"]').text()).toBe(
-      'No longer in this list',
+      'Removed',
     )
     expect(
       f

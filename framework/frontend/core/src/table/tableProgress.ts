@@ -8,6 +8,8 @@
 // standing, unlike a mark, because the work goes on whichever page is being
 // looked at. A row bar whose key is not in the current window is simply not
 // drawn, and comes back with its row without the server sending anything again.
+// A row that leaves the window or the set keeps its bar too: only the end of
+// the work or the server's word that the row is deleted takes it down (P-1090).
 
 import { type ReadonlySignal } from '../state/signal.js'
 

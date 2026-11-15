@@ -3662,7 +3662,7 @@ describe('HilosViewportTable capture and disappearing controls', () => {
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
-      reason: 'left_set',
+      reason: 'deleted',
     })
     await wrapper.vm.$nextTick()
     const reserves = wrapper.findAll('.hilos-table-work-reserve')

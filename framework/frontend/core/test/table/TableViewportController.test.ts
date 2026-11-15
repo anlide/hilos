@@ -3977,6 +3977,242 @@ describe('TableViewportController', () => {
     expect(controller.pendingCount.get()).toBe(1)
   })
 
+  it.each(['moved_out', 'left_set'] as const)(
+    'keeps the bar of a row that %s, under its placeholder too',
+    (reason) => {
+      const { controller, open } = makeController()
+      open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+      controller.ingestProgress({
+        scope: 'row',
+        progressKey: 'backup-17',
+        rowKey: 'a',
+        current: 3,
+        total: 11,
+      })
+      const { registration } = captureGeometry(controller, () => ({
+        main: 40,
+        work: 12,
+        detail: 0,
+        gap: 3,
+      }))
+
+      // The row only left this reader's window or set: its work goes on, and its moves and
+      // its end still arrive, so the bar stays with the key and nothing reserves its room.
+      controller.ingestDelta({ kind: 'row_removed', rowKey: 'a', reason })
+      expect(controller.progress.rows.get().get('a')?.progressKey).toBe(
+        'backup-17',
+      )
+      expect(registration.record('a', 'wide')?.workReserve).toBeNull()
+
+      controller.apply()
+      expect(controller.rows.get()[0]?.placeholder).toBe(true)
+      expect(controller.progress.rows.get().get('a')?.progressKey).toBe(
+        'backup-17',
+      )
+      expect(registration.record('a', 'wide')?.workReserve).toBeNull()
+      controller.dispose()
+    },
+  )
+
+  it.each([
+    [
+      'create',
+      (controller: TableViewportController<TableRow>) => {
+        controller.ingestOwnCreate(
+          { rowKey: 'a', slots: {} },
+          0,
+          1,
+          true,
+          null,
+          null,
+        )
+      },
+    ],
+    [
+      'append',
+      (controller: TableViewportController<TableRow>) => {
+        controller.ingestAppend({ rowKey: 'a', slots: {} }, 1, true, null, null)
+      },
+    ],
+  ] as const)(
+    'takes the bar down with an own deletion past the placeholder, and an own %s shows none',
+    (_arrival, arrive) => {
+      const { controller, open } = makeController()
+      open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+      controller.ingestProgress({
+        scope: 'row',
+        progressKey: 'backup-17',
+        rowKey: 'a',
+        current: 3,
+        total: 11,
+      })
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'moved_out',
+      })
+      controller.apply()
+
+      // The server follows the row past the window: the placeholder is standing, and the
+      // word that the row is deleted is the last one its bar will ever get.
+      controller.ingestDelta({
+        kind: 'row_removed',
+        rowKey: 'a',
+        reason: 'deleted',
+        own: true,
+      })
+      expect(controller.rows.get()[0]?.placeholder).toBe(true)
+      expect(controller.rows.get()[0]?.removal).toBe('moved_out')
+      expect(controller.progress.rows.get().has('a')).toBe(false)
+
+      arrive(controller)
+      expect(
+        controller.rows
+          .get()
+          .some((row) => row.rowKey === 'a' && !row.placeholder),
+      ).toBe(true)
+      expect(controller.progress.rows.get().has('a')).toBe(false)
+    },
+  )
+
+  it('takes the bar down with a foreign deletion past the placeholder and takes no frame after', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 3,
+      total: 11,
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'moved_out',
+    })
+    controller.apply()
+
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+    })
+    expect(controller.progress.rows.get().has('a')).toBe(false)
+
+    // The placeholder still says where the row went; only the bar knows it is gone.
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 5,
+      total: 11,
+    })
+    expect(controller.progress.rows.get().has('a')).toBe(false)
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+    expect(controller.rows.get()[0]?.removal).toBe('moved_out')
+  })
+
+  it('keeps the bar of a row pushed out by a create and shows it with the returning row', () => {
+    const { controller, open } = makeController(1)
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 3,
+      total: 11,
+    })
+
+    controller.ingestOwnCreate(
+      { rowKey: 'b', slots: {} },
+      0,
+      2,
+      true,
+      null,
+      null,
+    )
+    expect(controller.rows.get().map((row) => row.rowKey)).toEqual(['b'])
+    expect(controller.progress.rows.get().get('a')?.progressKey).toBe(
+      'backup-17',
+    )
+
+    controller.ingestAppend({ rowKey: 'a', slots: {} }, 2, true, null, null)
+    expect(
+      controller.rows.get().find((row) => row.rowKey === 'a')?.placeholder,
+    ).toBe(false)
+    expect(controller.progress.rows.get().get('a')).toMatchObject({
+      progressKey: 'backup-17',
+      current: 3,
+      total: 11,
+    })
+  })
+
+  it('takes a bar frame in for the placeholder of a row that left, not of one deleted', () => {
+    const { controller, open } = makeController()
+    open(
+      [
+        { rowKey: 'a', slots: {} },
+        { rowKey: 'b', slots: {} },
+      ],
+      2,
+      true,
+      null,
+      null,
+    )
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'moved_out',
+    })
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'b',
+      reason: 'deleted',
+    })
+    controller.apply()
+    expect(controller.rows.get().every((row) => row.placeholder)).toBe(true)
+
+    // The row that left comes back showing the last move of its work; the deleted one has
+    // nobody left to take a bar down from under its placeholder.
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 5,
+      total: 11,
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-18',
+      rowKey: 'b',
+      current: 5,
+      total: 11,
+    })
+    expect(controller.progress.rows.get().get('a')?.current).toBe(5)
+    expect(controller.progress.rows.get().has('b')).toBe(false)
+  })
+
+  it('takes a row bar down with an own deletion of its row', () => {
+    const { controller, open } = makeController()
+    open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'backup-17',
+      rowKey: 'a',
+      current: 3,
+      total: 11,
+    })
+
+    controller.ingestDelta({
+      kind: 'row_removed',
+      rowKey: 'a',
+      reason: 'deleted',
+      own: true,
+    })
+    expect(controller.rows.get()[0]?.placeholder).toBe(true)
+    expect(controller.progress.rows.get().has('a')).toBe(false)
+  })
+
   it('moves neither the count nor the marks when a bar arrives', () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1, true, null, null)
@@ -5338,7 +5574,13 @@ describe('TableViewportController retained presentation', () => {
       pendingMoves: ReadonlyMap<string, unknown>
     }
     expect(stored.windowSignal.get()).toEqual([
-      { kind: 'departed', rowKey: 'a', occurrence: 1, reason: 'deleted' },
+      {
+        kind: 'departed',
+        rowKey: 'a',
+        occurrence: 1,
+        reason: 'deleted',
+        deleted: true,
+      },
     ])
     expect([...stored.pendingMoves]).toEqual([])
     resolve.mockClear()
@@ -5366,7 +5608,13 @@ describe('TableViewportController retained presentation', () => {
     expect(controller.rows.get()[0]?.staleSources).toEqual([])
     expect(resolve).not.toHaveBeenCalled()
     expect(stored.windowSignal.get()).toEqual([
-      { kind: 'departed', rowKey: 'a', occurrence: 1, reason: 'deleted' },
+      {
+        kind: 'departed',
+        rowKey: 'a',
+        occurrence: 1,
+        reason: 'deleted',
+        deleted: true,
+      },
     ])
   })
 
@@ -5614,7 +5862,7 @@ describe('TableViewportController retained presentation', () => {
     },
   )
 
-  it('issues a new occurrence and clears row state when an own create reuses a key', () => {
+  it("issues a new occurrence and clears row state when an own create reuses a key, but keeps the key's bar", () => {
     const { controller, open } = makeController()
     open([{ rowKey: 'a', slots: {} }], 1)
     const { registration } = captureGeometry(controller, () => ({
@@ -5652,7 +5900,7 @@ describe('TableViewportController retained presentation', () => {
       highlighted: false,
       pending: null,
     })
-    expect(controller.progress.rows.get().size).toBe(0)
+    expect(controller.progress.rows.get().get('a')?.progressKey).toBe('old')
     expect(registration.record('a', 'wide')).toMatchObject({
       retained: null,
       live: null,
@@ -5749,7 +5997,7 @@ describe('TableViewportController live metadata boundaries', () => {
     controller.ingestDelta({
       kind: 'row_removed',
       rowKey: 'a',
-      reason: 'moved_out',
+      reason: 'deleted',
     })
     expect(registration.record('a', 'wide')?.workReserve?.total).toBe(14)
     controller.ingestDelta({

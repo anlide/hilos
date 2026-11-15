@@ -668,9 +668,10 @@ class HilosViewportTableRecord {
               while the row is on screen: a key absent from the window takes up
               nothing and comes back with its row. A row drawn as a placeholder
               gets no bar under it even if the key is still in the map — the core
-              takes a removed row's bar down at once, so that is a race rather
-              than a normal state, and the condition here is the same one that
-              draws the placeholder above. -->
+              keeps the bar of a row that left the window or the set under its
+              placeholder and does not draw it, and the bar stands again with
+              the returning row; the condition here is the same one that draws
+              the placeholder above. -->
                 @if (!view.placeholder && rowBar(view.rowKey); as bar) {
                   <tr
                     [hilosTableGeometryTarget]="geometry()"

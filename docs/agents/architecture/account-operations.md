@@ -1654,7 +1654,8 @@ switches neither live erasure entry:
   they were, and the people set gains no synthetic operation row. The card
   shows the same facts as its block (HIL-1954). Both read durable erasure facts
   and stay inert until HIL-1952.
-- Vue's list shows progress (not in the code yet — HIL-1956). Vue's card shows
+- Vue's list shows "Being deleted" beside the account's name and a caption
+  above its row bar (HIL-1956), inert until HIL-1952. Vue's card shows
   the "Being deleted" badge, the line "This account is being deleted." under the
   header and the erasure's progress — the parts, the owners awaited and the
   refusals — and offers no action (HIL-1957); after the end it is the live 404.

@@ -620,6 +620,11 @@ type WindowEntry =
       readonly rowKey: string
       readonly occurrence: number
       readonly reason: TableRemovalReason
+      /**
+       * The server said the row is deleted — when it went, or after it had left the window or
+       * the set; the reason the placeholder shows stays the one it left with.
+       */
+      readonly deleted: boolean
     }
 
 export class TableViewportController<R> implements TableWindowSink {
@@ -2454,6 +2459,13 @@ export class TableViewportController<R> implements TableWindowSink {
    * An `ended` for a place that holds nothing does nothing. There is no bar to take down, and
    * minting an empty one to clear would put a flicker on the screen for a run that is over.
    *
+   * A row bar belongs to its row key, not to the row's place in the window. Only the end of the
+   * work or the server's word that the row is deleted takes it down. A row that left the window
+   * or the set keeps its bar, and a frame for its placeholder is taken in, so that the row
+   * shows the last move when it comes back; a frame for the placeholder of a deleted row —
+   * deleted when it went or after it left — is dropped, because nothing will ever take that
+   * bar down again.
+   *
    * @param frame The bar as it arrived.
    */
   ingestProgress(frame: HilosTableProgressFrame): void {
@@ -2484,7 +2496,10 @@ export class TableViewportController<R> implements TableWindowSink {
             this.windowSignal
               .get()
               .some(
-                (entry) => entry.rowKey === rowKey && entry.kind === 'departed',
+                (entry) =>
+                  entry.rowKey === rowKey &&
+                  entry.kind === 'departed' &&
+                  entry.deleted,
               )
           ) {
             return
@@ -2740,14 +2755,18 @@ export class TableViewportController<R> implements TableWindowSink {
             }
             break
           case 'row_removed':
-            // The bar goes at once, whatever the gate decides about the row: the row is gone on
-            // the server, so nobody will cover it with a bar again, and the end of its work may
-            // never arrive at all — leaving the bar hanging under a placeholder with nothing left
-            // to take it down.
-            if (this.rowProgressSignal.get().has(delta.rowKey)) {
-              this.geometryOwner.reserveWork(delta.rowKey)
+            // A deleted row's bar goes at once, whatever the gate decides about the row: the
+            // server said the row is no more, so nobody will cover it with a bar again, and the
+            // end of its work may never arrive at all. A row that only left the window or the
+            // set keeps its bar: its moves and its end still arrive, because the senders send a
+            // bar to every tab with the table's window open, not to the rows of that window.
+            if (delta.reason === 'deleted') {
+              if (this.rowProgressSignal.get().has(delta.rowKey)) {
+                this.geometryOwner.reserveWork(delta.rowKey)
+              }
+              this.dropRowProgress(delta.rowKey)
+              this.markPlaceholderDeleted(delta.rowKey)
             }
-            this.dropRowProgress(delta.rowKey)
             // A LIVE row of the window, not any key in it: a row in focus leaves a second time
             // after its placeholder is standing (the server follows it past the window), and a
             // wait on a placeholder is a badge whose Apply changes nothing on the screen.
@@ -2851,6 +2870,13 @@ export class TableViewportController<R> implements TableWindowSink {
    */
   private applyOwnDelta(delta: LiveViewportDelta): void {
     if (!this.isLiveRow(delta.rowKey)) {
+      // The word that the row is deleted takes its bar down even past its placeholder: an own
+      // create or append of the same key would show that bar again otherwise.
+      if (delta.kind === 'row_removed' && delta.reason === 'deleted') {
+        this.dropRowProgress(delta.rowKey)
+        this.markPlaceholderDeleted(delta.rowKey)
+      }
+
       return
     }
     this.pendingMoves.delete(delta.rowKey)
@@ -3306,6 +3332,9 @@ export class TableViewportController<R> implements TableWindowSink {
       }
       this.geometryOwner.depart(entry.rowKey, reason)
       this.forgetRowState(entry.rowKey)
+      if (reason === 'deleted') {
+        this.dropRowProgress(entry.rowKey)
+      }
       if (entry.rowKey === live[0]) {
         this.firstAnchor = null
       }
@@ -3318,12 +3347,45 @@ export class TableViewportController<R> implements TableWindowSink {
         rowKey: entry.rowKey,
         occurrence: entry.occurrence,
         reason,
+        deleted: reason === 'deleted',
       }
     })
     this.windowSignal.set(rows)
   }
 
-  /** Drop row-bound state when an occurrence leaves or a key is reused. */
+  /**
+   * Mark the placeholder of a row the server has now deleted, so no bar frame for it is taken
+   * in again; the reason it shows stays the one it left with.
+   *
+   * @param rowKey Key of the deleted row.
+   */
+  private markPlaceholderDeleted(rowKey: string): void {
+    const window = this.windowSignal.get()
+    if (
+      !window.some(
+        (entry) =>
+          entry.rowKey === rowKey &&
+          entry.kind === 'departed' &&
+          !entry.deleted,
+      )
+    ) {
+      return
+    }
+    this.windowSignal.set(
+      window.map((entry) =>
+        entry.rowKey === rowKey && entry.kind === 'departed'
+          ? { ...entry, deleted: true }
+          : entry,
+      ),
+    )
+  }
+
+  /**
+   * Drop row-bound state when an occurrence leaves or a key is reused — all of it except its
+   * bar: the bar belongs to the key until the server ends it or says the row is deleted.
+   *
+   * @param rowKey Key of the row whose state goes.
+   */
   private forgetRowState(rowKey: string): void {
     const entry = this.windowSignal.get().find((row) => row.rowKey === rowKey)
     if (entry !== undefined) {
@@ -3345,7 +3407,6 @@ export class TableViewportController<R> implements TableWindowSink {
       clearTimeout(timer)
       this.highlightTimers.delete(rowKey)
     }
-    this.dropRowProgress(rowKey)
   }
 
   /**

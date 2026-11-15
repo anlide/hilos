@@ -328,12 +328,15 @@ costs an array comparison.
 The core binds the session's standing once, in `bootHilos`
 (`session/accountStanding.ts`); each SDK's shell only reads it.
 
-`erasing` is drawn by Vue's card (HIL-1957); Vue's list belongs to HIL-1956,
-React to HIL-1961 and Angular to HIL-1962. The people list's
-erasure bar is drawn so far only as the shared row bar of the window table
-(`HilosViewportTable` of each SDK), with its common label and count; its own
-words and the block of work come with Vue HIL-1956, React HIL-1961 and Angular
-HIL-1962.
+`erasing` is drawn by Vue's card (HIL-1957) and Vue's list (HIL-1956); React
+belongs to HIL-1961 and Angular to HIL-1962. Vue's list puts "Being deleted"
+beside the name of an account whose row bar is the erasure's — instead of
+Blocked and You; a merged account stays "Merged" — and a caption above the bar
+of every account of the circle: the summary, then the parts not done, the
+owners awaited and the refusals, at most three entries a line and "+N more"
+past them (`hilosUsersErasureCaption`, read through `HilosUsersTable.erasures`).
+React and Angular still draw only the shared row bar of the window table
+(`HilosViewportTable` of each SDK), with its common label and count.
 
 - **Deletion strip** (`hilosDeletionStrip`) — the standing the session acts as
   is `deletion_scheduled` with a known `deletionEffectiveAt`. It is shown during

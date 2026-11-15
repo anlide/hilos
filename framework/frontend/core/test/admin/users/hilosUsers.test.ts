@@ -20,6 +20,9 @@ import {
   readHilosAccountErasure,
   readHilosUsersErasureBar,
   HILOS_USERS_ERASURE_PROGRESS_KEY,
+  hilosUsersErasureCaption,
+  HILOS_USERS_ERASURE_COPY,
+  HILOS_USERS_ERASURE_LIMIT,
   type HilosAccountErasure,
   hilosPresenceBadge,
   HILOS_PRESENCE_WIDEST_LABEL,
@@ -1493,6 +1496,164 @@ describe('readHilosUsersErasureBar (HIL-1955)', () => {
   })
 })
 
+describe('hilosUsersErasureCaption (HIL-1956)', () => {
+  const startedAt = 1_800_000_000_000
+  const detail = {
+    startedAt,
+    parts: [
+      { participant: 'profile', owner: 'user', userId: 7, done: true },
+      { participant: 'chat', owner: 'room', userId: 7, done: false },
+      { participant: 'chat', owner: 'room', userId: 74, done: false },
+    ],
+    waits: [{ participant: 'delivery:email', userId: 74 }],
+    refusals: [{ userId: 74, table: null }],
+  }
+
+  /** A row bar as the table's viewport controller holds it. */
+  function bar(
+    barDetail: Record<string, unknown>,
+    total: number | null = 5,
+    progressKey: string = HILOS_USERS_ERASURE_PROGRESS_KEY,
+  ): HilosTableProgress {
+    return {
+      progressKey,
+      current: 3,
+      total,
+      fraction: total === null ? null : 3 / total,
+      detail: barDetail,
+    }
+  }
+
+  it('leaves the bar of other work alone', () => {
+    expect(hilosUsersErasureCaption(bar(detail, 5, 'other-work'), 7)).toBeNull()
+  })
+
+  it('counts the parts, says the start in the reader zone and lists only what stands in the way', () => {
+    const zone = vi
+      .spyOn(hilosTimeZone, 'get')
+      .mockReturnValue('Pacific/Honolulu')
+    try {
+      const caption = hilosUsersErasureCaption(bar(detail), 7)
+
+      expect(caption?.summary).toBe(
+        `Erasure in progress · 3 of 5 parts done · started ${String(formatMoment(startedAt, { kind: 'dateTime' }))}`,
+      )
+      expect(caption?.summary).toContain('Jan 14, 2027')
+      expect(caption?.expected).toEqual({
+        shown: [
+          expect.objectContaining({ participant: 'chat', account: null }),
+          expect.objectContaining({ participant: 'chat', account: 74 }),
+        ],
+        more: null,
+      })
+      expect(caption?.waits).toEqual({
+        shown: [
+          expect.objectContaining({
+            participant: 'delivery:email',
+            account: 74,
+          }),
+        ],
+        more: null,
+      })
+      expect(caption?.refusals).toEqual({
+        shown: [
+          expect.objectContaining({
+            account: 74,
+            text: 'Another table still references the account',
+          }),
+        ],
+        more: null,
+      })
+    } finally {
+      zone.mockRestore()
+    }
+  })
+
+  it('names no count while the work has no total', () => {
+    const caption = hilosUsersErasureCaption(
+      bar({ startedAt, parts: [], waits: [] }, null),
+      7,
+    )
+
+    expect(caption?.summary).toBe(
+      `Erasure in progress · started ${String(formatMoment(startedAt, { kind: 'dateTime' }))}`,
+    )
+  })
+
+  it('says only that the erasure is in progress when the block cannot be read', () => {
+    expect(hilosUsersErasureCaption(bar({}), 7)).toEqual({
+      summary: 'Erasure in progress',
+      expected: { shown: [], more: null },
+      waits: { shown: [], more: null },
+      refusals: { shown: [], more: null },
+    })
+  })
+
+  it('shows three entries a line and counts the rest', () => {
+    const many = [1, 2, 3, 4, 5]
+    const caption = hilosUsersErasureCaption(
+      bar({
+        startedAt,
+        parts: many.map((n) => ({
+          participant: `part-${String(n)}`,
+          owner: 'user',
+          userId: 7,
+          done: false,
+        })),
+        waits: many.map((n) => ({
+          participant: `wait-${String(n)}`,
+          userId: 7,
+        })),
+        refusals: many.map((n) => ({ userId: 70 + n, table: 'orders' })),
+      }),
+      7,
+    )
+
+    expect(HILOS_USERS_ERASURE_LIMIT).toBe(3)
+    expect(caption?.expected.shown.map((part) => part.participant)).toEqual([
+      'part-1',
+      'part-2',
+      'part-3',
+    ])
+    expect(caption?.expected.more).toBe('+2 more')
+    expect(caption?.waits.shown.map((wait) => wait.participant)).toEqual([
+      'wait-1',
+      'wait-2',
+      'wait-3',
+    ])
+    expect(caption?.waits.more).toBe('+2 more')
+    expect(caption?.refusals.shown.map((refusal) => refusal.account)).toEqual([
+      71, 72, 73,
+    ])
+    expect(caption?.refusals.more).toBe('+2 more')
+    expect(HILOS_USERS_ERASURE_COPY.more).toBe('+{count} more')
+  })
+
+  it('drops a hidden entry alone', () => {
+    const caption = hilosUsersErasureCaption(
+      bar({
+        ...detail,
+        parts: [
+          ...detail.parts,
+          {
+            participant: 'secret',
+            owner: 'user',
+            userId: HIDDEN_VALUE,
+            done: false,
+          },
+        ],
+      }),
+      7,
+    )
+
+    expect(caption?.expected.shown.map((part) => part.account)).toEqual([
+      null,
+      74,
+    ])
+    expect(caption?.waits.shown).toHaveLength(1)
+  })
+})
+
 describe('account erasure on the user card (HIL-1954)', () => {
   const erasure: HilosAccountErasure = {
     startedAt: 1_800_000_000_000,
@@ -2482,6 +2643,49 @@ describe('createHilosUsersTable', () => {
       table.dispose()
     },
   )
+
+  it('captions the erasure bars of its rows and nothing else', () => {
+    const { table } = usersTable({})
+    const controller = table.controller
+    const erasureDetail = {
+      startedAt: 1_800_000_000_000,
+      parts: [{ participant: 'chat', owner: 'room', userId: 7, done: false }],
+      waits: [],
+    }
+
+    expect(table.erasures.get().size).toBe(0)
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: HILOS_USERS_ERASURE_PROGRESS_KEY,
+      rowKey: '7',
+      current: 0,
+      total: 1,
+      detail: erasureDetail,
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'other-work',
+      rowKey: '8',
+      current: 1,
+      total: 2,
+    })
+
+    expect([...table.erasures.get().keys()]).toEqual(['7'])
+    expect(table.erasures.get().get('7')?.summary).toContain(
+      '0 of 1 parts done',
+    )
+    expect(controller.progress.rows.get().has('8')).toBe(true)
+
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: HILOS_USERS_ERASURE_PROGRESS_KEY,
+      rowKey: '7',
+      current: 1,
+      total: 1,
+      ended: true,
+    })
+    expect(table.erasures.get().size).toBe(0)
+  })
 
   it.each([undefined, { idInName: true }])(
     'opens on the document its address names and keeps the address in step with options %j',

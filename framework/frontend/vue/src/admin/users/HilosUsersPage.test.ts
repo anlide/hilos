@@ -132,6 +132,12 @@ interface LiveUsers {
    * @param staleSources The row's slot keys gone quiet; empty means current again.
    */
   stale(id: number, staleSources: string[]): void
+  /**
+   * A row bar moved, came up or came down (`table_progress`).
+   *
+   * @param bar The bar's body, without the table's address.
+   */
+  progress(bar: Record<string, unknown>): void
 }
 
 // A users context whose connection answers each viewport request with a window
@@ -153,6 +159,14 @@ function liveUsers(users: UserSeed[]): LiveUsers {
   scopes.openPage('hilos_users')
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
   const deltaListeners = new Set<(signal: { data: unknown }) => void>()
+  const progressListeners = new Set<(signal: { data: unknown }) => void>()
+  const progress = (data: Record<string, unknown>): void => {
+    for (const listener of progressListeners) {
+      listener({
+        data: { page: 'hilos_users', tableKey: 'hilosUsers', ...data },
+      })
+    }
+  }
   const delta = (data: Record<string, unknown>): void => {
     for (const listener of deltaListeners) {
       listener({
@@ -199,7 +213,9 @@ function liveUsers(users: UserSeed[]): LiveUsers {
           ? windowListeners
           : event === 'tableViewportDelta'
             ? deltaListeners
-            : null
+            : event === 'tableProgress'
+              ? progressListeners
+              : null
       listeners?.add(listener)
 
       return () => listeners?.delete(listener)
@@ -220,6 +236,7 @@ function liveUsers(users: UserSeed[]): LiveUsers {
     stale(id: number, staleSources: string[]): void {
       delta({ kind: 'row_stale', rowKey: id, staleSources })
     },
+    progress,
   }
 }
 
@@ -779,5 +796,174 @@ describe('HilosUsersPage presence (HIL-1566)', () => {
     await settle()
     expect(presence(wrapper, 1).text()).toBe('offline')
     expect(wrapper.text()).toContain('Oct 21, 2026, 10:00:00 AM')
+  })
+})
+
+describe('HilosUsersPage erasure (HIL-1956)', () => {
+  const startedAt = 1_800_000_000_000
+  const alice: UserSeed = {
+    id: 1,
+    name: 'Alice',
+    lastActivity: null,
+    presence: 'offline',
+    onlineSessionCount: 0,
+    block: true,
+  }
+  const bob: UserSeed = { ...alice, id: 2, name: 'Bob', block: false }
+  const detail = {
+    startedAt,
+    parts: [
+      { participant: 'profile', owner: 'user', userId: 1, done: true },
+      { participant: 'chat', owner: 'room', userId: 1, done: false },
+      { participant: 'chat', owner: 'room', userId: 2, done: false },
+    ],
+    waits: [{ participant: 'delivery:email', userId: 2 }],
+    refusals: [{ userId: 2, table: null }],
+  }
+
+  /**
+   * The erasure bar of one row as the server sends it.
+   *
+   * @param rowKey The account the row shows.
+   * @param fields What differs from a running bar three of five parts along.
+   */
+  function erasureBar(
+    rowKey: string,
+    fields: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      scope: 'row',
+      progressKey: 'hilos-account-erasure',
+      rowKey,
+      current: 3,
+      total: 5,
+      detail,
+      ...fields,
+    }
+  }
+
+  /**
+   * Mount the list over Alice (blocked, the session's own) and Bob.
+   *
+   * @param seeds The people of the first window.
+   */
+  async function mountCircle(seeds: UserSeed[] = [alice, bob]) {
+    const live = liveUsers(seeds)
+    live.context.scopes.session.data.set('currentUser', {
+      type: USER_ENTITY_TYPE,
+      id: 1,
+    })
+    const wrapper = await mountList(live.context)
+    const progressRow = (id: number) =>
+      wrapper.find(`[data-id="hilos-table-progress-row-${id}"]`)
+    const caption = (id: number, line: string) =>
+      progressRow(id).find(`[data-id="hilos-users-erasure-${line}"]`)
+
+    return { live, wrapper, progressRow, caption }
+  }
+
+  it('wears Being deleted instead of Blocked and You and captions the bar when it arrives live', async () => {
+    const { live, wrapper, progressRow, caption } = await mountCircle()
+    const name = (): DOMWrapper<Element> => cell(wrapper, 1, 'Name')
+    expect(name().text()).toContain('Blocked')
+    expect(name().text()).toContain('You')
+
+    live.progress(erasureBar('1'))
+    await flushPromises()
+
+    const erasing = name().get('[data-id="hilos-users-erasing"]')
+    expect(erasing.text()).toBe('Being deleted')
+    expect(erasing.get('i').attributes('aria-hidden')).toBe('true')
+    expect(name().text()).not.toContain('Blocked')
+    expect(name().text()).not.toContain('You')
+    expect(caption(1, 'summary').text()).toBe(
+      `Erasure in progress · 3 of 5 parts done · started ${String(formatMoment(startedAt, { kind: 'dateTime' }))}`,
+    )
+    expect(caption(1, 'expected').text()).toBe('Expected: chat; chat · #2')
+    expect(caption(1, 'expected').findAll('code')).toHaveLength(2)
+    expect(caption(1, 'waits').text()).toBe(
+      'Waiting for an owner: delivery:email · #2',
+    )
+    expect(caption(1, 'refusals').text()).toBe(
+      'Refused: #2 · Another table still references the account',
+    )
+    expect(
+      progressRow(1).get('[role="progressbar"]').attributes('aria-valuenow'),
+    ).toBe('60')
+    expect(
+      cell(wrapper, 2, 'Name').find('[data-id="hilos-users-erasing"]').exists(),
+    ).toBe(false)
+  })
+
+  it('keeps Merged on a merged account of the circle and still captions its bar', async () => {
+    const { live, wrapper, caption } = await mountCircle([
+      alice,
+      { ...bob, merged: true },
+    ])
+
+    live.progress(erasureBar('2'))
+    await flushPromises()
+
+    const name = cell(wrapper, 2, 'Name')
+    expect(name.get('[data-id="hilos-users-merged"]').text()).toBe('Merged')
+    expect(name.find('[data-id="hilos-users-erasing"]').exists()).toBe(false)
+    expect(caption(2, 'summary').text()).toContain('3 of 5 parts done')
+    expect(caption(2, 'expected').text()).toBe('Expected: chat · #1; chat')
+  })
+
+  it('brings Blocked and You back when the erasure ends', async () => {
+    const { live, wrapper, progressRow } = await mountCircle()
+    live.progress(erasureBar('1'))
+    await flushPromises()
+
+    live.progress(erasureBar('1', { current: 5, ended: true }))
+    await flushPromises()
+
+    const name = cell(wrapper, 1, 'Name')
+    expect(name.find('[data-id="hilos-users-erasing"]').exists()).toBe(false)
+    expect(name.text()).toContain('Blocked')
+    expect(name.text()).toContain('You')
+    expect(progressRow(1).exists()).toBe(false)
+  })
+
+  it('leaves a bar about other work without the erasure badge or caption', async () => {
+    const { live, wrapper, progressRow, caption } = await mountCircle()
+
+    live.progress(erasureBar('1', { progressKey: 'other-work' }))
+    await flushPromises()
+
+    expect(progressRow(1).find('[role="progressbar"]').exists()).toBe(true)
+    expect(caption(1, 'summary').exists()).toBe(false)
+    const name = cell(wrapper, 1, 'Name')
+    expect(name.find('[data-id="hilos-users-erasing"]').exists()).toBe(false)
+    expect(name.text()).toContain('Blocked')
+  })
+
+  it('says only that the erasure is in progress when its block cannot be read', async () => {
+    const { live, wrapper, caption } = await mountCircle()
+
+    live.progress(erasureBar('1', { detail: {} }))
+    await flushPromises()
+
+    expect(caption(1, 'summary').text()).toBe('Erasure in progress')
+    expect(caption(1, 'expected').exists()).toBe(false)
+    expect(caption(1, 'waits').exists()).toBe(false)
+    expect(caption(1, 'refusals').exists()).toBe(false)
+    expect(
+      cell(wrapper, 1, 'Name').get('[data-id="hilos-users-erasing"]').text(),
+    ).toBe('Being deleted')
+  })
+
+  it('moves the count without moving the row', async () => {
+    const { live, wrapper, caption } = await mountCircle()
+    live.progress(erasureBar('1'))
+    await flushPromises()
+    const row = wrapper.get('[data-id="hilos-table-row-1"]').element
+
+    live.progress(erasureBar('1', { current: 4 }))
+    await flushPromises()
+
+    expect(caption(1, 'summary').text()).toContain('4 of 5 parts done')
+    expect(wrapper.get('[data-id="hilos-table-row-1"]').element).toBe(row)
   })
 })

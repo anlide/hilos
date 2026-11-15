@@ -96,6 +96,9 @@ import {
   HILOS_USERS_ERASURE_PROGRESS_KEY,
   readHilosAccountErasure,
   readHilosUsersErasureBar,
+  hilosUsersErasureCaption,
+  HILOS_USERS_ERASURE_COPY,
+  HILOS_USERS_ERASURE_LIMIT,
   hilosStandingBadge,
   hilosUserFrozenRow,
   hilosUserOffersActions,
@@ -187,6 +190,9 @@ it('exports the @hilos/core public surface', () => {
   expect(readHilosAccountErasure).toBeTypeOf('function')
   expect(HILOS_USERS_ERASURE_PROGRESS_KEY).toBe('hilos-account-erasure')
   expect(readHilosUsersErasureBar).toBeTypeOf('function')
+  expect(hilosUsersErasureCaption).toBeTypeOf('function')
+  expect(HILOS_USERS_ERASURE_COPY.more).toBe('+{count} more')
+  expect(HILOS_USERS_ERASURE_LIMIT).toBe(3)
   expect(hilosStandingBadge('none')).toBeNull()
   expect(hilosUserFrozenRow(null)).toBeNull()
   expect(hilosUserOffersActions(null)).toBe(true)

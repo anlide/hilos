@@ -12,12 +12,18 @@ there, and changing the filter rewrites the address. An account folded into
 another one wears "Merged" instead of the Blocked and You badges beside its
 name; the person's id remains available below it. The presence badge says one of
 three words (HIL-1566) and holds the room of the widest one, so a presence changing
-live neither moves the row nor spills out of its column.
+live neither moves the row nor spills out of its column. An account being erased
+wears "Being deleted" instead of the Blocked and You badges (a merged one stays
+"Merged"), and every account of its circle carries a caption above its row bar:
+the summary, then the parts not done, the owners awaited and the refusals, three
+entries a line (hilosUsersErasureCaption, HIL-1956). A bar about other work gets
+no caption.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
   createHilosUsersTable,
   HILOS_PRESENCE_WIDEST_LABEL,
+  HILOS_USER_ERASURE_COPY,
   HILOS_USERS_LIST_COPY,
   hilosPresenceBadge,
   hilosStandingBadge,
@@ -50,6 +56,7 @@ const router = inject(hilosRouterKey, undefined)
 const users = createHilosUsersTable(props.context, router, { idInName: true })
 const usersTable = users.controller
 const currentUserId = useSignal(users.currentUserId)
+const erasures = useSignal(users.erasures)
 
 // Bind the server-windowed table to the connection on mount, request the first
 // window, and unbind on unmount.
@@ -59,6 +66,7 @@ onUnmounted(() => users.dispose())
 // The list reads its flags directly, without composing a card's standing.
 const mergedBadge = hilosStandingBadge('merged')
 const blockedBadge = hilosStandingBadge('blocked')
+const erasingBadge = hilosStandingBadge('erasing')
 </script>
 
 <template>
@@ -77,7 +85,23 @@ const blockedBadge = hilosStandingBadge('blocked')
             ><i class="bi me-1" :class="mergedBadge.icon" aria-hidden="true"></i
             >{{ mergedBadge.label }}</span
           >
-          <template v-if="!row.merged">
+          <span
+            v-else-if="
+              !row.merged &&
+              erasures.has(String(row.id)) &&
+              erasingBadge !== null
+            "
+            class="badge flex-shrink-0"
+            :class="`text-bg-${erasingBadge.tone}`"
+            data-id="hilos-users-erasing"
+            ><i
+              class="bi me-1"
+              :class="erasingBadge.icon"
+              aria-hidden="true"
+            ></i
+            >{{ erasingBadge.label }}</span
+          >
+          <template v-else-if="!row.merged">
             <span
               v-if="row.block && blockedBadge !== null"
               class="badge flex-shrink-0"
@@ -118,6 +142,68 @@ const blockedBadge = hilosStandingBadge('blocked')
       }}</template>
       <template #cell-actions="{ row }">
         <slot name="row-actions" :row="row" />
+      </template>
+      <template #row-progress="{ rowKey }">
+        <template
+          v-for="(caption, captionIndex) in [erasures.get(rowKey)]"
+          :key="captionIndex"
+        >
+          <template v-if="caption !== undefined">
+            <div data-id="hilos-users-erasure-summary">
+              {{ caption.summary }}
+            </div>
+            <div
+              v-if="caption.expected.shown.length > 0"
+              data-id="hilos-users-erasure-expected"
+            >
+              {{ HILOS_USER_ERASURE_COPY.expected }}:
+              <template
+                v-for="(part, index) in caption.expected.shown"
+                :key="part.key"
+                ><template v-if="index > 0">; </template
+                ><code>{{ part.participant }}</code
+                ><template v-if="part.account !== null">
+                  · #{{ part.account }}</template
+                ></template
+              ><template v-if="caption.expected.more !== null"
+                >; {{ caption.expected.more }}</template
+              >
+            </div>
+            <div
+              v-if="caption.waits.shown.length > 0"
+              data-id="hilos-users-erasure-waits"
+            >
+              {{ HILOS_USER_ERASURE_COPY.waits }}:
+              <template
+                v-for="(wait, index) in caption.waits.shown"
+                :key="wait.key"
+                ><template v-if="index > 0">; </template
+                ><code>{{ wait.participant }}</code
+                ><template v-if="wait.account !== null">
+                  · #{{ wait.account }}</template
+                ></template
+              ><template v-if="caption.waits.more !== null"
+                >; {{ caption.waits.more }}</template
+              >
+            </div>
+            <div
+              v-if="caption.refusals.shown.length > 0"
+              data-id="hilos-users-erasure-refusals"
+            >
+              {{ HILOS_USER_ERASURE_COPY.refusals }}:
+              <template
+                v-for="(refusal, index) in caption.refusals.shown"
+                :key="refusal.key"
+                ><template v-if="index > 0">; </template
+                ><template v-if="refusal.account !== null"
+                  >#{{ refusal.account }} · </template
+                >{{ refusal.text }}</template
+              ><template v-if="caption.refusals.more !== null"
+                >; {{ caption.refusals.more }}</template
+              >
+            </div>
+          </template>
+        </template>
       </template>
     </HilosViewportTable>
   </HilosAdminPage>

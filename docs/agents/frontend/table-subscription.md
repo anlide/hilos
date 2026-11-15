@@ -1134,7 +1134,9 @@ Apply resolves exactly those two, on the rows already shown:
   page", and `left_set` says "No longer in this list". The departed slot keeps
   its row key, occurrence and reason, plus numeric geometry; it keeps no source
   row or rendered slot payload, detail values, selection state, focus target, or
-  progress payload. It is not a live member, a selection/detail/focus target, or
+  progress payload. The placeholder carries no bar itself, but the bar of its key
+  lives on in the core until the work ends or the server says the row is deleted
+  (P-1090). It is not a live member, a selection/detail/focus target, or
   capacity for the window, and the local entity store is not cleared. A
   placeholder over a set that still has live rows elsewhere stays too.
 
@@ -1194,11 +1196,14 @@ hidden. The rendered reason's measured height, with chrome and gap, remains the
 allocation floor; a tall reason can make the placeholder taller when the tile
 departs.
 
-A foreign departure removes row-progress content immediately. If work was still
-visible, pending state keeps only its numeric work reserve; Apply combines that
-reserve once with the main row, detail, and gaps without double-counting the
-work or its gap. Work that ended before departure is not restored, and a later
-work-end does not shrink the placeholder.
+A foreign deletion (`deleted`) removes row-progress content immediately. If work
+was still visible, pending state keeps only its numeric work reserve; Apply
+combines that reserve once with the main row, detail, and gaps without
+double-counting the work or its gap. Work that ended before departure is not
+restored, and a later work-end does not shrink the placeholder. A row that left
+the window or the set (`moved_out`, `left_set`) keeps its bar and gets no work
+reserve: the layout measures the placeholder's room together with the bar on
+Apply.
 Live values and work on surviving rows continue to update; own removals remain
 immediate, and permitted own moves or placements may still reorder the window.
 
@@ -1830,10 +1835,16 @@ a **bar**, and there are exactly three:
    the project names, usually the content ones rather than the selection or the
    actions. Which ones those are is said by the **column declaration** — the
    optional `progress` flag on `HilosTableColumn`; no column marked stretches the
-   bar under the whole row. It is tied to the row key: the row goes, the bar
-   goes. The caption above it belongs to the project, and the view hands it over
-   as a **slot** (`row-progress` in Vue, the `rowProgress` render prop in React,
-   the `#rowProgress` template in Angular) rather than reading a key of `detail`.
+   bar under the whole row. It is tied to the row key: the end of the work or a
+   `row_removed` with the reason `deleted` takes it down. A row that leaves the
+   window or the set (`moved_out`, `left_set`), is pushed out by a create, or
+   comes back keeps its bar — under a placeholder the bar is not drawn, and it
+   stands again with the returning row; frames for the placeholder of a row
+   that left are taken in (P-1090). Frames for the placeholder of a deleted
+   row, including one deleted after it left, are not. The caption above it
+   belongs to the project, and the view hands it over as a **slot**
+   (`row-progress` in Vue, the `rowProgress` render prop in React, the
+   `#rowProgress` template in Angular) rather than reading a key of `detail`.
 2. **The table bar** — for work that has no row of its own. The place above the
    table is the framework's; **the content beside the bar is the project's** and
    is arbitrary: a title, a counter, a link, a cancel button. This is the reserve
