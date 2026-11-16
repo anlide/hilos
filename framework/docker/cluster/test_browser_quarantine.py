@@ -616,6 +616,36 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.assertIn("--repeat-each=5", self.calls[0][3])
         self.assertEqual([], self.lines())
 
+    def test_diagnostic_live_keeps_selector_and_both_native_repeat_forms(self):
+        self.plan = [planned("live")]
+        cases = (
+            ["cluster/live/moderation.spec.ts:59", "--repeat-each=5"],
+            ["cluster/live/moderation.spec.ts:59", "--repeat-each", "5"],
+        )
+        for extra_args in cases:
+            with self.subTest(extra_args=extra_args):
+                self.output.seek(0)
+                self.output.truncate()
+                self.events.clear()
+                self.calls.clear()
+                self.gateway.reset_mock()
+                selector = extra_args[0]
+                self.assertEqual(0, browser.run(self.stand, extra_args))
+                plan_calls = [call.args for call in self.gateway.call_args_list
+                              if "--hilos-phase=plan" in call.args]
+                self.assertEqual(1, len(plan_calls))
+                plan = plan_calls[0]
+                self.assertIn(selector, plan)
+                self.assertNotIn("--repeat-each=5", plan)
+                self.assertNotIn("--repeat-each", plan)
+                self.assertNotIn("5", plan)
+                self.assertEqual([("diagnostic", "live")],
+                                 [(phase, project) for phase, project, _, _ in self.calls])
+                executed = self.calls[0][3]
+                start = executed.index(selector)
+                self.assertEqual(extra_args, list(executed[start:start + len(extra_args)]))
+                self.assertEqual([], self.lines())
+
     def test_own_uuid_cleanup_leaves_other_runs_untouched(self):
         other = browser._run_path(self.stand, "quarantine", "other-run")
         other.mkdir(parents=True)

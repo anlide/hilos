@@ -504,6 +504,7 @@ $steps = array_merge($steps, [
         // not a measurement (HIL-2043 measures it).
         'seconds' => 170,
         'downsStand' => true,
+        'takesTests' => true,
     ],
     // Where every log line of a node lands, proven on the live tasks stand (HIL-1018): five
     // scenarios in sequence over demo/tasks, judged against scripts/log-streams.php. In the

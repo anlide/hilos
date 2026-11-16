@@ -135,6 +135,64 @@ JSON;
         );
     }
 
+    /**
+     * @return iterable<string, array{array<int, string>, string}> Selector arguments and the
+     *         command each must produce on the loaded cluster step.
+     */
+    public static function realConcertTicketsClusterSelections(): iterable
+    {
+        $selector = ['concert-tickets-cluster-e2e', '--tests=cluster/live/moderation.spec.ts:59'];
+        yield 'selector only' => [
+            $selector,
+            "composer run test:cluster:e2e -- 'cluster/live/moderation.spec.ts:59'",
+        ];
+        yield 'repeat one' => [
+            [...$selector, '--repeat=1'],
+            "composer run test:cluster:e2e -- 'cluster/live/moderation.spec.ts:59' --repeat-each=1",
+        ];
+        yield 'repeat five' => [
+            [...$selector, '--repeat=5'],
+            "composer run test:cluster:e2e -- 'cluster/live/moderation.spec.ts:59' --repeat-each=5",
+        ];
+    }
+
+    /**
+     * The loaded concert-tickets cluster browser step accepts one selector, and only its command changes.
+     * Without a selector the loaded manifest and its plan stay as loaded.
+     *
+     * @param array<int, string> $arguments One target and the selector, plus an explicit repeat when the case has one.
+     * @param string $command The selected step's command after narrowing.
+     */
+    #[DataProvider('realConcertTicketsClusterSelections')]
+    public function testNarrowsTheRealConcertTicketsClusterStep(array $arguments, string $command): void
+    {
+        $manifest = indexById(require __DIR__ . '/../../../scripts/test-suite.php');
+        $plain = parseArguments([]);
+        $unchanged = narrowToTests($manifest, $plain['targets'], $plain['tests'], $plain['repeat']);
+        $this->assertSame($manifest, $unchanged);
+        $this->assertSame(
+            planFor($manifest, ['concert-tickets-cluster-e2e']),
+            planFor($unchanged, ['concert-tickets-cluster-e2e']),
+        );
+
+        $options = parseArguments($arguments);
+        $narrowed = narrowToTests($manifest, $options['targets'], $options['tests'], $options['repeat']);
+        $selected = $manifest['concert-tickets-cluster-e2e'];
+        $selected['command'] = $command;
+        $this->assertSame($selected, $narrowed['concert-tickets-cluster-e2e']);
+        $this->assertSame(array_keys($manifest), array_keys($narrowed));
+        foreach ($manifest as $id => $step) {
+            if ($id === 'concert-tickets-cluster-e2e') {
+                continue;
+            }
+            $this->assertSame($step, $narrowed[$id]);
+        }
+        $this->assertSame(
+            planFor($manifest, ['concert-tickets-cluster-e2e']),
+            planFor($narrowed, ['concert-tickets-cluster-e2e']),
+        );
+    }
+
     /** The unstable result is already red when dependencies and all reports read it. */
     public function testUnstableResultBlocksOnlyItsDescendantsAndReportsRed(): void
     {
