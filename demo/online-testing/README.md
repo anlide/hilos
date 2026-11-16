@@ -396,8 +396,8 @@ stays at `/dev/shm/hilos-online-testing-cluster-galera1-data`,
 paths or mount them as an ordinary MariaDB data directory. No automatic data
 transfer from Galera is provided. Stop its old members and proxy with the old
 compose file before switching. The Galera scripts and proxy configuration stay
-in Git history. Scenarios 26/27/28 remain in the shared harness; their planned
-carrier is the concert-tickets cluster stand
+in Git history. Scenarios 26/27/28 remain in the shared harness. The
+concert-tickets cluster stand carries 26 and 27; 28 has no current carrier
 ([The cluster stands](../../docs/agents/testing.md#the-cluster-stands--six-demos-six-shapes)).
 They are not passing checks of this stand.
 

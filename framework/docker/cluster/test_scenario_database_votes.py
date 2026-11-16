@@ -28,6 +28,7 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
         self.use_stand()
         self.down = set()
         self.sizes = {}
+        self.connections = {}
         self.sql = self.contexts.enter_context(patch.object(scenarios, "db_sql", side_effect=self.read_sql))
         self.proxy = self.contexts.enter_context(patch.object(scenarios, "proxy_states", wraps=scenarios.proxy_states,
                                                            side_effect=self.proxy_states))
@@ -70,7 +71,7 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
         if statement == scenarios.DIRTY_READS_SQL:
             return "0"
         if statement == scenarios.app_connections_sql(self.stand.database.user):
-            return "2"
+            return self.connections.get(member, "2")
         if statement == "SELECT @@hostname":
             return f"{member}-host"
         self.fail(f"unexpected SQL: {statement}")
@@ -303,11 +304,13 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
         self.prepare_load()
         self.session.return_value = {"databaseMember": "db2-host"}
         self.load.member_of.side_effect = lambda node: "db1-host" if self.down or node == "m1" else "db2-host"
+        self.connections = {"db1": "3", "db2": "1"}
 
         def start(member):
             self.load.stop.assert_not_called()
             self.journal.stop.assert_not_called()
             self.down.remove(member)
+            self.connections = {"db1": "4", "db2": "0"}
 
         self.start.side_effect = start
         detail = scenarios.scenario_27_database_member_dies_under_load()
@@ -315,6 +318,8 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
         self.session.assert_called_once_with("m2", "primary")
         self.assertIn("db2 killed under m2's settings library", detail)
         self.assertIn("m2 moved through db1", detail)
+        self.assertIn("application connections before db1 3, db2 1, after db1 4, db2 0", detail)
+        self.assertIn("nodes write via db1 (m1, m2)", detail)
         self.assertEqual(3, self.steady.call_count)
         self.finish.assert_called_once_with(self.oracle, self.journal)
 

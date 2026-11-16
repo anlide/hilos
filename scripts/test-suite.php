@@ -469,12 +469,14 @@ $steps = array_merge($steps, [
     // The fleet of concert-tickets (HIL-2033): five equal masters that carry the work themselves,
     // on production cluster timers, over a MariaDB Galera cluster of three data members behind
     // HAProxy. Scenario 21 rolls the schema out once from five nodes started together on an empty
-    // Galera database, scenario 26 finds every member synced in one cluster and written to.
+    // Galera database, scenario 26 finds every member synced in one cluster and written to;
+    // scenario 27 kills one data member under load and brings it back, with the journal oracle
+    // checking all three servers in the same cycle.
     // Beside the other fleets and any e2e step, in the group of its stand, so that a browser step
     // over the same compose project would not run beneath it (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
-    // demo's unit suite runs in concert-tickets-php. Seconds: an estimate after the green full run
-    // 2380 and a raise of a Galera stand of about 85 s, not a measurement (HIL-2043 measures it).
+    // demo's unit suite runs in concert-tickets-php. Seconds: measured wall-clock time of the
+    // fresh-stand composer scenario command (21, 26, 27) on 2026-11-16.
     [
         'id' => 'concert-tickets-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -483,7 +485,7 @@ $steps = array_merge($steps, [
         'deps' => ['concert-tickets-deps'],
         'group' => 'concert-tickets-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 110,
+        'seconds' => 185,
         'downsStand' => true,
     ],
     // Moderation in five author/observer rotations over the five masters, live only. The

@@ -853,7 +853,7 @@ carried every scenario on a single shape is retired (HIL-1218).
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart, 48 daemon hang self-heal |
 | roblox-game-server | Vue | three masters and one slave: `m1` without capacity — it votes and hosts no placed work; `m2`, `m3` workers with `ram=10`, `slots=64`; slave `s1` worker with `ram=4`, `slots=64` | Galera of two data nodes and the `garbd` arbitrator, which votes and stores no data, behind HAProxy; the application uses both data nodes: HAProxy gives each node a data node of its own — `m1` and `m3` the first, `m2` and `s1` the second — so a row written by one node is always read by a node on the other data node, and a node whose data node is down is led to the living one. HAProxy closes the sessions of a data node it marks down: a data node cut off from the majority stays reachable and refuses every statement, and Hilos does not reconnect from a member outside the primary component, so a proxy in front of Galera must close them | 26 database is one cluster, 49 a row written by one node is read by another through another data node, past the process copy, and after that connection is lost, 50 journal is one logical set on every server; 51 a working master that does not lead is cut off and stops its work before it runs elsewhere; 27 the data node under the settings library dies under load: every node writes on through the survivor and the arbitrator, and it comes back, catches up from the survivor that donates while it serves, and takes connections only when Synced, with the journal oracle on both; 53 the arbitrator lost and back; 54 a data node cut off from the other and the arbitrator is fenced while the majority writes on |
 | file-gallery-manager | React | two masters without capacity and three slave workers with `ram=10` / `6` / `4`, each with `slots=64` | primary and one read-only replica behind one address that always leads to the primary, no automatic promotion | 31 replica keeps up with the primary, 50 journal is one logical set on every server, 52 losing the leader of the two masters leaves no heir: every slave carrying work stops it, nobody leads, until the leader returns, 55 the primary and then the replica are lost: while the primary is down no write is confirmed and no application connection reaches the replica; both return without a Hilos restart and hold one journal |
-| concert-tickets | Angular | five equal master workers with `ram=10`, `slots=64`, no slaves | Galera of three data nodes behind HAProxy; the application uses all three: HAProxy lays each next connection on the least busy data node | 21 schema rolled out once by five nodes that start together on an empty Galera database, 26 database is one cluster; 27/28 (not in the code yet — HIL-2041) |
+| concert-tickets | Angular | five equal master workers with `ram=10`, `slots=64`, no slaves | Galera of three data nodes behind HAProxy; the application uses all three: HAProxy lays each next connection on the least busy data node | 21 schema rolled out once by five nodes that start together on an empty Galera database; 26 database is one cluster of three synced data nodes, each holding an application connection; 27 a data node is killed under load while every node writes on through the two survivors, then comes back, catches up and takes connections only when Synced; the same cycle writes journal batches through the oracle and holds the three servers to one journal |
 
 `ram` means abstract units of declared placement capacity, not gigabytes of RAM
 or a container memory limit.
@@ -874,7 +874,7 @@ or a container memory limit.
 | concert-tickets | Hilos | Two of five masters are lost | Quorum 3 of 5 holds and work continues. | `ClusterConsensusConfigTest` (a set of five takes a quorum of three); 5 leader-kill re-election on binance-btc-tracker |
 | concert-tickets | Hilos | Three masters are lost | Work stops. | `ClusterConsensusConfigTest`; 7 quorum-loss on binance-btc-tracker; 51 working master cut off stops its work on roblox-game-server; with no leader possible the stand's placed work stops — 52 the leader of two lost stops the work on file-gallery-manager |
 | concert-tickets | Hilos | 3:2 partition, with the old leader and its working agents in the minority | The majority continues; the minority leader stops its work; one executor after recovery. | 24 cut-off leader stops its work on online-testing (parked, F-013); 51 working master cut off stops its work on roblox-game-server |
-| concert-tickets | DB | One of three data nodes is lost and returned | Writes continue through the survivors without restarting Hilos; the returned member catches up and takes new connections only when Synced. | (not in the code yet — HIL-2041) |
+| concert-tickets | DB | One of three data nodes is lost and returned | Writes continue through the survivors without restarting Hilos; the returned member catches up and takes new connections only when Synced. | scenario 27 |
 
 Acceptance proves Hilos and database failures separately, keeping the other
 layer healthy (not in the code yet — HIL-2043). New fleets enter after phase-one
@@ -1108,7 +1108,7 @@ so on file-gallery-manager scenario 31 then finds these writes on the replica
 too; `Need(database_members=2)` refuses a stand of one server. Concert-tickets
 does not carry it: its Galera replicates by the same mechanism as
 roblox-game-server's, and the same oracle holds its three servers once a member
-is lost and returned (not in the code yet — HIL-2041). The pointed runs:
+is lost and returned in scenario 27. The pointed runs:
 
 ```bash
 composer -d demo/file-gallery-manager run test:cluster:scenarios -- 50
@@ -1119,12 +1119,16 @@ Scenario **27** is carried by roblox-game-server, on two data nodes and `garbd`:
 one cycle kills a data node under load and brings it back, the return checks
 once split off as 28 included, and the journal oracle holds both data nodes
 after it; **53** and **54** take the arbitrator away and cut a data node off.
-Scenario **28** stays in the harness with no carrier; concert-tickets decides
-on 27/28 (not in the code yet — HIL-2041). Their component model and
-preconditions count votes separately from data members.
+Concert-tickets also carries scenario 27, on three data nodes and no arbitrator:
+one cycle covers loss and return, writes journal batches through the oracle and
+holds the three servers to one journal once a member is back. Its PASS records
+application connections before and after the fault and the nodes writing through
+each backend. The component model and preconditions count votes separately from
+data members. Scenario **28** remains in the catalog without a current carrier.
 
 ```bash
 composer -d demo/roblox-game-server run test:cluster:scenarios -- 27 53 54
+composer -d demo/concert-tickets run test:cluster:scenarios -- 27
 ```
 
 Scenario **55** runs on file-gallery-manager, the only stand carrying a
@@ -1167,8 +1171,9 @@ in production carries the rows and runs none of them. Which demo takes which:
 binance-btc-tracker the fleet and the runtime set probe; ecommerce-shop the
 fleet, the claimer and the ballast; file-gallery-manager the fleet;
 online-testing the fleet and the database probe; roblox-game-server the fleet
-and the database probe. The database probe stores its values in the framework
-install unit `probe_value`, so a demo that takes it carries that unit's
+and the database probe; concert-tickets the database probe for scenario 27. The
+database probe stores its values in the framework install unit `probe_value`,
+so a demo that takes it carries that unit's
 migration pair, pulled with `db:framework:pull` like any other framework unit.
 
 The stand's resolved Compose model is the one place its nodes are written, and
@@ -1621,10 +1626,11 @@ with `composer -d demo/roblox-game-server run test:cluster:e2e`. Passing
 runner copies node logs to
 `artifacts/roblox-game-server-cluster-e2e/nodes/<node>/`.
 
-The `concert-tickets-cluster` step runs scenarios 21 and 26 on a fresh stand in
+The `concert-tickets-cluster` step runs scenarios 21, 26 and 27 on a fresh stand in
 the `concert-tickets-cluster` group; from the repository root,
 `composer -d demo/concert-tickets run test:cluster:scenarios` runs the same
-matrix.
+matrix. Scenario 27 includes the loss, return and journal verification on all
+three data members.
 
 The `concert-tickets-cluster-e2e` step proves Moderation across the five
 masters of the same stand (HIL-1639, HIL-2033). After

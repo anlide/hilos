@@ -1141,6 +1141,23 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 12, 'legal_acceptance', $catalog, $schema);
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 13, 'data_export', $catalog, $schema);
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 14, 'legal_acceptance_export', $catalog, $schema);
+        $probeUnit = $schema->unit('probe_value');
+        $probeBase = $root . '/015_framework_install_probe_value';
+        $probeUp = FsPath::read($probeBase . '.sql');
+        $probeDown = FsPath::read($probeBase . '_down.sql');
+        $probeInstall = $catalog->verifyPair($probeUp, $probeDown);
+        self::assertSame(FrameworkMigrationOrigin::INSTALL, $probeInstall->kind);
+        self::assertSame(['probe_value'], $probeInstall->units);
+        self::assertCount(1, $probeInstall->parts);
+        $probeSource = $catalog->part($probeInstall->parts[0]->changeId, 'probe_value');
+        self::assertTrue($probeSource->introducesUnit);
+        self::assertSame([], $probeSource->requires);
+        self::assertSame([$probeSource->toArray()], array_map(
+            static fn (FrameworkMigrationPart $part): array => $part->toArray(),
+            $probeInstall->parts,
+        ));
+        self::assertSame(FsPath::read($probeUnit->upPath), substr($probeUp, strpos($probeUp, "\n") + 1));
+        self::assertSame(FsPath::read($probeUnit->downPath), substr($probeDown, strpos($probeDown, "\n") + 1));
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
@@ -1153,6 +1170,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             ...$this->exportLegalMomentFiles($root, 12, 'legal_acceptance'),
             ...$this->exportLegalMomentFiles($root, 13, 'data_export'),
             ...$this->exportLegalMomentFiles($root, 14, 'legal_acceptance_export'),
+            $probeBase . '.sql',
+            $probeBase . '_down.sql',
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1162,9 +1181,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         ));
         self::assertSame(
             $this->partRecords($catalog->partsForUnits($selectedUnits)),
-            $this->partRecords([...$origin->parts, ...$change->parts, ...$momentPartsOnDisk]),
+            $this->partRecords([...$origin->parts, ...$change->parts, ...$momentPartsOnDisk, ...$probeInstall->parts]),
         );
-        self::assertSame([], $catalog->missingParts($selectedUnits, [$origin, $change, ...$momentChanges]));
+        self::assertSame([], $catalog->missingParts($selectedUnits, [$origin, $change, ...$momentChanges, $probeInstall]));
     }
 
     /**

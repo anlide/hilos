@@ -1001,9 +1001,9 @@ The journal agent applies attribution through that frame path under its declared
 The owner's decision of 2026-10-14 took the primary/replica and Galera
 topologies off the earlier stands, and they have returned since:
 roblox-game-server (Galera) and concert-tickets (Galera) carry scenario 26, and
-file-gallery-manager (primary/replica) carries 31; scenarios 27/28 return on
-concert-tickets (not in the code yet — HIL-2041). The shared harness keeps the
-shape guards of all four; the carriers are in
+file-gallery-manager (primary/replica) carries 31; concert-tickets carries
+scenario 27's full loss/return cycle. The shared harness keeps their
+shape guards; the carriers are in
 [The cluster stands](../testing.md#the-cluster-stands--six-demos-six-shapes).
 This leaf (HIL-1621) does not establish non-duplication on Galera or trigger
 behavior on a replica; those guarantees needed carriers of their own as well as
@@ -1022,13 +1022,14 @@ confirmed batch, none for the refused one, and no entry of a copy's own
 triggers. Concert-tickets carries no scenario 50: its three-data-node Galera
 replicates by the same mechanism as roblox-game-server's, and the same oracle
 holds its three servers in the proof below that a member is lost and returned
-(not in the code yet — HIL-2041). An ordinary restart of a node is scenario
+in scenario 27. An ordinary restart of a node is scenario
 40's, on online-testing.
 Roblox proves the journal after a Galera data node is lost and returned:
 scenario 27 writes journal batches through the oracle while the fault lasts
 and holds both data nodes to one journal once the member is back.
-Concert-tickets proves it after a member is
-lost and returned (not in the code yet — HIL-2041). Scenario 55 proves it on
+Scenario 27 proves it on concert-tickets in one full loss/return cycle: it writes
+journal batches through the oracle while a member is down and holds the three
+servers to one journal once it returns. Scenario 55 proves it on
 file-gallery-manager: its primary and then its replica are lost and returned, and
 the same oracle holds both servers to one journal.
 These proofs do not promise exactly-once business operations when a reply is lost.

@@ -512,6 +512,7 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_DAEMON_NODE,
             HilosAgentType::HILOS_DAEMON_COLLECTOR,
             HilosAgentType::HILOS_AUTH_CODE,
+            HilosAgentType::HILOS_PROBE_DB,
         ], array_keys(Hilos::AGENTS));
     }
 

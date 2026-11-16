@@ -83,9 +83,10 @@ Plus scenarios beyond that matrix:
  27 database member dies       a member is killed while every node writes; each writes on through
                                the others, and the member comes back, catches up and takes
                                connections only when Synced, while no write fails; the journal
-                               oracle holds every data member (HIL-1231, HIL-2040)
-  28 database member comes      the member comes back, catches up, and is handed connections again
-                               (HIL-1231)
+                               oracle holds every data member (HIL-1231, HIL-2040); on
+                               concert-tickets, three data members and no arbitrator (HIL-2041)
+ 28 database member comes      the member comes back, catches up, and is handed connections again
+                               (HIL-1231); no current carrier
  53 database arbitrator lost   the arbitrator is killed while every node writes: both data members
     and back                   keep a primary component of two votes and serve; it comes back to
                                three votes (HIL-2040)
@@ -4421,9 +4422,9 @@ def scenario_50_journal_is_one_logical_set_on_every_server():
     different servers are not duplicates.
 
     It restarts nothing and builds no load. An ordinary restart of a node is scenario 40's (on
-    online-testing); a database server lost and caught up again is 27's on roblox-game-server,
-    HIL-2041's and 55's on file-gallery-manager; exactly-once business operations when a reply
-    is lost are not promised here.
+    online-testing); a database server lost and caught up again is 27's on roblox-game-server
+    and concert-tickets, and 55's on file-gallery-manager; exactly-once business operations when
+    a reply is lost are not promised here.
     """
     wait_converge(ALL_NODES)
     oracle = JournalOracle()
@@ -6484,6 +6485,32 @@ def app_connections_sql(user):
             f"WHERE USER = '{user}' AND ID <> CONNECTION_ID()")
 
 
+def application_connections():
+    """Count application connections on every SQL backend while all members are alive."""
+    held = {}
+    statement = app_connections_sql(STAND.database.user)
+    for member in STAND.database_sql_backends:
+        answer = db_sql(statement, member.service)
+        assert answer.isdigit(), f"{member.service} did not answer: {statement}"
+        held[member.service] = int(answer)
+    return held
+
+
+def writers_by_member(load, by_host):
+    """Group nodes by the member of their last acknowledged write."""
+    writers = {}
+    for node in ALL_NODES:
+        member = by_host.get(load.member_of(node)) or "none"
+        writers.setdefault(member, []).append(node)
+    return writers
+
+
+def format_member_observations(observed):
+    """Format connection counts or node groups by database service."""
+    return ", ".join(f"{member} ({', '.join(value)})" if isinstance(value, list) else f"{member} {value}"
+                     for member, value in observed.items())
+
+
 def app_sessions_on(member, user):
     """Count the user's sessions through SHOW, which also answers outside the primary component."""
     rows = db_sql(SESSIONS_SQL, member)
@@ -6866,6 +6893,7 @@ def scenario_27_database_member_dies_under_load():
     load = DbLoad()
     killed = started = False
     try:
+        before = application_connections()
         load.start()
         journal.start()
         wait_db_steady(load, 0, DB_MEMBER_DEATH_TIMEOUT)
@@ -6874,6 +6902,7 @@ def scenario_27_database_member_dies_under_load():
         killed = True
         killed_at = time.monotonic()
         recovered = wait_db_steady(load, killed_at, DB_MEMBER_DEATH_TIMEOUT, victim)
+        writers = writers_by_member(load, by_host)
 
         for node in on_victim:
             assert by_host.get(load.member_of(node)) != victim, \
@@ -6902,6 +6931,7 @@ def scenario_27_database_member_dies_under_load():
         db_start(victim)
         synced, up = member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT, time.monotonic())
         started = True
+        after = application_connections()
         load.stop()
         journal.stop()
 
@@ -6942,7 +6972,9 @@ def scenario_27_database_member_dies_under_load():
             f"{', '.join(survivors)} kept a primary cluster of {in_words(STAND.database_votes - 1)} votes "
             f"holding every acknowledged write; {victim} brought back: synced after {synced:.0f}s "
             f"and up behind the proxy after {up:.0f}s, holding every write acknowledged while it was away; "
-            f"none of {len(after_start)} writes failed while it came back; journal: {judged}")
+            f"none of {len(after_start)} writes failed while it came back; journal: {judged}; "
+            f"application connections before {format_member_observations(before)}, "
+            f"after {format_member_observations(after)}; nodes write via {format_member_observations(writers)}")
 
 
 def scenario_28_database_member_comes_back_and_catches_up():

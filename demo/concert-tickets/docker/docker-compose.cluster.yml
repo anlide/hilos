@@ -30,7 +30,7 @@ name: hilos-concert-tickets-cluster${HILOS_STAND_SUFFIX:-}
 x-hilos-cluster:
   cli: concert-tickets-cluster-cli
   entry: concert-tickets-cluster-entry
-  scenarios: [21, 26]
+  scenarios: [21, 26, 27]
   e2e:
     runner: concert-tickets-cluster-e2e-runner
 

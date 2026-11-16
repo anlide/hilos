@@ -113,8 +113,13 @@ Nothing here drives the stand: the framework's shared cluster harness
 (`framework/docker/cluster/`) reads the nodes out of the compose file and runs
 the scenarios it names — 21, the five nodes started together on an empty
 database roll the schema out once, and 26, the database is one cluster of three
-synced data nodes, each holding a connection of the application. The full run
-has a step of its own, `concert-tickets-cluster`.
+synced data nodes, each holding a connection of the application; 27, a data node
+is killed under load while every node writes on through the two survivors, then
+comes back, catches up and takes connections only when Synced. The same cycle
+writes journal batches through the oracle and holds the three servers to one
+journal once the member is back. Its PASS records application connections before
+and after the fault and the nodes writing through each backend. The full run has
+a step of its own, `concert-tickets-cluster`.
 
 The browser suite uses the same five masters through the entry, with Mailpit
 and Playwright from the `e2e` profile. The entry serves the Angular build's
@@ -136,7 +141,7 @@ before repeating it.
 | `composer run test:cluster:inspect -- m1` | inspect one node as JSON |
 | `composer run test:cluster:logs -- m1` | follow one node's container logs; Ctrl-C stops following |
 | `composer run test:cluster:client -- m1 test:cluster:inspect` | run an existing CLI command through the selected node |
-| `composer run test:cluster:scenarios` | scenarios 21 and 26 on a fresh stand; `-- 26` runs only the one named |
+| `composer run test:cluster:scenarios` | scenarios 21, 26 and 27 on a fresh stand; `-- 27` runs only the full loss/return cycle |
 | `composer run test:cluster:e2e` | Moderation through five person/author/observer master rotations on a fresh stand; build first with `test:e2e-build` |
 | `composer run test:cluster:e2e-time-zone` | draw an explicit browser zone for a new cluster spec |
 | `composer run test:cluster:down-volumes` | take the stand down, database included |
