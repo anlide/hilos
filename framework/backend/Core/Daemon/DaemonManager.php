@@ -13231,15 +13231,6 @@ abstract class DaemonManager extends BaseManager implements
     private function guardGroupOperation(SignalDispatch $dispatch): void
     {
         if ($dispatch->groupOperation !== null && !$dispatch->groupOperation->isCurrent()) {
-            $hold = $dispatch->heldId === null ? null : $this->agentSignalHolds()->get($dispatch->heldId);
-            $stop = $this->signalDispatchState?->stop;
-            $browsers = $this->signalDispatchState?->browsers;
-            if (($stop?->includesDispatch($dispatch) ?? false) || ($hold !== null && ($stop?->includesHold($hold) ?? false))) {
-                $stop->fail();
-            }
-            if (($browsers?->includesDispatch($dispatch) ?? false) || ($hold !== null && ($browsers?->includesHold($hold) ?? false))) {
-                $browsers->fail();
-            }
             $dispatch->cancel();
         }
     }

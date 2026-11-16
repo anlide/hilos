@@ -16,6 +16,7 @@ use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -45,6 +46,7 @@ use Hilos\Environment\EnvAccessor;
 use Hilos\Hilos;
 use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Server\AbstractServer;
+use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
 use Hilos\Socket\Transport\PlainSocketTransport;
 use Hilos\Socket\WebSocket\DTO\WebSocketGroupUnsubscribeSignalDTO;
@@ -59,7 +61,9 @@ use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
+use RuntimeException;
 use Socket;
+use Throwable;
 use WeakReference;
 
 /**
@@ -540,10 +544,12 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         self::assertSame('', $this->consumeWorker(), 'Settled releases cannot run twice');
     }
 
-    public function testCanceledPreparedEffectCannotPayItsCapturedCompletionPrefixes(): void
+    /** @param bool $update Update rather than unsubscribe */
+    #[DataProvider('ordinaryOperations')]
+    public function testCanceledPreparedEffectPaysItsCapturedCompletionPrefixes(bool $update): void
     {
         $this->join('g', ['seat' => 'old']);
-        $dispatch = $this->prepared($this->operation(false, []));
+        $dispatch = $this->prepared($this->operation($update, ['seat' => 'stale']));
         $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
         $state->stop = new SignalDispatchPrefix(1, $state->intake, [], 0, 0, 0);
         $state->browsers = new SignalDispatchPrefix(2, $state->intake, [], 0, 0, 0);
@@ -551,16 +557,209 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         $dispatch->browserPrefixId = 2;
         $state->stop->captureActive($dispatch);
         $state->browsers->captureActive($dispatch);
+        self::assertFalse($state->stop->isReadyForAccounting());
+        self::assertFalse($state->browsers->isReadyForAccounting());
         $this->receive(new WorkerGroupLeaveAllDTO(new GroupLeaveAllSignalData(['C'])));
         $this->join('g', ['seat' => 'new']);
         $this->drain($dispatch);
         $state->stop->settle($dispatch);
         $state->browsers->settle($dispatch);
-        self::assertTrue($state->stop->failed);
-        self::assertTrue($state->browsers->failed);
-        self::assertFalse($state->stop->isReadyForAccounting());
-        self::assertFalse($state->browsers->isReadyForAccounting());
+        $holds = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($this->manager);
+        for ($portion = 0; $portion < 20; $portion++) {
+            $state->stop->advanceValidation($holds);
+            $state->browsers->advanceValidation($holds);
+        }
+        self::assertFalse($state->stop->failed);
+        self::assertFalse($state->browsers->failed);
+        self::assertTrue($state->stop->isReadyForAccounting());
+        self::assertTrue($state->browsers->isReadyForAccounting());
+        self::assertSame(SignalDispatchPhase::Canceled, $dispatch->phase);
         self::assertSame('', $this->consumeWorker());
+        self::assertSame([['seat' => 'new'], ['seat' => 'new'], []],
+            [$this->params('g'), $this->mirrorParams('g'), $this->consumer->agent->operations]);
+    }
+
+    /** @param bool $update Update rather than unsubscribe */
+    #[DataProvider('ordinaryOperations')]
+    public function testSchedulerAccountsStaleGroupWorkBeforeReleasingBrowsersOnce(bool $update): void
+    {
+        $this->manager->registerServer($this->workers);
+        $releases = 0;
+        $browsers = $this->createMock(WebSocketServer::class);
+        $browsers->expects(self::once())->method('closeClientsOnceWritten')->willReturnCallback(
+            static function () use (&$releases): void { $releases++; },
+        );
+        $this->manager->registerServer($browsers);
+        $this->join('g', ['seat' => 'old']);
+        $dispatch = $this->prepared($this->operation($update, ['seat' => 'stale']));
+        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state->active = $dispatch;
+        $neighbor = $this->queueSlowCapturedDispatch();
+        new ReflectionProperty(DaemonManager::class, 'shutdownStartTime')->setValue($this->manager, microtime(true));
+        new ReflectionMethod(DaemonManager::class, 'captureSignalDispatchPrefixes')->invoke($this->manager);
+        $prefix = $state->browsers;
+        self::assertSame($prefix->id, $dispatch->browserPrefixId);
+        self::assertTrue($this->workers->isReadyToShutdown());
+        $release = new ReflectionMethod(DaemonManager::class, 'releaseBrowsersOnceWorkersLeft');
+        $release->invoke($this->manager);
+        self::assertSame(0, $releases, 'Worker readiness still owes the captured active lifetime');
+        $this->receive(new WorkerGroupLeaveAllDTO(new GroupLeaveAllSignalData(['C'])));
+        $this->join('g', ['seat' => 'new']);
+
+        new ReflectionMethod(DaemonManager::class, 'dispatchSignals')->invoke($this->manager);
+
+        self::assertSame(SignalDispatchPhase::Canceled, $dispatch->phase);
+        self::assertNotSame($dispatch, $state->active);
+        self::assertTrue($neighbor->hasWork(), 'Other captured work still owes bounded scheduler portions');
+        self::assertFalse($prefix->complete);
+        self::assertFalse($prefix->failed);
+        $release->invoke($this->manager);
+        self::assertSame(0, $releases);
+        $this->drainScheduler();
+        self::assertTrue($prefix->complete);
+        self::assertFalse($prefix->failed);
+        self::assertSame([], $state->peers);
+        self::assertNull($state->active);
+        self::assertFalse($neighbor->hasWork());
+        $release->invoke($this->manager);
+        $release->invoke($this->manager);
+        self::assertSame(1, $releases);
+        self::assertSame('', $this->consumeWorker());
+        self::assertSame([['seat' => 'new'], ['seat' => 'new'], []],
+            [$this->params('g'), $this->mirrorParams('g'), $this->consumer->agent->operations]);
+    }
+
+    /** @param bool $update Update rather than unsubscribe */
+    #[DataProvider('ordinaryOperations')]
+    public function testSchedulerAccountsStaleReleasedAuthorityBeforeAcknowledgingItsExactStopGeneration(bool $update): void
+    {
+        $this->manager->registerServer($this->workers);
+        $this->join('g', ['seat' => 'old']);
+        $roster = new ReflectionProperty(DaemonManager::class, 'agentManagerDaemon')->getValue($this->manager);
+        new ReflectionProperty(AgentManagerDaemon::class, 'startedAgentIds')->setValue($roster, []);
+        $dispatch = $this->prepared($this->operation($update, ['seat' => 'stale']));
+        $authority = WeakReference::create($dispatch->groupOperation);
+        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state->active = $dispatch;
+        $this->drainScheduler();
+        $holds = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($this->manager);
+        self::assertSame(1, $holds->getParkedCount());
+        self::assertNull($state->active);
+        $id = $holds->candidates()->current();
+        self::assertSame($authority->get(), $holds->get($id)->parked->groupOperation);
+        self::assertNotNull($authority->get());
+        self::assertSame('', $this->consumeWorker());
+        $neighbor = $this->queueSlowCapturedDispatch();
+        new ReflectionMethod(AbstractServer::class, 'addClient')->invoke($this->workers, $this->worker);
+        $key = WorkerConstants::TYPE_REGULAR . WorkerConstants::KEY_SEPARATOR . '1';
+        new ReflectionProperty(WorkerServer::class, 'secondStopWave')->setValue($this->workers,
+            [$key => [GroupAuthorityAgent::AGENT_TYPE]]);
+        new ReflectionProperty(WorkerServer::class, 'heldStopClients')->setValue($this->workers, [$key => $this->worker]);
+        new ReflectionProperty(WorkerServer::class, 'secondStopAgents')->setValue($this->workers,
+            [GroupAuthorityAgent::AGENT_TYPE => true]);
+        new ReflectionProperty(WorkerServer::class, 'secondStopWaveStep')->setValue($this->workers,
+            new ReflectionClass(WorkerServer::class)->getConstant('SECOND_WAVE_FIRST_GONE'));
+        new ReflectionProperty(WorkerServer::class, 'stopDispatchGeneration')->setValue($this->workers, 7);
+        new ReflectionMethod(DaemonManager::class, 'captureSignalDispatchPrefixes')->invoke($this->manager);
+        $prefix = $state->stop;
+        self::assertSame($this->workers, $prefix->workerServer);
+        self::assertSame(7, $prefix->workerGeneration);
+        $this->workers->completeStopDispatch(6);
+        self::assertSame(7, $this->workers->pendingStopDispatch(), 'Another generation cannot pay this barrier');
+        $roster->handleAgentStarted(new WorkerAgentStartedDTO(GroupAuthorityAgent::AGENT_TYPE, GroupAuthorityAgent::AGENT_TYPE));
+        $holds->release($id);
+        $state->released = new ReflectionMethod(DaemonManager::class, 'createReleasedAgentDispatch')->invoke(
+            $this->manager, $holds->get($id), $this->workers, null,
+        );
+        $holds->begin($id, $state->released);
+        self::assertSame($authority->get(), $state->released->groupOperation);
+        $released = WeakReference::create($state->released);
+        $this->receive(new WorkerGroupLeaveAllDTO(new GroupLeaveAllSignalData(['C'])));
+        $this->join('g', ['seat' => 'new']);
+
+        new ReflectionMethod(DaemonManager::class, 'dispatchSignals')->invoke($this->manager);
+
+        self::assertNull($state->released);
+        self::assertNull($released->get(), 'The scheduler must clear the retained release slot');
+        self::assertNull($holds->get($id));
+        self::assertSame(0, $holds->getParkedCount());
+        self::assertNull($authority->get());
+        self::assertTrue($neighbor->hasWork());
+        self::assertFalse($prefix->complete);
+        self::assertFalse($prefix->failed);
+        self::assertSame(7, $this->workers->pendingStopDispatch(), 'Cancellation cannot acknowledge its live captured neighbor');
+        $this->drainScheduler();
+        self::assertTrue($prefix->complete);
+        self::assertFalse($prefix->failed);
+        self::assertSame([], $state->peers);
+        self::assertNull($state->active);
+        self::assertFalse($neighbor->hasWork());
+        self::assertNull($this->workers->pendingStopDispatch());
+        self::assertSame('', $this->consumeWorker());
+        self::assertSame([['seat' => 'new'], ['seat' => 'new'], []],
+            [$this->params('g'), $this->mirrorParams('g'), $this->consumer->agent->operations]);
+        $this->drainScheduler();
+        self::assertSame('', $this->consumeWorker());
+    }
+
+    /** @return iterable<string, array{bool, bool}> Both owners together and each beside an independent prefix */
+    public static function cancellationFailureOwners(): iterable
+    {
+        yield 'both' => [true, true];
+        yield 'stop-only' => [true, false];
+        yield 'browsers-only' => [false, true];
+    }
+
+    /**
+     * @param bool $stopOwned Whether the stop prefix owns the canceled delivery
+     * @param bool $browserOwned Whether the browser prefix owns the canceled delivery
+     */
+    #[DataProvider('cancellationFailureOwners')]
+    public function testStaleCancellationDisposalFailureEscapesAndFailsOnlyItsOwningPrefixes(bool $stopOwned, bool $browserOwned): void
+    {
+        $this->join('g', ['seat' => 'old']);
+        $dispatch = $this->prepared($this->operation(false, []));
+        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state->stop = new SignalDispatchPrefix(1, $state->intake, [], 0, 0, 0);
+        $state->browsers = new SignalDispatchPrefix(2, $state->intake, [], 0, 0, 0);
+        if ($stopOwned) {
+            $dispatch->stopPrefixId = $state->stop->id;
+            $state->stop->captureActive($dispatch);
+        }
+        if ($browserOwned) {
+            $dispatch->browserPrefixId = $state->browsers->id;
+            $state->browsers->captureActive($dispatch);
+        }
+        $failure = new RuntimeException('canceled group operation disposal failed');
+        $dispatch->physical = (static function () use ($failure): Generator {
+            try {
+                yield;
+                yield;
+            } finally {
+                throw $failure;
+            }
+        })();
+        $dispatch->physical->valid();
+        $this->receive(new WorkerGroupLeaveAllDTO(new GroupLeaveAllSignalData(['C'])));
+        $this->join('g', ['seat' => 'new']);
+        $caught = null;
+        try {
+            $this->portion($dispatch, 1);
+        } catch (Throwable $problem) {
+            $caught = $problem;
+        }
+        self::assertSame($failure, $caught);
+        self::assertSame(SignalDispatchPhase::Canceled, $dispatch->phase);
+        self::assertFalse($dispatch->hasWork());
+        self::assertNull($dispatch->physical);
+        self::assertNull($dispatch->groupOperation);
+        self::assertSame($stopOwned, $state->stop->failed);
+        self::assertSame($browserOwned, $state->browsers->failed);
+        self::assertFalse($state->stop->complete);
+        self::assertFalse($state->browsers->complete);
+        self::assertSame('', $this->consumeWorker());
+        self::assertSame([['seat' => 'new'], ['seat' => 'new'], []],
+            [$this->params('g'), $this->mirrorParams('g'), $this->consumer->agent->operations]);
     }
 
     public function testReplacedRouterCancelsThePreparedCursorWithoutPinningItsSource(): void
@@ -842,6 +1041,21 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
             $this->portion($dispatch, 64);
         }
         self::assertFalse($dispatch->hasWork());
+    }
+
+    /** @return SignalDispatch Another captured lifetime that needs several scheduler portions */
+    private function queueSlowCapturedDispatch(): SignalDispatch
+    {
+        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $dispatch = new SignalDispatch(null, static function (): Generator {
+            yield;
+            for ($step = 0; $step < 130; $step++) {
+                yield;
+            }
+        });
+        $dispatch->peerFanoutId = ++$state->peerSequence;
+        $state->peers[$dispatch->peerFanoutId] = $dispatch;
+        return $dispatch;
     }
 
     /** Runs only the production scheduler's runnable portions; parked occupancy never drives this loop. */
