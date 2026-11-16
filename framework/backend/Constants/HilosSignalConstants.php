@@ -85,7 +85,6 @@ use Hilos\Files\Upload\DTO\UploadCancelActionDTO;
 use Hilos\Files\Upload\DTO\UploadInitActionDTO;
 use Hilos\Files\Upload\DTO\UploadPublishSignalData;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
-use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
 use Hilos\Legal\Export\DTO\LegalAcceptancesExportStateSignalData;
 use Hilos\Log\DTO\ClusterLogIndexPortionSignalData;
 use Hilos\Log\DTO\LogsFollowStartSignalData;
@@ -870,8 +869,9 @@ final class HilosSignalConstants
     /**
      * The person's agent → users library: the passkey's use is recorded, or why not (HIL-1405).
      *
-     * The library signs the person in or records the confirmed step; any refusal reads as the
-     * generic passkey failure. Carried by {@see UserPasskeyUseDoneSignalData}.
+     * The library signs the person in or records the confirmed step. An ordinary invalid-use
+     * refusal reads as the generic passkey failure; an erasing-account refusal keeps its reason
+     * and is marked separately by `erasing`. Carried by {@see UserPasskeyUseDoneSignalData}.
      */
     public const string HILOS_USER_PASSKEY_USE_DONE = 'hilos_user_passkey_use_done';
 
@@ -2463,9 +2463,6 @@ final class HilosSignalConstants
     /** Client → server: order this person's copy; empty payload and acknowledgement. */
     public const string HILOS_DATA_EXPORT_ORDER = 'hilos_data_export_order';
 
-    /** Agent → agent: the account was erased; remove its export row and file ({userId}). */
-    public const string HILOS_DATA_EXPORT_FORGET_USER = 'hilos_data_export_forget_user';
-
     /**
      * Server → client (all connected): the administrator's second-factor settings changed (HIL-494).
      *
@@ -3533,9 +3530,4 @@ final class HilosSignalConstants
      */
     public const string HILOS_LEGAL_ACCEPTANCES_EXPORT_STATE = 'hilos_legal_acceptances_export_state';
 
-    /**
-     * The sessions library → the legal agent: an account was erased, and no file of acceptance records on the
-     * server may outlive its records (HIL-1234). Carried by {@see LegalAcceptancesExportForgetSignalData}.
-     */
-    public const string HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET = 'hilos_legal_acceptances_export_forget';
 }

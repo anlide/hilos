@@ -129,8 +129,8 @@ The holder currently claims settings with all three operations for that wait
 upsert and the terminal deletions. The person's own wait is created and edited
 by their agent (HIL-1406). The complete-only topology comparison does not catch
 this overlap; it is named terminal debt, not a permission for partial DB
-co-owners. Old erasure rights remain until its live switch
-(not in the code yet — HIL-1952), and old merge rights until its own
+co-owners. HIL-1952 retired the holder's old erasure rights; old merge rights
+remain until their own
 (not in the code yet — HIL-1999). The detailed
 [erasure](account-operations.md#erasure) and [merge](account-operations.md#merge)
 canons give each prepared capability its own address. For merge, each owner
@@ -343,7 +343,9 @@ nothing to do writes nothing and asks nothing, and an owner that keeps refusing
 is asked once an hour. The sweep's state is the holder's memory alone: it dies
 with the holder, and a new holder begins from its first tick. Two holders
 during a move may both send frames, which is harmless because applying twice
-changes nothing more; a live move is HIL-1912.
+changes nothing more. Existing restriction integration covers the move;
+failover 4/19 is recorded, and cold person 39 remains quarantined as F-015.
+No broader cluster evidence is claimed here.
 
 The holder also keeps an internal request for the term and the switch-off to
 wait on (`SecondFactorTrustRestrictionSweep::await()`), "finish the restrictions up to R, then tell me": it starts a pass at
@@ -367,8 +369,8 @@ on the frame of the sweep that the term asked for (HIL-1908). They also forget t
 switch-off calls for it, on the frame of the sweep that the switch-off asked for
 (HIL-1909). The saved-moment rule, no extension of an earlier expiry, current
 gate checks and browser outcomes above stay requirements. The current holder calls remain
-until each ordinary move is enabled. Its terminal removals then remain only
-until erasure's switch (not in the code yet — HIL-1952) and merge's switch
+until each ordinary move is enabled. HIL-1952 retired its erasure removals;
+the merge's terminal removals remain until its switch
 (not in the code yet — HIL-1999).
 
 ## The delayed removal

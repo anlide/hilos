@@ -85,10 +85,9 @@ undeclared document or revision is a programming error at this internal entry.
 server's `accepted_at`, with an auto-increment `id` and a unique key over the
 person/document/revision. Repeating a recorded acceptance returns its original
 row and timestamp. There are no item actions: a stored acceptance is immutable.
-The users library claims `Add` only and creates these acceptances. The sessions
-library borrows `Remove` for account erasure, which removes all of the person's
-acceptances. That terminal right remains until the live erasure switch
-(not in the code yet — HIL-1952).
+The users library claims `Add` only and creates these acceptances. The person's
+agent removes the person's acceptances in its owner-local erasure part. HIL-1952
+retired the sessions library's borrowed erasure `Remove`.
 The only other removal is test-only: `test:legal:hold <userId> <document> <revisionId>` (HIL-324)
 first records the named acceptance if missing, in the users library's own
 transaction without publishing state, then asks the personal owner to remove
@@ -762,10 +761,11 @@ files of the directory no ready export names. An erased account removes every
 ready and failed export with its file and starts the export being built again
 (`hilos_legal_acceptances_export_forget`, [account-deletion.md](account-deletion.md)):
 which person is in which file is not known, and no copy on the server may
-outlive the records of an erased account. The participant protocol of the
-owners does the same in the legal agent's own step, which also deletes the
-account's order and records the counts ([account-operations.md](account-operations.md),
-*The legal export part*); the forget frame stays the live path until HIL-1952.
+outlive the records of an erased account. The legal agent's participant step
+deletes the account's order and records the counts
+([account-operations.md](account-operations.md), *The legal export part*).
+After commit, its existing build, sweep, state and file cleanup run in order;
+the old holder forget frame is retired. Disk cleanup keeps its existing limits.
 An administrator whose erasure has begun orders no new export. A file already
 downloaded is out of reach.
 

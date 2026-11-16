@@ -59,9 +59,10 @@ use Hilos\Database\View\Item\LegalAcceptanceExport;
 use Hilos\Fs\ClusterDirectoryMarker;
 use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\DirectoryScope;
+use Hilos\Fs\Exception\FileDeleteException;
+use Hilos\Fs\FsPath;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
 use Hilos\Legal\Export\LegalAcceptancesCsv;
 use Hilos\Legal\Export\LegalAcceptancesExportErasureResult;
 use Hilos\Legal\Export\LegalAcceptancesExportHttp;
@@ -71,6 +72,7 @@ use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalRevision;
 use Hilos\Legal\LegalSignificance;
+use Hilos\Log\AgentLogStream;
 use Hilos\Pages\Legal\DTO\HilosLegalAcceptancesExportActionDTO;
 use Hilos\Pages\Legal\LegalAdminAudience;
 use Hilos\Runtime\RtRowReader;
@@ -783,11 +785,9 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         self::assertContains(self::PERSON_CELLS[self::PERSON_ID], array_map(self::personCellsOf(...), self::linesOf($building)));
 
         Database::sqlRun('DELETE FROM `hilos_legal_acceptance` WHERE `user_id` = ?', [self::PERSON_ID]);
-        $agent->onSignalAgent(
-            new AgentSignalData(new LegalAcceptancesExportForgetSignalData(self::PERSON_ID)),
-            'hilos_users',
-            HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET,
-        );
+        $assignmentId = self::legalPart(self::openErasure(self::PERSON_ID), self::PERSON_ID);
+        $result = self::erase($agent, $assignmentId);
+        self::assertSame($assignmentId, $result->assignmentId);
 
         self::assertNull(self::exportOf(self::OTHER_ADMIN_ID));
         self::assertNull(self::exportOf(self::THIRD_ADMIN_ID));
@@ -820,8 +820,10 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         $agent->onTick();
         self::assertCount(1, $this->files());
 
-        self::exportOf(self::ADMIN_ID)?->actions->delete();
-        LegalAcceptancesExports::forget($agent, self::ADMIN_ID);
+        $assignmentId = self::legalPart(self::openErasure(self::ADMIN_ID), self::ADMIN_ID);
+        Database::sqlRun('DELETE FROM `hilos_legal_acceptance` WHERE `user_id` = ?', [self::ADMIN_ID]);
+        $result = self::erase($agent, $assignmentId);
+        self::assertSame($assignmentId, $result->assignmentId);
 
         self::assertNull(self::exportOf(self::ADMIN_ID));
         self::assertSame([], $this->files());
@@ -911,6 +913,85 @@ final class LegalAcceptancesExportIntegrationTest extends HilosSessionIntegratio
         self::assertSame([], $this->files());
         self::assertSame($id, self::exportOf(self::ADMIN_ID)?->id);
         self::assertSame(LegalAcceptancesExportState::PREPARING, self::exportOf(self::ADMIN_ID)?->state);
+        self::assertSame(4, $this->finish($agent, self::ADMIN_ID));
+        $export = self::exportOf(self::ADMIN_ID);
+        self::assertSame(LegalAcceptancesExportState::READY, $export?->state);
+        $lines = self::linesOf($this->directory . '/' . $export->storedName);
+        self::assertSame(self::expectedLines(static fn (): bool => true, self::utc()), $lines);
+        self::assertCount(self::RECORDS - 201, $lines);
+        self::assertNotContains(self::PERSON_CELLS[self::PERSON_ID], array_map(self::personCellsOf(...), $lines));
+    }
+
+    /**
+     * A finished file owned by root cannot be removed by nobody from a sticky directory, while nobody's
+     * building file can. The committed erasure still drops that contaminated build and the next build omits the person.
+     */
+    public function testAFinishedFileDeletionFailureStillRestartsTheBuildAfterErasure(): void
+    {
+        $originalUid = posix_geteuid();
+        self::assertSame(0, $originalUid);
+        $nobody = posix_getpwnam('nobody');
+        self::assertIsArray($nobody);
+        self::assertNotSame(0, $nobody['uid']);
+        self::assertTrue(class_exists(FileDeleteException::class));
+        self::seedAcceptances();
+        $agent = self::startedAgent();
+        $this->seedFinished(self::OTHER_ADMIN_ID, 'other.csv');
+        self::confirm(self::ADMIN_TOKEN, self::ADMIN_ID);
+        self::order($agent, self::ADMIN_KEY);
+        $id = self::exportOf(self::ADMIN_ID)?->id;
+        $agent->onTick();
+        $agent->onTick();
+        $agent->onTick();
+        $building = $this->buildingFile();
+        $finished = $this->directory . '/other.csv';
+        self::assertContains(self::PERSON_CELLS[self::PERSON_ID], array_map(self::personCellsOf(...), self::linesOf($building)));
+        Database::sqlRun('DELETE FROM `hilos_legal_acceptance` WHERE `user_id` = ?', [self::PERSON_ID]);
+        $assignmentId = self::legalPart(self::openErasure(self::PERSON_ID), self::PERSON_ID);
+
+        // Keep setup and the failure's autoload under root; /tmp permits traversal after the UID changes.
+        self::assertSame(0, fileowner($this->directory));
+        self::assertSame(0, fileowner($finished));
+        $logDirectory = $this->directory . '-logs';
+        $errorLog = AgentLogStream::pathFor($logDirectory, $agent->getId(), true);
+        try {
+            mkdir($logDirectory, 0755);
+            file_put_contents($errorLog, '');
+            FsPath::chmod($errorLog, 0666);
+            Logger::setLogFile($logDirectory . '/main.log');
+            FsPath::chmod($this->directory, 01777);
+            self::assertTrue(chown($building, $nobody['uid']));
+            self::assertTrue(posix_seteuid($nobody['uid']));
+            self::assertSame($nobody['uid'], posix_geteuid());
+
+            $result = self::erase($agent, $assignmentId);
+
+            self::assertSame('{"ownOrders":0,"sharedExports":1}', $result->payloadJson);
+            self::assertSame([[$assignmentId, HilosAgentType::HILOS_LEGAL, '{"ownOrders":0,"sharedExports":1}']], self::storedResults());
+            self::assertNull(self::exportOf(self::OTHER_ADMIN_ID));
+            self::assertFileExists($finished);
+            self::assertStringContainsString('Cannot delete file: ' . $finished, (string) file_get_contents($errorLog));
+            self::assertFileDoesNotExist($building);
+            self::assertSame($id, self::exportOf(self::ADMIN_ID)?->id);
+            self::assertSame(LegalAcceptancesExportState::PREPARING, self::exportOf(self::ADMIN_ID)?->state);
+        } finally {
+            $restored = posix_seteuid($originalUid);
+            Logger::setLogFile($this->logFile);
+            if ($restored) {
+                FsPath::chmod($this->directory, 0755);
+                if (is_file($building)) {
+                    self::assertTrue(chown($building, $originalUid));
+                }
+                FsPath::delete($errorLog);
+                if (is_dir($logDirectory)) {
+                    rmdir($logDirectory);
+                }
+                FsPath::delete($finished);
+            }
+            self::assertTrue($restored);
+            self::assertSame($originalUid, posix_geteuid());
+        }
+
         self::assertSame(4, $this->finish($agent, self::ADMIN_ID));
         $export = self::exportOf(self::ADMIN_ID);
         self::assertSame(LegalAcceptancesExportState::READY, $export?->state);

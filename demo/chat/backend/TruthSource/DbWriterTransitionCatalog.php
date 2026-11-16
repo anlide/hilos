@@ -32,7 +32,7 @@ final class DbWriterTransitionCatalog extends FrameworkDbWriterTransitionCatalog
             if (in_array($collection, [ChatDbContext::events, ChatDbContext::eventUserRegistrations], true)) {
                 $base = [...$base, ...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add)];
             }
-            $pending = [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)];
+            $pending = [];
             if ($collection === ChatDbContext::eventMessages) {
                 $pending[self::MERGE] = $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Update);
             }

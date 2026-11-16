@@ -120,7 +120,6 @@ use Demo\OnlineTesting\Pages\Hilos\Logs\LogsKeysPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsOverviewPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\OnlineTesting\Pages\Hilos\Logs\LogsSettingsPage;
-use Demo\OnlineTesting\Notification\OnlineTestingDeliveryChannelRegistry;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\OnlineTesting\Pages\Hilos\Communications\CommunicationsChannelFramePage;
@@ -231,7 +230,6 @@ use Hilos\Tables\Communications\HilosCommunicationsChannelsTable;
 use Hilos\Tables\Communications\HilosNotificationDeliveriesTable;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
-use Hilos\Notification\Delivery\DeliveryLogSettingsCatalog;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Demo\OnlineTesting\Pages\Hilos\I18nPage;
@@ -1157,7 +1155,6 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
                 HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => HilosAgentType::HILOS_DAEMON,
                 HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
                 HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_DATA_EXPORT,
-                HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
                 // The other half of the seam, and the endings the users library hands over:
                 // what a sign-in became reaches the library that owns the session.
                 HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -1963,25 +1960,14 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
         $ceiling = [
-            'accountDeletions' => ['HIL-1952'],
-            'dataExports' => ['HIL-1952'],
-            'identities' => ['HIL-1952', 'HIL-1999'],
-            'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1952'],
-            'notificationPreferences' => ['HIL-1952'],
-            'notifications' => ['HIL-1952'],
-            'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'pushSubscriptions' => ['HIL-1952'],
-            'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1952', 'HIL-1999'],
-            'secondFactors' => ['HIL-1952', 'HIL-1999'],
-            'stepUps' => ['HIL-1952'],
-            'userPhotos' => ['HIL-1952'],
-            'userRenames' => ['HIL-1952'],
-            'users' => ['HIL-1952', 'HIL-1999'],
-            'verifications' => ['HIL-1952'],
+            'identities' => ['HIL-1999'],
+            'passkeyCredentials' => ['HIL-1999'],
+            'secondFactorBackupCodes' => ['HIL-1999'],
+            'secondFactorResets' => ['HIL-1999'],
+            'secondFactorSettings' => ['HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1999'],
+            'secondFactors' => ['HIL-1999'],
+            'users' => ['HIL-1999'],
         ];
         foreach (Hilos::SHARED_DB_OWNERS as $collection => $pending) {
             $this->assertArrayHasKey($collection, $ceiling);

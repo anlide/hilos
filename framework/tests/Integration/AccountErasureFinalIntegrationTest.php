@@ -32,11 +32,8 @@ use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\Subscriber\ViewCacheSubscriber;
-use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
-use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
-use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
@@ -80,7 +77,7 @@ final class AccountErasureFinalIntegrationTest extends HilosSessionIntegrationTe
     private const string START_KEY = 'start:';
 
     /** Payload of the start's assignment, which the start does not read. */
-    private const string START_PAYLOAD = '{}';
+    private const string START_PAYLOAD = '{"participant":"personal","expireGrace":false}';
 
     /** Payload of the holder's own part, recorded without doing it. */
     private const string HOLDER_PART_PAYLOAD = '{}';
@@ -98,9 +95,6 @@ final class AccountErasureFinalIntegrationTest extends HilosSessionIntegrationTe
     private ?SignalRouter $previousRouter = null;
 
     private string $previousApp;
-
-    /** Whether the person's agent is the framework's own class, without the rights of the switch. */
-    private bool $beforeSwitch = false;
 
     protected function setUp(): void
     {
@@ -356,22 +350,6 @@ final class AccountErasureFinalIntegrationTest extends HilosSessionIntegrationTe
         self::assertTrue($this->personAgent($rootId)->shouldStop());
     }
 
-    /** The agent of today, without the rights of the switch, is refused by the guard and writes nothing. */
-    public function testTheAgentWithoutTheRightsOfTheSwitchIsRefused(): void
-    {
-        $this->beforeSwitch = true;
-        $rootId = $this->seedPerson();
-        self::seedRename($rootId, null);
-        $erasure = $this->prepareFinals($rootId);
-
-        $this->assertFinalRefused($rootId, self::finalId($erasure, $rootId), WriteNotAllowedException::class, null);
-
-        self::assertInstanceOf(IntegrationUserAgent::class, $this->personAgent($rootId));
-        self::assertSame(1, self::capturesOf($erasure, $rootId));
-        self::assertNull(self::completedAt((int)$erasure->requestId));
-        self::assertFalse(AccountErasureFinal::hasFinal($erasure->id, $rootId));
-    }
-
     /**
      * Every account of an open erasure gets one final, at the current stage and written to its own
      * agent; a repeat writes nothing, and a closed erasure records none.
@@ -507,15 +485,14 @@ final class AccountErasureFinalIntegrationTest extends HilosSessionIntegrationTe
     }
 
     /**
-     * The person's agent with the rights of the switch, or the framework's own class when the case
-     * proves the agent of today is refused.
+     * The personal owner inherits the production rights of the erasure final.
      *
      * @param string $userId Person id as the agent address carries it
      * @return AbstractUserAgent The agent, not yet claimed
      */
     protected function newPersonAgent(string $userId): AbstractUserAgent
     {
-        return $this->beforeSwitch ? new IntegrationUserAgent($userId) : new ErasureFinalTestUserAgent($userId);
+        return new ErasureFinalTestUserAgent($userId);
     }
 
     /**
@@ -941,17 +918,7 @@ final class ErasureFinalTestSessionsHolder extends AbstractSessionsLibraryAgent
  */
 final class ErasureFinalTestUserAgent extends AbstractUserAgent
 {
-    /** @var array<string, list<TruthSourceOperation>> The person's row, now with its removal */
-    public const array OWNS_DB_ROWS = [
-        HilosDbContext::users => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-    ];
 
-    /** @var array<string, list<TruthSourceOperation>> The framework agent's sets, the journal and the merge row now removed here too */
-    public const array OWNS_DB_SET = [
-        ...AbstractUserAgent::OWNS_DB_SET,
-        HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::userMerges => [TruthSourceOperation::Remove],
-    ];
 }
 
 /** The installation of the case: the person's agent per person and the session holder, so the census expects both parts. */

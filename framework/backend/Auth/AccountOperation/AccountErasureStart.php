@@ -35,7 +35,7 @@ use Throwable;
  * transaction. A repeated call returns the saved result without starting again. The agent of an
  * account folded into the root marks its own standing request begun as the first write of its
  * part, inside that part's transaction ({@see startOwnRequest()}). Neither sends a frame: the
- * coordinator assigns the step at its current stage through recordMissing().
+ * opening records the start intention atomically; recovery fills a missing start through recordMissing().
  * SCAFFOLD: the production erasure entry opens in HIL-1952.
  */
 final class AccountErasureStart
@@ -72,32 +72,45 @@ final class AccountErasureStart
      */
     public static function recordMissing(AccountOperation $operation): ?AccountOperationAssignment
     {
+        return Database::transaction(
+            DatabaseNames::PRIMARY,
+            static fn (): ?AccountOperationAssignment => self::recordInTransaction($operation, false),
+        );
+    }
+
+    /**
+     * Records the start intention inside the opening's transaction, without replacing an earlier assignment.
+     *
+     * @param AccountOperation $operation Open erasure whose root is to start
+     * @param bool $expireGrace Whether the personal owner expires the grace period before starting
+     * @return ?AccountOperationAssignment New start assignment, or null on a repeat
+     * @throws DatabaseException When no transaction is open
+     * @throws ValidationException When the operation is not an open erasure
+     * @throws Throwable When reading or recording fails; the caller owns the transaction
+     */
+    public static function recordInTransaction(AccountOperation $operation, bool $expireGrace): ?AccountOperationAssignment
+    {
+        if (!Database::hasOpenTransactions()) {
+            throw new DatabaseException('An account erasure start must be recorded inside a transaction');
+        }
         if ($operation->kind !== AccountOperationKind::Erasure || $operation->finishedAt !== null) {
             throw new ValidationException('Only an open erasure records its start.');
         }
-
-        return Database::transaction(DatabaseNames::PRIMARY, static function () use ($operation): ?AccountOperationAssignment {
-            $key = self::personalKey($operation->rootUserId);
-            foreach (Hilos::$db->accountOperationAssignments->forOperation($operation->id) as $assignment) {
-                if ($assignment->assignmentKey === $key) {
-                    return null;
-                }
+        $key = self::personalKey($operation->rootUserId);
+        foreach (Hilos::$db->accountOperationAssignments->forOperation($operation->id) as $assignment) {
+            if ($assignment->assignmentKey === $key) {
+                return null;
             }
-            $personal = new AccountOperationExpectation(
-                AccountErasureParticipantCatalog::PERSONAL,
-                $operation->rootUserId,
-                new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$operation->rootUserId),
-            );
+        }
 
-            return Hilos::$db->accountOperationAssignments->actions->record(
-                $operation->id,
-                $operation->stage,
-                $key,
-                $personal->assignmentOwner(),
-                $operation->rootUserId,
-                $personal->payload(),
-            );
-        });
+        return Hilos::$db->accountOperationAssignments->actions->record(
+            $operation->id,
+            $operation->stage,
+            $key,
+            new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$operation->rootUserId),
+            $operation->rootUserId,
+            AccountErasureStartPayload::payloadOf($expireGrace),
+        );
     }
 
     /**
@@ -123,6 +136,9 @@ final class AccountErasureStart
                 $request = Hilos::$db->accountDeletions[$operation->requestId] ?? null;
                 if ($request === null || $request->userId !== $operation->rootUserId) {
                     throw new ValidationException('The erasure names no deletion request of its root account.');
+                }
+                if (AccountErasureStartPayload::expireGraceOf($assignment->payload)) {
+                    $request->actions->expireGrace();
                 }
 
                 return AccountErasureStartResult::payloadOf($request->actions->start());

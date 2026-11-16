@@ -80,9 +80,9 @@ direction is each owner deleting its own rows in its own transaction, and
 the loser giving rows away under a narrow
 [operation right](account-operations.md#the-transfer-right), judged against
 the operation and both preparations without a new claim width or `_setVia`
-change. The transfer door is built but has no live merge caller. The old erasure
-remains live until HIL-1952 (not in the code yet — HIL-1952), and the old merge
-until HIL-1999 (not in the code yet — HIL-1999); preparation stays inert.
+change. The transfer door is built but has no live merge caller. The owner-local
+erasure path is live from HIL-1952; the old merge remains until HIL-1999
+(not in the code yet — HIL-1999), and its preparation stays inert.
 
 **Executors keep their working rows.** A delivery status, a personal data export
 and an administrator's export of acceptances stay with the executor that writes
@@ -288,19 +288,18 @@ profile move belong to a separate leaf
 The following are today's retained terminal paths, not a standing exception
 for any sweep, erasure or merge:
 
-- **Account erasure:** `eraseAccount()` and `applyAccountErasure()` run one
-  transaction at the sessions holder over the whole merged circle, including
-  chat messages, attachments, events and registration events. The due sweep
-  and `test:account:force-purge` remain its live producers until the switch to
-  owner-local work (not in the code yet — HIL-1952).
+- **Account erasure:** the due sweep and `test:account:force-purge` open or
+  observe a durable operation. Each participant deletes its own rows and saves
+  its result in one local transaction; a later refusal leaves earlier commits
+  intact and the operation unfinished for recovery (HIL-1952).
 - **Account merge:** `mergeAccounts()` and `applyAccountMerge()` run one
   transaction there too. Ways in, second factor, chat authorship, the loser's
   block and the tombstone keep their current writers until the merge cutover
   (not in the code yet — HIL-1999).
-- **Stops:** today a deleted person row or a merge row stops the affected
-  personal agent; an agent not running does not rise, and the survivor is not
-  stopped. Erasure moves this stop after the owner's confirmed part at its
-  cutover (not in the code yet — HIL-1952). Merge prepares a loser stop only
+- **Stops:** a deleted person row stops the affected personal agent; an agent
+  not running does not rise, and the survivor is not stopped. Erasure stops
+  the personal agent after its final write and confirmed part (HIL-1952).
+  Merge prepares a loser stop only
   after its copy is cleaned following receipt (not in the code yet — HIL-1998).
   The old immediate stop is removed only at the merge cutover
   (not in the code yet — HIL-1999).
@@ -317,22 +316,21 @@ addresses above. The complete [Writer Map](account-operations.md#writer-map)
 and [ordinary transitions](account-operations.md#ordinary-transitions) cover
 the other rows and the exact current operations.
 
-The three phases have distinct end points: ordinary moves leave only the
-named erasure/merge debts; HIL-1952 switches erasure and leaves only merge
+The three phases have distinct end points: ordinary moves left only the
+named erasure/merge debts; HIL-1952 switched erasure and left only merge
 debt; HIL-1999 switches merge and removes that remainder. The detailed
 [erasure canon](account-operations.md#erasure) records the personal finishing
 mode: the same agent, including a folded account's, closes ordinary actions
 and late frames, accepts only continuation of its own operation and finishes
-its own part. The closing and the refusal are built and inert (HIL-1939), with
-no live caller until HIL-1952. Its final deletion of the
+its own part. The closing and refusal are live in the erasure path (HIL-1952;
+prepared in HIL-1939). Its final deletion of the
 merge row, journal, capture and person and completion of its request follow the
 required results; its stop follows its last own write, made by the agent itself
-(HIL-1942, built and inert; the right to delete is not granted before the switch,
-not in the code yet — HIL-1952).
+(HIL-1942, enabled in HIL-1952).
 The erasure coordinator correlates assignments and answers to one operation
 and stage (HIL-1950); the holder's recovery pass and an owner's start find open
-obligations from DB (HIL-1951; [The erasure recovery](account-operations.md#current-implementation)),
-and no erasure is opened until HIL-1952.
+obligations from DB (HIL-1951; [The erasure recovery](account-operations.md#current-implementation));
+the live due and force-purge paths open those operations in HIL-1952.
 
 The detailed [merge canon](account-operations.md#merge) gives the folded loser
 a finishing mode: it accepts only continuation of its own operation, copy
@@ -343,9 +341,9 @@ durable obligations, including after a lost frame or a move
 (not in the code yet — HIL-2002). This mode replaces the current immediate
 stop only at live merge cutover (not in the code yet — HIL-1999).
 
-Preparatory erasure code is inert: a new handler does not authorize finishing
-old requests by the new path. Today's stops, producers and necessary rights
-remain until live erasure switches (not in the code yet — HIL-1952).
+The live erasure path uses the durable operation for both new starts and open
+work; the former holder-side erasure calls and grants were retired in HIL-1952.
+Merge remains on its old path until HIL-1999.
 
 Keep the grants, comments and debt entries needed by the old path until its
 actual switch. In the commit that enables a move, its implementing leaf removes

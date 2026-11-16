@@ -30,6 +30,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseNames;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\AccountOperation as EntityAccountOperation;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\View\Item\AccountDeletion;
@@ -364,6 +365,62 @@ final class AccountErasureProgressIntegrationTest extends FrameworkIntegrationTe
         AccountErasureProgressResolver::of(self::ROOT_ID);
     }
 
+    public function testMalformedFactsAreMemoizedSeparatelyAndSourceChangesReleaseBothFailures(): void
+    {
+        $request = self::requestDeletion();
+        $operation = self::open($request);
+        self::assertTrue($this->asPerson(self::ROOT_ID, static fn (): bool => $request->actions->start()));
+        Hilos::$db->accountOperationAssignments->actions->record(
+            $operation->id, $operation->stage, 'expect:broken',
+            new AccountOperationOwnerAddress(HilosAgentType::HILOS_SESSIONS_LIBRARY),
+            self::ROOT_ID, AccountOperationAssignmentPayload::fromJson('{}'),
+        );
+        $readCard = static fn (): ?AccountErasureProgress => AccountErasureProgressResolver::of(self::ROOT_ID);
+        $readList = static fn (): array => AccountErasureProgressResolver::begun();
+        $cardFailure = self::malformedFailure($readCard);
+        $listFailure = self::malformedFailure($readList);
+        self::assertNotSame($cardFailure, $listFailure);
+        self::assertSame($cardFailure, self::malformedFailure($readCard));
+        self::assertSame($listFailure, self::malformedFailure($readList));
+        self::assertNull(AccountErasureProgressResolver::of(self::OUTSIDER_ID));
+
+        self::assertTrue($operation->actions->advance($operation->stage, 'progress-recheck'));
+        self::assertNotSame($cardFailure, self::malformedFailure($readCard));
+        self::assertNotSame($listFailure, self::malformedFailure($readList));
+        AccountErasureProgressResolver::forgetAll();
+        $afterForget = self::malformedFailure($readCard);
+        self::assertNotSame($cardFailure, $afterForget);
+        self::assertTrue($operation->actions->finish($operation->stage, AccountOperationOutcome::Completed));
+        self::assertNull($readCard());
+        self::assertSame([], $readList());
+    }
+
+    public function testTransientDatabaseRefusalsAreRetriedWithoutAnySourceChange(): void
+    {
+        $request = self::requestDeletion();
+        self::open($request);
+        self::assertTrue($this->asPerson(self::ROOT_ID, static fn (): bool => $request->actions->start()));
+        Database::sqlRun('RENAME TABLE `hilos_account_operation` TO `hilos_account_operation_unavailable`');
+        try {
+            foreach ([
+                static fn (): ?AccountErasureProgress => AccountErasureProgressResolver::of(self::ROOT_ID),
+                static fn (): array => AccountErasureProgressResolver::begun(),
+            ] as $read) {
+                try {
+                    $read();
+                    self::fail('An unavailable operation table must refuse the progress read.');
+                } catch (DatabaseException) {
+                    self::assertTrue(true);
+                }
+            }
+        } finally {
+            Database::sqlRun('RENAME TABLE `hilos_account_operation_unavailable` TO `hilos_account_operation`');
+        }
+
+        self::assertNotNull(AccountErasureProgressResolver::of(self::ROOT_ID));
+        self::assertArrayHasKey(self::ROOT_ID, AccountErasureProgressResolver::begun());
+    }
+
     public function testWorkerReadsUseOnlyTheIndexDeclarationAndProcessWideSources(): void
     {
         $request = self::requestDeletion();
@@ -438,6 +495,20 @@ final class AccountErasureProgressIntegrationTest extends FrameworkIntegrationTe
             AccountErasureProgressResolver::of(self::ROOT_ID)->parts, AccountErasureProgress::done,
         ));
         self::assertNotNull(Hilos::$db->accountOperationResults->byAssignment($assignment->id));
+    }
+
+    /**
+     * @param callable $read Direct progress reader
+     * @return InvalidFormatException The malformed stored fact, still visible to direct readers
+     */
+    private static function malformedFailure(callable $read): InvalidFormatException
+    {
+        try {
+            $read();
+        } catch (InvalidFormatException $failure) {
+            return $failure;
+        }
+        self::fail('A malformed expectation must remain visible.');
     }
 
     /** @return AccountDeletion A live request that has not started */

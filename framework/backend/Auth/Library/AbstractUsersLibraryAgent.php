@@ -1385,7 +1385,7 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
                 if ($used->ask->operation === null) {
                     $this->resumeAction(
                         $used->ask,
-                        $used->error === null ? null : AuthMessages::INVALID_PASSKEY,
+                        $used->error === null ? null : ($used->erasing ? $used->error : AuthMessages::INVALID_PASSKEY),
                         fn () => $this->passkeyCommands()->finishLogin($used->ask),
                     );
 

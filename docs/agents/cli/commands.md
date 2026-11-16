@@ -510,7 +510,7 @@ for a completed erasure, the stage reached with exit code 6 for one not yet begu
 finished, and an unknown outcome when no reply arrives; running it again watches the same
 erasure. The outcomes are listed in the
 [erasure canon](../architecture/account-operations.md#erasure-cutover-and-observation).
-Its live entry switches together with due erasure (not in the code yet — HIL-1952).
+Its live entry uses the same durable operation as due erasure from HIL-1952.
 Write these per-feature and carefully; never generalise them into a shared time-travel
 utility. The Status heartbeat and
 its stale limit, and an announced maintenance start, have theirs, with a batch of settings

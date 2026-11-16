@@ -253,8 +253,8 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   frontend core reads the block as `HilosAccountErasure`
   (`readHilosAccountErasure()`), `refusals` as `HilosAccountErasureRefusal[]`.
   `done` is true when the assignment has a persisted result. The coordinator
-  records a safe reason when it answers a final refusal (HIL-1950); production
-  erasure remains inert until HIL-1952.
+  records a safe reason when it answers a final refusal (HIL-1950); the live
+  erasure state began with HIL-1952.
 - **Refusal.** `account_frozen` with status 403, as `errorCode` of
   `subscription_page_error` and of `action_error`. It is not a 401 and opens no
   sign-in.

@@ -560,7 +560,6 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::ANALYTICS_JOURNAL_PORTION => HilosAgentType::HILOS_ANALYTICS_WRITER,
                 HilosSignalConstants::ANALYTICS_JOURNAL_READY => HilosAgentType::HILOS_ANALYTICS_WRITER,
                 HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_DATA_EXPORT,
-                HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
                 // The other half of the seam, and the endings the users library hands over:
                 // what a sign-in became reaches the library that owns the session.
                 HilosSignalConstants::HILOS_AUTH_SESSION_GRANT => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -1148,25 +1147,14 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
         $ceiling = [
-            'accountDeletions' => ['HIL-1952'],
-            'dataExports' => ['HIL-1952'],
-            'identities' => ['HIL-1952', 'HIL-1999'],
-            'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1952'],
-            'notificationPreferences' => ['HIL-1952'],
-            'notifications' => ['HIL-1952'],
-            'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'pushSubscriptions' => ['HIL-1952'],
-            'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1952', 'HIL-1999'],
-            'secondFactors' => ['HIL-1952', 'HIL-1999'],
-            'stepUps' => ['HIL-1952'],
-            'userPhotos' => ['HIL-1952'],
-            'userRenames' => ['HIL-1952'],
-            'users' => ['HIL-1952', 'HIL-1999'],
-            'verifications' => ['HIL-1952'],
+            'identities' => ['HIL-1999'],
+            'passkeyCredentials' => ['HIL-1999'],
+            'secondFactorBackupCodes' => ['HIL-1999'],
+            'secondFactorResets' => ['HIL-1999'],
+            'secondFactorSettings' => ['HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1999'],
+            'secondFactors' => ['HIL-1999'],
+            'users' => ['HIL-1999'],
         ];
         foreach (Hilos::SHARED_DB_OWNERS as $collection => $pending) {
             $this->assertArrayHasKey($collection, $ceiling);
@@ -1716,7 +1704,7 @@ final class ConcertTicketsTopologyRegistryTest extends TestCase
         $this->assertSame(SmsRawSendAgent::class, $entry[AgentRegistryKey::WORKER]);
         $this->assertSame([], OwnershipDeclaration::dbCollectionsOf(SmsRawSendAgent::class));
         $this->assertSame([HilosSignalConstants::HILOS_SMS_SEND], array_keys(SmsRawSendAgent::AGENT_SIGNALS));
-        $this->assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
+        $this->assertArrayNotHasKey('notificationDeliveries', Hilos::SHARED_DB_OWNERS);
     }
 
     public function testDeclaredFeaturesAreFullyActivated(): void

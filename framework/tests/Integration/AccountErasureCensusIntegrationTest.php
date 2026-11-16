@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Auth\AccountOperation\AccountErasureCensus;
+use Hilos\Auth\AccountOperation\AccountOperationActivation;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureFixedOwner;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
+use Hilos\Auth\AccountOperation\AccountErasureStart;
+use Hilos\Auth\AccountOperation\AccountErasureStartPayload;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountMergeOpening;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
@@ -34,6 +38,7 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\AccountOperation as EntityAccountOperation;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
@@ -123,6 +128,18 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
             SourceInterestRegistry::releaseConsumer(SourceConsumer::agent(self::COORDINATOR_ID));
             Hilos::$db = $this->previousDb;
             parent::tearDown();
+        }
+    }
+
+    /** Activation asks only about metadata, so a participant needs no foreign row-read interest. */
+    public function testActivationDoesNotReadTheParticipantsRows(): void
+    {
+        SourceInterestRegistry::readsWhatIsDelivered();
+        try {
+            self::assertTrue(AccountOperationActivation::anyActivated([HilosDbContext::accountDeletions]));
+            self::assertFalse(AccountOperationActivation::anyActivated(['absentProjectRows']));
+        } finally {
+            SourceInterestRegistry::readsWhatItMounts();
         }
     }
 
@@ -415,7 +432,7 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
 
         self::assertNotNull($operation);
         self::assertNull($opened->deferredByOperationId);
-        self::assertSame(['wait:personal:43'], self::keysOf($opened->recorded));
+        self::assertSame(['wait:personal:43', 'start:personal:hilos_user:43:43'], self::keysOf($opened->recorded));
         self::assertSame(['wait:personal:43'], self::keysOf(AccountOperationExpectedSet::of($operation->id)->waiting()));
         self::assertSame([], AccountOperationExpectedSet::of($operation->id)->expected());
 
@@ -452,6 +469,7 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
                 'expect:users_library:hilos_users_library:42',
                 'expect:personal:hilos_user:43:43',
                 'expect:users_library:hilos_users_library:43',
+                'start:personal:hilos_user:43:43',
             ],
             self::keysOf($opened->recorded),
         );
@@ -459,10 +477,13 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
             self::assertSame(EntityAccountOperation::INITIAL_STAGE, $assignment->stage);
         }
         self::assertSame(
-            [41, 41, 42, 42, 43, 43],
+            [41, 41, 42, 42, 43, 43, 43],
             array_map(static fn (AccountOperationAssignment $assignment): ?int => $assignment->userId, $opened->recorded),
         );
-        self::assertSame(self::idsOf($opened->recorded), self::idsOf(AccountOperationExpectedSet::of($opened->operation->id)->expected()));
+        self::assertSame(
+            self::idsOf(array_slice($opened->recorded, 0, -1)),
+            self::idsOf(AccountOperationExpectedSet::of($opened->operation->id)->expected()),
+        );
     }
 
     /** Opening the same request again finds the same operation and its assignments, and stores nothing new. */
@@ -478,8 +499,39 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
         self::assertSame($first->operation?->id, $repeat->operation?->id);
         self::assertNull($repeat->deferredByOperationId);
         self::assertSame([], $repeat->recorded);
-        self::assertSame(self::idsOf($first->recorded), self::idsOf(AccountOperationExpectedSet::of($first->operation->id)->expected()));
+        self::assertSame(
+            self::idsOf(array_slice($first->recorded, 0, -1)),
+            self::idsOf(AccountOperationExpectedSet::of($first->operation->id)->expected()),
+        );
         self::assertSame($stored, self::storedRows());
+    }
+
+    /** The forced mode is durable before delivery, and neither entry mode can replace an existing intention. */
+    public function testOpeningSavesTheStartModeBeforeDeliveryAndRepeatsKeepIt(): void
+    {
+        AccountErasureCensusHilos::initBrowser();
+        foreach ([true, false] as $expireGrace) {
+            $request = self::requestDeletion($expireGrace ? self::ROOT_ID : self::OUTSIDER_ID);
+            $opened = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework(), $expireGrace);
+            $operation = $opened->operation;
+            self::assertNotNull($operation);
+            $start = Hilos::$db->accountOperationAssignments->byIdentity(
+                $operation->id, $operation->stage, AccountErasureStart::personalKey($request->userId),
+            );
+            self::assertNotNull($start);
+            self::assertSame($start->id, $opened->recorded[2]->id);
+            self::assertSame($expireGrace, AccountErasureStartPayload::expireGraceOf($start->payload));
+            $stored = self::storedRows();
+
+            $repeat = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework(), !$expireGrace);
+
+            self::assertSame($operation->id, $repeat->operation?->id);
+            self::assertSame([], $repeat->recorded);
+            self::assertSame($stored, self::storedRows());
+            self::assertSame($expireGrace, AccountErasureStartPayload::expireGraceOf($start->payload));
+            self::assertNull(AccountErasureStart::recordMissing($operation));
+            self::assertSame($stored, self::storedRows());
+        }
     }
 
     /** An account of the circle in another open erasure defers the opening without a write, until that erasure is closed. */
@@ -491,20 +543,25 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
         $request = self::requestDeletion(self::ROOT_ID);
         $stored = self::storedRows();
 
-        $deferred = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework());
+        $originalDate = $request->effectiveAt;
+        $deferred = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework(), true);
 
         self::assertNull($deferred->operation);
         self::assertSame($covering->id, $deferred->deferredByOperationId);
         self::assertSame([], $deferred->recorded);
         self::assertNull(Hilos::$db->accountOperations->byRequest($request->id));
         self::assertSame($stored, self::storedRows());
+        self::assertSame(
+            $originalDate,
+            (int)Database::sql('SELECT `effective_at` FROM `hilos_account_deletion` WHERE `id` = ?', [$request->id])->row()['effective_at'],
+        );
 
         self::assertTrue($covering->actions->finish($covering->stage, AccountOperationOutcome::NotStarted));
         $opened = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework());
 
         self::assertNull($opened->deferredByOperationId);
         self::assertSame([self::FOLDED_ID, self::ROOT_ID], $opened->operation?->circle->toArray());
-        self::assertCount(4, $opened->recorded);
+        self::assertCount(5, $opened->recorded);
     }
 
     /** An open merge naming the circle defers erasure until the merged loser joins the circle. */
@@ -535,7 +592,7 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
 
         self::assertNull($opened->deferredByOperationId);
         self::assertSame([self::OUTSIDER_ID, self::FOLDED_ID, self::ROOT_ID], $opened->operation?->circle->toArray());
-        self::assertCount(6, $opened->recorded);
+        self::assertCount(7, $opened->recorded);
     }
 
     /** A failure on an assignment rolls the operation back together with the assignments written before it. */
@@ -555,7 +612,28 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
             Database::sqlRun('ALTER TABLE `hilos_account_operation_assignment` DROP KEY `test_one_assignment`');
         }
 
-        self::assertCount(2, AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework())->recorded);
+        self::assertCount(3, AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework())->recorded);
+    }
+
+    /** A refusal of the final start INSERT rolls back the operation and the already written census. */
+    public function testAStartRecordFailureRollsBackTheOperationAndCensusTogether(): void
+    {
+        AccountErasureCensusHilos::initBrowser();
+        $request = self::requestDeletion(self::ROOT_ID);
+        Database::sqlRun(
+            "ALTER TABLE `hilos_account_operation_assignment` ADD CONSTRAINT `test_refuse_start` CHECK (LEFT(`assignment_key`, 6) <> 'start:')",
+        );
+        try {
+            self::assertInstanceOf(DatabaseException::class, self::refusal(
+                static fn () => AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework(), true),
+            ));
+            self::assertFalse(Database::hasOpenTransactions());
+            self::assertNull(Hilos::$db->accountOperations->byRequest($request->id));
+            self::assertSame([[], []], self::storedRows());
+        } finally {
+            Database::sqlRun('ALTER TABLE `hilos_account_operation_assignment` DROP CONSTRAINT `test_refuse_start`');
+        }
+        self::assertCount(3, AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework(), true)->recorded);
     }
 
     /** After the operation moves on, an earlier stage's key is not written again, new ones go to the current stage, the set reads every stage. */
@@ -590,7 +668,14 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
     {
         AccountErasureCensusHilos::initBrowser();
         $request = self::requestDeletion(self::ROOT_ID);
-        self::assertTrue($request->actions->cancel());
+        $person = new AccountErasureCensusPerson((string)self::ROOT_ID);
+        OwnershipDeclaration::claimAll($person);
+        try {
+            self::assertTrue(ExecutionContext::run(new ExecutionFrame(agentId: $person->getId()), static fn () => $request->actions->cancel()));
+        } finally {
+            TruthSourceRegistry::unregisterAgent($person->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($person->getId()));
+        }
 
         $refusal = self::refusal(static fn () => AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework()));
 
@@ -1045,4 +1130,9 @@ final class AccountErasureCensusNotes extends Objects
 {
     public const string OBJECT_CLASS = AccountErasureCensusNoteObject::class;
     public const string COLLECTION_KEY = 'censusNotes';
+}
+
+/** Canceling a request belongs to the same personal owner as it does on a live node. */
+final class AccountErasureCensusPerson extends AbstractUserAgent
+{
 }

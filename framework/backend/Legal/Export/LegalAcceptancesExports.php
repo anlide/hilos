@@ -208,29 +208,6 @@ final class LegalAcceptancesExports
     }
 
     /**
-     * Removes every finished file after an account is erased and starts the file being built again.
-     *
-     * Which person is in which file is not known, and the records of an erased account are gone with it;
-     * no copy on the server may outlive them. Erasure already deleted the person's own order;
-     * the directory sweep removes its file because no ready row keeps it (HIL-1202).
-     * The old erasure path's frame; the participant step is eraseAccountPart() (HIL-1947), the frame goes at the switch (HIL-1952).
-     *
-     * @param PageAgentInterface $agent The legal agent
-     * @param int $userId Erased account
-     * @throws HilosException When an order, a file or a state frame cannot be removed or sent
-     */
-    public static function forget(PageAgentInterface $agent, int $userId): void
-    {
-        $touched = [];
-        foreach (Hilos::$db->legalAcceptanceExports->allFinished() as $export) {
-            self::remove($export);
-            $touched[$export->userId] = true;
-        }
-        $touched[$userId] = true;
-        self::restartBuildAndTell($agent, array_keys($touched));
-    }
-
-    /**
      * The legal agent's part of an account erasure, carried as its participant step (HIL-1947).
      *
      * Called by the agent in its own frame with the assignment the coordinator gave it. Before any work the
@@ -287,18 +264,25 @@ final class LegalAcceptancesExports
                 $touched[$userId] = true;
                 Database::afterCommit(static function () use ($agent, $userId, $storedNames, $touched): void {
                     try {
-                        foreach ($storedNames as $exportId => $storedName) {
-                            if ($storedName !== null) {
-                                self::directory()[$storedName]->unlink();
-                            }
-                            unset(self::$toastSessions[$exportId]);
-                        }
                         self::restartBuildAndTell($agent, array_keys($touched));
                     } catch (HilosException $e) {
                         Logger::logAgentError(
                             $agent->getId(),
                             "Account of user {$userId} erased, but what follows the commit of its legal exports failed: {$e->getMessage()}",
                         );
+                    }
+                    foreach ($storedNames as $exportId => $storedName) {
+                        unset(self::$toastSessions[$exportId]);
+                        try {
+                            if ($storedName !== null) {
+                                self::directory()[$storedName]->unlink();
+                            }
+                        } catch (HilosException $e) {
+                            Logger::logAgentError(
+                                $agent->getId(),
+                                "Account of user {$userId} erased, but its legal export file {$storedName} could not be deleted: {$e->getMessage()}",
+                            );
+                        }
                     }
                 });
 

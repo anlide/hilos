@@ -110,13 +110,11 @@ signal between owners
 ([account-operations.md](../architecture/account-operations.md#erasure)). For
 erasure, the obligation is durable and the participant alone writes its
 assigned result. The generic participant step commits callback work and result
-in one local transaction, and a repeat answers from the saved result. It is
-built. The coordinator correlates assignments and answers by operation and
-stage, without a transaction across frames (HIL-1950). The production entry
-remains HIL-1952. The old
-terminal path and its required grants remain until the live erasure switch
-(not in the code yet — HIL-1952); an inert preparatory handler does not clear
-that marker. The linked canon records the detailed erasure norms. This boundary
+in one local transaction, and a repeat answers from the saved result. HIL-1952
+connected it to the live participants. The coordinator correlates assignments
+and answers by operation and stage, without a transaction across frames
+(HIL-1950). The old terminal path and its required grants were retired by
+HIL-1952. The linked canon records the detailed erasure norms. This boundary
 promises no distributed transaction, new `afterCommit()` guarantee or retry of
 files and outside actions.
 
@@ -143,20 +141,18 @@ that wins once, a result recorded in the same transaction as the work so that
 a second ask answers with it. That is how the approved research design of the
 split erasure and merge finishes an unfinished operation — from the records its
 owners hold, not from a cursor and not by retrying an after-commit step
-([Recovery](../architecture/account-operations.md#recovery)). HIL-1937 builds
-an inert generic participant result step for erasure; later leaves connect
-production participants and cut over the flow. No after-commit step receives
-a retry.
+([Recovery](../architecture/account-operations.md#recovery)). HIL-1937 built
+the generic participant result step for erasure, and HIL-1952 connected it to
+the live production participants. No after-commit step receives a retry.
 
-For erasure, the built participant step returns a saved result instead of
+For erasure, the live participant step returns a saved result instead of
 running its work again; the coordinator advances only the matching operation
 and stage (HIL-1950). The HIL-1952 entry starts the coordinator, and the
 holder's recovery passes, together with each participant's start or
 operation frame, select open obligations from DB (HIL-1951, built). A lost
 frame needs no fresh external event, and no DB poll on every tick or remembered
 cursor is added: the pass keeps a position in memory only, and a tick with no
-pass running reads nothing. These paths become live at erasure's cutover
-(not in the code yet — HIL-1952).
+pass running reads nothing. These paths are live from the HIL-1952 cutover.
 
 For [merge](../architecture/account-operations.md#merge), the loser commits
 its work with result and copy (not in the code yet — HIL-1992), the survivor

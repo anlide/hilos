@@ -161,7 +161,7 @@ final class AbstractUserAgentTest extends TestCase
     public function testDeclaredClaimsHaveExactlyTheAgreedWidthsAndOperations(): void
     {
         self::assertSame([HilosDbContext::users], array_keys(TestUserAgent::OWNS_DB_ROWS));
-        self::assertSame([TruthSourceOperation::Update], TestUserAgent::OWNS_DB_ROWS[HilosDbContext::users]);
+        self::assertSame([TruthSourceOperation::Update, TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_ROWS[HilosDbContext::users]);
         self::assertSame([
             HilosDbContext::identities,
             HilosDbContext::passkeyCredentials,
@@ -178,13 +178,14 @@ final class AbstractUserAgentTest extends TestCase
             HilosDbContext::notificationPreferences,
             HilosDbContext::pushSubscriptions,
             HilosDbContext::userRenames,
+            HilosDbContext::userMerges,
             HilosDbContext::accountOperationResults,
         ], array_keys(TestUserAgent::OWNS_DB_SET));
         foreach (self::borrowedSets() as $collection) {
             self::assertSame([TruthSourceOperation::Update, TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[$collection]);
         }
         self::assertSame(
-            [TruthSourceOperation::Add, TruthSourceOperation::Update],
+            [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
             TestUserAgent::OWNS_DB_SET[HilosDbContext::userRenames],
         );
         self::assertSame([TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[HilosDbContext::legalAcceptances]);
@@ -258,7 +259,7 @@ final class AbstractUserAgentTest extends TestCase
         );
     }
 
-    public function testThePersonsRowIsNotRemovedBeforeTheSwitch(): void
+    public function testThePersonRemovesItsOwnRowAfterTheSwitch(): void
     {
         SourceInterestRegistry::readsWhatIsDelivered();
         $agent = new TestUserAgent('42');
@@ -266,8 +267,8 @@ final class AbstractUserAgentTest extends TestCase
         OwnershipDeclaration::claimDbSet($agent);
         ExecutionContext::setCurrentAgentId($agent->getId());
 
-        $this->expectException(WriteNotAllowedException::class);
         TruthSourceRegistry::checkCanWriteItem(HilosDbContext::users, '42', static fn (): array => [], TruthSourceOperation::Remove);
+        self::assertSame([TruthSourceOperation::Update, TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_ROWS[HilosDbContext::users]);
     }
 
     public function testRenameJournalRowsOfAnotherPersonAreNotCreated(): void
@@ -662,6 +663,7 @@ final class AbstractUserAgentTest extends TestCase
             array_keys(TestUserAgent::OWNS_DB_SET),
             [
                 HilosDbContext::userRenames,
+            HilosDbContext::userMerges,
                 HilosDbContext::secondFactorSettings,
                 HilosDbContext::stepUps,
                 HilosDbContext::notificationPreferences,

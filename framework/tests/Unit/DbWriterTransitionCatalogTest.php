@@ -21,7 +21,6 @@ use Hilos\Core\TruthSource\DbWriterClaim;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Core\TruthSource\DbWriterClaimWidth;
 use Hilos\Core\TruthSource\DbWriterPartition;
-use Hilos\Core\TruthSource\DbWriterTransitionCatalog;
 use Hilos\Core\TruthSource\DbWriterTransitionState;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
@@ -129,53 +128,30 @@ final class DbWriterTransitionCatalogTest extends TestCase
 
         // The subject stays literal: widths, operations and leaves are not taken from the provider.
         $vectors = [
-            'users' => [['users', 'whole', 'add'], ['person', 'rows', 'update'], ['holder', 'whole', 'remove,update']],
+            'users' => [['users', 'whole', 'add'], ['person', 'rows', 'remove,update'], ['holder', 'whole', 'update']],
             'identities' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
-            'verifications' => [['users', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']],
-            'passkeyCredentials' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
+            'passkeyCredentials' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'update']],
             'secondFactors' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
             'secondFactorBackupCodes' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove,update']],
             'secondFactorResets' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
             'secondFactorSettings' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'add,remove,update']],
             'secondFactorTrusts' => [['person', 'set', 'remove,update'], ['holder', 'whole', 'add,remove']],
-            'stepUps' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
-            'accountDeletions' => [['users', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'update']],
-            'legalAcceptances' => [['users', 'whole', 'add'], ['person', 'set', 'remove'], ['holder', 'whole', 'remove']],
-            'notifications' => [['notifications', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
             'notificationDeliveries' => [
-                ['notifications', 'whole', 'add'], ['mail', 'whole', 'remove,update'], ['holder', 'whole', 'remove']],
-            'notificationPreferences' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
-            'pushSubscriptions' => [
-                ['notifications', 'whole', 'add'], ['person', 'set', 'remove,update'], ['holder', 'whole', 'remove']],
-            'dataExports' => [['export', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']],
-            'userRenames' => [['person', 'set', 'add,update'], ['holder', 'whole', 'remove']],
-            'userPhotos' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
+                ['notifications', 'whole', 'add'], ['mail', 'whole', 'remove,update']],
         ];
         $leaves = [
-            'users' => ['HIL-1952', 'HIL-1999'],
-            'identities' => ['HIL-1952', 'HIL-1999'],
-            'verifications' => ['HIL-1952'],
-            'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'secondFactors' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1952', 'HIL-1999'],
-            'stepUps' => ['HIL-1952'],
-            'accountDeletions' => ['HIL-1952'],
-            'legalAcceptances' => ['HIL-1952'],
-            'notifications' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1952'],
-            'notificationPreferences' => ['HIL-1952'],
-            'pushSubscriptions' => ['HIL-1952'],
-            'dataExports' => ['HIL-1952'],
-            'userRenames' => ['HIL-1952'],
-            'userPhotos' => ['HIL-1952'],
+            'users' => ['HIL-1999'],
+            'identities' => ['HIL-1999'],
+            'passkeyCredentials' => ['HIL-1999'],
+            'secondFactors' => ['HIL-1999'],
+            'secondFactorBackupCodes' => ['HIL-1999'],
+            'secondFactorResets' => ['HIL-1999'],
+            'secondFactorSettings' => ['HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1999'],
+            'notificationDeliveries' => [],
         ];
         if ($hasLegalAndOauth) {
             $vectors['identities'][] = ['oauth', 'whole', 'add'];
-            $vectors['legalAcceptanceExports'] = [['legal', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']];
-            $leaves['legalAcceptanceExports'] = ['HIL-1952'];
         }
         foreach (['sms' => $hasDurableSms, 'push' => $hasPush] as $role => $present) {
             if ($present) {
@@ -185,15 +161,11 @@ final class DbWriterTransitionCatalogTest extends TestCase
         if ($isChat) {
             $roles['chat'] = 'Demo\\Chat\\Agents\\ChatAgent';
             self::assertSame($roles['chat'], AgentRegistry::workerClass($facade::AGENTS['chat']));
-            $vectors['events'] = [['chat', 'whole', 'add,remove,update'], ['users', 'whole', 'add'], ['holder', 'whole', 'remove']];
-            $vectors['eventUserRegistrations'] = [
-                ['chat', 'whole', 'add,remove,update'], ['users', 'whole', 'add'], ['holder', 'whole', 'remove']];
-            $vectors['eventMessages'] = [['chat', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove,update']];
-            $vectors['eventAttachments'] = [['chat', 'whole', 'add,remove,update'], ['holder', 'whole', 'remove']];
-            $leaves['events'] = ['HIL-1952'];
-            $leaves['eventUserRegistrations'] = ['HIL-1952'];
-            $leaves['eventMessages'] = ['HIL-1952', 'HIL-1999'];
-            $leaves['eventAttachments'] = ['HIL-1952'];
+            $vectors['eventMessages'] = [['chat', 'whole', 'add,remove,update'], ['holder', 'whole', 'update']];
+            $leaves['eventMessages'] = ['HIL-1999'];
+        }
+        if (!$hasDurableSms && !$hasPush) {
+            unset($vectors['notificationDeliveries'], $leaves['notificationDeliveries']);
         }
         ksort($vectors);
         $catalog = $facade::getDbWriterTransitions();
@@ -245,51 +217,36 @@ final class DbWriterTransitionCatalogTest extends TestCase
         }
     }
 
-    /** The journal has only its person's writer beside the remaining terminal erasure. */
-    public function testRenameHasOnlyItsPersonalWriterAndTerminalErasure(): void
+    /** Paid erasure transitions cannot reintroduce the holder beside the personal writer. */
+    public function testPersonalCollectionsHaveNoSharedErasureDebt(): void
     {
-        $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['userRenames']);
-        self::assertSame(['', 'HIL-1952'], array_keys($states));
-        $this->assertVector([
-            UserAgent::class . ':set:add,update',
-            SessionsLibraryAgent::class . ':whole:remove',
-        ], $states['HIL-1952']);
-        $this->assertVector([UserAgent::class . ':set:add,remove,update'], $states['']);
-    }
-
-    /** With the foreign release in place the library only ever adds a push row, before erasure and after it. */
-    public function testPushLibraryOnlyAddsInEveryState(): void
-    {
-        $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['pushSubscriptions']);
-        self::assertSame(['', 'HIL-1952'], array_keys($states));
-        foreach ($states as $pending => $state) {
-            $expected = [UserAgent::class . ':set:remove,update'];
-            if ($pending !== '') {
-                $expected[] = SessionsLibraryAgent::class . ':whole:remove';
-            }
-            $expected[] = NotificationsLibraryAgent::class . ':whole:add';
-            $this->assertVector($expected, $state);
+        $catalog = ChatHilos::getDbWriterTransitions();
+        foreach (['userRenames', 'pushSubscriptions'] as $collection) {
+            self::assertArrayNotHasKey($collection, $catalog);
         }
-    }
-
-    /** Neither the owned renewal debt nor the foreign rebind debt can be declared back. */
-    public function testPushTransitionCannotReintroduceRetiredDebts(): void
-    {
-        $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['pushSubscriptions']);
-        foreach ($states as $state) {
-            self::assertNotContains('HIL-1905', $state->pendingLeaves);
-            self::assertNotContains('HIL-1906', $state->pendingLeaves);
-        }
+        $claims = DbWriterClaim::declarationsOf(UserAgent::class);
+        $this->assertVector([UserAgent::class . ':set:add,remove,update'], new DbWriterTransitionState([], $claims['userRenames']));
         $this->expectException(InvalidTopologyException::class);
-        $this->expectExceptionMessage("DB collection 'pushSubscriptions'");
+        $this->expectExceptionMessage("SHARED_DB_OWNERS['pushSubscriptions'] names an unknown DB writer collection");
         CatalogRetiredPushRenewalHilos::validateTopology();
+    }
+
+    /** The retired shared transition leaves notifications add-only and the personal push set unchanged. */
+    public function testPushLibraryOnlyAddsAfterTheCutover(): void
+    {
+        $library = DbWriterClaim::declarationsOf(NotificationsLibraryAgent::class);
+        $person = DbWriterClaim::declarationsOf(UserAgent::class);
+        $this->assertVector([NotificationsLibraryAgent::class . ':whole:add'],
+            new DbWriterTransitionState([], $library['pushSubscriptions']));
+        $this->assertVector([UserAgent::class . ':set:remove,update'],
+            new DbWriterTransitionState([], $person['pushSubscriptions']));
     }
 
     /** Terminal deletion keeps Remove after ordinary work. */
     public function testTrustSharedUsesAndTerminalRights(): void
     {
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['secondFactorTrusts']);
-        self::assertSame(['', 'HIL-1952,HIL-1999', 'HIL-1999'], array_keys($states));
+        self::assertSame(['', 'HIL-1999'], array_keys($states));
         foreach ($states as $pending => $state) {
             $operations = $pending === '' ? 'add' : 'add,remove';
             $this->assertVector([
@@ -305,7 +262,6 @@ final class DbWriterTransitionCatalogTest extends TestCase
         $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['notificationDeliveries']);
         $expectedLibrary = [
             '' => 'add',
-            'HIL-1952' => 'add',
         ];
         self::assertSame(array_keys($expectedLibrary), array_keys($states));
         foreach ($expectedLibrary as $pending => $operations) {
@@ -325,7 +281,8 @@ final class DbWriterTransitionCatalogTest extends TestCase
     public function testRawWorkersNeverAcquireFutureDeliveryRemoveOrAnOldGuardVertex(): void
     {
         foreach (['Demo\\Tasks\\Hilos', 'Demo\\Polls\\Hilos'] as $facade) {
-            foreach ($facade::getDbWriterTransitions()['notificationDeliveries'] as $state) {
+            self::assertArrayNotHasKey('notificationDeliveries', $facade::getDbWriterTransitions());
+            foreach (($facade::getDbWriterTransitions()['notificationDeliveries'] ?? []) as $state) {
                 self::assertNotContains('HIL-1893', $state->pendingLeaves);
                 self::assertSame([DbWriterPartition::NotificationChannelShard], $state->partitions);
                 foreach ($state->claims as $claim) {
@@ -340,11 +297,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
     {
         $catalog = ChatHilos::getDbWriterTransitions();
         $users = $this->statesByPendingLeaves($catalog['users']);
-        self::assertSame(['', 'HIL-1952,HIL-1999', 'HIL-1999'], array_keys($users));
-        $this->assertVector([
-            UsersLibraryAgent::class . ':whole:add', UserAgent::class . ':rows:update',
-            SessionsLibraryAgent::class . ':whole:remove,update',
-        ], $users['HIL-1952,HIL-1999']);
+        self::assertSame(['', 'HIL-1999'], array_keys($users));
         $this->assertVector([
             UsersLibraryAgent::class . ':whole:add', UserAgent::class . ':rows:remove,update',
             SessionsLibraryAgent::class . ':whole:update',
@@ -364,18 +317,9 @@ final class DbWriterTransitionCatalogTest extends TestCase
             self::assertSame([SessionsLibraryAgent::class . ':whole:' . $mergeOperations], $this->signatures($holder), $collection);
         }
         foreach (['stepUps', 'userRenames', 'accountDeletions', 'events', 'eventAttachments', 'eventUserRegistrations'] as $collection) {
-            $states = $this->statesByPendingLeaves($catalog[$collection]);
-            self::assertArrayNotHasKey('HIL-1999', $states, $collection . ' has no merge debt');
-            foreach ($states['']->claims as $claim) {
-                self::assertNotSame(SessionsLibraryAgent::class, $claim->ownerClass, $collection . ' final owner');
-            }
+            self::assertArrayNotHasKey($collection, $catalog, $collection . ' has no shared debt');
         }
-        $legal = $this->statesByPendingLeaves($catalog['legalAcceptances']);
-        self::assertSame(['', 'HIL-1952'], array_keys($legal));
-        $this->assertVector([
-            UsersLibraryAgent::class . ':whole:add', UserAgent::class . ':set:remove',
-            SessionsLibraryAgent::class . ':whole:remove',
-        ], $legal['HIL-1952']);
+        self::assertArrayNotHasKey('legalAcceptances', $catalog);
         $settings = $this->statesByPendingLeaves($catalog['secondFactorSettings']);
         $this->assertVector([UserAgent::class . ':set:add,remove,update'], $settings['']);
     }
@@ -403,7 +347,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
         self::assertArrayNotHasKey('legalAcceptanceExports', $catalog);
         self::assertArrayNotHasKey('dataExports', $catalog);
         self::assertArrayNotHasKey('notificationDeliveries', $catalog);
-        self::assertSame(['HIL-1952', 'HIL-1999'], $catalog['identities'][0]->pendingLeaves);
+        self::assertSame(['HIL-1999'], $catalog['identities'][0]->pendingLeaves);
         self::assertSame([
             AbstractSessionsLibraryAgent::class . ':whole:remove,update',
             AbstractUserAgent::class . ':set:remove,update',
@@ -416,11 +360,7 @@ final class DbWriterTransitionCatalogTest extends TestCase
             AbstractUserAgent::class . ':set:remove,update',
             AbstractSessionsLibraryAgent::class . ':whole:remove,update',
         ], $inactive['identities'][0]);
-        $this->assertVector([
-            AbstractNotificationsLibraryAgent::class . ':whole:add',
-            MailDeliveryChannelAgent::class . ':whole:remove,update',
-            AbstractSessionsLibraryAgent::class . ':whole:remove',
-        ], $inactive['notificationDeliveries'][0]);
+        self::assertArrayNotHasKey('notificationDeliveries', $inactive);
         foreach (['legalAcceptanceExports', 'dataExports', 'settings', 'probeValues', 'sessions', 'accessLogEntries', 'userMerges'] as $key) {
             self::assertArrayNotHasKey($key, $inactive);
         }
@@ -449,6 +389,9 @@ final class DbWriterTransitionCatalogTest extends TestCase
         bool $hasDurableSms,
     ): void {
         $expected = $this->ceilingV1($hasLegalAndOauth, $isChat);
+        if (!$hasDurableSms && !$hasPush) {
+            unset($expected['notificationDeliveries']);
+        }
         $roles = [
             'users' => [$namespace . '\\Agents\\Hilos\\UsersLibraryAgent'],
             'person' => [$namespace . '\\Agents\\Hilos\\UserAgent'],
@@ -517,90 +460,39 @@ final class DbWriterTransitionCatalogTest extends TestCase
     {
         $ceiling = [
             'users' => [
-                'HIL-1952,HIL-1999' => ['users:whole:add', 'person:rows:update', 'holder:whole:remove,update'],
                 'HIL-1999' => ['users:whole:add', 'person:rows:remove,update', 'holder:whole:update'],
                 '' => ['users:whole:add', 'person:rows:remove,update'],
             ],
             'identities' => [
-                'HIL-1952,HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove,update'],
                 'HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove,update'],
                 '' => ['users:whole:add', 'person:set:remove,update'],
             ],
-            'verifications' => [
-                'HIL-1952' => ['users:whole:add,remove,update', 'holder:whole:remove'],
-                '' => ['users:whole:add,remove,update'],
-            ],
             'passkeyCredentials' => [
-                'HIL-1952,HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove,update'],
                 'HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:update'],
                 '' => ['users:whole:add', 'person:set:remove,update'],
             ],
             'secondFactors' => [
-                'HIL-1952,HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove,update'],
                 'HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove,update'],
                 '' => ['users:whole:add', 'person:set:remove,update'],
             ],
             'secondFactorBackupCodes' => [
-                'HIL-1952,HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove,update'],
                 'HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove,update'],
                 '' => ['users:whole:add', 'person:set:remove,update'],
             ],
             'secondFactorResets' => [
-                'HIL-1952,HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove'],
                 'HIL-1999' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:remove'],
                 '' => ['users:whole:add', 'person:set:remove,update'],
             ],
             'secondFactorSettings' => [
-                'HIL-1952,HIL-1999' => ['person:set:add,remove,update', 'holder:whole:add,remove,update'],
                 'HIL-1999' => ['person:set:add,remove,update', 'holder:whole:add,remove,update'],
                 '' => ['person:set:add,remove,update'],
             ],
             'secondFactorTrusts' => [
-                'HIL-1952,HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove'],
                 'HIL-1999' => ['person:set:remove,update', 'holder:whole:add,remove'],
                 '' => ['person:set:remove,update', 'holder:whole:add'],
             ],
-            'stepUps' => [
-                'HIL-1952' => ['person:set:add,remove,update', 'holder:whole:remove'],
-                '' => ['person:set:add,remove,update'],
-            ],
-            'accountDeletions' => [
-                'HIL-1952' => ['users:whole:add', 'person:set:remove,update', 'holder:whole:update'],
-                '' => ['users:whole:add', 'person:set:remove,update'],
-            ],
-            'legalAcceptances' => [
-                'HIL-1952' => ['users:whole:add', 'person:set:remove', 'holder:whole:remove'],
-                '' => ['users:whole:add', 'person:set:remove'],
-            ],
-            'notifications' => [
-                'HIL-1952' => ['notifications:whole:add', 'person:set:remove,update', 'holder:whole:remove'],
-                '' => ['notifications:whole:add', 'person:set:remove,update'],
-            ],
             'notificationDeliveries' => [
-                'HIL-1952' => [
-                    'notifications:whole:add', 'channel:whole:remove,update', 'holder:whole:remove',
-                    'partition:notification-channel-shard'],
                 '' => ['notifications:whole:add', 'channel:whole:remove,update', 'partition:notification-channel-shard'],
-            ],
-            'notificationPreferences' => [
-                'HIL-1952' => ['person:set:add,remove,update', 'holder:whole:remove'],
-                '' => ['person:set:add,remove,update'],
-            ],
-            'pushSubscriptions' => [
-                'HIL-1952' => ['notifications:whole:add', 'person:set:remove,update', 'holder:whole:remove'],
-                '' => ['notifications:whole:add', 'person:set:remove,update'],
-            ],
-            'dataExports' => [
-                'HIL-1952' => ['export:whole:add,remove,update', 'holder:whole:remove'],
-                '' => ['export:whole:add,remove,update'],
-            ],
-            'userRenames' => [
-                'HIL-1952' => ['person:set:add,update', 'holder:whole:remove'],
-                '' => ['person:set:add,remove,update'],
-            ],
-            'userPhotos' => [
-                'HIL-1952' => ['person:set:add,remove,update', 'holder:whole:remove'],
-                '' => ['person:set:add,remove,update'],
             ],
         ];
         if ($hasLegalAndOauth) {
@@ -608,31 +500,10 @@ final class DbWriterTransitionCatalogTest extends TestCase
                 $vector[] = 'oauth:whole:add';
             }
             unset($vector);
-            $ceiling['legalAcceptanceExports'] = [
-                'HIL-1952' => ['legal:whole:add,remove,update', 'holder:whole:remove'],
-                '' => ['legal:whole:add,remove,update'],
-            ];
         }
         if ($isChat) {
-            $ceiling['userRenames'] = [
-                'HIL-1952' => ['person:set:add,update', 'holder:whole:remove'],
-                '' => ['person:set:add,remove,update'],
-            ];
-            $ceiling['events'] = [
-                'HIL-1952' => ['chat:whole:add,remove,update', 'users:whole:add', 'holder:whole:remove'],
-                '' => ['chat:whole:add,remove,update', 'users:whole:add'],
-            ];
-            $ceiling['eventUserRegistrations'] = [
-                'HIL-1952' => ['chat:whole:add,remove,update', 'users:whole:add', 'holder:whole:remove'],
-                '' => ['chat:whole:add,remove,update', 'users:whole:add'],
-            ];
             $ceiling['eventMessages'] = [
-                'HIL-1952,HIL-1999' => ['chat:whole:add,remove,update', 'holder:whole:remove,update'],
                 'HIL-1999' => ['chat:whole:add,remove,update', 'holder:whole:update'],
-                '' => ['chat:whole:add,remove,update'],
-            ];
-            $ceiling['eventAttachments'] = [
-                'HIL-1952' => ['chat:whole:add,remove,update', 'holder:whole:remove'],
                 '' => ['chat:whole:add,remove,update'],
             ];
         }

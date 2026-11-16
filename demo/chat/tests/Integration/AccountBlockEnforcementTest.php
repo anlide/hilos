@@ -9,7 +9,9 @@ use Hilos\Fs\DirectoryScope;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\DataExport\DataExportState;
 use Hilos\DataExport\DataExportGroup;
-use Hilos\DataExport\DTO\DataExportForgetUserSignalData;
+use Hilos\Auth\AccountOperation\AccountOperationExpectation;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
+use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\DataExport\DTO\DataExportOrderActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
@@ -855,13 +857,24 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
             $this->underAgent($agent, $order);
             self::assertFileDoesNotExist($readyPath);
             self::assertNotSame($first->id, Hilos::$db->dataExports->ofUser($userId)?->id);
-            $this->underAgent($agent, static function () use ($userId): void {
-                Hilos::$db->dataExports->ofUser($userId)?->actions->delete();
+            $library = $this->sessionsLibrary();
+            $assignment = $this->underAgent($library, static function () use ($userId) {
+                $operation = Hilos::$db->accountOperations->actions->recordErasure(
+                    1952, $userId, Hilos::$db->userMerges->erasureCircleOf($userId),
+                );
+                $expectation = new AccountOperationExpectation(
+                    AccountErasureParticipantCatalog::DATA_EXPORT,
+                    $userId,
+                    new AccountOperationOwnerAddress(DataExportAgent::AGENT_TYPE),
+                );
+
+                return Hilos::$db->accountOperationAssignments->actions->record(
+                    $operation->id, $operation->stage, $expectation->assignmentKey(), $expectation->assignmentOwner(),
+                    $userId, $expectation->payload(),
+                );
             });
-            $this->underAgent($agent, static fn () => $agent->onSignalAgent(
-                new AgentSignalData(new DataExportForgetUserSignalData($userId)), '',
-                HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER,
-            ));
+            $result = $this->underAgent($agent, static fn () => $agent->runErasurePart($assignment->id));
+            self::assertSame($assignment->id, $result->assignmentId);
             self::assertNull(Hilos::$db->dataExports->ofUser($userId));
             self::assertSame([], glob($path . '/*'));
         } finally {

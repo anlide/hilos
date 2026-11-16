@@ -14,6 +14,13 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Hilos;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\InvalidJsonException;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Database\View\Collection\AccountOperations;
+use Hilos\Database\View\Item\AccountOperation;
+use JsonException;
+use Throwable;
 use Hilos\Users\AccountErasureProgress;
 use Hilos\Users\AccountErasureProgressResolver;
 use PHPUnit\Framework\TestCase;
@@ -108,6 +115,60 @@ final class AccountErasureProgressTest extends TestCase
         }
     }
 
+    public function testEachMalformedKindIsRememberedAfterJsonConversionWithoutRepeatingTheReader(): void
+    {
+        $previousDb = Hilos::$db;
+        Hilos::$db = new MalformedProgressContext();
+        Hilos::$db->configure();
+        try {
+            $causes = [new JsonException('Broken JSON'), new InvalidJsonException('Broken payload'), new InvalidFormatException('No participant')];
+            foreach ($causes as $cause) {
+                AccountErasureProgressResolver::forgetAll();
+                Hilos::$db->accountOperations->failure = $cause;
+                Hilos::$db->accountOperations->cardReads = 0;
+                Hilos::$db->accountOperations->listReads = 0;
+                $card = static fn (): ?AccountErasureProgress => AccountErasureProgressResolver::of(43);
+                $list = static fn (): array => AccountErasureProgressResolver::begun();
+                $cardFailure = self::readFailure($card);
+                $listFailure = self::readFailure($list);
+                self::assertInstanceOf($cause instanceof JsonException ? InvalidJsonException::class : $cause::class, $cardFailure);
+                self::assertSame($cardFailure, self::readFailure($card));
+                self::assertSame($listFailure, self::readFailure($list));
+                self::assertSame(1, Hilos::$db->accountOperations->cardReads);
+                self::assertSame(1, Hilos::$db->accountOperations->listReads);
+                if ($cause instanceof JsonException) {
+                    self::assertSame($cause, $cardFailure->getPrevious());
+                    self::assertSame($cause, $listFailure->getPrevious());
+                    self::assertNotSame($cardFailure, $listFailure);
+                }
+                self::readFailure(static fn (): ?AccountErasureProgress => AccountErasureProgressResolver::of(44));
+                self::assertSame(2, Hilos::$db->accountOperations->cardReads);
+                AccountErasureProgressResolver::forgetAll();
+                self::readFailure($card);
+                self::readFailure($list);
+                self::assertSame(3, Hilos::$db->accountOperations->cardReads);
+                self::assertSame(2, Hilos::$db->accountOperations->listReads);
+            }
+        } finally {
+            AccountErasureProgressResolver::forgetAll();
+            Hilos::$db = $previousDb;
+        }
+    }
+
+    /**
+     * @param callable $read Progress reader
+     * @return Throwable Defect still visible to its direct caller
+     */
+    private static function readFailure(callable $read): Throwable
+    {
+        try {
+            $read();
+        } catch (InvalidJsonException|InvalidFormatException $failure) {
+            return $failure;
+        }
+        self::fail('The malformed progress must refuse its direct reader.');
+    }
+
     /**
      * @param list<array{userId: int, table: ?string}> $refusals Standing refusals of the erasure's finals
      * @return AccountErasureProgress One expected owner and one participant waiting for its owner
@@ -123,5 +184,44 @@ final class AccountErasureProgressTest extends TestCase
             AccountErasureProgress::participant => 'delivery:mail',
             AccountErasureProgress::userId => 42,
         ]], $refusals);
+    }
+}
+
+/** Mounts a counting reader that refuses before any database walk. */
+final class MalformedProgressContext extends HilosDbContext
+{
+    public function configure(): void
+    {
+        $this->_dbItemCollections[self::accountOperations] = MalformedProgressOperations::initEmpty();
+    }
+}
+
+/** Every reader attempt is counted, including a malformed fact that must not be read again. */
+final class MalformedProgressOperations extends AccountOperations
+{
+    public Throwable $failure;
+    public int $cardReads = 0;
+    public int $listReads = 0;
+
+    /**
+     * @param int $userId Account whose read is counted
+     * @return ?AccountOperation Never: this fixture refuses
+     */
+    public function openErasureCovering(int $userId): ?AccountOperation
+    {
+        ++$this->cardReads;
+        throw $this->failure;
+    }
+
+    /**
+     * @param AccountOperationKind $kind Unused operation kind
+     * @param int $afterId Unused cursor
+     * @param int $limit Unused page size
+     * @return static Never: this fixture refuses
+     */
+    public function openPage(AccountOperationKind $kind, int $afterId, int $limit): static
+    {
+        ++$this->listReads;
+        throw $this->failure;
     }
 }

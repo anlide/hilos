@@ -24,29 +24,23 @@ The users library starts a request. The person's agent cancels it, whether the
 person or an administrator asked (HIL-1409). The session holder marks a request
 carried out under a borrowed `Update` claim, because it is the one that erases.
 
-That is the code today: `complete()` is written inside the erasure's one
-transaction and rolls back with it, so a committed `completed_at` still means
-the whole circle succeeded. The detailed
+`completed_at` now records the personal owner's final transaction, after all
+required results and deletion of its person row. The detailed
 [erasure canon](account-operations.md#erasure) separates the conditional start
-at the request's personal owner from that owner's final completion after
-required results and the deletion of its person row. The final is built and
-inert (HIL-1942): the personal owner's one transaction completes the request,
-deletes its merge row, rename journal, capture and person row and records
-`{"request":<id>|null}`, and a `RESTRICT` refusal rolls it back whole with a
-safe reason kept on the operation; it has no live caller until
-HIL-1952 and its right to delete is not granted before the switch
-([*The erasure final*](account-operations.md#current-implementation)). The
-start is built and inert (HIL-1939): the request carries
-`started_at`, `start()` stamps it for the one winner against "Keep my account",
-and the person's agent and the sessions holder refuse the account from it, but
-nothing live calls it until HIL-1952. HIL-1936 builds the separate,
-inert [operation and assignment carriers](account-operations.md#erasure); it
-adds no started field and does not change today's `completed_at` meaning.
-HIL-1937's participant result carrier and generic atomic step are built but
-inert. The old writer, borrowed right
-and current `completed_at` semantics remain until the live switch
-(not in the code yet — HIL-1952); the cancel/due race and the retained trace
-remain requirements.
+at that owner from the final. A start records `started_at`. When force-purge
+asks for an immediate start, the personal owner also moves the erasure moment
+to now in that transaction. A due start leaves its already-due date unchanged.
+Deferred opening does not move the date; if the start
+transaction rolls back, the date, start and
+participant result roll back while the durable operation remains open. A later
+participant refusal after the start committed leaves the date in place and the
+operation unfinished. The personal owner's final transaction deletes its merge
+row, rename journal, capture and person row and records `{"request":<id>|null}`;
+a `RESTRICT` refusal rolls back only that final transaction and keeps a safe
+reason on the open operation ([*The erasure final*](account-operations.md#current-implementation)).
+The start and final are live in HIL-1952 (prepared in HIL-1939 and HIL-1942).
+HIL-1936 supplies the operation and assignment carriers without a separate
+start field. The cancel/due race and retained request trace remain.
 
 ## Starting And Calling It Off
 
@@ -162,32 +156,30 @@ the named account's completed request and the erasure log record the operation.
 Any failure rolls all of it back; the request stays live and due, and the next
 minute tries again. Half an erased account never exists.
 
-That one transaction and its rollback are the implementation in the tree. The
-target obligations, owners and order are detailed in
-[Erasure](account-operations.md#erasure). The generic participant step commits
-work and result in its local transaction and answers repeats from the saved
-result; the coordinator consumes it, while the production erasure entry remains
-for HIL-1952. After start, failure leaves an open operation for the next
-recovery pass (built, HIL-1951), without a common rollback. The fixed circle and folded-first ordering
-are prepared, with no live caller until HIL-1952. The final personal
-delete follows required results and uses `RESTRICT` as the last safeguard; it
-is built and inert (HIL-1942), and a refusal leaves the operation open with a
-safe reason, the account's number and the referencing table's name, kept on it.
-The canon names the personal, library,
-channel, export, sessions and project portions individually, including their
-saved anchors and post-commit limits. Preparation is inert: the due sweep above
-and force-purge below remain the only live producers until HIL-1952 enables the
-new erasure and retires the old path (not in the code yet — HIL-1952). Keep
-its necessary grants, comments and debt until that switch, and keep whatever
-rights the old merge still needs afterward. An inert handler does not clear
-the marker.
+The target obligations, owners and order are detailed in
+[Erasure](account-operations.md#erasure). Each participant commits its work and
+result in its own transaction; a refusal rolls back only that owner's current
+work, while earlier results remain durable and the open operation is resumed
+from its saved facts. The fixed circle and folded-first ordering are now used
+by the live erasure path. The final personal delete follows required results
+and uses `RESTRICT` as the last safeguard; a refusal leaves the operation open
+with a safe reason, the account's number and the referencing table's name.
+The canon names the personal, library, channel, export, sessions and project
+portions individually, including their saved anchors and post-commit limits.
+The due sweep and force-purge use these owner-local portions from HIL-1952;
+that switch retired the old erasure calls, borrowed rights and debt while
+keeping rights the old merge still needs.
 
 Tests can bring a request due with `test:account:force-purge <userId>`: the
-session holder moves its moment to now and erases it through this path,
-returning the outcome `completed` with the sum of the project's tallies for the
-circle. A failed erasure leaves the request due for the next sweep. The reply
-by stage — `starting` or `erasing` for an erasure that has not finished — is
-prepared and switches on in HIL-1952.
+session holder asks the personal owner to start it and waits on the resulting
+operation. The owner moves its moment to now only when a successful start
+commits; a deferred opening does not change the date, and a rolled-back start
+leaves the durable operation available for recovery. A later refusal leaves
+the committed date in place. The holder reports `completed`, `starting`, or
+`erasing` from the observed operation; an unanswered wait has an unknown
+outcome, and the operation continues. The existing wait window is unchanged; a
+large RT snapshot (HIL-1817) can consume it. Run the command again to observe
+the same durable operation.
 
 After the commit, the agent of every account in the circle stops itself, on
 whichever node it was up. One that was not up does not rise.
@@ -244,7 +236,6 @@ leaves out in its `AccountDataOwnerDirectory` (the facade's
 implements `AccountErasureProjectOwner` and carries its part through
 `AccountErasureProjectStep`; and the daemon refuses to start over a mounted
 table that no owner covers and no exemption names
-(`AccountErasureCoverageGuard`). The directory and the gate are live; the
-owners' part is prepared, with no live caller until HIL-1952. The
-seam and its borrowed rights stay live until the
-HIL-1952 switch retires them (not in the code yet — HIL-1952).
+(`AccountErasureCoverageGuard`). The directory, gate and owners' parts are live
+in HIL-1952. The switch retired the erasure seam's former borrowed write
+rights; rights still needed by the old merge remain until its separate cutover.

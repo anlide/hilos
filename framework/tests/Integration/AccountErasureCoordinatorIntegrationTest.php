@@ -176,7 +176,7 @@ final class AccountErasureCoordinatorIntegrationTest extends HilosSessionIntegra
         self::assertSame([AccountErasureStart::personalKey($root)], self::keys($first));
         self::assertSame($root, $first[0]->userId);
         self::assertSame(HilosAgentType::HILOS_USER . ':' . $root, $first[0]->owner->agentId());
-        self::assertSame('{"participant":"personal"}', $first[0]->payload->toJson());
+        self::assertSame('{"participant":"personal","expireGrace":false}', $first[0]->payload->toJson());
         self::assertSame(self::keys($first), self::keys($this->begin($operation)));
         self::assertNull($this->asHolder(static fn () => AccountErasureStart::recordMissing($operation)));
         self::assertSame(1, (int)Database::sql(
@@ -1171,18 +1171,9 @@ final class ErasureCoordinatorTestLegal extends AbstractHilosLegalAgent
 {
 }
 
-/** The final's future rights stay in the fixture until the production switch (HIL-1952). */
+/** The final uses the production personal writer's rights. */
 final class ErasureCoordinatorTestUserAgent extends AbstractUserAgent
 {
-    public const array OWNS_DB_ROWS = [
-        HilosDbContext::users => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-    ];
-
-    public const array OWNS_DB_SET = [
-        ...AbstractUserAgent::OWNS_DB_SET,
-        HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::userMerges => [TruthSourceOperation::Remove],
-    ];
 }
 
 /** Registered owners make the census expect every activated framework part. */

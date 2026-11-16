@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Users;
 
+use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -30,7 +31,8 @@ final class AddressablePerson
     /**
      * @param int $userId Person a frame would be addressed to
      * @throws ItemNotFoundForUpdateException When there is no such person
-     * @throws ValidationException When the account was merged into another one, or its erasure has begun
+     * @throws ValidationException When the account was merged into another one
+     * @throws AccountErasingException When the account's erasure has begun
      * @throws LogicException When a collection's class constants are not configured
      * @throws InvalidArgumentException When a stored row is not the collection's object type
      * @throws DatabaseException When a row cannot be loaded
@@ -44,7 +46,7 @@ final class AddressablePerson
             throw new ValidationException(AbstractSessionsLibraryAgent::MERGED_ACCOUNT_REFUSED_MESSAGE);
         }
         if (Hilos::$db->accountDeletions->startedOf($userId) !== null) {
-            throw new ValidationException(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE);
+            throw new AccountErasingException(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE);
         }
     }
 }

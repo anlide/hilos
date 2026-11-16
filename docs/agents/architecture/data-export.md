@@ -176,10 +176,10 @@ the saved result and sweeps nothing. The census waits for this part only while
 the person has an order saved
 (`AccountErasureParticipantCatalog::hasDataExport()`).
 
-The step has no live caller until HIL-1952. Until HIL-1952 the old
-path stays the one in use: the sessions holder deletes the order inside the
-erasure's transaction, and after the commit `DataExportNotifier::forgetUser()`
-sends the forget frame.
+The owner-local erasure step is live from HIL-1952: the data export agent
+deletes its order and records its result in its own transaction, then runs the
+existing file sweep after commit. The former holder-side delete and forget
+frame are retired; post-commit file failures keep their existing limits.
 
 ## Download And Storage
 

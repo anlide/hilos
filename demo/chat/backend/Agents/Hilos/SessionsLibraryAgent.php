@@ -15,7 +15,6 @@ use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\HilosException;
-use Hilos\Users\AccountErasure;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
@@ -24,7 +23,7 @@ use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
 
 /**
- * The chat demo's sessions library - the merge and the erasure of what a chat keeps for a
+ * The chat demo's sessions library - the sessions and merge of what a chat keeps for a
  * person (HIL-710, HIL-729, HIL-302, HIL-1199).
  *
  * Everything a session is went into {@see AbstractSessionsLibraryAgent} whole: resolving a
@@ -40,11 +39,7 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
  * framework checks both accounts, moves the ways in, tombstones the loser and signs it out, and
  * asks this demo the one thing only it knows - what a chat keeps for a person.
  *
- * The erasure is the merge's opposite and asks the same question the other way round
- * (HIL-302): when a person's account deletion falls due, the framework erases the ways in and
- * signs them out, and this demo deletes what a chat keeps for them - their messages with the
- * attachments and the events about them, and names the files to remove. The framework
- * removes the rename journal and person row after this hook (HIL-1200).
+ * Project erasure belongs to ChatAgent, reached through its account-data owner directory.
  *
  * What stayed in {@see ChatAgent} is the other half of the seam: who is on the wire, what
  * that person is called, and the tab that has to be told. The library says what a session
@@ -67,18 +62,8 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [
-        // A person's erasure and merge touch the room's messages in their own transaction, whoever owns the room.
-        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        ChatDbContext::eventMessages => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        // Borrowed to erase attachments with the person's messages in one transaction, whoever owns the room.
-        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        ChatDbContext::eventAttachments => [TruthSourceOperation::Remove],
-        // Borrowed to erase the events with the person's messages in one transaction, whoever owns the room.
-        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        ChatDbContext::events => [TruthSourceOperation::Remove],
-        // Borrowed to erase the person's registration events in the account erasure transaction, whoever owns the room.
-        // See docs/agents/architecture/instance-owners.md#operations-over-many-instances.
-        ChatDbContext::eventUserRegistrations => [TruthSourceOperation::Remove],
+        // The existing merge moves messages until its owner protocol is activated.
+        ChatDbContext::eventMessages => [TruthSourceOperation::Update],
     ];
 
     /**
@@ -140,40 +125,4 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         return [ChatCommandConstants::ROWS_MOVED_MESSAGES => $messagesMoved];
     }
 
-    /**
-     * Deletes everything a chat keeps of a person whose account is being erased (HIL-302).
-     *
-     * Children before their parents: attachments of the person's messages, the messages,
-     * registration events and their rename feed events. The rename events are read from the
-     * journal while it still exists. Where the person only renamed somebody else, that rename
-     * and its feed line stay, and the database clears their author (HIL-1195). The framework
-     * removes the person's journal and row after this hook, including for each folded account
-     * in the erasure circle (HIL-1200). The attachments' registry files are named by id, and the
-     * files library removes them after the commit (HIL-144).
-     *
-     * Runs inside the framework's erasure transaction, so a failure of any write rolls back
-     * every one before it and the ways in that went first.
-     *
-     * @param int $userId Person whose account is being erased
-     * @return AccountErasure Rows deleted under chat's own family names, and the attachments' registry files
-     * @throws HilosException On database or truth-source failure while deleting the rows
-     */
-    protected function applyAccountErasure(int $userId): AccountErasure
-    {
-        $messageIds = Hilos::$db->eventMessages->eventIdsByAuthor($userId);
-        $fileIds = Hilos::$db->eventAttachments->actions->deleteForMessages($messageIds);
-        $messages = Hilos::$db->eventMessages->actions->deleteByAuthor($userId);
-        $registrationIds = Hilos::$db->eventUserRegistrations->actions->deleteByTarget($userId);
-        $renameEventIds = Hilos::$db->userRenames->eventIdsByUser($userId);
-        $events = Hilos::$db->events->actions->deleteByIds([...$messageIds, ...$registrationIds, ...$renameEventIds]);
-
-        return new AccountErasure(
-            [
-                ChatCommandConstants::ROWS_ERASED_MESSAGES => $messages,
-                ChatCommandConstants::ROWS_ERASED_ATTACHMENTS => count($fileIds),
-                ChatCommandConstants::ROWS_ERASED_EVENTS => $events,
-            ],
-            $fileIds,
-        );
-    }
 }

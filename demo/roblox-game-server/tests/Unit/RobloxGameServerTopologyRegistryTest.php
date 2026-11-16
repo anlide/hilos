@@ -581,25 +581,14 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
         $ceiling = [
-            'accountDeletions' => ['HIL-1952'],
-            'dataExports' => ['HIL-1952'],
-            'identities' => ['HIL-1952', 'HIL-1999'],
-            'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1952'],
-            'notificationPreferences' => ['HIL-1952'],
-            'notifications' => ['HIL-1952'],
-            'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'pushSubscriptions' => ['HIL-1952'],
-            'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1952', 'HIL-1999'],
-            'secondFactors' => ['HIL-1952', 'HIL-1999'],
-            'stepUps' => ['HIL-1952'],
-            'userPhotos' => ['HIL-1952'],
-            'userRenames' => ['HIL-1952'],
-            'users' => ['HIL-1952', 'HIL-1999'],
-            'verifications' => ['HIL-1952'],
+            'identities' => ['HIL-1999'],
+            'passkeyCredentials' => ['HIL-1999'],
+            'secondFactorBackupCodes' => ['HIL-1999'],
+            'secondFactorResets' => ['HIL-1999'],
+            'secondFactorSettings' => ['HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1999'],
+            'secondFactors' => ['HIL-1999'],
+            'users' => ['HIL-1999'],
         ];
         foreach (Hilos::SHARED_DB_OWNERS as $collection => $pending) {
             self::assertArrayHasKey($collection, $ceiling);
@@ -654,7 +643,7 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
             UserPushReleaseDoneSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE],
         );
-        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
+        self::assertArrayNotHasKey(HilosDbContext::pushSubscriptions, Hilos::SHARED_DB_OWNERS);
         Hilos::validateTopology();
 
         $this->addToAssertionCount(1);

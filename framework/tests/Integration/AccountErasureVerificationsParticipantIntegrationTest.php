@@ -80,7 +80,7 @@ final class AccountErasureVerificationsParticipantIntegrationTest extends HilosS
     private const string START_KEY = 'start:';
 
     /** Payload of the start's assignment, which the start does not read. */
-    private const string START_PAYLOAD = '{}';
+    private const string START_PAYLOAD = '{"participant":"personal","expireGrace":false}';
 
     /** Payload of the personal capture's assignment. */
     private const string CAPTURE_PAYLOAD = '{"participant":"' . AccountErasureParticipantCatalog::PERSONAL . '"}';

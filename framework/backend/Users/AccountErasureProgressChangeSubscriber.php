@@ -7,7 +7,9 @@ namespace Hilos\Users;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceMirrorSubscriberInterface;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Pages\Users\AccountStandingAudience;
 
 /** Drops this process's derived erasure progress at every change of its DB facts. */
 final class AccountErasureProgressChangeSubscriber implements SourceMirrorSubscriberInterface
@@ -23,6 +25,11 @@ final class AccountErasureProgressChangeSubscriber implements SourceMirrorSubscr
         }
 
         switch ($change->sourceKey) {
+            case HilosDbContext::users:
+                if (in_array($change->mutationType, [TableMutationType::Delete, TableMutationType::Clear], true)) {
+                    AccountStandingAudience::forgetErasureFilter();
+                }
+                break;
             case HilosDbContext::accountOperations:
             case HilosDbContext::accountOperationAssignments:
             case HilosDbContext::accountOperationResults:

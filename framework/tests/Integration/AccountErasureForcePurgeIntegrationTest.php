@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
+use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Database\Identity\PasswordFate;
+use Hilos\Users\SecondFactorFate;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\AccountOperation\AccountDataOwner;
 use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
 use Hilos\Auth\AccountOperation\AccountErasureFinal;
-use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasurePart;
-use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
 use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
 use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
@@ -29,6 +32,7 @@ use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Agent\Hilos\AbstractHilosLegalAgent;
+use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\AgentSignalData;
@@ -63,7 +67,6 @@ use Hilos\Notification\Delivery\DeliveryChannelRegistry;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Users\AccountErasure;
-use Hilos\Users\AccountErasureProgress;
 use Hilos\Users\AccountErasureProgressChangeSubscriber;
 use Hilos\Users\AccountErasureProgressResolver;
 use Hilos\Users\Agent\AbstractUserAgent;
@@ -175,8 +178,7 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
         $root = self::seedPerson();
         $folded = self::seedPerson();
         self::seedMerge($folded, $root);
-        $operation = $this->openErasure($root);
-        $this->answerForcePurge(self::command('purge-one', $root), $operation);
+        $operation = $this->commandErasure($root, 'purge-one');
         $finals = $this->exchange($this->isFinalAsk(...));
         self::assertCount(1, $finals);
         self::assertSame([], $this->replies());
@@ -208,8 +210,7 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
     public function testKeepMyAccountWinningTheStartIsAnsweredWithTheCancellation(): void
     {
         $root = self::seedPerson();
-        $operation = $this->openErasure($root);
-        $this->answerForcePurge(self::command('purge-kept', $root), $operation);
+        $operation = $this->commandErasure($root, 'purge-kept');
         $this->asPerson($root, static fn () => Hilos::$db->accountDeletions[$operation->requestId]->actions->cancel());
         $this->deliverOperationFrame($this->operationFrames()[0]);
         $this->deliverOperationFrame($this->operationFrames()[0]);
@@ -230,8 +231,7 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
     public function testALostOwnerFrameIsAnsweredAtTheDeadlineWithTheErasingStage(): void
     {
         $root = self::seedPerson();
-        $operation = $this->openErasure($root);
-        $this->answerForcePurge(self::command('purge-lost', $root), $operation);
+        $operation = $this->commandErasure($root, 'purge-lost');
         self::assertNotSame([], $this->exchange($this->isProjectAsk(...)));
         self::assertSame([], $this->replies());
 
@@ -257,8 +257,7 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
     public function testAnUnansweredStartIsAnsweredAtTheDeadlineAsStarting(): void
     {
         $root = self::seedPerson();
-        $operation = $this->openErasure($root);
-        $this->answerForcePurge(self::command('purge-start', $root), $operation);
+        $operation = $this->commandErasure($root, 'purge-start');
         self::assertCount(1, $this->operationFrames());
 
         $this->sweepAtDeadline();
@@ -274,8 +273,7 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
     public function testARestrictRefusedFinalIsAnsweredAtTheDeadlineWithItsRefusal(): void
     {
         $root = self::seedPerson();
-        $operation = $this->openErasure($root);
-        $this->answerForcePurge(self::command('purge-refused', $root), $operation);
+        $operation = $this->commandErasure($root, 'purge-refused');
         [$final] = $this->exchange($this->isFinalAsk(...));
         self::seedIdentity($root, 'password', 'late@example.test');
         $this->deliverOperationFrame($final);
@@ -299,8 +297,7 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
     public function testARepeatedCommandResendsTheLostFrameAndGetsTheCompletion(): void
     {
         $root = self::seedPerson();
-        $operation = $this->openErasure($root);
-        $this->answerForcePurge(self::command('purge-first', $root), $operation);
+        $operation = $this->commandErasure($root, 'purge-first');
         $this->exchange($this->isProjectAsk(...));
         $this->sweepAtDeadline();
         self::assertCount(1, $this->replies());
@@ -308,7 +305,7 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
 
         $observed = $this->forcePurgeOperation($root);
         self::assertSame($operation->id, $observed?->id);
-        $this->answerForcePurge(self::command('purge-second', $root), $observed);
+        $this->sendCommand(self::command('purge-second', $root));
         self::assertSame([], $this->exchange());
 
         $replies = $this->replies();
@@ -324,9 +321,8 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
     public function testTwoCommandsOnOneErasureAreEachAnsweredOnce(): void
     {
         $root = self::seedPerson();
-        $operation = $this->openErasure($root);
-        $this->answerForcePurge(self::command('purge-a', $root), $operation);
-        $this->answerForcePurge(self::command('purge-b', $root), $operation);
+        $operation = $this->commandErasure($root, 'purge-a');
+        $this->sendCommand(self::command('purge-b', $root));
         self::assertSame([], $this->exchange());
 
         $replies = $this->replies();
@@ -346,15 +342,14 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
     public function testAnEndedErasureIsAnsweredAtOnceFromItsSavedResults(): void
     {
         $root = self::seedPerson();
-        $operation = $this->openErasure($root);
-        $this->answerForcePurge(self::command('purge-lost-reply', $root), $operation);
+        $operation = $this->commandErasure($root, 'purge-lost-reply');
         $this->exchange();
         [$lost] = $this->replies();
         self::assertSame('completed', $lost->payload[AccountDeletionCommandConstants::FIELD_OUTCOME] ?? null);
 
         $observed = $this->forcePurgeOperation($root);
         self::assertSame($operation->id, $observed?->id);
-        $this->answerForcePurge(self::command('purge-again', $root), $observed);
+        $this->sendCommand(self::command('purge-again', $root));
 
         self::assertSame([], $this->operationFrames());
         $replies = $this->replies();
@@ -372,8 +367,81 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
         self::requestDeletion($requested);
         self::assertNull($this->forcePurgeOperation($requested));
         $root = self::seedPerson();
-        $operation = $this->openErasure($root);
+        $operation = $this->commandErasure($root, 'purge-observed');
         self::assertSame($operation->id, $this->forcePurgeOperation($root)?->id);
+    }
+
+    /** The ordinary merge command refuses an account already claimed by the live force opening. */
+    public function testTheOldMergeRefusesAnAccountOfTheNewOperation(): void
+    {
+        $root = self::seedPerson();
+        $other = self::seedPerson();
+        $operation = $this->commandErasure($root, 'purge-before-merge');
+        $this->operationFrames();
+
+        $this->sendCommand(new CommandRequestDTO('merge-after-opening', CliCommands::ACCOUNT_MERGE, [
+            AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => $other,
+            AccountMergeCommandConstants::FIELD_LOSER_USER_ID => $root,
+        ]));
+
+        [$refusal] = $this->replies();
+        self::assertSame('merge-after-opening', $refusal->correlationId);
+        self::assertFalse($refusal->isOk());
+        self::assertSame("Force purge person (#{$root}) is being deleted", $refusal->payload['message']);
+        self::assertSame($operation->id, $this->forcePurgeOperation($root)?->id);
+        self::assertSame([], Database::sql('SELECT * FROM `hilos_user_merge`')->rows());
+        self::assertNull(self::operationRow($operation)['finished_at']);
+    }
+
+    /** A blocking merge leaves the future date untouched; retry after it ends opens this request's own force mode. */
+    public function testADeferredForceDoesNotWriteTheDateOrAnswerForTheBlockingOperation(): void
+    {
+        $root = self::seedPerson();
+        $other = self::seedPerson();
+        self::requestDeletion($root);
+        $request = Hilos::$db->accountDeletions->liveOf($root);
+        $before = Database::sql('SELECT * FROM `hilos_account_deletion` WHERE `id` = ?', [$request->id])->rows();
+        $merge = $this->asHolder(static fn () => Hilos::$db->accountOperations->actions->recordMerge(
+            $root, $other, new AccountMergeChoice(PasswordFate::SURVIVOR, SecondFactorFate::SURVIVOR, true, false),
+        ));
+
+        $this->sendCommand(self::command('purge-deferred', $root));
+
+        [$reply] = $this->replies();
+        self::assertFalse($reply->isOk());
+        self::assertSame("The deletion of user {$root} is waiting for another account operation.", $reply->payload['message']);
+        self::assertSame($before, Database::sql('SELECT * FROM `hilos_account_deletion` WHERE `id` = ?', [$request->id])->rows());
+        self::assertNull($this->forcePurgeOperation($root));
+        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_operation_assignment`')->rows());
+        self::assertSame([], $this->operationFrames());
+        $this->asHolder(static fn () => $merge->actions->finish($merge->stage, AccountOperationOutcome::Completed));
+        $this->sendCommand(self::command('purge-unblocked', $root));
+        self::assertNotSame($merge->id, $this->forcePurgeOperation($root)?->id);
+        $this->exchange();
+        [$completed] = $this->replies();
+        self::assertSame('completed', $completed->payload[AccountDeletionCommandConstants::FIELD_OUTCOME]);
+    }
+
+    /** A repeat after the start was committed watches the same operation and preserves its already changed date. */
+    public function testARepeatedForcePreservesTheCommittedStartDate(): void
+    {
+        $root = self::seedPerson();
+        $operation = $this->commandErasure($root, 'purge-date');
+        $held = $this->exchange($this->isProjectAsk(...));
+        self::assertNotSame([], $held);
+        $before = Database::sql('SELECT `effective_at`, `started_at` FROM `hilos_account_deletion` WHERE `id` = ?', [$operation->requestId])->rows();
+        self::assertNotNull($before[0]['started_at']);
+        $this->sendCommand(self::command('purge-date-again', $root));
+        self::assertSame($operation->id, $this->forcePurgeOperation($root)?->id);
+        $this->exchange($this->isProjectAsk(...));
+        self::assertSame($before, Database::sql(
+            'SELECT `effective_at`, `started_at` FROM `hilos_account_deletion` WHERE `id` = ?', [$operation->requestId],
+        )->rows());
+        foreach ($held as $frame) {
+            $this->deliverOperationFrame($frame);
+        }
+        $this->exchange();
+        self::assertCount(2, $this->replies());
     }
 
     /** @return ForcePurgeTestHolder The real holder exposed by the fixture */
@@ -402,13 +470,10 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
         );
     }
 
-    /**
-     * @param CommandRequestDTO $command Command waiting for the erasure
-     * @param AccountOperation $operation Erasure the command watches
-     */
-    private function answerForcePurge(CommandRequestDTO $command, AccountOperation $operation): void
+    /** @param CommandRequestDTO $command The real command entry of the holder */
+    private function sendCommand(CommandRequestDTO $command): void
     {
-        $this->asHolder(fn () => $this->holder()->answer($command, $operation));
+        $this->asHolder(fn () => $this->holder()->onSignalCommand($command, '', ''));
     }
 
     /**
@@ -569,15 +634,15 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
     }
 
     /**
-     * @param int $root Root whose standing request the operation answers
-     * @return AccountOperation Newly opened erasure, not yet started
+     * @param int $root Account whose future request the command opens
+     * @param string $correlationId Command watching this opening
+     * @return AccountOperation The operation opened through the real command entry
      */
-    private function openErasure(int $root): AccountOperation
+    private function commandErasure(int $root, string $correlationId): AccountOperation
     {
         self::requestDeletion($root);
-        $request = Hilos::$db->accountDeletions->liveOf($root);
-        self::assertNotNull($request);
-        $operation = $this->asHolder(static fn () => AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework())->operation);
+        $this->sendCommand(self::command($correlationId, $root));
+        $operation = $this->forcePurgeOperation($root);
         self::assertNotNull($operation);
 
         return $operation;
@@ -649,15 +714,6 @@ final class ForcePurgeTestUsersLibrary extends AbstractUsersLibraryAgent
 final class ForcePurgeTestHolder extends AbstractSessionsLibraryAgent
 {
     /**
-     * @param CommandRequestDTO $command Command waiting for the erasure
-     * @param AccountOperation $operation Erasure the command watches
-     */
-    public function answer(CommandRequestDTO $command, AccountOperation $operation): void
-    {
-        $this->answerForcePurge($command, $operation);
-    }
-
-    /**
      * @param int $userId Account the command names
      * @return ?AccountOperation The erasure the command watches
      */
@@ -683,19 +739,9 @@ final class ForcePurgeTestLegal extends AbstractHilosLegalAgent
 {
 }
 
-/** The final's future rights stay in the fixture until the production switch (HIL-1952). */
+/** The final uses the production personal writer's rights. */
 final class ForcePurgeTestUserAgent extends AbstractUserAgent
 {
-    public const array OWNS_DB_ROWS = [
-        HilosDbContext::users => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-    ];
-
-    public const array OWNS_DB_SET = [
-        ...AbstractUserAgent::OWNS_DB_SET,
-        HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::userMerges => [TruthSourceOperation::Remove],
-    ];
-
     /**
      * Counts one fixture row per account beside the real personal erasure, so the reply's sum is visible.
      *
@@ -817,6 +863,7 @@ abstract class ForcePurgeChannels extends DeliveryChannelRegistry
 /** All real framework owners, plus a project participant and the real mail handler. */
 abstract class ForcePurgeTestHilos extends Hilos
 {
+    protected const array FEATURES = [HilosFeature::AUTH];
     protected const string ACCOUNT_DATA_OWNER_DIRECTORY = ForcePurgeProjectDirectory::class;
     protected const string NOTIFICATION_CHANNEL_REGISTRY = ForcePurgeChannels::class;
 

@@ -338,7 +338,7 @@ final class PmdTopologyRegistryTest extends TestCase
             UserPushEndpointGoneSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE],
         );
-        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS[PmdDbContext::pushSubscriptions]);
+        self::assertArrayNotHasKey(PmdDbContext::pushSubscriptions, Hilos::SHARED_DB_OWNERS);
     }
 
     /** The library's ask to release an endpoint reaches the inherited personal owner of the prior subscriber by person index. */
@@ -397,10 +397,10 @@ final class PmdTopologyRegistryTest extends TestCase
             UserPushSubscribeSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE],
         );
-        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
+        self::assertArrayNotHasKey(HilosDbContext::pushSubscriptions, Hilos::SHARED_DB_OWNERS);
         Hilos::validateTopology();
 
-        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS['notificationDeliveries']);
+        self::assertArrayNotHasKey('notificationDeliveries', Hilos::SHARED_DB_OWNERS);
     }
 
     /** Every declared feature has its required project bindings. */

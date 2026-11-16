@@ -101,24 +101,18 @@ use Demo\Chat\Pages\Hilos\Legal\LegalRevisionTextPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalAcceptancesPage;
 use Demo\Chat\Pages\Hilos\Legal\LegalSettingsPage;
 use Demo\Chat\Pages\Hilos\AppearancePage;
-use Demo\Chat\Tables\HilosLegal\HilosLegalAcceptancesTable;
 use Hilos\Tables\Logs\HilosLogNodesTable;
 use Hilos\Tables\Analytics\HilosAnalyticsActionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionsTable;
 use Hilos\Tables\Analytics\HilosAnalyticsBrowserSessionListTable;
 use Hilos\Tables\Analytics\HilosAnalyticsPeopleTable;
-use Hilos\Tables\Legal\HilosLegalDocumentsTable;
 use Hilos\Tables\Legal\HilosLegalDocumentSetTable;
 use Hilos\Tables\Legal\HilosLegalDocumentDeviationsTable;
-use Hilos\Tables\Legal\HilosLegalChecksTable;
-use Hilos\Tables\Legal\HilosLegalRevisionsTable;
-use Hilos\Tables\Legal\HilosLegalSettingsTable;
 use Hilos\Tables\Appearance\HilosAppearanceSettingsTable;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Pages\Appearance\DTO\HilosAppearanceDefaultThemeSetActionDTO;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Demo\Chat\Database\Settings\SettingsCatalog;
-use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
 use Hilos\Legal\Export\LegalAcceptancesExportHttp;
 use Hilos\Legal\LegalSettings;
 use Hilos\Legal\LegalSettingsCatalog;
@@ -129,7 +123,6 @@ use Hilos\Notification\Delivery\DeliveryChannelSettings;
 
 use Hilos\DataExport\DataExportHttp;
 use Hilos\DataExport\DTO\DataExportOrderActionDTO;
-use Hilos\DataExport\DTO\DataExportForgetUserSignalData;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Demo\Chat\Agents\Hilos\DataExportAgent;
 use Closure;
@@ -171,7 +164,6 @@ use Hilos\Tables\ProtectedMode\HilosMaintenanceNodesTable;
 use Hilos\Tables\ProtectedMode\HilosMaintenanceWordsTable;
 use Demo\Chat\Moderation\ChatModerationKindDirectory;
 use Demo\Chat\Moderation\ChatModerationKindKey;
-use Demo\Chat\Pages\DTO\Profile\RenameActionDTO;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelConfigurationPage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelFramePage;
 use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelPage;
@@ -2135,7 +2127,6 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_DATA_EXPORT,
-            HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => HilosAgentType::HILOS_DATA_EXPORT,
             ChatSignalConstants::CHAT_ACCOUNT_OPERATION_STEP => AgentType::CHAT,
             ChatSignalConstants::BOT_MESSAGE => AgentType::CHAT,
             HilosSignalConstants::HILOS_SESSION_STATE => AgentType::CHAT,
@@ -2293,7 +2284,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
             HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => HilosAgentType::HILOS_DAEMON,
             HilosSignalConstants::HILOS_LEGAL_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_LEGAL,
-            HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => HilosAgentType::HILOS_LEGAL,
             HilosSignalConstants::BACKUP_AGENT_CREATE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_DELETE => AgentType::HILOS_BACKUP,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => AgentType::HILOS_BACKUP,
@@ -2553,7 +2543,6 @@ final class ChatTopologyRegistryTest extends TestCase
 
         $this->assertSame([
             HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
-            HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => DataExportForgetUserSignalData::class,
             ChatSignalConstants::CHAT_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             ChatSignalConstants::BOT_MESSAGE => BotMessageSignalData::class,
             HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
@@ -2711,7 +2700,6 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => ClusterLogIndexPortionSignalData::class,
             HilosSignalConstants::DAEMON_CLUSTER_PICTURE_PORTION => DaemonClusterPicturePortionSignalData::class,
             HilosSignalConstants::HILOS_LEGAL_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
-            HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => LegalAcceptancesExportForgetSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_CREATE => BackupCreateSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_DELETE => BackupDeleteSignalData::class,
             HilosSignalConstants::BACKUP_AGENT_SET_KEEP => BackupSetKeepSignalData::class,
@@ -3228,30 +3216,15 @@ final class ChatTopologyRegistryTest extends TestCase
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
         $ceiling = [
-            'accountDeletions' => ['HIL-1952'],
-            'dataExports' => ['HIL-1952'],
-            'eventAttachments' => ['HIL-1952'],
-            'eventMessages' => ['HIL-1952', 'HIL-1999'],
-            'eventUserRegistrations' => ['HIL-1952'],
-            'events' => ['HIL-1952'],
-            'identities' => ['HIL-1952', 'HIL-1999'],
-            'legalAcceptanceExports' => ['HIL-1952'],
-            'legalAcceptances' => ['HIL-1952'],
-            'notificationDeliveries' => ['HIL-1952'],
-            'notificationPreferences' => ['HIL-1952'],
-            'notifications' => ['HIL-1952'],
-            'passkeyCredentials' => ['HIL-1952', 'HIL-1999'],
-            'pushSubscriptions' => ['HIL-1952'],
-            'secondFactorBackupCodes' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorResets' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorSettings' => ['HIL-1952', 'HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1952', 'HIL-1999'],
-            'secondFactors' => ['HIL-1952', 'HIL-1999'],
-            'stepUps' => ['HIL-1952'],
-            'userPhotos' => ['HIL-1952'],
-            'userRenames' => ['HIL-1952'],
-            'users' => ['HIL-1952', 'HIL-1999'],
-            'verifications' => ['HIL-1952'],
+            'eventMessages' => ['HIL-1999'],
+            'identities' => ['HIL-1999'],
+            'passkeyCredentials' => ['HIL-1999'],
+            'secondFactorBackupCodes' => ['HIL-1999'],
+            'secondFactorResets' => ['HIL-1999'],
+            'secondFactorSettings' => ['HIL-1999'],
+            'secondFactorTrusts' => ['HIL-1999'],
+            'secondFactors' => ['HIL-1999'],
+            'users' => ['HIL-1999'],
         ];
         foreach (Hilos::SHARED_DB_OWNERS as $collection => $pending) {
             $this->assertArrayHasKey($collection, $ceiling);

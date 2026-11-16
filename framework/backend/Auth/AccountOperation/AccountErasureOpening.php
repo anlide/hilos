@@ -30,13 +30,18 @@ final class AccountErasureOpening
      *
      * @param AccountDeletion $request Deletion request the erasure answers
      * @param AccountErasureParticipantCatalog $catalog Participants of the installation
+     * @param bool $expireGrace Whether a new operation asks the personal owner to expire the grace period
      * @return AccountErasureOpeningResult Opened or recorded erasure and assignments, or the open erasure or merge id that defers it
      * @throws ValidationException When the request is no longer live and has no erasure yet
      * @throws Throwable When reading or recording fails; the operation and its assignments roll back together
      */
-    public static function open(AccountDeletion $request, AccountErasureParticipantCatalog $catalog): AccountErasureOpeningResult
+    public static function open(
+        AccountDeletion $request,
+        AccountErasureParticipantCatalog $catalog,
+        bool $expireGrace = false,
+    ): AccountErasureOpeningResult
     {
-        return Database::transaction(DatabaseNames::PRIMARY, static function () use ($request, $catalog): AccountErasureOpeningResult {
+        return Database::transaction(DatabaseNames::PRIMARY, static function () use ($request, $catalog, $expireGrace): AccountErasureOpeningResult {
             $existing = Hilos::$db->accountOperations->byRequest($request->id);
             if ($existing !== null) {
                 return new AccountErasureOpeningResult(
@@ -59,11 +64,16 @@ final class AccountErasureOpening
                 }
             }
             $operation = Hilos::$db->accountOperations->actions->recordErasure($request->id, $request->userId, $circle);
+            $recorded = AccountOperationComposition::recordMissing($operation, AccountErasureCensus::of($operation->circle, $catalog));
+            $start = AccountErasureStart::recordInTransaction($operation, $expireGrace);
+            if ($start !== null) {
+                $recorded[] = $start;
+            }
 
             return new AccountErasureOpeningResult(
                 $operation,
                 null,
-                AccountOperationComposition::recordMissing($operation, AccountErasureCensus::of($operation->circle, $catalog)),
+                $recorded,
             );
         });
     }

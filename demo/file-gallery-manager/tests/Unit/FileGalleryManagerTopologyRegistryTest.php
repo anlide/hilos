@@ -380,7 +380,7 @@ final class FileGalleryManagerTopologyRegistryTest extends TestCase
             UserPushReleaseDoneSignalData::class,
             Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_PUSH_RELEASE_DONE],
         );
-        self::assertSame(['HIL-1952'], Hilos::SHARED_DB_OWNERS[HilosDbContext::pushSubscriptions]);
+        self::assertArrayNotHasKey(HilosDbContext::pushSubscriptions, Hilos::SHARED_DB_OWNERS);
         Hilos::validateTopology();
 
         $this->addToAssertionCount(1);

@@ -17,7 +17,6 @@ use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\HilosProfileNameChange as StateHilosProfileNameChange;
 use Hilos\Runtime\State\Item\RecoveryWaiter as StateRecoveryWaiter;
 use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
-use Hilos\Users\AccountErasure;
 
 /**
  * The binance-btc-tracker demo's sessions library - its own way in and registration holds.
@@ -72,17 +71,4 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         StateHilosProfileNameChange::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
 
-    /**
-     * Answers the framework's erasure hook for one account (HIL-1200).
-     *
-     * This demo has no project rows of the person. The framework removes their rename journal
-     * and person row after this hook. The override answers because the default hook refuses.
-     *
-     * @param int $userId Person whose account is being erased
-     * @return AccountErasure No project rows or files
-     */
-    protected function applyAccountErasure(int $userId): AccountErasure
-    {
-        return new AccountErasure([], []);
-    }
 }

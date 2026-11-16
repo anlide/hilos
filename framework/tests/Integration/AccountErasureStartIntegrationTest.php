@@ -7,9 +7,9 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
+use Hilos\Auth\AccountOperation\AccountErasureStartPayload;
 use Hilos\Auth\AccountOperation\AccountErasureStartResult;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
-use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
@@ -312,6 +312,7 @@ final class AccountErasureStartIntegrationTest extends HilosSessionIntegrationTe
         $userId = $this->seedPerson();
         $request = $this->requestDeletion($userId);
         $assignmentId = $this->startAssignment($request, $userId);
+        $effectiveAt = self::requestRow($request)['effective_at'];
 
         $result = $this->runStart($userId, $assignmentId);
 
@@ -327,7 +328,135 @@ final class AccountErasureStartIntegrationTest extends HilosSessionIntegrationTe
         self::assertSame('This account is being deleted.', $answer->error);
         $row = self::requestRow($request);
         self::assertSame($startedAt, $row['started_at']);
+        self::assertSame($effectiveAt, $row['effective_at']);
         self::assertNull($row['canceled_at']);
+    }
+
+    /** The personal owner expires grace and commits the date, start and result together. */
+    public function testAForcedStartExpiresGraceAndCommitsItsStartAndResult(): void
+    {
+        $userId = $this->seedPerson();
+        $request = $this->requestDeletion($userId);
+        $assignmentId = $this->forceStartAssignment($request);
+        $before = TimeHelper::nowMs();
+
+        $result = $this->runStart($userId, $assignmentId);
+
+        $after = TimeHelper::nowMs();
+        $row = self::requestRow($request);
+        self::assertGreaterThanOrEqual($before, $row['effective_at']);
+        self::assertLessThanOrEqual($after, $row['effective_at']);
+        self::assertGreaterThanOrEqual($row['effective_at'], $row['started_at']);
+        self::assertLessThanOrEqual($after, $row['started_at']);
+        self::assertSame($row['effective_at'], $request->effectiveAt);
+        self::assertSame($row['started_at'], $request->startedAt);
+        self::assertTrue(AccountErasureStartResult::startedOf($result->payload));
+        self::assertSame([[$assignmentId, HilosAgentType::HILOS_USER . ':' . $userId, '{"start":"started"}']], self::storedResults());
+        self::assertFalse(Database::hasOpenTransactions());
+    }
+
+    /** A cancel between forced opening and delivery wins without moving the original date. */
+    public function testACancelBeforeAForcedStartKeepsTheOriginalGraceDate(): void
+    {
+        $userId = $this->seedPerson();
+        $request = $this->requestDeletion($userId);
+        $assignmentId = $this->forceStartAssignment($request);
+        $effectiveAt = self::requestRow($request)['effective_at'];
+        self::assertTrue($this->carryCancel($userId)->canceled);
+
+        $result = $this->runStart($userId, $assignmentId);
+
+        $row = self::requestRow($request);
+        self::assertSame($effectiveAt, $row['effective_at']);
+        self::assertNull($row['started_at']);
+        self::assertNotNull($row['canceled_at']);
+        self::assertFalse(AccountErasureStartResult::startedOf($result->payload));
+        self::assertSame([[$assignmentId, HilosAgentType::HILOS_USER . ':' . $userId, '{"start":"lost"}']], self::storedResults());
+    }
+
+    /** A real result-storage refusal rolls back both writes; the next owner uses the durable true intention. */
+    public function testAResultStorageFailureRollsBackForcedStartAndANewOwnerRetriesItsSavedMode(): void
+    {
+        $userId = $this->seedPerson();
+        $request = $this->requestDeletion($userId);
+        $assignmentId = $this->forceStartAssignment($request);
+        $original = self::requestRow($request);
+        Database::sqlRun(
+            "ALTER TABLE `hilos_account_operation_result` ADD CONSTRAINT `test_refuse_start` CHECK (JSON_EXTRACT(`payload_json`, '$.start') IS NULL)",
+        );
+        try {
+            try {
+                $this->runStart($userId, $assignmentId);
+                self::fail('The result storage must refuse the start result');
+            } catch (DatabaseException $failure) {
+                self::assertStringContainsString('test_refuse_start', $failure->getMessage());
+                self::assertFalse(Database::hasOpenTransactions());
+            }
+        } finally {
+            Database::sqlRun('ALTER TABLE `hilos_account_operation_result` DROP CONSTRAINT `test_refuse_start`');
+        }
+        self::assertSame($original, self::requestRow($request));
+        self::assertSame($original['effective_at'], $request->effectiveAt);
+        self::assertNull($request->startedAt);
+        self::assertSame([], self::storedResults());
+        self::assertSame(
+            '{"participant":"personal","expireGrace":true}',
+            Database::sql(
+                'SELECT `payload_json` FROM `hilos_account_operation_assignment` WHERE `id` = ?',
+                [$assignmentId],
+            )->row()['payload_json'],
+        );
+        $this->releasePersonAgents();
+        $before = TimeHelper::nowMs();
+
+        $result = $this->runStart($userId, $assignmentId);
+
+        self::assertTrue(AccountErasureStartResult::startedOf($result->payload));
+        $row = self::requestRow($request);
+        self::assertGreaterThanOrEqual($before, $row['effective_at']);
+        self::assertLessThanOrEqual(TimeHelper::nowMs(), $row['effective_at']);
+        self::assertNotNull($row['started_at']);
+    }
+
+    /** Recording through the opening's entry requires the caller's transaction even when the start is already present. */
+    public function testRecordingAStartOutsideATransactionIsRefused(): void
+    {
+        $userId = $this->seedPerson();
+        $request = $this->requestDeletion($userId);
+        $assignmentId = $this->forceStartAssignment($request);
+        $operation = Hilos::$db->accountOperationAssignments[$assignmentId]->operation;
+        $before = self::requestRow($request);
+        try {
+            $this->asHolder(static fn () => AccountErasureStart::recordInTransaction($operation, false));
+            self::fail('Recording a start must require an open transaction');
+        } catch (DatabaseException $refusal) {
+            self::assertSame('An account erasure start must be recorded inside a transaction', $refusal->getMessage());
+        }
+        self::assertSame($before, self::requestRow($request));
+        self::assertSame([], self::storedResults());
+    }
+
+    /** A controlled past committed date makes any attempt to expire grace again observable without a wait. */
+    public function testARepeatedForcedStartReturnsItsSavedResultWithoutMovingTheDate(): void
+    {
+        $userId = $this->seedPerson();
+        $request = $this->requestDeletion($userId);
+        $assignmentId = $this->forceStartAssignment($request);
+        $first = $this->runStart($userId, $assignmentId);
+        $past = TimeHelper::nowMs() - TimeConstants::MS_PER_SECOND;
+        Database::sqlRun(
+            'UPDATE `hilos_account_deletion` SET `effective_at` = ?, `started_at` = ? WHERE `id` = ?',
+            [$past, $past, $request->id],
+        );
+        $stored = self::storedResults();
+
+        $repeat = $this->runStart($userId, $assignmentId);
+
+        self::assertSame($first->id, $repeat->id);
+        self::assertTrue(AccountErasureStartResult::startedOf($repeat->payload));
+        self::assertSame($past, self::requestRow($request)['effective_at']);
+        self::assertSame($past, self::requestRow($request)['started_at']);
+        self::assertSame($stored, self::storedResults());
     }
 
     /**
@@ -669,19 +798,20 @@ final class AccountErasureStartIntegrationTest extends HilosSessionIntegrationTe
      * Reads a request straight from the database, past every in-memory collection.
      *
      * @param AccountDeletion $request The request
-     * @return array{started_at: ?int, canceled_at: ?int, completed_at: ?int} Its three state moments
+     * @return array{effective_at: int, started_at: ?int, canceled_at: ?int, completed_at: ?int} Its deadline and state moments
      * @throws DatabaseException When the query fails
      */
     private static function requestRow(AccountDeletion $request): array
     {
         Database::sql(
-            'SELECT `started_at`, `canceled_at`, `completed_at` FROM `hilos_account_deletion` WHERE `id` = ?',
+            'SELECT `effective_at`, `started_at`, `canceled_at`, `completed_at` FROM `hilos_account_deletion` WHERE `id` = ?',
             [$request->id],
         );
         $row = Database::row();
         self::assertNotNull($row);
 
         return [
+            'effective_at' => (int)$row['effective_at'],
             'started_at' => $row['started_at'] === null ? null : (int)$row['started_at'],
             'canceled_at' => $row['canceled_at'] === null ? null : (int)$row['canceled_at'],
             'completed_at' => $row['completed_at'] === null ? null : (int)$row['completed_at'],
@@ -726,8 +856,27 @@ final class AccountErasureStartIntegrationTest extends HilosSessionIntegrationTe
             self::START_KEY . $userId,
             new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$userId),
             $userId,
-            AccountOperationAssignmentPayload::fromJson('{}'),
+            AccountErasureStartPayload::payloadOf(false),
         )->id;
+    }
+
+    /**
+     * @param AccountDeletion $request Request whose forced start must already be durable before delivery
+     * @return int Canonical start assignment recorded by the opening
+     */
+    private function forceStartAssignment(AccountDeletion $request): int
+    {
+        $opened = $this->asHolder(static fn () => AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework(), true));
+        $operation = $opened->operation;
+        self::assertNotNull($operation);
+        $start = Hilos::$db->accountOperationAssignments->byIdentity(
+            $operation->id,
+            $operation->stage,
+            AccountErasureStart::personalKey($request->userId),
+        );
+        self::assertNotNull($start);
+
+        return $start->id;
     }
 
     /**

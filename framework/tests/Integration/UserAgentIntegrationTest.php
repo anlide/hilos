@@ -280,7 +280,7 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
         );
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, '43', ['43']);
         foreach (self::borrowedSets() as $collection) {
-            $operation = $collection === HilosDbContext::legalAcceptances
+            $operation = in_array($collection, [HilosDbContext::legalAcceptances, HilosDbContext::userMerges], true)
                 ? TruthSourceOperation::Remove
                 : TruthSourceOperation::Update;
             TruthSourceRegistry::checkCanWriteItem(
@@ -290,7 +290,7 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
                 $operation,
             );
             $this->assertWriteDenied($collection, '2', ['43'], $operation);
-            if ($collection === HilosDbContext::legalAcceptances) {
+            if (in_array($collection, [HilosDbContext::legalAcceptances, HilosDbContext::userMerges], true)) {
                 $this->assertWriteDenied(
                     $collection,
                     '1',
@@ -317,7 +317,7 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
         }
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, self::USER_ID, [self::USER_ID]);
         foreach (self::borrowedSets() as $collection) {
-            $operation = $collection === HilosDbContext::legalAcceptances
+            $operation = in_array($collection, [HilosDbContext::legalAcceptances, HilosDbContext::userMerges], true)
                 ? TruthSourceOperation::Remove
                 : TruthSourceOperation::Update;
             $this->assertWriteDenied($collection, '1', [self::USER_ID], $operation);

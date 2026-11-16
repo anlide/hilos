@@ -19,7 +19,6 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
  */
 class DbWriterTransitionCatalog
 {
-    protected const string ERASURE = 'HIL-1952';
     protected const string MERGE = 'HIL-1999';
 
     /**
@@ -64,10 +63,8 @@ class DbWriterTransitionCatalog
 
         $definitions[HilosDbContext::users] = $this->states(
             [...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
-                ...$this->claim($person, DbWriterClaimWidth::Rows, TruthSourceOperation::Update)],
-            [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
-                self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Update)],
-            [self::ERASURE => $this->claim($person, DbWriterClaimWidth::Rows, TruthSourceOperation::Remove)],
+                ...$this->claim($person, DbWriterClaimWidth::Rows, TruthSourceOperation::Update, TruthSourceOperation::Remove)],
+            [self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Update)],
         );
 
         foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials,
@@ -83,30 +80,27 @@ class DbWriterTransitionCatalog
                 HilosDbContext::secondFactorResets => [TruthSourceOperation::Remove],
                 default => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
             };
-            $pending = [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
-                self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, ...$mergeOperations)];
+            $pending = [self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, ...$mergeOperations)];
             $definitions[$collection] = $this->states($base, $pending);
         }
 
-        // The person's own erasure of the settings is in the base state (HIL-1941, Writer Map); the holder leaves with HIL-1952.
+        // The personal owner removes its settings; the holder retains the existing merge's rights.
         $definitions[HilosDbContext::secondFactorSettings] = $this->states(
             $this->claim($person, DbWriterClaimWidth::Set,
                 TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove),
-            [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
-                self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, ...TruthSourceOperation::ALL)],
+            [self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, ...TruthSourceOperation::ALL)],
         );
 
         $definitions[HilosDbContext::secondFactorTrusts] = $this->states(
             [...$this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
                 ...$this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Update, TruthSourceOperation::Remove)],
-            [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
-                self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
+            [self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
         );
 
         $definitions[HilosDbContext::legalAcceptances] = $this->states(
             base: [...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
                 ...$this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Remove)],
-            pending: [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
+            pending: [],
         );
 
         foreach ([HilosDbContext::stepUps, HilosDbContext::userPhotos, HilosDbContext::notificationPreferences,
@@ -124,27 +118,26 @@ class DbWriterTransitionCatalog
             $definitions[$collection] = $this->states(
                 [...$this->claim($person, DbWriterClaimWidth::Set, ...$operations),
                     ...$this->claim($creator, DbWriterClaimWidth::Whole, TruthSourceOperation::Add)],
-                [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole,
-                    $collection === HilosDbContext::accountDeletions ? TruthSourceOperation::Update : TruthSourceOperation::Remove)],
+                [],
             );
         }
 
         $definitions[HilosDbContext::verifications] = $this->states(
             $this->claim($users, DbWriterClaimWidth::Whole, ...TruthSourceOperation::ALL),
-            [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
+            [],
         );
         foreach ([HilosDbContext::dataExports => HilosAgentType::HILOS_DATA_EXPORT,
             HilosDbContext::legalAcceptanceExports => HilosAgentType::HILOS_LEGAL] as $collection => $agentType) {
             $definitions[$collection] = $this->states(
                 $this->claim($this->role($hilosClass, $agentType), DbWriterClaimWidth::Whole, ...TruthSourceOperation::ALL),
-                [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
+                [],
             );
         }
 
         $definitions[HilosDbContext::pushSubscriptions] = $this->states(
             [...$this->claim($notifications, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
                 ...$this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Update, TruthSourceOperation::Remove)],
-            [self::ERASURE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
+            [],
         );
         $definitions[HilosDbContext::userRenames] = $this->renameStates($hilosClass);
         $definitions[HilosDbContext::notificationDeliveries] = $this->deliveryStates($hilosClass);
@@ -159,14 +152,10 @@ class DbWriterTransitionCatalog
     protected function renameStates(string $hilosClass): array
     {
         $person = $this->role($hilosClass, HilosAgentType::HILOS_USER);
-        $pending = [self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
-                DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)];
-        $completed = [self::ERASURE => $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Remove)];
-
         return $this->states(
-            $this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Add, TruthSourceOperation::Update),
-            $pending,
-            $completed,
+            $this->claim($person, DbWriterClaimWidth::Set,
+                TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove),
+            [],
         );
     }
 
@@ -193,7 +182,7 @@ class DbWriterTransitionCatalog
 
     /**
      * Enumerates the finite graph. Independent leaves commute; terminal moves follow all ordinary moves,
-     * and merge follows erasure. Contributions sharing a permission are unioned until their last reason leaves.
+     * and contributions sharing a permission are unioned until their last reason leaves.
      *
      * @param list<DbWriterClaim> $base Claims that survive every move
      * @param array<string, list<DbWriterClaim>> $pending Claims contributed by each unpaid leaf
@@ -210,12 +199,9 @@ class DbWriterTransitionCatalog
         }
         $leaves = array_keys($pending);
         sort($leaves, SORT_STRING);
-        $ordinary = array_values(array_diff($leaves, [self::ERASURE, self::MERGE]));
-        if (isset($pending[self::ERASURE])) {
-            $requires[self::ERASURE] = [...($requires[self::ERASURE] ?? []), ...$ordinary];
-        }
+        $ordinary = array_values(array_diff($leaves, [self::MERGE]));
         if (isset($pending[self::MERGE])) {
-            $requires[self::MERGE] = [...($requires[self::MERGE] ?? []), self::ERASURE, ...$ordinary];
+            $requires[self::MERGE] = [...($requires[self::MERGE] ?? []), ...$ordinary];
         }
         $subsets = [[]];
         foreach ($leaves as $leaf) {
@@ -256,8 +242,7 @@ class DbWriterTransitionCatalog
 
         $states = $this->states(
             [...$this->claim($library, DbWriterClaimWidth::Whole, TruthSourceOperation::Add), ...$channels],
-            [self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
-                DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
+            [],
         );
 
         return array_map(static fn (DbWriterTransitionState $state): DbWriterTransitionState => new DbWriterTransitionState(

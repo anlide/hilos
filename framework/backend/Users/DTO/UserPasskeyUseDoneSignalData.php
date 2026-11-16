@@ -25,29 +25,38 @@ final class UserPasskeyUseDoneSignalData extends BaseDTO implements SignalDataIn
     public const string error = 'error';
     public const string errorType = 'errorType';
     public const string errorDetail = 'errorDetail';
+    public const string erasing = 'erasing';
 
     /**
      * @param UserPasskeyUseSignalData $ask The ask being answered, untouched
      * @param ?string $error Why the use was not written, or null when it went through
      * @param ?string $errorType Class name of the failure the refusal stands for, or null when nothing was held back
      * @param ?string $errorDetail Original message of that failure, or null when nothing was held back
+     * @param bool $erasing Whether the refusal is the domain refusal of an account being erased
+     * @throws InvalidFormatException When an erasing answer carries no refusal
      */
     public function __construct(
         public readonly UserPasskeyUseSignalData $ask,
         public readonly ?string $error,
         public readonly ?string $errorType,
         public readonly ?string $errorDetail,
+        public readonly bool $erasing = false,
     ) {
+        if ($erasing && $error === null) {
+            throw new InvalidFormatException('An erasing passkey answer must carry a refusal');
+        }
     }
 
     /**
      * @param UserPasskeyUseSignalData $ask The ask being answered
      * @param ?ActionRefusal $refusal Why the use was not written, or null when it went through
+     * @param bool $erasing Whether the account's erasure refused the use
      * @return self Answer carrying the ask back
+     * @throws InvalidFormatException When an erasing answer carries no refusal
      */
-    public static function to(UserPasskeyUseSignalData $ask, ?ActionRefusal $refusal): self
+    public static function to(UserPasskeyUseSignalData $ask, ?ActionRefusal $refusal, bool $erasing = false): self
     {
-        return new self($ask, $refusal?->reason, $refusal?->errorType, $refusal?->errorDetail);
+        return new self($ask, $refusal?->reason, $refusal?->errorType, $refusal?->errorDetail, $erasing);
     }
 
     /**
@@ -62,6 +71,7 @@ final class UserPasskeyUseDoneSignalData extends BaseDTO implements SignalDataIn
             error: self::optionalString($data, self::error),
             errorType: self::optionalString($data, self::errorType),
             errorDetail: self::optionalString($data, self::errorDetail),
+            erasing: self::requireBool($data, self::erasing),
         );
     }
 
@@ -73,6 +83,7 @@ final class UserPasskeyUseDoneSignalData extends BaseDTO implements SignalDataIn
             self::error => $this->error,
             self::errorType => $this->errorType,
             self::errorDetail => $this->errorDetail,
+            self::erasing => $this->erasing,
         ];
     }
 }

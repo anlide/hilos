@@ -610,6 +610,8 @@ class ScenarioDatabaseFaultsTest(unittest.TestCase):
         printed.assert_not_called()
 
     def test_55_primary_cleanup_timeout_reports_recovery_and_preserves_the_first_error(self):
+        self.contexts.enter_context(patch.object(
+            scenarios, "DB_MEMBER_RETURN_TIMEOUT", 3 * scenarios.POLL_INTERVAL))
         original, events = self.prepare_primary_recovery(cleanup_returns=False)
         with patch("builtins.print") as printed:
             with self.assertRaises(OSError) as caught:

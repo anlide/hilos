@@ -24,6 +24,7 @@ use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
+use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureUncapturedException;
@@ -405,9 +406,9 @@ abstract class AbstractUserAgent extends AbstractAgent
         ],
     ];
 
-    /** @var array<string, list<TruthSourceOperation>> The person's row, excluding creation and removal. */
+    /** @var array<string, list<TruthSourceOperation>> The person's row, including its erasure final and excluding creation. */
     public const array OWNS_DB_ROWS = [
-        HilosDbContext::users => [TruthSourceOperation::Update],
+        HilosDbContext::users => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
     ];
 
     /**
@@ -449,7 +450,8 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::notifications => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::notificationPreferences => TruthSourceOperation::ALL,
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+        HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::userMerges => [TruthSourceOperation::Remove],
         HilosDbContext::accountOperationResults => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
     ];
 
@@ -889,15 +891,7 @@ abstract class AbstractUserAgent extends AbstractAgent
                 }
 
                 $this->refuseAnotherPerson($passkeyUse->userId, $name);
-                $this->sendToAgent($passkeyUse->replySignal, UserPasskeyUseDoneSignalData::to(
-                    $passkeyUse,
-                    $this->flagRefusal(function () use ($passkeyUse): void {
-                        $this->recordPasskeyUse($passkeyUse->passkeyId, $passkeyUse->signCount);
-                        if ($passkeyUse->operation !== null && $passkeyUse->sessionTokenHash !== null) {
-                            $this->recordStepUp($passkeyUse->sessionTokenHash, $passkeyUse->operation);
-                        }
-                    }, 'Passkey use'),
-                ));
+                $this->sendToAgent($passkeyUse->replySignal, $this->passkeyUseAnswer($passkeyUse));
 
                 return;
 
@@ -2321,6 +2315,35 @@ abstract class AbstractUserAgent extends AbstractAgent
         } catch (Throwable $e) {
             $this->logAgentError("OAuth provider name for #{$this->userId} not written: {$e->getMessage()}");
         }
+    }
+
+    /**
+     * Keeps the erasure refusal distinct while every other failure follows the ordinary refusal path.
+     *
+     * @param UserPasskeyUseSignalData $ask Passkey use and optional step to record
+     * @return UserPasskeyUseDoneSignalData Outcome carrying the ask back to the library
+     * @throws InvalidFormatException When the answer's outcome is contradictory
+     */
+    private function passkeyUseAnswer(UserPasskeyUseSignalData $ask): UserPasskeyUseDoneSignalData
+    {
+        try {
+            AddressablePerson::require($this->userId);
+            $this->recordPasskeyUse($ask->passkeyId, $ask->signCount);
+            if ($ask->operation !== null && $ask->sessionTokenHash !== null) {
+                $this->recordStepUp($ask->sessionTokenHash, $ask->operation);
+            }
+        } catch (AccountErasingException $e) {
+            return UserPasskeyUseDoneSignalData::to($ask, ActionRefusal::fromThrowable($e), erasing: true);
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Passkey use for #{$this->userId} failed: {$e->getMessage()}");
+            }
+
+            return UserPasskeyUseDoneSignalData::to($ask, $refusal);
+        }
+
+        return UserPasskeyUseDoneSignalData::to($ask, null);
     }
 
     /**

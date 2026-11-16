@@ -54,10 +54,13 @@ Command: test:account:force-purge <userId>
 
 Description:
   Move a standing account-deletion request's erasure moment to now and carry it
-  out through the running session holder. Refuses on a production-like environment.
+  out through the running session holder. The personal owner moves the moment
+  when a force-purge start commits; the holder waits for and reports the operation.
+  Refuses on a production-like environment.
 
-  Waits up to {$seconds}s for the erasure to end. An unfinished erasure prints the stage
-  it reached and exits {$timeout}; run the command again to follow it.
+  Waits up to {$seconds}s for the operation. A timeout leaves the outcome unknown;
+  the operation continues. An unfinished erasure prints its stage and exits
+  {$timeout}; run the command again to follow it.
 
 Arguments:
   <userId>  User whose standing deletion request is carried out

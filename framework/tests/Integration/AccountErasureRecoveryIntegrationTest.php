@@ -16,6 +16,7 @@ use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
 use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
+use Hilos\Auth\AccountOperation\AccountErasureStartPayload;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
@@ -254,6 +255,46 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
         self::assertSame([], $this->exchangeHolding(static fn (SignalDTO $frame): bool => false));
         self::assertSame('completed', self::operationRow($operation)['outcome']);
         self::assertSame([$root], $this->projectOwner()->erasedAccounts);
+    }
+
+    /** A new holder resends a lost forced start with its saved true mode, which only the personal owner executes. */
+    public function testANewHolderRecoversTheForcedModeAfterTheFirstStartFrameIsLost(): void
+    {
+        $root = self::seedPerson();
+        $operation = $this->openErasure($root, true);
+        $request = Hilos::$db->accountDeletions[$operation->requestId];
+        $originalDate = $request->effectiveAt;
+        $start = self::assignment($operation, AccountErasureStart::personalKey($root));
+        self::assertTrue(AccountErasureStartPayload::expireGraceOf($start->payload));
+        $this->startHolder();
+        $this->tick();
+        $lost = $this->operationFrames();
+        self::assertSame([AccountErasureStart::personalKey($root)], $this->frameKeys($lost));
+
+        $this->startHolder();
+        $this->tick();
+
+        $resent = $this->operationFrames();
+        self::assertSame($this->frameIds($lost), $this->frameIds($resent));
+        $row = Database::sql('SELECT `effective_at`, `started_at` FROM `hilos_account_deletion` WHERE `id` = ?', [$request->id])->row();
+        self::assertSame($originalDate, (int)$row['effective_at']);
+        self::assertNull($row['started_at']);
+        $before = TimeHelper::nowMs();
+        $this->deliverOperationFrame($resent[0]);
+        $after = TimeHelper::nowMs();
+
+        self::assertSame(['done'], self::answerKinds($this->operationFrames()));
+        $row = Database::sql('SELECT `effective_at`, `started_at` FROM `hilos_account_deletion` WHERE `id` = ?', [$request->id])->row();
+        self::assertGreaterThanOrEqual($before, (int)$row['effective_at']);
+        self::assertLessThanOrEqual($after, (int)$row['effective_at']);
+        self::assertNotNull($row['started_at']);
+        self::assertSame(
+            '{"start":"started"}',
+            Database::sql(
+                'SELECT `payload_json` FROM `hilos_account_operation_result` WHERE `assignment_id` = ?',
+                [$start->id],
+            )->row()['payload_json'],
+        );
     }
 
     /** Case 2: the first tick of a new holder assigns the successors of a lost answer and does not repeat its part. */
@@ -868,9 +909,10 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
 
     /**
      * @param int $root Root whose standing request the operation answers
+     * @param bool $expireGrace Whether the opening saves a forced start intention
      * @return AccountOperation Newly opened erasure, not yet entered
      */
-    private function openErasure(int $root): AccountOperation
+    private function openErasure(int $root, bool $expireGrace = false): AccountOperation
     {
         ExecutionContext::run(
             new ExecutionFrame(agentId: HilosAgentType::HILOS_USERS_LIBRARY),
@@ -881,7 +923,9 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
         );
         $request = Hilos::$db->accountDeletions->liveOf($root);
         self::assertNotNull($request);
-        $operation = $this->asHolder(static fn () => AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework())->operation);
+        $operation = $this->asHolder(
+            static fn () => AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework(), $expireGrace)->operation,
+        );
         self::assertNotNull($operation);
 
         return $operation;
@@ -1173,18 +1217,9 @@ final class ErasureRecoveryTestLegal extends AbstractHilosLegalAgent
 {
 }
 
-/** The final's future rights stay in the fixture until the production switch (HIL-1952). */
+/** The final uses the production personal writer's rights. */
 final class ErasureRecoveryTestUserAgent extends AbstractUserAgent
 {
-    public const array OWNS_DB_ROWS = [
-        HilosDbContext::users => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-    ];
-
-    public const array OWNS_DB_SET = [
-        ...AbstractUserAgent::OWNS_DB_SET,
-        HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::userMerges => [TruthSourceOperation::Remove],
-    ];
 }
 
 /** A project with a sign-in surface, so the holder arms its recovery pass, and every erasure participant. */

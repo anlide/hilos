@@ -585,26 +585,14 @@ final class Hilos extends HilosFacade
 
     /** @var array<string, list<string>> Outstanding closed DB writer transitions. */
     public const array SHARED_DB_OWNERS = [
-        HilosDbContext::accountDeletions => ['HIL-1952'],
-        HilosDbContext::dataExports => ['HIL-1952'],
-        HilosDbContext::identities => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::legalAcceptanceExports => ['HIL-1952'],
-        HilosDbContext::legalAcceptances => ['HIL-1952'],
-        HilosDbContext::notificationDeliveries => ['HIL-1952'],
-        HilosDbContext::notificationPreferences => ['HIL-1952'],
-        HilosDbContext::notifications => ['HIL-1952'],
-        HilosDbContext::passkeyCredentials => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::pushSubscriptions => ['HIL-1952'],
-        HilosDbContext::secondFactorBackupCodes => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::secondFactorResets => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::secondFactorSettings => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::secondFactorTrusts => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::secondFactors => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::stepUps => ['HIL-1952'],
-        HilosDbContext::userPhotos => ['HIL-1952'],
-        HilosDbContext::userRenames => ['HIL-1952'],
-        HilosDbContext::users => ['HIL-1952', 'HIL-1999'],
-        HilosDbContext::verifications => ['HIL-1952'],
+        HilosDbContext::identities => ['HIL-1999'],
+        HilosDbContext::passkeyCredentials => ['HIL-1999'],
+        HilosDbContext::secondFactorBackupCodes => ['HIL-1999'],
+        HilosDbContext::secondFactorResets => ['HIL-1999'],
+        HilosDbContext::secondFactorSettings => ['HIL-1999'],
+        HilosDbContext::secondFactorTrusts => ['HIL-1999'],
+        HilosDbContext::secondFactors => ['HIL-1999'],
+        HilosDbContext::users => ['HIL-1999'],
     ];
 
     public const array TABLES = [

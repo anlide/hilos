@@ -14,6 +14,7 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\DTO\AuthPasswordChangedSignalData;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
@@ -24,16 +25,19 @@ use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
 use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
 use Hilos\Auth\StepUp\StepUpMethod;
+use Hilos\Auth\StepUp\StepUpMessages;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Http\RequestQueryParams;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -213,31 +217,47 @@ final class AccountErasingSignInTest extends IntegrationTestCase
         $token = $this->anonymousSession('passkey-ak');
         $this->drainSignals();
 
-        $agent = $this->personAgent($userId);
-        $this->underAgent($agent, static fn () => $agent->onSignalAgent(new AgentSignalData(new UserPasskeyUseSignalData(
-            userId: $userId,
-            passkeyId: $passkeyId,
-            signCount: 1,
-            operation: null,
-            sessionTokenHash: null,
-            replySignal: HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE,
-            acceptKey: 'passkey-ak',
-            requestId: self::REQUEST_ID,
-            action: HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM,
-            successMessage: null,
-        )), '', HilosSignalConstants::HILOS_USER_PASSKEY_USE));
-        $done = $this->takeFrame(HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE);
-        $this->assertInstanceOf(UserPasskeyUseDoneSignalData::class, $done);
+        $done = $this->passkeyUse($userId, $passkeyId);
+        $this->assertTrue($done->erasing);
+        $this->assertNull($done->errorType);
+        $this->assertNull($done->errorDetail);
         $this->assertSame(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE, $done->error);
+        $this->assertPasskeyRefusal($done, AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE);
+        $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
+    }
 
-        $library = $this->usersLibrary();
-        $this->underAgent($library, static fn () => $library->onSignalAgent(
-            new AgentSignalData($done),
-            '',
-            HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE,
-        ));
+    /** An ordinary wrong key keeps the generic passkey refusal all the way to the browser. */
+    public function testAnOrdinaryWrongPasskeyKeepsTheGenericBrowserRefusal(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $strangerId = $this->registerUser($this->uniqueEmail());
+        $passkeyId = $this->seedPasskey($strangerId);
+        $token = $this->anonymousSession('passkey-ak');
+        $this->drainSignals();
 
-        $this->assertNull($this->takeFrame(HilosSignalConstants::HILOS_AUTH_SESSION_GRANT), 'The holder is not asked to sign in');
+        $done = $this->passkeyUse($userId, $passkeyId);
+
+        $this->assertFalse($done->erasing);
+        $this->assertSame(AuthMessages::INVALID_PASSKEY, $done->error);
+        $this->assertPasskeyRefusal($done, AuthMessages::INVALID_PASSKEY);
+        $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
+    }
+
+    /** An erasing account still receives the step-up's own refusal and earns no confirmation. */
+    public function testAPasskeyStepUpKeepsItsOwnRefusalDuringErasure(): void
+    {
+        $userId = $this->registerUser($this->uniqueEmail());
+        $passkeyId = $this->seedPasskey($userId);
+        $token = $this->anonymousSession('passkey-ak');
+        $sessionTokenHash = StateProtectedModeRuntime::hashSessionToken($token);
+        $this->beginErasure($userId);
+        $this->drainSignals();
+
+        $done = $this->passkeyUse($userId, $passkeyId, StepUpOperationKey::EXPORT_DATA, $sessionTokenHash);
+
+        $this->assertTrue($done->erasing);
+        $this->assertPasskeyRefusal($done, StepUpMessages::PASSKEY_NOT_CONFIRMED);
+        $this->assertFalse(Hilos::$db->stepUps->isConfirmed($sessionTokenHash, $userId, StepUpOperationKey::EXPORT_DATA));
         $this->assertNull(Hilos::$db->sessions->findByToken($token)?->userId);
     }
 
@@ -770,6 +790,69 @@ final class AccountErasingSignInTest extends IntegrationTestCase
         $this->deliverHandshake($this->holder, $this->handshake($acceptKey, $token));
 
         return $token;
+    }
+
+    /**
+     * @param int $userId Person whose agent handles the use
+     * @param int $passkeyId Key the library already checked
+     * @param ?string $operation Protected step, or null for sign-in
+     * @param ?string $sessionTokenHash Browser confirming the step, or null for sign-in
+     * @return UserPasskeyUseDoneSignalData Owner's answer
+     */
+    private function passkeyUse(
+        int $userId,
+        int $passkeyId,
+        ?string $operation = null,
+        ?string $sessionTokenHash = null,
+    ): UserPasskeyUseDoneSignalData {
+        $agent = $this->personAgent($userId);
+        $this->underAgent($agent, static fn () => $agent->onSignalAgent(new AgentSignalData(new UserPasskeyUseSignalData(
+            userId: $userId,
+            passkeyId: $passkeyId,
+            signCount: 1,
+            operation: $operation,
+            sessionTokenHash: $sessionTokenHash,
+            replySignal: HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE,
+            acceptKey: 'passkey-ak',
+            requestId: self::REQUEST_ID,
+            action: $operation === null ? HilosSignalConstants::HILOS_PASSKEY_LOGIN_CONFIRM : HilosSignalConstants::HILOS_STEP_UP_CONFIRM,
+            successMessage: null,
+        )), '', HilosSignalConstants::HILOS_USER_PASSKEY_USE));
+        $done = $this->takeFrame(HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE);
+        $this->assertInstanceOf(UserPasskeyUseDoneSignalData::class, $done);
+
+        return $done;
+    }
+
+    /**
+     * @param UserPasskeyUseDoneSignalData $done Owner's answer to deliver to the users library
+     * @param string $reason Exact refusal the initiating browser must read
+     */
+    private function assertPasskeyRefusal(UserPasskeyUseDoneSignalData $done, string $reason): void
+    {
+        $library = $this->usersLibrary();
+        $this->underAgent($library, static fn () => $library->onSignalAgent(
+            new AgentSignalData(UserPasskeyUseDoneSignalData::fromArray($done->toArray())),
+            '',
+            HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE,
+        ));
+
+        $failures = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $this->assertNotSame(HilosSignalConstants::HILOS_AUTH_SESSION_GRANT, $signal->signalName->getName());
+            if ($signal->data instanceof WebSocketSignalData) {
+                $this->assertSame(SignalConstants::ACTION_ERROR, $signal->signalName->getName());
+                $this->assertSame($done->ask->acceptKey, $signal->data->targetAcceptKey);
+                $failure = $signal->data->data;
+                $this->assertInstanceOf(PageActionErrorSignalData::class, $failure);
+                $this->assertSame('fail', $failure->getEnvelopeOutcome());
+                $this->assertSame($done->ask->requestId, $failure->requestId);
+                $this->assertSame($done->ask->action, $failure->action);
+                $this->assertSame($reason, $failure->reason);
+                $failures[] = $failure;
+            }
+        }
+        $this->assertCount(1, $failures);
     }
 
     /**

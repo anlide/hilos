@@ -9,6 +9,7 @@ use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationExpectedSet;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Database\Object\Collection\AccountOperations as ObjectAccountOperations;
@@ -34,21 +35,34 @@ final class AccountErasureProgressResolver
     /** @var ?array<int, AccountErasureProgress> Every begun erasure's progress keyed by account, null until read */
     private static ?array $begun = null;
 
+    /** @var array<int, InvalidJsonException|InvalidFormatException> Malformed facts remembered separately for each account */
+    private static array $failures = [];
+
+    private static InvalidJsonException|InvalidFormatException|null $begunFailure = null;
+
     /**
      * @param int $userId Any account in an erasure's fixed circle
      * @return ?AccountErasureProgress Begun open erasure, or null when none covers the account
      * @throws HilosException When a DB reader, item wrapper or stored expectation refuses the lookup
      * @throws InvalidJsonException When a stored expectation payload cannot be decoded
+     * @throws InvalidFormatException When a stored expectation names no participant
      * @throws EmptyValueException Never for the person's agent type; declared by the final key
      * @throws ValueTooLongException Never for the person's agent type and an integer id; declared by the final key
      */
     public static function of(int $userId): ?AccountErasureProgress
     {
+        if (isset(self::$failures[$userId])) {
+            throw self::$failures[$userId];
+        }
         if (!array_key_exists($userId, self::$progress)) {
             try {
                 self::$progress[$userId] = self::read($userId);
             } catch (JsonException $failure) {
-                throw new InvalidJsonException('The account erasure expectation must be valid JSON.', previous: $failure);
+                throw self::$failures[$userId] = new InvalidJsonException(
+                    'The account erasure expectation must be valid JSON.', previous: $failure,
+                );
+            } catch (InvalidJsonException|InvalidFormatException $failure) {
+                throw self::$failures[$userId] = $failure;
             }
         }
 
@@ -61,16 +75,24 @@ final class AccountErasureProgressResolver
      * @return array<int, AccountErasureProgress> Progress keyed by account, empty without a database or a begun erasure
      * @throws HilosException When a DB reader, item wrapper or stored expectation refuses the lookup
      * @throws InvalidJsonException When a stored expectation payload cannot be decoded
+     * @throws InvalidFormatException When a stored expectation names no participant
      * @throws EmptyValueException Never for the person's agent type; declared by the final key
      * @throws ValueTooLongException Never for the person's agent type and an integer id; declared by the final key
      */
     public static function begun(): array
     {
+        if (self::$begunFailure !== null) {
+            throw self::$begunFailure;
+        }
         if (self::$begun === null) {
             try {
                 self::$begun = self::readBegun();
             } catch (JsonException $failure) {
-                throw new InvalidJsonException('The account erasure expectation must be valid JSON.', previous: $failure);
+                throw self::$begunFailure = new InvalidJsonException(
+                    'The account erasure expectation must be valid JSON.', previous: $failure,
+                );
+            } catch (InvalidJsonException|InvalidFormatException $failure) {
+                throw self::$begunFailure = $failure;
             }
         }
 
@@ -82,6 +104,8 @@ final class AccountErasureProgressResolver
     {
         self::$progress = [];
         self::$begun = null;
+        self::$failures = [];
+        self::$begunFailure = null;
     }
 
     /**

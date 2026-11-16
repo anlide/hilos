@@ -96,17 +96,16 @@ queued goes to the agent's log and does not undo the write.
 
 Those two sessions-holder operations are the code today. HIL-1898 moved
 creation of the first administrator to the users library; the sessions holder
-authorizes and binds the session. The old erasure's foreign `Remove` retires at
-its live switch (not in the code yet — HIL-1952), and the old merge's foreign
-`Update` at its own (not in the code yet — HIL-1999). The
+authorizes and binds the session. HIL-1952 retired the old erasure's foreign
+`Remove`; the old merge's foreign `Update` remains until its own switch
+(not in the code yet — HIL-1999). The
 [Writer Map](account-operations.md#writer-map) keeps those terminal debts
 separate from ordinary creation. Under the detailed
 [erasure canon](account-operations.md#erasure), the personal owner removes its
 merge row, `userRenames` and `users` last, after required participant results,
 and completes its own request in that final local transaction. That final is
-built and inert (HIL-1942), with no live caller until HIL-1952; the
-right to remove the person row is not granted before the switch
-(not in the code yet — HIL-1952). Under the detailed
+live from HIL-1952 (prepared in HIL-1942) and uses the personal agent's
+production `Remove` claim. Under the detailed
 [merge canon](account-operations.md#merge), the loser writes its own block
 after its merge row in its own fact transaction
 (not in the code yet — HIL-1992). The holder's old `Update` remains until the
@@ -197,20 +196,18 @@ When chat history is cleared, `ChatAgent` reads the journal to find linked users
 and obtains confirmed unlink from each journal's personal owner before deleting
 the events. Neither a database `SET NULL` nor deletion of the journal before
 its event ids were read substitutes for that hand-over.
-Keep the current grants and hook until their actual moves; the journal's
-terminal deletion remains at the holder until erasure's live switch
-(not in the code yet — HIL-1952).
+HIL-1952 retired the holder's borrowed journal-removal grant; the personal
+owner deletes its journal in the live final transaction after required results.
 
 For erasure, the rename-feed event ids are kept by the capture of the journal's
 personal owner, whose transaction takes the journal off them
 (`UserRenamesActions::unlinkForErasure()`, `ChatErasureRenameFeed`); `ChatAgent`
 reads them from that capture and writes no journal. The chat's
 `afterUserRenamed()` writes no feed event, and asks for no link, for a person
-whose erasure has begun. This is prepared, with no live caller until
-HIL-1952. That owner deletes its journal only in the
-final personal transaction after required results; the final is built and inert
-(HIL-1942), and its right to delete the journal is not granted before the switch
-(not in the code yet — HIL-1952). These are the erasure steps of
+whose erasure has begun. These guards and the capture are live from HIL-1952.
+That owner deletes its journal only in the final personal transaction after
+required results; the final uses its production `Remove` claim (prepared in
+HIL-1942). These are the erasure steps of
 [account-operations.md](account-operations.md#erasure); neither gives
 `ChatAgent` a new journal write.
 
@@ -274,13 +271,13 @@ without making a folded account an unmerged candidate. Erasure takes folded
 accounts first (HIL-1200), so this key does not run on its normal path. The
 HIL-1202 confirms this choice as the pattern for the other person keys.
 
-In the split erasure, the circle is fixed before any link is broken
-(prepared, no live caller until HIL-1952). Each folded account's
+In the live erasure, the circle is fixed before any link is broken
+(HIL-1952). Each folded account's
 personal owner removes its own merge row before its survivor goes, keeping that
 leaf-first order: the merge row is the first row its final deletes, and the
-survivor's final waits while any account is folded into it. This is built and
-inert (HIL-1942), with no live caller until HIL-1952. The holder retains
-today's erasure rights until the live switch (not in the code yet — HIL-1952).
+survivor's final waits while any account is folded into it. This is live in
+HIL-1952 (prepared in HIL-1942); the holder's former erasure rights were
+retired at that switch.
 
 The table is the sessions library's whole, and the whole operation is framework
 code (`AbstractSessionsLibraryAgent::mergeAccounts()`): whether the two accounts
@@ -376,13 +373,12 @@ and rolls back that one transaction, the operation stays open at that step with
 the safe refusal named — the account's number and the referencing table's name,
 kept on the operation and shown in the card's erasure block — and the end is
 proved by every owner's recorded result, the soft references among them, which
-no key catches. The final and its refusal are built and inert (HIL-1942), with
-no live caller until HIL-1952. The sessions holder has prepared its own
-confirmed release of all four references, waits and cards: its step
+no key catches. The final and its refusal are live in HIL-1952 (prepared in
+HIL-1942). The sessions holder releases its own four references, waits and
+cards in its live participant step:
 `eraseAccountSessionsPart()` records `{"sessions":<n>,"accessLog":<m>}` in the
-same transaction and tells the tabs after the commit, with no live caller until
-HIL-1952. These parts enter the live path only at the
-erasure switch (not in the code yet — HIL-1952). The keys, their `RESTRICT` /
+same transaction and tells the tabs after the commit (HIL-1952). These parts
+are live on the owner-local path. The keys, their `RESTRICT` /
 `SET NULL` choice and the absence of `CASCADE` do not change, and no key is
 added to a soft reference by it.
 

@@ -7,15 +7,19 @@ namespace Demo\Chat\Tests\Integration;
 use Demo\Chat\Agents\Hilos\DemoHilosAgent;
 use Demo\Chat\Hilos;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
+use Demo\Chat\Pages\Hilos\Communications\CommunicationsChannelPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
+use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -29,6 +33,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
@@ -40,6 +45,7 @@ use Hilos\Database\Database;
 use Hilos\Database\Object\Collection\AccountOperations as ObjectAccountOperations;
 use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Pages\Users\AccountStandingAudience;
+use Hilos\Pages\Communications\CommunicationsChannelSummaryAudience;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
@@ -48,6 +54,10 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\AccountErasureProgress;
 use Hilos\Users\AccountErasureProgressResolver;
 use Hilos\Users\AccountStandingResolver;
+use Hilos\Users\DTO\AccountStandingStateSignalData;
+use Hilos\Utils\Logger;
+use Hilos\Utils\LogLevel;
+use ReflectionProperty;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -312,6 +322,187 @@ final class AccountErasureUsersListTest extends IntegrationTestCase
         self::assertStringNotContainsString('Ivan Franko', $sent);
     }
 
+    public function testBrokenCardAndListProgressLeaveOtherCardsAndTheRestOfTheIndexTickRunning(): void
+    {
+        $broken = $this->openErasure();
+        $healthyId = (int) Hilos::$db->users->actions->createWithName('Other erasing account')->id;
+        $healthyRequest = Hilos::$db->accountDeletions->actions->request(
+            $healthyId, TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
+        $healthy = AccountErasureOpening::open($healthyRequest, AccountErasureParticipantCatalog::framework())->operation;
+        self::assertNotNull($healthy);
+        self::assertTrue($healthyRequest->actions->start());
+        $this->connect(admin: true);
+        $this->subscribeToList();
+        $this->settleFanOut();
+        $this->connect(admin: true, acceptKey: 'communications');
+        Hilos::$sr->subscribeToPage(CommunicationsChannelPage::PAGE, new WebSocketPageSubscribeSignalDTO(
+            'communications', CommunicationsChannelPage::PAGE, ['channelId' => 'email'],
+        ));
+        $index = new DemoHilosAgent();
+        Hilos::$sr->bindPageAgent('communications', CommunicationsChannelPage::PAGE, $index->getType(), $index->getIndex());
+        $this->connect(admin: true, acceptKey: 'healthy-card');
+        AccountStandingAudience::addSubscriber(self::ACCEPT_KEY, $this->personId);
+        AccountStandingAudience::addSubscriber('healthy-card', $healthyId);
+        $this->settleFanOut();
+        $logged = $this->progressLog(function () use ($broken, $healthy, $healthyId): void {
+            $this->breakProgress($broken);
+            $wait = new AccountOperationExpectation('delivery:mail', $healthyId, null);
+            Hilos::$db->accountOperationAssignments->actions->record(
+                $healthy->id, $healthy->stage, $wait->assignmentKey(), $wait->assignmentOwner(), $wait->userId, $wait->payload(),
+            );
+            new CommunicationsChannelSummaryAudience()->onSourceChange(
+                SourceChange::dbUpdated(HilosDbContext::settings, 'progress-test', []), SourceChangeProvenance::LocalWrite,
+            );
+            new DemoHilosAgent()->onTick();
+            $cards = [];
+            $ended = [];
+            $summaries = [];
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if (!$signal->data instanceof WebSocketSignalData) {
+                    continue;
+                }
+                if ($signal->signalName->getName() === HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE) {
+                    $cards[$signal->data->targetAcceptKey] = $signal->data->data->toArray();
+                } elseif ($signal->signalName->getName() === SignalTypeConstants::TABLE_PROGRESS) {
+                    $ended[] = $signal->data->data->toArray();
+                } elseif ($signal->data->targetAcceptKey === 'communications') {
+                    $summaries[] = $signal->data->data->toArray();
+                }
+            }
+            self::assertSame('erasing', $cards[self::ACCEPT_KEY][AccountStandingStateSignalData::accountStanding]['shown']);
+            self::assertNull($cards[self::ACCEPT_KEY][AccountStandingStateSignalData::accountErasure]);
+            self::assertSame(
+                AccountErasureProgressResolver::of($healthyId)->toArray(),
+                $cards['healthy-card'][AccountStandingStateSignalData::accountErasure],
+            );
+            self::assertCount(3, $ended);
+            foreach ($ended as $frame) {
+                self::assertTrue($frame['ended']);
+            }
+            self::assertCount(1, $summaries);
+            self::assertSame('email', $summaries[0][PageResponseSignalData::payload][PagePayload::data]['channelSummary']['channel']);
+            new DemoHilosAgent()->onTick();
+            self::assertSame([], $this->queuedFrames());
+            self::assertTrue($broken->actions->finish($broken->stage, AccountOperationOutcome::Completed));
+            $this->openErasure();
+            new DemoHilosAgent()->onTick();
+            $recovered = $this->frameNamed($this->queuedFrames(), HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE)->toArray();
+            self::assertSame('erasing', $recovered[AccountStandingStateSignalData::accountStanding]['shown']);
+            self::assertSame(
+                AccountErasureProgressResolver::of($this->personId)->toArray(), $recovered[AccountStandingStateSignalData::accountErasure],
+            );
+            new DemoHilosAgent()->onTick();
+            self::assertSame([], $this->queuedFrames());
+        });
+        self::assertSame(1, substr_count($logged, 'Account card erasure progress failed:'));
+        self::assertSame(1, substr_count($logged, 'Account card erasure progress recovered:'));
+    }
+
+    public function testListFailureEndsAllOpenWindowsPublishesAnEmptyPictureAndRecoversOnce(): void
+    {
+        $operation = $this->openErasure();
+        $this->connect(admin: true);
+        $this->subscribeToList();
+        $this->settleFanOut();
+        $this->connect(admin: true, acceptKey: 'second-list');
+        $this->subscribeToList('second-list');
+        $this->settleFanOut();
+        $previousLog = new ReflectionProperty(Logger::class, 'logFile')->getValue();
+        $log = tempnam(sys_get_temp_dir(), 'hilos-erasure-progress-');
+        self::assertIsString($log);
+        Logger::setLogFile($log);
+        try {
+            $this->breakProgress($operation);
+            AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+            $endedByConnection = [];
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($signal->data instanceof WebSocketSignalData && $signal->signalName->getName() === SignalTypeConstants::TABLE_PROGRESS) {
+                    $endedByConnection[$signal->data->targetAcceptKey][] = $signal->data->data->progress->toArray();
+                }
+            }
+            $ended = [$this->endedBar($this->foldedId), $this->endedBar($this->personId)];
+            self::assertSame($ended, $endedByConnection[self::ACCEPT_KEY]);
+            self::assertSame($ended, $endedByConnection['second-list']);
+            AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+            self::assertSame([], $this->queuedFrames());
+            self::assertSame([], $this->ownBars($this->subscribeToList()));
+            AccountStandingAudience::removeSubscriber('second-list');
+            Hilos::$sr->unsubscribeFromAll('second-list');
+            self::assertTrue($operation->actions->finish($operation->stage, AccountOperationOutcome::Completed));
+            $this->openErasure();
+            AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+            self::assertSame($this->expectedBars(), $this->bars($this->queuedFrames()));
+            AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+            self::assertSame([], $this->queuedFrames());
+            $logged = file_get_contents($log);
+            self::assertSame(1, substr_count($logged, 'Account list erasure progress failed:'));
+            self::assertSame(1, substr_count($logged, 'Account list erasure progress recovered.'));
+        } finally {
+            if ($previousLog === null) {
+                Logger::resetLogFile();
+            } else {
+                Logger::setLogFile($previousLog);
+            }
+            unlink($log);
+        }
+    }
+
+    public function testAMissingAccountKeepsTheResolverPictureAndNoBarOnStableTicksOrUserUpdates(): void
+    {
+        $this->openErasure();
+        $this->connect(admin: true);
+        $this->subscribeToList();
+        $this->settleFanOut();
+        $source = AccountErasureProgressResolver::begun();
+        Database::sqlRun('DELETE FROM `hilos_user_merge` WHERE `user_id` = ?', [$this->foldedId]);
+        Hilos::$db->users[$this->foldedId]->actions->delete();
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        self::assertSame([$this->endedBar($this->foldedId)], $this->bars($this->queuedFrames()));
+        Hilos::$db->users[$this->personId]->actions->setLastBrowserTimeZone('Europe/Warsaw');
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        self::assertSame($source, AccountErasureProgressResolver::begun());
+        self::assertSame([], $this->queuedFrames());
+        self::assertSame([$this->expectedBars()[1]], $this->ownBars($this->subscribeToList()));
+    }
+
+    /**
+     * @param callable $scenario Failure and recovery observed through the real audience
+     * @return string Log written during the scenario
+     */
+    private function progressLog(callable $scenario): string
+    {
+        $previousLog = new ReflectionProperty(Logger::class, 'logFile')->getValue();
+        $previousLevel = Logger::writeLevel();
+        $log = tempnam(sys_get_temp_dir(), 'hilos-erasure-progress-');
+        self::assertIsString($log);
+        Logger::setLogFile($log);
+        Logger::setWriteLevel(LogLevel::Info);
+        try {
+            $scenario();
+
+            return file_get_contents($log);
+        } finally {
+            if ($previousLog === null) {
+                Logger::resetLogFile();
+            } else {
+                Logger::setLogFile($previousLog);
+            }
+            Logger::setWriteLevel($previousLevel);
+            unlink($log);
+        }
+    }
+
+    /** @param AccountOperation $operation Erasure whose persisted expectation has lost its participant */
+    private function breakProgress(AccountOperation $operation): void
+    {
+        Hilos::$db->accountOperationAssignments->actions->record(
+            $operation->id, $operation->stage, 'expect:broken', new AccountOperationOwnerAddress(self::TEST_AGENT),
+            $this->personId, AccountOperationAssignmentPayload::fromJson('{}'),
+        );
+    }
+
     /** Closes every open erasure: the suite keeps rows between cases, and the resolver's begun() reads all open erasures of the data set. */
     private function closeOpenErasures(): void
     {
@@ -361,30 +552,32 @@ final class AccountErasureUsersListTest extends IntegrationTestCase
      * Opens a connection for a person who is an admin or is not.
      *
      * @param bool $admin Whether the person behind the connection is an admin
+     * @param string $acceptKey Connection to register
      */
-    private function connect(bool $admin): void
+    private function connect(bool $admin, string $acceptKey = self::ACCEPT_KEY): void
     {
         $user = Hilos::$db->users->actions->createWithName($admin ? 'Administrator of the list' : 'Visitor of the list');
         $user->actions->setAdmin($admin);
-        $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', $this->nameWithDataSet()), 0, 32));
+        $session = Hilos::$db->sessions->actions->createAnonymous(substr(hash('sha256', $this->nameWithDataSet() . $acceptKey), 0, 32));
         $session->actions->bindUser((int) $user->id);
-        Hilos::$rt->connections->actions->register(self::ACCEPT_KEY, (int) $user->id, $session->token, (int) $session->id);
+        Hilos::$rt->connections->actions->register($acceptKey, (int) $user->id, $session->token, (int) $session->id);
     }
 
     /**
      * Subscribes the connection to the list of people and reads the first window of the people table.
      *
+     * @param string $acceptKey Connection opening the list
      * @return array<string, mixed> The window section the page answer carries
      */
-    private function subscribeToList(): array
+    private function subscribeToList(string $acceptKey = self::ACCEPT_KEY): array
     {
         $this->queuedFrames();
-        Hilos::$sr->subscribeToPage(UsersPage::PAGE, new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, UsersPage::PAGE));
-        ExecutionContext::run(new ExecutionFrame(acceptKey: self::ACCEPT_KEY), static function (): void {
-            new UsersPage(new DemoHilosAgent())->onSubscribe(self::ACCEPT_KEY, new PageRouteParams([]));
+        Hilos::$sr->subscribeToPage(UsersPage::PAGE, new WebSocketPageSubscribeSignalDTO($acceptKey, UsersPage::PAGE));
+        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), static function () use ($acceptKey): void {
+            new UsersPage(new DemoHilosAgent())->onSubscribe($acceptKey, new PageRouteParams([]));
         });
 
-        return $this->pageWindow($this->queuedFrames());
+        return $this->pageWindow($this->queuedFrames($acceptKey));
     }
 
     /**
@@ -413,14 +606,15 @@ final class AccountErasureUsersListTest extends IntegrationTestCase
     }
 
     /**
+     * @param string $acceptKey Expected connection of every queued frame
      * @return list<array{name: string, data: SignalDataInterface}> Frames queued to the connection since the last read
      */
-    private function queuedFrames(): array
+    private function queuedFrames(string $acceptKey = self::ACCEPT_KEY): array
     {
         $frames = [];
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             if ($signal->data instanceof WebSocketSignalData) {
-                self::assertSame(self::ACCEPT_KEY, $signal->data->targetAcceptKey);
+                self::assertSame($acceptKey, $signal->data->targetAcceptKey);
                 $frames[] = ['name' => $signal->signalName->getName(), 'data' => $signal->data->data];
             }
         }

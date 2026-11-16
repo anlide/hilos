@@ -119,7 +119,7 @@ final class AccountErasurePersonalPartIntegrationTest extends HilosSessionIntegr
     private const string START_KEY = 'start:';
 
     /** Payload of the start's assignment, which the start does not read. */
-    private const string START_PAYLOAD = '{}';
+    private const string START_PAYLOAD = '{"participant":"personal","expireGrace":false}';
 
     /** The rows keep epoch milliseconds. */
     private const int CREATED_AT = 1790416800000;

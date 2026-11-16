@@ -18,7 +18,6 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\HilosException;
-use Hilos\Legal\Export\DTO\LegalAcceptancesExportForgetSignalData;
 use Hilos\Legal\Export\LegalAcceptancesExportHttp;
 use Hilos\Legal\Export\LegalAcceptancesExports;
 use Hilos\Pages\Legal\LegalAdminAudience;
@@ -79,7 +78,6 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
 
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_LEGAL_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
-        HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET => LegalAcceptancesExportForgetSignalData::class,
     ];
 
     public const array AGENT_HTTP_ROUTES = [HttpConstants::METHOD_GET => [LegalAcceptancesExportHttp::DOWNLOAD_PATH]];
@@ -156,15 +154,6 @@ abstract class AbstractHilosLegalAgent extends AbstractHilosAgent
                         LegalAcceptancesExports::eraseAccountPart($this, $assignment->id),
                     $this->getId(),
                 ));
-
-                return;
-
-            case HilosSignalConstants::HILOS_LEGAL_ACCEPTANCES_EXPORT_FORGET:
-                $forget = $data->data;
-                if (!$forget instanceof LegalAcceptancesExportForgetSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, LegalAcceptancesExportForgetSignalData::class, $forget);
-                }
-                LegalAcceptancesExports::forget($this, $forget->userId);
 
                 return;
 

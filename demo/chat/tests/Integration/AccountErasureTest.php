@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Tests\Integration;
 
-use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Core\Router\ChatSignalRouter;
 use Demo\Chat\Database\Entity\Item\Event as EntityEvent;
 use Demo\Chat\Database\Entity\Item\EventAttachment as EntityEventAttachment;
@@ -15,7 +14,16 @@ use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 use Demo\Chat\Hilos;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\AgentRegistry;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Database\Database;
@@ -42,6 +50,9 @@ use Hilos\Utils\Helpers\RandomHelper;
  */
 final class AccountErasureTest extends IntegrationTestCase
 {
+    /** @var list<SignalDTO> Announcements retained for file assertions */
+    private array $erasureAnnouncements = [];
+
     /** A moment long gone, so the request is due on the first tick. */
     private const int PAST = 1767225600000;
 
@@ -171,7 +182,7 @@ final class AccountErasureTest extends IntegrationTestCase
     private function drainFileRemovals(): array
     {
         $removals = [];
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+        foreach ($this->erasureAnnouncements as $signal) {
             if ($signal->signalName->getName() !== HilosSignalConstants::HILOS_FILE_REMOVE) {
                 continue;
             }
@@ -202,13 +213,43 @@ final class AccountErasureTest extends IntegrationTestCase
      */
     private function runErasure(): void
     {
-        $library = new SessionsLibraryAgent();
-        $this->startAgent($library);
-        ExecutionContext::run(
-            new ExecutionFrame(agentId: $library->getId()),
-            static function () use ($library): void {
-                $library->onTick();
-            },
-        );
+        $library = $this->sessionsLibrary();
+        ExecutionContext::run(new ExecutionFrame(agentId: $library->getId()), static fn () => $library->onTick());
+        $owners = [];
+        $delivered = 0;
+        try {
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                $payload = $signal->data instanceof AgentSignalData ? $signal->data->data : null;
+                if ($payload instanceof AccountOperationAnswerSignalData) {
+                    $owner = $library;
+                } elseif ($payload instanceof AccountOperationAskSignalData) {
+                    $assignment = Hilos::$db->accountOperationAssignments[$payload->assignmentId];
+                    if ($assignment->ownerType === HilosAgentType::HILOS_USER) {
+                        $owner = $this->personAgent((int)$payload->ownerIndex);
+                    } else {
+                        $id = $assignment->owner->agentId();
+                        if (!isset($owners[$id])) {
+                            $class = AgentRegistry::workerClass(Hilos::AGENTS[$assignment->ownerType]);
+                            self::assertNotNull($class);
+                            $owners[$id] = $payload->ownerIndex === null ? new $class() : new $class($payload->ownerIndex);
+                            OwnershipDeclaration::claimAll($owners[$id]);
+                        }
+                        $owner = $owners[$id];
+                    }
+                } else {
+                    $this->erasureAnnouncements[] = $signal;
+                    continue;
+                }
+                self::assertLessThan(200, ++$delivered, 'The real exchange must settle without a retry loop.');
+                ExecutionContext::run(new ExecutionFrame(agentId: $owner->getId()), static fn () => $owner->onSignalAgent(
+                    $signal->data, '', $signal->signalName->getName(),
+                ));
+            }
+        } finally {
+            foreach ($owners as $owner) {
+                TruthSourceRegistry::unregisterAgent($owner->getId());
+                SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($owner->getId()));
+            }
+        }
     }
 }

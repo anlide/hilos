@@ -5,6 +5,41 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Generator;
+use Hilos\Constants\CommandChannelWindows;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
+use Hilos\Fs\FsPath;
+use Hilos\Legal\Export\LegalAcceptancesExports;
+use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Objects;
+use Hilos\Database\PhpType;
+use Hilos\Mail\Delivery\MailDeliveryChannel;
+use Hilos\Mail\Delivery\MailDeliveryChannelAgent;
+use Hilos\Notification\Delivery\DeliveryChannelRegistry;
+use Hilos\Auth\AccountOperation\AccountDataOwner;
+use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
+use Hilos\Auth\AccountOperation\AccountErasurePart;
+use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
+use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
+use Hilos\Auth\AccountOperation\AccountOperationAsks;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
+use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Hilos\AbstractHilosLegalAgent;
+use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
+use Hilos\DataExport\AbstractDataExportAgent;
 use Hilos\Auth\AccessLog\AccessLogEvent;
 use Hilos\Auth\AccountDeletion\AccountDeletionCommandConstants;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
@@ -71,13 +106,19 @@ use ReflectionProperty;
 /**
  * The erasure of an account whose deletion fell due, run by the session holder (HIL-302).
  *
- * One transaction: the request is marked carried out, the framework's rows of the person go,
- * the project's seam deletes its own, and a failure anywhere rolls all of it back. After the
- * commit the export agents remove files of their deleted orders. A neighbour with the same
+ * The holder opens the operation and each real owner commits its own work and result. A refusal
+ * keeps the request open and leaves earlier committed parts in place. A neighbour with the same
  * rows in every table proves that the erasure cut by the person and nothing wider.
  */
 final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    use PersonAgentFrames;
+
+    /** @var array<string, AbstractAgent> Actual participant instances by their full agent id */
+    private array $owners = [];
+    /** @var list<SignalDTO> Non-operation frames preserved for the existing business assertions */
+    private array $announcements = [];
+
     public const int USER_ID = 302;
     public const int NEIGHBOUR_ID = 303;
     private const int FOLDED_ID = 304;
@@ -133,6 +174,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     ];
 
     private string $boundAppClass;
+    private ?FsContext $previousFs;
+    private string $exportDirectory;
 
     private ?SignalRouter $previousSignalRouter = null;
 
@@ -149,6 +192,15 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         parent::setUp();
         self::runExtraStubs(down: true);
         self::runExtraStubs(down: false);
+        Database::sql('CREATE TABLE `hilos_fw_test_erasure_note` (`user_id` INT UNSIGNED NOT NULL PRIMARY KEY) ENGINE=InnoDB');
+        Hilos::$db = new AccountErasureBusinessContext();
+        Hilos::$db->configure();
+        $this->previousFs = Hilos::$fs;
+        $this->exportDirectory = sys_get_temp_dir() . '/hilos-erasure-business-' . bin2hex(random_bytes(8));
+        Hilos::$fs = new AccountErasureBusinessFs($this->exportDirectory);
+        Hilos::$fs->configure();
+        Hilos::$fs->getDirectory(FsContext::LEGAL_EXPORT)->ensureDirectory();
+        LegalAcceptancesExports::reset();
         Schema::reset();
         Schema::initialize();
 
@@ -176,9 +228,18 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
      */
     protected function tearDown(): void
     {
+        $this->releasePersonAgents();
+        foreach ($this->owners as $owner) {
+            TruthSourceRegistry::unregisterAgent($owner->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($owner->getId()));
+        }
         foreach (self::daemonCollections() as $collection) {
             RtTruthSourceRegistry::unregisterDaemon($collection);
         }
+        LegalAcceptancesExports::reset();
+        Hilos::$fs = $this->previousFs;
+        FsPath::removeDirectory($this->exportDirectory);
+        Database::sql('DROP TABLE `hilos_fw_test_erasure_note`');
         SourceChangeBus::reset();
         Hilos::$notify = $this->previousNotify;
         Hilos::$rt = $this->previousRt;
@@ -246,9 +307,9 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertSame(0, self::deliveriesOf(self::USER_ID));
         self::assertSame(1, self::deliveriesOf(self::NEIGHBOUR_ID));
         self::assertSame(1, self::deliveryCount(), 'The erased notification leaves no orphan delivery');
-        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_operation`')->rows());
-        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_operation_assignment`')->rows());
-        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_operation_result`')->rows());
+        self::assertSame(['completed'], array_column(Database::sql('SELECT `outcome` FROM `hilos_account_operation`')->rows(), 'outcome'));
+        self::assertSame(11, (int)Database::sql('SELECT COUNT(*) AS `n` FROM `hilos_account_operation_assignment`')->rows()[0]['n']);
+        self::assertSame(9, (int)Database::sql('SELECT COUNT(*) AS `n` FROM `hilos_account_operation_result`')->rows()[0]['n']);
     }
 
     /**
@@ -273,23 +334,23 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     }
 
     /**
-     * A new dependent row written after the cleanup makes the person key roll everything back.
+     * A dependent row written after cleanup refuses the final while earlier parts remain committed.
      *
      * @throws HilosException When seeding or the sweep fails
      */
-    public function testAReferenceInsertedAfterCleanupRollsTheErasureBack(): void
+    public function testAReferenceInsertedAfterCleanupKeepsTheFinalOpen(): void
     {
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
         $agent = new AccountErasureTestAgent();
         $agent->insertLateNotificationFor = self::USER_ID;
         $agent->onStart();
-        $agent->onTick();
+        $this->runErasureTick($agent);
 
         self::assertTrue(self::personExists(self::USER_ID));
         self::assertNull(self::requestRow((int)$request->id)['completed_at']);
         self::assertSame(1, self::rowsOf('hilos_notification', self::USER_ID));
-        self::assertSame(self::USER_ID, self::userOf(self::SIGNED_IN_TOKEN));
+        self::assertNull(self::userOf(self::SIGNED_IN_TOKEN));
     }
 
     /**
@@ -465,7 +526,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
      *
      * @throws HilosException When seeding or the sweep fails
      */
-    public function testARolledBackErasureStopsNobody(): void
+    public function testARefusedProjectPartLeavesThePersonsAgentRunning(): void
     {
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
@@ -487,7 +548,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
      *
      * @throws HilosException When seeding or the sweep fails
      */
-    public function testTheErasedRowsFilesLeaveForTheFilesLibraryInOneFrame(): void
+    public function testTheErasedRowsFilesLeaveForTheFilesLibraryAfterEachPartCommit(): void
     {
         self::bindAppClass(AccountErasureFilesTestHilos::class);
         $previousFiles = Hilos::$files;
@@ -501,7 +562,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             $agent = new AccountErasureTestAgent();
             $agent->fileIdsOf = [self::FOLDED_ID => [41], self::USER_ID => [42, 43]];
             $agent->onStart();
-            $agent->onTick();
+            $this->runErasureTick($agent);
 
             self::assertSame([self::FOLDED_ID, self::USER_ID], $agent->erased);
             $removals = [];
@@ -512,7 +573,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
                     $removals[] = $signal->data->data->fileIds;
                 }
             }
-            self::assertSame([[41, 42, 43]], $removals);
+            self::assertSame([[41], [42, 43]], $removals);
         } finally {
             Hilos::$files = $previousFiles;
         }
@@ -560,14 +621,11 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     }
 
     /**
-     * A failure of the project's seam rolls every row back, and the request stays due.
-     *
-     * The rows the framework deleted come back in memory too, by key and as the same instances,
-     * with nothing read again (HIL-1165).
+     * A refused project part keeps the request open while completed framework parts stay removed.
      *
      * @throws HilosException When seeding or the sweep fails
      */
-    public function testAFailingSeamRollsEverythingBack(): void
+    public function testAFailingProjectPartKeepsEarlierCommittedParts(): void
     {
         $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
         $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
@@ -581,28 +639,24 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $this->runSweep(failingFor: self::USER_ID);
 
         foreach (self::ERASED_TABLES as $table) {
-            self::assertSame(1, self::rowsOf($table, self::USER_ID), "{$table} is rolled back");
+            self::assertSame(0, self::rowsOf($table, self::USER_ID), "{$table} was committed by its owner");
         }
-        self::assertSame($identities, self::heldIn(HilosDbContext::identities), 'The deleted ways in are held again');
-        self::assertSame($secondFactors, self::heldIn(HilosDbContext::secondFactors), 'The deleted factor is held again');
+        self::assertSame([], self::heldIn(HilosDbContext::identities), 'The committed removal stays removed');
+        self::assertSame([], self::heldIn(HilosDbContext::secondFactors), 'The committed removal stays removed');
         $row = self::requestRow($requestId);
         self::assertNull($row['completed_at'], 'The request is still standing and due');
         self::assertNull($row['canceled_at']);
-        self::assertSame(self::USER_ID, self::userOf(self::SIGNED_IN_TOKEN));
+        self::assertNull(self::userOf(self::SIGNED_IN_TOKEN));
         $queued = $this->drainQueue();
-        self::assertSame(
-            [],
-            self::dbFrameTypesAmong($queued),
-            'A rolled-back erasure announces none of its deletions to the other processes (HIL-1164)',
-        );
+        self::assertContains('db_sync_deleted', self::dbFrameTypesAmong($queued));
     }
 
     /**
-     * A refusal at a folded account undoes the named account's request and every account's rows.
+     * A refusal at a folded account holds its final and the root final, after earlier parts committed.
      *
      * @throws HilosException When seeding or the sweep fails
      */
-    public function testAFailingSeamOnAFoldedAccountRollsTheWholeErasureBack(): void
+    public function testAFailingProjectPartOnAFoldedAccountKeepsItsFinalOpen(): void
     {
         self::seedPersonRows();
         Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (?, 'Folded'), (?, 'Deepest')", [self::FOLDED_ID, self::DEEPEST_ID]);
@@ -616,11 +670,11 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
 
         $agent = $this->runSweep(failingFor: self::FOLDED_ID);
 
-        self::assertSame([self::DEEPEST_ID], $agent->erased);
+        self::assertSame([self::DEEPEST_ID, self::USER_ID], $agent->erased);
         foreach ([self::DEEPEST_ID, self::FOLDED_ID, self::USER_ID] as $id) {
-            self::assertTrue(self::personExists($id));
+            self::assertSame($id !== self::DEEPEST_ID, self::personExists($id));
             foreach (self::ERASED_TABLES as $table) {
-                self::assertSame(1, self::rowsOf($table, $id));
+                self::assertSame(0, self::rowsOf($table, $id));
             }
         }
         self::assertNull(self::requestRow((int)$request->id)['completed_at']);
@@ -701,9 +755,9 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         self::assertNull(Hilos::$db->sessions[$takeoverId]->userId, 'The takeover the person ran is ended');
         self::assertNull(Hilos::$db->sessions[$takeoverId]->impersonatorUserId);
         self::assertNull(self::userOf(self::NEIGHBOUR_TOKEN));
-        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_operation`')->rows());
-        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_operation_assignment`')->rows());
-        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_operation_result`')->rows());
+        self::assertSame(['completed'], array_column(Database::sql('SELECT `outcome` FROM `hilos_account_operation`')->rows(), 'outcome'));
+        self::assertSame(21, (int)Database::sql('SELECT COUNT(*) AS `n` FROM `hilos_account_operation_assignment`')->rows()[0]['n']);
+        self::assertSame(17, (int)Database::sql('SELECT COUNT(*) AS `n` FROM `hilos_account_operation_result`')->rows()[0]['n']);
     }
 
     /**
@@ -766,19 +820,87 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $this->sendForcePurgeCommand($agent, self::USER_ID);
 
         $outcome = $this->consumeForcePurgeOutcome();
-        self::assertSame('The project refused the erasure', self::refusalMessage($outcome->reply));
+        self::assertTrue($outcome->reply->isOk());
+        self::assertSame('erasing', $outcome->reply->payload[AccountDeletionCommandConstants::FIELD_OUTCOME]);
         $row = self::requestRow($requestId);
         self::assertLessThanOrEqual(TimeHelper::nowMs(), (int)$row['effective_at']);
         self::assertNull($row['completed_at']);
         self::assertNull($row['canceled_at']);
         foreach (self::ERASED_TABLES as $table) {
-            self::assertSame(1, self::rowsOf($table, self::USER_ID), "{$table} is rolled back");
+            self::assertSame(0, self::rowsOf($table, self::USER_ID), "{$table} was committed by its owner");
         }
 
         $sweepAgent = $this->runSweep();
 
         self::assertSame([self::USER_ID], $sweepAgent->erased);
         self::assertNotNull(self::requestRow($requestId)['completed_at']);
+    }
+
+    /** One refused project part leaves the other due request free to finish. */
+    public function testARefusedDueRequestDoesNotHoldUpTheOtherDueRequest(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $this->seedPerson(self::NEIGHBOUR_ID, self::NEIGHBOUR_TOKEN);
+        $first = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+        $second = Hilos::$db->accountDeletions->actions->request(self::NEIGHBOUR_ID, self::PAST);
+
+        $this->runSweep(failingFor: self::USER_ID);
+
+        self::assertNull(self::requestRow($first->id)['completed_at']);
+        self::assertNotNull(self::requestRow($second->id)['completed_at']);
+        self::assertTrue(self::personExists(self::USER_ID));
+        self::assertFalse(self::personExists(self::NEIGHBOUR_ID));
+    }
+
+    /** Only the due request opens an ordinary operation; the future request and its date stay intact. */
+    public function testTheSweepOpensOnlyTheDueRequestWithoutExpiringFutureGrace(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $this->seedPerson(self::NEIGHBOUR_ID, self::NEIGHBOUR_TOKEN);
+        Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+        $future = Hilos::$db->accountDeletions->actions->request(self::NEIGHBOUR_ID, self::DELETION_FUTURE);
+
+        $this->runSweep();
+
+        self::assertSame([self::USER_ID], array_map('intval', array_column(
+            Database::sql('SELECT `root_user_id` FROM `hilos_account_operation`')->rows(), 'root_user_id',
+        )));
+        self::assertSame(self::DELETION_FUTURE, (int)self::requestRow($future->id)['effective_at']);
+        self::assertNull(self::requestRow($future->id)['started_at']);
+        self::assertTrue(self::personExists(self::NEIGHBOUR_ID));
+    }
+
+    /** With no users-library owner, real verification rows leave a wait and never a manufactured completion. */
+    public function testAnAbsentOwnerLeavesTheRequestAndAnUnansweredWait(): void
+    {
+        self::bindAppClass(AccountErasureMissingOwnerHilos::class);
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $request = Hilos::$db->accountDeletions->actions->request(self::USER_ID, self::PAST);
+
+        $this->runSweep();
+
+        self::assertTrue(self::personExists(self::USER_ID));
+        self::assertNull(self::requestRow($request->id)['completed_at']);
+        self::assertSame([null], array_column(Database::sql('SELECT `finished_at` FROM `hilos_account_operation`')->rows(), 'finished_at'));
+        self::assertSame(['wait:users_library:' . self::USER_ID], array_column(Database::sql(
+            "SELECT `assignment_key` FROM `hilos_account_operation_assignment` WHERE `assignment_key` LIKE 'wait:%'",
+        )->rows(), 'assignment_key'));
+        self::assertSame([], Database::sql(
+            "SELECT `r`.`id` FROM `hilos_account_operation_result` `r` JOIN `hilos_account_operation_assignment` `a`"
+            . " ON `a`.`id` = `r`.`assignment_id` WHERE `a`.`assignment_key` LIKE 'wait:%'",
+        )->rows());
+        self::assertSame(1, self::rowsOf('hilos_user_verification', self::USER_ID));
+    }
+
+    /** The holder no longer has the personal writer's right to remove a person. */
+    public function testTheHolderCannotPerformAForeignErasureWrite(): void
+    {
+        $this->seedPerson(self::USER_ID, self::SIGNED_IN_TOKEN);
+        $holder = new AccountErasureTestAgent();
+        $this->prepareOwners($holder);
+        $this->expectException(WriteNotAllowedException::class);
+
+        ExecutionContext::run(new ExecutionFrame(agentId: $holder->getId()), static fn () => Hilos::$db->users[self::USER_ID]->actions->delete());
     }
 
     public function testSessionHolderDeclaresTheForcePurgeCommand(): void
@@ -862,6 +984,55 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         );
     }
 
+    /** @param AccountErasureTestAgent $holder Holder whose actual participants are prepared once */
+    private function prepareOwners(AccountErasureTestAgent $holder): void
+    {
+        $project = new AccountErasureTestProject();
+        $project->fixture = $holder;
+        foreach ([$holder, new AccountErasureTestUsersLibrary(), new AccountErasureTestDataExport(),
+            new AccountErasureTestLegal(), new MailDeliveryChannelAgent('1'), $project] as $owner) {
+            if (!isset(Hilos::appClass()::AGENTS[$owner::AGENT_TYPE])) {
+                continue;
+            }
+            OwnershipDeclaration::claimDb($owner::class, $owner->getId());
+            OwnershipDeclaration::claimDbSet($owner);
+            $this->owners[$owner->getId()] = $owner;
+        }
+        OwnershipDeclaration::claimRt($holder::class, $holder->getId());
+    }
+
+    /** @param AccountErasureTestAgent $holder Holder entering its due sweep and participant exchange */
+    private function runErasureTick(AccountErasureTestAgent $holder): void
+    {
+        $this->prepareOwners($holder);
+        ExecutionContext::run(new ExecutionFrame(agentId: $holder->getId()), fn () => $holder->onTick());
+        $this->exchange($holder);
+    }
+
+    /** @param AccountErasureTestAgent $holder The actual coordinator receiving committed participant answers */
+    private function exchange(AccountErasureTestAgent $holder): void
+    {
+        $delivered = 0;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $payload = $signal->data instanceof AgentSignalData ? $signal->data->data : null;
+            if ($payload instanceof AccountOperationAskSignalData) {
+                $assignment = Hilos::$db->accountOperationAssignments[$payload->assignmentId];
+                $owner = $assignment->ownerType === HilosAgentType::HILOS_USER
+                    ? $this->personAgent((int)$payload->ownerIndex)
+                    : $this->owners[$assignment->owner->agentId()];
+            } elseif ($payload instanceof AccountOperationAnswerSignalData) {
+                $owner = $holder;
+            } else {
+                $this->announcements[] = $signal;
+                continue;
+            }
+            self::assertLessThan(200, ++$delivered, 'Every exchange must settle without an automatic retry loop.');
+            ExecutionContext::run(new ExecutionFrame(agentId: $owner->getId()), static fn () => $owner->onSignalAgent(
+                $signal->data, '', $signal->signalName->getName(),
+            ));
+        }
+    }
+
     /**
      * Arms and runs the session holder's tick once.
      *
@@ -874,7 +1045,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
         $agent = new AccountErasureTestAgent();
         $agent->failingFor = $failingFor;
         $agent->onStart();
-        $agent->onTick();
+        $this->runErasureTick($agent);
 
         return $agent;
     }
@@ -884,7 +1055,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
      */
     private function drainQueue(): array
     {
-        $signals = [];
+        $signals = $this->announcements;
+        $this->announcements = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             $signals[] = $signal;
         }
@@ -942,7 +1114,8 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
      */
     private function sendForcePurgeCommand(AccountErasureTestAgent $agent, int $userId): void
     {
-        $agent->onSignalCommand(
+        $this->prepareOwners($agent);
+        ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), fn () => $agent->onSignalCommand(
             new CommandRequestDTO(
                 'force-purge-correlation',
                 CliCommands::ACCOUNT_TEST_FORCE_PURGE,
@@ -950,7 +1123,11 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             ),
             '',
             '',
-        );
+        ));
+        $this->exchange($agent);
+        if ($agent->failingFor !== null) {
+            ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), fn () => $agent->deadline());
+        }
     }
 
     /**
@@ -961,7 +1138,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     private function consumeForcePurgeOutcome(): AccountErasureCommandOutcome
     {
         $replies = [];
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+        foreach ($this->drainQueue() as $signal) {
             if ($signal->data instanceof CommandReplyDTO) {
                 $replies[] = $signal->data;
             }
@@ -1096,7 +1273,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
     private static function requestRow(int $id): array
     {
         Database::sql(
-            'SELECT `effective_at`, `canceled_at`, `completed_at` FROM `hilos_account_deletion` WHERE `id` = ?',
+            'SELECT `effective_at`, `started_at`, `canceled_at`, `completed_at` FROM `hilos_account_deletion` WHERE `id` = ?',
             [$id],
         );
 
@@ -1202,13 +1379,24 @@ final readonly class AccountErasureCommandOutcome
  */
 abstract class AccountErasureTestHilos extends Hilos
 {
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = AccountErasureTestDirectory::class;
+    protected const string NOTIFICATION_CHANNEL_REGISTRY = AccountErasureTestChannels::class;
+    public const array AGENTS = [
+        HilosAgentType::HILOS_USER => [AgentRegistryKey::WORKER => IntegrationUserAgent::class, AgentRegistryKey::INDEXED => true],
+        HilosAgentType::HILOS_SESSIONS_LIBRARY => [AgentRegistryKey::WORKER => AccountErasureTestAgent::class],
+        HilosAgentType::HILOS_USERS_LIBRARY => [AgentRegistryKey::WORKER => AccountErasureTestUsersLibrary::class],
+        HilosAgentType::HILOS_DATA_EXPORT => [AgentRegistryKey::WORKER => AccountErasureTestDataExport::class],
+        HilosAgentType::HILOS_LEGAL => [AgentRegistryKey::WORKER => AccountErasureTestLegal::class],
+        HilosAgentType::HILOS_MAIL => [AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class, AgentRegistryKey::INDEXED => true],
+        AccountErasureTestProject::AGENT_TYPE => [AgentRegistryKey::WORKER => AccountErasureTestProject::class],
+    ];
     protected const array FEATURES = [HilosFeature::AUTH];
 }
 
 /**
  * Fixture project that also keeps a files registry, so the holder hands erased files to it.
  */
-abstract class AccountErasureFilesTestHilos extends Hilos
+abstract class AccountErasureFilesTestHilos extends AccountErasureTestHilos
 {
     protected const array FEATURES = [HilosFeature::AUTH, HilosFeature::FILES];
 }
@@ -1218,6 +1406,13 @@ abstract class AccountErasureFilesTestHilos extends Hilos
  */
 final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
 {
+    public const array OWNS_RT = [
+        StateHilosOAuthTrip::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateRecoveryWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateRegistrationWaiter::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateHilosCodeSendAttempt::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+        StateHilosProfileFlow::RT_COLLECTION => TruthSourceOperation::BY_KIND,
+    ];
     /** Account whose seam refuses, to prove the rollback. */
     public ?int $failingFor = null;
 
@@ -1237,31 +1432,12 @@ final class AccountErasureTestAgent extends AbstractSessionsLibraryAgent
     {
     }
 
-    /**
-     * @param int $userId Person whose account is being erased
-     * @return AccountErasure One project row, and the registry files the case names for the person
-     * @throws ValidationException When the case asks the seam to refuse
-     * @throws DatabaseException When the person or rename journal cannot be inspected
-     */
-    protected function applyAccountErasure(int $userId): AccountErasure
+    /** Advances the existing parked-command deadline without a real-clock wait. */
+    public function deadline(): void
     {
-        if ($this->failingFor === $userId) {
-            throw new ValidationException('The project refused the erasure');
-        }
-        $this->erased[] = $userId;
-        Database::sql('SELECT `id` FROM `hilos_user` WHERE `id` = ?', [$userId]);
-        $exists = Database::row() !== null;
-        Database::sql('SELECT COUNT(*) AS `count` FROM `hilos_user_rename` WHERE `user_id` = ?', [$userId]);
-        $this->seenAtHook[] = [$userId, $exists, (int)(Database::row()['count'] ?? 0)];
-        if ($this->insertLateNotificationFor === $userId) {
-            Database::sqlRun(
-                'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`, `created_at`) VALUES (?, ?, ?, 1767225600123)',
-                [$userId, 'account.test', 'Late notification'],
-            );
-        }
-
-        return new AccountErasure(['projectRows' => 1], $this->fileIdsOf[$userId] ?? []);
+        $this->sweepForcePurges(microtime(true) + CommandChannelWindows::AGENT_WAIT_SECONDS);
     }
+
 }
 
 /**
@@ -1328,4 +1504,172 @@ final class AccountErasureTestConnection extends HilosSessionConnection
 /** The framework's agent of one person, with nothing overridden, so a sync frame can ask it to stop. */
 final class AccountErasureStopTestAgent extends AbstractUserAgent
 {
+}
+
+/** Framework participants keep their production claims. */
+final class AccountErasureTestUsersLibrary extends AbstractUsersLibraryAgent
+{
+}
+
+final class AccountErasureTestDataExport extends AbstractDataExportAgent
+{
+}
+
+final class AccountErasureTestLegal extends AbstractHilosLegalAgent
+{
+}
+
+/** Project behavior formerly carried by the holder's hook, now reached through its own assignment. */
+final class AccountErasureTestProject extends AbstractAgent implements AccountErasureProjectOwner
+{
+    public const string AGENT_TYPE = 'erasure_test_project';
+    public const string ACCOUNT_OPERATION_SIGNAL = 'erasure_test_project_step';
+    public const array AGENT_SIGNALS = [self::ACCOUNT_OPERATION_SIGNAL => AccountOperationAskSignalData::class];
+    public const array OWNS_DB_SET = [HilosDbContext::accountOperationResults => [TruthSourceOperation::Add]];
+    public const array READS_DB = [HilosDbContext::accountOperations, HilosDbContext::accountOperationAssignments];
+    public AccountErasureTestAgent $fixture;
+
+    /**
+     * @param string $collection Result set authored by this owner
+     * @return string Full owner address
+     */
+    public function ownedDbSetKey(string $collection): string
+    {
+        return $this->getId();
+    }
+
+    /**
+     * @param AccountErasurePart $part Account the assignment names
+     * @return AccountErasure Project evidence and files
+     */
+    public function eraseAccountPart(AccountErasurePart $part): AccountErasure
+    {
+        $userId = $part->userId;
+        if ($this->fixture->failingFor === $userId) {
+            throw new ValidationException('The project refused the erasure');
+        }
+        $this->fixture->erased[] = $userId;
+        Database::sql('SELECT `id` FROM `hilos_user` WHERE `id` = ?', [$userId]);
+        $exists = Database::row() !== null;
+        Database::sql('SELECT COUNT(*) AS `count` FROM `hilos_user_rename` WHERE `user_id` = ?', [$userId]);
+        $this->fixture->seenAtHook[] = [$userId, $exists, (int)(Database::row()['count'] ?? 0)];
+        if ($this->fixture->insertLateNotificationFor === $userId) {
+            Database::sqlRun(
+                'INSERT INTO `hilos_notification` (`user_id`, `type`, `title`, `created_at`) VALUES (?, ?, ?, 1767225600123)',
+                [$userId, 'account.test', 'Late notification'],
+            );
+        }
+
+        return new AccountErasure(['projectRows' => 1], $this->fixture->fileIdsOf[$userId] ?? []);
+    }
+
+    /**
+     * @param AgentSignalData $data Assignment frame
+     * @param string $source Coordinator
+     * @param string $name Declared signal
+     */
+    public function onSignalAgent(AgentSignalData $data, string $source, string $name): void
+    {
+        $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+            $data->data,
+            fn (AccountOperationAssignment $assignment): AccountOperationResult => AccountErasureProjectStep::run($this, $assignment->id),
+            $this->getId(),
+        ));
+    }
+
+    public function onStop(): void
+    {
+    }
+}
+
+abstract class AccountErasureTestDirectory extends AccountDataOwnerDirectory
+{
+    /** @return list<AccountDataOwner> The fixture's project participant, whose work and failure the case controls */
+    protected static function owners(): array
+    {
+        return [new AccountDataOwner(
+            'fixture', [AccountErasureBusinessNotes::COLLECTION_KEY], AccountErasureTestProject::AGENT_TYPE,
+            false, static fn (int $id): bool => false,
+        )];
+    }
+}
+
+final class AccountErasureTestMailChannel extends MailDeliveryChannel
+{
+    public function poolSize(): int
+    {
+        return 1;
+    }
+}
+
+abstract class AccountErasureTestChannels extends DeliveryChannelRegistry
+{
+    protected static function channels(): array
+    {
+        return [MailDeliveryChannel::NAME => new AccountErasureTestMailChannel()];
+    }
+}
+
+/** Framework collections plus the project's one account-bound note. */
+final class AccountErasureBusinessContext extends HilosDbContext
+{
+    /** Mounts the framework and the test project's note collection. */
+    public function configure(): void
+    {
+        parent::configure();
+        $this->mountObjectCollection(AccountErasureBusinessNotes::class, Objects::LAZY_STRATEGY_KEY);
+    }
+}
+
+/** The project fixture's only persisted field is also its primary account key. */
+final class AccountErasureBusinessNote extends Entity
+{
+    public const string user_id = 'user_id';
+    public const string _table = 'hilos_fw_test_erasure_note';
+    public const string _primary = self::user_id;
+    public const array _columns = [self::user_id];
+    public const array _types = [self::user_id => PhpType::INTEGER->value];
+
+    public int $user_id;
+}
+
+/** @extends Object_<AccountErasureBusinessNote> */
+final class AccountErasureBusinessNoteObject extends Object_
+{
+    public const string ENTITY_CLASS = AccountErasureBusinessNote::class;
+}
+
+/** @extends Objects<AccountErasureBusinessNoteObject> */
+final class AccountErasureBusinessNotes extends Objects
+{
+    public const string COLLECTION_KEY = 'erasureBusinessRows';
+    public const string OBJECT_CLASS = AccountErasureBusinessNoteObject::class;
+}
+
+/** The legal handler's real after-commit sweep reads an isolated temporary directory. */
+final class AccountErasureBusinessFs extends FsContext
+{
+    /** @param string $path Isolated legal-export directory */
+    public function __construct(private readonly string $path)
+    {
+    }
+
+    /** Registers the real legal-export directory contract. */
+    public function configure(): void
+    {
+        $this->registerDirectory(self::LEGAL_EXPORT, $this->path, DirectoryScope::CLUSTER);
+    }
+}
+
+/** The installation deliberately lacks the verification owner, while keeping all other real owners. */
+abstract class AccountErasureMissingOwnerHilos extends AccountErasureTestHilos
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_USER => [AgentRegistryKey::WORKER => IntegrationUserAgent::class, AgentRegistryKey::INDEXED => true],
+        HilosAgentType::HILOS_SESSIONS_LIBRARY => [AgentRegistryKey::WORKER => AccountErasureTestAgent::class],
+        HilosAgentType::HILOS_DATA_EXPORT => [AgentRegistryKey::WORKER => AccountErasureTestDataExport::class],
+        HilosAgentType::HILOS_LEGAL => [AgentRegistryKey::WORKER => AccountErasureTestLegal::class],
+        HilosAgentType::HILOS_MAIL => [AgentRegistryKey::WORKER => MailDeliveryChannelAgent::class, AgentRegistryKey::INDEXED => true],
+        AccountErasureTestProject::AGENT_TYPE => [AgentRegistryKey::WORKER => AccountErasureTestProject::class],
+    ];
 }

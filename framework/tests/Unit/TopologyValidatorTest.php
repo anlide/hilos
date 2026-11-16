@@ -2703,8 +2703,7 @@ final class TopologyValidatorTest extends TestCase
     }
 
     /**
-     * With the library only adding delivery rows, the catalog knows the collection by its one remaining vertex,
-     * the sessions library's erasure: a retired guard debt is checked against the closed states, not refused earlier.
+     * Once erasure has retired, an old delivery receipt names no remaining shared transition.
      *
      * @param class-string<HilosFacade> $facade Topology carrying a debt the guard transitions retired
      */
@@ -2714,9 +2713,9 @@ final class TopologyValidatorTest extends TestCase
         try {
             $facade::validateTopology();
         } catch (InvalidTopologyException $exception) {
-            self::assertStringContainsString("DB collection 'notificationDeliveries'", $exception->getMessage());
-            self::assertStringContainsString('exact closed DB writer state', $exception->getMessage());
-            self::assertStringNotContainsString('names an unknown DB writer collection', $exception->getMessage());
+            self::assertStringContainsString("SHARED_DB_OWNERS['notificationDeliveries']", $exception->getMessage());
+            self::assertStringContainsString('names an unknown DB writer collection', $exception->getMessage());
+            self::assertStringNotContainsString('exact closed DB writer state', $exception->getMessage());
             self::assertStringNotContainsString('is stale', $exception->getMessage());
             return;
         }
@@ -2729,15 +2728,18 @@ final class TopologyValidatorTest extends TestCase
     {
         return [
             'the earlier guard key' => [TopologyResurrectedDeliveryDebtHilos::class],
-            'the retry key beside the erasure' => [TopologyResurrectedRetryDebtHilos::class],
+            'the retired retry key' => [TopologyResurrectedRetryDebtHilos::class],
         ];
     }
 
     /** The partition proves only a channel's own rows: a whole holder beside it conflicts, an adding library does not. */
     public function testChannelPartitionDoesNotCoverALibraryOrSessionHolder(): void
     {
-        self::assertStringContainsString(AbstractSessionsLibraryAgent::class, implode("\n", $this->declaredOwnershipErrors(
+        self::assertStringNotContainsString(AbstractSessionsLibraryAgent::class, implode("\n", $this->declaredOwnershipErrors(
             [AbstractSessionsLibraryAgent::class], TopologyPartitionedChannelsHilos::class,
+        )));
+        self::assertStringContainsString(TopologyForeignDeliveryWriter::class, implode("\n", $this->declaredOwnershipErrors(
+            [TopologyForeignDeliveryWriter::class], TopologyPartitionedChannelsHilos::class,
         )));
         self::assertStringNotContainsString(AbstractNotificationsLibraryAgent::class, implode("\n", $this->declaredOwnershipErrors(
             [AbstractNotificationsLibraryAgent::class], TopologyPartitionedChannelsHilos::class,
@@ -9123,15 +9125,43 @@ abstract class TopologyPublicHistoryHilos extends HilosFacade
     ];
 }
 
+/** The declaration judge uses its own unpaid transition after production erasure has retired. */
+final class TopologyLegacyTransitionCatalog extends DbWriterTransitionCatalog
+{
+    public const string TEST_HANDOVER = 'HIL-999997';
+
+    /**
+     * @param class-string<HilosFacade> $hilosClass Synthetic two-writer topology
+     * @return array<string, list<DbWriterTransitionState>> Exact synthetic verification handover
+     */
+    protected function buildDefinitions(string $hilosClass): array
+    {
+        return [HilosDbContext::verifications => $this->states(
+            $this->claim($this->role($hilosClass, HilosAgentType::HILOS_USERS_LIBRARY),
+                DbWriterClaimWidth::Whole, ...TruthSourceOperation::ALL),
+            [self::TEST_HANDOVER => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
+                DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
+        )];
+    }
+}
+
+final class TopologyLegacyVerificationHolder extends TopologyTestAgent
+{
+    public const string AGENT_TYPE = HilosAgentType::HILOS_SESSIONS_LIBRARY;
+    public const array OWNS_DB = [HilosDbContext::verifications => [TruthSourceOperation::Remove]];
+}
+
 abstract class TopologyLegacyDbHilos extends HilosFacade
 {
+    protected const string DB_WRITER_TRANSITION_CATALOG = TopologyLegacyTransitionCatalog::class;
+
     public const array AGENTS = [
         HilosAgentType::HILOS_USERS_LIBRARY => [AgentRegistryKey::WORKER => AbstractUsersLibraryAgent::class],
-        HilosAgentType::HILOS_SESSIONS_LIBRARY => [AgentRegistryKey::WORKER => AbstractSessionsLibraryAgent::class],
+        HilosAgentType::HILOS_SESSIONS_LIBRARY => [AgentRegistryKey::WORKER => TopologyLegacyVerificationHolder::class],
     ];
 
     public const array SHARED_DB_OWNERS = [
-        'verifications' => ['HIL-1952'],
+        'verifications' => [TopologyLegacyTransitionCatalog::TEST_HANDOVER],
     ];
 }
 
@@ -9308,7 +9338,7 @@ final class TopologyForgedPartitionAgent extends TopologyDbUpdateAgent
 
 abstract class TopologyUnknownDbDebtHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = ['unknown' => ['HIL-1952']];
+    public const array SHARED_DB_OWNERS = ['unknown' => [TopologyLegacyTransitionCatalog::TEST_HANDOVER]];
 }
 
 abstract class TopologyUnknownDbLeafHilos extends TopologyLegacyDbHilos
@@ -9323,7 +9353,7 @@ abstract class TopologyEmptyDbDebtHilos extends TopologyLegacyDbHilos
 
 abstract class TopologySparseDbDebtHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => [1 => 'HIL-1952']];
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => [1 => TopologyLegacyTransitionCatalog::TEST_HANDOVER]];
 }
 
 abstract class TopologyMalformedDbDebtHilos extends TopologyLegacyDbHilos
@@ -9333,13 +9363,16 @@ abstract class TopologyMalformedDbDebtHilos extends TopologyLegacyDbHilos
 
 abstract class TopologyDuplicateDbDebtHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1952', 'HIL-1952']];
+    public const array SHARED_DB_OWNERS = [
+        ...parent::SHARED_DB_OWNERS,
+        'verifications' => [TopologyLegacyTransitionCatalog::TEST_HANDOVER, TopologyLegacyTransitionCatalog::TEST_HANDOVER],
+    ];
 }
 
 abstract class TopologyUnsortedDbDebtHilos extends TopologyLegacyDbHilos
 {
     public const array SHARED_DB_OWNERS = [
-        ...parent::SHARED_DB_OWNERS, 'secondFactorBackupCodes' => ['HIL-1999', 'HIL-1952'],
+        ...parent::SHARED_DB_OWNERS, 'secondFactorBackupCodes' => [TopologyLegacyTransitionCatalog::TEST_HANDOVER, 'HIL-1999'],
     ];
 }
 
@@ -9462,7 +9495,7 @@ abstract class TopologyMissingDbOperationHilos extends TopologyLegacyDbHilos
 
 abstract class TopologyStringDbDebtHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => 'HIL-1952'];
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => TopologyLegacyTransitionCatalog::TEST_HANDOVER];
 }
 
 abstract class TopologyNullDbDebtHilos extends TopologyLegacyDbHilos
@@ -9477,32 +9510,40 @@ abstract class TopologyNumericDbLeafHilos extends TopologyLegacyDbHilos
 
 abstract class TopologyNestedDbLeafHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => [['HIL-1952']]];
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => [[TopologyLegacyTransitionCatalog::TEST_HANDOVER]]];
 }
 
 abstract class TopologyInvalidDbCollectionHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, '' => ['HIL-1952']];
+    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, '' => [TopologyLegacyTransitionCatalog::TEST_HANDOVER]];
 }
 
 abstract class TopologyExtraKnownDbLeafHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1952', 'HIL-1999']];
+    public const array SHARED_DB_OWNERS = [
+        ...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1999', TopologyLegacyTransitionCatalog::TEST_HANDOVER],
+    ];
 }
 
 abstract class TopologyAvailabilityDbLeafHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1894', 'HIL-1952']];
+    public const array SHARED_DB_OWNERS = [
+        ...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1894', TopologyLegacyTransitionCatalog::TEST_HANDOVER],
+    ];
 }
 
 abstract class TopologyPolicyDbLeafHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1900', 'HIL-1952']];
+    public const array SHARED_DB_OWNERS = [
+        ...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1900', TopologyLegacyTransitionCatalog::TEST_HANDOVER],
+    ];
 }
 
 abstract class TopologyRecoveryDbLeafHilos extends TopologyLegacyDbHilos
 {
-    public const array SHARED_DB_OWNERS = [...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1901', 'HIL-1952']];
+    public const array SHARED_DB_OWNERS = [
+        ...parent::SHARED_DB_OWNERS, 'verifications' => ['HIL-1901', TopologyLegacyTransitionCatalog::TEST_HANDOVER],
+    ];
 }
 
 final class TopologyDbDeclarationDaemon extends TopologyTestAgentDaemon
@@ -9610,11 +9651,12 @@ abstract class TopologyPublicDbRowReadHilos extends HilosFacade
 
 final class TopologyRenameTransitionCatalog extends DbWriterTransitionCatalog
 {
+    public const string TEST_TERMINAL = 'HIL-999997';
     public const string TEST_UNLINK = 'HIL-999998';
 
     /**
      * @param class-string<HilosFacade> $hilosClass Inspected history-cleanup fixture
-     * @return array<string, list<DbWriterTransitionState>> Synthetic unlink and real erasure states
+     * @return array<string, list<DbWriterTransitionState>> Synthetic unlink and terminal states
      */
     protected function buildDefinitions(string $hilosClass): array
     {
@@ -9623,12 +9665,13 @@ final class TopologyRenameTransitionCatalog extends DbWriterTransitionCatalog
             HilosDbContext::userRenames => $this->states(
                 $this->claim($this->role($hilosClass, HilosAgentType::HILOS_USER),
                     DbWriterClaimWidth::Set, TruthSourceOperation::Add, TruthSourceOperation::Update),
-                [self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
+                [self::TEST_TERMINAL => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY),
                     DbWriterClaimWidth::Whole, TruthSourceOperation::Remove),
                     self::TEST_UNLINK => $this->claim($this->role($hilosClass, TopologyRenameHistoryAgent::AGENT_TYPE),
                         DbWriterClaimWidth::Whole, TruthSourceOperation::Update)],
-                [self::ERASURE => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_USER),
+                [self::TEST_TERMINAL => $this->claim($this->role($hilosClass, HilosAgentType::HILOS_USER),
                     DbWriterClaimWidth::Set, TruthSourceOperation::Remove)],
+                [self::TEST_TERMINAL => [self::TEST_UNLINK]],
             ),
         ];
     }
@@ -9689,7 +9732,9 @@ abstract class TopologyRenameInitialHilos extends HilosFacade
             AgentRegistryKey::DAEMON => TopologyDbDeclarationDaemon::class,
         ],
     ];
-    public const array SHARED_DB_OWNERS = ['userRenames' => ['HIL-1952', TopologyRenameTransitionCatalog::TEST_UNLINK]];
+    public const array SHARED_DB_OWNERS = [
+        'userRenames' => [TopologyRenameTransitionCatalog::TEST_TERMINAL, TopologyRenameTransitionCatalog::TEST_UNLINK],
+    ];
 
     protected const string DB_WRITER_TRANSITION_CATALOG = TopologyRenameTransitionCatalog::class;
 }
@@ -9795,7 +9840,7 @@ abstract class TopologyRenameMovedHilos extends TopologyRenameInitialHilos
             AgentRegistryKey::INDEXED => true,
         ],
     ];
-    public const array SHARED_DB_OWNERS = ['userRenames' => ['HIL-1952']];
+    public const array SHARED_DB_OWNERS = ['userRenames' => [TopologyRenameTransitionCatalog::TEST_TERMINAL]];
 }
 
 abstract class TopologyRenameFinalHilos extends TopologyRenameMovedHilos
@@ -10035,7 +10080,7 @@ abstract class TopologyResurrectedDeliveryDebtHilos extends TopologyRawSmsHilos
 
 abstract class TopologyResurrectedRetryDebtHilos extends TopologyResurrectedDeliveryDebtHilos
 {
-    public const array SHARED_DB_OWNERS = [HilosDbContext::notificationDeliveries => ['HIL-1910', 'HIL-1952']];
+    public const array SHARED_DB_OWNERS = [HilosDbContext::notificationDeliveries => ['HIL-1910']];
 }
 
 /** Account operation participants with deliberately broken declarations. */
@@ -10095,4 +10140,10 @@ abstract class TopologyAccountOperationEmptyProjectHilos extends HilosFacade
     public const array AGENTS = [
         'project_owner' => [AgentRegistryKey::WORKER => TopologyAccountOperationEmptyProjectAgent::class],
     ];
+}
+
+/** A deliberately foreign whole writer cannot use a delivery channel's partition proof. */
+final class TopologyForeignDeliveryWriter extends TopologyTestAgent
+{
+    public const array OWNS_DB = [HilosDbContext::notificationDeliveries => [TruthSourceOperation::Remove]];
 }

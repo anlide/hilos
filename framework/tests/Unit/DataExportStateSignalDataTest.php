@@ -6,7 +6,6 @@ namespace Hilos\Tests\Unit;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Auth\Library\DTO\AuthSessionGrantSignalData;
-use Hilos\DataExport\DTO\DataExportForgetUserSignalData;
 use Hilos\DataExport\DTO\DataExportStateSignalData;
 use PHPUnit\Framework\TestCase;
 
@@ -41,8 +40,6 @@ final class DataExportStateSignalDataTest extends TestCase
         $old = $grant->toArray();
         unset($old['provenBy']);
         self::assertNull(AuthSessionGrantSignalData::fromArray($old)->provenBy);
-        $forget = new DataExportForgetUserSignalData(7);
-        self::assertSame(7, DataExportForgetUserSignalData::fromArray($forget->toArray())->userId);
     }
 
     /** A request has no meaning without its ordering date. */

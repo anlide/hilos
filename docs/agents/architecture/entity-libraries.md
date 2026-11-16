@@ -51,12 +51,11 @@ writer of its collection, with no instance owner: `settings` below is such a
 library. Executors also keep their own working rows. The creator, the personal
 owner and the executor are chosen by responsibility, not by a class name.
 
-The current account erasure and merge still run as one transaction at the
-sessions holder across other owners' tables. The
+Account erasure now uses a durable operation and owner-local transactions;
+each participant commits its own work and result (HIL-1952). Merge remains on
+its old single-holder path until HIL-1999. The
 [three phases](account-operations.md#three-phases) separate ordinary moves
-from those terminal cutovers: old erasure writes stay until the live switch
-(not in the code yet — HIL-1952), old merge writes until its own
-(not in the code yet — HIL-1999). The read path and placement axes below stay
+from those terminal cutovers. The read path and placement axes below stay
 unchanged.
 
 `demo/chat/backend/Agents/LibraryAgent.php` is the live one-entity, one-library

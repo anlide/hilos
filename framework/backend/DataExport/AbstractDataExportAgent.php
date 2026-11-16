@@ -17,7 +17,6 @@ use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\EnvConstants;
 use Hilos\DataExport\DTO\DataExportOrderActionDTO;
-use Hilos\DataExport\DTO\DataExportForgetUserSignalData;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\AgentSignalData;
@@ -115,7 +114,6 @@ abstract class AbstractDataExportAgent extends AbstractAgent
 
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_DATA_EXPORT_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
-        HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER => DataExportForgetUserSignalData::class,
     ];
 
     public const array AGENT_HTTP_ROUTES = [HttpConstants::METHOD_GET => [DataExportHttp::DOWNLOAD_PATH]];
@@ -236,15 +234,6 @@ abstract class AbstractDataExportAgent extends AbstractAgent
                     fn (AccountOperationAssignment $assignment): AccountOperationResult => $this->runErasurePart($assignment->id),
                     $this->getId(),
                 ));
-
-                return;
-
-            case HilosSignalConstants::HILOS_DATA_EXPORT_FORGET_USER:
-                $forget = $data->data;
-                if (!$forget instanceof DataExportForgetUserSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, DataExportForgetUserSignalData::class, $forget);
-                }
-                $this->forgetUser($forget->userId);
 
                 return;
 

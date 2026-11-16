@@ -18,10 +18,13 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Legal\LegalDocument;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
+use Hilos\Users\AccountErasureProgress;
 use Hilos\Users\AccountErasureProgressResolver;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
+use Hilos\Utils\Logger;
+use Throwable;
 
 /**
  * Keeps the open admin surfaces that show an account's standing in step with it (HIL-945).
@@ -73,6 +76,17 @@ final class AccountStandingAudience
     /** @var ?array<int, TableProgressDTO> Erasure bar of each account the lists were last sent, null when no list holds one */
     private static ?array $erasureBars = null;
 
+    /** @var ?array<int, AccountErasureProgress> Resolver picture the account filter last read */
+    private static ?array $erasureSource = null;
+
+    /** @var array<int, TableProgressDTO> Bars filtered against the accounts present in that picture */
+    private static array $filteredErasureBars = [];
+
+    /** @var array<string, true> Cards whose erasure block is in a failure episode */
+    private static array $erasureFailures = [];
+
+    private static bool $erasureBarsFailed = false;
+
     /**
      * Holds a card subscriber and the standing and erasure progress its page answer showed.
      *
@@ -104,12 +118,15 @@ final class AccountStandingAudience
             self::$cards[$acceptKey],
             self::$shown[$acceptKey],
             self::$shownErasure[$acceptKey],
+            self::$erasureFailures[$acceptKey],
             self::$lists[$acceptKey],
             self::$listDocuments[$acceptKey],
             self::$listPeople[$acceptKey],
         );
         if (self::$lists === []) {
             self::$erasureBars = null;
+            self::forgetErasureFilter();
+            self::$erasureBarsFailed = false;
         }
     }
 
@@ -123,6 +140,16 @@ final class AccountStandingAudience
         self::$listDocuments = [];
         self::$listPeople = [];
         self::$erasureBars = null;
+        self::forgetErasureFilter();
+        self::$erasureFailures = [];
+        self::$erasureBarsFailed = false;
+    }
+
+    /** Drops only the account-existence filter when accounts leave the data set. */
+    public static function forgetErasureFilter(): void
+    {
+        self::$erasureSource = null;
+        self::$filteredErasureBars = [];
     }
 
     /**
@@ -150,7 +177,7 @@ final class AccountStandingAudience
      * @param PageAgentInterface $agent Agent serving the surfaces; the card frames leave from it
      * @throws InvalidArgumentException When a frame cannot be named
      * @throws InvalidFormatException When a standing frame cannot be built for its person
-     * @throws HilosException When standing, erasure progress, a list of people or a window cannot be read
+     * @throws HilosException When standing, a list of people or a window cannot be read
      */
     public static function onAgentTick(PageAgentInterface $agent): void
     {
@@ -161,7 +188,7 @@ final class AccountStandingAudience
                 continue;
             }
             $standing = AccountStandingResolver::of($userId);
-            $erasure = AccountErasureProgressResolver::of($userId)?->toArray();
+            $erasure = self::cardErasure($acceptKey, $userId);
             if ($standing->toArray() === self::$shown[$acceptKey]->toArray() && $erasure === self::$shownErasure[$acceptKey]) {
                 continue;
             }
@@ -210,23 +237,63 @@ final class AccountStandingAudience
     }
 
     /**
+     * Keeps a broken progress block apart from the standing and the other subscribers.
+     *
+     * @param string $acceptKey Card connection whose failure episode is remembered
+     * @param int $userId Account the card shows
+     * @return ?array<string, mixed> Full progress block, or null while its source refuses
+     */
+    private static function cardErasure(string $acceptKey, int $userId): ?array
+    {
+        try {
+            $erasure = AccountErasureProgressResolver::of($userId)?->toArray();
+        } catch (Throwable $failure) {
+            if (!isset(self::$erasureFailures[$acceptKey])) {
+                Logger::error("Account card erasure progress failed: user={$userId}, error={$failure->getMessage()}");
+                self::$erasureFailures[$acceptKey] = true;
+            }
+
+            return null;
+        }
+        if (isset(self::$erasureFailures[$acceptKey])) {
+            Logger::info("Account card erasure progress recovered: user={$userId}");
+            unset(self::$erasureFailures[$acceptKey]);
+        }
+
+        return $erasure;
+    }
+
+    /**
      * Sends every open list of people the erasure bars that changed since the picture it holds.
      *
      * The new picture is held before the first bar goes: a bar to a tab owed its page sends the page
      * whole instead, and a page sent again in the middle of the round must carry the current picture.
      *
      * @throws InvalidArgumentException Never: a row bar always names its row
-     * @throws HilosException When the erasure progress or an account cannot be read
      */
     private static function sendErasureBars(): void
     {
         if (self::$lists === []) {
             self::$erasureBars = null;
+            self::forgetErasureFilter();
+            self::$erasureBarsFailed = false;
 
             return;
         }
 
-        $current = self::currentErasureBars();
+        try {
+            $current = self::currentErasureBars();
+            if (self::$erasureBarsFailed) {
+                Logger::info('Account list erasure progress recovered.');
+                self::$erasureBarsFailed = false;
+            }
+        } catch (Throwable $failure) {
+            $current = [];
+            if (!self::$erasureBarsFailed) {
+                Logger::error('Account list erasure progress failed: ' . $failure->getMessage());
+                self::$erasureBarsFailed = true;
+            }
+        }
         $previous = self::$erasureBars ?? [];
         $changed = [];
         foreach ($current as $userId => $bar) {
@@ -258,12 +325,18 @@ final class AccountStandingAudience
      */
     private static function currentErasureBars(): array
     {
+        $source = AccountErasureProgressResolver::begun();
+        if ($source === self::$erasureSource) {
+            return self::$filteredErasureBars;
+        }
         $bars = [];
-        foreach (AccountErasureProgressResolver::begun() as $userId => $progress) {
+        foreach ($source as $userId => $progress) {
             if (isset(Hilos::$db->users[$userId])) {
                 $bars[$userId] = AbstractHilosUsersTable::erasureBar($userId, $progress);
             }
         }
+        self::$erasureSource = $source;
+        self::$filteredErasureBars = $bars;
 
         return $bars;
     }
