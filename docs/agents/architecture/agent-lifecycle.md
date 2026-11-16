@@ -155,13 +155,15 @@ line. The wait becomes a start-under-way wait the moment the agent does turn up
 starting here. The hold lives in the master's memory and dies with it: delivery
 across a node that fell over is HIL-347.
 
-Having answered the held frames, the master says one more thing (HIL-1044): to
-the agent declaring `hilos_agents_gone` in its `AGENT_SIGNALS`, which agents are
-gone and why — a dead worker, a failed start, an agent not placed — so whoever
-answers people on those agents' behalf ends what they will never answer. It is
-never sent when nobody declares it, and never to a declarer that is itself among
-the gone: a frame about its own death would restart the failing start again and
-again, the argument above against redelivery.
+Having answered the held frames, the master reports the original loss cohort
+and reason on each declared gone channel. `hilos_agents_gone` is declared by the
+sessions holder, which ends open sign-ins and reports lost agents to its trust
+restriction sweep. `hilos_oauth_agents_gone` is declared by the OAuth singleton,
+which ends pending identity links whose personal owner is gone. Each channel is
+looked up and sent independently. If its own recipient is in the loss cohort,
+the master skips that channel only and still considers the other; it does not
+send a failure report to an agent that cannot answer it. Neither frame is sent
+when its name has no declared route.
 
 The price of ending on a fact is that a start which ends without one strands its
 frames: a worker wedged in `onStart()` forever. A page and a command are taken
@@ -228,9 +230,11 @@ being stopped for idleness without sending another subscribe frame.
 A worker that dies takes its agents with it, and none of them gets to report a
 stop. The master forgets them at once
 (`AgentManagerDaemon::forgetAgentsOfWorker()`), answers the frames held for them
-without redelivering one, tells the agent declaring `hilos_agents_gone`, and
-then the project (`DaemonManager::onAgentsLostWithWorker()`). What brings a lost
-agent back depends on how it was started, and each kind has one way:
+without redelivering one, announces the cohort independently on the declared
+`hilos_agents_gone` and `hilos_oauth_agents_gone` channels, and then tells the
+project (`DaemonManager::onAgentsLostWithWorker()`). A channel is skipped only
+when its own recipient is among the lost agents. What brings a lost agent back
+depends on how it was started, and each kind has one way:
 
 - **An addressed agent** comes back with the next frame meant for it — an
   action, a page subscribe, an agent-to-agent signal, a daemon cron tick —

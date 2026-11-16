@@ -18,8 +18,12 @@ final class UsersLibraryDbOwnershipTest extends TestCase
 
         self::assertSame([TruthSourceOperation::Add], $claims[ChatDbContext::events]->asList());
         self::assertSame([TruthSourceOperation::Add], $claims[ChatDbContext::eventUserRegistrations]->asList());
-        self::assertSame([TruthSourceOperation::Add], $claims[ChatDbContext::secondFactors]->asList());
-        self::assertSame([TruthSourceOperation::Add], $claims[ChatDbContext::secondFactorBackupCodes]->asList());
+        self::assertArrayNotHasKey(ChatDbContext::secondFactors, $claims);
+        self::assertArrayNotHasKey(ChatDbContext::secondFactorBackupCodes, $claims);
+        self::assertArrayNotHasKey(ChatDbContext::secondFactorResets, $claims);
+        self::assertContains(ChatDbContext::secondFactors, UsersLibraryAgent::READS_DB);
+        self::assertContains(ChatDbContext::secondFactorBackupCodes, UsersLibraryAgent::READS_DB);
+        self::assertContains(ChatDbContext::secondFactorResets, UsersLibraryAgent::READS_DB);
         self::assertArrayNotHasKey(ChatDbContext::userRenames, $claims);
     }
 }

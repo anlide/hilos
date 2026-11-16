@@ -119,6 +119,7 @@ final class ImpersonationCommandRouteIntegrationTest extends FrameworkIntegratio
         'hilos_account_deletion',
         'hilos_user_merge',
         'hilos_access_log',
+        'hilos_account_operation',
     ];
 
     /** @var ?DbContext Database context to restore after the test */

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library;
 
+use JsonException;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\AccountOperation\AccountErasureCoordinator;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
@@ -340,6 +342,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * erasure part releases sessions and removes access-log rows. The remaining foreign rights
      * serve the existing merge until its owner protocol is activated; erasure writes go to each
      * participant in that participant's execution frame.
+     * Ordinary browser trust creation, renewal and revocation belong to the personal owner.
+     * This holder retains only merge removal, which also supplies its sign-in read interest.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -347,7 +351,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
         HilosDbContext::accountOperations => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::accountOperationAssignments => [TruthSourceOperation::Add],
-        HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        // Only terminal merge removal remains; the personal owner grants and renews trusts.
+        HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Remove],
         HilosDbContext::users => [TruthSourceOperation::Update],
         HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::passkeyCredentials => [TruthSourceOperation::Update],
@@ -4571,7 +4576,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                         "Browser trust renewal for #{$renewal->request->userId} refused: " . ($renewal->errorDetail ?? $renewal->error),
                     );
                 } elseif (!$renewal->renewed) {
-                    $this->regrantTrust($renewal->request);
+                    $this->logAgentInfo("Browser trust grant for #{$renewal->request->userId} no longer applies");
                 }
 
                 return;
@@ -7767,6 +7772,58 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * @param ?Session $session Session the proof arrived on, if still present
+     * @param int $userId Account resolved by the proof
+     * @param ?string $initiatorAcceptKey Submitting connection, if present
+     * @param ?string $requestId Submit being answered
+     * @param ?string $action Action being answered
+     * @return bool Whether the saved merge fact refused the sign-in
+     * @throws HilosException When the merge or session cannot be read or written
+     */
+    private function refuseMergingSignIn(
+        ?Session $session,
+        int $userId,
+        ?string $initiatorAcceptKey,
+        ?string $requestId,
+        ?string $action,
+    ): bool {
+        try {
+            $blocked = AccountMergeAccess::blocksSignIn($userId);
+        } catch (JsonException $failure) {
+            throw new DatabaseException('Could not decode the saved account merge result', previous: $failure);
+        }
+        if (!$blocked) {
+            return false;
+        }
+        if ($session === null) {
+            return true;
+        }
+        if ($session->pendingSecondFactorUserId !== null) {
+            $session->actions->releasePendingSecondFactor();
+        }
+        $outcome = AuthFlowOutcome::rejectTo(
+            AuthFlowOutcome::CODE_ACCOUNT_MERGING,
+            AuthFlowStep::IDENTIFIER,
+            AuthFlowIntent::LOGIN,
+            AccountMergeAccess::REFUSED_MESSAGE,
+        )->toArray();
+        $this->publishBlockedCardState($session, $initiatorAcceptKey, $requestId, $action, $outcome);
+        if ($initiatorAcceptKey !== null && ($requestId === null || $action === null)) {
+            $this->publishSessionState(new SessionStateSignalData(
+                sessionToken: $session->token,
+                sessionId: $session->id,
+                userId: $session->userId,
+                acceptKeys: [$initiatorAcceptKey],
+                pendingAck: $this->sessionPendingAck($session),
+                pendingAuthStep: $this->pendingAuthStepFor($session),
+                outcome: $outcome,
+            ));
+        }
+
+        return true;
+    }
+
+    /**
      * Refuses a proven sign-in into a blocked account, and leaves the "Access closed" card instead (HIL-289).
      *
      * Asked on every path that ends a proof, BEFORE the second-factor gate: a person whose account
@@ -8405,39 +8462,36 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * Trusts a browser for a person after the second factor was shown on it (HIL-494).
      *
-     * The confirmation is the trust's grant, and the days the policy gives run from it. A pair the
-     * person has no trust for yet is written here; a standing one is extended by the person's agent
-     * ({@see grantTrust()}, HIL-1907).
+     * The confirmation is the trust's grant; the person's agent grants or renews the pair.
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person who asked not to be asked again
-     * @throws HilosException On database or settings failure, or when the renewal cannot be asked for
-     * @throws InvalidArgumentException When the renewal frame cannot be named or queued
      */
     private function trustBrowser(int $sessionId, int $userId): void
     {
-        $days = SecondFactorPolicy::current()->trustDeviceDays();
-        if ($days === null) {
-            return;
-        }
+        try {
+            $days = SecondFactorPolicy::current()->trustDeviceDays();
+            if ($days === null) {
+                return;
+            }
 
-        $grantedAt = TimeHelper::nowMs();
-        $this->grantTrust(
-            $sessionId,
-            $userId,
-            $grantedAt + $days * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
-            $grantedAt,
-        );
+            $grantedAt = TimeHelper::nowMs();
+            $this->grantTrust(
+                $sessionId,
+                $userId,
+                $grantedAt + $days * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+                $grantedAt,
+            );
+        } catch (WiringRefusal) {
+            $this->logAgentError("Optional browser trust grant for #{$userId} has unavailable source wiring");
+        } catch (Throwable) {
+            $this->logAgentError("Optional browser trust grant for #{$userId} could not be requested");
+        }
     }
 
     /**
-     * Creates the trust of a browser for a person, or asks the person's agent to extend the standing one (HIL-1907).
-     *
-     * This library writes a pair only when the person has no trust for it yet. A standing pair -
-     * live, run out or cut by a restriction - is left as it is: the person's agent moves it to the
-     * confirmation in its own transaction, and nobody waits on that, because the sign-in was
-     * answered before. A person who can no longer be addressed is not asked, and the browser stays
-     * untrusted ({@see askPersonAgent()}).
+     * Asks the person's agent to grant or renew trust after the successful sign-in.
+     * A refused or lost optional grant never starts a fallback write in this library.
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person the browser is trusted for
@@ -8448,10 +8502,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      */
     private function grantTrust(int $sessionId, int $userId, int $until, int $grantedAt): void
     {
-        if (Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $until, $grantedAt)) {
-            return;
-        }
-
         $this->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW, new UserBrowserTrustRenewSignalData(
             $userId,
             $sessionId,
@@ -8459,48 +8509,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             $grantedAt,
             HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE,
         ));
-    }
-
-    /**
-     * Creates the trust again when the person's agent found no pair to extend, while the confirmation still holds (HIL-1907).
-     *
-     * The pair went between the confirmation and the agent's turn - a restriction took it out, or
-     * it was taken away. It is written again with the confirmation's end and grant only while the
-     * person can still be addressed - not gone, not folded, not being erased (HIL-1939) - the
-     * browser is still signed in as the person, the person's password has not changed since the
-     * confirmation, the person still has a confirmed authenticator and the policy still gives days;
-     * otherwise it is gone for good, the ordinary end of a revoke, and nothing is logged. The
-     * password covers every way the agent takes the pairs of other browsers without signing them
-     * out - a change with or without ending the other sessions, and a recovery: each goes through
-     * the agent writing the new password, which marks the moment of the change. A change in the
-     * same millisecond counts as after. The two moments come from two clocks, this library's and
-     * the agent's, so on a cluster the comparison narrows the gap by the skew between nodes and
-     * does not seal it. A pair written again meanwhile by a later confirmation is asked to be
-     * extended once more, and the agent answers that it stands, since its grant is the later one.
-     *
-     * @param UserBrowserTrustRenewSignalData $ask The renewal the person's agent found no pair for
-     * @throws HilosException On database or settings failure, or when the renewal cannot be asked for
-     * @throws InvalidArgumentException When the renewal frame cannot be named or queued
-     */
-    private function regrantTrust(UserBrowserTrustRenewSignalData $ask): void
-    {
-        try {
-            AddressablePerson::require($ask->userId);
-        } catch (ValidationException) {
-            return;
-        }
-        if (!isset(Hilos::$db->sessions[$ask->sessionId]) || Hilos::$db->sessions[$ask->sessionId]->userId !== $ask->userId) {
-            return;
-        }
-        $password = Hilos::$db->identities->findPasswordByUser($ask->userId);
-        if ($password?->passwordChangedAt !== null && $password->passwordChangedAt >= $ask->grantedAt) {
-            return;
-        }
-        if (Hilos::$db->secondFactors->confirmedOf($ask->userId) === [] || SecondFactorPolicy::current()->trustDeviceDays() === null) {
-            return;
-        }
-
-        $this->grantTrust($ask->sessionId, $ask->userId, $ask->trustedUntil, $ask->grantedAt);
     }
 
     /**
@@ -8535,6 +8543,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
 
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($this->refuseMergingSignIn(
+            $session,
+            $frame->userId,
+            $frame->acceptKey,
+            $frame->requestId,
+            $frame->action,
+        )) {
+            return;
+        }
         if ($session !== null && $this->refuseErasingSignIn(
             $session,
             $frame->userId,
@@ -8703,6 +8720,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $trip = Hilos::$rt->hilosOAuthTrips[$tripKeyHash];
         if ($trip === null) {
             $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+            if ($this->refuseMergingSignIn(
+                $session,
+                $frame->userId,
+                $frame->acceptKey,
+                $frame->requestId,
+                $frame->action,
+            )) {
+                return;
+            }
             if ($session !== null && $this->refuseErasingSignIn(
                 $session,
                 $frame->userId,
@@ -8747,6 +8773,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
         if ($trip->ending !== null) {
             $this->logAgentInfo("OAuth trip already ended ({$trip->ending}); late sign-in of user {$frame->userId} dropped");
+
+            return;
+        }
+
+        $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($this->refuseMergingSignIn($session, $frame->userId, null, null, null)) {
+            $trip->actions->end(OAuthResultSignalData::REASON_ACCOUNT_MERGING);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_MERGING);
 
             return;
         }
@@ -8889,6 +8923,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Asked again at the moment the grant is applied (HIL-494): the person may have enrolled a
         // second factor, or had it required, while the grant was waiting for its tab.
         $session = Hilos::$db->sessions->findByToken($sessionToken);
+        if ($this->refuseMergingSignIn($session, $userId, null, null, null)) {
+            $trip->actions->end(OAuthResultSignalData::REASON_ACCOUNT_MERGING);
+            $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_MERGING);
+
+            return;
+        }
         if ($session !== null && $this->refuseErasingSignIn($session, $userId, null, null, null)) {
             $trip->actions->end(OAuthResultSignalData::REASON_ACCOUNT_ERASING);
             $this->deliverOAuthTripResult($trip, OAuthResultSignalData::REASON_ACCOUNT_ERASING);
@@ -9263,6 +9303,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // session still goes, as a reset promises. An account whose erasure has begun is refused the
         // same way, without the card (HIL-1939).
         $session = Hilos::$db->sessions->findByToken($frame->sessionToken);
+        if ($this->refuseMergingSignIn(
+            $session,
+            $frame->userId,
+            $frame->acceptKey,
+            $frame->requestId,
+            $frame->action,
+        )) {
+            return;
+        }
         if ($session !== null && $this->refuseErasingSignIn(
             $session,
             $frame->userId,

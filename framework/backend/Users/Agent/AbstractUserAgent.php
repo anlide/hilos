@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Users\Agent;
 
+use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Constants\TimeConstants;
+use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Closure;
 use Hilos\Auth\AccountOperation\AccountErasureCapture;
 use Hilos\Auth\AccountOperation\AccountErasureDeliveryCapture;
@@ -14,6 +17,7 @@ use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalFinal;
 use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergePreparation;
 use Hilos\Auth\AccountOperation\AccountMergeRelease;
@@ -29,6 +33,7 @@ use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureUncapturedException;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
+use Hilos\Auth\Identity\IdentityPersonEdits;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
@@ -108,10 +113,14 @@ use Hilos\Users\DTO\UserBrowserTrustRevokeDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRevokeSignalData;
 use Hilos\Users\DTO\UserEmailChangeDoneSignalData;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
+use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
-use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetDoneSignalData;
+use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
@@ -134,16 +143,14 @@ use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
-use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
-use Hilos\Users\DTO\UserThemePickWriteSignalData;
-use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
-use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -158,16 +165,19 @@ use Hilos\Users\DTO\UserSecondFactorTrustRestrictDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorTrustRestrictSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
-use Hilos\Users\DTO\UserLegalHoldForgetDoneSignalData;
-use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
+use Hilos\Users\DTO\UserSessionsRestateSignalData;
 use Hilos\Users\DTO\UserStepUpCreditDoneSignalData;
 use Hilos\Users\DTO\UserStepUpCreditSignalData;
 use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
-use Hilos\Users\DTO\UserSessionsRestateSignalData;
+use Hilos\Users\DTO\UserThemePickWriteDoneSignalData;
+use Hilos\Users\DTO\UserThemePickWriteSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteDoneSignalData;
+use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
 use Hilos\WiringRefusal;
+use JsonException;
 use Throwable;
 
 /**
@@ -201,8 +211,9 @@ use Throwable;
  * because the coordinator continues only on the answer and something is waiting on it - and the
  * coordinator does what follows the write. Background reports of the last usable browser zone
  * and an OAuth identity's provider name, and the transport's dead-endpoint reports, are written
- * without an answer; their refusals go to this agent's log. Creating a way in, an enrolment,
- * a set of backup codes or a removal stays with the libraries that create it.
+ * without an answer; their refusals go to this agent's log. Ordinary identity additions are
+ * created here from caller-verified material; new-account creation remains at the users library.
+ * Creating an enrolment, a set of backup codes or a removal stays with its existing library.
  *
  * The agent follows the state of its person (HIL-1939). Open: every frame is served. Erasure
  * begun - the person's deletion request is marked started, the first step of the agent's part in
@@ -288,6 +299,10 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserPasswordResetSignalData::userId,
             AgentSignalConfigKey::DTO => UserPasswordResetSignalData::class,
         ],
+        HilosSignalConstants::HILOS_USER_IDENTITY_ADD => [
+            AgentSignalConfigKey::INDEX_FIELD => UserIdentityAddSignalData::userId,
+            AgentSignalConfigKey::DTO => UserIdentityAddSignalData::class,
+        ],
         HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE => [
             AgentSignalConfigKey::INDEX_FIELD => UserPasswordChangeSignalData::userId,
             AgentSignalConfigKey::DTO => UserPasswordChangeSignalData::class,
@@ -320,13 +335,17 @@ abstract class AbstractUserAgent extends AbstractAgent
             AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorWaitWriteSignalData::userId,
             AgentSignalConfigKey::DTO => UserSecondFactorWaitWriteSignalData::class,
         ],
-        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP => [
-            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorEnrollDropSignalData::userId,
-            AgentSignalConfigKey::DTO => UserSecondFactorEnrollDropSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorEnrollStartSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorEnrollStartSignalData::class,
         ],
-        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP => [
-            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorCodesDropSignalData::userId,
-            AgentSignalConfigKey::DTO => UserSecondFactorCodesDropSignalData::class,
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorCodesIssueSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorCodesIssueSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST => [
+            AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorResetRequestSignalData::userId,
+            AgentSignalConfigKey::DTO => UserSecondFactorResetRequestSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => [
             AgentSignalConfigKey::INDEX_FIELD => UserSecondFactorResetDueSignalData::userId,
@@ -415,7 +434,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @var array<string, list<TruthSourceOperation>> The person's borrowed child sets, and the rename
      *     journal: added with the name, its feed link written here.
      *     The ways of signing in and the passkeys are written here since HIL-1405, and the second factor
-     *     since HIL-1406; their creation is the libraries', and the unfinished enrolment a new start
+     *     since HIL-1406. Ordinary identities and passkeys are created here too (HIL-1989); new-account
+     *     creation remains at the users library. The unfinished enrolment a new start
      *     replaces is dropped here, on the library's frame (HIL-1903), and so is the set of backup codes a new
      *     issue replaces (HIL-1904). One row is born here too: the person's
      *     second-factor settings (`hilos_second_factor_setting`, keyed by the person), which the
@@ -436,13 +456,13 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     The second-factor settings are also removed here, in the agent's part of the erasure (HIL-1941).
      */
     public const array OWNS_DB_SET = [
-        HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::passkeyCredentials => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::secondFactors => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::secondFactorResets => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::identities => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::passkeyCredentials => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactors => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorResets => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorSettings => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
+        HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::stepUps => TruthSourceOperation::ALL,
         HilosDbContext::accountDeletions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::legalAcceptances => [TruthSourceOperation::Remove],
@@ -464,6 +484,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      *     the erasure part checks every notification's deliveries are captured (HIL-1941).
      */
     public const array READS_DB = [
+        HilosDbContext::sessions,
         HilosDbContext::secondFactorTrustRestrictions,
         HilosDbContext::accountOperationAssignments,
         HilosDbContext::accountOperations,
@@ -912,6 +933,16 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_USER_IDENTITY_ADD:
+                $add = $data->data;
+                if (!$add instanceof UserIdentityAddSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserIdentityAddSignalData::class, $add);
+                }
+
+                $this->sendToAgent($add->replySignal, $this->addIdentity($add));
+
+                return;
+
             case HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE:
                 $change = $data->data;
                 if (!$change instanceof UserPasswordChangeSignalData) {
@@ -1027,30 +1058,44 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 return;
 
-            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP:
-                $enrollDrop = $data->data;
-                if (!$enrollDrop instanceof UserSecondFactorEnrollDropSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorEnrollDropSignalData::class, $enrollDrop);
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START:
+                $enrollStart = $data->data;
+                if (!$enrollStart instanceof UserSecondFactorEnrollStartSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorEnrollStartSignalData::class, $enrollStart);
                 }
 
-                $this->refuseAnotherPerson($enrollDrop->userId, $name);
-                $this->sendToAgent($enrollDrop->replySignal, $this->secondFactorAnswer(
-                    fn () => $this->secondFactorEdits()->dropEnrolment($enrollDrop),
-                    fn (ActionRefusal $refusal) => UserSecondFactorEnrollDropDoneSignalData::refused($enrollDrop, $refusal),
+                $this->refuseAnotherPerson($enrollStart->userId, $name);
+                $this->sendToAgent($enrollStart->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->startEnrolment($enrollStart),
+                    fn (ActionRefusal $refusal) => UserSecondFactorEnrollStartDoneSignalData::refused($enrollStart, $refusal),
                 ));
 
                 return;
 
-            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP:
-                $codesDrop = $data->data;
-                if (!$codesDrop instanceof UserSecondFactorCodesDropSignalData) {
-                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorCodesDropSignalData::class, $codesDrop);
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE:
+                $codesIssue = $data->data;
+                if (!$codesIssue instanceof UserSecondFactorCodesIssueSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorCodesIssueSignalData::class, $codesIssue);
                 }
 
-                $this->refuseAnotherPerson($codesDrop->userId, $name);
-                $this->sendToAgent($codesDrop->replySignal, $this->secondFactorAnswer(
-                    fn () => $this->secondFactorEdits()->dropCodes($codesDrop),
-                    fn (ActionRefusal $refusal) => UserSecondFactorCodesDropDoneSignalData::refused($codesDrop, $refusal),
+                $this->refuseAnotherPerson($codesIssue->userId, $name);
+                $this->sendToAgent($codesIssue->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->issueCodes($codesIssue),
+                    fn (ActionRefusal $refusal) => UserSecondFactorCodesIssueDoneSignalData::refused($codesIssue, $refusal),
+                ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST:
+                $resetRequest = $data->data;
+                if (!$resetRequest instanceof UserSecondFactorResetRequestSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserSecondFactorResetRequestSignalData::class, $resetRequest);
+                }
+
+                $this->refuseAnotherPerson($resetRequest->userId, $name);
+                $this->sendToAgent($resetRequest->replySignal, $this->secondFactorAnswer(
+                    fn () => $this->secondFactorEdits()->requestReset($resetRequest),
+                    fn (ActionRefusal $refusal) => UserSecondFactorResetRequestDoneSignalData::refused($resetRequest, $refusal),
                 ));
 
                 return;
@@ -1385,12 +1430,17 @@ abstract class AbstractUserAgent extends AbstractAgent
      * on a start, so nothing is answered. A folded account applies it too - service work on the rows
      * it still has - and stops by its ordinary ways. A failure is logged, naming the person and no
      * browser's session, and the start goes on: the session holder's sweep asks again.
+     * A merge reservation defers material application without clearing the saved policy or its debt.
      */
     public function onStart(): void
     {
         try {
             if (Hilos::$db->secondFactorTrusts->getObjectCollection()->owes($this->userId)) {
-                Hilos::$db->secondFactorTrusts->actions->applySavedRestrictions($this->userId);
+                if (AccountMergeAccess::reservation($this->userId) !== null) {
+                    $this->logAgentInfo("Trust restrictions of #{$this->userId} deferred during account merge");
+                } else {
+                    Hilos::$db->secondFactorTrusts->actions->applySavedRestrictions($this->userId);
+                }
             }
         } catch (WiringRefusal $e) {
             $this->logAgentError("Trust restrictions of #{$this->userId} not applied at start: {$e->getMessage()}");
@@ -1595,9 +1645,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidArgumentException When a stored row is not the collection's object type
      * @throws DatabaseException When the row cannot be loaded, or the secret cannot be written
      * @throws HilosException On database or truth-source failure while reading or writing the row
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function writePasswordHash(int $identityId, string $passwordHash): void
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         if (
             !isset(Hilos::$db->identities[$identityId])
             || Hilos::$db->identities[$identityId]->userId !== $this->userId
@@ -1628,9 +1680,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidArgumentException When a stored row is not the collection's object type
      * @throws DatabaseException When the row cannot be loaded, or the secret cannot be written
      * @throws HilosException On database, truth-source or transaction failure while taking the trust away or writing the row
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function writeNewPassword(int $identityId, string $passwordHash, int $keepSessionId): void
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession($this->userId, $keepSessionId);
         Database::transactionStart();
         try {
@@ -1655,9 +1709,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidArgumentException When a stored row is not the collection's object type, or the sync signal cannot be named
      * @throws DatabaseException When the row cannot be loaded, or the flag cannot be written
      * @throws HilosException On database or truth-source failure while reading or writing the row
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function markAddressVerified(int $identityId): void
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         if (!isset(Hilos::$db->identities[$identityId])) {
             return;
         }
@@ -1682,9 +1738,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidArgumentException When the keys' query is given an invalid order direction
      * @throws DatabaseException When the keys cannot be loaded, or the use cannot be written
      * @throws HilosException On database or truth-source failure while reading or writing the key
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function recordPasskeyUse(int $passkeyId, int $signCount): void
     {
+        AccountMergeAccess::requireSignIn($this->userId);
         foreach (Hilos::$db->passkeyCredentials->listByUser($this->userId) as $credential) {
             if ($credential->id === $passkeyId) {
                 $credential->recordUse($signCount);
@@ -1711,9 +1769,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidArgumentException When the rows' query is given an invalid order direction
      * @throws DatabaseException When the rows cannot be loaded or rewritten
      * @throws HilosException When the rows or the transaction cannot be written
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function moveEmail(string $from, string $to): void
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         Database::transactionStart();
         try {
             Hilos::$db->identities->changeEmail($this->userId, $from, $to);
@@ -1748,9 +1808,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidArgumentException When a stored row is not the collection's object type, or a query is given an invalid order
      * @throws DatabaseException When the rows cannot be loaded or deleted
      * @throws HilosException On database or truth-source failure while reading or deleting the rows
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function unlinkIdentity(int $identityId): void
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         if (
             isset(Hilos::$db->identities[$identityId])
             && Hilos::$db->identities[$identityId]->userId === $this->userId
@@ -1778,9 +1840,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidArgumentException When the confirmations' query is invalid, or the frame cannot be named or queued
      * @throws DatabaseException When a confirmation cannot be read, written or removed
      * @throws HilosException On truth-source failure while writing a confirmation, or when the lifetime cannot be read
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function recordStepUp(string $sessionTokenHash, string $operation): void
     {
+        AccountMergeAccess::requireSignIn($this->userId);
         StepUpConfirmations::record($this, $sessionTokenHash, $this->userId, $operation);
     }
 
@@ -1795,9 +1859,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @param int $sessionId Session row of the browser losing trust, or with others the one keeping it
      * @param bool $others Whether every browser of the person but the named one loses trust
      * @throws HilosException On truth-source, lookup, transaction or delete failure while taking the trust away
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function revokeBrowserTrust(int $sessionId, bool $others): void
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         if ($others) {
             Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession($this->userId, $sessionId);
 
@@ -1808,20 +1874,38 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
-     * Extends the standing trust of a browser the sessions library found at a confirmation (HIL-1907).
-     *
-     * The pair takes the end and the grant the frame names - the moment the second factor was
-     * confirmed, not the moment of this write - and the stored restrictions are applied to the
-     * person in the same transaction. A pair granted later already is left as it is; a missing pair
-     * is not created, the library creates it. Not final, for the reason {@see self::renamePerson()} gives.
+     * Grants or renews browser trust after rechecking the person, session, proof and current policy.
+     * Saved restrictions apply atomically; a later grant is preserved.
      *
      * @param UserBrowserTrustRenewSignalData $ask The library's request: the browser, the new end and the grant
-     * @return bool Whether the pair stands - extended now or granted later already; false when there is none
-     * @throws HilosException On truth-source, lookup, transaction or write failure while extending the trust
+     * @return bool Whether the pair stands after the checks and saved restrictions
+     * @throws HilosException On truth-source, lookup, transaction or write failure while granting trust
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function renewBrowserTrust(UserBrowserTrustRenewSignalData $ask): bool
     {
-        return Hilos::$db->secondFactorTrusts->actions->renew($ask->sessionId, $this->userId, $ask->trustedUntil, $ask->grantedAt);
+        AccountMergeAccess::requireProtectionChange($this->userId);
+        AddressablePerson::require($this->userId);
+        $session = Hilos::$db->sessions[$ask->sessionId] ?? null;
+        if ($session === null || $session->userId !== $this->userId
+            || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::nowMs())) {
+            return false;
+        }
+        $days = SecondFactorPolicy::current()->trustDeviceDays();
+        if ($days === null || $days <= 0 || Hilos::$db->secondFactors->confirmedOf($this->userId) === []) {
+            return false;
+        }
+        $password = Hilos::$db->identities->findPasswordByUser($this->userId);
+        if ($password?->passwordChangedAt !== null && $password->passwordChangedAt >= $ask->grantedAt) {
+            return false;
+        }
+
+        return Hilos::$db->secondFactorTrusts->actions->grantOrRenew(
+            $ask->sessionId,
+            $this->userId,
+            min($ask->trustedUntil, $ask->grantedAt + $days * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND),
+            $ask->grantedAt,
+        );
     }
 
     /**
@@ -2396,6 +2480,37 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * @param UserIdentityAddSignalData $ask Verified addition and the original session
+     * @return UserIdentityAddDoneSignalData Committed identity or refusal
+     * @throws InvalidFormatException When an outcome cannot satisfy its transport contract
+     */
+    private function addIdentity(UserIdentityAddSignalData $ask): UserIdentityAddDoneSignalData
+    {
+        try {
+            $this->refuseAnotherPerson($ask->userId, HilosSignalConstants::HILOS_USER_IDENTITY_ADD);
+            AddressablePerson::require($this->userId);
+            if (!isset(Hilos::$db->sessions[$ask->sessionId]) || Hilos::$db->sessions[$ask->sessionId]->userId !== $this->userId) {
+                throw new ValidationException('User session not found');
+            }
+
+            return UserIdentityAddDoneSignalData::ok($ask, new IdentityPersonEdits($this->userId)->add($ask->identity));
+        } catch (DuplicateValueException) {
+            return UserIdentityAddDoneSignalData::refused($ask, ActionRefusal::said(AuthMessages::INVALID_LINK));
+        } catch (WiringRefusal $failure) {
+            $this->logAgentError("Identity addition for #{$this->userId} refused by wiring: {$failure->getMessage()}");
+
+            return UserIdentityAddDoneSignalData::refused($ask, ActionRefusal::fromThrowable($failure));
+        } catch (Throwable $failure) {
+            $refusal = ActionRefusal::fromThrowable($failure);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Identity addition for #{$this->userId} failed: {$failure->getMessage()}");
+            }
+
+            return UserIdentityAddDoneSignalData::refused($ask, $refusal);
+        }
+    }
+
+    /**
      * Runs one edit of the person's own and builds its answer, a refusal included.
      *
      * An account that cannot be addressed - erased, or folded into someone else between the hop and
@@ -2528,6 +2643,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function restrictTrustsAnswer(UserSecondFactorTrustRestrictSignalData $ask): UserSecondFactorTrustRestrictDoneSignalData
     {
         try {
+            AccountMergeAccess::requireProtectionChange($this->userId);
             Hilos::$db->secondFactorTrusts->actions->applyRestrictions($this->userId, $ask->restrictionId);
 
             return UserSecondFactorTrustRestrictDoneSignalData::ok($ask);
@@ -2576,6 +2692,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @throws InvalidArgumentException When the confirmations' query is invalid, or the frame cannot be named or queued
      * @throws DatabaseException When a confirmation cannot be read, written or removed
      * @throws HilosException When a lookup, a write or the env read of the check or of the confirmation fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     private function proveSecondFactor(UserSecondFactorProveSignalData $ask): UserSecondFactorProveDoneSignalData
     {

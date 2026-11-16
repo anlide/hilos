@@ -87,7 +87,9 @@ use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
 use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
@@ -95,12 +97,14 @@ use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -614,6 +618,7 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserAddressVerifySignalData
                 || $frame instanceof UserPasskeyUseSignalData
                 || $frame instanceof UserPasswordResetSignalData
+                || $frame instanceof UserIdentityAddSignalData
                 || $frame instanceof UserPasswordChangeSignalData
                 || $frame instanceof UserEmailChangeSignalData
                 || $frame instanceof UserIdentityUnlinkSignalData
@@ -622,8 +627,9 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserSecondFactorRemoveSignalData
                 || $frame instanceof UserSecondFactorResetCancelSignalData
                 || $frame instanceof UserSecondFactorWaitWriteSignalData
-                || $frame instanceof UserSecondFactorEnrollDropSignalData
-                || $frame instanceof UserSecondFactorCodesDropSignalData
+                || $frame instanceof UserSecondFactorEnrollStartSignalData
+                || $frame instanceof UserSecondFactorCodesIssueSignalData
+                || $frame instanceof UserSecondFactorResetRequestSignalData
                 || $frame instanceof UserSecondFactorResetDueSignalData
                 || $frame instanceof UserSecondFactorResetRemindSignalData
                 || $frame instanceof UserSecondFactorUnlockSignalData
@@ -641,6 +647,7 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserAddressVerifyDoneSignalData
                 || $frame instanceof UserPasskeyUseDoneSignalData
                 || $frame instanceof UserPasswordResetDoneSignalData
+                || $frame instanceof UserIdentityAddDoneSignalData
                 || $frame instanceof UserPasswordChangeDoneSignalData
                 || $frame instanceof UserEmailChangeDoneSignalData
                 || $frame instanceof UserIdentityUnlinkDoneSignalData
@@ -649,8 +656,9 @@ abstract class IntegrationTestCase extends TestCase
                 || $frame instanceof UserSecondFactorRemoveDoneSignalData
                 || $frame instanceof UserSecondFactorResetCancelDoneSignalData
                 || $frame instanceof UserSecondFactorWaitWriteDoneSignalData
-                || $frame instanceof UserSecondFactorEnrollDropDoneSignalData
-                || $frame instanceof UserSecondFactorCodesDropDoneSignalData
+                || $frame instanceof UserSecondFactorEnrollStartDoneSignalData
+                || $frame instanceof UserSecondFactorCodesIssueDoneSignalData
+                || $frame instanceof UserSecondFactorResetRequestDoneSignalData
                 || $frame instanceof UserSecondFactorResetDueDoneSignalData
                 || $frame instanceof UserSecondFactorResetRemindDoneSignalData
                 || $frame instanceof UserSecondFactorUnlockDoneSignalData

@@ -673,6 +673,7 @@ final class MainPageMagicLinkTest extends IntegrationTestCase
                 HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
                 new ProfileAddPasswordConfirmActionDTO(self::EMAIL_ADD_CODE, self::PROFILE_PASSWORD),
             );
+            $this->deliverPersonAgentFrames();
 
             $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
             $this->assertNotNull($identity, 'The profile writes the password onto the same account');

@@ -192,12 +192,11 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
     }
 
     /**
-     * The holder creating over a standing pair writes nothing and says the pair stands: extending
-     * it is the person's agent's (HIL-1907).
+     * Raw creation by the personal owner leaves a standing pair for the atomic renewal action.
      *
      * @throws HilosException When a fixture row cannot be written or read
      */
-    public function testTheHolderCreatingOverAStandingPairWritesNothing(): void
+    public function testRawPersonalTrustLeavesAStandingPairForRenewal(): void
     {
         [$userId, $sessionId] = $this->seedSignedInPerson();
         $confirmedAt = TimeHelper::nowMs() - self::DAY_MS;
@@ -566,7 +565,7 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
     }
 
     /**
-     * Trusts a browser for a person the way a sign-in let through does: in the sessions library's frame.
+     * Seeds a browser trust in its personal owner's frame.
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person the browser is trusted for
@@ -577,8 +576,8 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
      */
     private function trustAs(int $sessionId, int $userId, int $until, int $grantedAt): bool
     {
-        return ExecutionContext::run(
-            new ExecutionFrame(agentId: $this->sessions->getId()),
+        return $this->asPerson(
+            $userId,
             static fn (): bool => Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $until, $grantedAt),
         );
     }
@@ -633,6 +632,10 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
     private function seedSignedInPerson(): array
     {
         $userId = self::seedPerson();
+        Database::sqlRun(
+            "INSERT INTO `hilos_second_factor` (`user_id`, `label`, `secret`, `created_at`, `confirmed_at`) VALUES (?, 'totp', ?, ?, ?)",
+            [$userId, 'JBSWY3DPEHPK3PXP', self::SESSION_CREATED_AT, self::SESSION_CREATED_AT],
+        );
 
         return [$userId, $this->seedBrowser(self::SESSION_TOKEN, $userId)];
     }

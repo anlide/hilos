@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\RobloxGameServer\Tests\Unit;
 
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Demo\RobloxGameServer\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\RobloxGameServer\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\RobloxGameServer\Agents\Hilos\DemoHilosDaemonAgent;
@@ -152,6 +154,25 @@ use ReflectionProperty;
 /** Database-free guards for the Roblox Game Server registries and their framework feature requirements. */
 final class RobloxGameServerTopologyRegistryTest extends TestCase
 {
+    public function testIdentityAdditionIsDeliveredToTheDeclaredOwnerAndCaller(): void
+    {
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::userId, Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::class, Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(
+            HilosAgentType::HILOS_USERS_LIBRARY,
+            Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertSame(
+            UserIdentityAddDoneSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE, Hilos::getAgentSignalIndexFields());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE, Hilos::getAgentSignalRoutes());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE, Hilos::getAgentSignalRoutes());
+        self::assertSame(HilosAgentType::HILOS_SESSIONS_LIBRARY, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_AGENTS_GONE]);
+    }
+
     /** Every page key names a concrete page with that same declared identity. */
     public function testPageRegistryEntriesAreConcreteAndConsistent(): void
     {

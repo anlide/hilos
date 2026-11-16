@@ -12,6 +12,7 @@ use Hilos\Auth\Library\DTO\OAuthCreateAccountActionDTO;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\OAuth\Agent\AbstractOAuthAgent;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
+use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripEndedSignalData;
 use Hilos\Auth\OAuth\OAuthAccountTokenSigner;
 use Hilos\Auth\OAuth\OAuthLinkTokenSigner;
@@ -26,6 +27,11 @@ use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Router\SignalDataInterface;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Auth\Library\Command\AuthMessages;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
@@ -166,12 +172,18 @@ final class OAuthProviderNameIntegrationTest extends ProfileIntegrationTestCase
         $ending = $this->ending();
         self::assertSame(OAuthResultSignalData::REASON_REAUTH_REQUIRED, $ending->reason);
         self::assertNotNull($ending->linkToken);
-        $commands->linkAfterReauth(self::ACCEPT_KEY, new LinkOAuthAfterReauthActionDTO($ending->linkToken));
+        $this->submitStep(HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH, new LinkOAuthAfterReauthActionDTO($ending->linkToken));
         self::assertSame($expected, $this->oauthRow()['provider_name']);
         self::assertSame(self::USER_ID, (int)$this->oauthRow()['user_id']);
 
-        $this->expectException(ValidationException::class);
-        $commands->linkAfterReauth(self::ACCEPT_KEY, new LinkOAuthAfterReauthActionDTO($ending->linkToken));
+        $this->drainSignals();
+        $this->submitStep(HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH, new LinkOAuthAfterReauthActionDTO($ending->linkToken));
+        $failures = array_values(array_filter($this->drainSignals(), static fn (SignalDTO $frame): bool =>
+            $frame->data instanceof WebSocketSignalData && $frame->data->data instanceof PageActionErrorSignalData));
+        self::assertCount(1, $failures);
+        self::assertSame(self::ACCEPT_KEY, $failures[0]->data->targetAcceptKey);
+        self::assertSame(HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH, $failures[0]->data->data->action);
+        self::assertSame(AuthMessages::INVALID_LINK, $failures[0]->data->data->reason);
     }
 
     public function testReauthLinkStillRefusesAnotherEmailsOwner(): void
@@ -192,8 +204,8 @@ final class OAuthProviderNameIntegrationTest extends ProfileIntegrationTestCase
         $payload = 'oauth-link|' . self::PROVIDER . '|subject|' . self::EMAIL . '|' . (time() + 600);
         $encoded = rtrim(strtr(base64_encode($payload), '+/', '-_'), '=');
         $signature = rtrim(strtr(base64_encode(hash_hmac('sha256', $encoded, self::SECRET, true)), '+/', '-_'), '=');
-        new OAuthCommands($this->library)->linkAfterReauth(
-            self::ACCEPT_KEY,
+        $this->submitStep(
+            HilosSignalConstants::HILOS_LINK_OAUTH_AFTER_REAUTH,
             new LinkOAuthAfterReauthActionDTO($encoded . '.' . $signature),
         );
         self::assertNull($this->oauthRow()['provider_name']);
@@ -498,7 +510,7 @@ final class OAuthProviderNameIntegrationTest extends ProfileIntegrationTestCase
      * @param ?string $expected Persisted provider name
      */
     #[DataProvider('names')]
-    public function testDirectProfileLinkStoresTheProviderNameWithOnlyCreateRights(?string $reported, ?string $expected): void
+    public function testDirectProfileLinkHandsTheProviderNameToItsPersonalOwner(?string $reported, ?string $expected): void
     {
         $agent = new class extends AbstractOAuthAgent {
             /** @return OAuthProviderRegistry No exchange needed to exercise its resolved completion */
@@ -510,15 +522,81 @@ final class OAuthProviderNameIntegrationTest extends ProfileIntegrationTestCase
         $agent->onStart();
         $id = $agent->getId();
         OwnershipDeclaration::claimDb($agent::class, $id);
-        $op = OAuthPendingLogin::create(
+        $agent->onSignalAgent(new AgentSignalData(new OAuthPendingLoginSignalData(
             self::ACCEPT_KEY, self::SESSION_TOKEN, self::PROVIDER, 'code', 'trip', OAuthPendingLogin::MODE_LINK, self::USER_ID,
-        );
+        )), 'library', HilosSignalConstants::HILOS_OAUTH_PENDING);
+        $pending = new ReflectionProperty(AbstractOAuthAgent::class, 'pending')->getValue($agent);
+        $op = $pending->get(self::ACCEPT_KEY);
         try {
             ExecutionContext::run(new ExecutionFrame(agentId: $id), static function () use ($agent, $op, $reported): void {
                 new ReflectionMethod(AbstractOAuthAgent::class, 'succeedOp')->invoke($agent, $op, new OAuthUserInfo('subject', null, $reported));
             });
+            self::assertTrue($pending->get(self::ACCEPT_KEY)->awaitingIdentityAdd);
+            self::assertSame([], Database::sql('SELECT `id` FROM `hilos_identity`')->rows());
+            $asks = [];
+            while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($frame->signalName->getName() === HilosSignalConstants::HILOS_USER_IDENTITY_ADD) {
+                    $asks[] = $frame;
+                }
+            }
+            self::assertCount(1, $asks);
+            $this->deliverToPerson($asks[0]);
+            $done = [];
+            while (($frame = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                if ($frame->signalName->getName() === HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE) {
+                    $done[] = $frame;
+                }
+            }
+            self::assertCount(1, $done);
+            $agent->onSignalAgent($done[0]->data, 'personal', HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE);
+            self::assertNull($pending->get(self::ACCEPT_KEY));
             self::assertSame($expected, $this->oauthRow()['provider_name']);
             self::assertSame(OAuthResultSignalData::REASON_LINK_OK, $this->ending()->reason);
+        } finally {
+            $agent->onStop();
+            TruthSourceRegistry::unregisterAgent($id);
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($id));
+        }
+    }
+
+    public function testIdentityEnqueueFailureClearsTheMarkedOpAndEndsTheLink(): void
+    {
+        $agent = new class extends AbstractOAuthAgent {
+            public ?bool $markedAtEnqueue = null;
+
+            protected function buildProviderRegistry(): OAuthProviderRegistry
+            {
+                return new OAuthProviderRegistry([]);
+            }
+
+            public function sendToAgent(string $signalName, SignalDataInterface $data): void
+            {
+                if ($data instanceof UserIdentityAddSignalData) {
+                    $pending = new ReflectionProperty(AbstractOAuthAgent::class, 'pending')->getValue($this);
+                    $this->markedAtEnqueue = $pending->get($data->acceptKey)->awaitingIdentityAdd;
+                    throw new RuntimeException('Queue unavailable');
+                }
+                parent::sendToAgent($signalName, $data);
+            }
+
+        };
+        $agent->onStart();
+        $id = $agent->getId();
+        OwnershipDeclaration::claimDb($agent::class, $id);
+        try {
+            $agent->onSignalAgent(new AgentSignalData(new OAuthPendingLoginSignalData(
+                self::ACCEPT_KEY, self::SESSION_TOKEN, self::PROVIDER, 'code', 'trip', OAuthPendingLogin::MODE_LINK, self::USER_ID,
+            )), 'library', HilosSignalConstants::HILOS_OAUTH_PENDING);
+            $pending = new ReflectionProperty(AbstractOAuthAgent::class, 'pending')->getValue($agent);
+            ExecutionContext::run(new ExecutionFrame(agentId: $id), static function () use ($agent, $pending): void {
+                new ReflectionMethod(AbstractOAuthAgent::class, 'succeedOp')->invoke(
+                    $agent, $pending->get(self::ACCEPT_KEY), new OAuthUserInfo('subject', null, self::NAME),
+                );
+            });
+            self::assertTrue($agent->markedAtEnqueue);
+            self::assertNull($pending->get(self::ACCEPT_KEY));
+            self::assertSame([], Database::sql('SELECT `id` FROM `hilos_identity`')->rows());
+            self::assertSame(OAuthResultSignalData::REASON_LINK_FAILED, $this->ending()->reason);
         } finally {
             $agent->onStop();
             TruthSourceRegistry::unregisterAgent($id);

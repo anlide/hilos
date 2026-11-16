@@ -7,6 +7,9 @@ namespace Hilos\Tests\Unit\Auth\OAuth;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Hilos\Runtime\State\Collection\OAuthPendingLogins;
+use Hilos\Runtime\RtRowValues;
 
 /**
  * Unit tests for the in-flight OAuth login RT op (HIL-281).
@@ -40,6 +43,7 @@ final class OAuthPendingLoginTest extends TestCase
                 OAuthPendingLogin::tripKeyHash => 'trip-hash-1',
                 OAuthPendingLogin::mode => OAuthPendingLogin::MODE_LOGIN,
                 OAuthPendingLogin::linkUserId => 0,
+                OAuthPendingLogin::awaitingIdentityAdd => false,
             ],
             $op->toArray(),
         );
@@ -81,6 +85,88 @@ final class OAuthPendingLoginTest extends TestCase
             OAuthPendingLogin::provider => 'stub',
             OAuthPendingLogin::code => 'oauth:stub',
         ]);
+    }
+
+    public function testAwaitingMarkerRoundTripsAndPatchesWithoutChangingTheExchange(): void
+    {
+        $op = OAuthPendingLogin::create('accept', 'session', 'oauth:stub', 'code', 'trip', OAuthPendingLogin::MODE_LINK, 7);
+        self::assertFalse($op->awaitingIdentityAdd);
+        $original = $op->toArray();
+        $op->applyDiff([OAuthPendingLogin::awaitingIdentityAdd => true, OAuthPendingLogin::code => 'ignored']);
+        $expected = [...$original, OAuthPendingLogin::awaitingIdentityAdd => true];
+        self::assertSame($expected, $op->toArray());
+        self::assertSame($expected, OAuthPendingLogin::fromRow($expected)->toArray());
+        $op->applyDiff([]);
+        self::assertSame($expected, $op->toArray());
+
+        $codec = $op->rowCodec();
+        $restored = RtRowValues::completed($codec->restore(RtRowValues::fromNative($original)->reader()));
+        RtRowValues::completed($codec->patch($restored, RtRowValues::fromNative([
+            OAuthPendingLogin::awaitingIdentityAdd => true,
+            OAuthPendingLogin::provider => 'ignored',
+        ])->reader()));
+        self::assertSame($expected, $restored->toArray());
+    }
+
+    /** @param array<string, mixed> $marker Missing or mistyped marker */
+    #[DataProvider('invalidAwaitingMarkers')]
+    public function testFullRowsRefuseMissingOrMistypedAwaitingMarkers(array $marker): void
+    {
+        $row = OAuthPendingLogin::create('accept', 'session', 'oauth:stub', 'code', 'trip')->toArray();
+        unset($row[OAuthPendingLogin::awaitingIdentityAdd]);
+        $row = [...$row, ...$marker];
+        try {
+            OAuthPendingLogin::fromRow($row);
+            self::fail('A full row must carry its boolean marker');
+        } catch (InvalidFormatException) {
+        }
+        $this->expectException(InvalidFormatException::class);
+        RtRowValues::completed(OAuthPendingLogin::create('a', 's', 'oauth:stub', 'c', 't')->rowCodec()->restore(
+            RtRowValues::fromNative($row)->reader(),
+        ));
+    }
+
+    /** @return iterable<string, array{array<string, mixed>}> Strict full-row boolean cases */
+    public static function invalidAwaitingMarkers(): iterable
+    {
+        yield 'missing' => [[]];
+        foreach ([null, 0, 1, 'false', []] as $index => $value) {
+            yield 'wrong type ' . $index => [[OAuthPendingLogin::awaitingIdentityAdd => $value]];
+        }
+    }
+
+    public function testInvalidPatchesLeaveBothSynchronousAndSegmentedRowsUnchanged(): void
+    {
+        $op = OAuthPendingLogin::create('accept', 'session', 'oauth:stub', 'code', 'trip');
+        $before = $op->toArray();
+        $diff = [OAuthPendingLogin::awaitingIdentityAdd => 'true'];
+        try {
+            $op->applyDiff($diff);
+            self::fail('A string cannot patch a boolean');
+        } catch (InvalidFormatException) {
+        }
+        self::assertSame($before, $op->toArray());
+        try {
+            RtRowValues::completed($op->rowCodec()->patch($op, RtRowValues::fromNative($diff)->reader()));
+            self::fail('Segmented patches must validate before replacement');
+        } catch (InvalidFormatException) {
+        }
+        self::assertSame($before, $op->toArray());
+    }
+
+    public function testCollectionMarksOnlyTheCurrentTrip(): void
+    {
+        $pending = OAuthPendingLogins::init();
+        $pending->add(OAuthPendingLogin::create('accept', 'session', 'oauth:stub', 'code', 'current'));
+        $pending->markAwaitingIdentityAdd('missing', 'current');
+        $pending->markAwaitingIdentityAdd('accept', 'old');
+        self::assertFalse($pending['accept']->awaitingIdentityAdd);
+        $pending->markAwaitingIdentityAdd('accept', 'current');
+        self::assertTrue($pending['accept']->awaitingIdentityAdd);
+        $pending->remove('accept');
+        $pending->add(OAuthPendingLogin::create('accept', 'session', 'oauth:stub', 'code', 'next'));
+        $pending->markAwaitingIdentityAdd('accept', 'current');
+        self::assertFalse($pending['accept']->awaitingIdentityAdd);
     }
 
     public function testRtCollectionKeyIsStable(): void

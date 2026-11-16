@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Flow\AuthFlowIntent;
@@ -34,6 +35,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -81,6 +83,7 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @throws ValidationException When the address, the account or the password refuses, or the person cannot be addressed
      * @throws InvalidArgumentException When the grant or the ask frame cannot be named or queued
      * @throws HilosException When the identity lookup fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function login(string $acceptKey, LoginActionDTO $dto): void
     {
@@ -95,6 +98,7 @@ final class PasswordCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::UNKNOWN_EMAIL);
         }
 
+        AccountMergeAccess::requireSignIn($userId);
         $identity = Hilos::$db->identities->findPasswordByUser($userId);
         if ($identity === null) {
             throw new ValidationException(AuthMessages::NO_PASSWORD);
@@ -104,7 +108,7 @@ final class PasswordCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::WRONG_PASSWORD);
         }
 
-        if ($identity->passwordNeedsRehash()) {
+        if (AccountMergeAccess::reservation($userId) === null && $identity->passwordNeedsRehash()) {
             $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_PASSWORD_REHASH, new UserPasswordRehashSignalData(
                 userId: $userId,
                 identityId: (int)$identity->id,
@@ -131,9 +135,12 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @param UserPasswordRehashSignalData $ask The ask the agent answered
      * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
      * @throws InvalidArgumentException When the grant frame cannot be named or queued
+     * @throws HilosException When the merge reservation cannot be read or refuses the operation
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function finishLogin(UserPasswordRehashSignalData $ask): void
     {
+        AccountMergeAccess::requireSignIn($ask->userId);
         $this->library->grantSession($this->acting($ask->acceptKey), $ask->userId, provenBy: StepUpMethod::PASSWORD);
     }
 

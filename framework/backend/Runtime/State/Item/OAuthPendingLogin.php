@@ -51,6 +51,7 @@ final class OAuthPendingLogin extends RtState
     public const string tripKeyHash = 'tripKeyHash';
     public const string mode = 'mode';
     public const string linkUserId = 'linkUserId';
+    public const string awaitingIdentityAdd = 'awaitingIdentityAdd';
 
     /** Fixed scalar schema; variable text is held in segmented pages. */
     private const array FIELD_TYPES = [
@@ -61,6 +62,7 @@ final class OAuthPendingLogin extends RtState
         self::tripKeyHash => 'text',
         self::mode => 'text',
         self::linkUserId => 'int',
+        self::awaitingIdentityAdd => 'bool',
     ];
 
     /** The synchronous property defaults, not defaults for missing incoming keys. */
@@ -72,10 +74,12 @@ final class OAuthPendingLogin extends RtState
         self::tripKeyHash => '',
         self::mode => self::MODE_LOGIN,
         self::linkUserId => 0,
+        self::awaitingIdentityAdd => false,
     ];
 
     /** Only the fields the existing applyDiff door accepts. */
     private const array PATCH_FIELDS = [
+        self::awaitingIdentityAdd => true,
     ];
 
     /** Accept key of the initiating connection; also this op's id and the failure target. */
@@ -138,6 +142,14 @@ final class OAuthPendingLogin extends RtState
         }
     }
 
+    /** The final identity material has been handed to the personal owner (HIL-1989). */
+    public bool $awaitingIdentityAdd {
+        get => $this->rowValues()[self::awaitingIdentityAdd] ?? self::FIELD_DEFAULTS[self::awaitingIdentityAdd];
+        set {
+            $this->setRowValue(self::awaitingIdentityAdd, $value);
+        }
+    }
+
     /**
      * Builds a pending-login op for a verified callback.
      *
@@ -167,6 +179,7 @@ final class OAuthPendingLogin extends RtState
         $instance->tripKeyHash = $tripKeyHash;
         $instance->mode = $mode;
         $instance->linkUserId = $linkUserId;
+        $instance->awaitingIdentityAdd = false;
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -187,6 +200,7 @@ final class OAuthPendingLogin extends RtState
         $instance->tripKeyHash = self::requireString($row, self::tripKeyHash);
         $instance->mode = self::requireString($row, self::mode);
         $instance->linkUserId = self::requireInt($row, self::linkUserId);
+        $instance->awaitingIdentityAdd = self::requireBool($row, self::awaitingIdentityAdd);
         $instance->markRtSyncBaseline();
 
         return $instance;
@@ -221,8 +235,19 @@ final class OAuthPendingLogin extends RtState
             self::tripKeyHash => $this->tripKeyHash,
             self::mode => $this->mode,
             self::linkUserId => $this->linkUserId,
+            self::awaitingIdentityAdd => $this->awaitingIdentityAdd,
         ];
     }
+
+    /**
+     * @param array<string, mixed> $diff Changed fields; all exchange coordinates remain untouched
+     * @throws InvalidFormatException When the awaiting marker is not a boolean
+     */
+    public function applyDiff(array $diff): void
+    {
+        $this->awaitingIdentityAdd = self::patchBool($diff, self::awaitingIdentityAdd, $this->awaitingIdentityAdd);
+    }
+
     /** @return RtRowCodec Segmented codec preserving this row's scalar contract */
     public function rowCodec(): RtRowCodec
     {

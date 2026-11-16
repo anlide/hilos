@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Exception\PasswordUnchangedException;
@@ -18,7 +19,6 @@ use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -33,7 +33,12 @@ use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime as StateProtectedModeRuntime;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\IdentityAddData;
+use Hilos\Users\DTO\PasswordIdentityAddData;
+use Hilos\Users\DTO\SmsIdentityAddData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -85,10 +90,13 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @throws ValidationException When the add is not confirmed, or the account already has a password or has no confirmed email
      * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
      * @throws HilosException When an identity read or write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function setPassword(string $acceptKey, ProfileSetPasswordActionDTO $dto): void
     {
-        $userId = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD)->userId;
+        $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
+        $userId = $acting->userId;
+        AccountMergeAccess::requireProtectionChange($userId);
         if (Hilos::$db->identities->findPasswordByUser($userId) !== null) {
             throw new ValidationException(AuthMessages::ALREADY_HAS_PASSWORD);
         }
@@ -97,8 +105,10 @@ final class IdentityCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::CONFIRM_EMAIL_FIRST);
         }
         PasswordPolicy::assertValid($dto->newPassword, false);
-        Hilos::$db->identities->createPasswordIdentity($userId, $email, $dto->newPassword, verified: true);
-        $this->library->announcePasswordUpdated($userId, ProfilePasswordUpdatedSignalData::MODE_ADDED);
+        $this->addIdentity($acting, new PasswordIdentityAddData(
+            $email,
+            Hilos::$db->identities->hashPassword($dto->newPassword),
+        ));
     }
 
     /**
@@ -120,10 +130,12 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @throws EmptyValueException When the normalized identifier is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws HilosException When the verification query fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function requestSmsAdd(string $acceptKey, ProfileAddSmsRequestActionDTO $dto): CodeSendReplyDTO
     {
         $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
 
         $phone = PhoneNumber::normalize($dto->phone);
         if ($phone === null) {
@@ -164,23 +176,18 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @throws ValidationException When the add is not confirmed, the flow or code is invalid, or the phone is already in use
      * @throws InvalidArgumentException When the completed-step frame cannot be queued
      * @throws HilosException When a verification or identity query fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirmSmsAdd(string $acceptKey, ProfileAddSmsConfirmActionDTO $dto): void
     {
         $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $phone = $this->addingTo($acting, StateHilosProfileFlow::STEP_PHONE_SENT);
         if (new VerificationService()->verify(VerificationType::SMS_ADD, $phone, $dto->code) !== $acting->userId) {
             throw new ValidationException(AuthMessages::INVALID_CODE);
         }
 
-        try {
-            Hilos::$db->identities->createSmsIdentity($acting->userId, $phone);
-        } catch (DuplicateValueException) {
-            throw new ValidationException(AuthMessages::PHONE_IN_USE);
-        } catch (EmptyValueException) {
-            throw new ValidationException(AuthMessages::INVALID_PHONE);
-        }
-        $this->library->announceProfileFlowStep($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, null);
+        $this->addIdentity($acting, new SmsIdentityAddData($phone));
     }
 
     /**
@@ -204,10 +211,12 @@ final class IdentityCommands extends AbstractLibraryCommands
      * @throws EmptyValueException When the normalized identifier is empty
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws HilosException When a verification or identity query fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function requestPasswordAdd(string $acceptKey, ProfileAddPasswordRequestActionDTO $dto): CodeSendReplyDTO
     {
         $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $userId = $acting->userId;
 
         $email = strtolower($dto->email);
@@ -265,10 +274,12 @@ final class IdentityCommands extends AbstractLibraryCommands
      *     invalid or expired, or the email is already in use
      * @throws InvalidArgumentException When the password-updated signal cannot be named or queued
      * @throws HilosException When a verification or identity query fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirmPasswordAdd(string $acceptKey, ProfileAddPasswordConfirmActionDTO $dto): void
     {
         $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
 
         // Nothing to be unchanged from: this flow only ever adds a password to an account
         // that has none, which is what the refusal below it enforces.
@@ -289,16 +300,49 @@ final class IdentityCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::EMAIL_IN_USE);
         }
 
-        try {
-            Hilos::$db->identities->createPasswordIdentity($acting->userId, $email, $dto->newPassword, verified: true);
-        } catch (DuplicateValueException) {
-            throw new ValidationException(AuthMessages::EMAIL_IN_USE);
-        } catch (EmptyValueException) {
-            throw new ValidationException(AuthMessages::INVALID_EMAIL);
-        }
+        $this->addIdentity($acting, new PasswordIdentityAddData(
+            $email,
+            Hilos::$db->identities->hashPassword($dto->newPassword),
+        ));
+    }
 
-        $this->library->announcePasswordUpdated($acting->userId, ProfilePasswordUpdatedSignalData::MODE_ADDED);
-        $this->library->announceProfileFlowStep($acting, StepUpOperationKey::ADD_SIGN_IN_METHOD, null);
+    /**
+     * @param UserIdentityAddSignalData $ask Completed addition
+     * @throws HilosException When the current session or completion frame is unavailable
+     */
+    public function finishAdd(UserIdentityAddSignalData $ask): void
+    {
+        if (in_array($ask->action, [HilosSignalConstants::PROFILE_SET_PASSWORD, HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM], true)) {
+            $this->library->announcePasswordUpdated($ask->userId, ProfilePasswordUpdatedSignalData::MODE_ADDED);
+        }
+        if ($ask->action === HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM
+            || $ask->action === HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM) {
+            $this->library->announceProfileFlowStep($this->actingUser($ask->acceptKey), StepUpOperationKey::ADD_SIGN_IN_METHOD, null);
+        }
+    }
+
+    /**
+     * @param ActingSession $acting Browser that proved this addition
+     * @param IdentityAddData $identity Verified material to create
+     * @throws HilosException When the session is gone or the ask cannot be queued
+     */
+    private function addIdentity(ActingSession $acting, IdentityAddData $identity): void
+    {
+        $session = Hilos::$db->sessions->findByToken($acting->sessionToken);
+        if ($session === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $this->library->askPersonAgent($acting->userId, HilosSignalConstants::HILOS_USER_IDENTITY_ADD, new UserIdentityAddSignalData(
+            userId: $acting->userId,
+            sessionId: (int)$session->id,
+            identity: $identity,
+            tripKeyHash: null,
+            replySignal: HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE,
+            acceptKey: $acting->acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
     }
 
     /**
@@ -348,10 +392,12 @@ final class IdentityCommands extends AbstractLibraryCommands
      *     addressed
      * @throws InvalidArgumentException When the ask frame cannot be named or queued
      * @throws HilosException When an identity lookup fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function unlink(string $acceptKey, int $identityId): void
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
 
         if (count(Hilos::$db->identities->listByUser($acting->userId)) <= 1) {
             throw new ValidationException('cannot remove your only sign-in method');

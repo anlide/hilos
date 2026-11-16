@@ -92,6 +92,9 @@ final class AuthFlowOutcome extends ActionReplyDTO
      */
     public const string CODE_ACCOUNT_ERASING = 'account_erasing';
 
+    /** The account is being merged; sign-in returns to the address field. */
+    public const string CODE_ACCOUNT_MERGING = 'account_merging';
+
     /** Wire key for the success flag. */
     private const string FIELD_OK = 'ok';
 

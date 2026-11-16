@@ -25,6 +25,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValueTooShortException;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Database\Database;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\SettingsAccessor;
@@ -87,7 +88,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         $this->confirmStepUp(StepUpOperationKey::ADD_SIGN_IN_METHOD);
 
         $before = TimeHelper::nowMs();
-        $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::NEW_PASSWORD));
+        $this->submitStep(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::NEW_PASSWORD));
 
         $identity = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, self::EMAIL);
         self::assertSame(self::USER_ID, $identity?->userId);
@@ -395,7 +396,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         );
 
         try {
-            $this->submit(
+            $this->submitStep(
                 HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
                 new ProfileAddPasswordConfirmActionDTO(self::CODE, '12345678'),
             );
@@ -408,7 +409,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         self::assertNotNull($this->verifications()->findActive(VerificationType::EMAIL_ADD, self::EMAIL, self::MAX_ATTEMPTS));
         self::assertSame([], $this->passwordUpdates());
 
-        $this->submit(
+        $this->submitStep(
             HilosSignalConstants::PROFILE_ADD_PASSWORD_CONFIRM,
             new ProfileAddPasswordConfirmActionDTO(self::CODE, self::NEW_PASSWORD),
         );
@@ -656,11 +657,13 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
             self::PHONE,
         );
 
-        $this->assertRefused(
-            AuthMessages::PHONE_IN_USE,
-            HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM,
-            new ProfileAddSmsConfirmActionDTO(self::CODE),
-        );
+        $this->submitStep(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::CODE));
+        $failures = array_values(array_filter($this->drainSignals(), static fn ($signal): bool =>
+            $signal->data instanceof WebSocketSignalData && $signal->data->data instanceof PageActionErrorSignalData));
+        self::assertCount(1, $failures);
+        self::assertSame(self::ACCEPT_KEY, $failures[0]->data->targetAcceptKey);
+        self::assertSame(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, $failures[0]->data->data->action);
+        self::assertSame(AuthMessages::PHONE_IN_USE, $failures[0]->data->data->reason);
 
         self::assertSame([], self::rowsOf(self::USER_ID));
         self::assertSame([[IdentityType::SMS, self::PHONE, true]], self::rowsOf(self::OTHER_USER_ID));
@@ -757,8 +760,8 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
 
         $this->submitStep(HilosSignalConstants::PROFILE_ADD_SMS_REQUEST, new ProfileAddSmsRequestActionDTO(self::PHONE));
         $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
-        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::CODE));
-        $this->submit(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::NEW_PASSWORD));
+        $this->submitStep(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::CODE));
+        $this->submitStep(HilosSignalConstants::PROFILE_SET_PASSWORD, new ProfileSetPasswordActionDTO(self::NEW_PASSWORD));
 
         self::assertSame(
             [
@@ -788,7 +791,7 @@ final class ProfileSignInMethodsIntegrationTest extends ProfileIntegrationTestCa
         self::assertNotNull($this->verifications()->findActive(VerificationType::SMS_ADD, self::PHONE, self::MAX_ATTEMPTS));
 
         $this->seedCode(VerificationType::SMS_ADD, self::PHONE, self::USER_ID, self::CODE);
-        $this->submit(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::CODE));
+        $this->submitStep(HilosSignalConstants::PROFILE_ADD_SMS_CONFIRM, new ProfileAddSmsConfirmActionDTO(self::CODE));
 
         self::assertSame([[IdentityType::SMS, self::PHONE, true]], self::rowsOf(self::USER_ID));
     }

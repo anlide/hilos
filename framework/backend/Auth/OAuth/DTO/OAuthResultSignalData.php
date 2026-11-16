@@ -79,6 +79,9 @@ final class OAuthResultSignalData extends BaseDTO implements SignalDataInterface
     /** The provider proved the person, whose account's erasure has begun: nobody is signed in (HIL-1939). */
     public const string REASON_ACCOUNT_ERASING = 'account_erasing';
 
+    /** The account is being merged; no account or stage detail leaves the server. */
+    public const string REASON_ACCOUNT_MERGING = 'account_merging';
+
     /**
      * @param string $acceptKey Initiating connection accept key the signal targets
      * @param string $provider Provider key the login was attempted against

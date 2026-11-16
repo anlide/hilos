@@ -58,7 +58,6 @@ class DbWriterTransitionCatalog
         $person = $this->role($hilosClass, HilosAgentType::HILOS_USER);
         $holder = $this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY);
         $notifications = $this->role($hilosClass, HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY);
-        $oauth = $this->role($hilosClass, HilosAgentType::HILOS_OAUTH);
         $definitions = [];
 
         $definitions[HilosDbContext::users] = $this->states(
@@ -70,10 +69,10 @@ class DbWriterTransitionCatalog
         foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials,
             HilosDbContext::secondFactors, HilosDbContext::secondFactorBackupCodes,
             HilosDbContext::secondFactorResets] as $collection) {
-            $base = [...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
-                ...$this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Update, TruthSourceOperation::Remove)];
-            if ($collection === HilosDbContext::identities) {
-                $base = [...$base, ...$this->claim($oauth, DbWriterClaimWidth::Whole, TruthSourceOperation::Add)];
+            $base = $this->claim($person, DbWriterClaimWidth::Set,
+                TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove);
+            if (in_array($collection, [HilosDbContext::identities, HilosDbContext::passkeyCredentials], true)) {
+                $base = [...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add), ...$base];
             }
             $mergeOperations = match ($collection) {
                 HilosDbContext::passkeyCredentials => [TruthSourceOperation::Update],
@@ -92,8 +91,8 @@ class DbWriterTransitionCatalog
         );
 
         $definitions[HilosDbContext::secondFactorTrusts] = $this->states(
-            [...$this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
-                ...$this->claim($person, DbWriterClaimWidth::Set, TruthSourceOperation::Update, TruthSourceOperation::Remove)],
+            $this->claim($person, DbWriterClaimWidth::Set,
+                TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove),
             [self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
         );
 

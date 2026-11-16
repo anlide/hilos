@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use JsonException;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\StepUp\DTO\StepUpConfirmActionDTO;
 use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
@@ -63,6 +65,7 @@ final class StepUpCommands extends AbstractLibraryCommands
      * @throws ValidationException When the operation is unknown, impersonated, has no proof, or reaches the send cap
      * @throws RandomException When a verification code or WebAuthn challenge cannot be drawn
      * @throws HilosException When standing, settings, account proofs, verification delivery, or WebAuthn configuration fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function start(string $acceptKey, StepUpStartActionDTO $dto): StepUpOpeningReplyDTO
     {
@@ -83,6 +86,7 @@ final class StepUpCommands extends AbstractLibraryCommands
         }
 
         $acting = $this->confirming($acting, $dto->operation);
+        AccountMergeAccess::requireSignIn($acting->userId);
         $target = new StepUpMethodResolver()->resolve($acting->userId);
         if ($target === null) {
             throw new ValidationException(StepUpMessages::NOTHING_TO_CONFIRM_WITH);
@@ -136,6 +140,7 @@ final class StepUpCommands extends AbstractLibraryCommands
      * @throws ActionAccountFrozenException When the signed-in person is frozen and the operation is not an exit
      * @throws ValidationException When the operation, method, or proof is no longer valid, or the confirmer was erased or merged
      * @throws HilosException When standing, account proofs, verification, WebAuthn, env, or confirmation reads fail, or the ask cannot be queued
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirm(string $acceptKey, StepUpConfirmActionDTO $dto): void
     {
@@ -155,6 +160,7 @@ final class StepUpCommands extends AbstractLibraryCommands
         }
 
         $acting = $this->confirming($acting, $dto->operation);
+        AccountMergeAccess::requireSignIn($acting->userId);
         $target = new StepUpMethodResolver()->resolve($acting->userId);
         if ($target === null || $target->method !== $dto->method) {
             throw new ValidationException(StepUpMessages::EXPIRED);

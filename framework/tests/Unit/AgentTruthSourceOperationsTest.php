@@ -188,39 +188,31 @@ final class AgentTruthSourceOperationsTest extends TestCase
         $this->assertNotContains(HilosDbContext::accountOperationResults, $reads);
     }
 
-    /**
-     * The library only brings the second factor into being: every edit of it is the person's agent's (HIL-1406).
-     *
-     * An enrolment is only created: the unfinished one before it is dropped by the person's agent
-     * (HIL-1903). A set of backup codes is only created too: the one it replaces is dropped by the
-     * person's agent before (HIL-1904). A removal is only opened here. The settings row of a person
-     * is the agent's to create, so the library holds no claim on it and only reads it.
-     */
-    public function testLibraryAgentOnlyCreatesTheSecondFactor(): void
+    /** The personal owner creates and changes the factor; the library reads only. */
+    public function testLibraryAgentReadsTheSecondFactorWithoutWriting(): void
     {
         $claims = OwnershipDeclaration::dbCollectionsOf(AgentTruthSourceOperationsTestLibrary::class);
 
-        $this->assertTrue($claims[HilosDbContext::secondFactors]->allows(TruthSourceOperation::Add));
-        $this->assertFalse($claims[HilosDbContext::secondFactors]->allows(TruthSourceOperation::Update));
-        $this->assertFalse($claims[HilosDbContext::secondFactors]->allows(TruthSourceOperation::Remove));
-        $this->assertTrue($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Add));
-        $this->assertFalse($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Update));
-        $this->assertFalse($claims[HilosDbContext::secondFactorBackupCodes]->allows(TruthSourceOperation::Remove));
-        $this->assertTrue($claims[HilosDbContext::secondFactorResets]->allows(TruthSourceOperation::Add));
-        $this->assertFalse($claims[HilosDbContext::secondFactorResets]->allows(TruthSourceOperation::Update));
-        $this->assertFalse($claims[HilosDbContext::secondFactorResets]->allows(TruthSourceOperation::Remove));
+        $this->assertArrayNotHasKey(HilosDbContext::secondFactors, $claims);
+        $this->assertContains(HilosDbContext::secondFactors, AgentTruthSourceOperationsTestLibrary::READS_DB);
+        $this->assertArrayNotHasKey(HilosDbContext::secondFactorBackupCodes, $claims);
+        $this->assertContains(HilosDbContext::secondFactorBackupCodes, AgentTruthSourceOperationsTestLibrary::READS_DB);
+        $this->assertArrayNotHasKey(HilosDbContext::secondFactorResets, $claims);
+        $this->assertContains(HilosDbContext::secondFactorResets, AgentTruthSourceOperationsTestLibrary::READS_DB);
         $this->assertArrayNotHasKey(HilosDbContext::secondFactorSettings, $claims);
         $this->assertContains(HilosDbContext::secondFactorSettings, AgentTruthSourceOperationsTestLibrary::READS_DB);
     }
 
-    /** The OAuth agent links a provider account and edits none it linked before (HIL-1405). */
-    public function testOAuthAgentOnlyCreatesALink(): void
+    /** OAuth reads the live session and reservation; its final Add belongs to the personal owner. */
+    public function testOAuthAgentReadsWithoutAnIdentityWriteClaim(): void
     {
-        $claims = OwnershipDeclaration::dbCollectionsOf(AbstractOAuthAgent::class);
-
-        $this->assertTrue($claims[HilosDbContext::identities]->allows(TruthSourceOperation::Add));
-        $this->assertFalse($claims[HilosDbContext::identities]->allows(TruthSourceOperation::Update));
-        $this->assertFalse($claims[HilosDbContext::identities]->allows(TruthSourceOperation::Remove));
+        $this->assertArrayNotHasKey(HilosDbContext::identities, OwnershipDeclaration::dbCollectionsOf(AbstractOAuthAgent::class));
+        $this->assertSame([
+            HilosDbContext::sessions,
+            HilosDbContext::accountOperations,
+            HilosDbContext::accountOperationAssignments,
+            HilosDbContext::accountOperationResults,
+        ], AbstractOAuthAgent::READS_DB);
     }
 
     /**

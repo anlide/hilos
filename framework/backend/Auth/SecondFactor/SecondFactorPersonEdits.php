@@ -4,20 +4,31 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\SecondFactor;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\AuthenticatorName;
+use Hilos\Core\Exception\ValidationException;
+use Hilos\Users\AddressablePerson;
+use Hilos\Users\DTO\SecondFactorEnrollmentData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestDoneSignalData;
+use Hilos\Utils\Helpers\RandomHelper;
+use Random\RandomException;
+use Throwable;
 use Hilos\Constants\EnvConstants;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Database\Database;
 use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Users\Agent\AbstractUserAgent;
-use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -33,6 +44,7 @@ use Hilos\Users\DTO\UserSecondFactorUnlockSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
+use JsonException;
 
 /**
  * The edits of one person's second factor, written by that person's agent (HIL-1406).
@@ -42,9 +54,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  * confirmed or removed, a backup code burned, the wrong app codes counted and the lock they put or
  * an operator lifted, the removal wait chosen, a removal canceled, carried out or marked reminded,
  * and - when the factor goes whole - the trust of every browser that skipped it (HIL-1407).
- * Creating - an enrolment started, a set of backup codes issued, a removal asked for - stays with
- * the library; the unfinished enrolment a new start replaces is dropped here, on the library's
- * frame (HIL-1903), and so is the set of backup codes a new issue replaces (HIL-1904).
+ * Creation and replacement run here too: the new enrollment, backup codes and delayed reset
+ * commit before their material is returned to the requesting library.
  *
  * A check that reads the set is made here, in the turn that writes: the code is the write itself,
  * and whether an app is the person's and the last one is asked where the app is deleted, so two
@@ -62,6 +73,9 @@ final class SecondFactorPersonEdits
     /** Longest name an authenticator may have, as the column holds it. */
     private const int LABEL_MAX = 64;
 
+    /** Bytes of a reset cancel token. */
+    private const int TOKEN_BYTES = 32;
+
     /**
      * @param int $userId Person whose set is written, the index of the agent
      */
@@ -74,16 +88,28 @@ final class SecondFactorPersonEdits
      *
      * Whoever shows the factor has not lost it, which is why a right code on the sign-in step cancels
      * a standing removal; the profile and the confirmation of an operation leave it.
+     * A merge reservation keeps the removal standing while pre-fact proof still spends and counts normally.
+     * Profile enrollment and code renewal refuse a reservation before consuming their proof.
      *
      * @param UserSecondFactorProveSignalData $ask The code and where it was typed
      * @return UserSecondFactorProveDoneSignalData Whether it proved the person, what it counted, and what it canceled
+     * @throws ValidationException When a merge holds a profile enrollment or code renewal
      * @throws HilosException When a lookup, a write or the env read fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function prove(UserSecondFactorProveSignalData $ask): UserSecondFactorProveDoneSignalData
     {
+        AccountMergeAccess::requireSignIn($this->userId);
+        if (in_array($ask->action, [
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
+        ], true)) {
+            AccountMergeAccess::requireProtectionChange($this->userId);
+        }
         $check = $this->check($ask->code, $ask->backupCode);
         $resetCanceled = $check->proven
             && $ask->cancelReset
+            && AccountMergeAccess::reservation($this->userId) === null
             && Hilos::$db->secondFactorResets->liveOf($this->userId)?->actions->cancel() === true;
 
         return new UserSecondFactorProveDoneSignalData(
@@ -107,9 +133,11 @@ final class SecondFactorPersonEdits
      * @param UserSecondFactorEnrollConfirmSignalData $ask The enrolment, its first code and its name
      * @return UserSecondFactorEnrollConfirmDoneSignalData Whether the app is confirmed, and whether it is the first
      * @throws HilosException When a lookup, a write or the env read fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function enrollConfirm(UserSecondFactorEnrollConfirmSignalData $ask): UserSecondFactorEnrollConfirmDoneSignalData
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         $pending = Hilos::$db->secondFactors->unconfirmedOf($this->userId);
         $ttl = Hilos::$env[EnvConstants::HILOS_VERIFICATION_TTL_SEC]->int();
         if (
@@ -141,9 +169,11 @@ final class SecondFactorPersonEdits
      * @param UserSecondFactorRemoveSignalData $ask The app and the code proving the person
      * @return UserSecondFactorRemoveDoneSignalData Whether the app went, and whether the factor went whole
      * @throws HilosException When a lookup, a write, the env read or the transaction fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function remove(UserSecondFactorRemoveSignalData $ask): UserSecondFactorRemoveDoneSignalData
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         $factors = Hilos::$db->secondFactors->confirmedOf($this->userId);
         $target = null;
         foreach ($factors as $factor) {
@@ -203,9 +233,11 @@ final class SecondFactorPersonEdits
      * @param UserSecondFactorResetCancelSignalData $ask The removal to cancel, or none for the standing one
      * @return UserSecondFactorResetCancelDoneSignalData Whether this ask canceled it
      * @throws HilosException When the lookup or the write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function cancelReset(UserSecondFactorResetCancelSignalData $ask): UserSecondFactorResetCancelDoneSignalData
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         $reset = $ask->resetId === null
             ? Hilos::$db->secondFactorResets->liveOf($this->userId)
             : Hilos::$db->secondFactorResets[$ask->resetId] ?? null;
@@ -223,9 +255,11 @@ final class SecondFactorPersonEdits
      * @param UserSecondFactorWaitWriteSignalData $ask The wait asked for
      * @return UserSecondFactorWaitWriteDoneSignalData The wait stored
      * @throws HilosException When the lookup, the settings read or the write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function writeWait(UserSecondFactorWaitWriteSignalData $ask): UserSecondFactorWaitWriteDoneSignalData
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         $wait = SecondFactorResetWait::of($this->userId)->withRequested(
             $ask->days,
             SecondFactorPolicy::current(),
@@ -242,46 +276,100 @@ final class SecondFactorPersonEdits
     }
 
     /**
-     * Drops every unfinished enrolment of the person; the confirmed authenticators stay.
+     * Replaces the person's unfinished enrollment in one transaction, leaving confirmed apps intact.
      *
-     * An enrolment never confirmed is an abandoned QR code, and the library asks for it to go before it
-     * opens the next one. Nothing to drop is an answer like any other.
-     *
-     * @param UserSecondFactorEnrollDropSignalData $ask The drop asked for
-     * @return UserSecondFactorEnrollDropDoneSignalData The enrolments dropped
-     * @throws HilosException When the lookup or a delete fails
+     * @param UserSecondFactorEnrollStartSignalData $ask Enrollment requested
+     * @return UserSecondFactorEnrollStartDoneSignalData Committed enrollment material
+     * @throws HilosException When addressability, reservation, a lookup or a write refuses
+     * @throws JsonException When a saved merge result cannot be decoded
+     * @throws RandomException When a secret cannot be generated
      */
-    public function dropEnrolment(UserSecondFactorEnrollDropSignalData $ask): UserSecondFactorEnrollDropDoneSignalData
+    public function startEnrolment(UserSecondFactorEnrollStartSignalData $ask): UserSecondFactorEnrollStartDoneSignalData
     {
-        Hilos::$db->secondFactors->actions->dropUnfinished($this->userId);
-
-        return new UserSecondFactorEnrollDropDoneSignalData($ask, null, null, null);
-    }
-
-    /**
-     * Drops the person's whole set of backup codes, the spent ones and the unspent alike.
-     *
-     * The library asks for the set to go before it issues the next one, so the person never holds two
-     * sets. The rows go in one transaction of this agent: a failure leaves the set as it was. Nothing to
-     * drop is an answer like any other.
-     *
-     * @param UserSecondFactorCodesDropSignalData $ask The drop asked for
-     * @return UserSecondFactorCodesDropDoneSignalData The set dropped
-     * @throws HilosException When the lookup, a delete or the transaction fails
-     */
-    public function dropCodes(UserSecondFactorCodesDropSignalData $ask): UserSecondFactorCodesDropDoneSignalData
-    {
+        AddressablePerson::require($this->userId);
+        AccountMergeAccess::requireProtectionChange($this->userId);
         Database::transactionStart();
         try {
-            Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($this->userId);
+            $secret = Totp::newSecret();
+            $account = Hilos::$db->identities->findVerifiedEmailByUser($this->userId)
+                ?? Hilos::$db->identities->findVerifiedSmsByUser($this->userId)
+                ?? (string)$this->userId;
+            $uri = OtpAuthUri::build(AuthenticatorName::fromEnv(), $account, $secret);
+            Hilos::$db->secondFactors->actions->dropUnfinished($this->userId);
+            $factor = Hilos::$db->secondFactors->actions->startEnrolment($this->userId, SecondFactorMessages::DEFAULT_LABEL, $secret);
+            $enrollment = new SecondFactorEnrollmentData((int)$factor->id, $secret, $uri);
             Database::transactionCommit();
-        } catch (HilosException $failure) {
+        } catch (Throwable $failure) {
             Database::transactionRollbackSilent();
-
             throw $failure;
         }
 
-        return new UserSecondFactorCodesDropDoneSignalData($ask, null, null, null);
+        return new UserSecondFactorEnrollStartDoneSignalData($ask, $enrollment, null, null, null);
+    }
+
+    /**
+     * Replaces every spent and unspent backup code atomically.
+     *
+     * @param UserSecondFactorCodesIssueSignalData $ask Replacement requested
+     * @return UserSecondFactorCodesIssueDoneSignalData Committed display codes
+     * @throws HilosException When addressability, reservation, a lookup or a write refuses
+     * @throws JsonException When a saved merge result cannot be decoded
+     * @throws RandomException When codes cannot be generated
+     */
+    public function issueCodes(UserSecondFactorCodesIssueSignalData $ask): UserSecondFactorCodesIssueDoneSignalData
+    {
+        AddressablePerson::require($this->userId);
+        AccountMergeAccess::requireProtectionChange($this->userId);
+        Database::transactionStart();
+        try {
+            $codes = BackupCodeGenerator::generate(SecondFactorPolicy::current()->backupCodes);
+            Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($this->userId);
+            Hilos::$db->secondFactorBackupCodes->actions->issueSet($this->userId, $codes);
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            Database::transactionRollbackSilent();
+            throw $failure;
+        }
+
+        return new UserSecondFactorCodesIssueDoneSignalData($ask, array_map(BackupCodeGenerator::display(...), $codes), null, null, null);
+    }
+
+    /**
+     * Opens a delayed reset and sends its cancel link only after the transaction commits.
+     *
+     * @param UserSecondFactorResetRequestSignalData $ask Reset requested
+     * @return UserSecondFactorResetRequestDoneSignalData Committed reset id and epoch milliseconds
+     * @throws HilosException When addressability, reservation, a lookup, write or notification refuses
+     * @throws JsonException When a saved merge result cannot be decoded
+     * @throws RandomException When the cancel token cannot be generated
+     */
+    public function requestReset(UserSecondFactorResetRequestSignalData $ask): UserSecondFactorResetRequestDoneSignalData
+    {
+        AddressablePerson::require($this->userId);
+        AccountMergeAccess::requireProtectionChange($this->userId);
+        Database::transactionStart();
+        try {
+            $standing = Hilos::$db->secondFactorResets->liveOf($this->userId);
+            if ($standing !== null) {
+                throw new ValidationException(sprintf(
+                    SecondFactorMessages::RESET_ALREADY_REQUESTED,
+                    gmdate('Y-m-d H:i:s', intdiv($standing->effectiveAt, TimeConstants::MS_PER_SECOND)),
+                ));
+            }
+            $nowMs = TimeHelper::nowMs();
+            $effectiveAtMs = $nowMs + SecondFactorResetWait::of($this->userId)->effectiveDays(SecondFactorPolicy::current(), $nowMs)
+                * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+            $token = RandomHelper::secureHex(self::TOKEN_BYTES);
+            $reset = Hilos::$db->secondFactorResets->actions->request($this->userId, $effectiveAtMs, $token);
+            $resetId = (int)$reset->id;
+            Database::transactionCommit();
+        } catch (Throwable $failure) {
+            Database::transactionRollbackSilent();
+            throw $failure;
+        }
+        SecondFactorResetNotifier::requested($this->userId, $token, $effectiveAtMs);
+
+        return new UserSecondFactorResetRequestDoneSignalData($ask, $resetId, $effectiveAtMs, null, null, null);
     }
 
     /**
@@ -294,9 +382,11 @@ final class SecondFactorPersonEdits
      * @param UserSecondFactorResetDueSignalData $request The removal that is due
      * @return UserSecondFactorResetDueDoneSignalData Whether this frame carried it out
      * @throws HilosException When the lookup, a write or the transaction fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function carryOutReset(UserSecondFactorResetDueSignalData $request): UserSecondFactorResetDueDoneSignalData
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         if (!isset(Hilos::$db->secondFactorResets[$request->resetId])
             || Hilos::$db->secondFactorResets[$request->resetId]->userId !== $this->userId) {
             return new UserSecondFactorResetDueDoneSignalData($request, false, null, null, null);
@@ -327,9 +417,11 @@ final class SecondFactorPersonEdits
      * @param UserSecondFactorResetRemindSignalData $request The removal and the bound
      * @return UserSecondFactorResetRemindDoneSignalData Whether this frame put the mark
      * @throws HilosException When the lookup or the write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function remind(UserSecondFactorResetRemindSignalData $request): UserSecondFactorResetRemindDoneSignalData
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         if (!isset(Hilos::$db->secondFactorResets[$request->resetId])) {
             return new UserSecondFactorResetRemindDoneSignalData($request, false, null, null, null);
         }
@@ -349,9 +441,11 @@ final class SecondFactorPersonEdits
      * @param UserSecondFactorUnlockSignalData $request The parked command
      * @return UserSecondFactorUnlockDoneSignalData End of the lifted lock when one was in force
      * @throws HilosException When the lookup or the write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function unlock(UserSecondFactorUnlockSignalData $request): UserSecondFactorUnlockDoneSignalData
     {
+        AccountMergeAccess::requireProtectionChange($this->userId);
         $lockedUntil = Hilos::$db->secondFactorSettings->actions->unlockAppCodes($this->userId);
 
         return new UserSecondFactorUnlockDoneSignalData(

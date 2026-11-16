@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\Library\Command;
 
 use Closure;
-use Hilos\Auth\AuthenticatorName;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
@@ -13,7 +13,6 @@ use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\DTO\ConfirmSecondFactorActionDTO;
 use Hilos\Auth\Library\DTO\SecondFactorResetCancelLinkActionDTO;
 use Hilos\Auth\Library\DTO\SecondFactorSetupConfirmActionDTO;
-use Hilos\Auth\SecondFactor\BackupCodeGenerator;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesRenewActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorCodesShowActionDTO;
 use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorEnrollConfirmActionDTO;
@@ -23,7 +22,6 @@ use Hilos\Auth\SecondFactor\DTO\ProfileSecondFactorResetWaitSetActionDTO;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorProfileReplyDTO;
 use Hilos\Auth\SecondFactor\DTO\SecondFactorStepData;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
-use Hilos\Auth\SecondFactor\OtpAuthUri;
 use Hilos\Auth\SecondFactor\SecondFactorLockNotifier;
 use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
@@ -33,7 +31,6 @@ use Hilos\Auth\SecondFactor\SecondFactorResetNotifier;
 use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Auth\SecondFactor\SecondFactorResetWait;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
-use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
@@ -42,15 +39,18 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Database\Database;
-use Hilos\Database\View\Item\SecondFactorReset;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\AddressablePerson;
-use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -60,10 +60,10 @@ use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetDueDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetRemindDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorWaitWriteSignalData;
-use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Utils\Helpers\TimeHelper;
 use Hilos\Utils\Logger;
 use Random\RandomException;
+use JsonException;
 use Throwable;
 
 /**
@@ -86,10 +86,8 @@ use Throwable;
  * ceiling (HIL-1285) and the lock it puts - an app confirmed or disconnected, a removal canceled,
  * the wait chosen. The browser action is resumed on the agent's answer: the after... methods do
  * what follows any answer - a wrong code told to the holder, a lock or a canceled removal mailed -
- * and the finish... methods continue the action that asked. What is created stays here: an
- * enrolment is started on the answer of the person's agent, which first drops the enrolment the
- * person left unfinished (HIL-1903); a set of backup codes is issued on such an answer too, the
- * agent having first dropped the set the person had (HIL-1904); and a removal is asked for.
+ * and the finish... methods continue the action that asked. Enrollment and backup-code replacement
+ * and delayed reset creation commit at the personal owner before their result returns here.
  *
  * The profile half works on a signed-in person, whose id comes off the session: every action
  * but the first enrolment, the wait and the removal starts with a code, because a stolen live
@@ -102,9 +100,6 @@ use Throwable;
  */
 final class SecondFactorCommands extends AbstractLibraryCommands
 {
-    /** Bytes of a cancel link's token. */
-    private const int TOKEN_BYTES = 32;
-
     /**
      * Checks the code of a sign-in held on its second factor; the person's agent checks it.
      *
@@ -145,7 +140,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * Opens the enrolment an administrator requires; the person's agent first drops the unfinished one.
      *
      * The enrolment is started, and its secret answered once, on the agent's answer
-     * ({@see finishEnrollDrop()}).
+     * ({@see finishEnrollStart()}).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @return ?AuthFlowOutcome Always null: answered on the person's agent's answer, or by the holder
@@ -153,6 +148,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ValidationException When no wait stands on the enrolment screen, or the person can no longer be addressed
      * @throws LogicException When no action is being dispatched
      * @throws HilosException When a lookup or a frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function setupStart(string $acceptKey): ?AuthFlowOutcome
     {
@@ -162,7 +158,8 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             return null;
         }
 
-        $this->askEnrollDrop($userId, $acceptKey);
+        AccountMergeAccess::requireProtectionChange($userId);
+        $this->askEnrollStart($userId, $acceptKey);
 
         return null;
     }
@@ -179,6 +176,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValidationException When no wait stands on the enrolment, or the person can no longer be addressed
      * @throws HilosException When a lookup or a frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function setupConfirm(string $acceptKey, SecondFactorSetupConfirmActionDTO $dto): void
     {
@@ -187,6 +185,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             return;
         }
 
+        AccountMergeAccess::requireProtectionChange($userId);
         $this->askEnrollConfirm($userId, $acceptKey, null, $dto->code, $dto->label);
     }
 
@@ -197,6 +196,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws ValidationException When no wait stands on the last screen of an enrolment
      * @throws HilosException When a lookup or a frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function setupFinish(string $acceptKey): void
     {
@@ -220,6 +220,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ValidationException When no wait stands on the code step, or a removal already stands
      * @throws RandomException When the cancel token cannot be drawn
      * @throws HilosException When a lookup, a write or a frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function resetRequest(string $acceptKey): void
     {
@@ -229,19 +230,8 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             return;
         }
 
-        $reset = $this->requestReset($userId);
-        $this->publishState($userId);
-        $this->library->announceSecondFactorCanceled(
-            $acting,
-            AuthFlowOutcome::moveToSecondFactor(
-                AuthFlowStep::SECOND_FACTOR_RESET_REQUESTED,
-                new SecondFactorStepData(
-                    SecondFactorPolicy::current()->trustDeviceDays(),
-                    $reset->effectiveAt,
-                ),
-                null,
-            ),
-        );
+        AccountMergeAccess::requireProtectionChange($userId);
+        $this->askResetRequest($userId, $acceptKey);
     }
 
     /**
@@ -256,6 +246,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @param SecondFactorResetCancelLinkActionDTO $dto Token the link carried
      * @throws ValidationException When the link names no standing removal of a person that can be addressed
      * @throws HilosException When the lookup or the frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function resetCancelLink(string $acceptKey, SecondFactorResetCancelLinkActionDTO $dto): void
     {
@@ -266,6 +257,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
             throw new ValidationException(SecondFactorMessages::LINK_DEAD);
         }
 
+        AccountMergeAccess::requireProtectionChange($reset->userId);
         try {
             AddressablePerson::require($reset->userId);
         } catch (ValidationException) {
@@ -274,91 +266,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
         $this->askResetCancel($reset->userId, $acceptKey, (int)$reset->id);
     }
 
-    /**
-     * Opens a delayed removal of a person's second factor and announces it.
-     *
-     * Shared by the code step and the profile. The wait is the person's own, taken as it stands
-     * at the moment of asking. The row and its token commit together, and only then does the
-     * first announcement carry the cancel link.
-     *
-     * @param int $userId Person whose factor is to be removed
-     * @return SecondFactorReset The removal asked for
-     * @throws ValidationException When a removal already stands
-     * @throws RandomException When the cancel token cannot be drawn
-     * @throws HilosException When a lookup, the write or the announcement fails
-     */
-    public function requestReset(int $userId): SecondFactorReset
-    {
-        $standing = Hilos::$db->secondFactorResets->liveOf($userId);
-        if ($standing !== null) {
-            throw new ValidationException(sprintf(
-                SecondFactorMessages::RESET_ALREADY_REQUESTED,
-                gmdate('Y-m-d H:i:s', intdiv($standing->effectiveAt, TimeConstants::MS_PER_SECOND)),
-            ));
-        }
 
-        $nowMs = TimeHelper::nowMs();
-        $effectiveAtMs = $nowMs + SecondFactorResetWait::of($userId)->effectiveDays(SecondFactorPolicy::current(), $nowMs)
-            * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
-        $token = RandomHelper::secureHex(self::TOKEN_BYTES);
-        Database::transactionStart();
-        try {
-            $reset = Hilos::$db->secondFactorResets->actions->request(
-                $userId,
-                $effectiveAtMs,
-                $token,
-            );
-            Database::transactionCommit();
-        } catch (HilosException $failure) {
-            Database::transactionRollback();
-            throw $failure;
-        }
-        SecondFactorResetNotifier::requested($userId, $token, $effectiveAtMs);
-
-        return $reset;
-    }
-
-    /**
-     * Opens an enrolment for a person: a fresh secret on an unconfirmed authenticator.
-     *
-     * Only creates: the enrolment the person left unfinished was already dropped by their agent,
-     * whose answer this follows ({@see finishEnrollDrop()}, HIL-1903).
-     *
-     * @param int $userId Person enrolling
-     * @return array{0: int, 1: string, 2: string} The unconfirmed authenticator, its base32 secret and otpauth address
-     * @throws RandomException When the secret cannot be drawn
-     * @throws HilosException When a lookup, the env read or the write fails
-     */
-    public function startEnrolment(int $userId): array
-    {
-        $secret = Totp::newSecret();
-        $factor = Hilos::$db->secondFactors->actions->startEnrolment($userId, SecondFactorMessages::DEFAULT_LABEL, $secret);
-        $account = Hilos::$db->identities->findVerifiedEmailByUser($userId)
-            ?? Hilos::$db->identities->findVerifiedSmsByUser($userId)
-            ?? (string)$userId;
-
-        return [
-            (int)$factor->id,
-            $secret,
-            OtpAuthUri::build(AuthenticatorName::fromEnv(), $account, $secret),
-        ];
-    }
-
-    /**
-     * Issues a person a new set of backup codes; the person's agent dropped the old set first (HIL-1904).
-     *
-     * @param int $userId Person
-     * @return list<string> The new codes in display form
-     * @throws RandomException When the codes cannot be drawn
-     * @throws HilosException When a write fails
-     */
-    public function issueBackupCodes(int $userId): array
-    {
-        $codes = BackupCodeGenerator::generate(SecondFactorPolicy::current()->backupCodes);
-        Hilos::$db->secondFactorBackupCodes->actions->issueSet($userId, $codes);
-
-        return array_map(BackupCodeGenerator::display(...), $codes);
-    }
 
     /**
      * Starts connecting an authenticator app from the profile, answering the secret once.
@@ -368,7 +276,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * which the gate takes for the confirmation. That code is asked here whether or not an
      * administrator switched the operation off, and checked by the person's agent ({@see finishProof()}).
      * Either way the person's agent first drops the enrolment the person left unfinished, and the
-     * new one is started on its answer ({@see finishEnrollDrop()}, HIL-1903).
+     * new one is started on its answer ({@see finishEnrollStart()}, HIL-1903).
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param ProfileSecondFactorEnrollStartActionDTO $dto Proof, when an app is already connected
@@ -378,18 +286,20 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      *     can no longer be addressed
      * @throws LogicException When no action is being dispatched
      * @throws HilosException When a lookup, the settings read or a frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function profileEnrollStart(string $acceptKey, ProfileSecondFactorEnrollStartActionDTO $dto): ?SecondFactorProfileReplyDTO
     {
         $this->refuseTurnedOff();
         $userId = (int)$this->confirmedUser($acceptKey, StepUpOperationKey::ADD_AUTHENTICATOR_APP)->userId;
+        AccountMergeAccess::requireProtectionChange($userId);
         if (Hilos::$db->secondFactors->confirmedOf($userId) !== []) {
             $this->askProof($userId, $acceptKey, (string)$dto->proofCode, $dto->proofBackup);
 
             return null;
         }
 
-        $this->askEnrollDrop($userId, $acceptKey);
+        $this->askEnrollStart($userId, $acceptKey);
 
         return null;
     }
@@ -408,11 +318,13 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ValidationException When the second factor is turned off, the add is not confirmed, or the person can no
      *     longer be addressed
      * @throws HilosException When a lookup, the settings read or the frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function profileEnrollConfirm(string $acceptKey, ProfileSecondFactorEnrollConfirmActionDTO $dto): void
     {
         $this->refuseTurnedOff();
         $userId = (int)$this->confirmedUser($acceptKey, StepUpOperationKey::ADD_AUTHENTICATOR_APP)->userId;
+        AccountMergeAccess::requireProtectionChange($userId);
         $this->askEnrollConfirm($userId, $acceptKey, $dto->authenticatorId, $dto->code, $dto->label);
     }
 
@@ -428,11 +340,13 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
      * @throws ValidationException When the second factor is turned off, or the person can no longer be addressed
      * @throws HilosException When a lookup, the settings read or the frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function profileRemove(string $acceptKey, ProfileSecondFactorRemoveActionDTO $dto): void
     {
         $this->refuseTurnedOff();
         $userId = (int)$this->actingUser($acceptKey)->userId;
+        AccountMergeAccess::requireProtectionChange($userId);
         $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE, new UserSecondFactorRemoveSignalData(
             userId: $userId,
             authenticatorId: $dto->authenticatorId,
@@ -469,11 +383,14 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
      * @throws ValidationException When the second factor is turned off, or the person can no longer be addressed
      * @throws HilosException When a lookup, the settings read or the frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function profileCodesRenew(string $acceptKey, ProfileSecondFactorCodesRenewActionDTO $dto): void
     {
         $this->refuseTurnedOff();
-        $this->askProof((int)$this->actingUser($acceptKey)->userId, $acceptKey, $dto->proofCode, $dto->proofBackup);
+        $userId = (int)$this->actingUser($acceptKey)->userId;
+        AccountMergeAccess::requireProtectionChange($userId);
+        $this->askProof($userId, $acceptKey, $dto->proofCode, $dto->proofBackup);
     }
 
     /**
@@ -487,11 +404,13 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ValidationException When the second factor is turned off, the wait is outside the administrator's bounds,
      *     or the person can no longer be addressed
      * @throws HilosException When a lookup, the settings read or the frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function profileResetWaitSet(string $acceptKey, ProfileSecondFactorResetWaitSetActionDTO $dto): void
     {
         $this->refuseTurnedOff();
         $userId = (int)$this->actingUser($acceptKey)->userId;
+        AccountMergeAccess::requireProtectionChange($userId);
         $policy = SecondFactorPolicy::current();
         $min = max($policy->resetWaitMinDays, SecondFactorSettings::RESET_WAIT_FLOOR_DAYS);
         if ($dto->days < $min || $dto->days > $policy->resetWaitMaxDays) {
@@ -517,17 +436,18 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ValidationException When the second factor is turned off, the person has no factor, or a removal already stands
      * @throws RandomException When the cancel token cannot be drawn
      * @throws HilosException When a lookup, the settings read, the write or the announcement fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function profileResetRequest(string $acceptKey): void
     {
         $this->refuseTurnedOff();
         $userId = (int)$this->actingUser($acceptKey)->userId;
+        AccountMergeAccess::requireProtectionChange($userId);
         if (Hilos::$db->secondFactors->confirmedOf($userId) === []) {
             throw new ValidationException(SecondFactorMessages::FACTOR_OFF);
         }
 
-        $this->requestReset($userId);
-        $this->publishState($userId);
+        $this->askResetRequest($userId, $acceptKey);
     }
 
     /**
@@ -540,10 +460,13 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ItemNotFoundForUpdateException When the acting connection has no signed-in session
      * @throws ValidationException When the person can no longer be addressed
      * @throws HilosException When a lookup or the frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function profileResetCancel(string $acceptKey): void
     {
-        $this->askResetCancel((int)$this->actingUser($acceptKey)->userId, $acceptKey, null);
+        $userId = (int)$this->actingUser($acceptKey)->userId;
+        AccountMergeAccess::requireProtectionChange($userId);
+        $this->askResetCancel($userId, $acceptKey, null);
     }
 
     /**
@@ -573,10 +496,8 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * Continues the action whose code the person's agent accepted (HIL-1406).
      *
      * The sign-in step lets the sign-in through, and the session holder answers it; starting
-     * another app asks the person's agent to drop the enrolment left unfinished, and the new one
-     * is started on that answer ({@see finishEnrollDrop()}, HIL-1903); showing the backup codes
-     * lists them; renewing them asks the person's agent to drop the old set, and the new one is
-     * issued on that answer ({@see finishCodesDrop()}, HIL-1904).
+     * another app asks the personal owner to replace its unfinished enrollment ({@see finishEnrollStart()});
+     * showing the backup codes lists them, and renewing asks the owner to replace its set ({@see finishCodesIssue()}).
      *
      * @param UserSecondFactorProveSignalData $ask The ask the agent answered
      * @return ?ActionReplyDTO What the profile is told, or null when the holder or the next answer of the agent answers
@@ -584,6 +505,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ValidationException When the person was erased or merged into another account
      * @throws LogicException When the ask names an action no proof continues, or no action is being dispatched
      * @throws HilosException When a lookup or a frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function finishProof(UserSecondFactorProveSignalData $ask): ?ActionReplyDTO
     {
@@ -600,7 +522,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
                 return null;
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START:
-                $this->askEnrollDrop($ask->userId, $ask->acceptKey);
+                $this->askEnrollStart($ask->userId, $ask->acceptKey);
 
                 return null;
 
@@ -610,7 +532,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
                 return new SecondFactorProfileReplyDTO(codes: Hilos::$db->secondFactorBackupCodes->entriesOf($ask->userId));
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW:
-                $this->askCodesDrop($ask->userId, $ask->acceptKey);
+                $this->askCodesIssue($ask->userId, $ask->acceptKey);
 
                 return null;
 
@@ -640,7 +562,7 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      *
      * A first app of the person comes with a set of backup codes; a further one does not - the set
      * the person has stays theirs. The codes of a first app are issued on the next answer of the
-     * person's agent, which drops the set the person had first ({@see finishCodesDrop()},
+     * person's agent, which drops the set the person had first ({@see finishCodesIssue()},
      * HIL-1904). For a further app, on the way in the session holder is told the enrolment is
      * proven and the surface moves to the screen of the codes; in the profile the answer carries
      * no codes.
@@ -651,12 +573,13 @@ final class SecondFactorCommands extends AbstractLibraryCommands
      * @throws ValidationException When the person was erased or merged into another account
      * @throws LogicException When no action is being dispatched
      * @throws HilosException When a lookup or a frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function finishEnrollConfirm(UserSecondFactorEnrollConfirmDoneSignalData $done): ?ActionReplyDTO
     {
         $ask = $done->ask;
         if ($done->first) {
-            $this->askCodesDrop($ask->userId, $ask->acceptKey);
+            $this->askCodesIssue($ask->userId, $ask->acceptKey);
 
             return null;
         }
@@ -677,78 +600,60 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Starts the enrolment the person's agent made room for, answering its secret once (HIL-1903).
+     * Answers enrollment from committed owner material without reading its secret again.
      *
-     * The agent dropped the enrolment the person left unfinished, and the new one is created here
-     * - on the way in its secret is the screen's, in the profile the enrolment is the answer. The
-     * wait on the way in, the switch and the confirmation of the operation are not judged again,
-     * as in {@see finishEnrollConfirm()} and {@see finishProof()}.
-     *
-     * @param UserSecondFactorEnrollDropSignalData $ask The ask the agent answered
-     * @return ActionReplyDTO The secret on the way in, or the profile's enrolment with its secret
-     * @throws LogicException When the ask names an action no enrolment continues
-     * @throws RandomException When the secret cannot be drawn
-     * @throws HilosException When a lookup, the env read or the write fails
+     * @param UserSecondFactorEnrollStartDoneSignalData $done Successful owner answer
+     * @return ActionReplyDTO Setup or profile enrollment response
+     * @throws HilosException When settings cannot be read or the action is unknown
      */
-    public function finishEnrollDrop(UserSecondFactorEnrollDropSignalData $ask): ActionReplyDTO
+    public function finishEnrollStart(UserSecondFactorEnrollStartDoneSignalData $done): ActionReplyDTO
     {
-        switch ($ask->action) {
+        $enrollment = $done->enrollment;
+        if ($enrollment === null) {
+            throw new LogicException('Enrollment continuation requires committed material');
+        }
+        switch ($done->ask->action) {
             case HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_START:
-                [, $secret, $uri] = $this->startEnrolment($ask->userId);
-
                 return AuthFlowOutcome::secondFactorData(
-                    new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, $secret, $uri),
+                    new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), null, $enrollment->secret, $enrollment->otpauthUri),
                 );
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START:
-                [$id, $secret, $uri] = $this->startEnrolment($ask->userId);
-
-                return new SecondFactorProfileReplyDTO(authenticatorId: $id, secret: $secret, otpauthUri: $uri);
+                return new SecondFactorProfileReplyDTO(
+                    authenticatorId: $enrollment->authenticatorId, secret: $enrollment->secret, otpauthUri: $enrollment->otpauthUri,
+                );
 
             default:
-                throw new LogicException("An enrolment drop continues no action {$ask->action}");
+                throw new LogicException("An enrollment start continues no action {$done->ask->action}");
         }
     }
 
     /**
-     * Tells whether a person has an enrolment started and not confirmed (HIL-1903).
+     * Answers the press with the backup codes committed by the personal owner.
      *
-     * Asked when the person's agent answers that it dropped the unfinished enrolment: one that
-     * stands then was started by another press in between, and this press is refused rather than
-     * open a second one. The set of rows is read afresh; a row already loaded here carries the
-     * confirmation its DB_SYNC brought, and the agent's DB_SYNC is applied before its answer, as
-     * {@see finishEnrollConfirm()} relies on when it publishes the section.
-     *
-     * @param int $userId Person enrolling
-     * @return bool Whether an unfinished enrolment stands
-     * @throws HilosException When the lookup fails
-     */
-    public function enrolmentStands(int $userId): bool
-    {
-        return Hilos::$db->secondFactors->unconfirmedOf($userId) !== null;
-    }
-
-    /**
-     * Answers the press the person's agent dropped the old backup codes for, with the new set (HIL-1904).
-     *
-     * The codes are {@see codesAfterDrop()}'s. On the way in the session holder is told the
+     * The codes are carried by the committed owner answer. On the way in the session holder is told the
      * enrolment is proven and the surface moves to the screen of the codes; in the profile the
      * codes are the answer. The switch, the confirmation of the operation and the wait on the way
      * in are not judged again, as in {@see finishEnrollConfirm()}, {@see finishProof()} and
-     * {@see finishEnrollDrop()}.
+     * {@see finishEnrollStart()}.
      *
-     * @param UserSecondFactorCodesDropSignalData $ask The ask the agent answered
+     * @param UserSecondFactorCodesIssueDoneSignalData $done Committed owner answer
      * @return ActionReplyDTO The codes screen on the way in, or the profile's answer
      * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
      * @throws LogicException When the ask names an action no drop of the codes continues
      * @throws RandomException When the backup codes cannot be drawn
      * @throws HilosException When a lookup, a write or a frame fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
-    public function finishCodesDrop(UserSecondFactorCodesDropSignalData $ask): ActionReplyDTO
+    public function finishCodesIssue(UserSecondFactorCodesIssueDoneSignalData $done): ActionReplyDTO
     {
+        $ask = $done->ask;
+        $codes = $done->codes;
+        if ($codes === null) {
+            throw new LogicException('Code continuation requires committed material');
+        }
         switch ($ask->action) {
             case HilosSignalConstants::HILOS_SECOND_FACTOR_SETUP_CONFIRM:
-                $codes = $this->codesAfterDrop($ask->userId);
                 $this->library->announceSecondFactorSetupProven($this->acting($ask->acceptKey));
                 $this->publishState($ask->userId);
 
@@ -760,13 +665,12 @@ final class SecondFactorCommands extends AbstractLibraryCommands
 
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_CONFIRM:
             case HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW:
-                $codes = $this->codesAfterDrop($ask->userId);
                 $this->publishState($ask->userId);
 
                 return new SecondFactorProfileReplyDTO(backupCodes: $codes);
 
             default:
-                throw new LogicException("A backup-code drop continues no action {$ask->action}");
+                throw new LogicException("A backup-code issue continues no action {$ask->action}");
         }
     }
 
@@ -986,87 +890,111 @@ final class SecondFactorCommands extends AbstractLibraryCommands
     }
 
     /**
-     * Asks the person's agent to drop the enrolment the person left unfinished, and stops owing the browser an answer.
+     * Asks the personal owner to replace the unfinished enrollment and defers the browser answer.
      *
-     * The new enrolment is started on the agent's answer ({@see finishEnrollDrop()}, HIL-1903); no
-     * secret travels between the hops.
+     * The committed secret returns only in the addressed completion ({@see finishEnrollStart()}).
      *
      * @param int $userId Person enrolling
      * @param string $acceptKey Accept key the action arrived on
      * @throws ValidationException When the person was erased or merged into another account
      * @throws LogicException When no action is being dispatched
      * @throws HilosException When the person cannot be read, or the frame cannot be named or queued
+     * @throws JsonException When a saved merge result cannot be decoded
      */
-    private function askEnrollDrop(int $userId, string $acceptKey): void
+    private function askEnrollStart(int $userId, string $acceptKey): void
     {
-        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP, new UserSecondFactorEnrollDropSignalData(
-            userId: $userId,
-            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE,
-            acceptKey: $acceptKey,
-            requestId: $this->library->currentActionRequestId(),
-            action: $this->library->runningAction(),
-            successMessage: null,
-        ));
+        AccountMergeAccess::requireProtectionChange($userId);
+        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START,
+            new UserSecondFactorEnrollStartSignalData(
+                userId: $userId,
+                replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->library->currentActionRequestId(),
+                action: $this->library->runningAction(),
+                successMessage: null,
+            ),
+        );
     }
 
     /**
-     * Asks the person's agent to drop the person's set of backup codes, and stops owing the browser an answer.
+     * Asks the personal owner to replace its backup codes and defers the browser answer.
      *
-     * The new set is issued on the agent's answer ({@see finishCodesDrop()}, HIL-1904); no code
-     * travels between the hops.
+     * The committed display codes return only in the addressed completion ({@see finishCodesIssue()}).
      *
      * @param int $userId Person whose codes are issued anew
      * @param string $acceptKey Accept key the action arrived on
      * @throws ValidationException When the person was erased or merged into another account
      * @throws LogicException When no action is being dispatched
      * @throws HilosException When the person cannot be read, or the frame cannot be named or queued
+     * @throws JsonException When a saved merge result cannot be decoded
      */
-    private function askCodesDrop(int $userId, string $acceptKey): void
+    private function askCodesIssue(int $userId, string $acceptKey): void
     {
-        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP, new UserSecondFactorCodesDropSignalData(
-            userId: $userId,
-            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE,
-            acceptKey: $acceptKey,
-            requestId: $this->library->currentActionRequestId(),
-            action: $this->library->runningAction(),
-            successMessage: null,
-        ));
+        AccountMergeAccess::requireProtectionChange($userId);
+        $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE,
+            new UserSecondFactorCodesIssueSignalData(
+                userId: $userId,
+                replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->library->currentActionRequestId(),
+                action: $this->library->runningAction(),
+                successMessage: null,
+            ),
+        );
     }
 
     /**
-     * Reads the codes a person holds once their agent dropped the old set, issuing a set when none stands (HIL-1904).
+     * Resumes the code-step or profile reset request from its committed result.
      *
-     * A set standing here was issued by another press answered after this drop; its unused codes
-     * answer this press too, and nothing is created. A failure - the read, the draw or the write -
-     * leaves the person with no new codes on the screen, so the section is fanned again before the
-     * failure goes on and fails the press in general words.
-     *
-     * @param int $userId Person whose codes were dropped
-     * @return list<string> The codes in display form
-     * @throws RandomException When the backup codes cannot be drawn
-     * @throws HilosException When the lookup or a write fails
+     * @param UserSecondFactorResetRequestDoneSignalData $done Successful owner answer
+     * @return ?ActionReplyDTO Code-step move, or no additional profile payload
+     * @throws HilosException When the session, settings or outgoing frame is unavailable
      */
-    private function codesAfterDrop(int $userId): array
+    public function finishResetRequest(UserSecondFactorResetRequestDoneSignalData $done): ?ActionReplyDTO
     {
-        try {
-            $entries = Hilos::$db->secondFactorBackupCodes->entriesOf($userId);
-            if ($entries === []) {
-                return $this->issueBackupCodes($userId);
-            }
+        $this->publishState($done->ask->userId);
+        switch ($done->ask->action) {
+            case HilosSignalConstants::HILOS_SECOND_FACTOR_RESET_REQUEST:
+                $this->library->announceSecondFactorCanceled(
+                    $this->acting($done->ask->acceptKey),
+                    AuthFlowOutcome::moveToSecondFactor(
+                        AuthFlowStep::SECOND_FACTOR_RESET_REQUESTED,
+                        new SecondFactorStepData(SecondFactorPolicy::current()->trustDeviceDays(), $done->effectiveAt),
+                        null,
+                    ),
+                );
 
-            $codes = [];
-            foreach ($entries as $entry) {
-                if (!$entry->used) {
-                    $codes[] = $entry->code;
-                }
-            }
+                return null;
 
-            return $codes;
-        } catch (Throwable $e) {
-            $this->followUp(fn () => $this->publishState($userId), 'section', $userId);
+            case HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST:
+                return null;
 
-            throw $e;
+            default:
+                throw new LogicException("A reset request continues no action {$done->ask->action}");
         }
+    }
+
+    /**
+     * @param int $userId Person requesting the reset
+     * @param string $acceptKey Original connection
+     * @throws HilosException When the reservation or queued frame refuses
+     * @throws JsonException When a saved merge result cannot be decoded
+     */
+    private function askResetRequest(int $userId, string $acceptKey): void
+    {
+        AccountMergeAccess::requireProtectionChange($userId);
+        $this->library->askPersonAgent(
+            $userId,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST,
+            new UserSecondFactorResetRequestSignalData(
+                userId: $userId,
+                replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->library->currentActionRequestId(),
+                action: $this->library->runningAction(),
+                successMessage: null,
+            ),
+        );
     }
 
     /**

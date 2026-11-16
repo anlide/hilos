@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Users;
 
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use ArrayObject;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Constants\HilosAgentType;
@@ -75,9 +76,10 @@ use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
@@ -182,7 +184,17 @@ final class AbstractUserAgentTest extends TestCase
             HilosDbContext::accountOperationResults,
         ], array_keys(TestUserAgent::OWNS_DB_SET));
         foreach (self::borrowedSets() as $collection) {
-            self::assertSame([TruthSourceOperation::Update, TruthSourceOperation::Remove], TestUserAgent::OWNS_DB_SET[$collection]);
+            $operations = in_array($collection, [HilosDbContext::secondFactors, HilosDbContext::secondFactorBackupCodes,
+                HilosDbContext::secondFactorResets, HilosDbContext::secondFactorTrusts], true)
+                ? [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove]
+                : [TruthSourceOperation::Update, TruthSourceOperation::Remove];
+            self::assertSame($operations, TestUserAgent::OWNS_DB_SET[$collection]);
+        }
+        foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials] as $collection) {
+            self::assertSame(
+                [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
+                TestUserAgent::OWNS_DB_SET[$collection],
+            );
         }
         self::assertSame(
             [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
@@ -203,6 +215,7 @@ final class AbstractUserAgentTest extends TestCase
         self::assertSame([], TestUserAgent::OWNS_DB);
         self::assertSame(
             [
+                HilosDbContext::sessions,
                 HilosDbContext::secondFactorTrustRestrictions,
                 HilosDbContext::accountOperationAssignments,
                 HilosDbContext::accountOperations,
@@ -247,7 +260,18 @@ final class AbstractUserAgentTest extends TestCase
         foreach (self::borrowedSets() as $collection) {
             TruthSourceRegistry::checkCanWriteItem($collection, '1', static fn (): array => ['42'], TruthSourceOperation::Update);
             TruthSourceRegistry::checkCanWriteItem($collection, '1', static fn (): array => ['42'], TruthSourceOperation::Remove);
-            self::assertFalse(TruthSourceRegistry::hasCreateSource($collection));
+            if (in_array($collection, [HilosDbContext::secondFactors, HilosDbContext::secondFactorBackupCodes,
+                HilosDbContext::secondFactorResets, HilosDbContext::secondFactorTrusts], true)) {
+                TruthSourceRegistry::checkCanCreate($collection, static fn (): array => ['42']);
+                try {
+                    TruthSourceRegistry::checkCanCreate($collection, static fn (): array => ['43']);
+                    self::fail('The personal owner cannot create in another set');
+                } catch (CreateNotAllowedException) {
+                    self::assertTrue(TruthSourceRegistry::hasCreateSource($collection));
+                }
+            } else {
+                self::assertFalse(TruthSourceRegistry::hasCreateSource($collection));
+            }
         }
 
         $this->expectException(WriteNotAllowedException::class);
@@ -330,7 +354,7 @@ final class AbstractUserAgentTest extends TestCase
     {
         self::assertNotContains(HilosDbContext::stepUps, OwnershipDeclaration::borrowedDbCollectionsOf(TestUserAgent::class));
         self::assertNotContains(HilosDbContext::userPhotos, OwnershipDeclaration::borrowedDbCollectionsOf(TestUserAgent::class));
-        self::assertContains(HilosDbContext::secondFactorTrusts, OwnershipDeclaration::borrowedDbCollectionsOf(TestUserAgent::class));
+        self::assertNotContains(HilosDbContext::secondFactorTrusts, OwnershipDeclaration::borrowedDbCollectionsOf(TestUserAgent::class));
     }
 
     public function testEveryEditFrameIsAddressedByThePersonId(): void
@@ -349,6 +373,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => UserAddressVerifySignalData::class,
             HilosSignalConstants::HILOS_USER_PASSKEY_USE => UserPasskeyUseSignalData::class,
             HilosSignalConstants::HILOS_USER_PASSWORD_RESET => UserPasswordResetSignalData::class,
+            HilosSignalConstants::HILOS_USER_IDENTITY_ADD => UserIdentityAddSignalData::class,
             HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE => UserPasswordChangeSignalData::class,
             HilosSignalConstants::HILOS_USER_EMAIL_CHANGE => UserEmailChangeSignalData::class,
             HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK => UserIdentityUnlinkSignalData::class,
@@ -357,8 +382,9 @@ final class AbstractUserAgentTest extends TestCase
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE => UserSecondFactorRemoveSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL => UserSecondFactorResetCancelSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE => UserSecondFactorWaitWriteSignalData::class,
-            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP => UserSecondFactorEnrollDropSignalData::class,
-            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP => UserSecondFactorCodesDropSignalData::class,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START => UserSecondFactorEnrollStartSignalData::class,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE => UserSecondFactorCodesIssueSignalData::class,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST => UserSecondFactorResetRequestSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => UserSecondFactorResetDueSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => UserSecondFactorResetRemindSignalData::class,
             HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => UserSecondFactorUnlockSignalData::class,
@@ -662,8 +688,10 @@ final class AbstractUserAgentTest extends TestCase
         return array_values(array_diff(
             array_keys(TestUserAgent::OWNS_DB_SET),
             [
+                HilosDbContext::identities,
+                HilosDbContext::passkeyCredentials,
                 HilosDbContext::userRenames,
-            HilosDbContext::userMerges,
+                HilosDbContext::userMerges,
                 HilosDbContext::secondFactorSettings,
                 HilosDbContext::stepUps,
                 HilosDbContext::notificationPreferences,

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Polls\Tests\Unit;
 
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Demo\Polls\Pages\Hilos\Moderation\ModerationPage;
 use Demo\Polls\Pages\Hilos\Moderation\ModerationKindPage;
 use Demo\Polls\Pages\Hilos\Moderation\ModerationKindRulesPage;
@@ -352,6 +355,31 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class PollsTopologyRegistryTest extends TestCase
 {
+    public function testIdentityAdditionIsDeliveredToTheDeclaredOwnerAndCaller(): void
+    {
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::userId, Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::class, Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(
+            HilosAgentType::HILOS_USERS_LIBRARY,
+            Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertSame(
+            UserIdentityAddDoneSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE, Hilos::getAgentSignalIndexFields());
+        foreach ([
+            HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE => UserIdentityAddDoneSignalData::class,
+            HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE => AgentsGoneSignalData::class,
+        ] as $signal => $dto) {
+            self::assertSame(HilosAgentType::HILOS_OAUTH, Hilos::getAgentSignalRoutes()[$signal]);
+            self::assertSame($dto, Hilos::getAgentSignalDtoRoutes()[$signal]);
+            self::assertArrayNotHasKey($signal, Hilos::getAgentSignalIndexFields());
+        }
+        self::assertSame(HilosAgentType::HILOS_SESSIONS_LIBRARY, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_AGENTS_GONE]);
+    }
+
     /** The dependency snapshot stays a build input on an ordinary public page. */
     public function testLicenseDependenciesUsesThePublicIndexPageWithoutServerData(): void
     {
@@ -1352,6 +1380,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PASSKEY_USE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PASSWORD_RESET => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_IDENTITY_ADD => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_EMAIL_CHANGE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK => HilosAgentType::HILOS_USER,
@@ -1360,8 +1389,9 @@ final class PollsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE => HilosAgentType::HILOS_USER,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP => HilosAgentType::HILOS_USER,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => HilosAgentType::HILOS_USER,
@@ -1398,6 +1428,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1406,8 +1437,9 @@ final class PollsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1433,6 +1465,8 @@ final class PollsTopologyRegistryTest extends TestCase
                 HilosSignalConstants::LOGS_CLUSTER_INDEX_PORTION => HilosAgentType::HILOS_LOGS,
                 // The legal section's own frame (HIL-1234): an erasure removes the exports of acceptance records.
                 HilosSignalConstants::HILOS_LEGAL_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_LEGAL,
+                HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE => HilosAgentType::HILOS_OAUTH,
+                HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE => HilosAgentType::HILOS_OAUTH,
                 HilosSignalConstants::HILOS_OAUTH_PENDING => HilosAgentType::HILOS_OAUTH,
                 HilosSignalConstants::HILOS_MAIL_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,

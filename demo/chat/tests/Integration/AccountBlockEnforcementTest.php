@@ -190,13 +190,16 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
     {
         $userId = $this->registerUser($this->uniqueEmail());
         $library = $this->sessionsLibrary();
-        $sessionId = $this->underAgent($library, function () use ($userId): int {
+        $sessionId = $this->underAgent($library, static function (): int {
             $session = Hilos::$db->sessions->actions->createAnonymous(RandomHelper::secureHex(16));
-            $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
-            Hilos::$db->secondFactorTrusts->actions->trust($session->id, $userId, $until, TimeHelper::nowMs());
-            Hilos::$db->secondFactorTrusts->actions->trust(0, $userId, $until, TimeHelper::nowMs());
-
             return $session->id;
+        });
+        $personAgent = $this->personAgent($userId);
+        $this->underAgent($personAgent, static function () use ($sessionId, $userId): void {
+            $grantedAt = TimeHelper::nowMs();
+            $until = $grantedAt + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+            Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $until, $grantedAt);
+            Hilos::$db->secondFactorTrusts->actions->trust(0, $userId, $until, $grantedAt);
         });
 
         $this->block($userId);
@@ -635,13 +638,16 @@ final class AccountBlockEnforcementTest extends IntegrationTestCase
         $this->drainSignals();
 
         $library = $this->sessionsLibrary();
-        $otherSessionId = $this->underAgent($library, static function () use ($userId, $currentSessionId): int {
+        $otherSessionId = $this->underAgent($library, static function (): int {
             $other = Hilos::$db->sessions->actions->createAnonymous(RandomHelper::hex(16));
-            $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
-            Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, $userId, $until, TimeHelper::nowMs());
-            Hilos::$db->secondFactorTrusts->actions->trust($other->id, $userId, $until, TimeHelper::nowMs());
-
             return $other->id;
+        });
+        $personAgent = $this->personAgent($userId);
+        $this->underAgent($personAgent, static function () use ($userId, $currentSessionId, $otherSessionId): void {
+            $grantedAt = TimeHelper::nowMs();
+            $until = $grantedAt + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+            Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, $userId, $until, $grantedAt);
+            Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, $userId, $until, $grantedAt);
         });
         $this->writeRecoveredPassword($userId, $currentSessionId);
         $this->underAgent($library, static fn () => $library->onSignalAgent(

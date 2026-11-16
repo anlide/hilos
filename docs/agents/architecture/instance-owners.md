@@ -27,11 +27,13 @@ person's step-up confirmations and the trust taken from the person's browsers
 (HIL-1409).
 
 Choose both the creator and the single writer after creation before adding a
-DB write path. The library may create an entity with all its children; later
-`Update` and `Remove` belong to the row's owner, including a sweep's write.
-An executor keeps its working rows as described below. A partial claim gives
-no second writer permission. Until each named move lands, the current writers
-and their required grants remain; a marker makes no future door callable.
+DB write path. A library may create an entity with its children when it owns
+that creation; ordinary second-factor enrollments, backup-code sets and reset
+requests are created by the personal owner (HIL-1989). Later `Update` and
+`Remove` belong to the row's owner, including a sweep's write. An executor
+keeps its working rows as described below. A partial claim gives no second
+writer permission. Until each named move lands, the current writers and their
+required grants remain; a marker makes no future door callable.
 
 ## Does A New Entity Need One
 
@@ -68,10 +70,13 @@ notification marks, channel preferences and push unsubscribe (HIL-1408), calling
 off a deletion request and the profile photo (HIL-1409), and the theme choice
 (HIL-1427).
 
-The library reads the set, creates new members and coordinates work on members
-it does not own. Finding an expired row does not make it the writer of that
-row. A library with no personal owner beside it may itself be the only writer,
-as with `settings`; see [entity-libraries.md](entity-libraries.md).
+The library reads the set, creates members where it owns creation, and
+coordinates work on members it does not own. Ordinary enrollment, backup-code
+replacement and reset creation stay at the personal owner; the library carries
+the request and consumes the committed done answer. Finding an expired row does
+not make it the writer of that row. A library with no personal owner beside it
+may itself be the only writer, as with `settings`; see
+[entity-libraries.md](entity-libraries.md).
 
 The ordinary set guard grants a cross-set move only to a whole-table claimant,
 because one set claim cannot cover both origin and destination. This is the
@@ -118,10 +123,10 @@ judges the administrator flag and the block and the person's agent writes them
 taken away are the person's agent's too (HIL-1407): the holder hands the data-copy
 credit of a refused blocked sign-in and the trust of the sessions it ended to the
 agent by frame, and the agent takes the trust away itself with the second factor,
-a changed or recovered password and the block. The holder creates
-trust on the way in and no longer applies the term (HIL-1908).
-Creation stays there; a standing pair is renewed by the person's agent on the
-holder's frame (HIL-1907). A saved policy is retained for application as
+a changed or recovered password and the block. The personal owner now creates or
+renews every ordinary browser trust through one atomic grant-or-renew write
+(HIL-1989); the holder has no insert or re-grant fallback. The grant remains
+optional after successful sign-in. A saved policy is retained for application as
 a trust restriction (HIL-1900), which the personal owner applies on a service
 frame; missed work is found by the sessions holder's sweep, which sends that
 frame, and by the owner's own start, which applies the saved restrictions
@@ -311,8 +316,10 @@ The users library hands its journal link to that same owner after creating the
 feed event (HIL-1896). Creating the first administrator moved from
 `mintAdminUser()` at the sessions holder to the users library in HIL-1898; the
 holder still authorizes and binds the session.
-Trust renewal, the administrator's term and switch-off have the ordinary
-addresses above. The complete [Writer Map](account-operations.md#writer-map)
+The personal owner creates and renews trust through one atomic grant-or-renew
+write; the session holder has no insert or re-grant fallback. The administrator's
+term and switch-off still reach each owner through the saved restriction frame.
+The complete [Writer Map](account-operations.md#writer-map)
 and [ordinary transitions](account-operations.md#ordinary-transitions) cover
 the other rows and the exact current operations.
 
@@ -383,13 +390,14 @@ add another foreign writer under the name of a set operation or sweep.
 | HIL-630 | The person's agent as a figure: its row and set, raised on demand, asleep when idle (built). |
 | HIL-1404 | Name, administrator flag and block edits (built). |
 | HIL-1405 | Sign-in methods and passkey credentials, including sign-in (built). |
-| HIL-1406 | Second factor, including a reset whose delay elapsed (built). |
-| HIL-1407 | Step-up confirmations and browser trust taken away (built). |
+| HIL-1406 | Second-factor edits, including a reset whose delay elapsed (built). |
+| HIL-1407 | Step-up confirmations and browser trust revocation (built). |
 | HIL-1408 | Notification marks, channel preferences and push unsubscribe (built). |
 | HIL-1409 | Account-deletion requests and profile photos (built). |
 | HIL-1410 | Erasure and merge stop the affected instance agents (built). |
 | HIL-1411 | The people library is the only full owner of codes and registration holds (built). The code agent writes neither table; the sessions holder retains only borrowed `Remove` on codes for account erasure. Verification codes are outside the person's set (P-163, 2026-08-30). |
 | HIL-1412 | Cluster behavior of the person's agent (built). |
+| HIL-1989 | Owner-guarded atomic creation of enrollments, backup-code sets and reset requests; trust grant-or-renew with no holder fallback (built). |
 | HIL-1403 | A session has no instance owner today: standalone, written by the sessions holder; an agent per session keyed by its stable id is acceptable later (decided 2026-10-11, [Session Ownership](entity-libraries.md#session-ownership)). |
 | HIL-1281 | Profile on the owner's agent and memory as the reader's truth (not in the code yet — HIL-1281). |
 

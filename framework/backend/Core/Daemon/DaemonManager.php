@@ -3767,7 +3767,7 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Tells the agent that declared {@see HilosSignalConstants::HILOS_AGENTS_GONE} which agents are
+     * Tells each singleton that declared a loss channel which agents are
      * gone and why (HIL-1044).
      *
      * The three places that call this used to end in a log line, and the agents answering somebody
@@ -3781,29 +3781,31 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param list<string> $agentIds Ids of the agents that are gone
      * @param string $reason One of the {@see AgentsGoneSignalData} REASON_* constants
-     * @return Generator<int, void> Bounded listener exclusion, followed by one announcement
+     * @return Generator<int, void> Bounded exclusion and an independent announcement per declared channel
      * @throws InvalidArgumentException When the frame cannot be named
      */
     private function agentsGoneAnnouncement(array $agentIds, string $reason): Generator
     {
         yield;
-        $recipientType = Hilos::appClass()::getAgentSignalRoutes()[HilosSignalConstants::HILOS_AGENTS_GONE] ?? null;
-        if ($recipientType === null || $agentIds === []) {
-            return;
-        }
-        foreach ($agentIds as $agentId) {
-            if (AgentId::fromId($agentId)->type === $recipientType) {
-                return;
+        foreach ([HilosSignalConstants::HILOS_AGENTS_GONE, HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE] as $signalName) {
+            $recipientType = Hilos::appClass()::getAgentSignalRoutes()[$signalName] ?? null;
+            if ($recipientType === null || $agentIds === []) {
+                continue;
             }
-            yield;
-        }
+            foreach ($agentIds as $agentId) {
+                if (AgentId::fromId($agentId)->type === $recipientType) {
+                    continue 2;
+                }
+                yield;
+            }
 
-        Hilos::$sr?->queueSignal(
-            new SignalSource(SignalSource::DAEMON),
-            new SignalType(SignalTypeConstants::AGENT_SIGNAL),
-            new SignalName(HilosSignalConstants::HILOS_AGENTS_GONE),
-            new AgentSignalData(data: new AgentsGoneSignalData($agentIds, $reason)),
-        );
+            Hilos::$sr?->queueSignal(
+                new SignalSource(SignalSource::DAEMON),
+                new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName($signalName),
+                new AgentSignalData(data: new AgentsGoneSignalData($agentIds, $reason)),
+            );
+        }
     }
 
     /**

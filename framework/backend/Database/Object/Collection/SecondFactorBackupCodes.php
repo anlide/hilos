@@ -27,10 +27,10 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * SecondFactorBackupCodes object collection - the backup codes of every person (HIL-494).
  *
- * A person holds one set at a time: {@see issueSet()} creates a set and only creates it - the
- * person's agent takes the old set out with {@see deleteForUser()} before a new one is issued
- * (HIL-1904), and the same delete takes it out with the rest of the second factor. The code column
- * is DB-only, so the two reads that need the codes themselves - finding the row a typed
+ * A person holds one set at a time. The personal owner calls {@see deleteForUser()} and
+ * {@see issueSet()} in one transaction to replace it (HIL-1989); this collection does not open
+ * that transaction. The same delete takes out codes with the rest of the second factor. The code
+ * column is DB-only, so the two reads that need the codes themselves - finding the row a typed
  * code names, and listing the set for the "Show" screen - are targeted queries.
  *
  * @extends Objects<ObjectSecondFactorBackupCode>
@@ -67,9 +67,8 @@ class SecondFactorBackupCodes extends Objects
     /**
      * Creates a person's set of backup codes.
      *
-     * Nothing is taken out here. The person's old set was dropped by the person's agent before
-     * this is called ({@see deleteForUser()}, HIL-1904), in a transaction of its own: an
-     * interruption in between leaves the person with no codes, never with two live sets.
+     * The personal owner calls this after {@see deleteForUser()} in the same transaction
+     * (HIL-1989), so a failure rolls back the replacement and preserves the earlier set.
      *
      * @param int $userId Person the set belongs to
      * @param list<string> $codes Normalized codes of the new set

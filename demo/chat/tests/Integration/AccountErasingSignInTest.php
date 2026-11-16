@@ -21,6 +21,7 @@ use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthTripOpenedSignalData;
 use Hilos\Auth\OAuth\OAuthStateSigner;
 use Hilos\Auth\SecondFactor\Base32;
+use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\Session\DTO\AccountBlockChangedSignalData;
 use Hilos\Auth\Session\DTO\OAuthResumeActionDTO;
 use Hilos\Auth\Session\DTO\OAuthResumeReplyDTO;
@@ -486,15 +487,40 @@ final class AccountErasingSignInTest extends IntegrationTestCase
     {
         $userId = $this->registerUser($this->uniqueEmail());
         $this->enrolSecondFactor($userId);
-        $beforeId = (int) Hilos::$db->sessions->findByToken($this->signedInSession('trust-ak', $userId))?->id;
-        $afterId = (int) Hilos::$db->sessions->findByToken($this->signedInSession('trust-ak-2', $userId))?->id;
+        $this->signedInSession('trust-ak', $userId);
+        $beforeSession = $this->sessionOf('trust-ak');
+        $this->assertNotNull($beforeSession);
+        $this->assertSame($userId, $beforeSession->userId);
+        $this->signedInSession('trust-ak-2', $userId);
+        $afterSession = $this->sessionOf('trust-ak-2');
+        $this->assertNotNull($afterSession);
+        $this->assertSame($userId, $afterSession->userId);
 
-        $this->renewalNotFound($userId, $beforeId);
-        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($beforeId, $userId, 30), 'Before the start the pair is written again');
+        $trustDays = SecondFactorPolicy::current()->trustDeviceDays();
+        $this->assertNotNull($trustDays);
+        $this->assertGreaterThan(0, $trustDays);
+        $passwordChangedAt = Hilos::$db->identities->findPasswordByUser($userId)?->passwordChangedAt;
+        $this->assertNotNull($passwordChangedAt);
+        $beforeGrantedAt = TimeHelper::nowMs();
+        $this->assertLessThan($beforeGrantedAt, $passwordChangedAt);
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($beforeSession->id, $userId, $trustDays));
+
+        $before = $this->renewTrustAtPersonOwner($userId, $beforeSession->id, $beforeGrantedAt, $trustDays);
+        $this->assertTrue($before->renewed);
+        $this->assertNull($before->error);
+        $this->assertNull($before->errorType);
+        $this->assertNull($before->errorDetail);
+        $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($beforeSession->id, $userId, $trustDays));
 
         $this->beginErasure($userId);
-        $this->renewalNotFound($userId, $afterId);
-        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($afterId, $userId, 30));
+        $afterGrantedAt = TimeHelper::nowMs();
+        $this->assertLessThan($afterGrantedAt, $passwordChangedAt);
+        $after = $this->renewTrustAtPersonOwner($userId, $afterSession->id, $afterGrantedAt, $trustDays);
+        $this->assertFalse($after->renewed);
+        $this->assertSame(AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE, $after->error);
+        $this->assertNull($after->errorType);
+        $this->assertNull($after->errorDetail);
+        $this->assertFalse(Hilos::$db->secondFactorTrusts->isTrusted($afterSession->id, $userId, $trustDays));
     }
 
     /**
@@ -678,28 +704,62 @@ final class AccountErasingSignInTest extends IntegrationTestCase
     }
 
     /**
-     * Hands the library the answer of the person's agent that it found no pair to extend.
-     *
-     * @param int $userId Person the browser was trusted for
-     * @param int $sessionId Session row of the browser
-     * @throws HilosException When the frame fails
+     * @param int $userId Person whose agent receives the request
+     * @param int $sessionId Live signed-in browser session
+     * @param int $grantedAt Moment the confirmed factor was granted
+     * @param int $trustDays Current browser-trust policy duration
+     * @return UserBrowserTrustRenewDoneSignalData Correlated personal-owner answer
      */
-    private function renewalNotFound(int $userId, int $sessionId): void
-    {
-        $now = TimeHelper::nowMs();
-        $this->toLibrary(HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE, new UserBrowserTrustRenewDoneSignalData(
-            new UserBrowserTrustRenewSignalData(
-                $userId,
-                $sessionId,
-                $now + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
-                $now,
-                HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE,
-            ),
-            false,
-            null,
-            null,
-            null,
+    private function renewTrustAtPersonOwner(
+        int $userId,
+        int $sessionId,
+        int $grantedAt,
+        int $trustDays,
+    ): UserBrowserTrustRenewDoneSignalData {
+        $request = new UserBrowserTrustRenewSignalData(
+            userId: $userId,
+            sessionId: $sessionId,
+            trustedUntil: $grantedAt + $trustDays * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+            grantedAt: $grantedAt,
+            replySignal: HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE,
+        );
+        $library = $this->sessionsLibrary();
+        $this->drainSignals();
+        $this->underAgent($library, static fn () => $library->sendToAgent(
+            HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW,
+            $request,
         ));
+
+        $ask = Hilos::$sr?->getNextQueuedSignal();
+        $this->assertNotNull($ask);
+        $this->assertSame(HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW, $ask->signalName->getName());
+        $this->assertInstanceOf(AgentSignalData::class, $ask->data);
+        $personAgent = $this->personAgent($userId);
+        $this->underAgent($personAgent, static fn () => $personAgent->onSignalAgent(
+            $ask->data,
+            '',
+            $ask->signalName->getName(),
+        ));
+
+        $answerSignal = null;
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === $request->replySignal) {
+                $this->assertNull($answerSignal, 'The owner answers one renewal request once');
+                $answerSignal = $signal;
+            }
+        }
+        $this->assertNotNull($answerSignal);
+        $this->assertInstanceOf(AgentSignalData::class, $answerSignal->data);
+        $this->assertInstanceOf(UserBrowserTrustRenewDoneSignalData::class, $answerSignal->data->data);
+        $answer = $answerSignal->data->data;
+        $this->assertSame($request->toArray(), $answer->request->toArray());
+        $this->underAgent($library, static fn () => $library->onSignalAgent(
+            $answerSignal->data,
+            '',
+            $answerSignal->signalName->getName(),
+        ));
+
+        return $answer;
     }
 
     /**

@@ -7,6 +7,7 @@ namespace Hilos\Tests\Integration;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\SecondFactor\Base32;
 use Hilos\Auth\SecondFactor\BackupCodeGenerator;
+use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\SecondFactor\SecondFactorMessages;
 use Hilos\Auth\SecondFactor\Totp;
 use Hilos\Constants\HilosSignalConstants;
@@ -28,10 +29,10 @@ use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Item\SecondFactor;
 use Hilos\Hilos;
 use Hilos\HilosException;
-use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -127,8 +128,8 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
             'the wait chosen' => static fn () => Hilos::$db->secondFactorSettings->actions->setResetWait($userId, 20, null, null),
             'a wrong code counted' => static fn () => Hilos::$db->secondFactorSettings->actions->countAppCodeMiss($userId, 86400),
             'the settings removed' => static fn () => Hilos::$db->secondFactorSettings->actions->deleteForUser($userId),
-            'an unfinished enrolment dropped' => static fn () => Hilos::$db->secondFactors->actions->dropUnfinished($userId),
-            'a code set dropped' => static fn () => Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($userId),
+            'unfinished enrollment removal' => static fn () => Hilos::$db->secondFactors->actions->dropUnfinished($userId),
+            'backup-code set removal' => static fn () => Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($userId),
         ];
         foreach ($edits as $edit => $write) {
             try {
@@ -144,34 +145,27 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
         self::assertNotNull(Hilos::$db->secondFactorResets->liveOf($userId));
     }
 
-    /**
-     * An enrolment the library starts is only created: the unfinished one before it is the person's
-     * agent's to drop, so two starts stand side by side (HIL-1903). A set of backup codes is only
-     * created too: the old set is the person's agent's to drop, so both sets stand (HIL-1904).
-     *
-     * @throws HilosException When a fixture row cannot be written or read
-     */
-    public function testTheUsersLibraryCreatesEnrolmentsAndCodeSets(): void
+    /** Creation and replacement are confined to the person's own set. */
+    public function testTheUsersLibraryCannotCreateEnrolmentsCodesOrResets(): void
     {
         $userId = self::seedPerson();
         Hilos::$db->secondFactorBackupCodes->actions->issueSet($userId, ['oldoldoldo']);
-
-        $this->inLibrary(static function () use ($userId): void {
-            Hilos::$db->secondFactors->actions->startEnrolment($userId, 'Phone', Base32::encode(self::SECRET_BYTES));
-            Hilos::$db->secondFactors->actions->startEnrolment($userId, 'Tablet', Base32::encode(self::OTHER_SECRET_BYTES));
-            Hilos::$db->secondFactorBackupCodes->actions->issueSet($userId, ['newnewnewn']);
-            Hilos::$db->secondFactorResets->actions->request($userId, self::FUTURE, "cancel-{$userId}");
-        });
-
-        $started = Hilos::$db->secondFactors->listByUser($userId);
-        self::assertSame(['Phone', 'Tablet'], array_map(static fn (SecondFactor $factor): string => $factor->label, $started),
-            'The later start took nothing out');
-        self::assertSame([null, null], array_map(static fn (SecondFactor $factor): ?int => $factor->confirmedAt, $started));
-        self::assertSame(Base32::encode(self::SECRET_BYTES), $started[0]->readSecret());
-        self::assertSame(Base32::encode(self::OTHER_SECRET_BYTES), $started[1]->readSecret());
-        self::assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused($userId, 'oldoldoldo'), 'The new set took nothing out');
-        self::assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused($userId, 'newnewnewn'));
-        self::assertSame("cancel-{$userId}", Hilos::$db->secondFactorResets->liveOf($userId)?->readCancelToken());
+        foreach ([
+            static fn () => Hilos::$db->secondFactors->actions->startEnrolment($userId, 'Phone', Base32::encode(self::SECRET_BYTES)),
+            static fn () => Hilos::$db->secondFactorBackupCodes->actions->issueSet($userId, ['newnewnewn']),
+            static fn () => Hilos::$db->secondFactorResets->actions->request($userId, self::FUTURE, "cancel-{$userId}"),
+        ] as $create) {
+            try {
+                $this->inLibrary($create);
+                self::fail('The library cannot create rows in the personal set');
+            } catch (CreateNotAllowedException $refusal) {
+                self::assertStringContainsString($this->users->getId(), $refusal->getMessage());
+            }
+        }
+        self::assertSame([], Hilos::$db->secondFactors->listByUser($userId));
+        self::assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused($userId, 'oldoldoldo'));
+        self::assertNull(Hilos::$db->secondFactorBackupCodes->findUnused($userId, 'newnewnewn'));
+        self::assertNull(Hilos::$db->secondFactorResets->liveOf($userId));
     }
 
     /**
@@ -441,7 +435,7 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
     /**
      * @throws HilosException When a fixture row cannot be written or a frame fails
      */
-    public function testAnEnrolmentDropRemovesTheUnfinishedOnesAndLeavesTheConfirmedOne(): void
+    public function testAnEnrollmentStartReplacesTheUnfinishedOnesAndLeavesTheConfirmedOne(): void
     {
         $userId = self::seedPerson();
         $otherId = self::seedPerson();
@@ -451,25 +445,25 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
         self::seedUnfinished($otherId, 'Elsewhere');
         self::assertCount(3, Hilos::$db->secondFactors->listByUser($userId));
 
-        $dropped = $this->dropEnrolment($userId);
+        $started = $this->startEnrolment($userId);
 
-        self::assertNull($dropped->error);
+        self::assertNull($started->error);
         $left = Hilos::$db->secondFactors->listByUser($userId);
-        self::assertCount(1, $left, 'Both unfinished enrolments went');
+        self::assertCount(2, $left, 'Both unfinished enrollments were replaced by one');
         self::assertSame($confirmed->id, $left[0]->id, 'The confirmed app stayed');
         self::assertNotNull($left[0]->confirmedAt);
         self::assertCount(1, Hilos::$db->secondFactors->listByUser($otherId), 'Another person\'s enrolment is not this agent\'s to drop');
 
-        $again = $this->dropEnrolment($userId);
+        $again = $this->startEnrolment($userId);
 
-        self::assertNull($again->error, 'Nothing left to drop is an answer like any other');
-        self::assertCount(1, Hilos::$db->secondFactors->listByUser($userId));
+        self::assertNull($again->error, 'A replacement with no unfinished enrollment is allowed');
+        self::assertCount(2, Hilos::$db->secondFactors->listByUser($userId));
     }
 
     /**
      * @throws HilosException When a fixture row cannot be written
      */
-    public function testAnEnrolmentDropForAnotherPersonIsRefusedRatherThanWritten(): void
+    public function testAnEnrollmentStartForAnotherPersonIsRefusedRatherThanWritten(): void
     {
         $userId = self::seedPerson();
         $otherId = self::seedPerson();
@@ -477,9 +471,9 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
 
         try {
             $this->asPerson($userId, fn ($agent) => $agent->onSignalAgent(
-                new AgentSignalData(data: self::dropAsk($otherId)),
+                new AgentSignalData(data: self::startAsk($otherId)),
                 '',
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START,
             ));
             self::fail('A frame naming another person was written');
         } catch (AgentException) {
@@ -490,7 +484,7 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
     /**
      * @throws HilosException When a fixture row cannot be written or a frame fails
      */
-    public function testABackupCodesDropRemovesTheWholeSetAndOnlyThePersons(): void
+    public function testABackupCodesIssueRemovesTheWholeSetAndOnlyThePersons(): void
     {
         $userId = self::seedPerson();
         $otherId = self::seedPerson();
@@ -501,24 +495,26 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
         self::assertCount(3, Hilos::$db->secondFactorBackupCodes->listByUser($userId), 'The spent code is still a row');
         self::assertNull(Hilos::$db->secondFactorBackupCodes->findUnused($userId, 'aaaaaaaaaa'));
 
-        $dropped = $this->dropCodes($userId);
+        $issued = $this->issueCodes($userId);
 
-        self::assertNull($dropped->error);
-        self::assertCount(0, Hilos::$db->secondFactorBackupCodes->listByUser($userId), 'The spent and the unspent codes went together');
+        self::assertNull($issued->error);
+        self::assertCount(SecondFactorPolicy::current()->backupCodes, Hilos::$db->secondFactorBackupCodes->listByUser($userId));
+        self::assertNotNull($issued->codes);
+        self::assertNull(Hilos::$db->secondFactorBackupCodes->findUnused($userId, 'bbbbbbbbbb'));
         self::assertCount(2, Hilos::$db->secondFactorBackupCodes->listByUser($otherId), 'Another person\'s set is not this agent\'s to drop');
         self::assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused($otherId, 'dddddddddd'));
 
-        $again = $this->dropCodes($userId);
+        $again = $this->issueCodes($userId);
 
-        self::assertNull($again->error, 'Nothing left to drop is an answer like any other');
-        self::assertCount(0, Hilos::$db->secondFactorBackupCodes->listByUser($userId));
+        self::assertNull($again->error, 'A code-set replacement is allowed when a set already stands');
+        self::assertCount(SecondFactorPolicy::current()->backupCodes, Hilos::$db->secondFactorBackupCodes->listByUser($userId));
         self::assertCount(2, Hilos::$db->secondFactorBackupCodes->listByUser($otherId));
     }
 
     /**
      * @throws HilosException When a fixture row cannot be written
      */
-    public function testABackupCodesDropForAnotherPersonIsRefusedRatherThanWritten(): void
+    public function testABackupCodesIssueForAnotherPersonIsRefusedRatherThanWritten(): void
     {
         $userId = self::seedPerson();
         $otherId = self::seedPerson();
@@ -526,9 +522,9 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
 
         try {
             $this->asPerson($userId, fn ($agent) => $agent->onSignalAgent(
-                new AgentSignalData(data: self::codesDropAsk($otherId)),
+                new AgentSignalData(data: self::codesIssueAsk($otherId)),
                 '',
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE,
             ));
             self::fail('A frame naming another person was written');
         } catch (AgentException) {
@@ -556,35 +552,35 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
     }
 
     /**
-     * @param int $userId Person whose unfinished enrolments to drop
-     * @return UserSecondFactorEnrollDropDoneSignalData The agent's answer
+     * @param int $userId Person whose enrollment is starting
+     * @return UserSecondFactorEnrollStartDoneSignalData The agent's answer
      * @throws HilosException When the frame cannot be queued or the agent fails
      */
-    private function dropEnrolment(int $userId): UserSecondFactorEnrollDropDoneSignalData
+    private function startEnrolment(int $userId): UserSecondFactorEnrollStartDoneSignalData
     {
         $answer = $this->carry(
-            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP,
-            self::dropAsk($userId),
-            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START,
+            self::startAsk($userId),
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START_DONE,
         );
-        self::assertInstanceOf(UserSecondFactorEnrollDropDoneSignalData::class, $answer);
+        self::assertInstanceOf(UserSecondFactorEnrollStartDoneSignalData::class, $answer);
 
         return $answer;
     }
 
     /**
-     * @param int $userId Person whose backup codes to drop
-     * @return UserSecondFactorCodesDropDoneSignalData The agent's answer
+     * @param int $userId Person requesting replacement backup codes
+     * @return UserSecondFactorCodesIssueDoneSignalData The agent's answer
      * @throws HilosException When the frame cannot be queued or the agent fails
      */
-    private function dropCodes(int $userId): UserSecondFactorCodesDropDoneSignalData
+    private function issueCodes(int $userId): UserSecondFactorCodesIssueDoneSignalData
     {
         $answer = $this->carry(
-            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP,
-            self::codesDropAsk($userId),
-            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE,
+            self::codesIssueAsk($userId),
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE_DONE,
         );
-        self::assertInstanceOf(UserSecondFactorCodesDropDoneSignalData::class, $answer);
+        self::assertInstanceOf(UserSecondFactorCodesIssueDoneSignalData::class, $answer);
 
         return $answer;
     }
@@ -745,14 +741,14 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
     }
 
     /**
-     * @param int $userId Person whose unfinished enrolments to drop
-     * @return UserSecondFactorEnrollDropSignalData The ask the library sends before it opens the next enrolment
+     * @param int $userId Person requesting an enrollment start
+     * @return UserSecondFactorEnrollStartSignalData The request the library sends to the person's agent
      */
-    private static function dropAsk(int $userId): UserSecondFactorEnrollDropSignalData
+    private static function startAsk(int $userId): UserSecondFactorEnrollStartSignalData
     {
-        return new UserSecondFactorEnrollDropSignalData(
+        return new UserSecondFactorEnrollStartSignalData(
             userId: $userId,
-            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE,
+            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START_DONE,
             acceptKey: self::ACCEPT_KEY,
             requestId: 'req-1',
             action: HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
@@ -761,14 +757,14 @@ final class SecondFactorPersonEditsIntegrationTest extends HilosSessionIntegrati
     }
 
     /**
-     * @param int $userId Person whose backup codes to drop
-     * @return UserSecondFactorCodesDropSignalData The ask the library sends before it issues the next set
+     * @param int $userId Person requesting replacement backup codes
+     * @return UserSecondFactorCodesIssueSignalData The request the library sends to the person's agent
      */
-    private static function codesDropAsk(int $userId): UserSecondFactorCodesDropSignalData
+    private static function codesIssueAsk(int $userId): UserSecondFactorCodesIssueSignalData
     {
-        return new UserSecondFactorCodesDropSignalData(
+        return new UserSecondFactorCodesIssueSignalData(
             userId: $userId,
-            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE,
+            replySignal: HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE_DONE,
             acceptKey: self::ACCEPT_KEY,
             requestId: 'req-1',
             action: HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,

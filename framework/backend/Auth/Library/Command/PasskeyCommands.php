@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
-use Hilos\Auth\StepUp\StepUpMethod;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
 use Hilos\Auth\Flow\AuthFlowIntent;
@@ -17,11 +17,12 @@ use Hilos\Auth\Library\DTO\PasskeyRegisterConfirmActionDTO;
 use Hilos\Auth\Library\DTO\PasskeyRegisterOptionsActionDTO;
 use Hilos\Auth\Library\DTO\RegistrationPasskeyOptionsActionDTO;
 use Hilos\Auth\Method\PasskeyAddressPolicy;
-use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Registration\RegistrationConsent;
+use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\StepUp\DTO\StepUpOpeningReplyDTO;
 use Hilos\Auth\StepUp\DTO\StepUpPasskeyAnswer;
 use Hilos\Auth\StepUp\StepUpMessages;
+use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\StepUp\StepUpOperationKey;
 use Hilos\Auth\WebAuthn\AssertionVerifier;
 use Hilos\Auth\WebAuthn\AttestationResult;
@@ -34,20 +35,23 @@ use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Auth\WebAuthn\WebAuthnChallengeSigner;
 use Hilos\Auth\WebAuthn\WebAuthnConfig;
 use Hilos\Constants\HilosSignalConstants;
-use Hilos\Core\Http\DeviceName;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Http\DeviceName;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\PasskeyCredential;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
+use Hilos\Users\DTO\PasskeyIdentityAddData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -116,10 +120,12 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * @throws InvalidArgumentException When the options signal cannot be named or queued
      * @throws RandomException When the platform CSPRNG cannot produce a challenge
      * @throws HilosException When WebAuthn env config or credential lookup fails
+     * @throws JsonException When a saved merge reservation is malformed
      */
     public function registerOptions(string $acceptKey, PasskeyRegisterOptionsActionDTO $dto): void
     {
         $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
 
         $config = WebAuthnConfig::fromEnv();
         $challenge = new WebAuthnChallengeSigner($config->challengeSecret)->issue(
@@ -176,10 +182,12 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * @throws ValidationException When the add is not confirmed, the challenge, payload, or ceremony is invalid, or the passkey
      *     is already registered
      * @throws HilosException When WebAuthn env config, identity creation, or credential storage fails
+     * @throws JsonException When a saved merge reservation is malformed
      */
     public function registerConfirm(string $acceptKey, PasskeyRegisterConfirmActionDTO $dto): void
     {
         $acting = $this->confirmedUser($acceptKey, StepUpOperationKey::ADD_SIGN_IN_METHOD);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
 
         $config = WebAuthnConfig::fromEnv();
         try {
@@ -207,17 +215,35 @@ final class PasskeyCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::PASSKEY_REGISTRATION_FAILED . ': ' . $e->getMessage());
         }
 
-        $this->storeCredential(
-            $acting->userId,
-            $result,
-            $dto->transports,
-            $dto->userAgent,
-            $this->passkeyUserHandle(
-                $config,
-                $acting->userId,
-                Hilos::$db->passkeyCredentials->listByUser($acting->userId),
+        AccountMergeAccess::requireProtectionChange($acting->userId);
+        $session = Hilos::$db->sessions->findByToken($acting->sessionToken);
+        if ($session === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
+        }
+        $this->library->askPersonAgent($acting->userId, HilosSignalConstants::HILOS_USER_IDENTITY_ADD, new UserIdentityAddSignalData(
+            userId: $acting->userId,
+            sessionId: (int)$session->id,
+            identity: new PasskeyIdentityAddData(
+                credentialId: $result->credentialId,
+                publicKeyPem: $result->publicKeyPem,
+                algorithm: $result->algorithm->value,
+                signCount: $result->signCount,
+                transports: $dto->transports,
+                aaguid: $result->aaguid,
+                userHandle: Base64Url::encode($this->passkeyUserHandle(
+                    $config,
+                    $acting->userId,
+                    Hilos::$db->passkeyCredentials->listByUser($acting->userId),
+                )),
+                deviceName: DeviceName::fromUserAgent($dto->userAgent),
             ),
-        );
+            tripKeyHash: null,
+            replySignal: HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
     }
 
     /**
@@ -337,6 +363,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * @throws InvalidArgumentException When the landing or grant frame cannot be named or queued
      * @throws HilosException When WebAuthn env config, a lookup, or the account, identity, credential, project
      *     bookkeeping, or reservation write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function completeRegistration(string $acceptKey, CompleteRegistrationPasskeyActionDTO $dto): ?AuthFlowOutcome
     {
@@ -512,6 +539,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
      *     cannot be addressed
      * @throws InvalidArgumentException When the ask frame cannot be named or queued
      * @throws HilosException When WebAuthn env config, or the credential or identity lookup fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function loginConfirm(string $acceptKey, PasskeyLoginConfirmActionDTO $dto): void
     {
@@ -532,6 +560,7 @@ final class PasskeyCommands extends AbstractLibraryCommands
         if ($credential === null) {
             throw new ValidationException(AuthMessages::INVALID_PASSKEY);
         }
+        AccountMergeAccess::requireSignIn($credential->userId);
 
         // A credential whose identity anchor is gone is not a way in (HIL-722). Since
         // HIL-1111 no such row can exist: a foreign key holds the credential to its
@@ -588,6 +617,8 @@ final class PasskeyCommands extends AbstractLibraryCommands
      * @param UserPasskeyUseSignalData $ask The ask the agent answered
      * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
      * @throws InvalidArgumentException When the grant frame cannot be named or queued
+     * @throws HilosException When the merge gate refuses sign-in or cannot be read
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function finishLogin(UserPasskeyUseSignalData $ask): void
     {

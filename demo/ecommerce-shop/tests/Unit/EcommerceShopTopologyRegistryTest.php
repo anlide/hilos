@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Unit;
 
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Demo\EcommerceShop\Pages\Hilos\LicenseDependenciesPage;
 use Demo\EcommerceShop\Database\Pages\PageCatalog;
 use Hilos\Database\Pages\HilosPageCatalog;
@@ -269,6 +271,25 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class EcommerceShopTopologyRegistryTest extends TestCase
 {
+    public function testIdentityAdditionIsDeliveredToTheDeclaredOwnerAndCaller(): void
+    {
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::userId, Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::class, Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(
+            HilosAgentType::HILOS_USERS_LIBRARY,
+            Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertSame(
+            UserIdentityAddDoneSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE, Hilos::getAgentSignalIndexFields());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE, Hilos::getAgentSignalRoutes());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE, Hilos::getAgentSignalRoutes());
+        self::assertSame(HilosAgentType::HILOS_SESSIONS_LIBRARY, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_AGENTS_GONE]);
+    }
+
     /** The dependency snapshot stays a build input on an ordinary public page. */
     public function testLicenseDependenciesUsesThePublicIndexPageWithoutServerData(): void
     {
@@ -1094,6 +1115,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PASSKEY_USE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PASSWORD_RESET => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_IDENTITY_ADD => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_EMAIL_CHANGE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK => HilosAgentType::HILOS_USER,
@@ -1102,8 +1124,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE => HilosAgentType::HILOS_USER,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP => HilosAgentType::HILOS_USER,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK => HilosAgentType::HILOS_USER,
@@ -1140,6 +1163,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PASSKEY_USE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PASSWORD_RESET_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_IDENTITY_UNLINK_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
@@ -1148,8 +1172,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_REMOVE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_CANCEL_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REMIND_DONE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_UNLOCK_DONE => HilosAgentType::HILOS_USERS_LIBRARY,

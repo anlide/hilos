@@ -40,6 +40,7 @@ use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
 use Hilos\Users\DTO\UserPasswordRehashSignalData;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
@@ -48,9 +49,10 @@ use Hilos\Users\DTO\UserPhotoRemoveSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
 use Hilos\Users\DTO\UserThemePickWriteSignalData;
 use Hilos\Users\DTO\UserTimeZoneWriteSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetCancelSignalData;
@@ -145,6 +147,7 @@ trait PersonAgentFrames
             $ask instanceof UserAddressVerifySignalData,
             $ask instanceof UserPasskeyUseSignalData,
             $ask instanceof UserPasswordResetSignalData,
+            $ask instanceof UserIdentityAddSignalData,
             $ask instanceof UserPasswordChangeSignalData,
             $ask instanceof UserEmailChangeSignalData,
             $ask instanceof UserIdentityUnlinkSignalData,
@@ -153,8 +156,9 @@ trait PersonAgentFrames
             $ask instanceof UserSecondFactorRemoveSignalData,
             $ask instanceof UserSecondFactorResetCancelSignalData,
             $ask instanceof UserSecondFactorWaitWriteSignalData,
-            $ask instanceof UserSecondFactorEnrollDropSignalData,
-            $ask instanceof UserSecondFactorCodesDropSignalData,
+            $ask instanceof UserSecondFactorEnrollStartSignalData,
+            $ask instanceof UserSecondFactorCodesIssueSignalData,
+            $ask instanceof UserSecondFactorResetRequestSignalData,
             $ask instanceof UserSecondFactorResetDueSignalData,
             $ask instanceof UserSecondFactorResetRemindSignalData,
             $ask instanceof UserSecondFactorUnlockSignalData,

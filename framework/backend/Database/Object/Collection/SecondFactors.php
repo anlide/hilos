@@ -22,11 +22,10 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * SecondFactors object collection - the authenticator apps of every person (HIL-494).
  *
- * Persistence primitives of the enrolment: {@see startEnrolment()} opens one and only
- * opens it; {@see dropUnfinished()} takes out the enrolments never confirmed - the person's
- * agent does that before a new one is opened, so a person keeps at most one unfinished
- * enrolment (HIL-1903) - and {@see deleteForUser()} takes the whole second factor of a person
- * out, which is what switching it off and a completed reset both do. Reads by person go through
+ * Persistence primitives for enrollment. The personal owner calls {@see dropUnfinished()} and
+ * {@see startEnrolment()} in one transaction when replacing an unfinished enrollment (HIL-1989);
+ * this collection does not open that transaction. {@see deleteForUser()} takes out a person's
+ * full second factor when it is switched off or a reset completes. Reads by person go through
  * {@see listByUser()}.
  *
  * @extends Objects<ObjectSecondFactor>
@@ -63,10 +62,9 @@ class SecondFactors extends Objects
     /**
      * Opens an enrolment: an unconfirmed authenticator holding a fresh secret.
      *
-     * Nothing is taken out here. The person's earlier unfinished enrolment was dropped by the
-     * person's agent before this is called ({@see dropUnfinished()}, HIL-1903): asking for a new
-     * secret replaces the one shown before, and an abandoned QR code must not stay able to
-     * finish an enrolment later. Confirmed authenticators are untouched.
+     * The personal owner calls this after {@see dropUnfinished()} in the same transaction
+     * (HIL-1989), so a failed replacement restores the earlier unfinished enrollment. Confirmed
+     * authenticators are untouched.
      *
      * @param int $userId Person enrolling
      * @param string $label Name the authenticator starts with

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\StepUp\StepUpMethod;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
@@ -28,6 +29,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Users\DTO\UserAddressVerifySignalData;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -116,6 +118,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * @throws InvalidFormatException When the proven address is not a valid identifier
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When verification, the account, identity, or reservation write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirmMagicLink(string $acceptKey, ConfirmMagicLinkActionDTO $dto): ?AuthFlowOutcome
     {
@@ -157,6 +160,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * @throws InvalidFormatException When the proven address is not a valid identifier
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When verification, the account, identity, or reservation write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirmMagicLinkCode(string $acceptKey, ConfirmMagicLinkCodeActionDTO $dto): ?AuthFlowOutcome
     {
@@ -182,9 +186,12 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * @param UserAddressVerifySignalData $ask The ask the agent answered
      * @throws ItemNotFoundForUpdateException When the asking connection has no session any more
      * @throws InvalidArgumentException When the grant frame cannot be named or queued
+     * @throws HilosException When the merge reservation cannot be read or refuses the operation
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function finishSignIn(UserAddressVerifySignalData $ask): void
     {
+        AccountMergeAccess::requireSignIn($ask->userId);
         $this->grantProvenAddress($this->acting($ask->acceptKey), $ask->userId);
     }
 
@@ -224,6 +231,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * @throws ValidationException When the account's person cannot be addressed or the theme choice is invalid
      * @throws InvalidArgumentException When the hand-off or the ask frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     private function signInProvenAddress(ActingSession $acting, string $email, ?string $themePick): ?AuthFlowOutcome
     {
@@ -232,7 +240,7 @@ final class MagicLinkCommands extends AbstractLibraryCommands
             $this->releaseOwnHoldOn($email, $acting->sessionToken);
 
             $password = Hilos::$db->identities->findByIdentity(IdentityType::PASSWORD, $email);
-            if ($password !== null && !$password->verified) {
+            if (AccountMergeAccess::reservation($userId) === null && $password !== null && !$password->verified) {
                 $this->library->askPersonAgent($userId, HilosSignalConstants::HILOS_USER_ADDRESS_VERIFY, new UserAddressVerifySignalData(
                     userId: $userId,
                     identityId: (int)$password->id,

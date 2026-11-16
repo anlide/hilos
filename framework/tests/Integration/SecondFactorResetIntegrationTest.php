@@ -315,7 +315,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             new ProfileSecondFactorEnrollStartActionDTO($this->nextCodeOf($secret), false),
         );
         $this->carryPersonFrames($this->library);
-        // Two hops, prove and then drop: the press is answered once, by the second.
+        // Two hops, proof and then atomic enrollment: only the second answers the press.
         $ack = $this->acks()['second-app'] ?? null;
         $this->assertInstanceOf(PageActionSuccessSignalData::class, $ack);
         $start = SecondFactorProfileReplyDTO::fromArray((array)$ack->reply);
@@ -329,13 +329,12 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
-     * Two starts pressed at once both reach the person's agent before either answer is back: the
-     * answer resumed first starts the enrolment and answers its secret, the other finds that
-     * enrolment standing and is refused as expired, and one enrolment is left unfinished (HIL-1903).
+     * Both starts commit their replacement at the owner before their answers return. Each answer
+     * carries its own enrollment material, and only the final replacement remains unfinished.
      *
      * @throws HilosException When a command or a frame fails
      */
-    public function testTwoStartsAtOnceStartOneEnrolmentAndRefuseTheOtherPress(): void
+    public function testTwoStartsAtOnceEachCommitOneReplacementAndAnswerTheirOwnMaterial(): void
     {
         $this->drain();
         foreach (['start-a', 'start-b'] as $requestId) {
@@ -347,15 +346,16 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         }
         $log = $this->logged(fn () => $this->carryPersonFrames($this->library));
 
-        $this->assertStringNotContainsString('Action failed', $log, 'Losing to the other press is a refusal, not a failure');
+        $this->assertStringNotContainsString('Action failed', $log, 'Both committed owner starts return without a library failure');
         $acks = $this->acks();
         $this->assertSame(['start-a', 'start-b'], array_keys($acks));
         $this->assertInstanceOf(PageActionSuccessSignalData::class, $acks['start-a']);
         $started = SecondFactorProfileReplyDTO::fromArray((array)$acks['start-a']->reply);
         $this->assertNotNull($started->secret);
-        $this->assertInstanceOf(PageActionErrorSignalData::class, $acks['start-b']);
-        $this->assertSame(SecondFactorMessages::SETUP_EXPIRED, $acks['start-b']->reason);
-        $this->assertSame([(int)$started->authenticatorId], $this->unfinishedIds());
+        $this->assertInstanceOf(PageActionSuccessSignalData::class, $acks['start-b']);
+        $replacement = SecondFactorProfileReplyDTO::fromArray((array)$acks['start-b']->reply);
+        $this->assertNotSame($started->authenticatorId, $replacement->authenticatorId);
+        $this->assertSame([(int)$replacement->authenticatorId], $this->unfinishedIds());
     }
 
     /**
@@ -365,7 +365,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
      *
      * @throws HilosException When a command or a frame fails
      */
-    public function testAReadThatFailsWhenTheDropIsAnsweredFailsThePress(): void
+    public function testAFailedLibraryContinuationLeavesTheCommittedOwnerEnrollmentIntact(): void
     {
         $this->drain();
         $this->pressDeferred(
@@ -383,7 +383,7 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         $this->assertSame(['start-a'], array_keys($acks));
         $this->assertInstanceOf(PageActionErrorSignalData::class, $acks['start-a']);
         $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $acks['start-a']->reason);
-        $this->assertSame([], $this->unfinishedIds(), 'No enrolment is started behind a press that failed');
+        $this->assertCount(1, $this->unfinishedIds(), 'The owner committed before its answer was resumed');
     }
 
     /**
@@ -434,13 +434,12 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
-     * Two renewals pressed at once both reach the person's agent before either drop is answered:
-     * the answer resumed first finds no set and issues one, the other finds that set standing and
-     * answers it - one set is left, and both presses are answered with it (HIL-1904).
+     * Both renewals commit at the owner before their answers return. Each answer carries the
+     * codes that operation committed, and only the final replacement remains stored.
      *
      * @throws HilosException When a command or a frame fails
      */
-    public function testTwoRenewalsAtOnceLeaveOneSetAndAnswerItTwice(): void
+    public function testTwoRenewalsAtOnceEachAnswerTheirOwnCommittedSet(): void
     {
         $secret = $this->connectFirstAppSecret($first);
         $this->drain();
@@ -457,14 +456,18 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
         );
         $log = $this->logged(fn () => $this->carryPersonFrames($this->library));
 
-        $this->assertStringNotContainsString('Action failed', $log, 'Answering with the standing set is no failure');
+        $this->assertStringNotContainsString('Action failed', $log, 'Both committed owner replacements return without a library failure');
         $acks = $this->acks();
         $this->assertSame(['renew-a', 'renew-b'], array_keys($acks));
         $this->assertInstanceOf(PageActionSuccessSignalData::class, $acks['renew-a']);
         $this->assertInstanceOf(PageActionSuccessSignalData::class, $acks['renew-b']);
         $codes = SecondFactorProfileReplyDTO::fromArray((array)$acks['renew-a']->reply)->backupCodes ?? [];
         $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, $codes);
-        $this->assertSame($codes, SecondFactorProfileReplyDTO::fromArray((array)$acks['renew-b']->reply)->backupCodes);
+        $replacement = SecondFactorProfileReplyDTO::fromArray((array)$acks['renew-b']->reply)->backupCodes;
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, $replacement);
+        $this->assertNotSame($codes, $replacement);
+        $this->assertNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::USER_ID, BackupCodeGenerator::normalize($codes[0])));
+        $this->assertNotNull(Hilos::$db->secondFactorBackupCodes->findUnused(self::USER_ID, BackupCodeGenerator::normalize($replacement[0])));
         $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
     }
 
@@ -503,13 +506,11 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
-     * A new set that cannot be created after the person's agent dropped the old one fails the press
-     * in the general words, with the detail in the log, and the section is fanned again: it shows the
-     * person no codes left (HIL-1904).
+     * The library receives committed codes without a creation claim of its own.
      *
      * @throws HilosException When a command or a frame fails
      */
-    public function testACreationThatFailsAfterTheDropFailsThePressAndShowsNoCodes(): void
+    public function testCodeIssueSucceedsWithoutALibraryCreationClaim(): void
     {
         $secret = $this->connectFirstAppSecret();
         $this->drain();
@@ -519,20 +520,20 @@ final class SecondFactorResetIntegrationTest extends HilosSessionIntegrationTest
             new ProfileSecondFactorCodesRenewActionDTO($this->nextCodeOf($secret), false),
         );
 
-        // The library answers in a frame of its own and holds no claim in this case, so the truth
-        // source refuses the set it creates; the person's agent answers in its own frame, as before.
+        // The library has no creation claim; the personal owner commits the set in its own frame.
         $log = $this->logged(fn () => ExecutionContext::run(
             new ExecutionFrame(agentId: $this->library->getId()),
             fn () => $this->carryPersonFrames($this->library),
         ));
 
-        $this->assertStringContainsString('Action failed', $log);
+        $this->assertStringNotContainsString('Action failed', $log);
         $acks = $this->acks();
         $this->assertSame(['renew-a'], array_keys($acks));
-        $this->assertInstanceOf(PageActionErrorSignalData::class, $acks['renew-a']);
-        $this->assertSame(SignalConstants::ACTION_FAILED_REASON, $acks['renew-a']->reason);
-        $this->assertSame([], Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
-        $this->assertSame(0, $this->lastState()?->backupCodesLeft);
+        $this->assertInstanceOf(PageActionSuccessSignalData::class, $acks['renew-a']);
+        $codes = SecondFactorProfileReplyDTO::fromArray((array)$acks['renew-a']->reply)->backupCodes;
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, $codes);
+        $this->assertCount(SecondFactorSettings::DEFAULT_BACKUP_CODES, Hilos::$db->secondFactorBackupCodes->listByUser(self::USER_ID));
+        $this->assertSame(SecondFactorSettings::DEFAULT_BACKUP_CODES, $this->lastState()?->backupCodesLeft);
     }
 
     /**

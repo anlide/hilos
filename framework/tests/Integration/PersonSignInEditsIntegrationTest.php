@@ -19,6 +19,7 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -472,14 +473,20 @@ final class PersonSignInEditsIntegrationTest extends HilosSessionIntegrationTest
     /**
      * @throws HilosException When a fixture row cannot be written or read
      */
-    public function testTheOAuthAgentLinksAProviderAccountAndEditsNone(): void
+    public function testTheOAuthAgentCannotCreateOrRemoveAProviderAccount(): void
     {
         $userId = self::seedPerson();
         self::seedPassword($userId, self::EMAIL);
 
-        $linkId = $this->inOAuth(static fn (): ?int => Hilos::$db->identities->createOauthIdentity($userId, 'github', 'subject-1405')->id);
+        $linkId = $this->inLibrary(static fn (): ?int => Hilos::$db->identities->createOauthIdentity($userId, 'github', 'subject-1405')->id);
         self::assertNotNull($linkId);
 
+        try {
+            $this->inOAuth(static fn () => Hilos::$db->identities->createOauthIdentity($userId, 'github', 'foreign-subject'));
+            self::fail('The OAuth agent must hand final identity creation to the personal owner');
+        } catch (CreateNotAllowedException $refusal) {
+            self::assertStringContainsString(self::OAUTH_AGENT_ID, $refusal->getMessage());
+        }
         try {
             $this->inOAuth(static fn () => Hilos::$db->identities->deleteIdentity($userId, $linkId));
             self::fail('The OAuth agent must not remove a way in it linked');

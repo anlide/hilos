@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\StepUp;
 
+use JsonException;
+use Hilos\HilosException;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Hilos\Auth\Verification\CodeDeliveryAvailability;
@@ -30,9 +33,12 @@ final class StepUpMethodResolver
      * @throws SettingException When the second-factor setting catalog or value is invalid
      * @throws InvalidArgumentException When a collection query or loaded object is invalid
      * @throws LogicException When collection metadata is incomplete
+     * @throws HilosException When the saved merge reservation cannot be read
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function resolve(int $userId): ?StepUpTarget
     {
+        AccountMergeAccess::requireSignIn($userId);
         if (SecondFactorPolicy::current()->enabled && Hilos::$db->secondFactors->confirmedOf($userId) !== []) {
             return new StepUpTarget(StepUpMethod::SECOND_FACTOR);
         }

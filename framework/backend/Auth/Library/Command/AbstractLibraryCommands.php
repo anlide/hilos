@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use JsonException;
 use Closure;
 use Hilos\Auth\Code\CodeSendTicket;
 use Hilos\Auth\Code\AuthCodeAgent;
@@ -585,6 +586,7 @@ abstract class AbstractLibraryCommands
      * @throws InvalidArgumentException When the grant frame cannot be named or queued
      * @throws HilosException When the account, project bookkeeping, or reservation write fails, or whatever
      *     `$withAccount` throws
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     protected function landAccountWithoutHold(
         ActingSession $acting,

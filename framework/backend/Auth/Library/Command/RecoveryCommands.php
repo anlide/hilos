@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\Flow\AuthFlowIntent;
@@ -25,6 +26,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Users\DTO\UserPasswordResetSignalData;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -69,12 +71,17 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When identity lookup, code issuing, or the runtime write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function requestPasswordReset(string $acceptKey, RequestPasswordResetActionDTO $dto): AuthFlowOutcome
     {
         $acting = $this->acting($acceptKey);
 
         $email = strtolower($dto->email);
+        $userId = Hilos::$db->identities->findAccountIdByEmail($email);
+        if ($userId !== null) {
+            AccountMergeAccess::requireProtectionChange($userId);
+        }
         $ticket = $this->openCodeSendLine($acting, StateHilosCodeSendAttempt::CHANNEL_EMAIL);
         $outcome = new PasswordRecoveryService()->requestCode($email, $ticket);
         if ($outcome === null) {
@@ -128,12 +135,17 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * @throws ValidationException When the submitted code does not match the live one
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When verification or the runtime write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirmPasswordReset(string $acceptKey, ConfirmPasswordResetActionDTO $dto): ?AuthFlowOutcome
     {
         $acting = $this->acting($acceptKey);
 
         $email = strtolower($dto->email);
+        $userId = Hilos::$db->identities->findAccountIdByEmail($email);
+        if ($userId !== null) {
+            AccountMergeAccess::requireProtectionChange($userId);
+        }
         $recovery = new PasswordRecoveryService();
 
         if (!$recovery->hasLiveCode($email)) {
@@ -204,6 +216,7 @@ final class RecoveryCommands extends AbstractLibraryCommands
      * @throws ValidationException When the account's person cannot be addressed
      * @throws InvalidArgumentException When the ask frame cannot be named or queued
      * @throws HilosException When the code spend, the identity lookup, the session lookup or the runtime read fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function completePasswordReset(string $acceptKey, CompletePasswordResetActionDTO $dto): ?AuthFlowOutcome
     {
@@ -217,6 +230,11 @@ final class RecoveryCommands extends AbstractLibraryCommands
                 AuthFlowIntent::RECOVERY,
                 AuthMessages::RESET_CODE_EXPIRED,
             );
+        }
+
+        $userId = Hilos::$db->identities->findAccountIdByEmail($email);
+        if ($userId !== null) {
+            AccountMergeAccess::requireProtectionChange($userId);
         }
 
         try {

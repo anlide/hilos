@@ -89,14 +89,17 @@ use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserLastBrowserTimeZoneWriteSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Users\DTO\UserPasswordRehashDoneSignalData;
 use Hilos\Users\DTO\UserPasswordResetDoneSignalData;
 use Hilos\Users\DTO\UserPhotoPutDoneSignalData;
 use Hilos\Users\DTO\UserPhotoRemoveDoneSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorResetCancelDoneSignalData;
@@ -195,6 +198,11 @@ final class AgentSignalPayloadGuardTest extends TestCase
                 HilosSignalConstants::HILOS_USER_PASSWORD_CHANGE_DONE,
                 UserPasswordChangeDoneSignalData::class,
             ],
+            'HILOS_USER_IDENTITY_ADD_DONE' => [
+                PayloadGuardUsersLibraryAgent::class,
+                HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE,
+                UserIdentityAddDoneSignalData::class,
+            ],
             'HILOS_USER_EMAIL_CHANGE_DONE' => [
                 PayloadGuardUsersLibraryAgent::class,
                 HilosSignalConstants::HILOS_USER_EMAIL_CHANGE_DONE,
@@ -230,15 +238,20 @@ final class AgentSignalPayloadGuardTest extends TestCase
                 HilosSignalConstants::HILOS_USER_SECOND_FACTOR_WAIT_WRITE_DONE,
                 UserSecondFactorWaitWriteDoneSignalData::class,
             ],
-            'HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE' => [
+            'HILOS_USER_SECOND_FACTOR_ENROLL_START_DONE' => [
                 PayloadGuardUsersLibraryAgent::class,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE,
-                UserSecondFactorEnrollDropDoneSignalData::class,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START_DONE,
+                UserSecondFactorEnrollStartDoneSignalData::class,
             ],
-            'HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE' => [
+            'HILOS_USER_SECOND_FACTOR_CODES_ISSUE_DONE' => [
                 PayloadGuardUsersLibraryAgent::class,
-                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE,
-                UserSecondFactorCodesDropDoneSignalData::class,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE_DONE,
+                UserSecondFactorCodesIssueDoneSignalData::class,
+            ],
+            'HILOS_USER_SECOND_FACTOR_RESET_REQUEST_DONE' => [
+                PayloadGuardUsersLibraryAgent::class,
+                HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST_DONE,
+                UserSecondFactorResetRequestDoneSignalData::class,
             ],
             'HILOS_USER_SECOND_FACTOR_RESET_DUE_DONE' => [
                 PayloadGuardUsersLibraryAgent::class,
@@ -294,6 +307,16 @@ final class AgentSignalPayloadGuardTest extends TestCase
                 PayloadGuardOAuthAgent::class,
                 HilosSignalConstants::HILOS_OAUTH_PENDING,
                 OAuthPendingLoginSignalData::class,
+            ],
+            'HILOS_OAUTH_IDENTITY_ADD_DONE' => [
+                PayloadGuardOAuthAgent::class,
+                HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE,
+                UserIdentityAddDoneSignalData::class,
+            ],
+            'HILOS_OAUTH_AGENTS_GONE' => [
+                PayloadGuardOAuthAgent::class,
+                HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE,
+                AgentsGoneSignalData::class,
             ],
             'MAINTENANCE_AGENT_ENABLE' => [
                 PayloadGuardHilosIndexAgent::class,

@@ -19,8 +19,9 @@ use Hilos\Database\View\Item\SecondFactorReset;
 /**
  * SecondFactorResetsActions - write operations for the SecondFactorResets collection (HIL-494).
  *
- * Opening a delayed removal. Cancelling it, carrying it out and stamping an announcement
- * are writes on a row already there and belong to that item's actions.
+ * The personal owner opens a delayed removal in its request transaction, including the
+ * cancellation token. Cancelling it, carrying it out and stamping an announcement are writes
+ * on a row already there and belong to that item's actions.
  *
  * @extends DbActions<SecondFactorReset, ObjectSecondFactorResets>
  * @property-read DbCollectionSecondFactorResets $collection

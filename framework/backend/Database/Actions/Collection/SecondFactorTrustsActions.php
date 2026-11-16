@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Collection;
 
+use Hilos\Auth\SecondFactor\SecondFactorSettings;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -26,9 +27,8 @@ use Throwable;
  *
  * Trusting a browser for a person, taking every trust of a person out, and applying the stored
  * trust restrictions to the trusts of one person (HIL-1900), on a request for one of them or at
- * the start of the person's agent (HIL-1901). The session holder creates a trust a pair has none
- * of yet and leaves a standing one as it is; the person's agent extends a standing trust to the
- * moment the second factor was confirmed again and applies the restrictions with it (HIL-1907).
+ * the start of the person's agent (HIL-1901). The personal owner grants or renews a trust and
+ * applies saved restrictions atomically. Raw trust and renewal remain available to agreed consumers.
  *
  * @extends DbActions<SecondFactorTrust, ObjectSecondFactorTrusts>
  * @property-read DbCollectionSecondFactorTrusts $collection
@@ -40,7 +40,7 @@ class SecondFactorTrustsActions extends DbActions
      * Trusts a browser for a person until a moment, when the pair has no trust yet (HIL-1907).
      *
      * A standing pair is left as it is and nothing is written ({@see ObjectSecondFactorTrusts::trust()}):
-     * the session holder that creates trusts on the way in asks the person's agent to extend it.
+     * callers that need grant-or-renew use that atomic action instead.
      *
      * @param int $sessionId Session row of the browser
      * @param int $userId Person the browser is trusted for
@@ -64,7 +64,7 @@ class SecondFactorTrustsActions extends DbActions
     /**
      * Extends the standing trust of a browser for a person, and applies the stored restrictions to the person, in one transaction (HIL-1907).
      *
-     * The person's agent extends the pair the session holder found standing at the confirmation
+     * This raw renewal extends only a pair already standing at the confirmation
      * ({@see ObjectSecondFactorTrusts::renew()}). While the pair stands, every stored restriction is
      * applied to the person's trusts in the same transaction, so one saved at the confirmation or
      * later cuts or takes out the extended pair at once ({@see applySavedRestrictions()}). With no
@@ -89,6 +89,36 @@ class SecondFactorTrustsActions extends DbActions
             if ($renewed) {
                 $this->objectCollection->applyRestrictions($userId);
             }
+        });
+
+        return $renewed;
+    }
+
+    /**
+     * Grants or renews a pair and applies saved restrictions in the same transaction.
+     * A later grant already stored keeps its confirmation and end.
+     *
+     * @param int $sessionId Browser's live session
+     * @param int $userId Person whose set is written
+     * @param int $until Policy-capped end in epoch milliseconds
+     * @param int $grantedAt Proof moment in epoch milliseconds
+     * @return bool Whether the pair stands after applying restrictions
+     * @throws CreateNotAllowedException When adding to the person's set is refused
+     * @throws WriteNotAllowedException When editing or removing the person's set is refused
+     * @throws HilosException When the transaction or a row write fails
+     */
+    public function grantOrRenew(int $sessionId, int $userId, int $until, int $grantedAt): bool
+    {
+        $this->ensureCanCreateInSet((string)$userId);
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Update);
+        $this->ensureCanWriteSet((string)$userId, TruthSourceOperation::Remove);
+        $renewed = false;
+        $this->writeAtomically(function () use ($sessionId, $userId, $until, $grantedAt, &$renewed): void {
+            if (!$this->objectCollection->trust($sessionId, $userId, $until, $grantedAt)) {
+                $this->objectCollection->renew($sessionId, $userId, $until, $grantedAt);
+            }
+            $this->objectCollection->applyRestrictions($userId);
+            $renewed = $this->objectCollection->isTrusted($sessionId, $userId, SecondFactorSettings::TRUST_DAYS_MAX);
         });
 
         return $renewed;

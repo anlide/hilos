@@ -60,6 +60,7 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
         'hilos_user',
         'hilos_user_merge',
         'hilos_account_deletion',
+        'hilos_account_operation',
         'hilos_identity',
         'hilos_passkey_credential',
     ];

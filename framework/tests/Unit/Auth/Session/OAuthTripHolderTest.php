@@ -51,11 +51,11 @@ use ReflectionProperty;
  * Every ending of the exchange reaches the holder, and the holder is the one that knows which
  * connection the tab is on now. What is pinned here is the part that needs no database: the first
  * ending wins, an ending reaches a live connection at once and waits on the record for a dead one,
- * a sign-in owed to a dead connection is held rather than applied, and a key presented by a new
- * connection moves the outcome there - but only under the cookie the trip was started with.
+ * and a key presented by a new connection moves the outcome there - but only under the cookie
+ * the trip was started with.
  *
- * Applying a sign-in writes the session row, so that half is pinned against a real database by
- * the integration suite's OAuthTripSignInTest.
+ * Granting or parking a sign-in reads the persisted merge gate, and applying it writes the
+ * session row. Those paths are pinned against a real database by OAuthTripSignInTest.
  */
 final class OAuthTripHolderTest extends TestCase
 {
@@ -245,21 +245,6 @@ final class OAuthTripHolderTest extends TestCase
 
         $this->assertSame([], $this->drainResults());
         $this->assertSame(OAuthResultSignalData::REASON_LOGIN_FAILED, $this->trip()?->ending);
-    }
-
-    public function testASignInOwedToADeadConnectionIsHeldNotApplied(): void
-    {
-        $agent = new OAuthTripHolderTestAgent();
-        $this->open($agent, self::DEAD_ACCEPT_KEY);
-        $this->drain();
-
-        $this->grant($agent);
-
-        // Applying it would rotate the token and hand the ticket to nobody; the browser would
-        // come back with its old cookie as a guest while its signed-in session belonged to no one.
-        $this->assertSame([], $this->drainStateFrames());
-        $this->assertSame(StateHilosOAuthTrip::ENDING_GRANTED, $this->trip()?->ending);
-        $this->assertSame(self::USER_ID, $this->trip()?->userId);
     }
 
     public function testASignInArrivingAfterTheTripEndedIsDropped(): void

@@ -18,9 +18,9 @@ use Hilos\Database\View\Item\SecondFactorBackupCode;
 /**
  * SecondFactorBackupCodesActions - write operations for the SecondFactorBackupCodes collection (HIL-494).
  *
- * Issuing a person's set - only creating it - and deleting it: the person's agent drops the old
- * set on the frame of the users library before a new one is issued (HIL-1904). Burning one code
- * is a write on a row already there and belongs to that item's actions.
+ * The personal owner deletes the old code set and creates its replacement in one transaction
+ * (HIL-1989). Burning one code is a write on a row already there and belongs to that item's
+ * actions.
  *
  * @extends DbActions<SecondFactorBackupCode, ObjectSecondFactorBackupCodes>
  * @property-read DbCollectionSecondFactorBackupCodes $collection
@@ -31,8 +31,8 @@ class SecondFactorBackupCodesActions extends DbActions
     /**
      * Creates a person's set of backup codes.
      *
-     * Only creates: the person's old set was dropped by the person's agent before this is called
-     * (HIL-1904).
+     * The personal owner calls this inside the transaction that replaces the prior set
+     * (HIL-1989); a failure rolls back both deletion and creation.
      *
      * @param int $userId Person the set belongs to
      * @param list<string> $codes Normalized codes of the new set

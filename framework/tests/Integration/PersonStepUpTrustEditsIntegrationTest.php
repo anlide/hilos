@@ -50,14 +50,8 @@ use Hilos\Utils\Helpers\TimeHelper;
  * every frame - a refused one included. A frame naming another person is refused rather than
  * written, and an account folded into another one is credited nothing.
  *
- * A trust the sessions library finds standing at a confirmation is extended by the agent too
- * (HIL-1907), to the end and the grant the frame names; the agent creates no missing pair and says
- * so, and the users library extending one itself is refused by the truth source.
- *
- * The sessions library keeps its claim over every browser's trust whole - it creates one on the way
- * in and applies the days an administrator sets to every person at once - so the truth source does
- * not tell its removal of one person's trust from the agent's; that the agent is the one writer of
- * it is the code's, and the session cases check it where the holder ends sessions.
+ * Grants and renewals both go to the personal owner, who rechecks the live session and proof.
+ * The holder retains only terminal merge and erasure removals.
  *
  * Every writer runs in its own frame and under the claims its own class declares, and the frames
  * between them are carried by the case.
@@ -342,7 +336,7 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
     /**
      * @throws HilosException When a fixture row cannot be written or a frame fails
      */
-    public function testARenewalOfAMissingPairWritesNothingAndSaysSo(): void
+    public function testARenewalOfAMissingPairGrantsTrustAtThePersonalOwner(): void
     {
         $userId = $this->seedSignedInPerson();
         $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
@@ -356,9 +350,9 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
         );
 
         self::assertInstanceOf(UserBrowserTrustRenewDoneSignalData::class, $answer);
-        self::assertFalse($answer->renewed);
+        self::assertTrue($answer->renewed);
         self::assertNull($answer->error);
-        self::assertSame(0, (int)Database::sql(
+        self::assertSame(1, (int)Database::sql(
             'SELECT COUNT(*) AS `trusts` FROM `hilos_second_factor_trust` WHERE `user_id` = ?',
             [$userId],
         )->row()['trusts']);
@@ -518,8 +512,8 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
     private function trust(string $sessionToken, int $userId): int
     {
         $sessionId = (int)Hilos::$db->sessions->findByToken($sessionToken)?->id;
-        ExecutionContext::run(
-            new ExecutionFrame(agentId: $this->sessions->getId()),
+        $this->asPerson(
+            $userId,
             static fn () => Hilos::$db->secondFactorTrusts->actions->trust(
                 $sessionId,
                 $userId,
@@ -558,6 +552,10 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
     {
         $userId = self::seedPerson();
         self::seedSession(self::SESSION_TOKEN, $userId, self::CREATED_AT, null);
+        Database::sqlRun(
+            "INSERT INTO `hilos_second_factor` (`user_id`, `label`, `secret`, `created_at`, `confirmed_at`) VALUES (?, 'totp', ?, ?, ?)",
+            [$userId, 'JBSWY3DPEHPK3PXP', self::CREATED_AT, self::CREATED_AT],
+        );
 
         return $userId;
     }

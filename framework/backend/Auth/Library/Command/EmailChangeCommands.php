@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\ProfileEmailChangeCurrentConfirmActionDTO;
@@ -27,6 +28,7 @@ use Hilos\Mail\Template\MailTemplateCatalogConstants;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Hilos\Users\DTO\UserEmailChangeSignalData;
 use Hilos\Utils\Logger;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -83,10 +85,12 @@ final class EmailChangeCommands extends AbstractLibraryCommands
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      * @throws HilosException When a confirmation, verification or identity query fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function requestCurrentCode(string $acceptKey): CodeSendReplyDTO
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
         $current = $this->requireCurrentEmail($acting->userId);
 
@@ -123,10 +127,12 @@ final class EmailChangeCommands extends AbstractLibraryCommands
      *     or it died the moment it matched
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      * @throws HilosException When a confirmation, verification or identity query fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirmCurrentCode(string $acceptKey, ProfileEmailChangeCurrentConfirmActionDTO $dto): void
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
         $current = $this->requireCurrentEmail($acting->userId);
 
@@ -167,10 +173,12 @@ final class EmailChangeCommands extends AbstractLibraryCommands
      * @throws RandomException When the platform CSPRNG cannot produce a code
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      * @throws HilosException When a confirmation, verification or identity query fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function requestNewCode(string $acceptKey, ProfileEmailChangeNewRequestActionDTO $dto): CodeSendReplyDTO
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
         $current = $this->requireCurrentEmail($acting->userId);
         $email = $this->acceptNewEmail($acting->userId, $current, $dto->email);
@@ -216,10 +224,12 @@ final class EmailChangeCommands extends AbstractLibraryCommands
      *     the proof is gone, or the person cannot be addressed
      * @throws InvalidArgumentException When the ask frame cannot be named or queued
      * @throws HilosException When a confirmation, verification or identity query fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirmNewCode(string $acceptKey, ProfileEmailChangeNewConfirmActionDTO $dto): void
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $userId = $acting->userId;
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_EMAIL);
         $current = $this->requireCurrentEmail($userId);

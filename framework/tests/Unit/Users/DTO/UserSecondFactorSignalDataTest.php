@@ -9,12 +9,15 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionRefusal;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\DatabaseException;
-use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
+use Hilos\Users\DTO\SecondFactorEnrollmentData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -180,47 +183,72 @@ final class UserSecondFactorSignalDataTest extends TestCase
         self::assertNull($restored->errorType);
     }
 
-    public function testAnEnrolmentDropAskAndItsAnswersRoundTrip(): void
+    public function testAnEnrollmentStartAskAndItsAnswersRoundTrip(): void
     {
-        $ask = new UserSecondFactorEnrollDropSignalData(
+        $ask = new UserSecondFactorEnrollStartSignalData(
             7,
-            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_ENROLL_START_DONE,
             'key-1',
             'req-1',
             HilosSignalConstants::PROFILE_SECOND_FACTOR_ENROLL_START,
             null,
         );
-        $ok = new UserSecondFactorEnrollDropDoneSignalData($ask, null, null, null);
-        $refused = UserSecondFactorEnrollDropDoneSignalData::refused($ask, ActionRefusal::said(SecondFactorMessages::REQUIRED));
+        $ok = new UserSecondFactorEnrollStartDoneSignalData(
+            $ask, new SecondFactorEnrollmentData(21, 'secret', 'otpauth://totp/app'), null, null, null,
+        );
+        $refused = UserSecondFactorEnrollStartDoneSignalData::refused($ask, ActionRefusal::said(SecondFactorMessages::REQUIRED));
 
-        self::assertEquals($ask, UserSecondFactorEnrollDropSignalData::fromArray(self::overTheWire($ask->toArray())));
-        $restoredOk = UserSecondFactorEnrollDropDoneSignalData::fromArray(self::overTheWire($ok->toArray()));
+        self::assertEquals($ask, UserSecondFactorEnrollStartSignalData::fromArray(self::overTheWire($ask->toArray())));
+        $restoredOk = UserSecondFactorEnrollStartDoneSignalData::fromArray(self::overTheWire($ok->toArray()));
         self::assertEquals($ok, $restoredOk);
         self::assertNull($restoredOk->error);
-        $restoredRefused = UserSecondFactorEnrollDropDoneSignalData::fromArray(self::overTheWire($refused->toArray()));
+        $restoredRefused = UserSecondFactorEnrollStartDoneSignalData::fromArray(self::overTheWire($refused->toArray()));
         self::assertEquals($refused, $restoredRefused);
         self::assertSame(SecondFactorMessages::REQUIRED, $restoredRefused->error);
         self::assertNull($restoredRefused->errorType);
     }
 
-    public function testABackupCodesDropAskAndItsAnswersRoundTrip(): void
+    public function testABackupCodesIssueAskAndItsAnswersRoundTrip(): void
     {
-        $ask = new UserSecondFactorCodesDropSignalData(
+        $ask = new UserSecondFactorCodesIssueSignalData(
             7,
-            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_CODES_ISSUE_DONE,
             'key-1',
             'req-1',
             HilosSignalConstants::PROFILE_SECOND_FACTOR_CODES_RENEW,
             null,
         );
-        $ok = new UserSecondFactorCodesDropDoneSignalData($ask, null, null, null);
-        $refused = UserSecondFactorCodesDropDoneSignalData::refused($ask, ActionRefusal::said(SecondFactorMessages::REQUIRED));
+        $ok = new UserSecondFactorCodesIssueDoneSignalData($ask, ['abcde-fghij'], null, null, null);
+        $refused = UserSecondFactorCodesIssueDoneSignalData::refused($ask, ActionRefusal::said(SecondFactorMessages::REQUIRED));
 
-        self::assertEquals($ask, UserSecondFactorCodesDropSignalData::fromArray(self::overTheWire($ask->toArray())));
-        $restoredOk = UserSecondFactorCodesDropDoneSignalData::fromArray(self::overTheWire($ok->toArray()));
+        self::assertEquals($ask, UserSecondFactorCodesIssueSignalData::fromArray(self::overTheWire($ask->toArray())));
+        $restoredOk = UserSecondFactorCodesIssueDoneSignalData::fromArray(self::overTheWire($ok->toArray()));
         self::assertEquals($ok, $restoredOk);
         self::assertNull($restoredOk->error);
-        $restoredRefused = UserSecondFactorCodesDropDoneSignalData::fromArray(self::overTheWire($refused->toArray()));
+        $restoredRefused = UserSecondFactorCodesIssueDoneSignalData::fromArray(self::overTheWire($refused->toArray()));
+        self::assertEquals($refused, $restoredRefused);
+        self::assertSame(SecondFactorMessages::REQUIRED, $restoredRefused->error);
+        self::assertNull($restoredRefused->errorType);
+    }
+
+    public function testAResetRequestAskAndItsAnswersRoundTrip(): void
+    {
+        $ask = new UserSecondFactorResetRequestSignalData(
+            7,
+            HilosSignalConstants::HILOS_USER_SECOND_FACTOR_RESET_REQUEST_DONE,
+            'key-1',
+            'req-1',
+            HilosSignalConstants::PROFILE_SECOND_FACTOR_RESET_REQUEST,
+            null,
+        );
+        $ok = new UserSecondFactorResetRequestDoneSignalData($ask, 33, 1900000000000, null, null, null);
+        $refused = UserSecondFactorResetRequestDoneSignalData::refused($ask, ActionRefusal::said(SecondFactorMessages::REQUIRED));
+
+        self::assertEquals($ask, UserSecondFactorResetRequestSignalData::fromArray(self::overTheWire($ask->toArray())));
+        $restoredOk = UserSecondFactorResetRequestDoneSignalData::fromArray(self::overTheWire($ok->toArray()));
+        self::assertEquals($ok, $restoredOk);
+        self::assertNull($restoredOk->error);
+        $restoredRefused = UserSecondFactorResetRequestDoneSignalData::fromArray(self::overTheWire($refused->toArray()));
         self::assertEquals($refused, $restoredRefused);
         self::assertSame(SecondFactorMessages::REQUIRED, $restoredRefused->error);
         self::assertNull($restoredRefused->errorType);

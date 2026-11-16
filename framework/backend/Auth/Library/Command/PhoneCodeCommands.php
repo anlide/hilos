@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use JsonException;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Code\DTO\AuthCodeMintSignalData;
 use Hilos\Auth\Code\DTO\AuthCodeMintedSignalData;
 use Hilos\Auth\Registration\RegistrationConsent;
@@ -226,6 +228,7 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When verification, the account, identity, or reservation write fails
      * @throws RandomException When the platform CSPRNG cannot draw the new account name's digits
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirmPhoneCode(string $acceptKey, ConfirmPhoneCodeActionDTO $dto): ?AuthFlowOutcome
     {
@@ -239,6 +242,7 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
 
         $identity = Hilos::$db->identities->findByIdentity(IdentityType::SMS, $phone);
         if ($identity !== null && $identity->userId !== null) {
+            AccountMergeAccess::requireSignIn($identity->userId);
             $this->library->grantSession(
                 $acting,
                 $identity->userId,

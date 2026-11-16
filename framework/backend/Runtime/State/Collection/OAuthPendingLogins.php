@@ -6,6 +6,7 @@ namespace Hilos\Runtime\State\Collection;
 
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use OutOfBoundsException;
+use Throwable;
 
 /**
  * OAuthPendingLogins - in-flight OAuth login ops keyed by accept key (HIL-281).
@@ -30,6 +31,23 @@ final class OAuthPendingLogins extends RtStates
         $state = parent::get($acceptKey);
 
         return $state;
+    }
+
+    /**
+     * Marks only the currently addressed trip before its owner ask is queued (HIL-1989).
+     *
+     * @param string $acceptKey Initiating connection
+     * @param string $tripKeyHash Exact attempt being handed over
+     * @throws Throwable When the local runtime marker cannot be published
+     */
+    public function markAwaitingIdentityAdd(string $acceptKey, string $tripKeyHash): void
+    {
+        $op = $this->get($acceptKey);
+        if ($op === null || $op->tripKeyHash !== $tripKeyHash) {
+            return;
+        }
+        $op->applyDiff([OAuthPendingLogin::awaitingIdentityAdd => true]);
+        $op->markRtSyncBaseline();
     }
 
     /**

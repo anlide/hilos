@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\Pmd\Tests\Unit;
 
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Demo\Pmd\Browser\Data\SelfConnectionBrowserData;
 use Demo\Pmd\Browser\List\ProfileDevicesBrowserList;
 use Demo\Pmd\Browser\List\ProfileSessionsBrowserList;
@@ -64,6 +67,31 @@ use ReflectionClass;
 /** Database-free guards for the PMD registries and their framework feature requirements. */
 final class PmdTopologyRegistryTest extends TestCase
 {
+    public function testIdentityAdditionIsDeliveredToTheDeclaredOwnerAndCaller(): void
+    {
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::userId, Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::class, Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(
+            HilosAgentType::HILOS_USERS_LIBRARY,
+            Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertSame(
+            UserIdentityAddDoneSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE, Hilos::getAgentSignalIndexFields());
+        foreach ([
+            HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE => UserIdentityAddDoneSignalData::class,
+            HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE => AgentsGoneSignalData::class,
+        ] as $signal => $dto) {
+            self::assertSame(HilosAgentType::HILOS_OAUTH, Hilos::getAgentSignalRoutes()[$signal]);
+            self::assertSame($dto, Hilos::getAgentSignalDtoRoutes()[$signal]);
+            self::assertArrayNotHasKey($signal, Hilos::getAgentSignalIndexFields());
+        }
+        self::assertSame(HilosAgentType::HILOS_SESSIONS_LIBRARY, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_AGENTS_GONE]);
+    }
+
     /** Every page key names a concrete page with that same declared identity. */
     public function testPageRegistryEntriesAreConcreteAndConsistent(): void
     {

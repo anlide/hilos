@@ -13,6 +13,16 @@ use Hilos\Auth\OAuth\OAuthProviderConfig;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthUserInfo;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
+use Hilos\Core\Action\ActionRefusal;
+use Hilos\Auth\Library\Command\AuthMessages;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
+use Hilos\Users\DTO\OAuthIdentityAddData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
+use Hilos\Runtime\State\Collection\OAuthPendingLogins;
+use ReflectionProperty;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
@@ -122,6 +132,113 @@ final class OAuthAgentIntakeTest extends TestCase
             'test-source',
             'not_the_pending_signal',
         );
+    }
+
+    public function testAwaitingIdentityAdditionDoesNotRestartHttpAndStopsAsALinkFailure(): void
+    {
+        $agent = $this->makeAgent();
+        $agent->onStart();
+        self::waiting($agent, 'accept', 'trip', 7);
+        $agent->onTick();
+        $agent->onTick();
+        self::assertSame([], $agent->sent);
+        $agent->onStop();
+        self::assertCount(1, $agent->sent);
+        self::assertSame(OAuthResultSignalData::REASON_LINK_FAILED, $agent->sent[0]['data']->reason);
+    }
+
+    public function testStaleAndForeignDoneNeverClearTheCurrentAttempt(): void
+    {
+        $agent = $this->makeAgent();
+        $agent->onStart();
+        $pending = self::waiting($agent, 'accept', 'current', 7, self::KNOWN_KEY);
+        foreach ([['old', 7, self::KNOWN_KEY], ['current', 8, self::KNOWN_KEY], ['current', 7, self::UNKNOWN_KEY]] as [$trip, $user, $provider]) {
+            $done = UserIdentityAddDoneSignalData::ok(self::linkAsk('accept', $trip, $user, $provider), 9);
+            $agent->onSignalAgent(new AgentSignalData($done), 'personal', HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE);
+            self::assertNotNull($pending->get('accept'));
+            self::assertSame([], $agent->sent);
+        }
+        $done = UserIdentityAddDoneSignalData::ok(self::linkAsk('accept', 'current', 7, self::KNOWN_KEY), 9);
+        $agent->onSignalAgent(new AgentSignalData($done), 'personal', HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE);
+        self::assertNull($pending->get('accept'));
+        self::assertSame(OAuthResultSignalData::REASON_LINK_OK, $agent->sent[0]['data']->reason);
+        $agent->onSignalAgent(new AgentSignalData($done), 'personal', HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE);
+        $agent->onSignalAgent(
+            new AgentSignalData(new AgentsGoneSignalData([HilosAgentType::HILOS_USER . ':7'], AgentsGoneSignalData::REASON_WORKER_DIED)),
+            'daemon',
+            HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE,
+        );
+        self::assertCount(1, $agent->sent);
+    }
+
+    public function testGoneEndsOnlyTheExactPersonalOwnersAwaitingLinksAndLateDoneDoesNotRetry(): void
+    {
+        $agent = $this->makeAgent();
+        $agent->onStart();
+        $pending = self::waiting($agent, 'mine', 'trip-mine', 7);
+        self::waiting($agent, 'other', 'trip-other', 8);
+        $pending->add(OAuthPendingLogin::create('login', 'session', self::UNKNOWN_KEY, 'code', 'login-trip'));
+        $pending->add(OAuthPendingLogin::create('http', 'session', self::UNKNOWN_KEY, 'code', 'http-trip', OAuthPendingLogin::MODE_LINK, 7));
+        $agent->onSignalAgent(
+            new AgentSignalData(new AgentsGoneSignalData([HilosAgentType::HILOS_USER . ':70'], AgentsGoneSignalData::REASON_WORKER_DIED)),
+            'daemon',
+            HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE,
+        );
+        self::assertSame([], $agent->sent);
+        $agent->onSignalAgent(
+            new AgentSignalData(new AgentsGoneSignalData([HilosAgentType::HILOS_USER . ':7'], AgentsGoneSignalData::REASON_WORKER_DIED)),
+            'daemon',
+            HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE,
+        );
+        self::assertNull($pending->get('mine'));
+        foreach (['other', 'login', 'http'] as $key) {
+            self::assertNotNull($pending->get($key));
+        }
+        self::assertCount(1, $agent->sent);
+        self::assertSame('mine', $agent->sent[0]['data']->acceptKey);
+        self::assertSame(OAuthResultSignalData::REASON_LINK_FAILED, $agent->sent[0]['data']->reason);
+        $done = UserIdentityAddDoneSignalData::ok(self::linkAsk('mine', 'trip-mine', 7, self::UNKNOWN_KEY), 9);
+        $agent->onSignalAgent(new AgentSignalData($done), 'personal', HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE);
+        self::assertCount(1, $agent->sent);
+    }
+
+    public function testAddRefusalsKeepOnlyTheStableLinkOutcome(): void
+    {
+        foreach ([
+            [ActionRefusal::said(AccountMergeAccess::REFUSED_MESSAGE), OAuthResultSignalData::REASON_ACCOUNT_MERGING],
+            [ActionRefusal::said(AuthMessages::INVALID_LINK), OAuthResultSignalData::REASON_LINK_DUPLICATE],
+            [ActionRefusal::said('private failure detail'), OAuthResultSignalData::REASON_LINK_FAILED],
+        ] as [$refusal, $reason]) {
+            $agent = $this->makeAgent();
+            $agent->onStart();
+            $pending = self::waiting($agent, 'accept', 'trip', 7);
+            $done = UserIdentityAddDoneSignalData::refused(self::linkAsk('accept', 'trip', 7, self::UNKNOWN_KEY), $refusal);
+            $agent->onSignalAgent(new AgentSignalData($done), 'personal', HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE);
+            self::assertNull($pending->get('accept'));
+            self::assertCount(1, $agent->sent);
+            self::assertSame($reason, $agent->sent[0]['data']->reason);
+        }
+    }
+
+    private static function waiting(
+        AbstractOAuthAgent $agent,
+        string $acceptKey,
+        string $trip,
+        int $userId,
+        string $provider = self::UNKNOWN_KEY,
+    ): OAuthPendingLogins {
+        $pending = new ReflectionProperty(AbstractOAuthAgent::class, 'pending')->getValue($agent);
+        self::assertInstanceOf(OAuthPendingLogins::class, $pending);
+        $pending->add(OAuthPendingLogin::create($acceptKey, 'session', $provider, 'code', $trip, OAuthPendingLogin::MODE_LINK, $userId));
+        $pending->markAwaitingIdentityAdd($acceptKey, $trip);
+
+        return $pending;
+    }
+
+    private static function linkAsk(string $acceptKey, string $trip, int $userId, string $provider): UserIdentityAddSignalData
+    {
+        return new UserIdentityAddSignalData($userId, 1, new OAuthIdentityAddData($provider, 'subject', null), $trip,
+            HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE, $acceptKey, null, HilosSignalConstants::HILOS_OAUTH_CALLBACK, null);
     }
 
     /**

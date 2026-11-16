@@ -35,6 +35,8 @@ final class OAuthPendingLoginSignalDataTest extends TestCase
         $this->assertSame($data->toArray(), $restored->toArray());
         $this->assertSame(OAuthPendingLogin::MODE_LINK, $restored->mode);
         $this->assertSame(42, $restored->linkUserId);
+        $this->assertFalse($restored->toPendingLogin()->awaitingIdentityAdd);
+        $this->assertArrayNotHasKey(OAuthPendingLogin::awaitingIdentityAdd, $restored->toArray());
     }
 
     public function testRefusesAPayloadThatLostTheAuthorizationCode(): void

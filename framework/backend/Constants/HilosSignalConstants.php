@@ -177,12 +177,14 @@ use Hilos\Users\DTO\UserPushSubscribeSignalData;
 use Hilos\Users\DTO\UserPushUnsubscribeSignalData;
 use Hilos\Users\DTO\UserRenameDoneSignalData;
 use Hilos\Users\DTO\UserRenameSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorCodesDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestSignalData;
+use Hilos\Users\DTO\UserSecondFactorResetRequestDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorCodesIssueSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorEnrollConfirmSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropDoneSignalData;
-use Hilos\Users\DTO\UserSecondFactorEnrollDropSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartDoneSignalData;
+use Hilos\Users\DTO\UserSecondFactorEnrollStartSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveDoneSignalData;
 use Hilos\Users\DTO\UserSecondFactorProveSignalData;
 use Hilos\Users\DTO\UserSecondFactorRemoveDoneSignalData;
@@ -1060,32 +1062,46 @@ final class HilosSignalConstants
     public const string HILOS_USER_SECOND_FACTOR_UNLOCK_DONE = 'hilos_user_second_factor_unlock_done';
 
     /**
-     * Users library → the person's agent: drop the person's unfinished authenticator enrolments (HIL-1903).
+     * Replaces the person's unfinished enrollment atomically at its owner.
      *
-     * Carried by {@see UserSecondFactorEnrollDropSignalData}, an ask of the handover form.
+     * @see UserSecondFactorEnrollStartSignalData
      */
-    public const string HILOS_USER_SECOND_FACTOR_ENROLL_DROP = 'hilos_user_second_factor_enroll_drop';
+    public const string HILOS_USER_SECOND_FACTOR_ENROLL_START = 'hilos_user_second_factor_enroll_start';
 
     /**
-     * The person's agent → users library: the unfinished enrolments are dropped, or why not (HIL-1903).
+     * Committed enrollment material or a refusal, returned only to the requesting library.
      *
-     * The ask comes back whole. Carried by {@see UserSecondFactorEnrollDropDoneSignalData}.
+     * @see UserSecondFactorEnrollStartDoneSignalData
      */
-    public const string HILOS_USER_SECOND_FACTOR_ENROLL_DROP_DONE = 'hilos_user_second_factor_enroll_drop_done';
+    public const string HILOS_USER_SECOND_FACTOR_ENROLL_START_DONE = 'hilos_user_second_factor_enroll_start_done';
 
     /**
-     * Users library → the person's agent: drop the person's whole set of backup codes (HIL-1904).
+     * Replaces the person's backup-code set atomically at its owner.
      *
-     * Carried by {@see UserSecondFactorCodesDropSignalData}, an ask of the handover form.
+     * @see UserSecondFactorCodesIssueSignalData
      */
-    public const string HILOS_USER_SECOND_FACTOR_CODES_DROP = 'hilos_user_second_factor_codes_drop';
+    public const string HILOS_USER_SECOND_FACTOR_CODES_ISSUE = 'hilos_user_second_factor_codes_issue';
 
     /**
-     * The person's agent → users library: the set of backup codes is dropped, or why not (HIL-1904).
+     * Committed display codes or a refusal, returned only to the requesting library.
      *
-     * The ask comes back whole. Carried by {@see UserSecondFactorCodesDropDoneSignalData}.
+     * @see UserSecondFactorCodesIssueDoneSignalData
      */
-    public const string HILOS_USER_SECOND_FACTOR_CODES_DROP_DONE = 'hilos_user_second_factor_codes_drop_done';
+    public const string HILOS_USER_SECOND_FACTOR_CODES_ISSUE_DONE = 'hilos_user_second_factor_codes_issue_done';
+
+    /**
+     * Requests a delayed second-factor reset at the personal owner.
+     *
+     * @see UserSecondFactorResetRequestSignalData
+     */
+    public const string HILOS_USER_SECOND_FACTOR_RESET_REQUEST = 'hilos_user_second_factor_reset_request';
+
+    /**
+     * Committed reset id and epoch milliseconds, or a refusal; never a cancel token.
+     *
+     * @see UserSecondFactorResetRequestDoneSignalData
+     */
+    public const string HILOS_USER_SECOND_FACTOR_RESET_REQUEST_DONE = 'hilos_user_second_factor_reset_request_done';
 
     /**
      * Test-only users library → the person's agent: forget later acceptances of a document (HIL-1899).
@@ -2202,6 +2218,18 @@ final class HilosSignalConstants
      * start the failing agent again and again.
      */
     public const string HILOS_AGENTS_GONE = 'hilos_agents_gone';
+
+    /** Master → OAuth singleton: owners lost during a pending identity handover (HIL-1989). */
+    public const string HILOS_OAUTH_AGENTS_GONE = 'hilos_oauth_agents_gone';
+
+    /** Verified ordinary identity addition, addressed to its personal owner (HIL-1989). */
+    public const string HILOS_USER_IDENTITY_ADD = 'hilos_user_identity_add';
+
+    /** Personal owner → users library: identity addition completed (HIL-1989). */
+    public const string HILOS_USER_IDENTITY_ADD_DONE = 'hilos_user_identity_add_done';
+
+    /** Personal owner → OAuth exchange owner: identity addition completed (HIL-1989). */
+    public const string HILOS_OAUTH_IDENTITY_ADD_DONE = 'hilos_oauth_identity_add_done';
 
     // ── Hilos users library → the agent that holds sessions (agent signals) ──
     /**

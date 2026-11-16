@@ -6,7 +6,9 @@ namespace Hilos\Auth\OAuth\Agent;
 
 use Hilos\API\AsyncHttpClient;
 use Hilos\API\Exception\AsyncHttpException;
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\DTO\OAuthLoginReadySignalData;
 use Hilos\Auth\OAuth\DTO\OAuthPendingLoginSignalData;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
@@ -17,26 +19,32 @@ use Hilos\Auth\OAuth\OAuthHttpRequest;
 use Hilos\Auth\OAuth\OAuthProviderRegistry;
 use Hilos\Auth\OAuth\OAuthUserInfo;
 use Hilos\Backup\Agent\BackupAgent;
+use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\DTO\AgentsGoneSignalData;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
-use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException as FrameworkLogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
-use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Collection\OAuthPendingLogins;
 use Hilos\Runtime\State\Item\OAuthPendingLogin;
 use Hilos\Socket\SocketException;
+use Hilos\Users\AddressablePerson;
+use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\OAuthIdentityAddData;
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
+use Hilos\WiringRefusal;
 use Throwable;
 
 /**
@@ -71,18 +79,12 @@ use Throwable;
  */
 abstract class AbstractOAuthAgent extends AbstractAgent
 {
-    /**
-     * The identity table, which a completed exchange writes a linked provider account into.
-     *
-     * A borrowed claim, for creation alone (HIL-1405): a linked provider account is born here,
-     * because the exchange that proves the account ends in this agent's tick, so it is this process
-     * that finds out what to write. Every row that exists - this agent's links included - is its
-     * person's agent's to edit and remove, as docs/agents/architecture/instance-owners.md declares.
-     *
-     * @var array<string, list<TruthSourceOperation>>
-     */
-    public const array OWNS_DB = [
-        HilosDbContext::identities => [TruthSourceOperation::Add],
+    /** The live session and the saved protection reservation read before handing a link to its personal owner. */
+    public const array READS_DB = [
+        HilosDbContext::sessions,
+        HilosDbContext::accountOperations,
+        HilosDbContext::accountOperationAssignments,
+        HilosDbContext::accountOperationResults,
     ];
 
     public const string AGENT_TYPE = HilosAgentType::HILOS_OAUTH;
@@ -92,6 +94,8 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      * (this agent is monopolistic), so it maps straight to its payload DTO.
      */
     public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE => UserIdentityAddDoneSignalData::class,
+        HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE => AgentsGoneSignalData::class,
         HilosSignalConstants::HILOS_OAUTH_PENDING => OAuthPendingLoginSignalData::class,
     ];
 
@@ -156,6 +160,24 @@ abstract class AbstractOAuthAgent extends AbstractAgent
                 $op = $pending->toPendingLogin();
                 $this->pending->add($op);
                 $this->logAgentInfo("adopted OAuth {$op->mode} handoff {$op->getId()} (provider={$op->provider})");
+
+                return;
+
+            case HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE:
+                $done = $data->data;
+                if (!$done instanceof UserIdentityAddDoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserIdentityAddDoneSignalData::class, $done);
+                }
+                $this->completeIdentityAdd($done);
+
+                return;
+
+            case HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE:
+                $gone = $data->data;
+                if (!$gone instanceof AgentsGoneSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AgentsGoneSignalData::class, $gone);
+                }
+                $this->identityOwnersGone($gone);
 
                 return;
 
@@ -319,7 +341,7 @@ abstract class AbstractOAuthAgent extends AbstractAgent
         }
 
         foreach ($ops as $op) {
-            if (isset($this->exchanges[$op->getId()])) {
+            if ($op->awaitingIdentityAdd || isset($this->exchanges[$op->getId()])) {
                 continue;
             }
             if (count($this->exchanges) >= $this->maxConcurrentExchanges()) {
@@ -341,6 +363,9 @@ abstract class AbstractOAuthAgent extends AbstractAgent
      */
     private function startOp(OAuthPendingLogin $op, float $nowMs): void
     {
+        if ($op->awaitingIdentityAdd) {
+            return;
+        }
         try {
             $provider = $this->buildProviderRegistry()->get($op->provider);
         } catch (HilosException $e) {
@@ -507,52 +532,89 @@ abstract class AbstractOAuthAgent extends AbstractAgent
     }
 
     /**
-     * Binds a resolved identity to the initiating account in link mode, then clears the op (HIL-401).
+     * Hands the verified link to its personal owner and releases the HTTP exchange.
+     * The operation remains in the existing pool until done, owner loss or stop.
      *
-     * The framework-owned success path: the initiator is already signed in (their
-     * user id rode the signed state and was recorded on the op server-side), so no
-     * account is resolved or created and the session is never touched — the identity
-     * is written straight through the framework identity primitive. Every terminal
-     * outcome is signalled explicitly to the initiating connection, since a link
-     * has no session change to ride: success ({@see OAuthResultSignalData::REASON_LINK_OK}),
-     * an identity already linked to some account
-     * ({@see OAuthResultSignalData::REASON_LINK_DUPLICATE}), or any other write
-     * failure ({@see OAuthResultSignalData::REASON_LINK_FAILED}). Signalled through the
-     * session holder, which knows which connection the tab is on by then (HIL-1044).
-     *
-     * @param OAuthPendingLogin $op Op being completed (carries the target user and accept key)
-     * @param OAuthUserInfo $info Resolved provider identity
+     * @param OAuthPendingLogin $op Link operation
+     * @param OAuthUserInfo $info Verified provider material
      */
     private function completeOAuthLink(OAuthPendingLogin $op, OAuthUserInfo $info): void
     {
-        $db = Hilos::$db;
-        if (!$db instanceof HilosDbContext) {
-            $this->logAgentError("OAuth link failed for {$op->getId()}: identity context is unavailable");
-            $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_FAILED);
-            $this->clearOp($op->getId());
-
-            return;
-        }
-
         try {
-            $db->identities->createOauthIdentity($op->linkUserId, $op->provider, $info->subject, $info->name);
-        } catch (DuplicateValueException) {
-            $this->logAgentWarning("OAuth link refused for {$op->getId()} (provider={$op->provider}): already linked");
-            $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_DUPLICATE);
-            $this->clearOp($op->getId());
+            AddressablePerson::require($op->linkUserId);
+            AccountMergeAccess::requireProtectionChange($op->linkUserId);
+            $session = Hilos::$db->sessions->findByToken($op->sessionToken);
+            if ($session === null || $session->userId !== $op->linkUserId) {
+                $this->failOp($op, 'link session is no longer signed in');
 
-            return;
-        } catch (Throwable $e) {
-            $this->logAgentError("OAuth link write failed for {$op->getId()}: " . $e->getMessage());
-            $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_FAILED);
-            $this->clearOp($op->getId());
+                return;
+            }
+            $ask = new UserIdentityAddSignalData(
+                userId: $op->linkUserId,
+                sessionId: (int)$session->id,
+                identity: new OAuthIdentityAddData($op->provider, $info->subject, $info->name),
+                tripKeyHash: $op->tripKeyHash,
+                replySignal: HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE,
+                acceptKey: $op->acceptKey,
+                requestId: null,
+                action: HilosSignalConstants::HILOS_OAUTH_CALLBACK,
+                successMessage: null,
+            );
+            $this->pending->markAwaitingIdentityAdd($op->acceptKey, $op->tripKeyHash);
+            $this->sendToAgent(HilosSignalConstants::HILOS_USER_IDENTITY_ADD, $ask);
+            $this->dropExchange($op->acceptKey);
+        } catch (WiringRefusal $failure) {
+            $this->failOp($op, 'identity handover refused by wiring: ' . $failure->getMessage());
+        } catch (Throwable $failure) {
+            if ($failure->getMessage() === AccountMergeAccess::REFUSED_MESSAGE) {
+                $this->sendLinkResult($op, OAuthResultSignalData::REASON_ACCOUNT_MERGING);
+                $this->clearOp($op->acceptKey);
 
+                return;
+            }
+            $this->failOp($op, 'identity handover failed: ' . $failure->getMessage());
+        }
+    }
+
+    /** @param UserIdentityAddDoneSignalData $done Answer to one exact pending link */
+    private function completeIdentityAdd(UserIdentityAddDoneSignalData $done): void
+    {
+        $ask = $done->ask;
+        $op = $this->pending->get($ask->acceptKey);
+        if ($op === null || !$op->awaitingIdentityAdd || $op->mode !== OAuthPendingLogin::MODE_LINK
+            || $op->tripKeyHash !== $ask->tripKeyHash || $op->linkUserId !== $ask->userId
+            || !$ask->identity instanceof OAuthIdentityAddData || $op->provider !== $ask->identity->provider
+            || $ask->replySignal !== HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE
+            || $ask->action !== HilosSignalConstants::HILOS_OAUTH_CALLBACK) {
             return;
         }
 
-        $this->logAgentInfo("OAuth link resolved for {$op->getId()} (provider={$op->provider}, user={$op->linkUserId})");
-        $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_OK);
-        $this->clearOp($op->getId());
+        $reason = OAuthResultSignalData::REASON_LINK_FAILED;
+        if ($done->error === null) {
+            $reason = OAuthResultSignalData::REASON_LINK_OK;
+        } elseif ($done->error === AccountMergeAccess::REFUSED_MESSAGE) {
+            $reason = OAuthResultSignalData::REASON_ACCOUNT_MERGING;
+        } elseif ($done->error === AuthMessages::INVALID_LINK) {
+            $reason = OAuthResultSignalData::REASON_LINK_DUPLICATE;
+        }
+        $this->sendLinkResult($op, $reason);
+        $this->clearOp($op->acceptKey);
+    }
+
+    /** @param AgentsGoneSignalData $gone Full agent addresses whose waiting links can no longer receive an answer */
+    private function identityOwnersGone(AgentsGoneSignalData $gone): void
+    {
+        $waiting = [];
+        foreach ($this->pending as $op) {
+            if ($op instanceof OAuthPendingLogin && $op->awaitingIdentityAdd && $op->mode === OAuthPendingLogin::MODE_LINK
+                && in_array(AbstractUserAgent::AGENT_TYPE . AgentConstants::ID_SEPARATOR . $op->linkUserId, $gone->agentIds, true)) {
+                $waiting[] = $op;
+            }
+        }
+        foreach ($waiting as $op) {
+            $this->sendLinkResult($op, OAuthResultSignalData::REASON_LINK_FAILED);
+            $this->clearOp($op->acceptKey);
+        }
     }
 
     /**

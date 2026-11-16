@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
+use Hilos\Auth\Flow\AuthFlowOutcome;
 use Generator;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\Command\AuthMessages;
@@ -47,7 +49,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
  * over: at once to a tab that is on the wire, later to a tab that was away when the sign-in
  * arrived, and again to a tab whose first ticket died with its connection.
  */
-final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
+final class OAuthTripSignInTest extends AccountMergeGuardIntegrationTestCase
 {
     private const int CREATED_AT = 1788254100000;
 
@@ -117,7 +119,7 @@ final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
         self::seedSession(self::SESSION_TOKEN, null, self::CREATED_AT, null);
         $sessionId = Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
         $agent = new OAuthTripSignInTestAgent();
-        $this->open($agent, self::LIVE_ACCEPT_KEY);
+        $this->openTrip($agent, self::LIVE_ACCEPT_KEY);
 
         $this->grant($agent);
 
@@ -131,6 +133,29 @@ final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
         $this->assertSame($sessionId, $this->trip()?->sessionId);
     }
 
+    /** Parking also reads the real merge gate before any grant is recorded. */
+    public function testASignInOwedToADeadConnectionIsHeldNotApplied(): void
+    {
+        self::seedSession(self::SESSION_TOKEN, null, self::CREATED_AT, null);
+        $agent = new OAuthTripSignInTestAgent();
+        $this->openTrip($agent, self::DROPPED_ACCEPT_KEY);
+        self::drain();
+
+        $this->grant($agent);
+
+        $states = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof AgentSignalData && $signal->data->data instanceof SessionStateSignalData) {
+                $states[] = $signal->data->data;
+            }
+        }
+        self::assertSame([], $states);
+        self::assertSame(StateHilosOAuthTrip::ENDING_GRANTED, $this->trip()?->ending);
+        self::assertSame(self::USER_ID, $this->trip()?->userId);
+        self::assertNull(Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->userId);
+        self::assertCount(0, Hilos::$rt->hilosSessionRotations);
+    }
+
     /**
      * @throws HilosException When the grant or the presentation fails
      * @throws DatabaseException When seeding or reading the rows fails
@@ -139,7 +164,7 @@ final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
     {
         self::seedSession(self::SESSION_TOKEN, null, self::CREATED_AT, null);
         $agent = new OAuthTripSignInTestAgent();
-        $this->open($agent, self::DROPPED_ACCEPT_KEY);
+        $this->openTrip($agent, self::DROPPED_ACCEPT_KEY);
         $this->grant($agent);
         $this->assertNull($this->lastStateFrame(), 'Nobody was there to hand the ticket to');
         $row = self::sessionRow(self::SESSION_TOKEN);
@@ -166,7 +191,7 @@ final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
     {
         self::seedSession(self::SESSION_TOKEN, null, self::CREATED_AT, null);
         $agent = new OAuthTripSignInTestAgent();
-        $this->open($agent, self::LIVE_ACCEPT_KEY);
+        $this->openTrip($agent, self::LIVE_ACCEPT_KEY);
         $this->grant($agent);
         $first = $this->lastStateFrame();
         $this->assertNotNull($first);
@@ -212,7 +237,7 @@ final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
             $sessionId = $session->id;
         }
         $agent = new OAuthTripSignInTestAgent();
-        $this->open($agent, self::DROPPED_ACCEPT_KEY);
+        $this->openTrip($agent, self::DROPPED_ACCEPT_KEY);
         $trip = $this->trip();
         self::assertNotNull($trip);
         $trip->actions->end(StateHilosOAuthTrip::ENDING_SIGNED_IN);
@@ -244,11 +269,99 @@ final class OAuthTripSignInTest extends HilosSessionIntegrationTestCase
         self::assertSame($hasSessionId ? $sessionId : null, $this->trip()?->sessionId);
     }
 
+    #[DataProvider('mergeTripStates')]
+    public function testMergeFactRefusesNoTripLiveAndParkedOAuthGrants(string $state): void
+    {
+        self::seedSession(self::SESSION_TOKEN, null, self::CREATED_AT, null);
+        $agent = new OAuthTripSignInTestAgent();
+        if ($state !== 'missing') {
+            $this->openTrip($agent, $state === 'live' ? self::LIVE_ACCEPT_KEY : self::DROPPED_ACCEPT_KEY);
+        }
+        $this->saveMergeFactWithoutDbSync();
+        self::drain();
+        if ($state === 'parked missing session') {
+            $this->asHolder(static fn () => Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->actions->delete());
+        }
+        $this->grant($agent);
+        self::assertNull(Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->userId);
+        self::assertSame([], Hilos::$rt->hilosSessionRotations->toArray());
+        self::assertSame([], Database::sql('SELECT * FROM `hilos_second_factor_trust`')->rows());
+        self::assertSame([], Database::sql('SELECT * FROM `hilos_step_up`')->rows());
+        if ($state === 'missing') {
+            $frame = $this->lastStateFrame();
+            self::assertSame(AuthFlowOutcome::CODE_ACCOUNT_MERGING, $frame?->outcome['code']);
+        } else {
+            self::assertSame(OAuthResultSignalData::REASON_ACCOUNT_MERGING, $this->trip()?->ending);
+            $reply = $this->resume($agent, self::RETURNING_ACCEPT_KEY);
+            self::assertTrue($reply->known);
+            $this->assertMergeResult();
+        }
+    }
+
+    /** @return iterable<string, array{string}> Provider doors before any session binding */
+    public static function mergeTripStates(): iterable
+    {
+        foreach (['missing', 'live', 'parked', 'parked missing session'] as $state) {
+            yield $state => [$state];
+        }
+    }
+
+    public function testHeldOAuthGrantRepeatsMergeGateWhenTheTabResumes(): void
+    {
+        self::seedSession(self::SESSION_TOKEN, null, self::CREATED_AT, null);
+        $agent = new OAuthTripSignInTestAgent();
+        $this->openTrip($agent, self::DROPPED_ACCEPT_KEY);
+        $this->grant($agent);
+        self::assertSame(StateHilosOAuthTrip::ENDING_GRANTED, $this->trip()?->ending);
+        $this->saveMergeFactWithoutDbSync();
+        self::drain();
+        $reply = $this->resume($agent, self::RETURNING_ACCEPT_KEY);
+        self::assertTrue($reply->known);
+        $this->assertMergeResult();
+        self::assertNull(Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->userId);
+        self::assertSame([], Hilos::$rt->hilosSessionRotations->toArray());
+        self::assertSame([], Database::sql('SELECT * FROM `hilos_second_factor_trust`')->rows());
+    }
+
+    private function assertMergeResult(): void
+    {
+        $results = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData && $signal->data->data instanceof OAuthResultSignalData) {
+                $results[] = $signal->data->data;
+            }
+        }
+        self::assertNotEmpty($results);
+        foreach ($results as $result) {
+            self::assertSame(OAuthResultSignalData::REASON_ACCOUNT_MERGING, $result->reason);
+            self::assertSame(AccountMergeAccess::REFUSED_MESSAGE, $result->message);
+        }
+    }
+
+    /** A different ORM writes the immutable give after this reader has cached its absence. */
+    private function saveMergeFactWithoutDbSync(): void
+    {
+        $loser = self::person();
+        $operation = $this->open(self::USER_ID, $loser);
+        $this->reserve($operation, self::USER_ID);
+        $this->reserve($operation, $loser);
+        $assignment = $this->go($operation);
+        self::assertNull($operation->mergeFact());
+        $reader = Hilos::$db;
+        try {
+            Hilos::$db = new HilosSessionTestDbContext();
+            Hilos::$db->configure();
+            $this->give($loser, $assignment);
+        } finally {
+            Hilos::$db = $reader;
+        }
+    }
+
     /**
      * @param OAuthTripSignInTestAgent $agent Holder under test
      * @param string $acceptKey Connection the callback came from
      */
-    private function open(OAuthTripSignInTestAgent $agent, string $acceptKey): void
+    private function openTrip(OAuthTripSignInTestAgent $agent, string $acceptKey): void
     {
         $agent->onSignalAgent(
             new AgentSignalData(data: new OAuthTripOpenedSignalData(

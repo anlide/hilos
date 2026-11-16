@@ -1050,12 +1050,13 @@ final class RtResumableSnapshotTest extends TestCase
         ], [HilosUpload::acceptKey => 'ignored', HilosUpload::filename => 'ignored', HilosUpload::receivedBytes => 10,
             HilosUpload::phase => UploadPhase::COMPLETE->value, HilosUpload::uploadHoldId => $long,
             HilosUpload::uploadHoldDeadlineAt => 12, HilosUpload::uploadHoldApproved => true]];
-        yield 'OAuth pending legacy patch is deliberately empty' => [OAuthPendingLogin::class, [
+        yield 'OAuth pending patches only its awaiting marker' => [OAuthPendingLogin::class, [
             OAuthPendingLogin::acceptKey => 'connection', OAuthPendingLogin::sessionToken => 'token',
             OAuthPendingLogin::provider => 'oauth:example', OAuthPendingLogin::code => $long,
             OAuthPendingLogin::tripKeyHash => 'trip-hash', OAuthPendingLogin::mode => OAuthPendingLogin::MODE_LINK,
-            OAuthPendingLogin::linkUserId => 7,
-        ], [OAuthPendingLogin::code => ['ignored malformed value'], OAuthPendingLogin::mode => null, OAuthPendingLogin::linkUserId => 'ignored']];
+            OAuthPendingLogin::linkUserId => 7, OAuthPendingLogin::awaitingIdentityAdd => false,
+        ], [OAuthPendingLogin::code => ['ignored malformed value'], OAuthPendingLogin::mode => null, OAuthPendingLogin::linkUserId => 'ignored',
+            OAuthPendingLogin::awaitingIdentityAdd => true]];
         yield 'recovery grant' => [RecoveryWaiter::class, [
             RecoveryWaiter::acceptKey => 'connection', RecoveryWaiter::identifier => $long,
             RecoveryWaiter::sessionToken => 'token', RecoveryWaiter::codeAccepted => false,

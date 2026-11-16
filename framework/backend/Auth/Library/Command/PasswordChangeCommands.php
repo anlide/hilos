@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Code\DTO\CodeSendReplyDTO;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\DTO\ProfileChangePasswordActionDTO;
@@ -27,6 +28,7 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosProfileFlow;
 use Hilos\Users\DTO\UserPasswordChangeSignalData;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -54,10 +56,12 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
      * @return ProfileChangePasswordOpeningReplyDTO Current code destination, or a null channel when none is reachable
      * @throws ValidationException When confirmation is missing or the account has no password
      * @throws HilosException When the session, confirmation or identity lookup fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function open(string $acceptKey): ProfileChangePasswordOpeningReplyDTO
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_PASSWORD);
         $this->requirePassword($acting->userId);
         $target = new StepUpMethodResolver()->resolveAddress($acting->userId);
@@ -80,10 +84,12 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
      * @throws RandomException When the platform cannot produce a verification code
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      * @throws HilosException When the session, confirmation, identity or verification operation fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function requestCode(string $acceptKey): CodeSendReplyDTO
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_PASSWORD);
         $this->requirePassword($acting->userId);
         $target = new StepUpMethodResolver()->resolveAddress($acting->userId);
@@ -120,10 +126,12 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
      *     or it died the moment it matched
      * @throws InvalidArgumentException When the step frame cannot be named or queued
      * @throws HilosException When the session, confirmation, identity or verification operation fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function confirmCode(string $acceptKey, ProfileChangePasswordCodeConfirmActionDTO $dto): void
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_PASSWORD);
         $this->requirePassword($acting->userId);
         $target = new StepUpMethodResolver()->resolveAddress($acting->userId);
@@ -162,10 +170,12 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
      *     the person cannot be addressed
      * @throws InvalidArgumentException When the ask frame cannot be named or queued
      * @throws HilosException When a session, confirmation, identity, verification or password-list operation fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function change(string $acceptKey, ProfileChangePasswordActionDTO $dto): void
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
         $this->stepUp->require($acceptKey, StepUpOperationKey::CHANGE_PASSWORD);
         $password = $this->requirePassword($acting->userId);
         $target = new StepUpMethodResolver()->resolveAddress($acting->userId);
@@ -232,9 +242,11 @@ final class PasswordChangeCommands extends AbstractLibraryCommands
      * @return Identity Existing password identity
      * @throws ValidationException When the account no longer has a password
      * @throws HilosException When the identity lookup fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     private function requirePassword(int $userId): Identity
     {
+        AccountMergeAccess::requireProtectionChange($userId);
         return Hilos::$db->identities->findPasswordByUser($userId)
             ?? throw new ValidationException(AuthMessages::NO_PASSWORD);
     }

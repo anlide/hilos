@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Demo\FileGalleryManager\Tests\Unit;
 
+use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Demo\FileGalleryManager\Constants\AgentType;
 use Demo\FileGalleryManager\Hilos;
 use Demo\FileGalleryManager\Pages\Hilos\AboutPage;
@@ -91,6 +93,25 @@ use ReflectionClass;
 /** Database-free guards for the File Gallery Manager registries and their framework feature requirements. */
 final class FileGalleryManagerTopologyRegistryTest extends TestCase
 {
+    public function testIdentityAdditionIsDeliveredToTheDeclaredOwnerAndCaller(): void
+    {
+        self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::userId, Hilos::getAgentSignalIndexFields()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(UserIdentityAddSignalData::class, Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
+        self::assertSame(
+            HilosAgentType::HILOS_USERS_LIBRARY,
+            Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertSame(
+            UserIdentityAddDoneSignalData::class,
+            Hilos::getAgentSignalDtoRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE],
+        );
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE, Hilos::getAgentSignalIndexFields());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_OAUTH_IDENTITY_ADD_DONE, Hilos::getAgentSignalRoutes());
+        self::assertArrayNotHasKey(HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE, Hilos::getAgentSignalRoutes());
+        self::assertSame(HilosAgentType::HILOS_SESSIONS_LIBRARY, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_AGENTS_GONE]);
+    }
+
     /** Every page key names a concrete page with that same declared identity. */
     public function testPageRegistryEntriesAreConcreteAndConsistent(): void
     {

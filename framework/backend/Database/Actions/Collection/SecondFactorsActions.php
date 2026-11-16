@@ -19,10 +19,10 @@ use Hilos\Database\View\Item\SecondFactor;
 /**
  * SecondFactorsActions - write operations for the SecondFactors collection (HIL-494).
  *
- * Opening an enrolment, dropping the unfinished ones - on the frame of the users library, by the
- * person's agent (HIL-1903) - and switching a person's second factor off whole. Confirming an
- * enrolment, taking a code's step and removing one authenticator are writes on a row
- * already there and belong to that item's actions.
+ * The personal owner replaces an enrolment by dropping unfinished rows and creating the new
+ * factor in one transaction (HIL-1989). Switching the factor off removes the whole set.
+ * Confirmation, a code step and removing one authenticator are writes on an existing row and
+ * belong to that item's actions.
  *
  * @extends DbActions<SecondFactor, ObjectSecondFactors>
  * @property-read DbCollectionSecondFactors $collection
@@ -33,8 +33,9 @@ class SecondFactorsActions extends DbActions
     /**
      * Opens an enrolment: an unconfirmed authenticator holding a fresh secret.
      *
-     * Only creates: the person's earlier unfinished enrolment was dropped by the person's agent
-     * before this is called (HIL-1903); confirmed authenticators stay.
+     * The personal owner calls this inside the transaction that removes earlier unfinished
+     * enrollments (HIL-1989); confirmed authenticators stay. The owner returns enrollment
+     * material only after that transaction commits.
      *
      * @param int $userId Person enrolling
      * @param string $label Name the authenticator starts with

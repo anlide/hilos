@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Recovery;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Exception\PasswordTooCommonException;
 use Hilos\Auth\Exception\PasswordUnchangedException;
 use Hilos\Auth\PasswordPolicy;
@@ -24,6 +25,8 @@ use Hilos\Database\Verification\VerificationType;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
+use Hilos\HilosException;
+use JsonException;
 use Random\RandomException;
 
 /**
@@ -81,6 +84,8 @@ final class PasswordRecoveryService
      * @throws ValidationException When the code was issued for a target the transport refuses
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      * @throws DbCollectionNotReadableException When nothing here reads the identities or verifications collection, or its readiness is on its way
+     * @throws HilosException When the merge reservation cannot be read or refuses the operation
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function requestCode(string $email, ?string $progressTicket = null): ?VerificationSendOutcome
     {
@@ -135,9 +140,16 @@ final class PasswordRecoveryService
      * @throws LogicException When the verifications object collection is unavailable
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
+     * @throws HilosException When the merge reservation cannot be read or refuses the operation
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function acceptCode(string $email, string $code): bool
     {
+        $userId = $this->identities()->findAccountIdByEmail($email);
+        if ($userId !== null) {
+            AccountMergeAccess::requireProtectionChange($userId);
+        }
+
         return new VerificationService()->matchCode(VerificationType::PASSWORD_RESET, $email, $code);
     }
 
@@ -176,10 +188,15 @@ final class PasswordRecoveryService
      * @throws EnvException When the attempt-ceiling env key is missing, outside the catalog,
      *   or not an int
      * @throws DbCollectionNotReadableException When nothing here reads the identities or verifications collection, or its readiness is on its way
+     * @throws HilosException When the merge reservation cannot be read or refuses the operation
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function complete(string $email, string $newPassword): ?ObjectIdentity
     {
         $userId = $this->identities()->findAccountIdByEmail($email);
+        if ($userId !== null) {
+            AccountMergeAccess::requireProtectionChange($userId);
+        }
         $identity = $userId === null ? null : $this->identities()->findPasswordByUser($userId);
         if ($userId === null || $identity === null) {
             return null;
@@ -208,10 +225,15 @@ final class PasswordRecoveryService
      * @throws DatabaseException When an identity query fails
      * @throws LogicException When the identities object collection is unavailable
      * @throws DbCollectionNotReadableException When nothing here reads the identities collection, or its readiness is on its way
+     * @throws HilosException When the merge reservation cannot be read or refuses the operation
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     private function passwordUserId(string $email): ?int
     {
         $userId = $this->identities()->findAccountIdByEmail($email);
+        if ($userId !== null) {
+            AccountMergeAccess::requireProtectionChange($userId);
+        }
 
         return $userId !== null && $this->identities()->findPasswordByUser($userId) !== null
             ? $userId

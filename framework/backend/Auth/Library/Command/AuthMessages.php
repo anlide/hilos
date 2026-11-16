@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\OAuth\DTO\OAuthResultSignalData;
@@ -271,6 +272,7 @@ final class AuthMessages
             OAuthResultSignalData::REASON_LINK_OK,
             OAuthResultSignalData::REASON_SECOND_FACTOR,
             OAuthResultSignalData::REASON_ACCOUNT_BLOCKED => null,
+            OAuthResultSignalData::REASON_ACCOUNT_MERGING => AccountMergeAccess::REFUSED_MESSAGE,
             OAuthResultSignalData::REASON_ACCOUNT_ERASING => AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE,
             OAuthResultSignalData::REASON_LINK_DUPLICATE => 'That account is already linked to another user.',
             OAuthResultSignalData::REASON_LINK_FAILED => 'Could not link the account. Please try again.',
@@ -315,6 +317,7 @@ final class AuthMessages
             AuthFlowOutcome::CODE_SECOND_FACTOR_EXPIRED => 'Your sign-in step expired. Sign in again.',
             AuthFlowOutcome::CODE_SECOND_FACTOR_ATTEMPTS => 'Too many wrong codes. Sign in again.',
             AuthFlowOutcome::CODE_ACCOUNT_BLOCKED => 'This account has been blocked by the project administration.',
+            AuthFlowOutcome::CODE_ACCOUNT_MERGING => AccountMergeAccess::REFUSED_MESSAGE,
             AuthFlowOutcome::CODE_ACCOUNT_ERASING => AbstractSessionsLibraryAgent::ERASING_ACCOUNT_REFUSED_MESSAGE,
             default => null,
         };

@@ -26,10 +26,11 @@ use Hilos\Utils\Helpers\TimeHelper;
 /**
  * SecondFactorResets object collection - the delayed removals of second factors (HIL-494).
  *
- * {@see request()} opens one, {@see liveOf()} and {@see findLiveByToken()} answer the
- * profile, the sign-in step and the cancel link, and the two sweeps -
- * {@see dueBy()} for the removals whose time has come and {@see reminderDueBy()} for the
- * daily announcement - are what the users library's tick reads.
+ * The personal owner creates a request and its token through {@see request()} in one
+ * transaction; the users library's tick only finds due and reminder work. {@see liveOf()} and
+ * {@see findLiveByToken()} answer the profile, the sign-in step and the cancel link, and the two
+ * sweeps - {@see dueBy()} for the removals whose time has come and {@see reminderDueBy()} for
+ * the daily announcement - are what the users library's tick reads.
  *
  * @extends Objects<ObjectSecondFactorReset>
  * @method ObjectSecondFactorReset|null current()
@@ -73,7 +74,8 @@ class SecondFactorResets extends Objects
      * at the request.
      *
      * The row is inserted without the token, and the token is written straight after, so it
-     * stays out of the ORM columns. The caller commits the two together.
+     * stays out of the ORM columns. The personal owner's request transaction commits the row
+     * and token together, before it sends the notice.
      *
      * @param int $userId Person whose second factor is to be removed
      * @param int $effectiveAt Moment the removal is carried out (epoch milliseconds)

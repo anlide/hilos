@@ -263,6 +263,175 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertSame([], $this->goneFrames());
     }
 
+    /**
+     * @param string $report Actual report entry
+     * @param string $reason Existing loss reason
+     */
+    #[DataProvider('cohortNegativeReports')]
+    public function testEachReportAnnouncesBothIndependentSingletonChannels(string $report, string $reason): void
+    {
+        $this->declareGoneListeners(AgentsGoneBothTestHilos::class);
+        $manager = new HeldAgentSignalTestManager();
+        $manager->$report(HeldAgentSignalTestRouter::COLD_AGENT);
+        $frames = $this->namedGoneFrames();
+        self::assertSame([
+            HilosSignalConstants::HILOS_AGENTS_GONE,
+            HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE,
+        ], array_keys($frames));
+        foreach ($frames as $frame) {
+            self::assertSame([HeldAgentSignalTestRouter::COLD_AGENT], $frame->data->data->agentIds);
+            self::assertSame($reason, $frame->data->data->reason);
+            self::assertSame(SignalSource::DAEMON, $frame->signalSource->getSource());
+        }
+        $this->deliverGoneFrames($manager, $frames);
+        self::assertSame([
+            HilosSignalConstants::HILOS_AGENTS_GONE . '@' . AgentsGoneTestListener::TYPE,
+            HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE . '@' . OAuthAgentsGoneTestListener::TYPE,
+        ], $manager->workerServer->deliveries);
+    }
+
+    /**
+     * @param class-string<Hilos> $facade Declared scalar receiving routes
+     * @param list<string> $names Expected channel names
+     */
+    #[DataProvider('goneChannelDeclarations')]
+    public function testMissingLossRoutesAreSkippedIndependently(string $facade, array $names): void
+    {
+        $this->declareGoneListeners($facade);
+        $manager = new HeldAgentSignalTestManager();
+        $manager->reportWorkerLost(HeldAgentSignalTestRouter::COLD_AGENT);
+        self::assertSame($names, array_keys($this->namedGoneFrames()));
+        $manager->reportAgentsLostWithWorker(3, false, []);
+        self::assertSame([], $this->namedGoneFrames());
+    }
+
+    /** @return iterable<string, array{class-string<Hilos>, list<string>}> Independent activation */
+    public static function goneChannelDeclarations(): iterable
+    {
+        yield 'sessions only' => [AgentsGoneTestHilos::class, [HilosSignalConstants::HILOS_AGENTS_GONE]];
+        yield 'OAuth only' => [OAuthAgentsGoneTestHilos::class, [HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE]];
+        yield 'neither' => [NoAgentsGoneTestHilos::class, []];
+    }
+
+    /**
+     * @param string $report Report entry; worker loss also accepts both recipients together
+     * @param list<string> $ids Original gone cohort
+     * @param list<string> $names Channels whose own recipient survived
+     */
+    #[DataProvider('goneRecipientLosses')]
+    public function testOnlyTheLostRecipientChannelIsExcluded(string $report, array $ids, array $names): void
+    {
+        $this->declareGoneListeners(AgentsGoneBothTestHilos::class);
+        $manager = new HeldAgentSignalTestManager();
+        if ($report === 'reportWorkerLost') {
+            $manager->reportAgentsLostWithWorker(3, false, $ids);
+        } else {
+            $manager->$report($ids[0]);
+        }
+        $frames = $this->namedGoneFrames();
+        self::assertSame($names, array_keys($frames));
+        foreach ($frames as $frame) {
+            self::assertSame($ids, $frame->data->data->agentIds);
+        }
+        $this->deliverGoneFrames($manager, $frames);
+        foreach ($ids as $id) {
+            self::assertNotContains($id, $manager->workerServer->startedAgentTypes, 'A failing recipient must not restart itself');
+        }
+        self::assertCount(count($names), $manager->workerServer->deliveries);
+    }
+
+    /** @return iterable<string, array{string, list<string>, list<string>}> Loss of each recipient and both */
+    public static function goneRecipientLosses(): iterable
+    {
+        foreach (['reportWorkerLost', 'reportStartFailed', 'reportNotPlaced'] as $report) {
+            yield $report . ' sessions' => [$report, [AgentsGoneTestListener::TYPE], [HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE]];
+            yield $report . ' OAuth' => [$report, [OAuthAgentsGoneTestListener::TYPE], [HilosSignalConstants::HILOS_AGENTS_GONE]];
+        }
+        yield 'both in one worker cohort' => ['reportWorkerLost', [AgentsGoneTestListener::TYPE, OAuthAgentsGoneTestListener::TYPE], []];
+    }
+
+    /**
+     * The held cohort and cancellation exist inside one master, in a window shorter than a stand tick.
+     *
+     * @param string $report Actual report entry
+     * @param string $reason Existing loss reason
+     */
+    #[DataProvider('cohortNegativeReports')]
+    public function testBothChannelsFollowTheOriginalCohortRefusalsAcrossYields(string $report, string $reason): void
+    {
+        $this->declareGoneListeners(AgentsGoneBothTestHilos::class);
+        $manager = new HeldAgentSignalTestManager();
+        for ($index = 0; $index < 130; $index++) {
+            $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, new SignalDTO(
+                new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+                new SignalName(HeldAgentSignalTestRouter::COLD_COMMAND),
+                new CommandRequestDTO('two-channels-' . $index, HeldAgentSignalTestRouter::COLD_COMMAND),
+            ));
+        }
+        $ids = [HeldAgentSignalTestRouter::COLD_AGENT];
+        if ($report === 'reportWorkerLost') {
+            for ($index = 0; $index < 140; $index++) {
+                $ids[] = 'gone_person:' . $index;
+            }
+            $manager->reportAgentsLostWithWorker(3, false, $ids);
+        } else {
+            $manager->$report(HeldAgentSignalTestRouter::COLD_AGENT);
+        }
+        self::assertGreaterThanOrEqual(66, count($manager->heldFrames()));
+        self::assertLessThanOrEqual(64, Hilos::$sr->getQueuedSignalCount());
+        self::assertSame([], $manager->lossHookQueuedCounts);
+        $manager->onCommandAbandoned('two-channels-100');
+        $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, new SignalDTO(
+            new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::COMMAND_REQUEST),
+            new SignalName(HeldAgentSignalTestRouter::COLD_COMMAND),
+            new CommandRequestDTO('two-channels-later', HeldAgentSignalTestRouter::COLD_COMMAND),
+        ));
+        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        $advance = new ReflectionClass(DaemonManager::class)->getMethod('advanceSignalEffect');
+        for ($step = 0; $step < 1000 && $state->effects !== []; $step++) {
+            $advance->invoke($manager, key($state->effects));
+        }
+        self::assertSame([], $state->effects);
+        self::assertCount(1, $manager->heldFrames());
+        self::assertSame('two-channels-later', $manager->heldFrames()[0]->signal->data->correlationId);
+        $replies = [];
+        $gone = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $name = $signal->signalName->getName();
+            if (in_array($name, [HilosSignalConstants::HILOS_AGENTS_GONE, HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE], true)) {
+                self::assertCount(129, $replies, 'Every owed refusal must precede both announcements');
+                self::assertArrayNotHasKey($name, $gone);
+                $gone[$name] = $signal->data->data;
+            } else {
+                self::assertSame([], $gone, 'No refusal may follow either announcement');
+                $replies[] = $signal->data->correlationId;
+            }
+        }
+        $expected = [];
+        for ($index = 0; $index < 130; $index++) {
+            if ($index !== 100) {
+                $expected[] = 'two-channels-' . $index;
+            }
+        }
+        self::assertSame($expected, $replies);
+        self::assertSame([
+            HilosSignalConstants::HILOS_AGENTS_GONE, HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE,
+        ], array_keys($gone));
+        foreach ($gone as $frame) {
+            self::assertSame($ids, $frame->agentIds);
+            self::assertSame($reason, $frame->reason);
+        }
+        self::assertSame($report === 'reportWorkerLost' ? [131] : [], $manager->lossHookQueuedCounts);
+        $manager->reportNotPlaced(HeldAgentSignalTestRouter::UP_AGENT);
+        $laterGone = $this->namedGoneFrames();
+        self::assertSame(array_keys($gone), array_keys($laterGone));
+        foreach ($laterGone as $frame) {
+            self::assertSame([HeldAgentSignalTestRouter::UP_AGENT], $frame->data->data->agentIds);
+            self::assertSame(AgentsGoneSignalData::REASON_NOT_PLACED, $frame->data->data->reason);
+        }
+        self::assertSame('two-channels-later', $manager->heldFrames()[0]->signal->data->correlationId);
+    }
+
     public function testAFrameForAnAgentThatHasNotReportedItsStartIsHeld(): void
     {
         $manager = new HeldAgentSignalTestManager();
@@ -1615,6 +1784,47 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, AgentsGoneTestHilos::class);
     }
 
+    /** @param class-string<Hilos> $facade Project facade whose declarations are under test */
+    private function declareGoneListeners(string $facade): void
+    {
+        $this->boundAppClass = Hilos::appClass();
+        new ReflectionProperty(Hilos::class, 'appClass')->setValue(null, $facade);
+    }
+
+    /** @return array<string, SignalDTO> Both loss channels, collected in one pass */
+    private function namedGoneFrames(): array
+    {
+        $frames = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            $name = $signal->signalName->getName();
+            if (!in_array($name, [HilosSignalConstants::HILOS_AGENTS_GONE, HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE], true)) {
+                continue;
+            }
+            self::assertInstanceOf(AgentSignalData::class, $signal->data);
+            self::assertInstanceOf(AgentsGoneSignalData::class, $signal->data->data);
+            self::assertArrayNotHasKey($name, $frames);
+            $frames[$name] = $signal;
+        }
+
+        return $frames;
+    }
+
+    /**
+     * @param HeldAgentSignalTestManager $manager Real master dispatch with a stand-in worker
+     * @param array<string, SignalDTO> $frames Previously observed announcements
+     */
+    private function deliverGoneFrames(HeldAgentSignalTestManager $manager, array $frames): void
+    {
+        foreach ($frames as $name => $signal) {
+            $recipient = Hilos::appClass()::getAgentSignalRoutes()[$name];
+            self::assertIsString($recipient, 'Each route remains scalar');
+            $manager->workerServer->seatAgentUnderWay($recipient);
+            $manager->reportStarted($recipient);
+            Hilos::$sr->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
+        $manager->drainQueue();
+    }
+
     /**
      * @return list<array{list<string>, string}> Agents and reason of every loss fact queued, in order
      */
@@ -2034,6 +2244,12 @@ final class HeldAgentSignalTestRouter extends SignalRouter
 
     public const string UNPLACED_UP_PAGE = 'unplaced_up_room';
 
+    /** @return class-string<Hilos> Facade bound by the case, including its actual scalar loss routes */
+    protected function hilosClass(): string
+    {
+        return Hilos::appClass();
+    }
+
     /** @var list<WebSocketSignalData> Subscription errors queued for a browser, in order */
     public array $pageErrorFrames = [];
 
@@ -2246,4 +2462,41 @@ final class AgentsGoneTestListener extends AbstractAgent
     public function onStop(): void
     {
     }
+}
+
+/** Independent OAuth receiver; it must never claim the sessions channel. */
+final class OAuthAgentsGoneTestListener extends AbstractAgent
+{
+    public const string TYPE = 'oauth_agents_gone_listener';
+
+    public const array AGENT_SIGNALS = [
+        HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE => AgentsGoneSignalData::class,
+    ];
+
+    public function onStop(): void
+    {
+    }
+}
+
+/** Both scalar singleton declarations, with different receiving classes. */
+abstract class AgentsGoneBothTestHilos extends Hilos
+{
+    public const array AGENTS = [
+        AgentsGoneTestListener::TYPE => [AgentRegistryKey::WORKER => AgentsGoneTestListener::class],
+        OAuthAgentsGoneTestListener::TYPE => [AgentRegistryKey::WORKER => OAuthAgentsGoneTestListener::class],
+    ];
+}
+
+/** OAuth may be enabled without a sessions loss listener. */
+abstract class OAuthAgentsGoneTestHilos extends Hilos
+{
+    public const array AGENTS = [
+        OAuthAgentsGoneTestListener::TYPE => [AgentRegistryKey::WORKER => OAuthAgentsGoneTestListener::class],
+    ];
+}
+
+/** No loss route is declared. */
+abstract class NoAgentsGoneTestHilos extends Hilos
+{
+    public const array AGENTS = [];
 }

@@ -262,6 +262,7 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
             TruthSourceOperation::Update,
         );
         $this->assertWriteDenied(HilosDbContext::users, '43', []);
+        // Ordinary identities, passkeys, enrollments, backup codes and reset requests are added here too (HIL-1989).
         // The rename journal, the second-factor settings row, the step-up confirmations, the
         // muted-channel rows and the photo row are the sets the agent adds to - the journal with
         // the name, the settings row on its first edit (HIL-1406), a confirmation of the person's
@@ -279,6 +280,13 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
             TruthSourceOperation::Update,
         );
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, '43', ['43']);
+        foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials, HilosDbContext::secondFactors,
+            HilosDbContext::secondFactorBackupCodes, HilosDbContext::secondFactorResets, HilosDbContext::secondFactorTrusts] as $collection) {
+            foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
+                TruthSourceRegistry::checkCanWriteItem($collection, '1', static fn (): array => [self::USER_ID], $operation);
+                $this->assertWriteDenied($collection, '2', ['43'], $operation);
+            }
+        }
         foreach (self::borrowedSets() as $collection) {
             $operation = in_array($collection, [HilosDbContext::legalAcceptances, HilosDbContext::userMerges], true)
                 ? TruthSourceOperation::Remove
@@ -316,6 +324,12 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
             $this->assertCreateDenied($collection, [self::setKeyOf($collection, self::USER_ID)]);
         }
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, self::USER_ID, [self::USER_ID]);
+        foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials, HilosDbContext::secondFactors,
+            HilosDbContext::secondFactorBackupCodes, HilosDbContext::secondFactorResets, HilosDbContext::secondFactorTrusts] as $collection) {
+            foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
+                $this->assertWriteDenied($collection, '1', [self::USER_ID], $operation);
+            }
+        }
         foreach (self::borrowedSets() as $collection) {
             $operation = in_array($collection, [HilosDbContext::legalAcceptances, HilosDbContext::userMerges], true)
                 ? TruthSourceOperation::Remove
@@ -338,6 +352,12 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
     private static function addedSets(): array
     {
         return [
+            HilosDbContext::identities,
+            HilosDbContext::passkeyCredentials,
+            HilosDbContext::secondFactors,
+            HilosDbContext::secondFactorBackupCodes,
+            HilosDbContext::secondFactorResets,
+            HilosDbContext::secondFactorTrusts,
             HilosDbContext::userRenames,
             HilosDbContext::secondFactorSettings,
             HilosDbContext::stepUps,

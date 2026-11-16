@@ -438,12 +438,12 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     {
         $this->enrol();
         $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
-        Hilos::$db->secondFactorTrusts->actions->trust(
+        $this->asPerson(self::USER_ID, static fn () => Hilos::$db->secondFactorTrusts->actions->trust(
             $sessionId,
             self::USER_ID,
             TimeHelper::nowMs() + 365 * self::DAY_MS,
             TimeHelper::nowMs(),
-        );
+        ));
         $savedAt = TimeHelper::nowMs();
 
         $defaults = SecondFactorPolicy::defaults();
@@ -492,6 +492,9 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
             HilosSignalConstants::HILOS_AUTH_SESSION_GRANT,
         );
         $afterGrant = TimeHelper::nowMs();
+        $asks = $this->renewalAsks();
+        $this->assertCount(1, $asks);
+        $this->assertTrue($this->carryRenewal($asks[0])->renewed);
 
         $granted = self::trustRow($sessionId);
         $this->assertNotNull($granted);
@@ -602,7 +605,9 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
      */
     public function testAnOlderRenewalChangesNothing(): void
     {
+        $this->enrol();
         $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
+        Hilos::$db->sessions[$sessionId]->actions->bindUser(self::USER_ID);
         $now = TimeHelper::nowMs();
         $this->trustSince($sessionId, $now - 10 * self::DAY_MS);
         $earlier = self::renewalAt($sessionId, $now - 2 * TimeConstants::MS_PER_SECOND);
@@ -641,8 +646,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
 
     /**
      * The same missed restriction applied by the person's agent before the renewal reaches it
-     * leaves no pair to extend; the holder writes it again with the proof's grant and end, and
-     * the new pair is not asked to be extended (HIL-1907).
+     * leaves no pair to extend; the personal owner creates it at the proof's grant and end.
      *
      * @throws HilosException When enrolment, the restriction, a frame or a read fails
      */
@@ -663,7 +667,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $this->asPerson(self::USER_ID, static fn () => Hilos::$db->secondFactorTrusts->actions->applySavedRestrictions(self::USER_ID));
         $this->assertNull(self::trustRow($sessionId));
 
-        $this->assertFalse($this->carryRenewal($asks[0])->renewed);
+        $this->assertTrue($this->carryRenewal($asks[0])->renewed);
 
         $written = self::trustRow($sessionId);
         $this->assertNotNull($written);
@@ -799,7 +803,9 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $this->proveTrustingThisBrowser();
         $after = TimeHelper::nowMs();
 
-        $this->assertSame([], $this->renewalAsks());
+        $asks = $this->renewalAsks();
+        $this->assertCount(1, $asks);
+        $this->assertTrue($this->carryRenewal($asks[0])->renewed);
         $written = self::trustRow($sessionId);
         $this->assertNotNull($written);
         $this->assertNotSame($revoked[0], $written[0]);
@@ -853,8 +859,10 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         self::seedSession($otherToken, null, self::CREATED_AT, null);
         $otherSessionId = Hilos::$db->sessions->findByToken($otherToken)->id;
         $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
-        Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, self::USER_ID, $until, TimeHelper::nowMs());
-        Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until, TimeHelper::nowMs());
+        $this->asPerson(self::USER_ID, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, self::USER_ID, $until, TimeHelper::nowMs()));
+        $this->asPerson(self::USER_ID, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until, TimeHelper::nowMs()));
 
         Hilos::$db->secondFactorTrusts->actions->deleteForUserExceptSession(self::USER_ID, $currentSessionId);
         $this->assertTrue(Hilos::$db->secondFactorTrusts->isTrusted($currentSessionId, self::USER_ID, 30));
@@ -875,7 +883,8 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     {
         $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
         $grantedAt = TimeHelper::nowMs();
-        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $grantedAt + 365 * self::DAY_MS, $grantedAt);
+        $this->asPerson(self::USER_ID, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $grantedAt + 365 * self::DAY_MS, $grantedAt));
         $savedAt = TimeHelper::nowMs();
         $restrictionId = $this->restrict($savedAt, 7);
         $this->drain();
@@ -915,8 +924,10 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
         $sleeperSessionId = (int)Hilos::$db->sessions->findByToken($sleeperToken)->id;
         $now = TimeHelper::nowMs();
-        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $now + 30 * self::DAY_MS, $now);
-        Hilos::$db->secondFactorTrusts->actions->trust($sleeperSessionId, $sleeperId, $now + 30 * self::DAY_MS, $now);
+        $this->asPerson(self::USER_ID, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $now + 30 * self::DAY_MS, $now));
+        $this->asPerson($sleeperId, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($sleeperSessionId, $sleeperId, $now + 30 * self::DAY_MS, $now));
         $this->personAgent(self::USER_ID);
         $savedAt = TimeHelper::nowMs();
         $restrictionId = $this->restrict($savedAt, 7);
@@ -951,7 +962,8 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $now = TimeHelper::nowMs();
         foreach ([self::USER_ID => self::SESSION_TOKEN, $refusingId => $refusingToken] as $userId => $token) {
             $sessionId = (int)Hilos::$db->sessions->findByToken($token)->id;
-            Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $now + 30 * self::DAY_MS, $now);
+            $this->asPerson($userId, static fn () =>
+                Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $now + 30 * self::DAY_MS, $now));
         }
         $savedAt = TimeHelper::nowMs();
         $restrictionId = $this->restrict($savedAt, 7);
@@ -993,7 +1005,8 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     {
         $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)->id;
         $now = TimeHelper::nowMs();
-        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $now + 30 * self::DAY_MS, $now);
+        $this->asPerson(self::USER_ID, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $now + 30 * self::DAY_MS, $now));
         $restrictionId = $this->restrict(TimeHelper::nowMs(), 7);
         $this->assertNull($this->bringHome($restrictionId)->error);
         $this->drain();
@@ -1021,18 +1034,18 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $otherToken = 'dd00000000000000000000000000dd94';
         self::seedSession($otherToken, null, self::CREATED_AT, null);
         $otherSessionId = Hilos::$db->sessions->findByToken($otherToken)->id;
-        Hilos::$db->secondFactorTrusts->actions->trust(
+        $this->asPerson(self::USER_ID, static fn () => Hilos::$db->secondFactorTrusts->actions->trust(
             $currentSessionId,
             self::USER_ID,
             TimeHelper::nowMs() + 365 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
             TimeHelper::nowMs(),
-        );
-        Hilos::$db->secondFactorTrusts->actions->trust(
+        ));
+        $this->asPerson(self::USER_ID, static fn () => Hilos::$db->secondFactorTrusts->actions->trust(
             $otherSessionId,
             self::USER_ID,
             TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
             TimeHelper::nowMs(),
-        );
+        ));
 
         $this->recoverPassword($currentSessionId);
         $this->holder->onSignalAgent(
@@ -1069,8 +1082,10 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         self::seedSession($otherToken, null, self::CREATED_AT, null);
         $otherSessionId = Hilos::$db->sessions->findByToken($otherToken)->id;
         $until = TimeHelper::nowMs() + 30 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
-        Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, self::USER_ID, $until, TimeHelper::nowMs());
-        Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until, TimeHelper::nowMs());
+        $this->asPerson(self::USER_ID, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($currentSessionId, self::USER_ID, $until, TimeHelper::nowMs()));
+        $this->asPerson(self::USER_ID, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until, TimeHelper::nowMs()));
 
         $this->recoverPassword($currentSessionId);
         $this->holder->onSignalAgent(
@@ -1299,8 +1314,10 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         self::seedSession($otherToken, null, self::CREATED_AT, null);
         $otherSessionId = (int)Hilos::$db->sessions->findByToken($otherToken)->id;
         $until = TimeHelper::nowMs() + 7 * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
-        Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $until, TimeHelper::nowMs());
-        Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until, TimeHelper::nowMs());
+        $this->asPerson(self::USER_ID, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($sessionId, self::USER_ID, $until, TimeHelper::nowMs()));
+        $this->asPerson(self::USER_ID, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($otherSessionId, self::USER_ID, $until, TimeHelper::nowMs()));
         Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
 
         $this->applyTurnedOff(null);
@@ -1363,7 +1380,8 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $sleeperSessionId = (int)Hilos::$db->sessions->findByToken($sleeperToken)->id;
         $now = TimeHelper::nowMs();
         $this->trustSince($sessionId, $now);
-        Hilos::$db->secondFactorTrusts->actions->trust($sleeperSessionId, $sleeperId, $now + self::DAY_MS, $now);
+        $this->asPerson($sleeperId, static fn () =>
+            Hilos::$db->secondFactorTrusts->actions->trust($sleeperSessionId, $sleeperId, $now + self::DAY_MS, $now));
         $this->personAgent(self::USER_ID);
         Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
         $restrictionId = $this->restrict(TimeHelper::nowMs(), 0);
@@ -1468,7 +1486,7 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         $now = TimeHelper::nowMs();
         foreach ($trusted as $userId => $token) {
             $sessionId = (int)Hilos::$db->sessions->findByToken($token)->id;
-            Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $now + self::DAY_MS, $now);
+            $this->asPerson($userId, static fn () => Hilos::$db->secondFactorTrusts->actions->trust($sessionId, $userId, $now + self::DAY_MS, $now));
         }
         Hilos::$setting = new SettingsAccessor(SecondFactorTurnedOffTestCatalog::class);
         $restrictionId = $this->restrict(TimeHelper::nowMs(), 0);
@@ -1833,6 +1851,25 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
         foreach ($frames as [$name, $data]) {
             $this->holder->onSignalAgent($data, 'test', $name);
         }
+        $pending = $this->queued();
+        $other = [];
+        foreach ($pending as $signal) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW) {
+                $this->deliverToPerson($signal);
+            } else {
+                $other[] = $signal;
+            }
+        }
+        foreach ($this->queued() as $signal) {
+            if ($signal->signalName->getName() === HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE) {
+                $this->holder->onSignalAgent($signal->data, 'test', HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW_DONE);
+            } else {
+                $other[] = $signal;
+            }
+        }
+        foreach ($other as $signal) {
+            Hilos::$sr->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
+        }
     }
 
     /**
@@ -1867,12 +1904,12 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
      */
     private function trustSince(int $sessionId, int $grantedAt): void
     {
-        Hilos::$db->secondFactorTrusts->actions->trust(
+        $this->asPerson(self::USER_ID, static fn () => Hilos::$db->secondFactorTrusts->actions->trust(
             $sessionId,
             self::USER_ID,
             $grantedAt + SecondFactorSettings::DEFAULT_TRUST_DAYS * self::DAY_MS,
             $grantedAt,
-        );
+        ));
     }
 
     /**

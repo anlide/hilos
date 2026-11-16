@@ -45,47 +45,33 @@ The transitions below do not make a future owner callable today.
 
 | Table | Writers and operations today | What |
 |---|---|---|
-| `hilos_second_factor` | users library `Add`; person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | apps: base32 secret, last accepted step, confirmed or not |
-| `hilos_second_factor_backup_code` | users library `Add`; person's agent `Update`/`Remove`; holder `Update`/`Remove` for merge/erasure | one row per code, spent by a conditional write |
-| `hilos_second_factor_reset` | users library `Add`; person's agent `Update`/`Remove`; holder `Remove` for merge/erasure | removals: when asked, when due, the cancel token, last notice |
+| `hilos_second_factor` | person's agent `Add`/`Update`/`Remove`; holder `Update`/`Remove` for the legacy merge and `Remove` for erasure | apps: base32 secret, last accepted step, confirmed or not |
+| `hilos_second_factor_backup_code` | person's agent `Add`/`Update`/`Remove`; holder `Update`/`Remove` for the legacy merge and `Remove` for erasure | one row per code, spent by a conditional write |
+| `hilos_second_factor_reset` | person's agent `Add`/`Update`/`Remove`; holder `Remove` for the legacy merge and erasure | removals: when asked, when due, the cancel token, last notice |
 | `hilos_second_factor_setting` | person's agent `Add`/`Update`/`Remove` (`Remove` in its erasure part); holder `Add`/`Update`/`Remove` for the merge's wait upsert and merge/erasure deletion | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
-| `hilos_second_factor_trust` | holder `Add` for the creation on the way in, `Update`/`Remove` for the global term and merge/erasure; person's agent `Update`/`Remove` for personal revocations, for applying the saved restrictions and for renewing a standing pair | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
+| `hilos_second_factor_trust` | person's agent `Add`/`Update`/`Remove` for grant-or-renew and personal policy; holder `Remove` for the legacy merge and erasure | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
 | `hilos_second_factor_trust_restriction` | settings library `Add` in the transaction of the save that shortened the term or turned the factor off; no `Update` or `Remove`; the holder and the person's agent read it | one shortening: the save moment and a term of 0 to 365 days; trusts granted no later than the save live no longer than the save plus the term, and 0 takes them out |
 
 The personal edits moved in HIL-1406 are written by the person's agent
-(`AbstractUserAgent`, its writes in `SecondFactorPersonEdits`) on a frame of the
-users library, which judges what lies outside the person's set first and does
-what follows the agent's answer. The library still creates enrollment, backup
-codes and reset requests, and only creates them.
+(`AbstractUserAgent`, through `SecondFactorPersonEdits`). The users library
+carries the request and consumes the owner's done answer; it does not create
+ordinary enrollment, backup-code or reset rows.
 
-The personal owner removes the previous enrollment before the library creates
-the new one (HIL-1903). Every start of an enrollment - on the way in, the first
-app in the profile, and a further app after its code - sends the person's agent
-`hilos_user_second_factor_enroll_drop`; the agent deletes every enrollment of the
-person that was never confirmed and answers
-`hilos_user_second_factor_enroll_drop_done`, and on that answer the library
-creates the new enrollment with its secret and answers the same press. The
-secret is born at that creation, so nothing secret travels between the hops. A
-refusal of the agent refuses the press in its words. An answer that finds an
-unfinished enrollment standing again - a second start pressed at the same time
-created it first - refuses its press with `SETUP_EXPIRED`, so a person keeps at
-most one unfinished enrollment.
+Before creating secret-bearing material, the personal owner checks that the
+person is addressable and has no active merge reservation. Enrollment replacement
+removes unfinished enrollments and creates the new factor in one transaction.
+The done answer carries the committed secret and URI; a failure rolls back both
+the removal and creation, preserving the earlier unfinished enrollment.
 
-The personal owner removes the old backup-code set before the library creates
-the new codes (HIL-1904). Every issue of a set - the first app connected on the
-way in or in the profile, and new codes in the profile after a code - sends the
-person's agent `hilos_user_second_factor_codes_drop`; the agent deletes the
-person's whole set in its own transaction, an empty set included, and answers
-`hilos_user_second_factor_codes_drop_done`, and on that answer the library
-creates the new set and answers the same press as before. No code travels
-between the hops. A refusal of the agent refuses the press in its words and
-leaves the old set standing. An answer that finds a set standing again - a
-second press at the same time created it first - answers its press with the
-unused codes of that set and creates nothing, so a person keeps one set. A
-failure after the drop - the read, the draw or the write of the new set - fails
-the press in the general words, and the person's section is fanned again first,
-so it shows what the failed write left: no codes, unless it broke midway
-through the set.
+Replacing backup codes is likewise owner-local and atomic: the owner deletes the
+old set and creates its replacement in one transaction. Display codes are sent
+in the done answer only after commit. A failure rolls back the replacement and
+preserves the previous set.
+
+A reset request and its cancellation token are created together by the personal
+owner. The owner commits before sending the reset notice; the done answer carries
+the committed request id and effective moment. A failed transaction leaves no
+new reset request and sends no notice.
 
 The secret, code and token written immediately after their new row's insert
 remain completion of creation. The person's settings row is the agent's to
@@ -135,9 +121,21 @@ remain until their own
 [erasure](account-operations.md#erasure) and [merge](account-operations.md#merge)
 canons give each prepared capability its own address. For merge, each owner
 checks its protection, shown flag and pending-removal refusals at preparation
-(built, but with no live sender until HIL-2000). Reservation restrictions
-cover protection changes and affected policy entrances, including late service frames
-(not in the code yet — HIL-1989). The loser transfers or deletes its factor
+(built, but with no live sender until HIL-2000). Reservation guards cover the
+existing personal protection mutations and affected policy entrances, including
+late service frames (built, HIL-1989). Saved trust policy still limits reads;
+startup and service application defer the material writes while this account is
+reserved, preserving debt for startup, await or the next ordinary pass after its
+own release. Ordinary proof before the give fact still spends backup codes,
+checks replay and counts wrong codes, without canceling a reserved reset.
+The personal owner now creates enrollment, replacement codes and reset requests
+after addressability and reservation checks; each replacement is atomic, and its
+done answer carries only committed material. The reset notice follows commit.
+New sign-in grants recheck the saved give fact before binding, including OAuth
+no-trip, live, held and resumed paths; survivor sign-in remains refused through
+receipt even when DB sync was missed. Grant-or-renew has no holder fallback.
+These guards are active, but the prepared merge remains inert until HIL-1999.
+The loser transfers or deletes its factor
 and backup codes by fate, preserving spent status, and removes its other
 second-factor rows with its result (not in the code yet — HIL-1992). The
 survivor writes the longer effective wait when protection transfers and
@@ -227,13 +225,13 @@ all their trusts. Blocking a person removes every trust even when no session is
 currently signed in. Unblocking does not restore one. Ordinary sign-out keeps
 the trust until its expiry or an explicit revocation.
 
-Who writes each of these today (HIL-1407). The session holder's `trust()`
-creates a new pair on the way in and leaves a standing pair as it is; the
-person's agent extends a standing pair on `hilos_user_browser_trust_renew`
-(HIL-1907, below). The holder removes trusts in merge and erasure; it claims
-`Add` and `Remove` for those paths. It no longer cuts or removes trusts for the
-administrator's term or on switch-off: that is the people's agents' work on the
-sweep's frame (HIL-1908 and HIL-1909, below). Taking one
+Who writes each of these today (HIL-1407). The personal owner creates or renews
+every ordinary pair through `grantOrRenew()` on
+`hilos_user_browser_trust_renew` (HIL-1989, below). The session holder has no
+ordinary `Add`, insert or re-grant fallback; its remaining trust write is
+`Remove` for the retained merge and erasure paths. It no longer cuts or removes
+trusts for the administrator's term or on switch-off: that is the people's
+agents' work on the sweep's frame (HIL-1908 and HIL-1909, below). Taking one
 person's trust away is already that person's agent's, in the turn of the write
 that causes it:
 
@@ -254,40 +252,21 @@ that causes it:
 
 ### Trust Writes After The Ordinary Moves
 
-New trust creation on entry stays at the holder; renewal of an existing
-session/person pair belongs to the personal owner, which owns every later write
-(HIL-1907). A proof that asks to trust the browser is the trust's grant, and the
-policy's days run from it. A pair with no trust yet is written by the holder. A
-standing pair - live, run out or cut by a restriction - is left as it is: the
-holder's creation writes nothing and says the pair stands, and the holder sends
-the person's agent `hilos_user_browser_trust_renew`, naming the person, the
-session row, the new end, the moment of the confirmation and the signal the
-answer is sent under. A person who can no longer be addressed is not asked, and
-the browser stays untrusted. The browser was answered before all this; the
-sign-in does not wait on the renewal.
+Every sign-in that asks to trust the browser sends the proof moment and requested
+expiry to the personal owner (`hilos_user_browser_trust_renew`). The owner checks
+that the person is addressable, has no merge reservation, the session still
+belongs to that person and is live, a confirmed factor exists, current policy
+allows trust, and the password has not changed since the proof. The holder never
+inserts or re-grants a trust as fallback. The browser has already been answered:
+trust is optional and sign-in does not wait on its result.
 
-In one transaction the agent moves the pair's end and its last grant to the
-confirmation - not to the moment of its own write - unless a later grant is
-written already, and applies the stored restrictions to the person, so one saved
-at the confirmation or later cuts or takes out the extended pair at once. It
-answers `hilos_user_browser_trust_renew_done` with `renewed`: true when the pair
-stands, extended now or granted later already; false when there is none. A
-refusal is logged by the holder naming the person and no session, and is not
-asked again. On `renewed` false the pair went between the confirmation and the
-agent's turn, and the holder writes it again, with the confirmation's end and
-grant, only while all four still hold: the session row exists and is signed in
-as the person, the person's password has not changed since the confirmation,
-the person has a confirmed app, and the policy still gives days. Otherwise it
-went for good - the ordinary end of a revoke - and nothing is logged. The
-password stands for every way the person's agent takes the pairs of the other
-browsers without signing them out - a change that ends the other sessions, one
-that does not, and a recovery: each goes through the agent's write of the new
-password, which marks the moment of the change, and a change in the same
-millisecond as the confirmation counts as after it. The confirmation is a moment
-of the holder's clock and the change one of the agent's; on a cluster these are
-two nodes, so the comparison narrows the gap and does not seal it. A pair
-written again meanwhile by a later confirmation is asked to be extended once
-more and answered that it stands, so the exchange ends.
+`grantOrRenew()` adds an absent pair or renews a standing one in one transaction,
+applies saved restrictions, and preserves a later grant already written. The
+owner answers whether the pair stands; an owner refusal or a false result is
+logged without a holder-side insert or retry. The confirmation moment is stored
+instead of the owner's write time. It comes from the holder's clock while a
+password change moment comes from the owner's clock, so a cluster clock skew can
+still affect their ordering.
 
 The saved policy needed to apply a shorter term is retained, as the restrictions
 above (HIL-1900); the sessions holder's sweep and the owner's start recover
@@ -310,18 +289,14 @@ applies to it when its term is 0 or it runs past its limit; the same test tells
 the sweep of HIL-1901 which work is unfinished. Today the sweep is what sends
 the frame; the switch-off below sends it through the request of the next
 paragraph (HIL-1909), and so does the term (HIL-1908).
-The holder no longer extends a trust - the renewal is the owner's own write
-(HIL-1907) - so the application meets no extension from another process. Three
-gaps remain. The creation: a pair the holder writes while the owner takes every
-trust of the person away survives that revocation when the insert lands after
-the owner's read, and only a stored mark of the revocation would close it. The
-skew of the cluster's clocks inside the window: the confirmation is a moment of
-the holder's clock and the password change one of the agent's, so a change that
-follows the confirmation by less than the skew can carry the earlier moment when
-the agent's clock runs behind, and the pair is written again. The merge of
-accounts: the holder itself deletes the survivor's pairs without signing its
-sessions out, and a pair written again between the renewal being sent and that
-step comes back (HIL-1999).
+The owner-only grant path closes the old holder-insert race with a concurrent
+revocation. Two gaps remain. First, the skew of the cluster's clocks inside the
+window: the confirmation is a moment of the holder's clock and the password
+change one of the agent's, so a change that follows the confirmation by less
+than the skew can carry the earlier moment when the agent's clock runs behind.
+Second, the retained legacy merge still deletes the survivor's trusts in the
+holder's transaction; that path remains until the merge cutover HIL-1999. The
+prepared merge's saved-fact sign-in gate does not activate that cutover.
 
 Missed application is found in two places (HIL-1901). The sessions holder
 sweeps for it: the framework cron rule

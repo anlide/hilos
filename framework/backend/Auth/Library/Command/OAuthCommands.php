@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\Library\Command;
 
+use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
@@ -38,8 +39,10 @@ use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosOAuthTrip;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
-use Hilos\Utils\Logger;
+use Hilos\Users\DTO\OAuthIdentityAddData;
+use Hilos\Users\DTO\UserIdentityAddSignalData;
 use Hilos\Users\DTO\UserIdentityProviderNameWriteSignalData;
+use Hilos\Utils\Logger;
 use JsonException;
 use Random\RandomException;
 use Throwable;
@@ -128,6 +131,7 @@ final class OAuthCommands extends AbstractLibraryCommands
      *     the state is invalid, or a link-mode return is not confirmed
      * @throws InvalidArgumentException When the hand-off to the OAuth agent cannot be named or queued
      * @throws HilosException When the provider registry, the sign-in method setting, or the confirmation cannot be read
+     * @throws JsonException When a saved merge reservation is malformed
      */
     public function callbackOAuth(string $acceptKey, OAuthCallbackActionDTO $dto): void
     {
@@ -153,6 +157,7 @@ final class OAuthCommands extends AbstractLibraryCommands
                 throw new ValidationException(AuthMessages::OAUTH_VERIFICATION_FAILED);
             }
             $linkUserId = $acting->userId;
+            AccountMergeAccess::requireProtectionChange($linkUserId);
             new StepUpGate()->require($acting->sessionToken, $linkUserId, StepUpOperationKey::ADD_SIGN_IN_METHOD);
         }
 
@@ -202,10 +207,12 @@ final class OAuthCommands extends AbstractLibraryCommands
      * @throws ValidationException When the project has no OAuth wiring, the token is invalid, foreign-owned, or already linked,
      *     or its provider is switched off
      * @throws HilosException When the identity lookup or bind, or the sign-in method setting, fails
+     * @throws JsonException When a saved merge reservation is malformed
      */
     public function linkAfterReauth(string $acceptKey, LinkOAuthAfterReauthActionDTO $dto): void
     {
         $acting = $this->actingUser($acceptKey);
+        AccountMergeAccess::requireProtectionChange($acting->userId);
 
         $link = $this->oauthService()->verifyLinkToken($dto->token);
         if ($link === null) {
@@ -218,11 +225,21 @@ final class OAuthCommands extends AbstractLibraryCommands
             throw new ValidationException(AuthMessages::INVALID_LINK);
         }
 
-        try {
-            Hilos::$db->identities->createOauthIdentity($acting->userId, $link->provider, $link->subject, $link->providerName);
-        } catch (DuplicateValueException) {
-            throw new ValidationException(AuthMessages::INVALID_LINK);
+        $session = Hilos::$db->sessions->findByToken($acting->sessionToken);
+        if ($session === null) {
+            throw new ItemNotFoundForUpdateException('User session not found');
         }
+        $this->library->askPersonAgent($acting->userId, HilosSignalConstants::HILOS_USER_IDENTITY_ADD, new UserIdentityAddSignalData(
+            userId: $acting->userId,
+            sessionId: (int)$session->id,
+            identity: new OAuthIdentityAddData($link->provider, $link->subject, $link->providerName),
+            tripKeyHash: null,
+            replySignal: HilosSignalConstants::HILOS_USER_IDENTITY_ADD_DONE,
+            acceptKey: $acceptKey,
+            requestId: $this->library->currentActionRequestId(),
+            action: $this->library->runningAction(),
+            successMessage: null,
+        ));
     }
 
     /**
@@ -253,6 +270,7 @@ final class OAuthCommands extends AbstractLibraryCommands
             $data->provider . ':' . $data->subject,
         );
         if ($identity !== null && $identity->userId !== null) {
+            AccountMergeAccess::requireSignIn($identity->userId);
             $this->reportProviderName($identity, $data->providerName);
             $this->library->grantSession($acting, $identity->userId, tripKeyHash: $data->tripKeyHash);
 
@@ -277,6 +295,7 @@ final class OAuthCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome Refusal, or null when the holder answers the sign-in
      * @throws ValidationException When the theme choice is outside the theme catalog
      * @throws HilosException When the identity, account, or acceptance write fails
+     * @throws JsonException When a saved merge result cannot be decoded
      */
     public function createAccount(string $acceptKey, OAuthCreateAccountActionDTO $dto): ?AuthFlowOutcome
     {
