@@ -11,6 +11,7 @@ use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\View\Item\Identity;
+use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
@@ -31,6 +32,22 @@ class IdentityActions extends DbActions
     public function transferForMerge(AccountMergeTransfer $transfer): void
     {
         $this->transferSelectedForMerge($transfer);
+    }
+
+    /**
+     * Demotes the source preparation password before its separate transfer, or deletes it under the existing rules.
+     * SCAFFOLD: the merge give transaction in HIL-1992 supplies the production caller.
+     *
+     * @param AccountMergeTransfer $transfer Active give capability
+     * @throws HilosException When the anchor, ordinary own write or password demotion refuses the action
+     */
+    public function demoteForMerge(AccountMergeTransfer $transfer): void
+    {
+        $transfer->guardPassword($this->object);
+        $this->ensureCanWrite(TruthSourceOperation::Update);
+        Hilos::$db->identities->getObjectCollection()->demotePasswordToMagicLink(
+            $this->object, $transfer->loserUserId, $transfer->survivorUserId,
+        );
     }
 
     /**

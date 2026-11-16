@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Auth\AccountOperation\AccountMergeTransfer;
 use Hilos\Database\Actions\Item\IdentityActions;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
@@ -68,6 +69,18 @@ class Identity extends DbItem
     public function verifyPassword(string $plainPassword): bool
     {
         return $this->_object->verifyPassword($plainPassword);
+    }
+
+    /**
+     * SCAFFOLD: the merge give transaction in HIL-1992 supplies the production caller.
+     *
+     * @param AccountMergeTransfer $transfer Active right over this captured source row
+     * @return ?string Stored secret for the attempt-local hand-over copy
+     * @throws HilosException When the row, capability or secret lookup refuses the read
+     */
+    public function readForMerge(AccountMergeTransfer $transfer): ?string
+    {
+        return $this->_object->readForMerge($transfer);
     }
 
     /**

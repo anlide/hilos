@@ -5,6 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Database;
 
 use Hilos\Database\Actions\Collection\SettingsActions;
+use Hilos\Database\Actions\Collection\AccountMergeCopiesActions;
+use Hilos\Database\Entity\Collection\AccountMergeCopies as EntityAccountMergeCopies;
+use Hilos\Database\Entity\Item\AccountMergeCopy as EntityAccountMergeCopy;
+use Hilos\Database\Object\Collection\AccountMergeCopies as ObjectAccountMergeCopies;
+use Hilos\Database\Object\Item\AccountMergeCopy as ObjectAccountMergeCopy;
+use Hilos\Database\View\Collection\AccountMergeCopies as DbCollectionAccountMergeCopies;
+use Hilos\Database\View\Item\AccountMergeCopy as DbAccountMergeCopy;
 use Hilos\Database\Actions\Item\IdentityActions;
 use Hilos\Database\Actions\Item\PasskeyCredentialActions;
 use Hilos\Database\Actions\Item\SettingActions;
@@ -120,6 +127,7 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::accountOperations => DbCollectionAccountOperations::class,
         HilosDbContext::accountOperationAssignments => DbCollectionAccountOperationAssignments::class,
         HilosDbContext::accountOperationResults => DbCollectionAccountOperationResults::class,
+        HilosDbContext::accountMergeCopies => DbCollectionAccountMergeCopies::class,
         HilosDbContext::dataExports => DbCollectionDataExports::class,
         HilosDbContext::legalAcceptanceExports => DbCollectionLegalAcceptanceExports::class,
         HilosDbContext::files => DbCollectionFiles::class,
@@ -137,6 +145,33 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::userMerges => DbCollectionUserMerges::class,
         HilosDbContext::userPhotos => DbCollectionUserPhotos::class,
     ];
+
+    public function testCopyExtensionKeepsAssignmentOffsetsAndExcludesItsPayload(): void
+    {
+        $context = new DeclaringDbContext([
+            HilosDbContext::accountMergeCopies => new FrameworkExtension(ExtendedCopyViews::class, ExtendedCopyActions::class),
+        ]);
+        $context->configure();
+        $objects = $context->mountedObjectCollection(HilosDbContext::accountMergeCopies);
+        self::assertInstanceOf(ExtendedCopyObjects::class, $objects);
+        self::assertSame(Objects::LAZY_STRATEGY_KEY, $objects->getLazyStrategy());
+        self::assertInstanceOf(ExtendedCopyActions::class, $context->accountMergeCopies->actions);
+        $entity = ExtendedCopyEntity::fromRow([
+            'assignment_id' => 19, 'owner_agent_id' => 'hilos_user:7', 'created_at' => 0, 'payload_json' => '{"secret":"private"}',
+        ]);
+        $objects->fixture(ExtendedCopyObject::fromEntity($entity));
+        self::assertInstanceOf(ExtendedCopyView::class, $context->accountMergeCopies[19]);
+        self::assertSame(19, $context->accountMergeCopies[19]->assignmentId);
+        self::assertSame(['assignmentId' => 19, 'ownerAgentId' => 'hilos_user:7', 'createdAt' => 0], $context->accountMergeCopies[19]->toArray());
+        $previousDb = Hilos::$db;
+        Hilos::$db = $context;
+        try {
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
+        } finally {
+            Hilos::$db = $previousDb;
+        }
+        self::assertFalse(property_exists($entity, 'payload_json'));
+    }
 
     /**
      * @throws HilosException When the context refuses to configure
@@ -492,4 +527,39 @@ final class ExtendedPasskeyViews extends DbCollectionPasskeyCredentials
     {
         return $this->createDbItem($object);
     }
+}
+
+class ExtendedCopyEntity extends EntityAccountMergeCopy
+{
+}
+class ExtendedCopyEntities extends EntityAccountMergeCopies
+{
+    public const string ENTITY_CLASS = ExtendedCopyEntity::class;
+}
+class ExtendedCopyObject extends ObjectAccountMergeCopy
+{
+    public const string ENTITY_CLASS = ExtendedCopyEntity::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedCopyObjects::class;
+}
+class ExtendedCopyObjects extends ObjectAccountMergeCopies
+{
+    public const string OBJECT_CLASS = ExtendedCopyObject::class;
+    public const string ENTITY_COLLECTION_CLASS = ExtendedCopyEntities::class;
+
+    /** @param ExtendedCopyObject $object Already hydrated fixture row, with no database read */
+    public function fixture(ExtendedCopyObject $object): void
+    {
+        $this->hydrate($object->assignmentId, $object);
+    }
+}
+class ExtendedCopyView extends DbAccountMergeCopy
+{
+}
+class ExtendedCopyViews extends DbCollectionAccountMergeCopies
+{
+    public const string DB_ITEM_CLASS = ExtendedCopyView::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedCopyObjects::class;
+}
+class ExtendedCopyActions extends AccountMergeCopiesActions
+{
 }

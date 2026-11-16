@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["account_merge_copy"],"parts":[{"changeId":"20261116090449292760_HIL-1992_account_merge_copy","unit":"account_merge_copy","upSha256":"2595b1772a623bad259e9870ca432737d8371be0fae0d423c19e2b1dc21d6a74","downSha256":"28de63e1a1e9161d0f1c102bac10edcfea81167ca084c81677c42f4f9cf1c3ca"}],"upSha256":"2595b1772a623bad259e9870ca432737d8371be0fae0d423c19e2b1dc21d6a74","downSha256":"28de63e1a1e9161d0f1c102bac10edcfea81167ca084c81677c42f4f9cf1c3ca"}
+DROP TABLE IF EXISTS `hilos_account_merge_copy`;

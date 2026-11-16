@@ -107,9 +107,10 @@ and completes its own request in that final local transaction. That final is
 live from HIL-1952 (prepared in HIL-1942) and uses the personal agent's
 production `Remove` claim. Under the detailed
 [merge canon](account-operations.md#merge), the loser writes its own block
-after its merge row in its own fact transaction
-(not in the code yet — HIL-1992). The holder's old `Update` remains until the
-merge switch named above.
+after its merge row in the
+[prepared give transaction](account-operations.md#the-prepared-loser-give).
+The owner entry has no live coordinator sender until HIL-2000; the holder's
+old `Update` remains until the merge switch named above.
 
 ## What The Framework Does For A Person
 
@@ -297,9 +298,10 @@ That one transaction is the merge in the tree. The detailed
 [merge canon](account-operations.md#merge) keeps what the tombstone means and
 its order: the loser transfers its own rows under their existing ids, applies
 the fate to its own previous password, then writes the merge row and its own
-block in the same transaction with its result and hand-over copy
-(not in the code yet — HIL-1992). The survivor's memory admission and fence
-against stale frames (not in the code yet — HIL-1993) are separate from its
+block in the same transaction with its nonsecret result and separate private
+hand-over copy. This [prepared give](account-operations.md#the-prepared-loser-give)
+has no live coordinator sender until HIL-2000. The survivor's memory admission
+and fence against stale frames (not in the code yet — HIL-1993) are separate from its
 own password/protection writes and receipt (not in the code yet — HIL-1994).
 The loser stops only after deleting its copy following receipt
 (not in the code yet — HIL-1998). The keys, chain and readers below retain

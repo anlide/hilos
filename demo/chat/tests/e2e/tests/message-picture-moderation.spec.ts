@@ -38,6 +38,10 @@ import {
   dictateGatewayBehavior,
   releaseGatewayAnswer,
 } from '../../../../../framework/frontend/scripts/standGateway.mjs'
+import {
+  cancelCronPause,
+  pauseCronRule,
+} from '../../../../../framework/frontend/scripts/daemonMoments.mjs'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 import {
   UPLOADS_WORKER_AGENT,
@@ -1381,9 +1385,15 @@ test.describe('an active picture loses its submitting connection or person', () 
         const trace = await pictureControls(author, record)
         const witnessTrace = await pictureControls(observer, record)
         let closeControl: SocketReconnectControl | undefined
+        let cleanupHistoryPauseId: string | undefined
         const failures: unknown[] = []
         try {
-          if (transition === 'close') await armSocketDrop(author)
+          if (transition === 'close') {
+            cleanupHistoryPauseId = (
+              await pauseCronRule('daemon/cleanup_history')
+            ).pauseId
+            await armSocketDrop(author)
+          }
           const oldPerson = await createTestUserJoined(expect, author)
           const newPerson = await createTestUserJoined(expect, observer)
           expect(newPerson.userId).not.toBe(oldPerson.userId)
@@ -1713,6 +1723,9 @@ test.describe('an active picture loses its submitting connection or person', () 
             ...Object.values(keys).map(forgetModelKey),
             authorContext.close(),
             observerContext.close(),
+            ...(cleanupHistoryPauseId
+              ? [cancelCronPause(cleanupHistoryPauseId)]
+              : []),
           ])
           for (const result of cleaned)
             if (result.status === 'rejected') failures.push(result.reason)

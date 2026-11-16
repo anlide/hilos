@@ -119,7 +119,8 @@ final class AbstractUserAgentTest extends TestCase
         self::assertSame(['42'], $agent->ownedDbRowKeys(HilosDbContext::users));
         foreach (array_keys(TestUserAgent::OWNS_DB_SET) as $collection) {
             self::assertSame(
-                $collection === HilosDbContext::accountOperationResults ? 'hilos_user:42' : '42',
+                in_array($collection, [HilosDbContext::accountOperationResults, HilosDbContext::accountMergeCopies], true)
+                    ? 'hilos_user:42' : '42',
                 $agent->ownedDbSetKey($collection),
             );
         }
@@ -182,6 +183,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosDbContext::userRenames,
             HilosDbContext::userMerges,
             HilosDbContext::accountOperationResults,
+            HilosDbContext::accountMergeCopies,
         ], array_keys(TestUserAgent::OWNS_DB_SET));
         foreach (self::borrowedSets() as $collection) {
             $operations = in_array($collection, [HilosDbContext::secondFactors, HilosDbContext::secondFactorBackupCodes,
@@ -212,6 +214,7 @@ final class AbstractUserAgentTest extends TestCase
             [TruthSourceOperation::Add, TruthSourceOperation::Remove],
             TestUserAgent::OWNS_DB_SET[HilosDbContext::accountOperationResults],
         );
+        self::assertSame([TruthSourceOperation::Add], TestUserAgent::OWNS_DB_SET[HilosDbContext::accountMergeCopies]);
         self::assertSame([], TestUserAgent::OWNS_DB);
         self::assertSame(
             [
@@ -248,6 +251,7 @@ final class AbstractUserAgentTest extends TestCase
         TruthSourceRegistry::checkCanCreate(HilosDbContext::stepUps, static fn (): array => ['42']);
         TruthSourceRegistry::checkCanCreate(HilosDbContext::notificationPreferences, static fn (): array => ['42']);
         TruthSourceRegistry::checkCanCreate(HilosDbContext::accountOperationResults, static fn (): array => ['hilos_user:42']);
+        TruthSourceRegistry::checkCanCreate(HilosDbContext::accountMergeCopies, static fn (): array => ['hilos_user:42']);
         TruthSourceRegistry::checkCanWriteItem(
             HilosDbContext::accountOperationResults,
             '1',
@@ -698,6 +702,7 @@ final class AbstractUserAgentTest extends TestCase
                 HilosDbContext::userPhotos,
                 HilosDbContext::legalAcceptances,
                 HilosDbContext::accountOperationResults,
+                HilosDbContext::accountMergeCopies,
             ],
         ));
     }

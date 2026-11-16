@@ -17,6 +17,10 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Hilos;
+use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
 use Hilos\Tests\Integration\AuthThrottleIntegrationTest;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -251,6 +255,72 @@ final class AgentTruthSourceOperationsTest extends TestCase
         );
     }
 
+    public function testPersonalCopyClaimOnlyAddsAndUsesTheFullAgentAddress(): void
+    {
+        $claims = OwnershipDeclaration::dbSetCollectionsOf(CopyOperationsTestPerson::class);
+        $person = new CopyOperationsTestPerson('7');
+        self::assertSame([TruthSourceOperation::Add], CopyOperationsTestPerson::OWNS_DB_SET[HilosDbContext::accountMergeCopies]);
+        self::assertTrue($claims[HilosDbContext::accountMergeCopies]->allows(TruthSourceOperation::Add));
+        self::assertFalse($claims[HilosDbContext::accountMergeCopies]->allows(TruthSourceOperation::Update));
+        self::assertFalse($claims[HilosDbContext::accountMergeCopies]->allows(TruthSourceOperation::Remove));
+        self::assertSame($person->getId(), $person->ownedDbSetKey(HilosDbContext::accountMergeCopies));
+        self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            CopyOperationsTestPerson::OWNS_DB_SET[HilosDbContext::userMerges]);
+        foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials, HilosDbContext::secondFactors,
+            HilosDbContext::secondFactorBackupCodes] as $collection) {
+            self::assertSame(TruthSourceOperation::ALL, CopyOperationsTestPerson::OWNS_DB_SET[$collection]);
+        }
+    }
+
+    public function testPersonalMergeClaimAddsAndRemovesWithoutEditingExistingRows(): void
+    {
+        $claims = OwnershipDeclaration::dbSetCollectionsOf(CopyOperationsTestPerson::class);
+        self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            CopyOperationsTestPerson::OWNS_DB_SET[HilosDbContext::userMerges]);
+        self::assertTrue($claims[HilosDbContext::userMerges]->allows(TruthSourceOperation::Add));
+        self::assertTrue($claims[HilosDbContext::userMerges]->allows(TruthSourceOperation::Remove));
+        self::assertFalse($claims[HilosDbContext::userMerges]->allows(TruthSourceOperation::Update));
+        self::assertSame('7', new CopyOperationsTestPerson('7')->ownedDbSetKey(HilosDbContext::userMerges));
+    }
+
+    public function testCopySetGrantRefusesForeignSetsAndEveryChangingOperation(): void
+    {
+        $previousDb = Hilos::$db;
+        Hilos::$db = new CopyOperationsTestDbContext();
+        Hilos::$db->configure();
+        $person = new CopyOperationsTestPerson('7');
+        try {
+            OwnershipDeclaration::claimDbSet($person);
+            ExecutionContext::setCurrentAgentId($person->getId());
+            TruthSourceRegistry::checkCanCreate(HilosDbContext::accountMergeCopies, static fn (): array => [$person->getId()]);
+            foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
+                try {
+                    TruthSourceRegistry::checkCanWriteItem(
+                        HilosDbContext::accountMergeCopies, '19', static fn (): array => [$person->getId()], $operation,
+                    );
+                    self::fail('An Add-only copy claim changed an existing row');
+                } catch (WriteNotAllowedException) {
+                    self::assertTrue(true);
+                }
+            }
+            foreach ([$person->getIndex(), new CopyOperationsTestPerson('8')->getId()] as $foreign) {
+                try {
+                    TruthSourceRegistry::checkCanCreate(HilosDbContext::accountMergeCopies, static fn (): array => [$foreign]);
+                    self::fail('A foreign or person-only copy set was accepted');
+                } catch (CreateNotAllowedException) {
+                    self::assertTrue(true);
+                }
+            }
+            ExecutionContext::setCurrentAgentId('foreign-copy-writer');
+            $this->expectException(CreateNotAllowedException::class);
+            TruthSourceRegistry::checkCanCreate(HilosDbContext::accountMergeCopies, static fn (): array => [$person->getId()]);
+        } finally {
+            TruthSourceRegistry::unregisterAgent($person->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($person->getId()));
+            Hilos::$db = $previousDb;
+        }
+    }
+
     /**
      * Lays the claims of an ordinary agent down and starts it, the way a worker would.
      *
@@ -337,4 +407,13 @@ final class AgentTruthSourceOperationsTestLibrary extends AbstractUsersLibraryAg
 final class AgentTruthSourceOperationsTestSessionsLibrary extends AbstractSessionsLibraryAgent
 {
     public const string AGENT_TYPE = 'unit_truth_source_operations_sessions_library';
+}
+
+/** Uses the production personal claims without lifecycle work. */
+final class CopyOperationsTestPerson extends AbstractUserAgent
+{
+}
+
+final class CopyOperationsTestDbContext extends HilosDbContext
+{
 }

@@ -1,0 +1,20 @@
+{
+    "format": 1,
+    "id": "20261116090449292760_HIL-1992_account_merge_copy",
+    "parts": [
+        {
+            "unit": "account_merge_copy",
+            "up": "account_merge_copy.sql",
+            "down": "account_merge_copy_down.sql",
+            "introducesUnit": true,
+            "requires": [
+                {
+                    "changeId": "20261109072435317522_HIL-1987_drop_account_erasure_tables",
+                    "unit": "account_erasure_assignment"
+                }
+            ],
+            "afterStubUpSha256": "2595b1772a623bad259e9870ca432737d8371be0fae0d423c19e2b1dc21d6a74",
+            "afterStubDownSha256": "28de63e1a1e9161d0f1c102bac10edcfea81167ca084c81677c42f4f9cf1c3ca"
+        }
+    ]
+}

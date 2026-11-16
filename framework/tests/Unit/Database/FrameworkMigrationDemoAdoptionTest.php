@@ -330,6 +330,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $acceptanceExportMoment = $this->assertExportLegalMomentPair($project->root, 25, 'legal_acceptance_export', $catalog, $schema);
                 $origins[] = $acceptanceExportMoment;
                 $coveredParts[] = $acceptanceExportMoment->parts[0];
+                $copy = $this->copyInstallPair($project->root, 26, $catalog, $schema);
+                $origins[] = $copy;
+                $coveredParts[] = $copy->parts[0];
                 $selectedUnits = array_column($schema->selectedUnits($project->facade), 'key');
                 self::assertSame(
                     $this->partRecords($catalog->partsForUnits($selectedUnits)),
@@ -968,11 +971,53 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
             self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
             $origins[] = $install;
+            $copyIndices = [173, 130, 130, 111, 111, 113];
+            $copyBase = $project->root . '/' . sprintf('%03d', $copyIndices[$index]) . '_framework_install_account_merge_copy';
+            $origins[] = $catalog->verifyPair(FsPath::read($copyBase . '.sql'), FsPath::read($copyBase . '_down.sql'));
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);
         self::assertSame([[], [], [], [], [], [], [], [], [], [], [], []], array_column($plans, 'publications'));
+    }
+
+    public function testEveryAuthDemoCarriesTheNewCopyInstallWithoutRewritingItsHistory(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $projects = FrameworkMigrationProjectRegistry::load(dirname(__DIR__, 4) . '/framework-projects.json');
+        $numbers = [173, 130, 130, 111, 111, 113, 26, 28, 16, 19, 16, 14];
+        foreach ($projects as $index => $project) {
+            $this->copyInstallPair($project->root, $numbers[$index], $catalog, $schema);
+        }
+    }
+
+    /**
+     * @param string $root Project migration track
+     * @param int $number Installer-assigned pair number
+     * @param FrameworkMigrationCatalog $catalog Immutable framework sources
+     * @param FrameworkSchemaCatalog $schema Current framework stubs
+     * @return FrameworkMigrationOrigin Verified exact copy install
+     */
+    private function copyInstallPair(
+        string $root,
+        int $number,
+        FrameworkMigrationCatalog $catalog,
+        FrameworkSchemaCatalog $schema,
+    ): FrameworkMigrationOrigin
+    {
+        $base = $root . '/' . sprintf('%03d', $number) . '_framework_install_account_merge_copy';
+        $up = FsPath::read($base . '.sql');
+        $down = FsPath::read($base . '_down.sql');
+        $origin = $catalog->verifyPair($up, $down);
+        self::assertSame(FrameworkMigrationOrigin::INSTALL, $origin->kind);
+        self::assertSame(['account_merge_copy'], $origin->units);
+        self::assertCount(1, $origin->parts);
+        self::assertSame('20261116090449292760_HIL-1992_account_merge_copy/account_merge_copy', $origin->parts[0]->key());
+        $unit = $schema->unit('account_merge_copy');
+        self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+        self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+        return $origin;
     }
 
     /**
@@ -1141,6 +1186,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 12, 'legal_acceptance', $catalog, $schema);
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 13, 'data_export', $catalog, $schema);
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 14, 'legal_acceptance_export', $catalog, $schema);
+        $copyBase = $root . '/016_framework_install_account_merge_copy';
+        $momentChanges[] = $this->copyInstallPair($root, 16, $catalog, $schema);
         $probeUnit = $schema->unit('probe_value');
         $probeBase = $root . '/015_framework_install_probe_value';
         $probeUp = FsPath::read($probeBase . '.sql');
@@ -1172,6 +1219,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             ...$this->exportLegalMomentFiles($root, 14, 'legal_acceptance_export'),
             $probeBase . '.sql',
             $probeBase . '_down.sql',
+            $copyBase . '.sql',
+            $copyBase . '_down.sql',
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1407,6 +1456,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 11, 'legal_acceptance', $catalog, $schema);
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 12, 'data_export', $catalog, $schema);
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 13, 'legal_acceptance_export', $catalog, $schema);
+        $copyBase = $root . '/014_framework_install_account_merge_copy';
+        $momentChanges[] = $this->copyInstallPair($root, 14, $catalog, $schema);
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
@@ -1417,6 +1468,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             ...$this->exportLegalMomentFiles($root, 11, 'legal_acceptance'),
             ...$this->exportLegalMomentFiles($root, 12, 'data_export'),
             ...$this->exportLegalMomentFiles($root, 13, 'legal_acceptance_export'),
+            $copyBase . '.sql',
+            $copyBase . '_down.sql',
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);

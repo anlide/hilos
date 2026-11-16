@@ -18,6 +18,8 @@ use Hilos\Database\Entity\Item\Identity as EntityIdentity;
 use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
 use Hilos\Database\Entity\Item\SecondFactor as EntitySecondFactor;
 use Hilos\Database\Entity\Item\SecondFactorBackupCode as EntitySecondFactorBackupCode;
+use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationAssignment;
@@ -47,6 +49,9 @@ final class AccountMergeTransfer
     /** @var WeakMap<Object_, string> Captured collection and row id, without retaining row data */
     private readonly WeakMap $members;
 
+    /** @var WeakMap<Object_, int> Own preparation password anchor, independent of the transfer manifest */
+    private readonly WeakMap $passwordAnchors;
+
     /** @var array<int, int> Selected credential id to its captured identity id */
     private array $passkeyAnchors = [];
 
@@ -65,6 +70,7 @@ final class AccountMergeTransfer
         private readonly string $executorId,
     ) {
         $this->members = new WeakMap();
+        $this->passwordAnchors = new WeakMap();
     }
 
     /** The transaction hooks and finally close the one issued instance. */
@@ -171,6 +177,28 @@ final class AccountMergeTransfer
     }
 
     /**
+     * The preparation password may be deleted instead of transferred, so it need not belong to the manifest.
+     *
+     * @param Object_ $item Own clean password captured at admission
+     * @throws WriteNotAllowedException When the live source right, executor or preparation anchor no longer holds
+     * @throws HilosException When the stored row coordinates cannot be read
+     */
+    public function guardPassword(Object_ $item): void
+    {
+        if (!$this->active || ExecutionContext::currentAgentId() !== $this->executorId) {
+            throw new WriteNotAllowedException('This account merge password right is not active for this executor.');
+        }
+        TruthSourceRegistry::checkCanGiveSet(HilosDbContext::identities, (string)$this->loserUserId);
+        if (!isset($this->passwordAnchors[$item]) || !$item->isRelated() || $item->hasChanges()
+            || $item->valueForColumn(EntityIdentity::id) !== $this->passwordAnchors[$item]
+            || $item->valueForColumn(EntityIdentity::type) !== IdentityType::PASSWORD
+            || $item->valueForColumn(EntityIdentity::user_id) !== $this->loserUserId
+            || $item->storedSetTop() !== (string)$this->loserUserId) {
+            throw new WriteNotAllowedException('Password demotion requires the captured source preparation password.');
+        }
+    }
+
+    /**
      * @param AccountOperationAssignment $assignment Immutable participant address
      * @param ?AccountOperation $operation Merge named by that assignment
      * @param string $executorId Current participant
@@ -231,6 +259,12 @@ final class AccountMergeTransfer
      */
     private function capture(AccountMergeTransferRows $rows, AccountMergeChoice $choice, AccountMergePreparationResult $source): void
     {
+        if ($source->passwordIdentityId !== null && $choice->passwordFate !== null && $choice->passwordFate !== PasswordFate::LOSER) {
+            $password = Hilos::$db->identities[$source->passwordIdentityId] ?? null;
+            if ($password !== null) {
+                $this->passwordAnchors[$password->getObject()] = $source->passwordIdentityId;
+            }
+        }
         if (($rows->secondFactors !== [] || $rows->secondFactorBackupCodes !== [])
             && $choice->secondFactorFate !== SecondFactorFate::BOTH) {
             throw new WriteNotAllowedException('Second-factor rows may only be given when both protections are preserved.');

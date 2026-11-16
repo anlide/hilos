@@ -17,6 +17,7 @@ use Hilos\Database\Object\Collection\PasskeyCredentials as ObjectPasskeyCredenti
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -245,13 +246,15 @@ class PasskeyCredential extends Object_
      * read: two assertions of a cloned key could both pass that check before either is written,
      * and the agent, as the one writer of the person's keys taking its frames one at a time,
      * is where the second one is caught. The stored counter is read with a targeted query, since
-     * a counter written by another process never reaches a copy of the row loaded here. An
-     * unchanged counter - the 0/0 pair of a key that never counts - is not written again.
+     * a delayed ORM mirror must not weaken the replay check. The accepted use is synchronized
+     * through the ordinary ORM door, leaving the loaded row clean for the owner's next step.
+     * An unchanged counter - the 0/0 pair of a key that never counts - is not written again.
      *
      * @param int $signCount Signature counter the authenticator reported
      * @throws WebAuthnVerificationException When the counter did not advance past the stored one (possible clone)
      * @throws DatabaseException When the counter lookup, the counter update or the last-used update fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws HilosException When publishing the accepted use through the ORM fails
      */
     public function recordUse(int $signCount): void
     {
@@ -262,6 +265,9 @@ class PasskeyCredential extends Object_
         }
 
         $this->touchLastUsed();
+        if ($this->entity->id !== null) {
+            $this->sync();
+        }
     }
 
     /**

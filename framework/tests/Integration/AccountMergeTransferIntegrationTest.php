@@ -55,6 +55,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\SqlRuntime\LockWaitTimeoutException;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationAssignment;
@@ -728,6 +729,280 @@ final class AccountMergeTransferIntegrationTest extends FrameworkIntegrationTest
         self::assertSame(AccountMergeStage::Go->value, $operation->stage);
     }
 
+    /**
+     * @param string $collection Selected secret-bearing row kind
+     * @param string $marker Literal stored fixture secret
+     */
+    #[DataProvider('secretRows')]
+    public function testMergeSecretReadersCheckTheSourceRightAtEveryRead(string $collection, string $marker): void
+    {
+        [, $give] = $this->ready();
+        $otherId = match ($collection) {
+            HilosDbContext::identities => $this->seedIdentity(self::LOSER_ID),
+            HilosDbContext::secondFactors => $this->unconfirmedId,
+            HilosDbContext::secondFactorBackupCodes => $this->seedBackupCode(self::LOSER_ID),
+        };
+        $foreignId = match ($collection) {
+            HilosDbContext::identities => $this->seedIdentity(self::FOREIGN_ID),
+            HilosDbContext::secondFactors => $this->seedFactor(self::FOREIGN_ID),
+            HilosDbContext::secondFactorBackupCodes => $this->seedBackupCode(self::FOREIGN_ID),
+        };
+        $item = Hilos::$db->{$collection}[$this->selectedIds()[$collection]];
+        $leaked = null;
+        $this->asPerson($this->loser, function () use ($give, $collection, $marker, $otherId, $foreignId, $item, &$leaked): void {
+            AccountMergeTransfer::run($give->id, $this->selection(), function ($transfer) use (
+                $collection, $marker, $otherId, $foreignId, $item, &$leaked,
+            ) {
+                $leaked = $transfer;
+                self::assertSame($marker, $item->readForMerge($transfer));
+                self::assertStringNotContainsString($marker, json_encode($item->toArray(), JSON_THROW_ON_ERROR));
+                if ($collection === HilosDbContext::identities) {
+                    self::assertSame($marker, $item->getObject()->readForMerge($transfer));
+                }
+                foreach ([$otherId, $foreignId] as $id) {
+                    $this->assertRefused(WriteNotAllowedException::class,
+                        static fn () => Hilos::$db->{$collection}[$id]->readForMerge($transfer));
+                }
+                $this->asPerson($this->survivor, fn () => $this->assertRefused(WriteNotAllowedException::class,
+                    static fn () => $item->readForMerge($transfer)));
+                TruthSourceRegistry::unregister($collection, $this->loser->getId());
+                $this->assertRefused(WriteNotAllowedException::class, static fn () => $item->readForMerge($transfer));
+                OwnershipDeclaration::claimAll($this->loser);
+                self::assertSame($marker, $item->readForMerge($transfer));
+                $this->transferSelected($transfer);
+                $this->assertRefused(WriteNotAllowedException::class, static fn () => $item->readForMerge($transfer));
+                if ($collection === HilosDbContext::identities) {
+                    $this->assertRefused(WriteNotAllowedException::class, static fn () => $item->getObject()->readForMerge($transfer));
+                }
+
+                return self::payload();
+            });
+        });
+        $this->asPerson($this->loser, fn () => $this->assertRefused(WriteNotAllowedException::class,
+            static fn () => $item->readForMerge($leaked)));
+    }
+
+    /** @return iterable<string, array{string, string}> Every DB-only secret primitive */
+    public static function secretRows(): iterable
+    {
+        yield 'identity' => [HilosDbContext::identities, 'fixture-password-hash'];
+        yield 'factor' => [HilosDbContext::secondFactors, 'fixture-secret'];
+        yield 'backup code' => [HilosDbContext::secondFactorBackupCodes, 'fixture-code'];
+    }
+
+    /** The existing View delegate returns the entire own set, including used rows, without another finder. */
+    public function testBackupCodeListByUserIncludesUsedAndUnusedOwnRows(): void
+    {
+        $unused = $this->seedBackupCode(self::LOSER_ID);
+        $foreign = $this->seedBackupCode(self::FOREIGN_ID);
+        $rows = Hilos::$db->secondFactorBackupCodes->listByUser(self::LOSER_ID);
+        self::assertSame([$this->backupCodeId, $unused], array_map(static fn ($row) => $row->id, $rows));
+        self::assertNotNull($rows[0]->usedAt);
+        self::assertNull($rows[1]->usedAt);
+        self::assertSame([$foreign], array_map(static fn ($row) => $row->id,
+            Hilos::$db->secondFactorBackupCodes->listByUser(self::FOREIGN_ID)));
+        self::assertSame([], Hilos::$db->secondFactorBackupCodes->listByUser(self::SURVIVOR_ID));
+    }
+
+    /**
+     * @param string $branch Existing demotion outcome
+     * @param bool $rollback Whether the same objects and stored secrets must be restored
+     */
+    #[DataProvider('passwordDemotions')]
+    public function testOwnPasswordDemotionUsesTheExistingRulesAndRollsBack(string $branch, bool $rollback): void
+    {
+        $id = $this->seedPassword($branch !== 'unverified');
+        if ($branch === 'collision') {
+            Database::sql('INSERT INTO `hilos_identity` (`user_id`, `type`, `identifier`, `created_at`, `updated_at`)'
+                . ' SELECT ?, ?, `identifier`, ?, ? FROM `hilos_identity` WHERE `id` = ?',
+                [self::SURVIVOR_ID, IdentityType::MAGIC_LINK, 1000, 1000, $id]);
+        }
+        [, $give] = $this->ready(passwordFate: PasswordFate::NONE);
+        $password = Hilos::$db->identities[$id];
+        $object = $password->getObject();
+        $saved = $object->toArray();
+        $savedUpdatedAt = $object->valueForColumn(EntityIdentity::updated_at);
+        $before = $this->businessSnapshot();
+        $reaction = $this->observeAnnouncements();
+        $attempt = function () use ($give, $id, $password, $object, $branch, $rollback, $reaction): void {
+            $this->asPerson($this->loser, function () use ($give, $id, $password, $object, $branch, $rollback, $reaction): void {
+                // A password that will be deleted is deliberately absent from the manifest.
+                $rows = new AccountMergeTransferRows(identities: $branch === 'verified' ? [$id] : []);
+                AccountMergeTransfer::run($give->id, $rows, function ($transfer) use ($password, $object, $branch, $rollback, $reaction) {
+                    $password->actions->demoteForMerge($transfer);
+                    if ($branch === 'verified') {
+                        self::assertSame(IdentityType::MAGIC_LINK, $password->type);
+                        self::assertNull($password->passwordChangedAt);
+                        self::assertNull($password->readForMerge($transfer));
+                        self::assertFalse($object->hasChanges());
+                        self::assertSame((string)self::LOSER_ID, $object->storedSetTop());
+                        $password->actions->transferForMerge($transfer);
+                        self::assertSame(self::SURVIVOR_ID, $password->userId);
+                    } else {
+                        self::assertFalse($object->isRelated());
+                        self::assertFalse(isset(Hilos::$db->identities[$object->id]));
+                    }
+                    $this->assertRefused(WriteNotAllowedException::class, static fn () => $password->actions->demoteForMerge($transfer));
+                    self::assertSame([], $reaction->seen);
+                    self::assertSame([], $this->drainTransferFrames());
+                    if ($rollback) {
+                        throw new RuntimeException('rollback password demotion');
+                    }
+
+                    return self::payload();
+                });
+            });
+        };
+        if ($rollback) {
+            $failure = $this->assertRefused(RuntimeException::class, $attempt);
+            self::assertSame('rollback password demotion', $failure->getMessage());
+            self::assertSame($before, $this->businessSnapshot());
+            self::assertSame($saved, $object->toArray());
+            self::assertSame($savedUpdatedAt, $object->valueForColumn(EntityIdentity::updated_at));
+            self::assertTrue($object->isRelated());
+            self::assertFalse($object->hasChanges());
+            self::assertSame((string)self::LOSER_ID, $object->storedSetTop());
+            self::assertSame($object, Hilos::$db->identities[$id]->getObject());
+            self::assertSame([], $reaction->seen);
+            self::assertSame([], $this->drainTransferFrames());
+            self::assertNull(Hilos::$db->accountOperationResults->byAssignment($give->id));
+        } else {
+            $attempt();
+            $row = Database::sql('SELECT * FROM `hilos_identity` WHERE `id` = ?', [$id])->firstRow();
+            if ($branch === 'verified') {
+                self::assertSame(IdentityType::MAGIC_LINK, $row['type']);
+                self::assertNull($row['secret']);
+                self::assertNull($row['password_changed_at']);
+                self::assertSame(self::SURVIVOR_ID, (int)$row['user_id']);
+            } else {
+                self::assertNull($row);
+            }
+        }
+    }
+
+    /** @return iterable<string, array{string, bool}> All old helper branches at commit and rollback */
+    public static function passwordDemotions(): iterable
+    {
+        foreach (['verified', 'unverified', 'collision'] as $branch) {
+            yield $branch . ' commit' => [$branch, false];
+            yield $branch . ' rollback' => [$branch, true];
+        }
+    }
+
+    /** The own-password door checks the live executor, claim, exact anchor and clean source before ordinary writes. */
+    public function testOwnPasswordGuardDoesNotBorrowManifestMembership(): void
+    {
+        $id = $this->seedPassword(false);
+        [, $give] = $this->ready(passwordFate: PasswordFate::SURVIVOR);
+        $other = $this->seedPassword(true);
+        $foreign = $this->seedIdentity(self::FOREIGN_ID, IdentityType::PASSWORD);
+        $password = Hilos::$db->identities[$id];
+        $before = $this->businessSnapshot();
+        $leaked = null;
+        $this->asPerson($this->loser, function () use ($give, $id, $other, $foreign, $password, &$leaked): void {
+            AccountMergeTransfer::run($give->id, new AccountMergeTransferRows(), function ($transfer) use (
+                $id, $other, $foreign, $password, &$leaked,
+            ) {
+                $leaked = $transfer;
+                $transfer->guardPassword($password->getObject());
+                $this->assertRefused(WriteNotAllowedException::class,
+                    static fn () => $password->readForMerge($transfer));
+                foreach ([$other, $foreign, $this->identityId] as $wrong) {
+                    $this->assertRefused(WriteNotAllowedException::class,
+                        static fn () => Hilos::$db->identities[$wrong]->actions->demoteForMerge($transfer));
+                }
+                $this->asPerson($this->survivor, fn () => $this->assertRefused(WriteNotAllowedException::class,
+                    static fn () => $password->actions->demoteForMerge($transfer)));
+                $password->getObject()->identifier = 'dirty@example.test';
+                $this->assertRefused(WriteNotAllowedException::class, static fn () => $password->actions->demoteForMerge($transfer));
+                $password->getObject()->revert();
+                TruthSourceRegistry::unregister(HilosDbContext::identities, $this->loser->getId());
+                $this->assertRefused(WriteNotAllowedException::class, static fn () => $password->actions->demoteForMerge($transfer));
+                TruthSourceRegistry::register(HilosDbContext::identities, TruthSourceKeys::set((string)self::LOSER_ID), $this->loser->getId(),
+                    new TruthSourceOperations(TruthSourceOperation::Update));
+                // The capability does not lend Remove to the helper's deletion branch.
+                $this->assertRefused(WriteNotAllowedException::class, static fn () => $password->actions->demoteForMerge($transfer));
+                OwnershipDeclaration::claimAll($this->loser);
+
+                return self::payload();
+            });
+        });
+        $this->asPerson($this->loser, fn () => $this->assertRefused(WriteNotAllowedException::class,
+            static fn () => $password->actions->demoteForMerge($leaked)));
+        self::assertSame($before, $this->businessSnapshot());
+    }
+
+    /**
+     * @param ?PasswordFate $fate A kept or unspecified password cannot be demoted
+     */
+    #[DataProvider('keptPasswords')]
+    public function testOwnPasswordDemotionRequiresAnExplicitDiscardFate(?PasswordFate $fate): void
+    {
+        $id = $this->seedPassword(true);
+        [, $give] = $this->ready(passwordFate: $fate);
+        $before = $this->businessSnapshot();
+        $this->asPerson($this->loser, function () use ($give, $id): void {
+            AccountMergeTransfer::run($give->id, new AccountMergeTransferRows(identities: [$id]), function ($transfer) use ($id) {
+                $this->assertRefused(WriteNotAllowedException::class,
+                    static fn () => Hilos::$db->identities[$id]->actions->demoteForMerge($transfer));
+
+                return self::payload();
+            });
+        });
+        self::assertSame($before, $this->businessSnapshot());
+    }
+
+    /** @return iterable<string, array{?PasswordFate}> Choices without own demotion */
+    public static function keptPasswords(): iterable
+    {
+        yield 'unspecified' => [null];
+        yield 'source kept' => [PasswordFate::LOSER];
+    }
+
+    /**
+     * @param bool $beforeAdmission Whether deletion precedes the attempt-local capture
+     */
+    #[DataProvider('anchorReplacementTimes')]
+    public function testDeletedPasswordAnchorCannotBeReplacedByAddressOrObject(bool $beforeAdmission): void
+    {
+        $id = $this->seedPassword(true);
+        [, $give] = $this->ready(passwordFate: PasswordFate::NONE);
+        $password = Hilos::$db->identities[$id];
+        $identifier = $password->identifier;
+        if ($beforeAdmission) {
+            $this->asPerson($this->loser, static fn () => $password->getObject()->delete());
+        }
+        $this->asPerson($this->loser, function () use ($give, $id, $password, $identifier, $beforeAdmission): void {
+            AccountMergeTransfer::run($give->id, new AccountMergeTransferRows(), function ($transfer) use (
+                $id, $password, $identifier, $beforeAdmission,
+            ) {
+                if (!$beforeAdmission) {
+                    $password->getObject()->delete();
+                }
+                $replacementId = $beforeAdmission ? $id + 100 : $id;
+                Database::sql('INSERT INTO `hilos_identity` (`id`, `user_id`, `type`, `identifier`, `verified`, `secret`,'
+                    . ' `created_at`, `updated_at`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                    [$replacementId, self::LOSER_ID, IdentityType::PASSWORD, $identifier, true, 'replacement-hash', 1000, 1000]);
+                $this->mountFreshContext();
+                $replacement = Hilos::$db->identities[$replacementId];
+                $this->assertRefused(WriteNotAllowedException::class, static fn () => $password->actions->demoteForMerge($transfer));
+                $this->assertRefused(WriteNotAllowedException::class, static fn () => $replacement->actions->demoteForMerge($transfer));
+                self::assertSame(IdentityType::PASSWORD, $replacement->type);
+                self::assertSame('replacement-hash', Database::sql('SELECT `secret` FROM `hilos_identity` WHERE `id` = ?',
+                    [$replacementId])->firstRow()['secret']);
+
+                return self::payload();
+            });
+        });
+    }
+
+    /** @return iterable<string, array{bool}> Address replacement and same-id object substitution */
+    public static function anchorReplacementTimes(): iterable
+    {
+        yield 'before admission, new id at old address' => [true];
+        yield 'after capture, same id in new object' => [false];
+    }
+
     /** Every extra mapped column is refused inside the shared save failure boundary. */
     #[DataProvider('foreignColumnEdits')]
     public function testScopedSaveRefusesForeignColumnsAndRestoresTheSameObject(string $collection, string $field, mixed $value): void
@@ -1124,11 +1399,12 @@ final class AccountMergeTransferIntegrationTest extends FrameworkIntegrationTest
 
     /**
      * @param SecondFactorFate $fate Choice to record before the real preparation pair
+     * @param ?PasswordFate $passwordFate Password choice to record with the preparation pair
      * @return array{AccountOperation, AccountOperationAssignment} Prepared operation and loser's give
      */
-    private function ready(SecondFactorFate $fate = SecondFactorFate::BOTH): array
+    private function ready(SecondFactorFate $fate = SecondFactorFate::BOTH, ?PasswordFate $passwordFate = null): array
     {
-        $operation = AccountMergeOpening::open(self::SURVIVOR_ID, self::LOSER_ID, new AccountMergeChoice(null, $fate, true, true));
+        $operation = AccountMergeOpening::open(self::SURVIVOR_ID, self::LOSER_ID, new AccountMergeChoice($passwordFate, $fate, true, true));
         foreach ([[$this->survivor, self::SURVIVOR_ID, AccountMergeDuty::PrepareSurvivor],
             [$this->loser, self::LOSER_ID, AccountMergeDuty::PrepareLoser]] as [$person, $userId, $duty]) {
             $assignment = Hilos::$db->accountOperationAssignments->byIdentity($operation->id, AccountMergeStage::Preparing->value, $duty->value);
@@ -1288,6 +1564,30 @@ final class AccountMergeTransferIntegrationTest extends FrameworkIntegrationTest
         Database::sql('INSERT INTO `hilos_second_factor` (`user_id`, `label`, `secret`, `confirmed_at`, `created_at`,'
             . ' `last_used_step`, `last_used_at`) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [$userId, 'Transfer factor', 'fixture-secret', $confirmed ? TimeHelper::nowMs() : null, TimeHelper::nowMs(), 23, 1234]);
+
+        return Database::lastInsertId();
+    }
+
+    /**
+     * @param bool $verified Whether the password address is verified
+     * @return int Persisted own password anchor
+     */
+    private function seedPassword(bool $verified): int
+    {
+        $id = $this->seedIdentity(self::LOSER_ID, IdentityType::PASSWORD);
+        Database::sql('UPDATE `hilos_identity` SET `verified` = ?, `password_changed_at` = ? WHERE `id` = ?', [(int)$verified, 1234, $id]);
+
+        return $id;
+    }
+
+    /**
+     * @param int $userId Backup code owner
+     * @return int Persisted unused backup code id
+     */
+    private function seedBackupCode(int $userId): int
+    {
+        Database::sql('INSERT INTO `hilos_second_factor_backup_code` (`user_id`, `code`, `created_at`) VALUES (?, ?, ?)',
+            [$userId, 'other-code', 1234]);
 
         return Database::lastInsertId();
     }

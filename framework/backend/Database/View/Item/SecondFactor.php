@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Auth\AccountOperation\AccountMergeTransfer;
 use Hilos\Database\Actions\Item\SecondFactorActions;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
@@ -51,6 +53,20 @@ class SecondFactor extends DbItem
             ObjectSecondFactor::createdAt => $this->_object->createdAt,
             default => parent::__get($name),
         };
+    }
+
+    /**
+     * SCAFFOLD: the merge give transaction in HIL-1992 supplies the production caller.
+     *
+     * @param AccountMergeTransfer $transfer Active right over this captured source row
+     * @return ?string Stored secret for the attempt-local hand-over copy
+     * @throws HilosException When the row, capability or secret lookup refuses the read
+     */
+    public function readForMerge(AccountMergeTransfer $transfer): ?string
+    {
+        $transfer->guardRow(HilosDbContext::secondFactors, $this->_object);
+
+        return $this->_object->readSecret();
     }
 
     /**

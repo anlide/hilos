@@ -19,6 +19,8 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Migration\FrameworkSchemaCatalog;
+use Hilos\Database\Migration\FrameworkMigrationCatalog;
+use Hilos\Database\Migration\FrameworkMigrationOrigin;
 use Hilos\Database\Migration\FrameworkSchemaUnit;
 use Hilos\Database\Schema\FrameworkTablesWithoutEntity;
 use Hilos\Hilos;
@@ -118,7 +120,34 @@ final class FrameworkMigrationCatalogTest extends TestCase
         $this->assertContains('oauth_provider', $keys);
         $this->assertContains('legal_acceptance_export', $keys);
         $this->assertNotContains('verifier_circle', $keys);
-        $this->assertCount(28, $keys);
+        $this->assertCount(29, $keys);
+    }
+
+    public function testAuthSelectsCopyWithItsAssignmentDependencyAndCoreDoesNot(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $auth = array_column($schema->selectedUnits(SchemaAuthCodesHilos::class), 'key');
+        self::assertContains('account_merge_copy', $auth);
+        self::assertContains('account_erasure_assignment', $auth);
+        self::assertSame(['account_erasure_assignment'], $schema->unit('account_merge_copy')->dependencies);
+        self::assertLessThan(array_search('account_merge_copy', $auth, true), array_search('account_erasure_assignment', $auth, true));
+        self::assertNotContains('account_merge_copy', array_column($schema->selectedUnits(SchemaCoreHilos::class), 'key'));
+    }
+
+    public function testCopyIntroducingSourceAndCurrentStubsPassTheImmutableCanon(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $parts = [$catalog->part('20261116090449292760_HIL-1992_account_merge_copy', 'account_merge_copy')];
+        self::assertSame('20261116090449292760_HIL-1992_account_merge_copy/account_merge_copy', $parts[0]->key());
+        self::assertTrue($parts[0]->introducesUnit);
+        self::assertSame([
+            '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_assignment',
+        ], $parts[0]->requires);
+        $unit = $schema->unit('account_merge_copy');
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $parts[0]->afterStubUpSha256);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $parts[0]->afterStubDownSha256);
+        $catalog->verifyCurrentStubs();
     }
 
     public function testMetadataRequirementsAreTheSelectionSource(): void

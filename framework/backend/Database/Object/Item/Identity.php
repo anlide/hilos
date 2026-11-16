@@ -13,6 +13,7 @@ use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
@@ -158,6 +159,18 @@ class Identity extends Object_
     }
 
     /**
+     * @param AccountMergeTransfer $transfer Active right over this captured source row
+     * @return ?string Stored secret for the attempt-local hand-over copy
+     * @throws HilosException When the row, capability or secret lookup refuses the read
+     */
+    public function readForMerge(AccountMergeTransfer $transfer): ?string
+    {
+        $transfer->guardRow(HilosDbContext::identities, $this);
+
+        return $this->storedSecret();
+    }
+
+    /**
      * Tells whether the stored hash was written under parameters that are no longer current.
      *
      * The read half of rehash-on-login (HIL-162): after the password has verified, the sign-in
@@ -253,6 +266,12 @@ class Identity extends Object_
                 . EntityIdentity::updated_at . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
             $params,
         );
+        $updatedAt = $this->entity->updated_at;
+        $syncedUpdatedAt = $this->entitySync->updated_at;
+        Database::onRollback(function () use ($updatedAt, $syncedUpdatedAt): void {
+            $this->entity->updated_at = $updatedAt;
+            $this->entitySync->updated_at = $syncedUpdatedAt;
+        }, index: $this->entity::getDatabase()->connectionIndex);
         $this->entity->updated_at = $now;
         $this->entitySync->updated_at = $now;
     }

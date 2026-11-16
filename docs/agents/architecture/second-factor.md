@@ -137,9 +137,11 @@ receipt even when DB sync was missed. Grant-or-renew has no holder fallback.
 These guards are active, but the prepared merge remains inert until HIL-1999.
 The loser transfers or deletes its factor
 and backup codes by fate, preserving spent status, and removes its other
-second-factor rows with its result (not in the code yet — HIL-1992). The
-survivor writes the longer effective wait when protection transfers and
-deletes its own trusts under the existing policy, with receipt
+second-factor rows with its nonsecret result and separate private copy in the
+[prepared give](account-operations.md#the-prepared-loser-give), with no live
+coordinator sender until HIL-2000. The survivor writes the longer effective
+wait when protection transfers and deletes its own trusts under the existing
+policy, with receipt
 (not in the code yet — HIL-1994). The holder ends loser sessions after the
 fact and survivor sessions after receipt when the loser's factor first
 protects it (not in the code yet — HIL-1995).

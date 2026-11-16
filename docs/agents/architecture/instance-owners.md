@@ -85,9 +85,13 @@ direction is each owner deleting its own rows in its own transaction, and
 the loser giving rows away under a narrow
 [operation right](account-operations.md#the-transfer-right), judged against
 the operation and both preparations without a new claim width or `_setVia`
-change. The transfer door is built but has no live merge caller. The owner-local
-erasure path is live from HIL-1952; the old merge remains until HIL-1999
-(not in the code yet — HIL-1999), and its preparation stays inert.
+change. The transfer door and the
+[prepared loser give](account-operations.md#the-prepared-loser-give) are built:
+`AccountMergeGiving::run()` commits the own-row transfer, tombstone, block,
+nonsecret result and separate private copy together; `copy()` reads only that
+saved carrier. The owner entry and assignment match have no live coordinator
+sender until HIL-2000. The owner-local erasure path is live from HIL-1952; the
+old merge remains until HIL-1999 (not in the code yet — HIL-1999).
 
 **Executors keep their working rows.** A delivery status, a personal data export
 and an administrator's export of acceptances stay with the executor that writes
@@ -339,6 +343,9 @@ and stage (HIL-1950); the holder's recovery pass and an owner's start find open
 obligations from DB (HIL-1951; [The erasure recovery](account-operations.md#current-implementation));
 the live due and force-purge paths open those operations in HIL-1952.
 
+The [prepared give](account-operations.md#the-prepared-loser-give) already
+replays its exact saved result and copy for a folded loser without reading
+business sets. It does not change today's immediate stop.
 The detailed [merge canon](account-operations.md#merge) gives the folded loser
 a finishing mode: it accepts only continuation of its own operation, copy
 replay and cleanup, and stops after cleanup following receipt. Ordinary access

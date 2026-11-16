@@ -269,9 +269,23 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
         // own proof (HIL-1407), a channel the person turned off (HIL-1408), the photo row on the
         // first photo (HIL-1409), the result of its own step in an account operation, keyed by the
         // agent's full id (HIL-1939) - and only to its own person's set.
+        // The prepared merge adds its own tombstone and private copy; the copy uses the full agent id (HIL-1992).
         foreach (self::addedSets() as $collection) {
             TruthSourceRegistry::checkCanCreate($collection, static fn (): array => [self::setKeyOf($collection, self::USER_ID)]);
             $this->assertCreateDenied($collection, [self::setKeyOf($collection, '43')]);
+        }
+        TruthSourceRegistry::checkCanWriteItem(
+            HilosDbContext::userMerges,
+            self::USER_ID,
+            static fn (): array => [self::USER_ID],
+            TruthSourceOperation::Remove,
+        );
+        $this->assertWriteDenied(HilosDbContext::userMerges, '43', ['43'], TruthSourceOperation::Remove);
+        $this->assertWriteDenied(HilosDbContext::userMerges, self::USER_ID, [self::USER_ID]);
+        $this->assertCreateDenied(HilosDbContext::accountMergeCopies, [self::USER_ID]);
+        foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
+            $this->assertWriteDenied(HilosDbContext::accountMergeCopies, '1', [self::AGENT_ID], $operation);
+            $this->assertWriteDenied(HilosDbContext::accountMergeCopies, '2', [self::setKeyOf(HilosDbContext::accountMergeCopies, '43')], $operation);
         }
         TruthSourceRegistry::checkCanWriteItem(
             HilosDbContext::secondFactorSettings,
@@ -324,6 +338,7 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
             $this->assertCreateDenied($collection, [self::setKeyOf($collection, self::USER_ID)]);
         }
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, self::USER_ID, [self::USER_ID]);
+        $this->assertWriteDenied(HilosDbContext::userMerges, self::USER_ID, [self::USER_ID], TruthSourceOperation::Remove);
         foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials, HilosDbContext::secondFactors,
             HilosDbContext::secondFactorBackupCodes, HilosDbContext::secondFactorResets, HilosDbContext::secondFactorTrusts] as $collection) {
             foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
@@ -363,18 +378,22 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
             HilosDbContext::stepUps,
             HilosDbContext::notificationPreferences,
             HilosDbContext::userPhotos,
+            HilosDbContext::userMerges,
             HilosDbContext::accountOperationResults,
+            HilosDbContext::accountMergeCopies,
         ];
     }
 
     /**
      * @param string $collection Added set being checked
      * @param string $userId Person whose set is meant
-     * @return string The person's agent id for operation results, the person's id for every other set
+     * @return string The full agent id for results and private copies, the person's id for other sets
      */
     private static function setKeyOf(string $collection, string $userId): string
     {
-        return $collection === HilosDbContext::accountOperationResults ? HilosAgentType::HILOS_USER . ':' . $userId : $userId;
+        return in_array($collection, [HilosDbContext::accountOperationResults, HilosDbContext::accountMergeCopies], true)
+            ? HilosAgentType::HILOS_USER . ':' . $userId
+            : $userId;
     }
 
     /**

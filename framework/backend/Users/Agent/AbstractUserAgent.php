@@ -19,6 +19,7 @@ use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeGiving;
 use Hilos\Auth\AccountOperation\AccountMergePreparation;
 use Hilos\Auth\AccountOperation\AccountMergeRelease;
 use Hilos\Auth\AccountOperation\AccountOperationActivation;
@@ -471,8 +472,9 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::notificationPreferences => TruthSourceOperation::ALL,
         HilosDbContext::pushSubscriptions => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::userMerges => [TruthSourceOperation::Remove],
+        HilosDbContext::userMerges => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::accountOperationResults => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
+        HilosDbContext::accountMergeCopies => [TruthSourceOperation::Add],
     ];
 
     /**
@@ -551,14 +553,14 @@ abstract class AbstractUserAgent extends AbstractAgent
 
     /**
      * The results of the agent's account operation steps are keyed by the agent's full id, the
-     * owner their assignment names (HIL-1939); every other set by the person's id.
+     * owner their assignment names (HIL-1939), as are its private merge copies (HIL-1992); every other set by the person's id.
      *
      * @param string $collection Collection whose set claim is being resolved
-     * @return string The agent's full id for the results, the person's root set key otherwise
+     * @return string The agent's full id for results and merge copies, the person's root set key otherwise
      */
     public function ownedDbSetKey(string $collection): string
     {
-        if ($collection === HilosDbContext::accountOperationResults) {
+        if ($collection === HilosDbContext::accountOperationResults || $collection === HilosDbContext::accountMergeCopies) {
             return $this->getId();
         }
 
@@ -700,6 +702,16 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * @param int $assignmentId Immutable loser go/give assignment
+     * @return AccountOperationResult Committed give or its saved durable fact
+     * @throws Throwable When admission, storage or transactional work fails
+     */
+    public function giveForMerge(int $assignmentId): AccountOperationResult
+    {
+        return AccountMergeGiving::run($assignmentId, $this->userId);
+    }
+
+    /**
      * @param int $assignmentId Release assignment the coordinator gave this agent
      * @return AccountOperationResult Committed release or the saved result of an earlier attempt
      * @throws AccountOperationStepRefusedException When the caller, assignment or stage refuses new work
@@ -769,6 +781,7 @@ abstract class AbstractUserAgent extends AbstractAgent
                         AccountMergeDuty::PrepareLoser->value => $this->prepareForMerge($assignment->id),
                         AccountMergeDuty::ReleaseLoser->value,
                         AccountMergeDuty::ReleaseSurvivor->value => $this->releaseMergePreparation($assignment->id),
+                        AccountMergeDuty::Give->value => $this->giveForMerge($assignment->id),
                         default => AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
                             && AccountOperationExpectation::participantOf($assignment->payload) === AccountErasureParticipantCatalog::PERSONAL
                                 ? $this->eraseAccountPersonalPart($assignment->id)
