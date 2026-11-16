@@ -61,7 +61,7 @@ function fixture(options: SessionScopeOptions = {}) {
       tell('hilos_profile_name_state', { userId, change }),
     identity: (id: number | null) =>
       tell('handshake_response', {
-        data: { accountStanding: null },
+        data: { accountStanding: null, accessLossReason: null },
         entities: {
           [options.currentUserSlot ?? 'currentUser']:
             id === null ? null : { id, name: 'Current person' },

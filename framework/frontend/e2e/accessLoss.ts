@@ -1,7 +1,6 @@
 import type { Expect, Page } from '@playwright/test'
 
 const noticeText = {
-  session_ended: 'Your session has ended. Any unsaved changes were lost.',
   account_blocked: 'Any unsaved changes were lost.',
   ended_by_administrator:
     'Your session was ended by an administrator. Any unsaved changes were lost.',

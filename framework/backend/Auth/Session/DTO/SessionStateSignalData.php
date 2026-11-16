@@ -233,7 +233,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When the payload names no session, or a present field is not of its declared type
+     * @throws InvalidFormatException When the payload names no session, omits accessLossReason, or a present field is not of its declared type
      * @throws InvalidArgumentException When an answered frame names multiple sockets, or the access-loss reason is invalid for the identity
      */
     public static function fromArray(array $data): static
@@ -263,7 +263,7 @@ final class SessionStateSignalData extends BaseDTO implements SignalDataInterfac
             outcome: self::optionalArray($data, 'outcome'),
             accountBlocked: HandshakeResponseSignalData::readAccountBlocked($data),
             accountStanding: HandshakeResponseSignalData::readAccountStanding($data),
-            accessLossReason: self::optionalString($data, self::accessLossReason),
+            accessLossReason: self::requireNullableString($data, self::accessLossReason),
         );
     }
 

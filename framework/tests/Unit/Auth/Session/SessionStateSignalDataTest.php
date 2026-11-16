@@ -20,7 +20,6 @@ final class SessionStateSignalDataTest extends TestCase
     public static function accessLossReasons(): array
     {
         return [
-            'remote end fallback' => ['session_ended'],
             'administrator' => ['ended_by_administrator'],
             'another browser' => ['ended_from_another_browser'],
             'password changed' => ['password_changed'],
@@ -60,17 +59,24 @@ final class SessionStateSignalDataTest extends TestCase
             }
             self::assertNull($frame->withAccessLossReason(null)->accessLossReason);
             self::assertSame($reason, $frame->accessLossReason);
-
-            $older = $frame->toArray();
-            unset($older['accessLossReason']);
-            self::assertNull(SessionStateSignalData::fromArray($older)->accessLossReason);
         }
+    }
+
+    public function testMissingAccessLossReasonIsRefused(): void
+    {
+        $frame = new SessionStateSignalData('token', 17, null, ['socket']);
+        $payload = $frame->toArray();
+        unset($payload['accessLossReason']);
+        $this->expectException(InvalidFormatException::class);
+
+        SessionStateSignalData::fromArray($payload);
     }
 
     /** @return array<string, array{mixed, class-string}> Invalid reasons and their refusal family */
     public static function malformedAccessLossReasons(): array
     {
         return [
+            'session ended' => ['session_ended', InvalidArgumentException::class],
             'unknown' => ['expired', InvalidArgumentException::class],
             'empty' => ['', InvalidArgumentException::class],
             'integer' => [42, InvalidFormatException::class],
@@ -95,7 +101,7 @@ final class SessionStateSignalDataTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        new SessionStateSignalData('token', 17, 41, ['socket'])->withAccessLossReason('session_ended');
+        new SessionStateSignalData('token', 17, 41, ['socket'])->withAccessLossReason('ended_by_administrator');
     }
 
     public function testParserRefusesAccessLossReasonBesideAnAuthenticatedIdentity(): void
@@ -182,6 +188,7 @@ final class SessionStateSignalDataTest extends TestCase
             'sessionToken' => 'token',
             'sessionId' => 17,
             'pendingAuthStep' => ['step' => 'identifier', 'code' => 'identifier_taken'] + $messageField,
+            'accessLossReason' => null,
         ]);
     }
 
@@ -275,6 +282,7 @@ final class SessionStateSignalDataTest extends TestCase
             'sessionToken' => 'token',
             'userId' => null,
             'acceptKeys' => ['accept-key'],
+            'accessLossReason' => null,
         ]);
     }
 
@@ -357,6 +365,7 @@ final class SessionStateSignalDataTest extends TestCase
             'acceptKeys' => ['socket-a', 'socket-b'],
             'requestId' => 'req-1',
             'action' => 'hilos_dismiss_session_ack',
+            'accessLossReason' => null,
         ]);
     }
 

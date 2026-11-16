@@ -210,12 +210,14 @@ export function registerLayoutBlockedLiveCases(
           await view.flush(() =>
             session.handshake({
               entities: { currentUser: null },
-              data: { accessLossReason: 'session_ended' },
+              data: { accessLossReason: 'ended_by_administrator' },
             }),
           )
           expect(
             part(view.root, 'access-loss-notice')?.textContent?.trim(),
-          ).toBe('Your session has ended. Any unsaved changes were lost.')
+          ).toBe(
+            'Your session was ended by an administrator. Any unsaved changes were lost.',
+          )
           expect(part(view.root, 'test-sign-in')).not.toBeNull()
 
           await view.flush(() => session.handshake(BLOCKED_GREETING))

@@ -75,7 +75,7 @@ function fakeConnection() {
 }
 
 describe('sessionScope', () => {
-  it.each([undefined, null, 'unknown', '', 1, {}, ['session_ended']])(
+  it.each([null, 'unknown', '', 'session_ended', 1, {}, ['session_ended']])(
     'replaces a previous access-loss reason with null for %j',
     (value) => {
       const connection = fakeConnection()
@@ -84,12 +84,12 @@ describe('sessionScope', () => {
       const reason = sessionAccessLossReason(scopes)
       expect(reason.get()).toBeNull()
       connection.emitHandshakeResponse({
-        data: { accessLossReason: 'session_ended' },
+        data: { accessLossReason: 'ended_by_administrator' },
       })
-      expect(reason.get()).toBe('session_ended')
+      expect(reason.get()).toBe('ended_by_administrator')
 
       connection.emitHandshakeResponse({
-        ...(value === undefined ? {} : { data: { accessLossReason: value } }),
+        data: { accessLossReason: value },
       })
 
       expect(reason.get()).toBeNull()
@@ -98,7 +98,6 @@ describe('sessionScope', () => {
   )
 
   it.each([
-    'session_ended',
     'account_blocked',
     'ended_by_administrator',
     'ended_from_another_browser',
@@ -126,6 +125,35 @@ describe('sessionScope', () => {
 
   it('exposes the handshake_response schema keyed for projectSchemas', () => {
     expect(SESSION_SIGNAL_SCHEMAS['handshake_response']).toBeDefined()
+  })
+
+  it('rejects a handshake_response that omits data', () => {
+    expect(
+      SESSION_SIGNAL_SCHEMAS['handshake_response'].safeParse({
+        entities: { currentUser: { id: 1 } },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects a handshake_response whose data omits accessLossReason', () => {
+    expect(
+      SESSION_SIGNAL_SCHEMAS['handshake_response'].safeParse({
+        data: { accountBlocked: null },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('accepts null and a present value normalization may drop', () => {
+    const schema = SESSION_SIGNAL_SCHEMAS['handshake_response']
+    expect(schema.safeParse({ data: { accessLossReason: null } }).success).toBe(
+      true,
+    )
+    expect(
+      schema.safeParse({ data: { accessLossReason: 'unknown' } }).success,
+    ).toBe(true)
+    expect(schema.safeParse({ data: { accessLossReason: 1 } }).success).toBe(
+      true,
+    )
   })
 
   it('ingests the handshake response and resolves the current user name', () => {

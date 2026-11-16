@@ -15,7 +15,7 @@ const OUTLET_STATES = [
   'frozen',
   'stale',
   'takeover',
-  'session_ended',
+  'ended_by_administrator',
   'account_blocked',
 ] as const
 
@@ -72,7 +72,7 @@ export function registerLayoutPublicStatusOutletCases(
               case 'takeover':
                 session.handshake(TAKEOVER)
                 break
-              case 'session_ended':
+              case 'ended_by_administrator':
               case 'account_blocked':
                 session.handshake({
                   entities: { currentUser: null },
@@ -96,7 +96,7 @@ export function registerLayoutPublicStatusOutletCases(
           expect(find(view.root, 'test-sign-in')).toBeNull()
           const guest =
             state === 'blocked' ||
-            state === 'session_ended' ||
+            state === 'ended_by_administrator' ||
             state === 'account_blocked'
           expect(find(view.root, 'nav-logout') !== null).toBe(!guest)
           if (state === 'stale') {
@@ -107,7 +107,10 @@ export function registerLayoutPublicStatusOutletCases(
           if (state === 'takeover') {
             expect(find(view.root, 'impersonation-banner')).not.toBeNull()
           }
-          if (state === 'session_ended' || state === 'account_blocked') {
+          if (
+            state === 'ended_by_administrator' ||
+            state === 'account_blocked'
+          ) {
             expect(hilosAccessLossReason.get()).toBe(state)
             expect(document.activeElement).toBe(document.body)
           }
@@ -125,12 +128,14 @@ export function registerLayoutPublicStatusOutletCases(
           if (state === 'frozen') {
             expect(find(view.root, 'legal-frozen-screen')).not.toBeNull()
           }
-          if (state === 'session_ended') {
-            expect(hilosAccessLossReason.get()).toBe('session_ended')
+          if (state === 'ended_by_administrator') {
+            expect(hilosAccessLossReason.get()).toBe('ended_by_administrator')
             // Angular retains template indentation around this exact copy.
             expect(
               find(view.root, 'access-loss-notice')?.textContent?.trim(),
-            ).toBe('Your session has ended. Any unsaved changes were lost.')
+            ).toBe(
+              'Your session was ended by an administrator. Any unsaved changes were lost.',
+            )
             expect(find(view.root, 'test-sign-in')).not.toBeNull()
             expect(find(view.root, 'ordinary-page')).toBeNull()
           }

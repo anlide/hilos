@@ -109,11 +109,13 @@ export function registerHilosViewAccessCases<T>(
           const draft = await openDraft(view)
           const sentBefore = session.send.mock.calls.length
           await view.flush(() => {
-            session.handshake(null, { accessLossReason: 'session_ended' })
+            session.handshake(null, {
+              accessLossReason: 'ended_by_administrator',
+            })
             session.gate.requireAuth()
           })
           expect(notice(view)?.textContent?.trim()).toBe(
-            'Your session has ended. Any unsaved changes were lost.',
+            'Your session was ended by an administrator. Any unsaved changes were lost.',
           )
           expect(notice(view)?.parentElement).toBe(region)
           expect(region.getAttribute('role')).toBe('status')
@@ -135,7 +137,7 @@ export function registerHilosViewAccessCases<T>(
           })
           await outlast(view)
           expect(notice(view)?.textContent?.trim()).toBe(
-            'Your session has ended. Any unsaved changes were lost.',
+            'Your session was ended by an administrator. Any unsaved changes were lost.',
           )
           expect(find(view, 'private-page')).toBeNull()
           expect(find(view, 'hilos-page-skeleton')).toBeNull()
@@ -162,7 +164,9 @@ export function registerHilosViewAccessCases<T>(
         expect(doc('modal')).not.toBeNull()
         expect(authCount()).toBe(1)
         await view.flush(() =>
-          session.handshake(null, { accessLossReason: 'session_ended' }),
+          session.handshake(null, {
+            accessLossReason: 'ended_by_administrator',
+          }),
         )
         expect(doc('modal')).toBeNull()
         expect(
@@ -171,12 +175,12 @@ export function registerHilosViewAccessCases<T>(
         expect(authCount()).toBe(1)
         expect(document.activeElement).toBe(find(view, 'auth-identifier'))
         expect(notice(view)?.textContent?.trim()).toBe(
-          'Your session has ended. Any unsaved changes were lost.',
+          'Your session was ended by an administrator. Any unsaved changes were lost.',
         )
       })
     })
 
-    it.each(['session_ended', 'account_blocked'] as const)(
+    it.each(['ended_by_administrator', 'account_blocked'] as const)(
       'X03 clears a nonempty copy before framework flush on %s and never copies the lost page',
       async (reason) => {
         await run(async (kit, session) => {
@@ -226,7 +230,9 @@ export function registerHilosViewAccessCases<T>(
               expect(find(view, 'page-error')).not.toBeNull()
             }
             await view.flush(() =>
-              session.handshake(null, { accessLossReason: 'session_ended' }),
+              session.handshake(null, {
+                accessLossReason: 'ended_by_administrator',
+              }),
             )
             await outlast(view)
             for (const id of [
@@ -259,10 +265,12 @@ export function registerHilosViewAccessCases<T>(
         const reader = find(view, 'public-file-reader')
         expect(reader).not.toBeNull()
         await view.flush(() =>
-          session.handshake(null, { accessLossReason: 'session_ended' }),
+          session.handshake(null, {
+            accessLossReason: 'ended_by_administrator',
+          }),
         )
         await outlast(view)
-        expect(hilosAccessLossReason.get()).toBe('session_ended')
+        expect(hilosAccessLossReason.get()).toBe('ended_by_administrator')
         expect(find(view, 'public-file-reader')).toBe(reader)
         for (const id of [
           'access-loss-notice',
@@ -276,7 +284,7 @@ export function registerHilosViewAccessCases<T>(
         expect(authCount()).toBe(0)
         await view.flush(() => session.answer())
         expect(find(view, 'public-file-reader')).toBe(reader)
-        expect(hilosAccessLossReason.get()).toBe('session_ended')
+        expect(hilosAccessLossReason.get()).toBe('ended_by_administrator')
         for (const id of [
           'access-loss-notice',
           'auth-surface',
@@ -296,14 +304,16 @@ export function registerHilosViewAccessCases<T>(
         const view = await render(kit, session, false)
         const draft = await openDraft(view)
         await view.flush(() =>
-          session.handshake(null, { accessLossReason: 'session_ended' }),
+          session.handshake(null, {
+            accessLossReason: 'ended_by_administrator',
+          }),
         )
         expect(draft.isConnected).toBe(false)
         expect(doc('modal')).toBeNull()
         expect(find(view, 'private-page')).toBeNull()
         expect(authCount()).toBe(0)
         expect(notice(view)?.textContent?.trim()).toBe(
-          'Your session has ended. Any unsaved changes were lost.',
+          'Your session was ended by an administrator. Any unsaved changes were lost.',
         )
         const container = view.root.querySelector<HTMLElement>(
           '.hilos-page-slot > [tabindex="-1"]',
@@ -369,7 +379,9 @@ export function registerHilosViewAccessCases<T>(
         nav.focus()
         expect(document.activeElement).toBe(nav)
         await view.flush(() =>
-          session.handshake(null, { accessLossReason: 'session_ended' }),
+          session.handshake(null, {
+            accessLossReason: 'ended_by_administrator',
+          }),
         )
         expect(notice(view)).not.toBeNull()
         expect(document.activeElement).toBe(nav)

@@ -122,7 +122,6 @@ final class HandshakeResponseSignalDataTest extends TestCase
     public static function accessLossReasons(): array
     {
         return [
-            'remote end fallback' => ['session_ended'],
             'administrator' => ['ended_by_administrator'],
             'another browser' => ['ended_from_another_browser'],
             'password changed' => ['password_changed'],
@@ -169,10 +168,24 @@ final class HandshakeResponseSignalDataTest extends TestCase
         }
         self::assertNull($frame->withAccessLossReason(null)->accessLossReason);
         self::assertSame($reason, $frame->accessLossReason);
+    }
 
-        $older = $frame->toArray();
-        unset($older['data']['accessLossReason']);
-        self::assertNull(HandshakeResponseSignalData::fromArray($older)->accessLossReason);
+    public function testMissingAccessLossReasonOnAnAnonymousPayloadIsRefused(): void
+    {
+        $payload = new HandshakeResponseSignalData()->toArray();
+        unset($payload['data']['accessLossReason']);
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
+    }
+
+    public function testMissingAccessLossReasonOnAnAuthenticatedPayloadIsRefused(): void
+    {
+        $payload = new HandshakeResponseSignalData(selfId: 41)->toArray();
+        unset($payload['data']['accessLossReason']);
+        $this->expectException(InvalidFormatException::class);
+
+        HandshakeResponseSignalData::fromArray($payload);
     }
 
     public function testAccessLossStampKeepsEveryAuthenticatedIdentityField(): void
@@ -198,6 +211,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
     public static function malformedAccessLossReasons(): array
     {
         return [
+            'session ended' => ['session_ended', InvalidArgumentException::class],
             'unknown' => ['expired', InvalidArgumentException::class],
             'empty' => ['', InvalidArgumentException::class],
             'integer' => [42, InvalidFormatException::class],
@@ -222,7 +236,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
     {
         $this->expectException(InvalidArgumentException::class);
 
-        new HandshakeResponseSignalData(selfId: 41)->withAccessLossReason('session_ended');
+        new HandshakeResponseSignalData(selfId: 41)->withAccessLossReason('ended_by_administrator');
     }
 
     public function testParserRefusesAccessLossReasonBesideAnAuthenticatedIdentity(): void
@@ -244,7 +258,7 @@ final class HandshakeResponseSignalDataTest extends TestCase
         unset($step['message']);
         $this->expectException(InvalidFormatException::class);
 
-        HandshakeResponseSignalData::fromArray(['data' => ['pendingAuthStep' => $step + $messageField]]);
+        HandshakeResponseSignalData::fromArray(['data' => ['pendingAuthStep' => $step + $messageField, 'accessLossReason' => null]]);
     }
 
     /** @return array<string, array{array<string, mixed>}> Invalid nested message fields */
@@ -260,8 +274,10 @@ final class HandshakeResponseSignalDataTest extends TestCase
 
     public function testMissingOrNullPendingNodeStaysAbsent(): void
     {
-        self::assertNull(HandshakeResponseSignalData::fromArray([])->pendingAuthStep);
-        self::assertNull(HandshakeResponseSignalData::fromArray(['data' => ['pendingAuthStep' => null]])->pendingAuthStep);
+        self::assertNull(HandshakeResponseSignalData::fromArray(['data' => ['accessLossReason' => null]])->pendingAuthStep);
+        self::assertNull(HandshakeResponseSignalData::fromArray([
+            'data' => ['pendingAuthStep' => null, 'accessLossReason' => null],
+        ])->pendingAuthStep);
     }
 
     public function testPendingRegistrationConsentSurvivesTheTransportRoundtrip(): void

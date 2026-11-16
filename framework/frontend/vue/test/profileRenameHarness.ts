@@ -100,6 +100,7 @@ export function profileRenameTab(known = true) {
         accountBlocked: null,
         pendingAck: null,
         pendingAuthStep: null,
+        accessLossReason: null,
         ...data,
       },
       entities: {

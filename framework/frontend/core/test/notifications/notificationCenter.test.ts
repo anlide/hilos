@@ -270,7 +270,12 @@ describe('notification binder', () => {
    * connection, which is what the join waits for.
    */
   function answerSession(): void {
-    MockWebSocket.last.message(frame('handshake_response', { entities: {} }))
+    MockWebSocket.last.message(
+      frame('handshake_response', {
+        entities: {},
+        data: { accessLossReason: null },
+      }),
+    )
   }
 
   function sentFrames(): { type: string; group?: string; action?: string }[] {

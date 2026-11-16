@@ -110,7 +110,7 @@ export function accessSession(initial = '/') {
     handshake(id: number | null, data: Record<string, unknown> = {}) {
       emit(SIGNAL_HANDSHAKE_RESPONSE, {
         entities: { currentUser: id === null ? null : { id } },
-        data: { accountBlocked: null, ...data },
+        data: { accountBlocked: null, accessLossReason: null, ...data },
       })
     },
     answer(identity?: HilosPageIdentity) {

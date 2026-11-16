@@ -267,7 +267,10 @@ describe('parseSignal', () => {
       const result = parseSignal(
         JSON.stringify({
           type: 'handshake_response',
-          data: { entities: { currentUser: { id: 7, timeZone } } },
+          data: {
+            entities: { currentUser: { id: 7, timeZone } },
+            data: { accessLossReason: null },
+          },
         }),
         SESSION_SIGNAL_SCHEMAS,
       )

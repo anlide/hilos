@@ -639,7 +639,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
      *
      * @param array<string, mixed> $data Source data
      * @return static DTO instance
-     * @throws InvalidFormatException When a present identity or auth-step node lacks a required field, or a field has the wrong type
+     * @throws InvalidFormatException When data omits accessLossReason, a present node lacks a required field, or a field has the wrong type
      * @throws InvalidArgumentException When the access-loss reason is unknown or the identity is authenticated
      */
     public static function fromArray(array $data): static
@@ -665,6 +665,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
         if ($themeSettings !== null) {
             $themeSettings = ThemeSettingsSignalData::fromArray($themeSettings)->toArray();
         }
+        $accessLossReason = self::requireNullableString($section, self::accessLossReason);
         if ($currentUser === null) {
             return new static(
                 pendingAck: $pendingAck,
@@ -675,7 +676,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
                 passkeyAllowsUnproven: $passkeyAllowsUnproven,
                 accountBlocked: $accountBlocked,
                 accountStanding: $accountStanding,
-                accessLossReason: self::optionalString($section, self::accessLossReason),
+                accessLossReason: $accessLossReason,
                 adminViewMode: $adminViewMode,
                 impersonationPolicy: $impersonationPolicy,
                 themeSettings: $themeSettings,
@@ -700,7 +701,7 @@ final class HandshakeResponseSignalData extends BaseDTO implements SignalDataInt
             passkeyAllowsUnproven: $passkeyAllowsUnproven,
             accountBlocked: $accountBlocked,
             accountStanding: $accountStanding,
-            accessLossReason: self::optionalString($section, self::accessLossReason),
+            accessLossReason: $accessLossReason,
             adminViewMode: $adminViewMode,
             impersonationPolicy: $impersonationPolicy,
             themeSettings: $themeSettings,

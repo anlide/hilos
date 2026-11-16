@@ -602,6 +602,7 @@ describe('maintenance signals on the existing public reader lifecycle', () => {
     const h = mount(true)
     cleanup.push(bindTimeZoneState(h.connection))
     h.socket.push('handshake_response', {
+      data: { accessLossReason: null },
       entities: { currentUser: { id: 1, timeZone: 'UTC' } },
     })
     h.publish(
@@ -622,6 +623,7 @@ describe('maintenance signals on the existing public reader lifecycle', () => {
     await h.start()
     const utcLabel = h.reader.upcomingWorks.get()[0]?.startsAtLabel
     h.socket.push('handshake_response', {
+      data: { accessLossReason: null },
       entities: { currentUser: { id: 1, timeZone: 'Europe/Warsaw' } },
     })
     expect(h.reader.upcomingWorks.get()[0]?.startsAtLabel).toBe(
@@ -646,6 +648,7 @@ describe('calendar dependencies without server events', () => {
     const h = mount(true)
     cleanup.push(bindTimeZoneState(h.connection))
     h.socket.push('handshake_response', {
+      data: { accessLossReason: null },
       entities: { currentUser: { id: 1, timeZone: 'UTC' } },
     })
     expect(hilosTimeZone.get()).toBe('UTC')
@@ -662,6 +665,7 @@ describe('calendar dependencies without server events', () => {
     h.reader.dayStrips.get()
     expect(format.mock.calls.length).toBe(calendarReads)
     h.socket.push('handshake_response', {
+      data: { accessLossReason: null },
       entities: { currentUser: { id: 1, timeZone: 'America/Los_Angeles' } },
     })
     expect(hilosTimeZone.get()).toBe('America/Los_Angeles')
@@ -679,6 +683,7 @@ describe('live calendar silence', () => {
     const h = mount(true)
     cleanup.push(bindTimeZoneState(h.connection))
     h.socket.push('handshake_response', {
+      data: { accessLossReason: null },
       entities: { currentUser: { id: 1, timeZone: 'UTC' } },
     })
     const facts = statusFile({
@@ -764,6 +769,7 @@ describe('live calendar silence', () => {
     const h = mount(true)
     cleanup.push(bindTimeZoneState(h.connection))
     h.socket.push('handshake_response', {
+      data: { accessLossReason: null },
       entities: { currentUser: { id: 1, timeZone: 'UTC' } },
     })
     h.publish(

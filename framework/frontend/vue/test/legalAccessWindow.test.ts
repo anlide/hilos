@@ -121,7 +121,7 @@ function accessWindowHarness(admin: boolean, table: TableCase) {
   const session = (isAdmin: boolean) => {
     project('handshake_response', {
       entities: { currentUser: { id: 7, admin: isAdmin } },
-      data: { adminViewMode: true },
+      data: { adminViewMode: true, accessLossReason: null },
     })
     pages.releaseOnSession()
   }

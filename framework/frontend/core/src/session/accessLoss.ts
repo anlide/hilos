@@ -17,7 +17,6 @@ import {
 
 /** The server's explanations for taking an active session's identity away. */
 export type AccessLossReason =
-  | 'session_ended'
   | 'account_blocked'
   | 'ended_by_administrator'
   | 'ended_from_another_browser'
@@ -26,7 +25,6 @@ export type AccessLossReason =
 
 /** Shared copy for the live access-loss notice in all three SDK views. */
 export const ACCESS_LOSS_COPY = {
-  session_ended: 'Your session has ended. Any unsaved changes were lost.',
   account_blocked: 'Any unsaved changes were lost.',
   ended_by_administrator:
     'Your session was ended by an administrator. Any unsaved changes were lost.',

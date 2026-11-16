@@ -357,7 +357,7 @@ describe('HilosModerationKindRulesPage', () => {
     const h = backend()
     h.receive('handshake_response', {
       entities: { currentUser: null },
-      data: { adminViewMode: true },
+      data: { adminViewMode: true, accessLossReason: null },
     })
     h.answer()
     const view = mount(h)

@@ -112,7 +112,6 @@ const ACCESS_LOSS_REASON_KEY = 'accessLossReason'
 
 /** Kept here so the session parser does not import the document latch at runtime. */
 const ACCESS_LOSS_REASONS = [
-  'session_ended',
   'account_blocked',
   'ended_by_administrator',
   'ended_from_another_browser',
@@ -512,7 +511,8 @@ export const SESSION_ACK_SIGNED_IN = 'auth_signed_in'
  * The handshake-response payload keyed for a connection's `projectSchemas`, so
  * the parse boundary validates what {@link bindSessionScope} ingests.
  * {@link createHilosConnection} merges it in, so a project never restates the
- * `{ handshake_response: scopePayloadSchema }` pair.
+ * handshake schema. `handshake_response` requires `data.accessLossReason`;
+ * the value stays unchecked so an unknown present reason still becomes null.
  *
  * The send-progress line rides here rather than with the auth-code bundle even
  * though it is an auth frame (HIL-826). This bundle is merged INSIDE
@@ -523,8 +523,22 @@ export const SESSION_ACK_SIGNED_IN = 'auth_signed_in'
  * The profile windows' list rides here for the same reason (HIL-1182), and so
  * does the frame of the identity confirmations the session has (HIL-1330).
  */
+
+/**
+ * `handshake_response` is a scope payload that must name `data.accessLossReason`.
+ *
+ * The value stays unchecked: null, a string and a wrong type all pass.
+ * Normalization turns anything but the five live reasons into null before
+ * identity is ingested. Other scopes keep {@link scopePayloadSchema}.
+ */
+const handshakeResponseSchema = scopePayloadSchema.refine(
+  (payload) =>
+    payload.data !== undefined &&
+    Object.hasOwn(payload.data, ACCESS_LOSS_REASON_KEY),
+)
+
 export const SESSION_SIGNAL_SCHEMAS = {
-  [SIGNAL_HANDSHAKE_RESPONSE]: scopePayloadSchema,
+  [SIGNAL_HANDSHAKE_RESPONSE]: handshakeResponseSchema,
   [SIGNAL_SESSION_TOASTS]: sessionToastsSchema,
   [SIGNAL_CODE_SEND_PROGRESS]: codeSendProgressSchema,
   [SIGNAL_PROFILE_FLOWS]: profileFlowsSchema,
@@ -603,7 +617,7 @@ export function bindSessionScope(
     options.currentUserEntityType ?? DEFAULT_CURRENT_USER_ENTITY_TYPE
   connection.on('projectSignal', (signal) => {
     if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) {
-      // Validated against scopePayloadSchema at the parse boundary; this cast is
+      // Validated against handshakeResponseSchema at the parse boundary; this cast is
       // the declared typed selector for that schema's output. The impersonating
       // admin shares the current-user entity type so it dedupes against the same
       // user delivered elsewhere; a null slot clears it (no longer impersonated).
@@ -624,7 +638,6 @@ export function bindSessionScope(
       // late is the surface closing over the sentence it exists to show. The
       // second pass rewrites the same values, which notifies nobody.
       const plainData = { ...(payload.data ?? {}) }
-      // Every frame replaces the reason, even when an older server omitted it.
       // Identity listeners must see THIS reason before the entity slots change.
       plainData[ACCESS_LOSS_REASON_KEY] = readAccessLossReason(
         plainData[ACCESS_LOSS_REASON_KEY],

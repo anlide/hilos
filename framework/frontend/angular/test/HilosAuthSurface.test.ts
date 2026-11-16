@@ -329,6 +329,7 @@ function doneBeforeSubscription() {
       data: {
         authMethods: [{ key: PASSWORD_METHOD_KEY, name: null }],
         pendingAck: SESSION_ACK_REGISTERED,
+        accessLossReason: null,
       },
     },
   }

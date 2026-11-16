@@ -208,7 +208,10 @@ describe('the shared restore shell', () => {
           socket.emit('message', {
             data: JSON.stringify({
               type: 'handshake_response',
-              data: { entities: { currentUser: { id: 1, timeZone } } },
+              data: {
+                entities: { currentUser: { id: 1, timeZone } },
+                data: { accessLossReason: null },
+              },
             }),
           })
           expect(hilosTimeZone.get()).toBe(timeZone)

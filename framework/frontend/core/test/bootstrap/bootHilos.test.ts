@@ -45,8 +45,10 @@ import {
   type ConnectionState,
   type HandshakeSignal,
   type HilosConnection,
+  type ParseFailure,
   type ProjectSignal,
 } from '../../src/base/index.js'
+import { sessionUserId } from '../../src/session/sessionScope.js'
 
 const resolved = new Intl.DateTimeFormat().resolvedOptions()
 
@@ -222,10 +224,13 @@ describe('bootHilos', () => {
 
     connection.emitProjectSignal('handshake_response', {
       entities: { currentUser: null },
-      data: { accessLossReason: 'session_ended', accountBlocked: null },
+      data: {
+        accessLossReason: 'ended_by_administrator',
+        accountBlocked: null,
+      },
     })
 
-    expect(hilosAccessLossReason.get()).toBe('session_ended')
+    expect(hilosAccessLossReason.get()).toBe('ended_by_administrator')
     expect(scopes.page()?.data.signal('privateValue').get()).toBeUndefined()
     expect(hilosRouter.pageLoading.get()).toBe(true)
     expect(hilosRouter.currentPath.get()).toBe('/')
@@ -234,7 +239,7 @@ describe('bootHilos', () => {
       entities: { currentUser: null },
       data: { accessLossReason: null, accountBlocked: null },
     })
-    expect(hilosAccessLossReason.get()).toBe('session_ended')
+    expect(hilosAccessLossReason.get()).toBe('ended_by_administrator')
   })
 
   it('binds the loss controller before connect can publish a handshake', () => {
@@ -245,12 +250,70 @@ describe('bootHilos', () => {
       })
       this.emitProjectSignal('handshake_response', {
         entities: { currentUser: null },
-        data: { accessLossReason: 'session_ended' },
+        data: { accessLossReason: 'ended_by_administrator' },
       })
-      expect(hilosAccessLossReason.get()).toBe('session_ended')
+      expect(hilosAccessLossReason.get()).toBe('ended_by_administrator')
     }
 
     boot(connection)
+  })
+
+  it('refuses a handshake that omits accessLossReason without publishing its identity', () => {
+    const socket = scriptedSocket()
+    const { connection, actions } = createHilosConnection({
+      url: 'ws://test/ws',
+      webSocketFactory: () => socket.socket,
+    })
+    const scopes = new ScopeManager()
+    bootHilos({
+      connection,
+      actions,
+      scopes,
+      viewLayer: 'vue',
+      router: createAppPageRouter({ main: { path: '/', admin: false } }),
+      navigationEnvironment: fakeNavigation('/'),
+    })
+    const failures: ParseFailure[] = []
+    connection.on('parseFailure', (failure) => {
+      failures.push(failure)
+    })
+    const userId = sessionUserId(scopes)
+
+    socket.open()
+    socket.message({ type: 'handshake', data: { build: 'test' } })
+    socket.message({
+      type: 'handshake_response',
+      data: {
+        entities: { currentUser: { id: 7, name: 'Ada' } },
+        data: { accessLossReason: null },
+      },
+    })
+    expect(userId.get()).toBe(7)
+
+    socket.message({
+      type: 'handshake_response',
+      data: {
+        entities: { currentUser: { id: 9, name: 'Other' } },
+        data: { accountBlocked: null },
+      },
+    })
+    expect(failures).toEqual([
+      expect.objectContaining({
+        kind: 'invalid-signal-data',
+        type: 'handshake_response',
+      }),
+    ])
+    expect(userId.get()).toBe(7)
+
+    socket.message({
+      type: 'handshake_response',
+      data: {
+        entities: { currentUser: { id: 8, name: 'Bea' } },
+        data: { accessLossReason: null },
+      },
+    })
+    expect(userId.get()).toBe(8)
+    expect(failures).toHaveLength(1)
   })
 
   it('holds early Continue on a new socket until its page subscription is sent', async () => {
@@ -280,7 +343,10 @@ describe('bootHilos', () => {
     const welcome = { type: 'handshake', data: { build: 'test-build' } }
     const session = {
       type: 'handshake_response',
-      data: { entities: { currentUser: { id: 1, name: 'Ada' } } },
+      data: {
+        entities: { currentUser: { id: 1, name: 'Ada' } },
+        data: { accessLossReason: null },
+      },
     }
     try {
       const first = sockets[0]!
@@ -429,7 +495,7 @@ describe('bootHilos', () => {
         socket.message({
           type: 'handshake_response',
           data: {
-            data: { accountStanding: null },
+            data: { accountStanding: null, accessLossReason: null },
             entities: {
               currentUser: { id: 99, name: 'Other slot' },
               me: { id: 7, name: 'Current person' },
@@ -544,7 +610,10 @@ describe('bootHilos', () => {
     )
     const answer = (currentUser: unknown) => ({
       type: 'handshake_response',
-      data: { entities: { currentUser } },
+      data: {
+        entities: { currentUser },
+        data: { accessLossReason: null },
+      },
     })
     const tokyo = answer({ id: 1, name: 'Ada', timeZone: 'Asia/Tokyo' })
     try {

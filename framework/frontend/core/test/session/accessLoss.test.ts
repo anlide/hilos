@@ -22,7 +22,6 @@ import { computedSignal, subscribeSignal } from '../../src/state/signal.js'
 import { bindPageScope } from '../../src/subscription/bindPageScope.js'
 
 const endedSessionReasons = [
-  'session_ended',
   'ended_by_administrator',
   'ended_from_another_browser',
   'password_changed',
@@ -99,7 +98,7 @@ function setup(options: SessionScopeOptions = {}) {
       entities: {
         [options.currentUserSlot ?? 'currentUser']: id === null ? null : { id },
       },
-      data: { accountBlocked: null, ...data },
+      data: { accountBlocked: null, accessLossReason: null, ...data },
     })
   }
   const answer = (): void =>
@@ -120,9 +119,8 @@ function lossData(reason: AccessLossReason): Record<string, unknown> {
 }
 
 describe('accessLoss', () => {
-  it('owns exactly the six approved explanations', () => {
+  it('owns exactly the five approved explanations', () => {
     expect(ACCESS_LOSS_COPY).toEqual({
-      session_ended: 'Your session has ended. Any unsaved changes were lost.',
       account_blocked: 'Any unsaved changes were lost.',
       ended_by_administrator:
         'Your session was ended by an administrator. Any unsaved changes were lost.',
@@ -213,7 +211,7 @@ describe('accessLoss', () => {
     },
   )
 
-  it.each([undefined, null, 'unknown', 42, ['session_ended']])(
+  it.each([undefined, null, 'unknown', 'session_ended', 42, ['session_ended']])(
     'does not latch voluntary logout or an unrecognized reason: %j',
     (reason) => {
       const s = setup()
@@ -286,8 +284,8 @@ describe('accessLoss', () => {
       currentUserEntityType: 'person',
     })
     s.handshake(7)
-    s.handshake(null, lossData('session_ended'))
-    expect(hilosAccessLossReason.get()).toBe('session_ended')
+    s.handshake(null, lossData('ended_by_administrator'))
+    expect(hilosAccessLossReason.get()).toBe('ended_by_administrator')
   })
 
   it('releases old identity, card and route listeners and ignores a late disposer', () => {
@@ -297,16 +295,16 @@ describe('accessLoss', () => {
     const current = setup()
     expect(hilosAccessLossReason.get()).toBeNull()
     current.handshake(8)
-    current.handshake(null, lossData('session_ended'))
+    current.handshake(null, lossData('ended_by_administrator'))
     old.release()
     old.router.navigate('/next')
     old.handshake(7)
     old.handshake(null, lossData('account_blocked'))
-    expect(hilosAccessLossReason.get()).toBe('session_ended')
+    expect(hilosAccessLossReason.get()).toBe('ended_by_administrator')
     current.release()
     expect(hilosAccessLossReason.get()).toBeNull()
     current.handshake(8)
-    current.handshake(null, lossData('session_ended'))
+    current.handshake(null, lossData('ended_by_administrator'))
     expect(hilosAccessLossReason.get()).toBeNull()
   })
 
@@ -315,8 +313,8 @@ describe('accessLoss', () => {
     s.handshake(7)
     const release = bindAccessLoss(s.scopes, s.router)
     releases.push(release)
-    s.handshake(null, lossData('session_ended'))
-    expect(hilosAccessLossReason.get()).toBe('session_ended')
+    s.handshake(null, lossData('ended_by_administrator'))
+    expect(hilosAccessLossReason.get()).toBe('ended_by_administrator')
     setup()
     expect(hilosAccessLossReason.get()).toBeNull()
   })

@@ -94,7 +94,7 @@ describe('createHilosConnection', () => {
     socket.emit('message', {
       data: JSON.stringify({
         type: 'handshake_response',
-        data: { entities: {} },
+        data: { entities: {}, data: { accessLossReason: null } },
       }),
     })
     socket.emit('message', {
