@@ -1024,8 +1024,10 @@ replicates by the same mechanism as roblox-game-server's, and the same oracle
 holds its three servers in the proof below that a member is lost and returned
 (not in the code yet — HIL-2041). An ordinary restart of a node is scenario
 40's, on online-testing.
-Roblox proves the journal after Galera data-node and arbitrator failures
-(not in the code yet — HIL-2040). Concert-tickets proves it after a member is
+Roblox proves the journal after a Galera data node is lost and returned:
+scenario 27 writes journal batches through the oracle while the fault lasts
+and holds both data nodes to one journal once the member is back.
+Concert-tickets proves it after a member is
 lost and returned (not in the code yet — HIL-2041). Scenario 55 proves it on
 file-gallery-manager: its primary and then its replica are lost and returned, and
 the same oracle holds both servers to one journal.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # What a data member answers the proxy's agent check: `up` while it may take new connections,
-# `down` otherwise. Connections already open to a member are left alone either way.
+# `down` otherwise. What becomes of the connections already open is the proxy's choice.
 #
 # Up while Synced (wsrep_local_state 4) and while Donor/Desynced (2). With two data members the
 # one that survives the other is at once the donor of the full copy to the returning member and

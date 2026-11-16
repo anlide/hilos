@@ -4,7 +4,8 @@ import unittest
 from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import Mock, call, patch
+from types import SimpleNamespace
+from unittest.mock import ANY, Mock, call, patch
 
 import control
 import scenarios
@@ -95,6 +96,26 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
                                                            side_effect=lambda _member, node: self.writes[node].value))
         self.started_at = self.contexts.enter_context(patch.object(control, "node_started_at",
                                                                  return_value=control.Outcome(0, "started", "")))
+        self.load.assert_last_acknowledged.side_effect = self.check_acknowledged
+        self.oracle = Mock(spec=scenarios.JournalOracle)
+        self.oracle.node_id = "m2"
+        self.oracle.batches.return_value = []
+        batch_text = scenarios.JournalOracle._batch_text
+        factory = self.contexts.enter_context(patch.object(scenarios, "JournalOracle", return_value=self.oracle))
+        factory._batch_text.side_effect = batch_text
+        self.journal = Mock(spec=scenarios.JournalLoad)
+        self.contexts.enter_context(patch.object(scenarios, "JournalLoad", return_value=self.journal))
+        self.finish_impl = scenarios.finish_journal
+        self.finish = self.contexts.enter_context(patch.object(scenarios, "finish_journal", return_value="journal proof"))
+        self.session = self.contexts.enter_context(patch.object(scenarios, "application_session",
+                                                             return_value={"databaseMember": "db1-host"}))
+        self.contexts.enter_context(patch.object(scenarios.time, "time", return_value=100.0))
+
+    def check_acknowledged(self, member, node):
+        last = self.writes[node]
+        held = self.value(member, node)
+        assert held == last.value, f"{member} holds {held} for {node}, which last wrote {last.value}"
+        return last
 
     def test_shape_guards_separate_data_members_from_votes(self):
         cases = [
@@ -246,12 +267,16 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
                 self.value.reset_mock()
                 self.kill.reset_mock()
                 self.start.reset_mock()
+                self.load.assert_last_acknowledged.reset_mock()
                 detail = scenarios.scenario_27_database_member_dies_under_load()
                 self.assertIn("primary cluster of two votes holding every acknowledged write", detail)
                 self.kill.assert_called_once_with("db1")
                 self.start.assert_called_once_with("db1")
-                self.assertEqual([call(member.service, node) for member in self.stand.database_members
-                                  if member.service != "db1" for node in scenarios.ALL_NODES], self.value.call_args_list)
+                survivors = [call(member.service, node) for member in self.stand.database_members
+                             if member.service != "db1" for node in scenarios.ALL_NODES]
+                self.assertEqual(survivors, self.load.assert_last_acknowledged.call_args_list)
+                self.assertEqual(survivors + [call("db1", node) for node in scenarios.ALL_NODES],
+                                 self.value.call_args_list)
 
     def test_27_rejects_a_survivor_that_lost_the_voters_vote(self):
         self.prepare_load()
@@ -273,6 +298,175 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
         self.started_at.side_effect = [control.Outcome(0, value, "") for value in ("started", "started", "restarted")]
         with self.assertRaisesRegex(AssertionError, "m1 was restarted while db1 was down"):
             scenarios.scenario_27_database_member_dies_under_load()
+
+    def test_27_kills_the_library_backend_instead_of_the_first_probe_backend(self):
+        self.prepare_load()
+        self.session.return_value = {"databaseMember": "db2-host"}
+        self.load.member_of.side_effect = lambda node: "db1-host" if self.down or node == "m1" else "db2-host"
+
+        def start(member):
+            self.load.stop.assert_not_called()
+            self.journal.stop.assert_not_called()
+            self.down.remove(member)
+
+        self.start.side_effect = start
+        detail = scenarios.scenario_27_database_member_dies_under_load()
+        self.kill.assert_called_once_with("db2")
+        self.session.assert_called_once_with("m2", "primary")
+        self.assertIn("db2 killed under m2's settings library", detail)
+        self.assertIn("m2 moved through db1", detail)
+        self.assertEqual(3, self.steady.call_count)
+        self.finish.assert_called_once_with(self.oracle, self.journal)
+
+    def test_27_checks_every_node_that_used_the_killed_member(self):
+        self.prepare_load()
+        self.load.member_of.side_effect = lambda node: "db2-host" if self.down and node == "m1" else "db1-host"
+        with self.assertRaisesRegex(AssertionError, "m2 still writes through db1, which was killed"):
+            scenarios.scenario_27_database_member_dies_under_load()
+        self.start.assert_called_once_with("db1")
+        self.finish.assert_not_called()
+
+    def test_27_rejects_an_unknown_library_backend_before_starting_load(self):
+        self.prepare_load()
+        self.session.return_value = {"databaseMember": "unknown-host"}
+        with self.assertRaisesRegex(AssertionError, "m2 uses an unknown data member unknown-host"):
+            scenarios.scenario_27_database_member_dies_under_load()
+        self.load.start.assert_not_called()
+        self.journal.start.assert_not_called()
+        self.kill.assert_not_called()
+
+    def test_27_rejects_a_returned_member_missing_an_acknowledged_write(self):
+        self.prepare_load()
+        self.value.side_effect = lambda member, node: "stale" if member == "db1" else self.writes[node].value
+        with self.assertRaisesRegex(AssertionError, "db1 came back without m1's write"):
+            scenarios.scenario_27_database_member_dies_under_load()
+        self.finish.assert_not_called()
+
+    def test_27_rejects_a_probe_failure_that_finishes_during_return(self):
+        self.prepare_load()
+        self.load.attempts.side_effect = lambda node: [scenarios.DbWriteAttempt(-1, 10, node, "", False, None, "lost link")]
+        with self.assertRaisesRegex(AssertionError, "write failed while db1 was coming back: lost link"):
+            scenarios.scenario_27_database_member_dies_under_load()
+        self.finish.assert_not_called()
+
+    def test_27_rejects_a_nonconfirmed_journal_batch_started_during_return(self):
+        self.prepare_load()
+        for outcome in (scenarios.JOURNAL_AMBIGUOUS, scenarios.JOURNAL_REFUSED):
+            with self.subTest(outcome=outcome):
+                self.oracle.batches.return_value = [scenarios.JournalBatch(
+                    1, (("example_string", "value"),), 100000, 100001, outcome, "lost answer")]
+                with self.assertRaisesRegex(AssertionError, f"came to {outcome} while db1 was coming back: lost answer"):
+                    scenarios.scenario_27_database_member_dies_under_load()
+        self.finish.assert_not_called()
+
+    def test_27_rejects_an_early_refusal_even_when_later_and_final_batches_confirm(self):
+        self.prepare_load()
+        pairs = (("example_string", "value"),)
+        self.oracle.batches.return_value = [
+            scenarios.JournalBatch(1, pairs, 99998, 99999, scenarios.JOURNAL_REFUSED, "no writer"),
+            scenarios.JournalBatch(2, pairs, 100000, 100001, scenarios.JOURNAL_CONFIRMED, "ok")]
+        self.oracle.write_batch.return_value = SimpleNamespace(outcome=scenarios.JOURNAL_CONFIRMED)
+        self.oracle.verify.return_value = "journal proof"
+        self.finish.side_effect = self.finish_impl
+        with self.assertRaisesRegex(AssertionError, "was refused before its first write: no writer"):
+            scenarios.scenario_27_database_member_dies_under_load()
+        self.finish.assert_not_called()
+
+    def test_27_finishes_the_journal_only_after_the_member_returns_and_loads_stop(self):
+        self.prepare_load()
+        self.oracle.batches.return_value = [scenarios.JournalBatch(
+            1, (), 99998, 99999, scenarios.JOURNAL_AMBIGUOUS, "lost answer")]
+        steps = Mock()
+        steps.attach_mock(self.oracle.start, "oracle_start")
+        steps.attach_mock(self.session, "session")
+        steps.attach_mock(self.load.start, "load_start")
+        steps.attach_mock(self.journal.start, "journal_start")
+        steps.attach_mock(self.start, "member_start")
+        steps.attach_mock(self.load.stop, "load_stop")
+        steps.attach_mock(self.journal.stop, "journal_stop")
+        steps.attach_mock(self.finish, "finish")
+        with patch.object(scenarios, "member_back", return_value=(2, 3)) as back:
+            steps.attach_mock(back, "member_back")
+            detail = scenarios.scenario_27_database_member_dies_under_load()
+        self.assertEqual([call.oracle_start(), call.session("m2", "primary"), call.load_start(),
+                          call.journal_start(), call.member_start("db1"),
+                          call.member_back("db1", 3, scenarios.DB_MEMBER_RETURN_TIMEOUT, 0.0),
+                          call.load_stop(), call.journal_stop(), call.load_stop(), call.journal_stop(),
+                          call.finish(self.oracle, self.journal)], steps.mock_calls)
+        self.assertIn("journal: journal proof", detail)
+
+    def test_27_cleanup_does_not_replace_the_original_failure(self):
+        self.prepare_load()
+        original = AssertionError("load stopped")
+        self.steady.side_effect = [{"m1": 0, "m2": 0}, original]
+        self.start.side_effect = RuntimeError("cannot start")
+        with patch("builtins.print") as printed:
+            with self.assertRaises(AssertionError) as caught:
+                scenarios.scenario_27_database_member_dies_under_load()
+        self.assertIs(original, caught.exception)
+        self.start.assert_called_once_with("db1")
+        printed.assert_called_once_with("    scenario 27 recovery failed: cannot start", flush=True)
+
+    def test_27_stops_both_loads_and_recovers_when_journal_stop_and_recovery_fail(self):
+        self.prepare_load()
+        original = AssertionError("probe failed while the member was down")
+        self.start.side_effect = RuntimeError("cannot start")
+        for error_type in (OSError, SystemExit):
+            with self.subTest(error_type=error_type):
+                self.down.clear()
+                self.steady.side_effect = [{"m1": 0, "m2": 0}, original]
+                self.journal.stop.side_effect = error_type("journal writer failed")
+                self.load.stop.reset_mock()
+                self.journal.stop.reset_mock()
+                self.start.reset_mock()
+                with patch("builtins.print") as printed:
+                    with self.assertRaises(AssertionError) as caught:
+                        scenarios.scenario_27_database_member_dies_under_load()
+                self.assertIs(original, caught.exception)
+                self.load.stop.assert_called_once_with()
+                self.journal.stop.assert_called_once_with()
+                self.start.assert_called_once_with("db1")
+                self.assertEqual([call("    scenario 27 journal load recovery failed: journal writer failed", flush=True),
+                                  call("    scenario 27 recovery failed: cannot start", flush=True)], printed.call_args_list)
+        self.finish.assert_not_called()
+
+    def test_27_unconfirmed_return_restores_and_waits_without_replacing_the_first_failure(self):
+        self.prepare_load()
+        self.start.side_effect = self.down.discard
+        for cleanup_fails in (False, True):
+            with self.subTest(cleanup_fails=cleanup_fails):
+                original = scenarios.ScenarioTimeout("returned member is not Synced")
+                cleanup_error = RuntimeError("recovery member unavailable")
+                back_impl = scenarios.member_back
+                self.start.reset_mock()
+                self.load.stop.reset_mock()
+                self.journal.stop.reset_mock()
+                with patch.object(scenarios, "member_back") as wait, \
+                        patch.object(scenarios, "restore_stand", wraps=scenarios.restore_stand) as restore, \
+                        patch("builtins.print") as printed:
+                    def back(*args):
+                        if wait.call_count == 1:
+                            self.load.stop.assert_not_called()
+                            self.journal.stop.assert_not_called()
+                            raise original
+                        if cleanup_fails:
+                            raise cleanup_error
+                        return back_impl(*args)
+
+                    wait.side_effect = back
+                    with self.assertRaises(scenarios.ScenarioTimeout) as caught:
+                        scenarios.scenario_27_database_member_dies_under_load()
+                self.assertIs(original, caught.exception)
+                self.assertEqual([call("db1"), call("db1")], self.start.call_args_list)
+                self.assertEqual(2, wait.call_count)
+                self.assertEqual(call("db1", 3, scenarios.DB_MEMBER_RETURN_TIMEOUT), wait.call_args_list[-1])
+                self.assertIn(call(True, "scenario 27", ANY), restore.call_args_list)
+                if cleanup_fails:
+                    printed.assert_called_once_with("    scenario 27 recovery failed: recovery member unavailable",
+                                                    flush=True)
+                else:
+                    printed.assert_not_called()
+        self.finish.assert_not_called()
 
     def test_28_returns_to_the_full_component_and_checks_each_acknowledged_write(self):
         self.prepare_load()

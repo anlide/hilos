@@ -851,7 +851,7 @@ carried every scenario on a single shape is retired (HIL-1218).
 | binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations, 46 browser liveness across masters, 47 a node with another project time zone refused on both ends |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet, 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes, 43 waiting ballast retries after a slave returns without another ask (cleanup checked with `composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18`) |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart, 48 daemon hang self-heal |
-| roblox-game-server | Vue | three masters and one slave: `m1` without capacity — it votes and hosts no placed work; `m2`, `m3` workers with `ram=10`, `slots=64`; slave `s1` worker with `ram=4`, `slots=64` | Galera of two data nodes and the `garbd` arbitrator, which votes and stores no data, behind HAProxy; the application uses both data nodes: HAProxy gives each node a data node of its own — `m1` and `m3` the first, `m2` and `s1` the second — so a row written by one node is always read by a node on the other data node, and a node whose data node is down is led to the living one | 26 database is one cluster, 49 a row written by one node is read by another through another data node, past the process copy, and after that connection is lost, 50 journal is one logical set on every server; 51 a working master that does not lead is cut off and stops its work before it runs elsewhere; Galera fault proofs below (not in the code yet — HIL-2040) |
+| roblox-game-server | Vue | three masters and one slave: `m1` without capacity — it votes and hosts no placed work; `m2`, `m3` workers with `ram=10`, `slots=64`; slave `s1` worker with `ram=4`, `slots=64` | Galera of two data nodes and the `garbd` arbitrator, which votes and stores no data, behind HAProxy; the application uses both data nodes: HAProxy gives each node a data node of its own — `m1` and `m3` the first, `m2` and `s1` the second — so a row written by one node is always read by a node on the other data node, and a node whose data node is down is led to the living one. HAProxy closes the sessions of a data node it marks down: a data node cut off from the majority stays reachable and refuses every statement, and Hilos does not reconnect from a member outside the primary component, so a proxy in front of Galera must close them | 26 database is one cluster, 49 a row written by one node is read by another through another data node, past the process copy, and after that connection is lost, 50 journal is one logical set on every server; 51 a working master that does not lead is cut off and stops its work before it runs elsewhere; 27 the data node under the settings library dies under load: every node writes on through the survivor and the arbitrator, and it comes back, catches up from the survivor that donates while it serves, and takes connections only when Synced, with the journal oracle on both; 53 the arbitrator lost and back; 54 a data node cut off from the other and the arbitrator is fenced while the majority writes on |
 | file-gallery-manager | React | two masters without capacity and three slave workers with `ram=10` / `6` / `4`, each with `slots=64` | primary and one read-only replica behind one address that always leads to the primary, no automatic promotion | 31 replica keeps up with the primary, 50 journal is one logical set on every server, 52 losing the leader of the two masters leaves no heir: every slave carrying work stops it, nobody leads, until the leader returns, 55 the primary and then the replica are lost: while the primary is down no write is confirmed and no application connection reaches the replica; both return without a Hilos restart and hold one journal |
 | concert-tickets | Angular | five equal master workers with `ram=10`, `slots=64`, no slaves | Galera of three data nodes behind HAProxy; the application uses all three: HAProxy lays each next connection on the least busy data node | 21 schema rolled out once by five nodes that start together on an empty Galera database, 26 database is one cluster; 27/28 (not in the code yet — HIL-2041) |
 
@@ -864,9 +864,9 @@ or a container memory limit.
 |---|---|---|---|---|
 | roblox-game-server | Hilos | `m1` alive without capacity | It votes and never hosts placed work; work runs on `m2`/`m3`/`s1`. | scenario 51 |
 | roblox-game-server | Hilos | A working master that does not lead is cut off | Its work moves to the remaining capacity — the other working master or the slave — never two executors at once; `m1` takes none; no rebalance is owed on return. | scenario 51 |
-| roblox-game-server | DB | `garbd` is lost | The two data nodes keep quorum and writes continue. | (not in the code yet — HIL-2040) |
-| roblox-game-server | DB | One data node is lost, `garbd` alive | Survivor and arbitrator keep quorum and writes continue; the returned node takes connections only when Synced. | (not in the code yet — HIL-2040) |
-| roblox-game-server | DB | Data node + `garbd` are cut off from the other data node | The majority continues; the minority takes no operations. | (not in the code yet — HIL-2040) |
+| roblox-game-server | DB | `garbd` is lost | The two data nodes keep quorum and writes continue. | scenario 53 |
+| roblox-game-server | DB | One data node is lost, `garbd` alive | Survivor and arbitrator keep quorum and writes continue; the returned node takes connections only when Synced. | scenario 27 |
+| roblox-game-server | DB | Data node + `garbd` are cut off from the other data node | The majority continues; the minority takes no operations, its sessions are closed by the proxy and its nodes write through the majority. | scenario 54 |
 | file-gallery-manager | Hilos | Either of the two masters is lost | Quorum 2 of 2 is gone: leadership and placed work stop safely, never two executors; the three slaves add no votes; the returned pair elects one leader and work resumes. | 52 on file-gallery-manager (the leader is lost); losing the other master is the quorum condition of 7 and the stop of 36 on binance-btc-tracker (36 parked, F-012) |
 | file-gallery-manager | Hilos | One slave is lost, masters healthy | Its work moves to the remaining capacity. | 4 slave-kill failover on ecommerce-shop: the same failover; the probe fleet costs a slot and no ram, so 10/6/4 change nothing (owner's decision 2026-11-14) |
 | file-gallery-manager | DB | Replica is lost | The primary is unaffected. | scenario 55 |
@@ -1115,11 +1115,25 @@ composer -d demo/file-gallery-manager run test:cluster:scenarios -- 50
 composer -d demo/roblox-game-server run test:cluster:scenarios -- 50
 ```
 
+Scenario **27** is carried by roblox-game-server, on two data nodes and `garbd`:
+one cycle kills a data node under load and brings it back, the return checks
+once split off as 28 included, and the journal oracle holds both data nodes
+after it; **53** and **54** take the arbitrator away and cut a data node off.
+Scenario **28** stays in the harness with no carrier; concert-tickets decides
+on 27/28 (not in the code yet — HIL-2041). Their component model and
+preconditions count votes separately from data members.
+
+```bash
+composer -d demo/roblox-game-server run test:cluster:scenarios -- 27 53 54
+```
+
 Scenario **55** runs on file-gallery-manager, the only stand carrying a
 replica (`Need(database_replicas=1)`). It loses the primary and then the
 replica and returns both, with the JournalOracle writing one synchronous batch
-at a time. While the primary is down, a write is not confirmed and no application
-connection reaches the replica; returned, the nodes write again without restarting
+at a time. Its final confirmed batch, replica settling and journal verification
+use the same `finish_journal()` as 27. While the primary is down, a write is not
+confirmed and no application connection reaches the replica; returned, the nodes
+write again without restarting
 any node. The replica is then lost while the primary writes on. Primary first,
 because restarting the replica after the primary's return replaces waiting for its
 reconnect timer; the write made while the primary is down waits out the CLI's
@@ -1130,14 +1144,6 @@ reconnect timer; the write made while the primary is down waits out the CLI's
 ```bash
 composer -d demo/file-gallery-manager run test:cluster:scenarios -- 55
 ```
-
-Scenarios **27/28 have no current carrier**: their implementations, registry
-entries and shape guards stay in the harness for future stands. They are not
-run or counted as passed by any current matrix.
-Scenarios 27/28 return on concert-tickets (not in the code yet — HIL-2041);
-their component model and preconditions count votes separately from data
-members. Scenarios 27/28 also take the two-data-node + `garbd` form on
-roblox-game-server (not in the code yet — HIL-2040).
 
 The one-time schema rollout is needed on one server too (HIL-1228). Nodes that
 start together also read one marker of their database — the first write is

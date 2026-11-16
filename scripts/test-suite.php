@@ -428,12 +428,15 @@ $steps = array_merge($steps, [
     // through both data members, scenario 49 reads what one node wrote through the other one,
     // scenario 50 holds both data members to one journal, and scenario 51 cuts off a working
     // master that does not lead, which stops its work before it runs on another node.
+    // Scenario 27 kills the data member under the settings library under load and brings it
+    // back, with the journal oracle; 53 loses and returns the arbitrator; 54 cuts a data member
+    // off the majority and mends it.
     // Beside the other fleets and any e2e step, in the group of its stand, so that a browser step
     // over the same compose project would not run beneath it (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
     // demo's unit suite runs in roblox-game-server-php. Seconds: one measurement of this step on
-    // one stand (HIL-2036, 300 s with the stand's up and down); HIL-2043 measures it in the full
-    // run.
+    // one stand (HIL-2040); HIL-2043 measures it in the full run. The measured step took 177.3 s,
+    // before artifact collection and final stand teardown.
     [
         'id' => 'roblox-game-server-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -442,7 +445,7 @@ $steps = array_merge($steps, [
         'deps' => ['roblox-game-server-deps'],
         'group' => 'roblox-game-server-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 300,
+        'seconds' => 177,
         'downsStand' => true,
     ],
     // Daemon clock, environment mismatch and orphans, and section navigation; one

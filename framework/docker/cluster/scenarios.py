@@ -81,9 +81,17 @@ Plus scenarios beyond that matrix:
                                cluster, reads wait for the cluster's writes, and the application
                                is connected to each (HIL-1230)
  27 database member dies       a member is killed while every node writes; each writes on through
-                               the others (HIL-1231)
+                               the others, and the member comes back, catches up and takes
+                               connections only when Synced, while no write fails; the journal
+                               oracle holds every data member (HIL-1231, HIL-2040)
   28 database member comes      the member comes back, catches up, and is handed connections again
                                (HIL-1231)
+ 53 database arbitrator lost   the arbitrator is killed while every node writes: both data members
+    and back                   keep a primary component of two votes and serve; it comes back to
+                               three votes (HIL-2040)
+ 54 database member cut off    a data member cut off from the other and the arbitrator leaves the
+    is fenced                  primary component, refuses every read and write and keeps no session;
+                               the majority writes on, the mended member catches up (HIL-2040)
  32 another admin view mode     a node whose HILOS_ADMIN_VIEW_MODE_ENABLED differs from its
                                neighbours' is refused on both ends (HIL-1274)
  35 rt row deleted while cut    a cut-off neighbour sweeps rows deleted by each set owner on the
@@ -385,6 +393,8 @@ DB_LOAD_STEADY = 3
 # Each probe's worker also drains the other nodes' DB syncs. An unbounded writer can
 # queue more work than that worker processes and time out its own command before the fault.
 DB_LOAD_INTERVAL_SECONDS = 0.5
+# One journal call at a time: batch windows must not overlap for JournalOracle.verify().
+JOURNAL_LOAD_INTERVAL_SECONDS = 1.0
 
 # The RT collection of the browser sockets, a copy of which every process holds; mirrors
 # BinanceBtcTrackerRtContext::connections (demo/binance-btc-tracker/backend/Runtime/View/Context/
@@ -512,6 +522,12 @@ def db_sql(statement, member=None):
     return ctl_out("db-sql", statement, *([member] if member else []))
 
 
+def db_sql_refusal(statement, member):
+    """None when the member answered, otherwise the command's refusal or failure text."""
+    outcome = control.execute(STAND, "db-sql", statement, member)
+    return None if outcome.code == 0 else (outcome.err or outcome.out)
+
+
 def db_log(member):
     """One database member's container log so far, or '' when there is none."""
     return ctl_out("db-log", member)
@@ -527,6 +543,30 @@ def db_start(member):
     """Start the same member container again, retaining its data."""
     outcome = control.execute(STAND, "db-start", member)
     assert outcome.code == 0, f"could not start {member}: {outcome.err or outcome.out}"
+
+
+def db_voter_kill(voter):
+    """Kill the declared database voter without treating it as a SQL server."""
+    outcome = control.execute(STAND, "db-voter-kill", voter)
+    assert outcome.code == 0, f"could not db-voter-kill {voter}: {outcome.err or outcome.out}"
+
+
+def db_voter_start(voter):
+    """Start the same database voter again."""
+    outcome = control.execute(STAND, "db-voter-start", voter)
+    assert outcome.code == 0, f"could not db-voter-start {voter}: {outcome.err or outcome.out}"
+
+
+def db_cut(*services):
+    """Cut the named database services off the stand's network."""
+    outcome = control.execute(STAND, "db-cut", *services)
+    assert outcome.code == 0, f"could not db-cut {services}: {outcome.err or outcome.out}"
+
+
+def db_mend(*services):
+    """Reconnect the named database services to the stand's network."""
+    outcome = control.execute(STAND, "db-mend", *services)
+    assert outcome.code == 0, f"could not db-mend {services}: {outcome.err or outcome.out}"
 
 
 def proxy_states():
@@ -3929,6 +3969,9 @@ JOURNAL_AMBIGUOUS = "ambiguous"
 # prefix CommandChannelClientTrait::refusalText() gives the refusal it prints on stderr.
 JOURNAL_WROTE_LINE = "Wrote {key} = {value}, accepted at epoch ms "
 JOURNAL_REFUSAL_PREFIX = "Refused: "
+# SettingsLibraryAgent reports "Write N was refused" after starting the batch: earlier pairs
+# were written, and even N=1 may have committed before its reply was lost.
+JOURNAL_WRITE_REFUSAL_PREFIX = "Refused: Write "
 # The channel a test write's receipt names (JournalReceiptData): the command comes in over the CLI
 # channel, and its name is both the action and the source of the receipt.
 JOURNAL_RECEIPT_CHANNEL = "cli"
@@ -3954,9 +3997,9 @@ class JournalOracle:
     server's, and verify() judges what every server journaled against what the calls came to.
     write_batch() may be called from another thread than the one that reads, but one call at a
     time: verify() binds each receipt to the window of exactly one batch, and the windows of calls
-    that overlap would each hold it. Call verify() after the load has stopped. The fault scenarios of
-    HIL-2040, HIL-2041 and scenario 55 on file-gallery-manager build their own load on write_batch()
-    within that.
+    that overlap would each hold it. Call verify() after the load has stopped. JournalLoad below
+    builds the fault load for scenario 27; scenario 55 writes synchronous batches. Both use
+    finish_journal() for the final confirmed batch and verification.
     """
 
     def __init__(self):
@@ -4137,7 +4180,8 @@ class JournalOracle:
     @staticmethod
     def _outcome(pairs, outcome):
         """Classify one call: confirmed when it exited 0 and stdout acknowledges every pair, one line
-        each and in order; refused when it failed with the daemon's refusal on stderr; else ambiguous."""
+        each and in order; refused only for a whole-batch refusal before the first write;
+        else ambiguous."""
         if outcome.code == 0:
             lines = outcome.out.splitlines()
             acknowledged = len(lines) == len(pairs) and all(
@@ -4145,6 +4189,8 @@ class JournalOracle:
                 for line, prefix in zip(lines, (JOURNAL_WROTE_LINE.format(key=key, value=value)
                                                 for key, value in pairs)))
             return JOURNAL_CONFIRMED if acknowledged else JOURNAL_AMBIGUOUS
+        if outcome.err.startswith(JOURNAL_WRITE_REFUSAL_PREFIX):
+            return JOURNAL_AMBIGUOUS
         return JOURNAL_REFUSED if outcome.err.startswith(JOURNAL_REFUSAL_PREFIX) else JOURNAL_AMBIGUOUS
 
     @staticmethod
@@ -4375,8 +4421,9 @@ def scenario_50_journal_is_one_logical_set_on_every_server():
     different servers are not duplicates.
 
     It restarts nothing and builds no load. An ordinary restart of a node is scenario 40's (on
-    online-testing); a database server lost and caught up again is HIL-2040, HIL-2041 and scenario 55
-    on file-gallery-manager's; exactly-once business operations when a reply is lost are not promised here.
+    online-testing); a database server lost and caught up again is 27's on roblox-game-server,
+    HIL-2041's and 55's on file-gallery-manager; exactly-once business operations when a reply
+    is lost are not promised here.
     """
     wait_converge(ALL_NODES)
     oracle = JournalOracle()
@@ -6311,6 +6358,10 @@ CLUSTER_STATUS_SQL = ("SHOW GLOBAL STATUS WHERE Variable_name IN "
                       "('wsrep_cluster_size', 'wsrep_cluster_status', 'wsrep_local_state_comment')")
 SYNC_WAIT_SQL = "SELECT @@SESSION.wsrep_sync_wait"
 DIRTY_READS_SQL = "SELECT @@SESSION.wsrep_dirty_reads"
+NON_PRIMARY_REFUSAL = "WSREP has not yet prepared node for application use"
+FENCE_READ_SQL = "SELECT COUNT(*) FROM `hilos_probe_value`"
+FENCE_WRITE_SQL = "UPDATE `hilos_probe_value` SET `value` = `value` WHERE 1 = 0"
+SESSIONS_SQL = "SHOW PROCESSLIST"
 WSREP_READ_BIT = 1
 
 
@@ -6433,6 +6484,18 @@ def app_connections_sql(user):
             f"WHERE USER = '{user}' AND ID <> CONNECTION_ID()")
 
 
+def app_sessions_on(member, user):
+    """Count the user's sessions through SHOW, which also answers outside the primary component."""
+    rows = db_sql(SESSIONS_SQL, member)
+    assert rows, f"{member} did not answer {SESSIONS_SQL}"
+    sessions = 0
+    for line in rows.splitlines():
+        fields = line.split("\t")
+        if len(fields) >= 8 and fields[1] == user and not fields[7].startswith(SESSIONS_SQL):
+            sessions += 1
+    return sessions
+
+
 def scenario_31_replica_keeps_up_with_the_primary():
     """Every replica took the writes of all preceding scenarios and remains read-only.
 
@@ -6502,6 +6565,7 @@ class DbLoad:
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._attempts = {node: [] for node in ALL_NODES}
+        self._writer_locks = {node: threading.Lock() for node in ALL_NODES}
         self._threads = []
 
     def start(self):
@@ -6519,18 +6583,21 @@ class DbLoad:
         key = f"cluster_db_load_{node}"
         index = 0
         while not self._stop.is_set():
-            index += 1
-            value = f"w{index}"
-            started = time.monotonic()
-            outcome = control.client(STAND, node, "test:cluster:db:write", key, value)
-            prefix = f"Wrote {key}={value} via "
-            member = next((line[len(prefix):] for line in outcome.out.splitlines()
-                           if line.startswith(prefix)), None)
-            ok = outcome.code == 0 and bool(member)
-            error = "" if ok else (outcome.err or outcome.out or f"exit {outcome.code}").strip()
-            attempt = DbWriteAttempt(started, time.monotonic(), node, value, ok, member if ok else None, error)
-            with self._lock:
-                self._attempts[node].append(attempt)
+            with self._writer_locks[node]:
+                if self._stop.is_set():
+                    break
+                index += 1
+                value = f"w{index}"
+                started = time.monotonic()
+                outcome = control.client(STAND, node, "test:cluster:db:write", key, value)
+                prefix = f"Wrote {key}={value} via "
+                member = next((line[len(prefix):] for line in outcome.out.splitlines()
+                               if line.startswith(prefix)), None)
+                ok = outcome.code == 0 and bool(member)
+                error = "" if ok else (outcome.err or outcome.out or f"exit {outcome.code}").strip()
+                attempt = DbWriteAttempt(started, time.monotonic(), node, value, ok, member if ok else None, error)
+                with self._lock:
+                    self._attempts[node].append(attempt)
             self._stop.wait(DB_LOAD_INTERVAL_SECONDS)
 
     def attempts(self, node):
@@ -6539,6 +6606,20 @@ class DbLoad:
 
     def last_acknowledged(self, node):
         return next((attempt for attempt in reversed(self.attempts(node)) if attempt.ok), None)
+
+    def assert_last_acknowledged(self, member, node):
+        """Read the member against this node's last ACK while only its writer is held.
+
+        The same lock covers the CLI call and recording its outcome: a call already in flight
+        must answer before the ACK and SELECT are observed together. Other nodes keep writing,
+        and this node resumes as soon as the check returns or raises.
+        """
+        with self._writer_locks[node]:
+            last = self.last_acknowledged(node)
+            assert last is not None, f"{node} acknowledged no database write"
+            held = database_value(member, node)
+            assert held == last.value, f"{member} holds {held} for {node}, which last wrote {last.value}"
+            return last
 
     def member_of(self, node):
         last = self.last_acknowledged(node)
@@ -6549,8 +6630,8 @@ class DbLoad:
                 if attempt.started >= since and not attempt.ok]
 
 
-def wait_db_steady(load, since, timeout, victim=None):
-    """Wait for three consecutive acknowledged writes per node, begun after `since`."""
+def wait_db_steady(load, since, timeout, victim=None, steady=DB_LOAD_STEADY):
+    """Wait for `steady` consecutive acknowledged writes per node, begun after `since`."""
     deadline = time.monotonic() + timeout
     while True:
         recovered = {}
@@ -6561,7 +6642,7 @@ def wait_db_steady(load, since, timeout, victim=None):
                 if not attempt.ok:
                     break
                 streak.append(attempt)
-            if len(streak) >= DB_LOAD_STEADY:
+            if len(streak) >= steady:
                 recovered[node] = streak[0].started - since
         if len(recovered) == len(ALL_NODES):
             return recovered
@@ -6572,9 +6653,58 @@ def wait_db_steady(load, since, timeout, victim=None):
             if victim is not None:
                 raise ScenarioTimeout(f"{node} did not write again within {timeout:.0f}s of killing "
                                       f"{victim}: {last_error}")
-            raise ScenarioTimeout(f"{node} did not produce {DB_LOAD_STEADY} steady writes "
+            raise ScenarioTimeout(f"{node} did not produce {steady} steady writes "
                                   f"within {timeout:.0f}s: {last_error}")
         time.sleep(POLL_INTERVAL)
+
+
+class JournalLoad:
+    """One background caller: outcomes stay in the oracle, and stop propagates writer failures."""
+
+    def __init__(self, oracle):
+        self._oracle = oracle
+        self._stop = threading.Event()
+        self._thread = None
+        self._error = None
+
+    def start(self):
+        self._thread = threading.Thread(target=self._write, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
+        if self._error is not None:
+            raise self._error
+
+    def _write(self):
+        try:
+            while not self._stop.is_set():
+                self._oracle.write_batch(self._oracle.next_pairs())
+                self._stop.wait(JOURNAL_LOAD_INTERVAL_SECONDS)
+        except BaseException as error:
+            self._error = error
+
+
+def finish_journal(oracle, load):
+    """Stop the load and require a confirmed last batch: verify's final-value check reads its values."""
+    load.stop()
+    batch = oracle.write_batch(oracle.next_pairs())
+    assert batch.outcome == JOURNAL_CONFIRMED, \
+        f"the last journal batch after the fault came to {batch.outcome}: {batch.detail}"
+    oracle.settle()
+    return oracle.verify(oracle.batches())
+
+
+def restore_stand(failed, label, action):
+    """Restore the stand without replacing the scenario's original failure with a cleanup failure."""
+    try:
+        action()
+    except BaseException as error:
+        if not failed:
+            raise
+        print(f"    {label} recovery failed: {error}", flush=True)
 
 
 def database_members_by_hostname():
@@ -6694,8 +6824,8 @@ def member_back(member, count, timeout, since_start=None):
 
 
 def database_value(member, node):
-    """The setting a node's load writer last placed, read directly from one member."""
-    return db_sql(f"SELECT `value` FROM `hilos_setting` WHERE `key` = 'cluster_db_load_{node}'", member)
+    """The probe a node's load writer placed in hilos_probe_value, read directly from one member."""
+    return db_sql(f"SELECT `value` FROM `hilos_probe_value` WHERE `key` = 'cluster_db_load_{node}'", member)
 
 
 def assert_member_synced(member, count):
@@ -6710,7 +6840,11 @@ def assert_member_synced(member, count):
 
 
 def scenario_27_database_member_dies_under_load():
-    """Every node writes through the survivors when the member under the first probe dies."""
+    """Kill the data member under the settings library and bring it back under continuous load.
+
+    The kill and return that 27 and 28 used to split are one cycle here. The journal oracle
+    covers the fault and the return alongside every node's probe writes (HIL-2040).
+    """
     wait_converge(ALL_NODES)
     wait_database_votes()
     members = [member.service for member in STAND.database_members]
@@ -6723,23 +6857,27 @@ def scenario_27_database_member_dies_under_load():
         assert outcome.code == 0, f"could not inspect {node}'s start: {outcome.err}"
         started_at[node] = outcome.out.strip()
 
+    oracle = JournalOracle()
+    oracle.start()
+    hostname = application_session(oracle.node_id, "primary")["databaseMember"]
+    victim = by_host.get(hostname)
+    assert victim is not None, f"{oracle.node_id} uses an unknown data member {hostname}"
+    journal = JournalLoad(oracle)
     load = DbLoad()
-    victim = None
-    killed = False
-    back = 0.0
+    killed = started = False
     try:
         load.start()
+        journal.start()
         wait_db_steady(load, 0, DB_MEMBER_DEATH_TIMEOUT)
-        victim = by_host.get(load.member_of(MASTERS[0]))
-        assert victim is not None, f"{MASTERS[0]} wrote through an unknown database member"
+        on_victim = [node for node in ALL_NODES if by_host.get(load.member_of(node)) == victim]
         db_kill(victim)
         killed = True
         killed_at = time.monotonic()
         recovered = wait_db_steady(load, killed_at, DB_MEMBER_DEATH_TIMEOUT, victim)
-        load.stop()
 
-        new_member = by_host.get(load.member_of(MASTERS[0]))
-        assert new_member != victim, f"{MASTERS[0]} still writes through {victim}, which was killed"
+        for node in on_victim:
+            assert by_host.get(load.member_of(node)) != victim, \
+                f"{node} still writes through {victim}, which was killed"
         survivors = [member for member in members if member != victim]
         for member in survivors:
             status = member_status(member)
@@ -6752,26 +6890,59 @@ def scenario_27_database_member_dies_under_load():
             local = status.get("wsrep_local_state_comment")
             assert local == "Synced", f"{member} is {local}, not Synced"
             for node in ALL_NODES:
-                last = load.last_acknowledged(node)
-                assert last is not None, f"{node} acknowledged no database write"
-                held = database_value(member, node)
-                assert held == last.value, f"{member} holds {held} for {node}, which last wrote {last.value}"
+                load.assert_last_acknowledged(member, node)
         for node in ALL_NODES:
             outcome = control.node_started_at(STAND, node)
             assert outcome.code == 0 and outcome.out.strip() == started_at[node], \
                 f"{node} was restarted while {victim} was down"
         failed = len(load.failures_since(killed_at))
-    finally:
+        wait_db_steady(load, time.monotonic(), DB_MEMBER_DEATH_TIMEOUT, victim)
+        mark = time.monotonic()
+        mark_ms = int(time.time() * 1000)
+        db_start(victim)
+        synced, up = member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT, time.monotonic())
+        started = True
         load.stop()
-        if killed:
-            db_start(victim)
-            _, back = member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT)
+        journal.stop()
 
+        for node in ALL_NODES:
+            last = load.last_acknowledged(node)
+            assert last is not None, f"{node} acknowledged no database write"
+            held = database_value(victim, node)
+            assert held == last.value, f"{victim} came back without {node}'s write: holds {held}, {node} last wrote {last.value}"
+        after_start = [attempt for node in ALL_NODES for attempt in load.attempts(node)
+                       if attempt.finished >= mark]
+        for attempt in after_start:
+            assert attempt.ok, f"{attempt.node}'s write failed while {victim} was coming back: {attempt.error}"
+        for batch in oracle.batches():
+            if batch.started_ms >= mark_ms:
+                assert batch.outcome == JOURNAL_CONFIRMED, \
+                    f"journal {JournalOracle._batch_text(batch)} came to {batch.outcome} while {victim} was coming back: {batch.detail}"
+            assert batch.outcome != JOURNAL_REFUSED, \
+                f"journal {JournalOracle._batch_text(batch)} was refused before its first write: {batch.detail}"
+    finally:
+        failed_now = sys.exc_info()[0] is not None
+        try:
+            restore_stand(failed_now, "scenario 27 database load", load.stop)
+        finally:
+            failed_now = failed_now or sys.exc_info()[0] is not None
+            try:
+                restore_stand(failed_now, "scenario 27 journal load", journal.stop)
+            finally:
+                failed_now = failed_now or sys.exc_info()[0] is not None
+                if killed and not started:
+                    restore_stand(failed_now, "scenario 27", lambda: (
+                        db_start(victim), member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT)))
+
+    judged = finish_journal(oracle, journal)
     recovery = ", ".join(f"{node} after {recovered[node]:.1f}s" for node in ALL_NODES)
-    return (f"{victim} killed under {MASTERS[0]}'s probe; every node wrote again ({recovery}), "
-            f"{MASTERS[0]} through {new_member}; {failed} write(s) failed in the window; "
+    moved = ", ".join(on_victim)
+    return (f"{victim} killed under {oracle.node_id}'s settings library; every node wrote again ({recovery}), "
+            f"{moved} moved through {', '.join(survivors)}; {failed} write(s) failed in the window; "
             f"{', '.join(survivors)} kept a primary cluster of {in_words(STAND.database_votes - 1)} votes "
-            f"holding every acknowledged write; {victim} back and synced after {back:.0f}s")
+            f"holding every acknowledged write; {victim} brought back: synced after {synced:.0f}s "
+            f"and up behind the proxy after {up:.0f}s, holding every write acknowledged while it was away; "
+            f"none of {len(after_start)} writes failed while it came back; journal: {judged}")
 
 
 def scenario_28_database_member_comes_back_and_catches_up():
@@ -6823,6 +6994,200 @@ def scenario_28_database_member_comes_back_and_catches_up():
             f"acknowledged while it was away; none of {len(after_start)} writes failed while it came back")
 
 
+def scenario_53_database_arbitrator_lost_and_back():
+    """A vote holds no data: losing the arbitrator leaves a majority of two votes out of three.
+
+    Both data servers keep serving, and the returning arbitrator restores three votes.
+    This guards the stand's declared shape as well as its quorum.
+    """
+    wait_converge(ALL_NODES)
+    wait_database_votes()
+    members = [member.service for member in STAND.database_members]
+    for member in members:
+        assert_member_synced(member, STAND.database_votes)
+    voter = STAND.database_voters[0].service
+    started_at = {}
+    by_host = database_members_by_hostname()
+    for node in ALL_NODES:
+        outcome = control.node_started_at(STAND, node)
+        assert outcome.code == 0, f"could not inspect {node}'s start: {outcome.err}"
+        started_at[node] = outcome.out.strip()
+        # Scenario 27 leaves existing sessions on the survivor. Reopen each probe session
+        # before the fault so the proxy can place it on its node's preferred data member again.
+        session = application_session(node, "primary")
+        connection_id = session["databaseConnectionId"]
+        db_sql(f"KILL {connection_id}", by_host.get(session["databaseMember"]))
+        session = application_session(node, "primary")
+        assert session["databaseConnectionId"] != connection_id, \
+            f"{node} kept databaseConnectionId={connection_id} before the arbitrator fault"
+    user = STAND.database.user
+
+    load = DbLoad()
+    killed = False
+    try:
+        load.start()
+        wait_db_steady(load, 0, DB_MEMBER_DEATH_TIMEOUT)
+        db_voter_kill(voter)
+        killed = True
+        lost_at = time.monotonic()
+        deadline = lost_at + DB_MEMBER_DEATH_TIMEOUT
+        while True:
+            observed = {}
+            for member in members:
+                status = member_status(member)
+                observed[member] = (status.get("wsrep_cluster_size"), status.get("wsrep_cluster_status"),
+                                    status.get("wsrep_local_state_comment"))
+            if all(state == (str(STAND.database_votes - 1), "Primary", "Synced")
+                   for state in observed.values()):
+                break
+            if time.monotonic() >= deadline:
+                for member, (_, state, _) in observed.items():
+                    assert state == "Primary", (f"{member} left the primary component when {voter} was lost: "
+                                                "two votes of three are a majority")
+                raise AssertionError(f"data members did not settle after {voter} was lost: {observed}")
+            time.sleep(POLL_INTERVAL)
+
+        states = proxy_states()
+        conns = {}
+        for member in members:
+            state = states.get(member)
+            assert state == "UP", (f"{member} is {state} at the proxy after {voter} was lost: "
+                                   "the arbitrator holds no data, its loss takes no data member away")
+            statement = app_connections_sql(user)
+            answer = db_sql(statement, member)
+            assert answer.isdigit(), f"{member} did not answer: {statement}"
+            conns[member] = int(answer)
+            assert conns[member] >= 1, (f"{member} holds no connection of {user}: the one address does not lead "
+                                        "to every member, so the database is not written as a multi-primary")
+        recovered = wait_db_steady(load, lost_at, DB_MEMBER_DEATH_TIMEOUT, voter, steady=1)
+        for node in ALL_NODES:
+            outcome = control.node_started_at(STAND, node)
+            assert outcome.code == 0 and outcome.out.strip() == started_at[node], \
+                f"{node} was restarted while {voter} was down"
+        db_voter_start(voter)
+        wait_database_votes()
+        killed = False
+        load.stop()
+        for member in members:
+            for node in ALL_NODES:
+                last = load.last_acknowledged(node)
+                assert last is not None, f"{node} acknowledged no database write"
+                held = database_value(member, node)
+                assert held == last.value, f"{member} holds {held} for {node}, which last wrote {last.value}"
+    finally:
+        failed_now = sys.exc_info()[0] is not None
+        try:
+            restore_stand(failed_now, "scenario 53 database load", load.stop)
+        finally:
+            if killed:
+                restore_stand(failed_now or sys.exc_info()[0] is not None, "scenario 53", lambda: (
+                    db_voter_start(voter), wait_database_votes()))
+
+    recovery = ", ".join(f"{node} after {recovered[node]:.1f}s" for node in ALL_NODES)
+    return (f"{voter} lost: {', '.join(members)} kept a primary component of two votes, both up behind "
+            f"the proxy with {conns} application connection(s); every node wrote again ({recovery}); "
+            f"{voter} back, three votes")
+
+
+def scenario_54_database_member_cut_off_is_fenced():
+    """A cut is not a kill: the isolated server remains alive and reachable through the proxy.
+
+    Outside the primary component it refuses all reads and writes. The proxy removes it and
+    closes its sessions; nodes reconnect to the majority (a data server and the arbitrator on
+    Roblox). Mending the cut lets it catch up. There is no journal load here (HIL-2040).
+    """
+    wait_converge(ALL_NODES)
+    wait_database_votes()
+    members = [member.service for member in STAND.database_members]
+    for member in members:
+        assert_member_synced(member, STAND.database_votes)
+    started_at = {}
+    for node in ALL_NODES:
+        outcome = control.node_started_at(STAND, node)
+        assert outcome.code == 0, f"could not inspect {node}'s start: {outcome.err}"
+        started_at[node] = outcome.out.strip()
+    user = STAND.database.user
+    by_host = database_members_by_hostname()
+
+    load = DbLoad()
+    cut = False
+    try:
+        load.start()
+        wait_db_steady(load, 0, DB_MEMBER_DEATH_TIMEOUT)
+        victim = by_host.get(load.member_of(MASTERS[0]))
+        assert victim is not None, f"{MASTERS[0]} wrote through an unknown database member"
+        survivors = [member for member in members if member != victim]
+        cut = True
+        db_cut(victim)
+        cut_at = time.monotonic()
+        limit = DB_MEMBER_DEATH_TIMEOUT
+        deadline = cut_at + limit
+        while True:
+            status = member_status(victim)
+            outside = status.get("wsrep_cluster_status") == "non-Primary" and status.get("wsrep_cluster_size") == "1"
+            state = proxy_states().get(victim)
+            sessions = app_sessions_on(victim, user)
+            down = state in ("DOWN", "DOWN (agent)")
+            if outside and down and sessions == 0:
+                break
+            if time.monotonic() >= deadline:
+                assert outside, (f"{victim} is still in a primary component {limit:.0f}s after it was cut off: "
+                                 "two primary components")
+                assert down, f"{victim} is out of the primary component yet {state} at the proxy"
+                raise AssertionError(f"{sessions} application session(s) remain on {victim} after the proxy "
+                                     "marked it down: they fail every statement and never reconnect")
+            time.sleep(POLL_INTERVAL)
+        for statement in (FENCE_READ_SQL, FENCE_WRITE_SQL):
+            answer = db_sql_refusal(statement, victim)
+            assert answer is not None and NON_PRIMARY_REFUSAL in answer, \
+                f"{victim} answered {statement!r} out of the primary component: {answer!r}"
+        fenced_after = time.monotonic() - cut_at
+
+        states = proxy_states()
+        for member in survivors:
+            assert_member_synced(member, STAND.database_votes - 1)
+            assert states.get(member) == "UP", f"{member} is {states.get(member)} at the proxy while {victim} is cut off"
+        recovered = wait_db_steady(load, cut_at, DB_MEMBER_DEATH_TIMEOUT, victim)
+        for node in ALL_NODES:
+            assert by_host.get(load.member_of(node)) != victim, \
+                f"{node} still writes through {victim}, which is cut off"
+            outcome = control.node_started_at(STAND, node)
+            assert outcome.code == 0 and outcome.out.strip() == started_at[node], \
+                f"{node} was restarted while {victim} was cut off"
+        survivor = by_host.get(load.member_of(MASTERS[0]))
+        db_mend(victim)
+        mended_at = time.monotonic()
+        synced, up = member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT, mended_at)
+        cut = False
+        load.stop()
+
+        for node in ALL_NODES:
+            for attempt in load.attempts(node):
+                assert not (attempt.ok and cut_at <= attempt.started < mended_at
+                            and by_host.get(attempt.member) == victim), \
+                    f"{node} wrote {attempt.value} through {victim} while it was cut off: the minority took an operation"
+        for member in members:
+            for node in ALL_NODES:
+                last = load.last_acknowledged(node)
+                assert last is not None, f"{node} acknowledged no database write"
+                held = database_value(member, node)
+                assert held == last.value, f"{member} holds {held} for {node}, which last wrote {last.value}"
+    finally:
+        failed_now = sys.exc_info()[0] is not None
+        try:
+            restore_stand(failed_now, "scenario 54 database load", load.stop)
+        finally:
+            if cut:
+                restore_stand(failed_now or sys.exc_info()[0] is not None, "scenario 54", lambda: (
+                    db_mend(victim), member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT)))
+
+    recovery = ", ".join(f"{node} after {recovered[node]:.1f}s" for node in ALL_NODES)
+    return (f"{victim} cut off from {', '.join(survivors)} and the arbitrator: out of the primary component, "
+            f"down at the proxy and without a session after {fenced_after:.1f}s, refusing reads and writes; "
+            f"{', '.join(ALL_NODES)} wrote again through {survivor} ({recovery}); mended, "
+            f"synced after {synced:.0f}s, up after {up:.0f}s")
+
+
 def scenario_55_primary_and_replica_lost_and_restored():
     """While the primary is down a write is not confirmed and no application connection reaches
     the replica; both return without a Hilos restart and hold one journal (HIL-2042).
@@ -6846,6 +7211,18 @@ def scenario_55_primary_and_replica_lost_and_restored():
     oracle.settle()
     replica = STAND.database_replicas[0].service
     primary = STAND.database_replicas[0].replica_of
+
+    def wait_primary_answers():
+        started = time.monotonic()
+        deadline = started + DB_MEMBER_RETURN_TIMEOUT
+        while True:
+            outcome = control.execute(STAND, "db-sql", "SELECT 1", primary)
+            if outcome.code == 0:
+                return
+            if time.monotonic() >= deadline:
+                raise ScenarioTimeout(f"{primary} did not return within {DB_MEMBER_RETURN_TIMEOUT:.0f}s")
+            time.sleep(POLL_INTERVAL)
+
     started_at = {}
     for node in ALL_NODES:
         outcome = control.node_started_at(STAND, node)
@@ -6891,16 +7268,8 @@ def scenario_55_primary_and_replica_lost_and_restored():
         )
 
         db_start(primary)
+        wait_primary_answers()
         primary_down = False
-        started = time.monotonic()
-        deadline = started + DB_MEMBER_RETURN_TIMEOUT
-        while True:
-            outcome = control.execute(STAND, "db-sql", "SELECT 1", primary)
-            if outcome.code == 0:
-                break
-            if time.monotonic() >= deadline:
-                raise ScenarioTimeout(f"{primary} did not return within {DB_MEMBER_RETURN_TIMEOUT:.0f}s")
-            time.sleep(POLL_INTERVAL)
 
         back = oracle.write_batch(oracle.next_pairs())
         assert back.outcome == JOURNAL_CONFIRMED, (
@@ -6917,8 +7286,8 @@ def scenario_55_primary_and_replica_lost_and_restored():
             f"losing the replica touched the primary: {batch.detail}"
         )
         db_start(replica)
-        replica_down = False
         wait_replica_answers(replica)
+        replica_down = False
 
         oracle.settle()
         for node in ALL_NODES:
@@ -6927,17 +7296,18 @@ def scenario_55_primary_and_replica_lost_and_restored():
                 f"{node} was restarted while the database was down"
             )
         wait_converge(ALL_NODES)
-        judged = oracle.verify(oracle.batches())
+        # This scenario writes synchronously: stop is safe without starting a background load.
+        judged = finish_journal(oracle, JournalLoad(oracle))
     finally:
-        restarted_in_finally = False
-        if primary_down:
-            db_start(primary)
-            restarted_in_finally = True
-        if replica_down:
-            db_start(replica)
-            restarted_in_finally = True
-        if restarted_in_finally:
-            wait_replica_answers(replica)
+        failed_now = sys.exc_info()[0] is not None
+        try:
+            if primary_down:
+                restore_stand(failed_now, "scenario 55 primary", lambda: (
+                    db_start(primary), wait_primary_answers()))
+        finally:
+            if replica_down:
+                restore_stand(failed_now or sys.exc_info()[0] is not None, "scenario 55 replica", lambda: (
+                    db_start(replica), wait_replica_answers(replica)))
 
     return (f"{primary} lost: the write came to {down.outcome} and no application connection reached {replica}; "
             f"back, the nodes wrote again; {replica} lost: the primary wrote on; both back and caught up, "
@@ -6946,8 +7316,8 @@ def scenario_55_primary_and_replica_lost_and_restored():
 
 class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ram database_members "
                      "cluster_directory entry database_replicas database_votes working_masters bare_master "
-                     "masters_exactly",
-                     defaults=(0, 0, False, False, 0, False, 0, False, False, 0, 0, 0, False, 0))):
+                     "masters_exactly database_voters",
+                     defaults=(0, 0, False, False, 0, False, 0, False, False, 0, 0, 0, False, 0, 0))):
     """The shape of stand a scenario is written against: at least `masters` masters and `slaves`
     slaves, a stranger, a slave that declares ram, at least `nodes` members in all, every master
     declaring ram - masters that carry placed work themselves - and a database of at least
@@ -6956,7 +7326,8 @@ class Need(namedtuple("Need", "masters slaves stranger slave_ram nodes master_ra
     database component, counting data members and voters but not replicas, at least
     `working_masters` masters that declare ram, a master that declares none, and exactly
     `masters_exactly` masters when it is not 0 - a shape whose quorum is every master, so that
-    losing the leader leaves no heir. What a scenario names by role - the third master, the
+    losing the leader leaves no heir, and at least `database_voters` voters - arbitrators that
+    vote and hold no data. What a scenario names by role - the third master, the
     second slave - is what it needs."""
 
 
@@ -7046,6 +7417,13 @@ SCENARIOS = [
     Scenario("27 database member dies under load", scenario_27_database_member_dies_under_load,
              Need(database_members=2, database_votes=3)),
     Scenario("28 database member comes back and catches up", scenario_28_database_member_comes_back_and_catches_up,
+             Need(database_members=2, database_votes=3)),
+    # Beside 27 and 28, and like them only once every shared-database scenario has read the intact
+    # stand: 53 takes the arbitrator away and returns it, 54 cuts a data member off the others and
+    # mends it, each before the next scenario begins.
+    Scenario("53 database arbitrator lost and back", scenario_53_database_arbitrator_lost_and_back,
+             Need(database_members=2, database_voters=1)),
+    Scenario("54 database member cut off is fenced", scenario_54_database_member_cut_off_is_fenced,
              Need(database_members=2, database_votes=3)),
     # After 27/28: the primary and then its read-only replica are lost and returned, one synchronous
     # journal batch at a time; 31 then reads the replica both returns left behind.
@@ -7237,6 +7615,7 @@ def unmet_need(stand, scenario):
                               (need.database_members, len(stand.database_members), "database members"),
                               (need.database_replicas, len(stand.database_replicas), "database replicas"),
                               (need.database_votes, stand.database_votes, "database votes"),
+                              (need.database_voters, len(stand.database_voters), "database voters"),
                               (need.working_masters,
                                sum(1 for m in stand.masters if stand.members[m].ram) if need.working_masters else 0,
                                "masters that declare ram")):
