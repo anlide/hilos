@@ -377,6 +377,7 @@ final class InMemoryTableFilter
 
     /**
      * Compares sort values, with nulls last ascending or, on opt-in, in either direction.
+     * Two integers or floats compare numerically; other non-null pairs keep natural case-insensitive text order.
      *
      * @param mixed $a Value of the sorted field in the left row, or null when the row has none
      * @param mixed $b Value of the sorted field in the right row, or null when the row has none
@@ -394,6 +395,10 @@ final class InMemoryTableFilter
         }
         if ($b === null) {
             return $nullsLast ? -1 : -$direction;
+        }
+
+        if ((is_int($a) || is_float($a)) && (is_int($b) || is_float($b))) {
+            return $direction * ($a <=> $b);
         }
 
         return $direction * strnatcasecmp((string) $a, (string) $b);

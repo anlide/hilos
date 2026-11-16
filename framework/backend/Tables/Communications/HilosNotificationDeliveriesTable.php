@@ -393,9 +393,8 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
      * The boundary is read back onto the fields of the row and the two are compared by the one
      * comparator every window uses, so the journal places its rows by the rule every other table
      * places them by, only reading its own names first ({@see anchorForRow()} says why they are
-     * its own). The id of the boundary is made an integer when it is one: the database may hand
-     * it over as text, and {@see InMemoryTableFilter::compare()} settles a tie between two keys
-     * as numbers only when both are integers - as text, delivery 10 would stand above delivery 9.
+     * its own). Non-null boundary values for rowKey, createdAt, deliveredAt and attempts are read
+     * as the integers the row declares, even when SQL returns text; channel, status and null stay as supplied.
      *
      * @param AbstractTableRow $row Delivery row to place
      * @param TableAnchorDTO $anchor Boundary in the columns of the source
@@ -417,7 +416,13 @@ class HilosNotificationDeliveriesTable extends TableDefinition implements Viewpo
                 return null;
             }
             $value = $anchor->values[$column];
-            $against[$field] = $field === $keyField && is_string($value) && ctype_digit($value) ? (int) $value : $value;
+            $against[$field] = match ($field) {
+                HilosNotificationDeliveryTableRow::rowKey,
+                HilosNotificationDeliveryTableRow::createdAt,
+                HilosNotificationDeliveryTableRow::deliveredAt,
+                HilosNotificationDeliveryTableRow::attempts => $value === null ? null : (int) $value,
+                default => $value,
+            };
         }
 
         return InMemoryTableFilter::compare($row->toArray(), $against, $query->sort, $keyField);

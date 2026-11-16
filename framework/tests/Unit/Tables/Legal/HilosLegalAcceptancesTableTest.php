@@ -102,6 +102,32 @@ final class HilosLegalAcceptancesTableTest extends TestCase
         self::assertSame(-5000, HilosLegalAcceptanceTableRow::fromArray($row->toArray())->acceptedAt);
     }
 
+    public function testNegativeAcceptanceMomentsUseTheDeclaredIntegerTypeOfSqlBoundaries(): void
+    {
+        $table = new LegalAcceptancesTableProbe();
+        $row = new HilosLegalAcceptanceTableRow(10, 42, 'Person', null, 'terms', 'gone', null, -5000);
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $query = new TableQueryDTO(sort: TableSortOrderDTO::of(new TableSortDTO(
+                HilosLegalAcceptanceTableRow::acceptedAt, $direction, 'accepted_at',
+            )));
+            foreach (['-3000', -3000] as $moment) {
+                $place = $table->placeRowAgainst($row, new TableAnchorDTO(['accepted_at' => $moment, 'id' => '9']), $query);
+                self::assertNotNull($place);
+                self::assertSame($direction === TableConstants::ORDER_ASC ? -1 : 1, $place <=> 0);
+            }
+            foreach (['-5000', -5000, '0', 0] as $moment) {
+                $row->acceptedAt = (int) $moment;
+                self::assertSame(0, $table->placeRowAgainst($row, new TableAnchorDTO([
+                    'accepted_at' => $moment, 'id' => '10',
+                ]), $query));
+                self::assertSame($direction === TableConstants::ORDER_ASC ? 1 : -1, $table->placeRowAgainst($row, new TableAnchorDTO([
+                    'accepted_at' => $moment, 'id' => '9',
+                ]), $query) <=> 0);
+            }
+            $row->acceptedAt = -5000;
+        }
+    }
+
     public function testDeletionNeedsNoSqlAndOtherSourcesAreIgnored(): void
     {
         $table = new LegalAcceptancesTableProbe();

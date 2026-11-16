@@ -70,7 +70,6 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
     ];
     private const int DEFAULT_LIMIT = 50;
     private const array FACETED_FILTERS = [self::FILTER_DOCUMENT, self::FILTER_REVISION];
-    private const string SQL_INTEGER_PATTERN = '/\A-?\d+\z/';
 
     /** @return int Number of rows in the initial window */
     public function windowSize(): int
@@ -240,9 +239,8 @@ abstract class AbstractHilosLegalAcceptancesTable extends TableDefinition implem
                 return null;
             }
             $value = $anchor->values[$column];
-            // Both anchor columns, the acceptance moment and the id, are integers that SQL hands back as text; the
-            // moment may be negative, and a text comparison would place it after a positive one.
-            $against[$field] = is_string($value) && preg_match(self::SQL_INTEGER_PATTERN, $value) === 1 ? (int) $value : $value;
+            // The row declares both supported fields, acceptedAt and rowKey, as integers; SQL may return them as text.
+            $against[$field] = $value === null ? null : (int) $value;
         }
 
         return InMemoryTableFilter::compare($row->toArray(), $against, $query->sort, $keyField);

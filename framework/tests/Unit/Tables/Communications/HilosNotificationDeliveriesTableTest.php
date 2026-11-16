@@ -461,6 +461,59 @@ final class HilosNotificationDeliveriesTableTest extends TestCase
         self::assertGreaterThan(0, $placeBelow);
     }
 
+    public function testNegativeCreatedAtUsesTheDeclaredIntegerTypeOfSqlBoundaries(): void
+    {
+        $table = $this->table();
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $query = new TableQueryDTO(sort: $this->resolvedOrder(
+                $table, new TableSortDTO(HilosNotificationDeliveryTableRow::createdAt, $direction),
+            ));
+            foreach (['-3000', -3000] as $moment) {
+                $place = $table->placeRowAgainst(
+                    self::deliveryRow(10, -5000), new TableAnchorDTO(['created_at' => $moment, 'id' => '9']), $query,
+                );
+                self::assertNotNull($place);
+                self::assertSame($direction === TableConstants::ORDER_ASC ? -1 : 1, $place <=> 0);
+            }
+            foreach (['-5000', -5000, '0', 0] as $moment) {
+                $row = self::deliveryRow(10, (int) $moment);
+                self::assertSame(0, $table->placeRowAgainst($row, new TableAnchorDTO([
+                    'created_at' => $moment, 'id' => '10',
+                ]), $query));
+                self::assertSame($direction === TableConstants::ORDER_ASC ? 1 : -1, $table->placeRowAgainst($row, new TableAnchorDTO([
+                    'created_at' => $moment, 'id' => '9',
+                ]), $query) <=> 0);
+            }
+        }
+    }
+
+    public function testNegativeDeliveredAtUsesTheDeclaredNullableIntegerTypeOfSqlBoundaries(): void
+    {
+        $table = $this->table();
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $query = new TableQueryDTO(sort: $this->resolvedOrder(
+                $table, new TableSortDTO(HilosNotificationDeliveryTableRow::deliveredAt, $direction),
+            ));
+            foreach (['-3000', -3000] as $moment) {
+                $place = $table->placeRowAgainst(
+                    self::deliveryRow(10, 0, deliveredAt: -5000),
+                    new TableAnchorDTO(['delivered_at' => $moment, 'id' => '9']), $query,
+                );
+                self::assertNotNull($place);
+                self::assertSame($direction === TableConstants::ORDER_ASC ? -1 : 1, $place <=> 0);
+            }
+            foreach (['-5000', -5000, '0', 0, null] as $moment) {
+                $row = self::deliveryRow(10, 0, deliveredAt: $moment === null ? null : (int) $moment);
+                self::assertSame(0, $table->placeRowAgainst($row, new TableAnchorDTO([
+                    'delivered_at' => $moment, 'id' => '10',
+                ]), $query));
+                self::assertSame($direction === TableConstants::ORDER_ASC ? 1 : -1, $table->placeRowAgainst($row, new TableAnchorDTO([
+                    'delivered_at' => $moment, 'id' => '9',
+                ]), $query) <=> 0);
+            }
+        }
+    }
+
     /**
      * Nullable deliveredAt ordering places rows with nulls last in ASC and first in DESC.
      */

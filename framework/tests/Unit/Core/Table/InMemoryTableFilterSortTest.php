@@ -10,6 +10,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\InMemoryTableFilter;
+use Hilos\Core\Table\TableAnchorDirection;
 use Hilos\Core\Table\TableConstants;
 use PHPUnit\Framework\TestCase;
 
@@ -90,6 +91,131 @@ final class InMemoryTableFilterSortTest extends TestCase
                 $direction === TableConstants::ORDER_ASC ? 1 : -1,
                 InMemoryTableFilter::compare($rows[0], $rows[1], $order, self::KEY_FIELD) <=> 0,
             );
+        }
+    }
+
+    public function testIntegersAreSortedAndComparedNumericallyInBothDirections(): void
+    {
+        $rows = [
+            [self::KEY_FIELD => 4, self::STATE_FIELD => 2],
+            [self::KEY_FIELD => 1, self::STATE_FIELD => -5],
+            [self::KEY_FIELD => 5, self::STATE_FIELD => 10],
+            [self::KEY_FIELD => 2, self::STATE_FIELD => -3],
+            [self::KEY_FIELD => 3, self::STATE_FIELD => 0],
+        ];
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $order = TableSortOrderDTO::of(new TableSortDTO(self::STATE_FIELD, $direction));
+            $sorted = InMemoryTableFilter::apply($rows, new TableQueryDTO(sort: $order), self::KEY_FIELD)->rows;
+            $expected = $direction === TableConstants::ORDER_ASC ? [-5, -3, 0, 2, 10] : [10, 2, 0, -3, -5];
+            self::assertSame($expected, array_column($sorted, self::STATE_FIELD));
+            foreach ($sorted as $leftIndex => $left) {
+                foreach ($sorted as $rightIndex => $right) {
+                    self::assertSame(
+                        $leftIndex <=> $rightIndex,
+                        InMemoryTableFilter::compare($left, $right, $order, self::KEY_FIELD) <=> 0,
+                    );
+                }
+            }
+        }
+    }
+
+    public function testFractionsAndMixedIntegerFloatPairsKeepTheirNumericOrder(): void
+    {
+        $rows = [
+            [self::KEY_FIELD => 1, self::STATE_FIELD => 1.5],
+            [self::KEY_FIELD => 2, self::STATE_FIELD => -3.5],
+            [self::KEY_FIELD => 3, self::STATE_FIELD => 1],
+            [self::KEY_FIELD => 4, self::STATE_FIELD => 1.25],
+            [self::KEY_FIELD => 5, self::STATE_FIELD => -5.25],
+            [self::KEY_FIELD => 6, self::STATE_FIELD => -4],
+        ];
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $order = TableSortOrderDTO::of(new TableSortDTO(self::STATE_FIELD, $direction));
+            $sorted = InMemoryTableFilter::apply($rows, new TableQueryDTO(sort: $order), self::KEY_FIELD)->rows;
+            $expected = $direction === TableConstants::ORDER_ASC ? [-5.25, -4, -3.5, 1, 1.25, 1.5] : [1.5, 1.25, 1, -3.5, -4, -5.25];
+            self::assertSame($expected, array_column($sorted, self::STATE_FIELD));
+        }
+    }
+
+    public function testLargeIntegersAreNotRoundedToTheSameFloat(): void
+    {
+        $rows = [
+            [self::KEY_FIELD => 1, self::STATE_FIELD => 9007199254740993],
+            [self::KEY_FIELD => 2, self::STATE_FIELD => 9007199254740992],
+        ];
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $order = TableSortOrderDTO::of(new TableSortDTO(self::STATE_FIELD, $direction));
+            $sorted = InMemoryTableFilter::apply($rows, new TableQueryDTO(sort: $order), self::KEY_FIELD)->rows;
+            self::assertSame($direction === TableConstants::ORDER_ASC ? [2, 1] : [1, 2], array_column($sorted, self::KEY_FIELD));
+            self::assertSame(
+                $direction === TableConstants::ORDER_ASC ? 1 : -1,
+                InMemoryTableFilter::compare($rows[0], $rows[1], $order, self::KEY_FIELD),
+            );
+        }
+    }
+
+    public function testTextKeepsNaturalCaseInsensitiveOrderAndNumericEqualsUseTheKey(): void
+    {
+        foreach ([['-5', '-3', 1], [-5, '-3', 1], ['item2', 'ITEM10', -1], ['Alpha', 'alpha', 1], [1, 1.0, 1]] as [$a, $b, $sign]) {
+            $rows = [[self::KEY_FIELD => 2, self::STATE_FIELD => $a], [self::KEY_FIELD => 1, self::STATE_FIELD => $b]];
+            foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+                $order = TableSortOrderDTO::of(new TableSortDTO(self::STATE_FIELD, $direction));
+                self::assertSame(
+                    ($direction === TableConstants::ORDER_ASC ? 1 : -1) * $sign,
+                    InMemoryTableFilter::compare($rows[0], $rows[1], $order, self::KEY_FIELD) <=> 0,
+                );
+                $sorted = InMemoryTableFilter::apply($rows, new TableQueryDTO(sort: $order), self::KEY_FIELD)->rows;
+                self::assertSame(
+                    ($direction === TableConstants::ORDER_ASC ? 1 : -1) * $sign < 0 ? [2, 1] : [1, 2],
+                    array_column($sorted, self::KEY_FIELD),
+                );
+            }
+        }
+    }
+
+    public function testNegativeNumericWindowsWalkBothWaysWithoutLosingOrRepeatingRows(): void
+    {
+        $rows = [
+            [self::KEY_FIELD => 3, self::STATE_FIELD => -3],
+            [self::KEY_FIELD => 1, self::STATE_FIELD => -10],
+            [self::KEY_FIELD => 6, self::STATE_FIELD => 2],
+            [self::KEY_FIELD => 4, self::STATE_FIELD => -1],
+            [self::KEY_FIELD => 2, self::STATE_FIELD => -5],
+            [self::KEY_FIELD => 5, self::STATE_FIELD => 0],
+        ];
+        foreach ([TableConstants::ORDER_ASC, TableConstants::ORDER_DESC] as $direction) {
+            $order = TableSortOrderDTO::of(new TableSortDTO(self::STATE_FIELD, $direction));
+            $expected = $direction === TableConstants::ORDER_ASC ? [1, 2, 3, 4, 5, 6] : [6, 5, 4, 3, 2, 1];
+            foreach ([TableAnchorDirection::After, TableAnchorDirection::Before] as $side) {
+                $anchor = null;
+                $keys = [];
+                for ($page = 0; $page < 3; $page++) {
+                    $snapshot = InMemoryTableFilter::apply($rows, new TableQueryDTO(
+                        sort: $order, limit: self::PAGE_SIZE, anchor: $anchor, anchorDirection: $side,
+                    ), self::KEY_FIELD);
+                    $offset = $side === TableAnchorDirection::After ? $page * self::PAGE_SIZE : (2 - $page) * self::PAGE_SIZE;
+                    self::assertSame(array_slice($expected, $offset, self::PAGE_SIZE), array_column($snapshot->rows, self::KEY_FIELD));
+                    self::assertSame($offset, $snapshot->rowsBefore);
+                    self::assertNotNull($snapshot->frame);
+                    if ($side === TableAnchorDirection::After) {
+                        self::assertSame($anchor, $snapshot->frame->before);
+                        self::assertSame($expected[$offset + self::PAGE_SIZE] ?? null, $snapshot->frame->after?->values[self::KEY_FIELD]);
+                        $keys = [...$keys, ...array_column($snapshot->rows, self::KEY_FIELD)];
+                        $anchor = $snapshot->lastAnchor;
+                    } else {
+                        self::assertSame($anchor, $snapshot->frame->after);
+                        self::assertSame($expected[$offset - 1] ?? null, $snapshot->frame->before?->values[self::KEY_FIELD]);
+                        $keys = [...array_column($snapshot->rows, self::KEY_FIELD), ...$keys];
+                        $anchor = $snapshot->firstAnchor;
+                    }
+                }
+                self::assertSame($expected, $keys);
+                $empty = InMemoryTableFilter::apply($rows, new TableQueryDTO(
+                    sort: $order, limit: self::PAGE_SIZE, anchor: $anchor, anchorDirection: $side,
+                ), self::KEY_FIELD);
+                self::assertSame([], $empty->rows);
+                self::assertSame($side === TableAnchorDirection::After ? 6 : 0, $empty->rowsBefore);
+            }
         }
     }
 
