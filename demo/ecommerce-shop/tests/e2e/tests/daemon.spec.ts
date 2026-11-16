@@ -28,6 +28,7 @@ import {
   expectStandaloneWebsockets,
   expectDaemonNodeLive,
   expectDaemonNodeHead,
+  expectDaemonNodeTableName,
   expectStandaloneNodeOverview,
   DAEMON_WORKERS_CHILD,
   expectClusterDaemonNodePage,
@@ -43,6 +44,7 @@ import {
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
+import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
 
 // spec-owner: demo — proves ecommerce-shop mounts the Daemon section without logs.
 
@@ -293,62 +295,172 @@ for (const viewer of [false, true]) {
     page,
     context,
   }) => {
-    // Each tab opens its own live subscription, followed by a full reload.
+    // Cold WebSockets, Node live reports and every tab's reload/history are real subscriptions.
     test.slow()
-    await setAdminViewMode(viewer)
-    if (!viewer) await grantAdminToSelf(expect, page)
     const reports = watchDaemonNodeFrames(page)
-    await gotoPage(expect, page, DAEMON_NODE_PATH, PAGE_READY)
-    await expectStandaloneNodeOverview(expect, page, {
-      showLogLinks: false,
-      nodeName: DAEMON_STANDALONE_NODE_NAME,
-    })
-    const beforeLive = reports.frames.length
-    const visitor = await context.newPage()
+    const websockets = watchDaemonWebsocketsFrames(page)
     try {
-      await gotoPage(expect, visitor, '/', PAGE_READY)
-      await expectDaemonNodeLive(expect, page, reports.frames, beforeLive)
-      await expectStandaloneNodeOverview(expect, page, {
-        showLogLinks: false,
-        nodeName: DAEMON_STANDALONE_NODE_NAME,
+      await setAdminViewMode(viewer)
+      if (!viewer) await grantAdminToSelf(expect, page)
+      await test.step(`WebSockets smoke keeps Ecommerce log links absent as ${viewer ? 'a viewer' : 'an admin'}`, async () => {
+        await gotoPage(
+          expect,
+          page,
+          `${DAEMON_NODE_PATH}/websockets`,
+          PAGE_READY,
+        )
+        await expectStandaloneWebsockets(expect, page, websockets.frames, {
+          showLogLinks: false,
+          nodeName: DAEMON_STANDALONE_NODE_NAME,
+        })
+        websockets.frames.length = 0
+        await page.reload()
+        await expectStandaloneWebsockets(expect, page, websockets.frames, {
+          showLogLinks: false,
+          nodeName: DAEMON_STANDALONE_NODE_NAME,
+        })
+        await expect(
+          page.getByTestId(/^hilos-daemon-(node|worker|agent)-log/),
+        ).toHaveCount(0)
+        await page
+          .getByTestId('hilos-page-tab-hilos_daemon_http_server')
+          .click()
+        await expectDaemonNodeHead(
+          expect,
+          page,
+          HilosPages.DAEMON_HTTP_SERVER,
+          'standalone',
+          {
+            showLogLinks: false,
+            nodeName: DAEMON_STANDALONE_NODE_NAME,
+          },
+        )
+        await expect(
+          page.getByTestId(/^hilos-daemon-(node|worker|agent)-log/),
+        ).toHaveCount(0)
+        websockets.frames.length = 0
+        await page.getByTestId('hilos-page-tab-hilos_daemon_websockets').click()
+        await expectStandaloneWebsockets(expect, page, websockets.frames, {
+          showLogLinks: false,
+          nodeName: DAEMON_STANDALONE_NODE_NAME,
+        })
+      })
+      reports.frames.length = 0
+      await test.step(`keeps every addressed Node page free of log links after reload and history as ${viewer ? 'a viewer' : 'an admin'}`, async () => {
+        await gotoPage(expect, page, DAEMON_NODE_PATH, PAGE_READY)
+        await expectStandaloneNodeOverview(expect, page, {
+          showLogLinks: false,
+          nodeName: DAEMON_STANDALONE_NODE_NAME,
+        })
+        const beforeLive = reports.frames.length
+        const visitor = await context.newPage()
+        try {
+          await gotoPage(expect, visitor, '/', PAGE_READY)
+          await expectDaemonNodeLive(expect, page, reports.frames, beforeLive)
+          await expectStandaloneNodeOverview(expect, page, {
+            showLogLinks: false,
+            nodeName: DAEMON_STANDALONE_NODE_NAME,
+          })
+        } finally {
+          await visitor.close()
+        }
+        const followNodeTabs = async () => {
+          for (const tab of DAEMON_NODE_TABS) {
+            const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
+            await link.focus()
+            if (!viewer) await expect(link).toBeFocused()
+            if (tab.key === HilosPages.DAEMON_WEBSOCKETS)
+              websockets.frames.length = 0
+            await link.press('Enter')
+            await expect(page).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
+            await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
+              showLogLinks: false,
+              nodeName: DAEMON_STANDALONE_NODE_NAME,
+            })
+            if (tab.key === HilosPages.DAEMON_WEBSOCKETS) {
+              await expectStandaloneWebsockets(
+                expect,
+                page,
+                websockets.frames,
+                {
+                  showLogLinks: false,
+                  nodeName: DAEMON_STANDALONE_NODE_NAME,
+                },
+              )
+            } else if (
+              !viewer &&
+              tab.key !== HilosPages.DAEMON_NODE &&
+              tab.key !== HilosPages.DAEMON_ENV
+            ) {
+              await expectDaemonNodeTableName(
+                expect,
+                page,
+                DAEMON_STANDALONE_NODE_NAME,
+              )
+            }
+            if (tab.key === HilosPages.DAEMON_WEBSOCKETS)
+              websockets.frames.length = 0
+            await page.reload()
+            await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
+              showLogLinks: false,
+              nodeName: DAEMON_STANDALONE_NODE_NAME,
+            })
+            if (tab.key === HilosPages.DAEMON_WEBSOCKETS) {
+              await expectStandaloneWebsockets(
+                expect,
+                page,
+                websockets.frames,
+                {
+                  showLogLinks: false,
+                  nodeName: DAEMON_STANDALONE_NODE_NAME,
+                },
+              )
+            }
+            await expect(
+              page.getByTestId(/^hilos-daemon-(worker|agent)-log-/),
+            ).toHaveCount(0)
+            if (tab.key !== HilosPages.DAEMON_NODE) {
+              await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
+              await expectStandaloneNodeOverview(expect, page, {
+                showLogLinks: false,
+                nodeName: DAEMON_STANDALONE_NODE_NAME,
+              })
+              if (tab.key === HilosPages.DAEMON_WEBSOCKETS)
+                websockets.frames.length = 0
+              await page.goBack()
+              await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
+                showLogLinks: false,
+                nodeName: DAEMON_STANDALONE_NODE_NAME,
+              })
+              if (tab.key === HilosPages.DAEMON_WEBSOCKETS) {
+                await expectStandaloneWebsockets(
+                  expect,
+                  page,
+                  websockets.frames,
+                  {
+                    showLogLinks: false,
+                    nodeName: DAEMON_STANDALONE_NODE_NAME,
+                  },
+                )
+              }
+              await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
+              await expectStandaloneNodeOverview(expect, page, {
+                showLogLinks: false,
+                nodeName: DAEMON_STANDALONE_NODE_NAME,
+              })
+            }
+          }
+        }
+        if (viewer) await followNodeTabs()
+        else
+          await test.step(
+            'Node pages expose one entity heading, link tabs and tables named through the Shell',
+            followNodeTabs,
+          )
       })
     } finally {
-      await visitor.close()
-    }
-    for (const tab of DAEMON_NODE_TABS) {
-      const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
-      await link.focus()
-      await link.press('Enter')
-      await expect(page).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
-      await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
-        showLogLinks: false,
-        nodeName: DAEMON_STANDALONE_NODE_NAME,
-      })
-      await page.reload()
-      await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
-        showLogLinks: false,
-        nodeName: DAEMON_STANDALONE_NODE_NAME,
-      })
-      await expect(
-        page.getByTestId(/^hilos-daemon-(worker|agent)-log-/),
-      ).toHaveCount(0)
-      if (tab.key !== 'hilos_daemon_node') {
-        await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
-        await expectStandaloneNodeOverview(expect, page, {
-          showLogLinks: false,
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        })
-        await page.goBack()
-        await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
-          showLogLinks: false,
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        })
-        await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
-        await expectStandaloneNodeOverview(expect, page, {
-          showLogLinks: false,
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        })
-      }
+      websockets.stop()
+      reports.stop()
     }
   })
 }
@@ -465,42 +577,6 @@ for (const viewer of [false, true]) {
       })
       log.stop()
       await cold.close()
-    }
-  })
-}
-
-for (const viewer of [false, true]) {
-  test(`WebSockets smoke keeps Ecommerce log links absent as ${viewer ? 'a viewer' : 'an admin'}`, async ({
-    page,
-  }) => {
-    test.slow() // Registration and direct/reloaded page subscriptions are real round trips.
-    await setAdminViewMode(viewer)
-    if (!viewer) await grantAdminToSelf(expect, page)
-    const reports = watchDaemonWebsocketsFrames(page)
-    try {
-      await gotoPage(expect, page, `${DAEMON_NODE_PATH}/websockets`, PAGE_READY)
-      await expectStandaloneWebsockets(expect, page, reports.frames, {
-        showLogLinks: false,
-        nodeName: DAEMON_STANDALONE_NODE_NAME,
-      })
-      reports.frames.length = 0
-      await page.reload()
-      await expectStandaloneWebsockets(expect, page, reports.frames, {
-        showLogLinks: false,
-        nodeName: DAEMON_STANDALONE_NODE_NAME,
-      })
-      await expect(
-        page.getByTestId(/^hilos-daemon-(node|worker|agent)-log/),
-      ).toHaveCount(0)
-      await page.getByTestId('hilos-page-tab-hilos_daemon_http_server').click()
-      await expectDaemonPage(expect, page, 'hilos_daemon_http_server')
-      await page.getByTestId('hilos-page-tab-hilos_daemon_websockets').click()
-      await expectStandaloneWebsockets(expect, page, reports.frames, {
-        showLogLinks: false,
-        nodeName: DAEMON_STANDALONE_NODE_NAME,
-      })
-    } finally {
-      reports.stop()
     }
   })
 }

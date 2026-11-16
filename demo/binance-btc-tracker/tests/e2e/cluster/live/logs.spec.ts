@@ -322,32 +322,25 @@ async function expectClusterTable(
   await resetNodeFilter(page)
 }
 
-test('cluster logs keys: shows node column and filters by every cluster member', async ({
+test('cluster logs keys: Keys and Workers show node columns and filter by every cluster member', async ({
   browser,
 }) => {
   const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
   try {
     await grantAdminToSelf(expect, page)
-    await expectClusterTable(page, {
-      path: '/hilos/logs/keys',
-      searchPlaceholder: 'Search by key (agent-*) or node…',
-      members: [...CLUSTER_MASTERS, ...CLUSTER_SLAVES],
+    await test.step('cluster logs keys: shows node column and filters by every cluster member', async () => {
+      await expectClusterTable(page, {
+        path: '/hilos/logs/keys',
+        searchPlaceholder: 'Search by key (agent-*) or node…',
+        members: [...CLUSTER_MASTERS, ...CLUSTER_SLAVES],
+      })
     })
-  } finally {
-    await page.context().close()
-  }
-})
-
-test('cluster logs workers: shows node column and filters by every cluster member', async ({
-  browser,
-}) => {
-  const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
-  try {
-    await grantAdminToSelf(expect, page)
-    await expectClusterTable(page, {
-      path: '/hilos/logs/workers',
-      searchPlaceholder: 'Search by key or node…',
-      members: [...CLUSTER_MASTERS, ...CLUSTER_SLAVES],
+    await test.step('cluster logs workers: shows node column and filters by every cluster member', async () => {
+      await expectClusterTable(page, {
+        path: '/hilos/logs/workers',
+        searchPlaceholder: 'Search by key or node…',
+        members: [...CLUSTER_MASTERS, ...CLUSTER_SLAVES],
+      })
     })
   } finally {
     await page.context().close()

@@ -40,6 +40,7 @@ import {
 import { deliveryClusterControl } from '../../helpers/deliveryCluster.js'
 import {
   appendLogLines,
+  FOLLOWED_STREAM,
   logMarker,
   TAIL_ARRIVAL_TIMEOUT_MS,
 } from '../../helpers/logs.js'
@@ -753,18 +754,12 @@ test('cluster delivery: a pending remote owner loss cancels the hold and recover
     await expect
       .poll(() =>
         streamRows().some(
-          ({ key }) =>
-            key.startsWith(`${owner.worker.node}:`) &&
-            key.includes('hilos_log_store'),
+          ({ key }) => key === `${owner.worker.node}:${FOLLOWED_STREAM}`,
         ),
       )
       .toBe(true)
     const sourceRow = streamRows()
-      .filter(
-        ({ key }) =>
-          key.startsWith(`${owner.worker.node}:`) &&
-          key.includes('hilos_log_store'),
-      )
+      .filter(({ key }) => key === `${owner.worker.node}:${FOLLOWED_STREAM}`)
       .at(-1)!
     const row = page.getByTestId(`hilos-table-row-${sourceRow.key}`)
     await expect(row).toBeVisible()

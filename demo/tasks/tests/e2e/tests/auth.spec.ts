@@ -1,4 +1,12 @@
 import { test, expect } from '../test.js'
+import { createHash } from 'node:crypto'
+import type { Frame } from '@playwright/test'
+import {
+  parseSignalValue,
+  SESSION_SIGNAL_SCHEMAS,
+  SIGNAL_HANDSHAKE_RESPONSE,
+  type ScopePayloadWire,
+} from '../../../../../framework/frontend/core/src/base/index.js'
 
 import {
   PASSWORD,
@@ -22,6 +30,8 @@ import {
   gotoAuthReturn,
   gotoPage,
   PAGE_REFUSED,
+  watchSocketFrames,
+  watchOpenedSockets,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { mailsTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
 import {
@@ -340,7 +350,7 @@ test('signs a member in by the code, on an address that already has an account',
 
 test('signs a member in by clicking the link in the letter, from a cold load', async ({
   page,
-}) => {
+}, testInfo) => {
   const email = uniqueEmail()
 
   // A verified password account first. The envelope stands where it still
@@ -360,27 +370,213 @@ test('signs a member in by clicking the link in the letter, from a cold load', a
   await page.getByTestId('auth-icon-magic-link').click()
   await expect(page.getByTestId('auth-link-sent')).toBeVisible()
 
-  // The click itself: a full browser load of the return route, which is the
-  // condition the defect needed (HIL-607). The relay mounts while the socket is
-  // still opening, so the confirm has to wait for a connection that can carry it
-  // rather than be dropped and reported as an unreachable server.
-  await gotoAuthReturn(
-    expect,
-    page,
-    returnPath(await readMagicLinkUrl(email)),
-    'auth-magic',
-  )
+  // Keep the first attempt's transport order: a visible signed-in identity can
+  // precede the rotation's cookie exchange and the new socket's welcome.
+  const fingerprint = (value: string) =>
+    createHash('sha256').update(value).digest('hex')
+  const route = () => {
+    const url = new URL(page.url())
+    return { path: url.pathname, query: fingerprint(url.search) }
+  }
+  const events: object[] = []
+  const started = performance.now()
+  const record = (event: string, detail: object = {}) => {
+    events.push({
+      order: events.length + 1,
+      ms: performance.now() - started,
+      route: route(),
+      event,
+      ...detail,
+    })
+  }
+  const redact = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(redact)
+    if (value === null || typeof value !== 'object') return value
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [
+        key,
+        /token|ticket|cookie|password|secret|email|acceptKey/i.test(key)
+          ? fingerprint(
+              typeof entry === 'string' ? entry : (JSON.stringify(entry) ?? ''),
+            )
+          : redact(entry),
+      ]),
+    )
+  }
+  const cookies = (header: string, separator: string) =>
+    Object.fromEntries(
+      header.split(separator).flatMap((part) => {
+        const pair = part.trim().split(';')[0] ?? ''
+        const equals = pair.indexOf('=')
+        return equals < 0
+          ? []
+          : [[pair.slice(0, equals), fingerprint(pair.slice(equals + 1))]]
+      }),
+    )
+  const pending: Promise<void>[] = []
+  const snapshot = (event: string) => {
+    const observed = { order: events.length, ms: performance.now() - started }
+    pending.push(
+      page
+        .context()
+        .cookies()
+        .then(
+          (values) => {
+            record(event, {
+              observed,
+              cookies: Object.fromEntries(
+                values.map(({ name, value }) => [name, fingerprint(value)]),
+              ),
+            })
+          },
+          () => {
+            record('cookie-snapshot-unavailable', { observed })
+          },
+        ),
+    )
+  }
+  const network = await page.context().newCDPSession(page)
+  const sockets = watchOpenedSockets(page)
+  let rotationSocket = 0
+  let welcomedSocket = 0
+  const identities = new Map<number, { id: string | number; name: unknown }>()
+  const frames = watchSocketFrames(page, (frame) => {
+    record('received', {
+      socket: frame.socket,
+      message: frame.message,
+      wire: redact(frame.wire),
+      failure: frame.failure?.kind,
+    })
+    const parsed = parseSignalValue(frame.wire, SESSION_SIGNAL_SCHEMAS)
+    if (!parsed.ok) return
+    const signal = parsed.signal
+    if (signal.kind === 'handshake') welcomedSocket = frame.socket
+    if (signal.kind === 'sessionRotate') rotationSocket = frame.socket
+    if (
+      signal.kind === 'project' &&
+      signal.type === SIGNAL_HANDSHAKE_RESPONSE
+    ) {
+      const payload = signal.data as ScopePayloadWire
+      const user = payload.entities?.currentUser
+      if (user && !Array.isArray(user)) {
+        identities.set(frame.socket, { id: user.id, name: user.name })
+      } else {
+        identities.delete(frame.socket)
+      }
+    }
+  })
+  const navigated = (frame: Frame) => {
+    if (frame === page.mainFrame()) record('route')
+  }
+  page.on('framenavigated', navigated)
+  network.on('Network.webSocketCreated', ({ requestId }) => {
+    record('socket-created', { requestId })
+  })
+  network.on('Network.webSocketWillSendHandshakeRequest', (event) => {
+    record('upgrade-request', {
+      requestId: event.requestId,
+      timestamp: event.timestamp,
+      cookies: cookies(
+        event.request.headers.Cookie ?? event.request.headers.cookie ?? '',
+        ';',
+      ),
+    })
+  })
+  network.on('Network.webSocketHandshakeResponseReceived', (event) => {
+    record('upgrade-response', {
+      requestId: event.requestId,
+      timestamp: event.timestamp,
+      status: event.response.status,
+      cookies: cookies(
+        event.response.headers['Set-Cookie'] ??
+          event.response.headers['set-cookie'] ??
+          '',
+        '\n',
+      ),
+    })
+  })
+  network.on('Network.webSocketClosed', ({ requestId, timestamp }) => {
+    record('socket-closed', { requestId, timestamp })
+  })
+  try {
+    await network.send('Network.enable')
+    record('before-cold-link')
+    snapshot('cookies-before-cold-link')
+    // The click itself: a full browser load of the return route, which is the
+    // condition the defect needed (HIL-607). The relay mounts while the socket is
+    // still opening, so the confirm has to wait for a connection that can carry it
+    // rather than be dropped and reported as an unreachable server.
+    await gotoAuthReturn(
+      expect,
+      page,
+      returnPath(await readMagicLinkUrl(email)),
+      'auth-magic',
+    )
 
-  // Home, signed in: the relay navigates on success and the session it upgraded
-  // is the one this tab is holding.
-  await expect(page.getByTestId('nav-logout')).toBeVisible()
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('profile-name')).toHaveText(
-    nameFromEmail(email),
-  )
+    // Home, signed in: the relay navigates on success and the session it upgraded
+    // is the one this tab is holding.
+    await expect(page.getByTestId('nav-logout')).toBeVisible()
+    record('nav-logout-visible')
+    await expect(page).toHaveURL('/')
+    await expect(page.getByTestId('auth-magic')).toHaveCount(0)
+    // The cold document's first guest welcome and the old socket's upgraded
+    // identity are both too early. Await the rotation's next socket, welcomed
+    // and naming this same member, before unloading it for the cold profile.
+    await expect
+      .poll(() => {
+        const current = identities.get(welcomedSocket)
+        const previous = identities.get(rotationSocket)
+        return (
+          rotationSocket > 0 &&
+          welcomedSocket === rotationSocket + 1 &&
+          welcomedSocket === frames.sockets() &&
+          current !== undefined &&
+          previous !== undefined &&
+          current.id === previous.id &&
+          current.name === nameFromEmail(email)
+        )
+      })
+      .toBe(true)
+    record('rotation-ready', {
+      rotationSocket,
+      welcomedSocket,
+      userId: identities.get(welcomedSocket)?.id,
+    })
+    snapshot('cookies-before-cold-profile')
+    record('before-cold-profile', {
+      sockets: sockets.map(({ welcomed }, index) => ({
+        socket: index + 1,
+        welcomed,
+      })),
+    })
+    await gotoPage(expect, page, '/profile')
+    await expect(page.getByTestId('profile-name')).toHaveText(
+      nameFromEmail(email),
+    )
 
-  // Two letters: the magic link and the mandatory new sign-in security notice.
-  expect(await mailsTo(email)).toHaveLength(2)
+    // Two letters: the magic link and the mandatory new sign-in security notice.
+    expect(await mailsTo(email)).toHaveLength(2)
+  } finally {
+    frames.stop()
+    page.off('framenavigated', navigated)
+    await network.detach()
+    await Promise.allSettled(pending)
+    await testInfo.attach('cold-magic-link-transport', {
+      body: JSON.stringify(
+        {
+          events,
+          sockets: sockets.map(({ url, welcomed }, index) => ({
+            socket: index + 1,
+            path: url.pathname,
+            welcomed,
+          })),
+        },
+        null,
+        2,
+      ),
+      contentType: 'application/json',
+    })
+  }
 })
 
 test('turns a tampered sign-in link down on its own screen', async ({

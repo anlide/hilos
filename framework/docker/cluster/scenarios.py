@@ -6227,37 +6227,170 @@ def scenario_51_working_master_cut_off_stops_its_work():
     leadership the victim's own log says it lost to the lost quorum, is the shape of 24 and is
     retried too. The victim is recreated, as in 24.
     """
-    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before the cut")
+    views = wait_until(lambda v: len(leaders(v)) == 1 and fleet_started(v), CONVERGE_TIMEOUT,
+                       "one leader holds the started fleet before the cut")
     leader = leaders(views)[0]
     bare = [n for n in MASTERS if not STAND.members[n].ram]
     working = [n for n in MASTERS if STAND.members[n].ram and n != leader]
-    victim = max(sorted(working), key=lambda node: len(hosted_by(views, node)))
     slave = next(n for n in SLAVES if STAND.members[n].ram)
-    carriers = [victim, slave]
-    if not any(hosted_by(views, node) for node in carriers):
-        raise ScenarioPreconditionLost(f"neither {victim} nor {slave} carries a fleet member under {leader}: "
-                                       "the fleet is placed elsewhere, and there is nothing to move it from")
-    try:
-        views = spread_fleet_over(carriers, views)
-    except ScenarioTimeout as error:
-        raise ScenarioPreconditionLost(f"{victim} and {slave} do not both carry fleet members under {leader}: "
-                                       "the leader placed the moved ones elsewhere") from error
-    if leaders(views) != [leader]:
-        raise ScenarioPreconditionLost(f"{', '.join(leaders(views)) or 'no master'} leads once the fleet is spread "
-                                       f"over {victim} and {slave}, not {leader}: a re-election of the stand's own "
-                                       "(P-459)")
-    for node in bare:
-        assert live_on(views, node) == 0, (f"{node} declares no ram, yet the leader runs {live_on(views, node)} "
+    carriers = [n for n in ALL_NODES if STAND.members[n].ram]
+    borrowed = []
+    attempted_cut = False
+    victim = None
+
+    def same_leader(v):
+        if leaders(v) != [leader]:
+            raise ScenarioPreconditionLost(f"{', '.join(leaders(v)) or 'no master'} leads before the cut, "
+                                           f"not {leader}: a re-election of the stand's own (P-459)")
+
+    def follower(v, node):
+        view = v.get(node) or {}
+        return (view.get("consensusRole") == "follower"
+                and view.get("lifecycleState") == "MasterFollowerOrCandidate"
+                and view.get("leaderId") == leader and view.get("hasQuorum") is True)
+
+    def working_follower(v, node):
+        return follower(v, node) and bool(hosted_by(v, node))
+
+    def baseline(v, nodes=ALL_NODES):
+        same_leader(v)
+        return (fleet_started(v) and converged(nodes)(v)
+                and (v.get(leader) or {}).get("hasQuorum") is True
+                and all(follower(v, node) for node in nodes if node in MASTERS and node != leader))
+
+    def ready_for_cut(v):
+        return (baseline(v) and bool(hosted_by(v, slave))
+                and any(working_follower(v, node) for node in working))
+
+    def refuse(reason, v, answer=None):
+        raise ScenarioPreconditionLost(f"{reason}; placements/views: {summarize(v)}; "
+                                       f"capabilities: { {n: declared_capabilities(v, n) for n in ALL_NODES} }; "
+                                       f"answer: {answer!r}")
+
+    def bare_empty(v):
+        for node in bare:
+            assert live_on(v, node) == 0, (f"{node} declares no ram, yet the leader runs {live_on(v, node)} "
                                            "placed agent(s) on it")
-    for member, row in sorted(worker_placements(views).items()):
-        assert STAND.members[row["nodeId"]].ram, f"{member} runs on {row['nodeId']}, which declares no ram"
-    members = hosted_by(views, victim)
-    others = [n for n in ALL_NODES if n != victim]
-    quorum = [n for n in MASTERS if n != victim]
-    marks = {n: node_log_mark(n) for n in ALL_NODES}
-    print(f"    partitioning {victim} with {len(members)} fleet member(s) under {leader}: {sorted(members)}")
-    ctl("partition", victim)
+        for member, row in sorted(worker_placements(v).items()):
+            assert STAND.members[row["nodeId"]].ram, f"{member} runs on {row['nodeId']}, which declares no ram"
+
+    def stock_carriers(v):
+        # The two-transfer bound relies on the stand's equal stock of slots, read from the roster.
+        if len(carriers) != 3 or any(
+                CAPABILITY_WORKER not in declared_capabilities(v, node)
+                or {tag for tag in declared_capabilities(v, node) if tag.startswith(RESOURCE_SLOTS + "=")}
+                != {f"{RESOURCE_SLOTS}=64"} for node in carriers):
+            refuse("preparation needs three worker carriers with their stock 64 slots", v)
+
+    def checked(action, node):
+        outcome = control.execute(STAND, action, node)
+        assert outcome.code == 0, f"{action} {node} failed: {outcome!r}"
+        return outcome
+
+    def return_borrowed():
+        errors = []
+        # Try every registered node even when one command fails or loses its reply.
+        while borrowed:
+            node = borrowed.pop(0)
+            try:
+                checked("start", node)
+            except Exception as error:
+                errors.append(f"start {node}: {error}")
+        return errors
+
+    def await_baseline(desc, timeout=CONVERGE_TIMEOUT, nodes=ALL_NODES):
+        try:
+            return wait_until(lambda v: baseline(v, nodes), timeout, desc, nodes=nodes)
+        except ScenarioPreconditionLost:
+            raise
+        except ScenarioTimeout as error:
+            raise ScenarioPreconditionLost(f"{desc}: {error}") from error
+
     try:
+        views = await_baseline(f"the original leader {leader}, quorum, roster and settled fleet before preparation")
+        bare_empty(views)
+        if not ready_for_cut(views):
+            stock_carriers(views)
+            missing_slave = not hosted_by(views, slave)
+            missing_follower = not any(working_follower(views, node) for node in working)
+            if ((missing_slave and live_on(views, slave))
+                    or (missing_follower and not any(live_on(views, node) == 0 for node in working))):
+                freed = min(sorted(working), key=lambda node: live_on(views, node))
+                pair = [freed, slave]
+                survivors = [node for node in ALL_NODES if node not in pair]
+                saved = {row["agentId"] for row in leader_placements(views)
+                         if row.get("state") in LIVE_PLACEMENT_STATES}
+                borrowed.extend(pair)  # A command may take effect and lose its reply.
+                print(f"    evacuating {pair} once under {leader} before preparing the working follower")
+                for node in pair:
+                    checked("kill", node)
+
+                def evacuated(v):
+                    if not baseline(v, survivors):
+                        return False
+                    roster = {row["nodeId"]: row for row in v[leader].get("nodes", [])}
+                    rows = {row["agentId"]: row for row in leader_placements(v)}
+                    return (all(node in roster and roster[node].get("online") is False for node in pair)
+                            and all(live_on(v, node) == 0 for node in pair)
+                            and all(rows.get(member, {}).get("state") == "started"
+                                    and rows[member].get("nodeId") in survivors for member in saved))
+
+                try:
+                    views = wait_until(evacuated, FAILOVER_TIMEOUT,
+                                       f"{pair} offline and their saved work settled on {survivors}", nodes=survivors)
+                except ScenarioPreconditionLost:
+                    raise
+                except ScenarioTimeout as error:
+                    raise ScenarioPreconditionLost(f"one bounded evacuation of {pair} did not settle: {error}") from error
+                errors = return_borrowed()
+                assert not errors, "; ".join(errors)
+                views = await_baseline(f"{pair} returned under {leader} with quorum, roster and fleet")
+                if any(live_on(views, node) for node in pair):
+                    refuse(f"evacuated carriers {pair} received POLICY work on return", views)
+
+            for _transfer in range(2):
+                if ready_for_cut(views):
+                    break
+                stock_carriers(views)
+                donor = max(sorted({row["nodeId"] for row in worker_placements(views).values()}),
+                            key=lambda node: len(hosted_by(views, node)))
+                donated = hosted_by(views, donor)
+                if len(donated) <= 1:
+                    refuse(f"no donor holds more than one fleet member ({donor})", views)
+                member = sorted(donated)[0]
+                empty = {node for node in carriers if node != leader and live_on(views, node) == 0}
+                positive = {node for node in [slave, *working] if hosted_by(views, node)}
+                before = views
+                print(f"    restarting {member} from {donor} toward empty carriers {sorted(empty)} under {leader}")
+                outcome = control.client(STAND, leader, "agent:restart", member, f"--node={donor}")
+                assert outcome.code == 0, f"agent:restart {member} from {donor} failed: {outcome!r}"
+                try:
+                    views = await_baseline(f"{member} restarted from {donor} under {leader}")
+                except ScenarioPreconditionLost as error:
+                    raise ScenarioPreconditionLost(f"{error}; restart answer: {outcome!r}") from error
+                stock_carriers(views)
+                target = worker_placements(views)[member].get("nodeId")
+                if (target not in empty or live_on(views, target) != 1
+                        or hosted_by(views, donor) != donated - {member}
+                        or any(not hosted_by(views, node) for node in positive)
+                        or any(live_on(views, node) for node in empty - {target})):
+                    refuse(f"single-member restart made no safe progress from {donor}; "
+                           f"before: {summarize(before)}", views, outcome)
+            if not ready_for_cut(views):
+                refuse("two single-member restarts did not prepare a working follower and slave", views)
+
+        # Re-read the follower carrying work after preparation, then begin the fencing proof afresh.
+        victim = max(sorted(node for node in working if working_follower(views, node)),
+                     key=lambda node: len(hosted_by(views, node)))
+        bare_empty(views)
+        members = hosted_by(views, victim)
+        others = [n for n in ALL_NODES if n != victim]
+        quorum = [n for n in MASTERS if n != victim]
+        marks = {n: node_log_mark(n) for n in ALL_NODES}
+        print(f"    partitioning {victim} with {len(members)} fleet member(s) under {leader}: {sorted(members)}")
+        attempted_cut = True
+        checked("partition", victim)
+
         def one_leads(v):
             ls = leaders(v)
             return len(ls) == 1 and v[ls[0]].get("hasQuorum") is True
@@ -6350,8 +6483,27 @@ def scenario_51_working_master_cut_off_stops_its_work():
                 f"quorum of {', '.join(quorum)}; {victim} stopped them {gap:.2f}s before the first came up on "
                 f"{', '.join(hosts)}; {', '.join(bare)} hosted nothing")
     finally:
-        ctl("recreate", victim)
-        wait_converge(ALL_NODES)
+        original_error = sys.exc_info()[1]
+        errors = return_borrowed()
+        if attempted_cut:
+            try:
+                checked("recreate", victim)
+            except Exception as error:
+                errors.append(f"recreate {victim}: {error}")
+        try:
+            wait_converge(ALL_NODES)
+            wait_until(fleet_started, CONVERGE_TIMEOUT, "the full fleet is started after restoring the stand")
+        except Exception as error:
+            errors.append(f"converge after restoration: {error}")
+        if errors:
+            message = "scenario 51 restoration failed: " + "; ".join(errors)
+            if isinstance(original_error, ScenarioTimeout):
+                # A failed restoration must not hand a stopped carrier to the scenario retry loop.
+                raise AssertionError(f"{message}; original failure: {original_error}") from original_error
+            if original_error is not None:
+                print(f"{message}; preserving original error: {original_error}", file=sys.stderr)
+            else:
+                raise AssertionError(message)
 
 
 # What scenario 26 asks every member of a clustered database about itself.

@@ -79,6 +79,7 @@ import {
   watchDaemonSource,
   gotoPage,
   PAGE_READY,
+  expectPageReady,
   grantAdminToSelf,
   armViewerSubmit,
   expectViewerRestartRefused,
@@ -117,120 +118,129 @@ test.describe('forged viewer submit transport', () => {
     return { socket, events, page: events as unknown as Page }
   }
 
-  for (const delivery of ['bare', 'batch'] as const) {
-    for (const correlation of ['envelope', 'data'] as const) {
-      test(`${delivery} forged reply correlates by ${correlation} and retains neighbors and evidence`, async () => {
-        const sent: unknown[] = []
-        const reply = {
-          type: 'action_error',
-          data: {
-            action: 'forged',
-            errorCode: 'view_mode',
-            reason: 'Refused.',
-            ...(correlation === 'data' ? { requestId } : {}),
-          },
-          ...(correlation === 'envelope' ? { requestId } : {}),
-          outcome: 'fail',
-          time: 42,
-        }
-        const before = {
-          type: 'e2e_neighbor',
-          data: {},
-          requestId: 'someone-else',
-        }
-        const after = { type: 'e2e_tail', data: { sequence: 1 } }
-        const late = { type: 'e2e_tail', data: { sequence: 2 } }
-        const inners = [before, null, reply, after]
-        const raw =
-          delivery === 'batch'
-            ? JSON.stringify({ type: 'signal_batch', data: { frames: inners } })
-            : JSON.stringify(reply)
-        const peer = observerPeer((message) => {
-          sent.push(JSON.parse(message))
-          const receive = (payload: string | Buffer) =>
-            peer.socket.emit('framereceived', { payload })
-          receive('{"type":')
-          receive(Buffer.from([0, 255]))
-          if (delivery === 'bare') receive(JSON.stringify(before))
-          receive(raw)
-          if (delivery === 'bare') receive(JSON.stringify(after))
-          receive(JSON.stringify(late))
+  test('forged replies correlate and retain neighbors and evidence', async () => {
+    for (const delivery of ['bare', 'batch'] as const) {
+      for (const correlation of ['envelope', 'data'] as const) {
+        await test.step(`${delivery} forged reply correlates by ${correlation} and retains neighbors and evidence`, async () => {
+          const sent: unknown[] = []
+          const reply = {
+            type: 'action_error',
+            data: {
+              action: 'forged',
+              errorCode: 'view_mode',
+              reason: 'Refused.',
+              ...(correlation === 'data' ? { requestId } : {}),
+            },
+            ...(correlation === 'envelope' ? { requestId } : {}),
+            outcome: 'fail',
+            time: 42,
+          }
+          const before = {
+            type: 'e2e_neighbor',
+            data: {},
+            requestId: 'someone-else',
+          }
+          const after = { type: 'e2e_tail', data: { sequence: 1 } }
+          const late = { type: 'e2e_tail', data: { sequence: 2 } }
+          const inners = [before, null, reply, after]
+          const raw =
+            delivery === 'batch'
+              ? JSON.stringify({
+                  type: 'signal_batch',
+                  data: { frames: inners },
+                })
+              : JSON.stringify(reply)
+          const peer = observerPeer((message) => {
+            sent.push(JSON.parse(message))
+            const receive = (payload: string | Buffer) =>
+              peer.socket.emit('framereceived', { payload })
+            receive('{"type":')
+            receive(Buffer.from([0, 255]))
+            if (delivery === 'bare') receive(JSON.stringify(before))
+            receive(raw)
+            if (delivery === 'bare') receive(JSON.stringify(after))
+            receive(JSON.stringify(late))
+          })
+          const viewer = await armViewerSubmit(peer.page)
+          peer.events.emit('websocket', peer.socket)
+          try {
+            const answer = await viewer.submit(request, requestId)
+            expect(answer.wire).toEqual(reply)
+            expect(answer.raw).toBe(raw)
+            expect(answer.failure).toBeUndefined()
+            expect(sent).toEqual([
+              { type: 'action', action: 'forged', requestId },
+            ])
+            expect(viewer.frames.map(({ wire }) => wire)).toEqual([
+              undefined,
+              undefined,
+              ...(delivery === 'batch' ? inners : [before, reply, after]),
+              late,
+            ])
+            expect(viewer.frames[0]).toMatchObject({
+              socket: 1,
+              message: 1,
+              raw: '{"type":',
+              failure: { kind: 'malformed-json' },
+            })
+            expect(viewer.frames[1]).toMatchObject({
+              socket: 1,
+              message: 2,
+              raw: undefined,
+              failure: { kind: 'non-text-frame' },
+            })
+            if (delivery === 'batch') {
+              expect(
+                viewer.frames.slice(2, 6).map(({ socket, message, raw }) => ({
+                  socket,
+                  message,
+                  raw,
+                })),
+              ).toEqual(inners.map(() => ({ socket: 1, message: 3, raw })))
+              expect(viewer.frames[3].failure?.kind).toBe('invalid-envelope')
+            }
+            viewer.dispose()
+            expect(peer.events.listenerCount('websocket')).toBe(0)
+            expect(peer.events.listenerCount('close')).toBe(0)
+            expect(peer.socket.listenerCount('framereceived')).toBe(0)
+            expect(peer.socket.listenerCount('close')).toBe(0)
+            await expect(viewer.submit(request, requestId)).rejects.toThrow(
+              'disposed',
+            )
+          } finally {
+            viewer.dispose()
+          }
+        })
+      }
+    }
+  })
+
+  test('forged submits settle and release pending waiters', async () => {
+    for (const ending of ['close', 'dispose'] as const) {
+      await test.step(`a forged submit settles on ${ending} and releases its pending waiter`, async () => {
+        let received = 0
+        const peer = observerPeer(() => {
+          received++
+          if (ending === 'close') peer.socket.emit('close')
         })
         const viewer = await armViewerSubmit(peer.page)
         peer.events.emit('websocket', peer.socket)
         try {
-          const answer = await viewer.submit(request, requestId)
-          expect(answer.wire).toEqual(reply)
-          expect(answer.raw).toBe(raw)
-          expect(answer.failure).toBeUndefined()
-          expect(sent).toEqual([
-            { type: 'action', action: 'forged', requestId },
-          ])
-          expect(viewer.frames.map(({ wire }) => wire)).toEqual([
-            undefined,
-            undefined,
-            ...(delivery === 'batch' ? inners : [before, reply, after]),
-            late,
-          ])
-          expect(viewer.frames[0]).toMatchObject({
-            socket: 1,
-            message: 1,
-            raw: '{"type":',
-            failure: { kind: 'malformed-json' },
-          })
-          expect(viewer.frames[1]).toMatchObject({
-            socket: 1,
-            message: 2,
-            raw: undefined,
-            failure: { kind: 'non-text-frame' },
-          })
-          if (delivery === 'batch') {
-            expect(
-              viewer.frames
-                .slice(2, 6)
-                .map(({ socket, message, raw }) => ({ socket, message, raw })),
-            ).toEqual(inners.map(() => ({ socket: 1, message: 3, raw })))
-            expect(viewer.frames[3].failure?.kind).toBe('invalid-envelope')
-          }
-          viewer.dispose()
-          expect(peer.events.listenerCount('websocket')).toBe(0)
-          expect(peer.events.listenerCount('close')).toBe(0)
-          expect(peer.socket.listenerCount('framereceived')).toBe(0)
-          expect(peer.socket.listenerCount('close')).toBe(0)
-          await expect(viewer.submit(request, requestId)).rejects.toThrow(
-            'disposed',
+          const answer = viewer.submit(request, requestId)
+          const rejected = expect(answer).rejects.toThrow(
+            ending === 'close' ? 'socket closed' : 'disposed',
           )
+          expect(received).toBe(1)
+          if (ending === 'dispose') viewer.dispose()
+          await rejected
         } finally {
           viewer.dispose()
         }
+        expect(peer.events.listenerCount('websocket')).toBe(0)
+        expect(peer.socket.listenerCount('framereceived')).toBe(0)
       })
     }
-  }
-
-  for (const ending of ['close', 'dispose'] as const) {
-    test(`a forged submit settles on ${ending} and releases its pending waiter`, async () => {
-      let received = 0
-      const peer = observerPeer(() => {
-        received++
-        if (ending === 'close') peer.socket.emit('close')
-      })
-      const viewer = await armViewerSubmit(peer.page)
-      peer.events.emit('websocket', peer.socket)
-      try {
-        const answer = viewer.submit(request, requestId)
-        const rejected = expect(answer).rejects.toThrow(
-          ending === 'close' ? 'socket closed' : 'disposed',
-        )
-        expect(received).toBe(1)
-        if (ending === 'dispose') viewer.dispose()
-        await rejected
-      } finally {
-        viewer.dispose()
-      }
-      expect(peer.events.listenerCount('websocket')).toBe(0)
-      expect(peer.socket.listenerCount('framereceived')).toBe(0)
-    })
-  }
+  })
 })
 
 test.describe('daemon overview', () => {
@@ -1656,164 +1666,178 @@ test.describe('daemon environment', () => {
   }) => {
     // Registration and several server-window changes are real round trips.
     test.slow()
-    const windows = await watchTableSearch(page, {
-      page: 'hilos_daemon_env',
-      tableKey: 'hilosDaemonEnvKeys',
-    })
-    await grantAdminToSelf(expect, page)
-    await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
-    await expectStandaloneOverview(
-      expect,
-      page,
-      DATABASE_HOST,
-      DAEMON_STANDALONE_NODE_NAME,
-    )
-    await page.getByTestId('hilos-daemon-node-standalone').click()
-    await expectStandaloneNodeOverview(expect, page, {
-      nodeName: DAEMON_STANDALONE_NODE_NAME,
-    })
-    const link = page.getByTestId('hilos-daemon-environment-link')
-    await link.scrollIntoViewIfNeeded()
-    await link.focus()
-    await link.press('Enter')
-    await expectDaemonPage(expect, page, 'hilos_daemon_env')
-    await expect(page).toHaveURL(/\/hilos\/daemon\/node\/standalone\/env$/)
-    await page.setViewportSize({ width: 1440, height: 812 })
-    await expectStandaloneEnvironment(expect, page)
-    const count = await page.getByTestId('hilos-daemon-env-keys').innerText()
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-      DAEMON_STANDALONE_NODE_NAME,
-    )
-    await expect(
-      page.getByRole('table', { name: 'Catalog keys' }),
-    ).toBeVisible()
-    await expect(page.getByRole('table')).toHaveCount(1)
-    await expect(
-      page.getByRole('list', { name: 'Reading ladder' }),
-    ).toBeVisible()
-    const search = page.getByTestId('hilos-table-search')
-    await expect(search).toHaveAccessibleName('Key or value')
-    const searchFor = async (key: string): Promise<void> => {
-      const mark = await windows.mark()
+    await test.step('reads environment values, masks secrets and filters attention', async () => {
+      const windows = await watchTableSearch(page, {
+        page: 'hilos_daemon_env',
+        tableKey: 'hilosDaemonEnvKeys',
+      })
+      await grantAdminToSelf(expect, page)
+      await gotoPage(expect, page, DAEMON_ROOT_PATH, PAGE_READY)
+      await expectStandaloneOverview(
+        expect,
+        page,
+        DATABASE_HOST,
+        DAEMON_STANDALONE_NODE_NAME,
+      )
+      await page.getByTestId('hilos-daemon-node-standalone').click()
+      await expectStandaloneNodeOverview(expect, page, {
+        nodeName: DAEMON_STANDALONE_NODE_NAME,
+      })
+      const link = page.getByTestId('hilos-daemon-environment-link')
+      await link.scrollIntoViewIfNeeded()
+      await link.focus()
+      await link.press('Enter')
+      await expectDaemonPage(expect, page, 'hilos_daemon_env')
+      await expect(page).toHaveURL(/\/hilos\/daemon\/node\/standalone\/env$/)
+      await page.setViewportSize({ width: 1440, height: 812 })
+      await expectStandaloneEnvironment(expect, page)
+      const count = await page.getByTestId('hilos-daemon-env-keys').innerText()
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+        DAEMON_STANDALONE_NODE_NAME,
+      )
+      await expect(
+        page.getByRole('table', { name: 'Catalog keys' }),
+      ).toBeVisible()
+      await expect(page.getByRole('table')).toHaveCount(1)
+      await expect(
+        page.getByRole('list', { name: 'Reading ladder' }),
+      ).toBeVisible()
+      const search = page.getByTestId('hilos-table-search')
+      await expect(search).toHaveAccessibleName('Key or value')
+      const searchFor = async (key: string): Promise<void> => {
+        const mark = await windows.mark()
+        try {
+          await typeInto(search, key)
+          await windows.settled(expect, mark, key, [key])
+        } finally {
+          await test.info().attach(`environment-search-${key}`, {
+            body: JSON.stringify(await windows.read(), null, 2),
+            contentType: 'application/json',
+          })
+        }
+      }
+      await searchFor('APP_ENV')
+      const app = shownByTestId(page, 'hilos-table-row-APP_ENV')
+      await expect(app).toContainText('test')
+      await expect(app).toContainText('Launch environment')
+      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      const attention = page.getByTestId('hilos-table-filter-attention')
+      await expect(attention).toHaveAccessibleName('Needs attention only')
+      await expect(attention).not.toBeChecked()
+      const attentionOn = await windows.mark()
+      await attention.focus()
+      await attention.press('Space')
+      await expect(attention).toBeChecked()
       try {
-        await typeInto(search, key)
-        await windows.settled(expect, mark, key, [key])
+        await windows.settled(expect, attentionOn, 'APP_ENV', [])
       } finally {
-        await test.info().attach(`environment-search-${key}`, {
+        await test.info().attach(`environment-attention-on`, {
           body: JSON.stringify(await windows.read(), null, 2),
           contentType: 'application/json',
         })
       }
-    }
-    await searchFor('APP_ENV')
-    const app = shownByTestId(page, 'hilos-table-row-APP_ENV')
-    await expect(app).toContainText('test')
-    await expect(app).toContainText('Launch environment')
-    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-    const attention = page.getByTestId('hilos-table-filter-attention')
-    await expect(attention).toHaveAccessibleName('Needs attention only')
-    await expect(attention).not.toBeChecked()
-    const attentionOn = await windows.mark()
-    await attention.focus()
-    await attention.press('Space')
-    await expect(attention).toBeChecked()
-    try {
-      await windows.settled(expect, attentionOn, 'APP_ENV', [])
-    } finally {
-      await test.info().attach(`environment-attention-on`, {
-        body: JSON.stringify(await windows.read(), null, 2),
-        contentType: 'application/json',
+      await expect(
+        shownByTestId(page, 'hilos-daemon-env-keys-empty-attention'),
+      ).toHaveText('No key needs attention.')
+      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect(page.getByTestId('hilos-daemon-env-keys')).toHaveText(count)
+      const attentionOff = await windows.mark()
+      await attention.focus()
+      await attention.press('Space')
+      await expect(attention).not.toBeChecked()
+      try {
+        await windows.settled(expect, attentionOff, 'APP_ENV', ['APP_ENV'])
+      } finally {
+        await test.info().attach(`environment-attention-off`, {
+          body: JSON.stringify(await windows.read(), null, 2),
+          contentType: 'application/json',
+        })
+      }
+      await expect(app).toContainText('test')
+      await searchFor('DB_PASSWORD')
+      const secret = shownByTestId(page, 'hilos-table-row-DB_PASSWORD')
+      await expect(secret).toContainText(/Set · \d+ chars/)
+      await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+      await expect(page.locator('body')).not.toContainText('hilos_pass')
+      const target = await watchTableModalFocus(secret)
+      try {
+        expect(await target.read()).toMatchObject({
+          openerConnected: true,
+          sameTrigger: true,
+        })
+        await secret.scrollIntoViewIfNeeded()
+        await fitsInScrollport(secret)
+        expect(await target.read()).toMatchObject({
+          openerConnected: true,
+          sameTrigger: true,
+        })
+      } finally {
+        await test.info().attach(`environment-target`, {
+          body: JSON.stringify(
+            { target: await target.read(), frames: await windows.read() },
+            null,
+            2,
+          ),
+          contentType: 'application/json',
+        })
+        await target.dispose()
+      }
+      await page.getByTestId(DAEMON_ROOT_CRUMB).click()
+      await expectStandaloneOverview(
+        expect,
+        page,
+        DATABASE_HOST,
+        DAEMON_STANDALONE_NODE_NAME,
+      )
+      await expectStandaloneEnvOrphans(expect, page)
+      await page.reload()
+      await expect(page).toHaveURL(
+        /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
+      )
+      await expect(
+        page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans'),
+      ).toHaveAttribute('aria-current', 'page')
+      await expect(page.getByRole('table')).toHaveCount(1)
+      await page.goBack()
+      await expectStandaloneNodeOverview(expect, page, {
+        nodeName: DAEMON_STANDALONE_NODE_NAME,
       })
-    }
-    await expect(
-      shownByTestId(page, 'hilos-daemon-env-keys-empty-attention'),
-    ).toHaveText('No key needs attention.')
-    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-    await expect(page.getByTestId('hilos-daemon-env-keys')).toHaveText(count)
-    const attentionOff = await windows.mark()
-    await attention.focus()
-    await attention.press('Space')
-    await expect(attention).not.toBeChecked()
-    try {
-      await windows.settled(expect, attentionOff, 'APP_ENV', ['APP_ENV'])
-    } finally {
-      await test.info().attach(`environment-attention-off`, {
-        body: JSON.stringify(await windows.read(), null, 2),
-        contentType: 'application/json',
-      })
-    }
-    await expect(app).toContainText('test')
-    await searchFor('DB_PASSWORD')
-    const secret = shownByTestId(page, 'hilos-table-row-DB_PASSWORD')
-    await expect(secret).toContainText(/Set · \d+ chars/)
-    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-    await expect(page.locator('body')).not.toContainText('hilos_pass')
-    const target = await watchTableModalFocus(secret)
-    try {
-      expect(await target.read()).toMatchObject({
-        openerConnected: true,
-        sameTrigger: true,
-      })
-      await secret.scrollIntoViewIfNeeded()
-      await fitsInScrollport(secret)
-      expect(await target.read()).toMatchObject({
-        openerConnected: true,
-        sameTrigger: true,
-      })
-    } finally {
-      await test.info().attach(`environment-target`, {
-        body: JSON.stringify(
-          { target: await target.read(), frames: await windows.read() },
-          null,
-          2,
-        ),
-        contentType: 'application/json',
-      })
-      await target.dispose()
-    }
-    await page.getByTestId(DAEMON_ROOT_CRUMB).click()
-    await expectStandaloneOverview(
-      expect,
-      page,
-      DATABASE_HOST,
-      DAEMON_STANDALONE_NODE_NAME,
-    )
-    await expectStandaloneEnvOrphans(expect, page)
-    await page.reload()
-    await expect(page).toHaveURL(
-      /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
-    )
-    await expect(
-      page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans'),
-    ).toHaveAttribute('aria-current', 'page')
-    await expect(page.getByRole('table')).toHaveCount(1)
-    await page.goBack()
-    await expectStandaloneNodeOverview(expect, page, {
-      nodeName: DAEMON_STANDALONE_NODE_NAME,
+      await page.goForward()
+      await expect(page).toHaveURL(
+        /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
+      )
+      await gotoPage(
+        expect,
+        page,
+        '/hilos/daemon/node/standalone/env/orphans',
+        PAGE_READY,
+      )
+      await expectDaemonPage(expect, page, 'hilos_daemon_env_orphans')
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+      await expect(page.getByRole('table')).toHaveCount(1)
+      // A cold mount binds the catalog window with all keys selected.
+      await gotoPage(
+        expect,
+        page,
+        '/hilos/daemon/node/standalone/env',
+        PAGE_READY,
+      )
+      await expectDaemonPage(expect, page, 'hilos_daemon_env')
+      await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
+      await expectStandaloneEnvironment(expect, page)
     })
-    await page.goForward()
-    await expect(page).toHaveURL(
-      /\/hilos\/daemon\/node\/standalone\/env\/orphans$/,
-    )
-    await gotoPage(
-      expect,
-      page,
-      '/hilos/daemon/node/standalone/env/orphans',
-      PAGE_READY,
-    )
-    await expectDaemonPage(expect, page, 'hilos_daemon_env_orphans')
-    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-    await expect(page.getByRole('table')).toHaveCount(1)
-    // A cold mount binds the catalog window with all keys selected.
-    await gotoPage(
-      expect,
-      page,
-      '/hilos/daemon/node/standalone/env',
-      PAGE_READY,
-    )
-    await expectDaemonPage(expect, page, 'hilos_daemon_env')
-    await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
-    await expectStandaloneEnvironment(expect, page)
+
+    await test.step('the Env orphans tab names its one table through the heading from the keyboard', async () => {
+      await gotoPage(expect, page, DAEMON_NODE_PATH, PAGE_READY)
+      const link = page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans')
+      await link.focus()
+      await expect(link).toBeFocused()
+      await link.press('Enter')
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(`${DAEMON_NODE_PATH}/env/orphans`)
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+      await expectDaemonNodeTableName(expect, page, DAEMON_STANDALONE_NODE_NAME)
+    })
   })
 
   test('a viewer reads Cron, HTTP, environment, orphans and comparison with values hidden', async ({
@@ -1950,118 +1974,147 @@ test.describe('Daemon section cold navigation', () => {
       test.slow()
       await setAdminViewMode(viewer)
       if (!viewer) await grantAdminToSelf(expect, page)
-      // The source may be null until its first full picture; prepare that fact
-      // in the setup tab, leaving the cold document's subscription untouched.
-      await gotoPage(expect, page, DAEMON_PLACEMENT_PATH, PAGE_READY)
-      await expectDaemonPlacementSourceReady(expect, page)
-      const cold = await context.newPage()
-      const log = watchDeliveryFrames(cold)
-      const windows = await watchTableSearch(cold, {
-        page: 'hilos_daemon_placement',
-        tableKey: 'hilosDaemonPlacement',
-      })
-      const held = await holdPageReply(cold, 'hilos_daemon_placement')
-      const navigation = gotoPage(
-        expect,
-        cold,
-        DAEMON_PLACEMENT_PATH,
-        PAGE_READY,
-      )
-      const completed = navigation.catch((error: unknown) => error)
-      const frames = () =>
-        log.packets
-          .flatMap((packet) => packet.frames)
-          .filter((frame) => frame.socket === log.sockets())
-      try {
-        await held.received
-        await expectDaemonPlacementPending(expect, cold)
-        held.release()
-        await navigation
-        const initial = await expectDaemonPlacementAnswer(
-          expect,
-          cold,
-          frames(),
+      await test.step(`Daemon section links, shared heading and Placement keyboard controls as ${viewer ? 'a viewer' : 'an admin'}`, async () => {
+        await gotoPage(expect, page, DAEMON_ROOT_PATH)
+        await expectDaemonPage(expect, page, 'hilos_daemon')
+        await expectDaemonSectionHead(expect, page, 'hilos_daemon')
+        const placement = page.getByTestId(
+          'hilos-page-tab-hilos_daemon_placement',
         )
-        expect(initial.entryPoints?.nodeId).toBe('standalone')
-        await expectDaemonPlacementRequests(expect, log)
-        if (viewer)
-          await expect(cold.getByTestId('view-mode-banner')).toBeVisible()
-        await cold.reload()
-        await expectDaemonPage(expect, cold, 'hilos_daemon_placement')
-        await expectDaemonPlacementAnswer(expect, cold, frames())
-        await expectDaemonPlacementRequests(expect, log)
+        await placement.focus()
+        await expect(placement).toBeFocused()
+        await placement.press('Enter')
+        await expectDaemonPage(expect, page, 'hilos_daemon_placement')
         await expectDaemonSectionAccessibility(
           expect,
-          cold,
+          page,
           false,
           DAEMON_STANDALONE_NODE_NAME,
         )
-        await searchDaemonPlacement(expect, cold, windows)
-        const live = await watchDaemonPlacementLive(expect, cold, log, 2)
-        const visitor = await browser.newPage({
-          baseURL,
-          ignoreHTTPSErrors: true,
+        if (viewer)
+          await expect(page.getByTestId('view-mode-banner')).toBeVisible()
+        const overview = page.getByTestId('hilos-page-tab-hilos_daemon')
+        await overview.focus()
+        await expect(overview).toBeFocused()
+        await overview.press('Enter')
+        await expectDaemonPage(expect, page, 'hilos_daemon')
+        await expectDaemonSectionHead(expect, page, 'hilos_daemon')
+      })
+
+      await test.step(`cold Placement answers once, reloads and resets on history while live data preserves search as ${viewer ? 'a viewer' : 'an admin'}`, async () => {
+        // The source may be null until its first full picture; prepare that fact
+        // in the setup tab, leaving the cold document's subscription untouched.
+        await gotoPage(expect, page, DAEMON_PLACEMENT_PATH, PAGE_READY)
+        await expectDaemonPlacementSourceReady(expect, page)
+        const cold = await context.newPage()
+        const log = watchDeliveryFrames(cold)
+        const windows = await watchTableSearch(cold, {
+          page: 'hilos_daemon_placement',
+          tableKey: 'hilosDaemonPlacement',
         })
-        try {
-          await gotoPage(expect, visitor, '/', PAGE_READY)
-          await live.changed()
-        } finally {
-          await visitor.context().close()
-          await live.dispose()
-        }
-        await cold.getByTestId('hilos-page-tab-hilos_daemon').press('Enter')
-        await expectDaemonPage(expect, cold, 'hilos_daemon')
-        await expectDaemonSectionHead(expect, cold, 'hilos_daemon')
-        await expect(
-          cold.getByTestId('hilos-daemon-placement-view'),
-        ).toHaveCount(0)
-        const source = await expectDaemonRootEntryPoints(expect, cold, log)
-        expect(source.nodeId).toBe('standalone')
-        await cold.goBack()
-        await expectDaemonPlacementReset(expect, cold)
-        await cold.goForward()
-        await expectDaemonPage(expect, cold, 'hilos_daemon')
-        await expectDaemonSectionHead(expect, cold, 'hilos_daemon')
-        await cold
-          .getByTestId('hilos-page-tab-hilos_daemon_placement')
-          .press('Enter')
-        await expectDaemonPlacementReset(expect, cold)
-        // The source's metrics link is a real addressed HTTP page.
-        await cold.getByTestId('hilos-page-tab-hilos_daemon').press('Enter')
-        await expectDaemonPage(expect, cold, 'hilos_daemon')
-        await cold.getByTestId('hilos-daemon-entry-metrics').press('Enter')
-        await expectDaemonPage(expect, cold, 'hilos_daemon_http_server')
-        await expect(cold).toHaveURL(
-          `${DAEMON_ROOT_PATH}/node/${source.nodeId}/http`,
-        )
-        await expect(cold.getByTestId('hilos-daemon-http-address')).toHaveText(
-          new RegExp(`:${source.httpPort}\\s*$`),
-        )
-        await gotoPage(expect, cold, '/hilos/daemon/env-mismatch', PAGE_READY)
-        await expectStandaloneMismatch(
+        const held = await holdPageReply(cold, 'hilos_daemon_placement')
+        const navigation = gotoPage(
           expect,
           cold,
-          DAEMON_STANDALONE_NODE_NAME,
+          DAEMON_PLACEMENT_PATH,
+          PAGE_READY,
         )
-        await cold
-          .getByTestId('hilos-page-tab-hilos_daemon_placement')
-          .press('Enter')
-        await expectDaemonPlacementReset(expect, cold)
-        expectDaemonPlacementOwnership(expect, log)
-      } finally {
-        held.dispose()
-        await completed
-        await test.info().attach('daemon-section-cold-history-live', {
-          body: JSON.stringify({
-            packets: log.packets,
-            sent: log.sent,
-            search: await windows.read(),
-          }),
-          contentType: 'application/json',
-        })
-        log.stop()
-        await cold.close()
-      }
+        const completed = navigation.catch((error: unknown) => error)
+        const frames = () =>
+          log.packets
+            .flatMap((packet) => packet.frames)
+            .filter((frame) => frame.socket === log.sockets())
+        try {
+          await held.received
+          await expectDaemonPlacementPending(expect, cold)
+          held.release()
+          await navigation
+          const initial = await expectDaemonPlacementAnswer(
+            expect,
+            cold,
+            frames(),
+          )
+          expect(initial.entryPoints?.nodeId).toBe('standalone')
+          await expectDaemonPlacementRequests(expect, log)
+          if (viewer)
+            await expect(cold.getByTestId('view-mode-banner')).toBeVisible()
+          await cold.reload()
+          await expectDaemonPage(expect, cold, 'hilos_daemon_placement')
+          await expectDaemonPlacementAnswer(expect, cold, frames())
+          await expectDaemonPlacementRequests(expect, log)
+          await expectDaemonSectionAccessibility(
+            expect,
+            cold,
+            false,
+            DAEMON_STANDALONE_NODE_NAME,
+          )
+          await searchDaemonPlacement(expect, cold, windows)
+          const live = await watchDaemonPlacementLive(expect, cold, log, 2)
+          const visitor = await browser.newPage({
+            baseURL,
+            ignoreHTTPSErrors: true,
+          })
+          try {
+            await gotoPage(expect, visitor, '/', PAGE_READY)
+            await live.changed()
+          } finally {
+            await visitor.context().close()
+            await live.dispose()
+          }
+          await cold.getByTestId('hilos-page-tab-hilos_daemon').press('Enter')
+          await expectDaemonPage(expect, cold, 'hilos_daemon')
+          await expectDaemonSectionHead(expect, cold, 'hilos_daemon')
+          await expect(
+            cold.getByTestId('hilos-daemon-placement-view'),
+          ).toHaveCount(0)
+          const source = await expectDaemonRootEntryPoints(expect, cold, log)
+          expect(source.nodeId).toBe('standalone')
+          await cold.goBack()
+          await expectDaemonPlacementReset(expect, cold)
+          await cold.goForward()
+          await expectDaemonPage(expect, cold, 'hilos_daemon')
+          await expectDaemonSectionHead(expect, cold, 'hilos_daemon')
+          await cold
+            .getByTestId('hilos-page-tab-hilos_daemon_placement')
+            .press('Enter')
+          await expectDaemonPlacementReset(expect, cold)
+          // The source's metrics link is a real addressed HTTP page.
+          await cold.getByTestId('hilos-page-tab-hilos_daemon').press('Enter')
+          await expectDaemonPage(expect, cold, 'hilos_daemon')
+          await cold.getByTestId('hilos-daemon-entry-metrics').press('Enter')
+          await expectDaemonPage(expect, cold, 'hilos_daemon_http_server')
+          await expect(cold).toHaveURL(
+            `${DAEMON_ROOT_PATH}/node/${source.nodeId}/http`,
+          )
+          await expect(
+            cold.getByTestId('hilos-daemon-http-address'),
+          ).toHaveText(new RegExp(`:${source.httpPort}\\s*$`))
+          await gotoPage(expect, cold, '/hilos/daemon/env-mismatch', PAGE_READY)
+          await expectStandaloneMismatch(
+            expect,
+            cold,
+            DAEMON_STANDALONE_NODE_NAME,
+          )
+          await cold
+            .getByTestId('hilos-page-tab-hilos_daemon_placement')
+            .press('Enter')
+          await expectDaemonPlacementReset(expect, cold)
+          expectDaemonPlacementOwnership(expect, log)
+        } finally {
+          held.dispose()
+          await completed
+          await test.info().attach('daemon-section-cold-history-live', {
+            body: JSON.stringify({
+              packets: log.packets,
+              sent: log.sent,
+              search: await windows.read(),
+            }),
+            contentType: 'application/json',
+          })
+          log.stop()
+          await cold.close()
+        }
+      })
     })
   }
 })

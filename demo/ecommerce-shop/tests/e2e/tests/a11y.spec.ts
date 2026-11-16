@@ -2,14 +2,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from '../test.js'
 
 import {
-  DAEMON_NODE_PATH,
-  DAEMON_NODE_TABS,
-  DAEMON_STANDALONE_NODE_NAME,
   clickSubmit,
-  expectDaemonNodeHead,
-  expectDaemonNodeTableName,
-  expectStandaloneWebsockets,
-  watchDaemonWebsocketsFrames,
   gotoPage,
   grantAdminToSelf,
   openTableFixture,
@@ -43,63 +36,6 @@ import {
   watchPublicStatus,
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
-
-test('Node pages expose one entity heading, link tabs and tables named through the Shell', async ({
-  page,
-}) => {
-  // Each addressed page is a real subscription opened from the keyboard.
-  test.slow()
-  const reports = watchDaemonWebsocketsFrames(page)
-  try {
-    await grantAdminToSelf(expect, page)
-    await gotoPage(expect, page, DAEMON_NODE_PATH)
-    await expectDaemonNodeHead(
-      expect,
-      page,
-      'hilos_daemon_node',
-      'standalone',
-      {
-        showLogLinks: false,
-        nodeName: DAEMON_STANDALONE_NODE_NAME,
-      },
-    )
-    for (const tab of DAEMON_NODE_TABS.slice(1)) {
-      const link = page.getByTestId(`hilos-page-tab-${tab.key}`)
-      await link.focus()
-      await expect(link).toBeFocused()
-      await link.press('Enter')
-      await expect(page).toHaveURL(`${DAEMON_NODE_PATH}${tab.path}`)
-      await expectDaemonNodeHead(expect, page, tab.key, 'standalone', {
-        showLogLinks: false,
-        nodeName: DAEMON_STANDALONE_NODE_NAME,
-      })
-      if (tab.key === 'hilos_daemon_websockets') {
-        await expectStandaloneWebsockets(expect, page, reports.frames, {
-          showLogLinks: false,
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        })
-      } else if (tab.key !== 'hilos_daemon_env')
-        await expectDaemonNodeTableName(
-          expect,
-          page,
-          DAEMON_STANDALONE_NODE_NAME,
-        )
-      await page.getByTestId('hilos-page-tab-hilos_daemon_node').click()
-      await expectDaemonNodeHead(
-        expect,
-        page,
-        'hilos_daemon_node',
-        'standalone',
-        {
-          showLogLinks: false,
-          nodeName: DAEMON_STANDALONE_NODE_NAME,
-        },
-      )
-    }
-  } finally {
-    reports.stop()
-  }
-})
 
 test.describe('SDK reading accessibility, synthetic fixture ingress', () => {
   test.beforeEach(async ({ page }) => {

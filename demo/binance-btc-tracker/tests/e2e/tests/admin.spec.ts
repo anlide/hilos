@@ -31,97 +31,126 @@ const HILOS_USERS_TABLE = 'hilosUsers'
 test('navigates the admin tree with no reload or reconnect', async ({
   page,
 }) => {
-  let fullLoads = 0
-  page.on('load', () => {
-    fullLoads += 1
+  await test.step('navigates the admin tree with no reload or reconnect', async () => {
+    let fullLoads = 0
+    page.on('load', () => {
+      fullLoads += 1
+    })
+
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, '/')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    const loadsAfterColdLoad = fullLoads
+
+    // Gear -> dashboard, which lists the sections as cards.
+    await page.getByTestId('nav-admin').click()
+    await expect(page.getByTestId('dashboard-view')).toBeVisible()
+    await expect(page.getByTestId('dashboard-card-hilos_logs')).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/hilos')
+
+    // Dashboard card -> the Logs owner and its six page links.
+    await page.getByTestId('dashboard-card-hilos_logs').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs')
+    expect(new URL(page.url()).pathname).toBe('/hilos/logs')
+    await expect(
+      page.getByTestId('hilos-page-tab-hilos_logs_keys'),
+    ).toBeVisible()
+
+    // Every tab is its own page; Overview is the way back to the section summary.
+    await page.getByTestId('hilos-page-tab-hilos_logs_keys').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs_keys')
+    expect(new URL(page.url()).pathname).toBe('/hilos/logs/keys')
+    await expect(page.getByTestId('hilos-table-title')).toHaveText(
+      'Log streams',
+    )
+    await expect(page.getByTestId('hilos-table-search')).toBeVisible()
+    await expect(page.getByTestId('hilos-table-filter-class')).toBeVisible()
+    await expect(page.getByTestId('hilos-table-count')).toBeVisible()
+    await page.getByTestId('hilos-page-tab-hilos_logs').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs')
+    expect(new URL(page.url()).pathname).toBe('/hilos/logs')
+
+    await page.getByTestId('hilos-page-tab-hilos_logs_workers').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs_workers')
+    expect(new URL(page.url()).pathname).toBe('/hilos/logs/workers')
+    await expect(page.getByTestId('hilos-table-title')).toHaveText(
+      'Worker streams',
+    )
+    await expect(page.getByTestId('hilos-table-search')).toBeVisible()
+    await expect(page.getByTestId('hilos-table-filter-type')).toBeVisible()
+    await expect(page.getByTestId('hilos-table-count')).toBeVisible()
+    await page.getByTestId('hilos-page-tab-hilos_logs').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs')
+    expect(new URL(page.url()).pathname).toBe('/hilos/logs')
+
+    await page.getByTestId('hilos-page-tab-hilos_logs_rotations').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
+    await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
+    await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
+    await shownByTestId(page, 'hilos-table-filter-state').click()
+    await expect(page).toHaveURL(/\/hilos\/logs\/rotations\/due$/)
+    await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
+
+    await page.getByTestId('hilos-page-tab-hilos_logs_settings').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs_settings')
+    await expect(page).toHaveURL(/\/hilos\/logs\/settings$/)
+    await page.getByTestId('hilos-page-tab-hilos_logs_view').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs_view')
+    const stream = page.getByTestId('hilos-log-stream')
+    await expect(
+      stream.locator(`option[value="${FOLLOWED_STREAM}"]`),
+    ).toHaveCount(1)
+    await stream.selectOption(FOLLOWED_STREAM)
+    const viewerPath = `/hilos/logs/view/standalone/live/${FOLLOWED_STREAM}`
+    await expect(page).toHaveURL(new URL(viewerPath, page.url()).href)
+    await expectLogsPageHead(expect, page, 'hilos_logs_view')
+    await page.getByTestId('hilos-page-tab-hilos_logs').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs')
+
+    // The whole tour stayed in one live document on one socket.
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    expect(fullLoads).toBe(loadsAfterColdLoad)
+
+    // Cold entry, F5 and history use the same owner without extending its crumbs.
+    await gotoPage(expect, page, viewerPath, PAGE_READY)
+    await expectLogsPageHead(expect, page, 'hilos_logs_view')
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expectLogsPageHead(expect, page, 'hilos_logs_view')
+    await page.getByTestId('hilos-page-tab-hilos_logs_rotations').click()
+    await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
+    await page.goBack()
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(new URL(viewerPath, page.url()).href)
+    await expectLogsPageHead(expect, page, 'hilos_logs_view')
+    await page.goForward()
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
+    await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
   })
 
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  const loadsAfterColdLoad = fullLoads
-
-  // Gear -> dashboard, which lists the sections as cards.
-  await page.getByTestId('nav-admin').click()
-  await expect(page.getByTestId('dashboard-view')).toBeVisible()
-  await expect(page.getByTestId('dashboard-card-hilos_logs')).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe('/hilos')
-
-  // Dashboard card -> the Logs owner and its six page links.
-  await page.getByTestId('dashboard-card-hilos_logs').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs')
-  expect(new URL(page.url()).pathname).toBe('/hilos/logs')
-  await expect(page.getByTestId('hilos-page-tab-hilos_logs_keys')).toBeVisible()
-
-  // Every tab is its own page; Overview is the way back to the section summary.
-  await page.getByTestId('hilos-page-tab-hilos_logs_keys').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs_keys')
-  expect(new URL(page.url()).pathname).toBe('/hilos/logs/keys')
-  await expect(page.getByTestId('hilos-table-title')).toHaveText('Log streams')
-  await expect(page.getByTestId('hilos-table-search')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-filter-class')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-count')).toBeVisible()
-  await page.getByTestId('hilos-page-tab-hilos_logs').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs')
-  expect(new URL(page.url()).pathname).toBe('/hilos/logs')
-
-  await page.getByTestId('hilos-page-tab-hilos_logs_workers').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs_workers')
-  expect(new URL(page.url()).pathname).toBe('/hilos/logs/workers')
-  await expect(page.getByTestId('hilos-table-title')).toHaveText(
-    'Worker streams',
-  )
-  await expect(page.getByTestId('hilos-table-search')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-filter-type')).toBeVisible()
-  await expect(page.getByTestId('hilos-table-count')).toBeVisible()
-  await page.getByTestId('hilos-page-tab-hilos_logs').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs')
-  expect(new URL(page.url()).pathname).toBe('/hilos/logs')
-
-  await page.getByTestId('hilos-page-tab-hilos_logs_rotations').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
-  await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
-  await expect(page.getByTestId('hilos-table-loading')).toHaveCount(0)
-  await shownByTestId(page, 'hilos-table-filter-state').click()
-  await expect(page).toHaveURL(/\/hilos\/logs\/rotations\/due$/)
-  await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
-
-  await page.getByTestId('hilos-page-tab-hilos_logs_settings').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs_settings')
-  await expect(page).toHaveURL(/\/hilos\/logs\/settings$/)
-  await page.getByTestId('hilos-page-tab-hilos_logs_view').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs_view')
-  const stream = page.getByTestId('hilos-log-stream')
-  await expect(
-    stream.locator(`option[value="${FOLLOWED_STREAM}"]`),
-  ).toHaveCount(1)
-  await stream.selectOption(FOLLOWED_STREAM)
-  const viewerPath = `/hilos/logs/view/standalone/live/${FOLLOWED_STREAM}`
-  await expect(page).toHaveURL(new URL(viewerPath, page.url()).href)
-  await expectLogsPageHead(expect, page, 'hilos_logs_view')
-  await page.getByTestId('hilos-page-tab-hilos_logs').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs')
-
-  // The whole tour stayed in one live document on one socket.
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  expect(fullLoads).toBe(loadsAfterColdLoad)
-
-  // Cold entry, F5 and history use the same owner without extending its crumbs.
-  await gotoPage(expect, page, viewerPath, PAGE_READY)
-  await expectLogsPageHead(expect, page, 'hilos_logs_view')
-  await page.reload()
-  await expectPageReady(expect, page)
-  await expectLogsPageHead(expect, page, 'hilos_logs_view')
-  await page.getByTestId('hilos-page-tab-hilos_logs_rotations').click()
-  await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
-  await page.goBack()
-  await expectPageReady(expect, page)
-  await expect(page).toHaveURL(new URL(viewerPath, page.url()).href)
-  await expectLogsPageHead(expect, page, 'hilos_logs_view')
-  await page.goForward()
-  await expectPageReady(expect, page)
-  await expect(page).toHaveURL(/\/hilos\/logs\/rotations$/)
-  await expectLogsPageHead(expect, page, 'hilos_logs_rotations')
+  await test.step('Logs pages expose named navigation, one heading and ordinary keyboard links', async () => {
+    await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
+    await expectLogsPageHead(expect, page, 'hilos_logs')
+    const overview = page.getByTestId('hilos-page-tab-hilos_logs')
+    const keys = page.getByTestId('hilos-page-tab-hilos_logs_keys')
+    await overview.focus()
+    await expect(overview).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(keys).toBeFocused()
+    await keys.press('Enter')
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(/\/hilos\/logs\/keys$/)
+    await expectLogsPageHead(expect, page, 'hilos_logs_keys')
+    await keys.focus()
+    await page.keyboard.press('Tab')
+    const workers = page.getByTestId('hilos-page-tab-hilos_logs_workers')
+    await expect(workers).toBeFocused()
+    await workers.press('Enter')
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(/\/hilos\/logs\/workers$/)
+    await expectLogsPageHead(expect, page, 'hilos_logs_workers')
+  })
 })
 
 // A built parametrized admin page resolves on cold load through the framework

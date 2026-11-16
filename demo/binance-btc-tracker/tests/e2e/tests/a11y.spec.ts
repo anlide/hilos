@@ -1,8 +1,6 @@
 import { expect, test as base } from '../test.js'
 import {
   expectBreadcrumbLabels,
-  DAEMON_NODE_PATH,
-  DAEMON_STANDALONE_NODE_NAME,
   RESTART_MARK_TIMEOUT_MS,
   STATUS_PATH,
   STATUS_WORKS_PATH,
@@ -22,22 +20,16 @@ import {
   dismissToasts,
   MAINTENANCE_PATH,
   expectMaintenanceWatchdogThresholds,
-  expectDaemonNodeTableName,
   expectPublicStatusAccessibility,
   expectPublicStatusPair,
   expectPublicStatusReadOnly,
   expectStatusHead,
   expectLanguagePageHead,
-  expectLogsPageHead,
   expectChangeLogSectionHead,
   expectStatusIncidentDialog,
   shownByTestId,
   watchPublicStatus,
   watchStatusFrames,
-  DAEMON_ROOT_PATH,
-  expectDaemonPage,
-  expectDaemonSectionHead,
-  expectDaemonSectionAccessibility,
   expectPageReady,
   expectMaintenancePageCurrent,
   gotoPage,
@@ -226,32 +218,6 @@ test('Analytics Person has one entity heading naming its table and a decorative 
   await expect(current.getByRole('link')).toHaveCount(0)
   await expect(head.getByTestId('hilos-page-tabs')).toHaveCount(0)
   await expect(page.getByRole('tablist')).toHaveCount(0)
-})
-
-test('Logs pages expose named navigation, one heading and ordinary keyboard links', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/logs', PAGE_READY)
-  await expectLogsPageHead(expect, page, 'hilos_logs')
-  const overview = page.getByTestId('hilos-page-tab-hilos_logs')
-  const keys = page.getByTestId('hilos-page-tab-hilos_logs_keys')
-  await overview.focus()
-  await expect(overview).toBeFocused()
-  await page.keyboard.press('Tab')
-  await expect(keys).toBeFocused()
-  await keys.press('Enter')
-  await expectPageReady(expect, page)
-  await expect(page).toHaveURL(/\/hilos\/logs\/keys$/)
-  await expectLogsPageHead(expect, page, 'hilos_logs_keys')
-  await keys.focus()
-  await page.keyboard.press('Tab')
-  const workers = page.getByTestId('hilos-page-tab-hilos_logs_workers')
-  await expect(workers).toBeFocused()
-  await workers.press('Enter')
-  await expectPageReady(expect, page)
-  await expect(page).toHaveURL(/\/hilos\/logs\/workers$/)
-  await expectLogsPageHead(expect, page, 'hilos_logs_workers')
 })
 
 test('Status pages expose the shared heading, current tab, title, named table and keyboard navigation', async ({
@@ -453,58 +419,6 @@ test('the default language deletion explanation is named, keyboard readable and 
   await expect(why).toBeFocused()
   await expect(trash).toBeDisabled()
   await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
-})
-
-test('the Env orphans tab names its one table through the heading from the keyboard', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, DAEMON_NODE_PATH, PAGE_READY)
-  const link = page.getByTestId('hilos-page-tab-hilos_daemon_env_orphans')
-  await link.focus()
-  await expect(link).toBeFocused()
-  await link.press('Enter')
-  await expectPageReady(expect, page)
-  await expect(page).toHaveURL(`${DAEMON_NODE_PATH}/env/orphans`)
-  await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-  await expectDaemonNodeTableName(expect, page, DAEMON_STANDALONE_NODE_NAME)
-})
-
-test.describe('Daemon section accessibility', () => {
-  test.afterEach(() => setAdminViewMode(false))
-
-  for (const viewer of [false, true]) {
-    test(`Daemon section links, shared heading and Placement keyboard controls as ${viewer ? 'a viewer' : 'an admin'}`, async ({
-      page,
-    }) => {
-      await setAdminViewMode(viewer)
-      if (!viewer) await grantAdminToSelf(expect, page)
-      await gotoPage(expect, page, DAEMON_ROOT_PATH)
-      await expectDaemonPage(expect, page, 'hilos_daemon')
-      await expectDaemonSectionHead(expect, page, 'hilos_daemon')
-      const placement = page.getByTestId(
-        'hilos-page-tab-hilos_daemon_placement',
-      )
-      await placement.focus()
-      await expect(placement).toBeFocused()
-      await placement.press('Enter')
-      await expectDaemonPage(expect, page, 'hilos_daemon_placement')
-      await expectDaemonSectionAccessibility(
-        expect,
-        page,
-        false,
-        DAEMON_STANDALONE_NODE_NAME,
-      )
-      if (viewer)
-        await expect(page.getByTestId('view-mode-banner')).toBeVisible()
-      const overview = page.getByTestId('hilos-page-tab-hilos_daemon')
-      await overview.focus()
-      await expect(overview).toBeFocused()
-      await overview.press('Enter')
-      await expectDaemonPage(expect, page, 'hilos_daemon')
-      await expectDaemonSectionHead(expect, page, 'hilos_daemon')
-    })
-  }
 })
 
 test('Change Log names its section navigation and tables from one shared heading', async ({
