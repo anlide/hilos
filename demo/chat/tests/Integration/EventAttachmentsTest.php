@@ -18,6 +18,7 @@ use Demo\Chat\Database\View\Item\EventAttachment;
 use Demo\Chat\Files\ChatAttachmentUploadTarget;
 use Demo\Chat\Hilos;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Execution\ExecutionContext;
@@ -29,6 +30,8 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
 use Hilos\Core\Source\SourceChangeSubscriberInterface;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Exception\Transaction\AnnouncementFailedException;
 use Hilos\Database\Object\Item\File as ObjectFile;
@@ -219,6 +222,74 @@ final class EventAttachmentsTest extends IntegrationTestCase
         $remove = $this->onlyQueued(HilosSignalConstants::HILOS_FILE_REMOVE);
         self::assertInstanceOf(FileRemoveSignalData::class, $remove);
         self::assertSame([$first, $second], $remove->fileIds);
+    }
+
+    /**
+     * Delivers the registry callback after a committed tombstone, before sign-out or DB_SYNC consumption.
+     * The loser connection and complete ORM mirror stay local and unchanged. This window is shorter
+     * than a stand tick; a browser cannot pause frame handling there, and the new merge has no live
+     * sender yet. Handler plus DB coverage proves the guard, not cross-node delivery or failover.
+     */
+    public function testMergeCommittedAfterPublicationRemovesTheFilesWithoutWritingAMessage(): void
+    {
+        $this->approveMessage();
+        self::assertInstanceOf(UploadPublishSignalData::class, $this->onlyQueued(HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE));
+        $first = $this->registryFile('merged-1.txt');
+        $second = $this->registryFile('merged-2.txt');
+        $merges = Hilos::$db->userMerges->getObjectCollection();
+        self::assertNotNull($merges);
+        $merges->preloadAll();
+        self::assertTrue($merges->isAllLoaded());
+        self::assertArrayNotHasKey($this->userId, Hilos::$db->userMerges);
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, NULL, ?)',
+            [$this->userId, TimeHelper::nowMs()],
+        );
+
+        $this->deliverPublished(new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1', 'u2'], [$first, $second], null));
+
+        self::assertSame($this->userId, Hilos::$rt->connections[self::ACCEPT_KEY]->userId);
+        self::assertTrue($merges->isAllLoaded());
+        self::assertArrayNotHasKey($this->userId, Hilos::$db->userMerges);
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertSame(self::TEXT, Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationMessage);
+        self::assertSame(['u1', 'u2'], Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationAttachments);
+        self::assertSame(0, $this->messagesWritten());
+        self::assertSame([], Database::sql('SELECT * FROM `event_message` WHERE `author_user_id` = ?', [$this->userId])->rows());
+        self::assertSame([], Database::sql('SELECT * FROM `event_attachment` WHERE `file_id` IN (?, ?)', [$first, $second])->rows());
+        $remove = $this->onlyQueued(HilosSignalConstants::HILOS_FILE_REMOVE);
+        self::assertInstanceOf(FileRemoveSignalData::class, $remove);
+        self::assertSame([$first, $second], $remove->fileIds);
+    }
+
+    /** Preparation without a tombstone leaves the registry reply free to publish the message. */
+    public function testMergePreparationAfterPublicationStillWritesTheMessageAndAttachmentLinks(): void
+    {
+        $this->approveMessage();
+        self::assertInstanceOf(UploadPublishSignalData::class, $this->onlyQueued(HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
+        $first = $this->registryFile('preparing-1.txt');
+        $second = $this->registryFile('preparing-2.txt');
+        $survivorId = (int)Hilos::$db->users->actions->createWithName('Survivor')->id;
+        TruthSourceRegistry::register(HilosDbContext::accountOperations, TruthSourceKeys::all(), self::TEST_AGENT_ID);
+        $operation = Hilos::$db->accountOperations->actions->recordMerge(
+            $survivorId, $this->userId, new AccountMergeChoice(null, null, null, null),
+        );
+        self::assertSame('preparing', $operation->stage);
+        self::assertFalse(Hilos::$db->userMerges->isMergedInDatabase($this->userId));
+
+        $this->deliverPublished(new FilesPublishedSignalData(self::ACCEPT_KEY, ['u1', 'u2'], [$first, $second], null));
+
+        self::assertSame($this->userId, Hilos::$rt->connections[self::ACCEPT_KEY]->userId);
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertSame(1, $this->messagesWritten());
+        self::assertCount(1, Database::sql('SELECT * FROM `event_message` WHERE `author_user_id` = ?', [$this->userId])->rows());
+        self::assertSame([$first, $second], Hilos::$db->eventAttachments->allFileIds());
+        $bind = $this->onlyQueued(HilosSignalConstants::HILOS_FILE_BIND);
+        self::assertInstanceOf(FileBindSignalData::class, $bind);
+        self::assertSame([$first, $second], $bind->fileIds);
     }
 
     public function testAnAnswerCannotPublishWhileAModerationCheckIsStillActive(): void

@@ -78,13 +78,12 @@ final class EventMessagesActions extends DbActions
      * number of messages re-pointed (the merge summary's "messages moved"). Runs
      * inside the merge transaction, so a failure rolls the whole merge back.
      *
-     * The caller carries the claim, and it is a borrowed one: since HIL-729 the merge
-     * runs in the process that owns the SESSIONS, and the chat agent that owns this
-     * collection is elsewhere, so the sessions library registers its own narrow grant
-     * over these rows ({@see SessionsLibraryAgent::onStart()}). The registry is per
-     * process, which is what makes that possible - a grant is not asserted against the
-     * owner, it is held beside it. The framework half of the same merge
-     * ({@see Identities::rePointToUser()}) is covered the same way, in the same hook.
+     * ChatAgent runs its prepared merge participant under its own collection claim.
+     * The current live merge still runs in the sessions holder, with its borrowed narrow
+     * Update grant ({@see SessionsLibraryAgent::OWNS_DB}) until the HIL-1999 switch.
+     * The registry is per process, so that transitional grant stays beside the owner.
+     * The framework half of the legacy merge ({@see Identities::rePointToUser()})
+     * remains on its current path too.
      *
      * This used to read that no claim was needed because the collection is registered
      * with a lazy key strategy. That held on nothing but the guard's silence: the right

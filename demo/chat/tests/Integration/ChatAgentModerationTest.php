@@ -16,6 +16,7 @@ use Demo\Chat\Moderation\ChatModerationKindKey;
 use Demo\Chat\Pages\DTO\Main\MessageActionDTO;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HilosAgentType;
@@ -27,6 +28,8 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceOperations;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Moderation\DTO\ModerationVerdictSignalData;
 use Hilos\Moderation\ModerationKindKey;
@@ -313,6 +316,87 @@ final class ChatAgentModerationTest extends IntegrationTestCase
     public static function erasingDraftAttachments(): array
     {
         return ['text' => [[]], 'text with a document' => [['doc']]];
+    }
+
+    /**
+     * Delivers the allow callback after a committed merge, before sign-out or DB_SYNC consumption.
+     * The loser connection and complete ORM mirror stay local and unchanged. This window is shorter
+     * than a stand tick; a browser cannot pause frame handling there, and the new merge has no live
+     * sender yet. Handler plus DB coverage proves the guard, not cross-node delivery or failover.
+     *
+     * @param list<string> $ids Draft's attachment ids
+     */
+    #[DataProvider('erasingDraftAttachments')]
+    public function testMergeCommittedDuringModerationReturnsTheDraftWithoutPublishing(array $ids): void
+    {
+        if ($ids !== []) {
+            $this->completeUpload(self::ACCEPT_KEY, $this->userId, 'doc', 'notes.pdf', 'application/pdf', 'pdf');
+        }
+        $this->submit('draft', $ids);
+        $check = $this->messageCheck();
+        $survivorId = (int)Hilos::$db->users->actions->createWithName('Survivor')->id;
+        $merges = Hilos::$db->userMerges->getObjectCollection();
+        self::assertNotNull($merges);
+        $merges->preloadAll();
+        self::assertTrue($merges->isAllLoaded());
+        self::assertArrayNotHasKey($this->userId, Hilos::$db->userMerges);
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, ?)',
+            [$this->userId, $survivorId, TimeHelper::nowMs()],
+        );
+
+        $this->decideCheck($this->agent, $check);
+
+        self::assertSame($this->userId, Hilos::$rt->connections[self::ACCEPT_KEY]->userId);
+        self::assertTrue($merges->isAllLoaded());
+        self::assertArrayNotHasKey($this->userId, Hilos::$db->userMerges);
+        self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_UNAVAILABLE,
+            Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+        self::assertSame('draft', Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationMessage);
+        self::assertSame($ids, Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationAttachments);
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE));
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE_PICTURE));
+        $this->assertMessages([]);
+        self::assertSame([], Database::sql('SELECT * FROM `event_message` WHERE `author_user_id` = ?', [$this->userId])->rows());
+        self::assertSame([], $this->queuedNamed(HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
+    }
+
+    /**
+     * The preparation reserve is not a committed merge and does not close publication.
+     *
+     * @param list<string> $ids Draft's attachment ids
+     */
+    #[DataProvider('erasingDraftAttachments')]
+    public function testMergePreparationDuringModerationStillAllowsPublication(array $ids): void
+    {
+        if ($ids !== []) {
+            $this->completeUpload(self::ACCEPT_KEY, $this->userId, 'doc', 'notes.pdf', 'application/pdf', 'pdf');
+        }
+        $this->submit('draft', $ids);
+        $check = $this->messageCheck();
+        $survivorId = (int)Hilos::$db->users->actions->createWithName('Survivor')->id;
+        TruthSourceRegistry::register(HilosDbContext::accountOperations, TruthSourceKeys::all(), 'test-agent');
+        $operation = Hilos::$db->accountOperations->actions->recordMerge(
+            $survivorId, $this->userId, new AccountMergeChoice(null, null, null, null),
+        );
+        self::assertSame('preparing', $operation->stage);
+        self::assertFalse(Hilos::$db->userMerges->isMergedInDatabase($this->userId));
+
+        $this->decideCheck($this->agent, $check);
+
+        self::assertSame($this->userId, Hilos::$rt->connections[self::ACCEPT_KEY]->userId);
+        self::assertNull(Hilos::$rt->hilosModerationChecks->find(self::ACCEPT_KEY, ChatModerationKindKey::MESSAGE));
+        if ($ids === []) {
+            self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_NONE,
+                Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+            $this->assertMessages(['draft']);
+            self::assertSame([], $this->queuedNamed(HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
+        } else {
+            self::assertSame(ConnectionRuntimeConstants::OUTBOUND_MODERATION_PHASE_CHECKING,
+                Hilos::$rt->connections[self::ACCEPT_KEY]->outboundModerationPhase);
+            $this->assertMessages([]);
+            self::assertCount(1, $this->queuedNamed(HilosSignalConstants::HILOS_UPLOAD_PUBLISH));
+        }
     }
 
     public function testUnknownRequestOldAttemptAndChangedTextOrIdsCannotApproveTheDraft(): void

@@ -19,10 +19,11 @@ use Hilos\Database\View\Item\UserMerge;
 /**
  * The framework merge table, keyed by the folded account.
  *
- * `Hilos::$db->userMerges[$userId]` is that account's merge row, or null when it was never
- * folded into another one - which is how "is this account merged" is asked. The accounts
- * folded into one person are read by foldedInto(); the live end of the chain a folded
- * account leads to, by liveSurvivorOf(); the circle an erasure takes along, by erasureCircleOf().
+ * `Hilos::$db->userMerges[$userId] ?? null` is that account's optional merge row from the
+ * local mirror or lazy loading. isMergedInDatabase() checks fresh presence regardless of
+ * mirror completeness or pending DB sync. The accounts folded into one person are read by
+ * foldedInto(); the live end of the chain a folded account leads to, by liveSurvivorOf();
+ * the circle an erasure takes along, by erasureCircleOf().
  *
  * @extends DbCollection<UserMerge, ObjectUserMerges>
  * @method ObjectUserMerges|null getObjectCollection()
@@ -36,6 +37,18 @@ class UserMerges extends DbCollection
 {
     public const string DB_ITEM_CLASS = UserMerge::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectUserMerges::class;
+
+    /**
+     * Reads fresh presence without hydrating the local mirror, including tombstones whose survivor is null.
+     *
+     * @param int $userId Folded account whose own tombstone is checked
+     * @return bool Whether the database currently holds that account's merge row
+     * @throws DatabaseException When the query fails; failure is not reported as absence
+     */
+    public function isMergedInDatabase(int $userId): bool
+    {
+        return $this->objectCollection->isMergedInDatabase($userId);
+    }
 
     /**
      * @param int $survivorUserId Person the requested accounts were folded into

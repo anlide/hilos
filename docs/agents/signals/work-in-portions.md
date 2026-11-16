@@ -162,8 +162,9 @@ work with receipt (not in the code yet — HIL-1994), and the holder
 its own work with result (not in the code yet — HIL-1995). Declared project
 participants follow that same local atomic boundary — `AccountMergeProjectStep`
 commits an owner's move with its result, built and live at the merge switch —
-including chat's author transfer
-(not in the code yet — HIL-1997). Operation/stage correlation rejects
+including chat's prepared author transfer and message count through its
+existing assignment ask/answer entry, with no live merge sender until HIL-2000
+and HIL-1999. Operation/stage correlation rejects
 duplicate, old and foreign answers without advancing unrelated work
 (not in the code yet — HIL-2000). Recovery selects unfinished obligations
 from DB at start, on subsequent coordinator passes and on operation frames

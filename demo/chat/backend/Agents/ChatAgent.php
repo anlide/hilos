@@ -56,6 +56,10 @@ use Hilos\Auth\AccountOperation\AccountErasurePart;
 use Hilos\Auth\AccountOperation\AccountErasurePersonalCaptureResult;
 use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
 use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
+use Hilos\Auth\AccountOperation\AccountMergePart;
+use Hilos\Auth\AccountOperation\AccountMergeProjectOwner;
+use Hilos\Auth\AccountOperation\AccountMergeProjectStep;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
@@ -98,10 +102,10 @@ use JsonException;
  * moved there whole, because the guards and the write they need are the same process again,
  * and what this project answers is a seam apiece.
  *
- * Its erasure part removes a person's feed rows (HIL-1949), and it refuses to write a message
- * from a person whose erasure has begun.
+ * Its erasure part removes a person's feed rows, and its prepared merge part transfers message
+ * authorship. It refuses to write a message after the author's erasure begins or merge commits.
  */
-final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwner
+final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwner, AccountMergeProjectOwner
 {
     /**
      * The room and everything written into it: the events, their messages, who joined, and what
@@ -125,7 +129,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     ];
 
     /**
-     * Results of this agent's erasure steps are added and never changed (HIL-1949). Their set
+     * Results of this agent's erasure and merge steps are added and never changed. Their set
      * is the agent's full id, the owner named by the assignment. See
      * docs/agents/architecture/account-operations.md, "The participant result claim".
      *
@@ -156,7 +160,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     public const array READS_RT = [HilosUpload::RT_COLLECTION];
 
     /**
-     * @var list<string> Settings, files, journals a history clear asks to unlink, and the erasure part's assignment and its operation
+     * @var list<string> Settings, files, journals a history clear asks to unlink, and erasure/merge assignments and operations
      */
     public const array READS_DB = [
         HilosDbContext::settings,
@@ -413,6 +417,24 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     }
 
     /**
+     * Transfers the loser's message authorship inside the common merge step's transaction.
+     * SCAFFOLD: no live sender until HIL-2000 and the merge switch in HIL-1999.
+     *
+     * @param AccountMergePart $part Operation, survivor and loser whose messages move
+     * @return array<string, int> Number of messages moved to the survivor
+     * @throws HilosException When storage or a truth-source check refuses the move
+     */
+    public function mergeAccountPart(AccountMergePart $part): array
+    {
+        return [
+            ChatCommandConstants::ROWS_MOVED_MESSAGES => Hilos::$db->eventMessages->actions->rePointAuthor(
+                $part->loserUserId,
+                $part->survivorUserId,
+            ),
+        ];
+    }
+
+    /**
      * Records chat startup and restores per-user state for connections kept through a stop.
      *
      * @throws HilosException On database or runtime startup failure
@@ -520,7 +542,10 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
                 $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
                     $ask,
                     fn (AccountOperationAssignment $assignment): AccountOperationResult =>
-                        AccountErasureProjectStep::run($this, $assignment->id),
+                        match ($assignment->operation->kind) {
+                            AccountOperationKind::Merge => AccountMergeProjectStep::run($this, $assignment->id),
+                            AccountOperationKind::Erasure => AccountErasureProjectStep::run($this, $assignment->id),
+                        },
                     $this->getId(),
                 ));
 
@@ -983,7 +1008,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
         if ($check->deadlineAt <= TimeHelper::nowMs()) {
             throw new ValidationException('The message moderation deadline expired');
         }
-        if ($this->erasureBegun($check->userId)) {
+        if ($this->messageAuthorUnavailable($check->userId)) {
             $this->forgetMessageChecks($check->acceptKey, $check);
             $this->failMessageModeration($check->acceptKey);
             return;
@@ -1057,17 +1082,18 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     }
 
     /**
-     * Chat's single writer runs each handler to completion; its erasure part is assigned only after start.
-     * The holder's post-commit sign-out frame is not durable, so it cannot close this door.
-     * A message written after the chat part would survive final erasure with its author set to null.
+     * Chat runs each handler to completion: earlier messages enter its merge or erasure part.
+     * A committed merge tombstone or started erasure closes late publication before sign-out or DB sync.
+     * Preparation alone stays open; the guard also covers the current merge path.
      *
      * @param int $userId Person attempting to publish a message
-     * @return bool Whether a standing erasure has begun in the database
-     * @throws HilosException When the standing request cannot be read
+     * @return bool Whether the database records a merge or started erasure for the author
+     * @throws HilosException When the merge fact or standing erasure cannot be read
      */
-    private function erasureBegun(int $userId): bool
+    private function messageAuthorUnavailable(int $userId): bool
     {
-        return Hilos::$db->accountDeletions->startedOf($userId) !== null;
+        return Hilos::$db->userMerges->isMergedInDatabase($userId)
+            || Hilos::$db->accountDeletions->startedOf($userId) !== null;
     }
 
     /**
@@ -1236,7 +1262,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
             $this->removeUnlinkedPublicationFiles($published->fileIds);
             return;
         }
-        if ($this->erasureBegun(Hilos::$rt->connections[$published->acceptKey]->userId)) {
+        if ($this->messageAuthorUnavailable(Hilos::$rt->connections[$published->acceptKey]->userId)) {
             $this->failMessageModeration($published->acceptKey);
             $this->removeUnlinkedPublicationFiles($published->fileIds);
             return;

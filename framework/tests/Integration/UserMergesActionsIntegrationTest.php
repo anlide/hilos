@@ -95,6 +95,80 @@ final class UserMergesActionsIntegrationTest extends HilosSessionIntegrationTest
     }
 
     /**
+     * A person without a tombstone is not merged.
+     */
+    public function testFreshMergePresenceIsFalseWithoutATombstone(): void
+    {
+        $userId = self::seedPerson('Unmerged');
+
+        $this->assertFalse(Hilos::$db->userMerges->isMergedInDatabase($userId));
+    }
+
+    /**
+     * A SQL fixture models a merge not delivered by DB sync to a previously read partial mirror.
+     */
+    public function testFreshMergePresenceSeesARowMissingFromAPartialMirror(): void
+    {
+        $survivor = self::seedPerson('Survivor');
+        $loser = self::seedPerson('Loser');
+        $merges = Hilos::$db->userMerges;
+        $objects = $merges->getObjectCollection();
+        $this->assertNotNull($objects);
+        $this->assertArrayNotHasKey($loser, $merges);
+        $this->assertFalse($objects->isAllLoaded());
+        $this->assertFalse($merges->isMergedInDatabase($loser));
+
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NULL)',
+            [$loser, $survivor],
+        );
+
+        $this->assertTrue($merges->isMergedInDatabase($loser));
+        $this->assertFalse($merges->isMergedInDatabase($survivor));
+        $this->assertFalse($objects->isAllLoaded());
+    }
+
+    /**
+     * A complete mirror stays unchanged while fresh presence sees a SQL fixture without DB sync.
+     */
+    public function testFreshMergePresenceSeesARowMissingFromACompleteMirror(): void
+    {
+        $survivor = self::seedPerson('Survivor');
+        $loser = self::seedPerson('Loser');
+        $merges = Hilos::$db->userMerges;
+        $objects = $merges->getObjectCollection();
+        $this->assertNotNull($objects);
+        $objects->preloadAll();
+        $this->assertTrue($objects->isAllLoaded());
+        $this->assertArrayNotHasKey($loser, $merges);
+        $this->assertFalse($merges->isMergedInDatabase($loser));
+
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, NULL)',
+            [$loser, $survivor],
+        );
+
+        $this->assertTrue($merges->isMergedInDatabase($loser));
+        $this->assertFalse($merges->isMergedInDatabase($survivor));
+        $this->assertArrayNotHasKey($loser, $merges);
+        $this->assertTrue($objects->isAllLoaded());
+    }
+
+    /**
+     * An erased survivor leaves a tombstone that still closes the folded account.
+     */
+    public function testFreshMergePresenceIncludesATombstoneWithoutASurvivor(): void
+    {
+        $loser = self::seedPerson('Loser');
+        Database::sqlRun(
+            'INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, NULL, NULL)',
+            [$loser],
+        );
+
+        $this->assertTrue(Hilos::$db->userMerges->isMergedInDatabase($loser));
+    }
+
+    /**
      * An account is folded at most once: a second merge of it is refused by the database.
      *
      * @throws HilosException On database error

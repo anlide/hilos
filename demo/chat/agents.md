@@ -82,10 +82,16 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
    whatever rights the old merge needs stay afterward.
    The [chat merge part](spec/agents/chat-agent.md#responsibilities) transfers the
    loser's message authorship across all rooms in one `ChatAgent` transaction with
-   its result (not in the code yet — HIL-1997), through the project participant
-   seam, which is ready: the chat directory already declares the `chat` owner,
-   and `ChatAgent` implements `AccountMergeProjectOwner`
-   (not in the code yet — HIL-1997). The holder's current `applyAccountMerge()`
+   its result through `AccountMergeProjectStep`. The directory's `chat` singleton
+   implements both project owner interfaces; its prepared `mergeAccountPart()`
+   uses the existing `chat_account_operation_step` ask/answer entry, dispatching
+   by the assignment operation's durable kind. There is no live merge sender
+   until HIL-2000 and HIL-1999. A committed merge already closes both late
+   publication doors through the fresh `isMergedInDatabase()` reader, including
+   a null-survivor tombstone, without waiting for sign-out or DB_SYNC. The
+   existing draft/unavailable outcome stays, with no publication as survivor;
+   preparing alone leaves sending open, and unbound registry files follow
+   `removeUnlinkedPublicationFiles()`. The holder's current `applyAccountMerge()`
    and borrowed `Update` on `eventMessages` remain until the single merge switch
    (not in the code yet — HIL-1999).
 2. `LibraryAgent` is the **only** truth source for the admin library DB collection `bots`
