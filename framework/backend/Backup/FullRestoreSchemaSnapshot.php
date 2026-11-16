@@ -82,6 +82,65 @@ final readonly class FullRestoreSchemaSnapshot
     }
 
     /**
+     * @param int $index Connection index whose session parameters are being verified
+     * @param bool $upFinished Whether migrateUp has completed on this connection
+     * @throws RestoreFailedException When session parameters changed or could not be read
+     * @throws DatabaseException When the caller's connection cannot be restored
+     */
+    public function assertUpSessionUnchanged(int $index, bool $upFinished): void
+    {
+        $callerIndex = Database::getCurrentIndex();
+        $reliance = $upFinished
+            ? 'Connection ' . $index . ' is imported and UP has run'
+            : 'Connection ' . $index . ' is imported but not migrated';
+        try {
+            try {
+                $rows = Database::sql(
+                    "SHOW SESSION VARIABLES WHERE Variable_name IN ('"
+                    . SchemaMetadata::CHECK_CONSTRAINT_CHECKS . "', '"
+                    . SchemaMetadata::SQL_MODE . "', '"
+                    . SchemaMetadata::DEFAULT_STORAGE_ENGINE . "')",
+                    index: $index,
+                )->rows();
+            } catch (DatabaseException $failure) {
+                throw RestoreFailedException::afterDestructive($reliance . ': the UP session settings could not be read', $failure);
+            }
+            $counts = [];
+            $values = [];
+            foreach ($rows as $row) {
+                if (!isset($row['Variable_name']) || !array_key_exists('Value', $row)) {
+                    throw RestoreFailedException::afterDestructive($reliance . ': the UP session settings could not be read');
+                }
+                $name = strtolower((string)$row['Variable_name']);
+                $counts[$name] = ($counts[$name] ?? 0) + 1;
+                $values[$name] = (string)$row['Value'];
+            }
+            if (($counts[SchemaMetadata::SQL_MODE] ?? 0) !== 1
+                || ($counts[SchemaMetadata::DEFAULT_STORAGE_ENGINE] ?? 0) !== 1
+                || ($counts[SchemaMetadata::CHECK_CONSTRAINT_CHECKS] ?? 0) > 1
+            ) {
+                throw RestoreFailedException::afterDestructive($reliance . ': the UP session settings could not be read');
+            }
+            $actualChecks = ($counts[SchemaMetadata::CHECK_CONSTRAINT_CHECKS] ?? 0) === 1
+                ? $values[SchemaMetadata::CHECK_CONSTRAINT_CHECKS]
+                : null;
+            $schema = $this->schemas[$index] ?? throw RestoreFailedException::afterDestructive(
+                $reliance . ': connection ' . $index . ' has no prepared schema',
+            );
+            $schema->assertUpSessionValues(
+                $actualChecks,
+                $values[SchemaMetadata::SQL_MODE],
+                $values[SchemaMetadata::DEFAULT_STORAGE_ENGINE],
+                $reliance,
+            );
+        } finally {
+            if (Database::getCurrentIndex() !== $callerIndex) {
+                Database::useConnection($callerIndex);
+            }
+        }
+    }
+
+    /**
      * @param string $server Physical server identity
      * @return SchemaMetadata Selected schema without volatile row counts or statistics
      * @throws DatabaseException When catalog or SHOW CREATE reads fail

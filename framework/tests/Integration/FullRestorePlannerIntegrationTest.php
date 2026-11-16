@@ -404,6 +404,35 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
         $changed->assertUnchanged($inputs->targets);
     }
 
+    /**
+     * The UP session verification checks session variables on the target connection,
+     * detects drifts with the post-UP state and preserves caller connection index.
+     */
+    public function testAssertUpSessionUnchangedVerifiesSessionParametersAndPreservesCallerIndex(): void
+    {
+        $inputs = $this->inputs();
+        $snapshot = FullRestoreSchemaSnapshot::read($inputs->targets);
+        $index = $inputs->targets[0]->connection->index;
+
+        $callerIndex = Database::getCurrentIndex();
+        $snapshot->assertUpSessionUnchanged($index, true);
+        $this->assertSame($callerIndex, Database::getCurrentIndex());
+
+        $originalMode = (string)Database::sql('SELECT @@sql_mode AS mode', index: $index)->row()['mode'];
+        Database::sql("SET SESSION sql_mode = 'NO_FIELD_OPTIONS'", index: $index);
+        try {
+            $snapshot->assertUpSessionUnchanged($index, true);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertSame($callerIndex, Database::getCurrentIndex());
+            $this->assertStringContainsString('Connection ' . $index . ' is imported and UP has run', $e->getMessage());
+            $this->assertStringContainsString('sql_mode was ' . $originalMode . ', now NO_FIELD_OPTIONS', $e->getMessage());
+            $this->assertTrue($e->databaseTouched());
+        } finally {
+            Database::sql("SET SESSION sql_mode = '" . $originalMode . "'", index: $index);
+        }
+    }
+
     /** @return iterable<string, array{?string}> Disabled and unknown enforcement reports */
     public static function changedCheckEnforcements(): iterable
     {

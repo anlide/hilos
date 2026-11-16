@@ -555,6 +555,9 @@ final class BackupRestorerIntegrationTest extends FrameworkIntegrationTestCase
             $this->assertStringContainsString('"connections":[1],"starting":"drop journal_late"', $log);
             $this->assertStringContainsString('"connections":[0,1],"starting":"install journal triggers"', $log);
             $this->assertSame(1, substr_count($log, '"starting":"migrate"'));
+            $this->assertSame(1, substr_count($log, '"starting":"prepare migrations"'));
+            $this->assertSame(1, substr_count($log, '"starting":"recheck UP session before"'));
+            $this->assertSame(1, substr_count($log, '"starting":"recheck UP session after"'));
         } finally {
             Database::useConnection(DatabaseConnectionDefaults::PRIMARY_INDEX);
             Database::sql('DROP TABLE IF EXISTS ' . $journal . '.journal_late');
@@ -1226,7 +1229,20 @@ SQL);
             $this->assertStringContainsString('"server":', $lines[0]);
             $this->assertStringContainsString('"primaryMarker":"' . self::TARGET_MARKER . '"', $lines[0]);
             $this->assertStringContainsString('"phase":"importing","connections":[0],"starting":"import"', $lines[1]);
-            $this->assertStringContainsString('"phase":"migrating","connections":[0],"starting":"migrate"', $lines[2]);
+            $this->assertStringContainsString('"phase":"migrating","connections":[0],"starting":"prepare migrations"', $lines[2]);
+            $this->assertStringContainsString('"phase":"migrating","connections":[0],"starting":"recheck UP session before"', $lines[3]);
+            $this->assertStringContainsString('"phase":"migrating","connections":[0],"starting":"migrate"', $lines[4]);
+            $this->assertStringContainsString('"phase":"migrating","connections":[0],"starting":"recheck UP session after"', $lines[5]);
+            $migratingSteps = [];
+            foreach ($lines as $line) {
+                if (str_contains($line, '"phase":"migrating"') && preg_match('/"starting":"([^"]+)"/', $line, $matches)) {
+                    $migratingSteps[] = $matches[1];
+                }
+            }
+            $this->assertSame(
+                ['prepare migrations', 'recheck UP session before', 'migrate', 'recheck UP session after'],
+                array_slice($migratingSteps, 0, 4),
+            );
             $this->assertStringNotContainsString('password', implode("\n", $lines));
             $this->assertStringNotContainsString('INSERT', implode("\n", $lines));
             $this->assertStringNotContainsString(self::ARCHIVED_MARKER, implode("\n", $lines));
@@ -1452,6 +1468,118 @@ SQL);
             'The restored database must carry the schema the code expects, not the dump\'s',
         );
         $this->assertSame([['1', 'alpha']], $this->probeRows(), 'The imported rows must survive the migration');
+    }
+
+    public function testUpSessionSqlModeDriftBeforeUpRefusesAfterImport(): void
+    {
+        $this->listFixtureMigration();
+        Migration::initialize();
+        $marker = new DatabaseMarkerRow(self::TARGET_MARKER, 'target-node', 1788256800123);
+        DatabaseMarker::put($marker);
+        $this->publishFixtureBackup(
+            $this->markerDumpSql(self::ARCHIVED_MARKER) . $this->probeDumpSql([['1', 'alpha']]),
+            self::ARCHIVE_MIGRATION_INDEX,
+        );
+        Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+        $originalMode = (string)Database::sql('SELECT @@SESSION.sql_mode')->field('@@SESSION.sql_mode');
+        $driftMode = $originalMode === 'NO_ENGINE_SUBSTITUTION'
+            ? 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION'
+            : 'NO_ENGINE_SUBSTITUTION';
+        try {
+            new BackupRestorer()->restore(
+                self::BACKUP_ID,
+                BackupScope::FULL,
+                RestoreEnvDecision::ALLOW,
+                null,
+                static function (RestorePhase $phase) use ($driftMode): void {
+                    if ($phase === RestorePhase::MIGRATING) {
+                        Database::sql(
+                            "SET SESSION sql_mode = '" . $driftMode . "'",
+                            index: DatabaseConnectionDefaults::PRIMARY_INDEX,
+                        );
+                    }
+                },
+            );
+            $this->fail('The session drift before UP must refuse');
+        } catch (RestoreFailedException $failure) {
+            $this->assertTrue($failure->databaseTouched());
+            $this->assertStringContainsString('step=recheck UP session before', $failure->getMessage());
+            $this->assertStringContainsString('Connection 0 is imported but not migrated', $failure->getMessage());
+            $this->assertSame([['1', 'alpha']], $this->probeRows(), 'The imported rows must survive');
+            $this->assertNotContains(self::MIGRATED_COLUMN, $this->probeColumns(), 'UP must not have run');
+            $this->assertSame(self::ARCHIVE_MIGRATION_INDEX, Migration::getCurrentIndex());
+            $this->assertEquals($marker, DatabaseMarker::current());
+        } finally {
+            Database::sql("SET SESSION sql_mode = '" . $originalMode . "'", index: DatabaseConnectionDefaults::PRIMARY_INDEX);
+            DatabaseMarker::clear();
+        }
+    }
+
+    public function testUpSessionSqlModeDriftAfterReconnectRefusesBeforeUp(): void
+    {
+        $this->listFixtureMigration();
+        Migration::initialize();
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'alpha']]),
+            self::ARCHIVE_MIGRATION_INDEX,
+        );
+        Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+        $globalMode = (string)Database::sql('SELECT @@GLOBAL.sql_mode')->field('@@GLOBAL.sql_mode');
+        $originalSessionMode = (string)Database::sql('SELECT @@SESSION.sql_mode')->field('@@SESSION.sql_mode');
+        $supportedDiffMode = $globalMode === 'NO_ENGINE_SUBSTITUTION'
+            ? 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION'
+            : 'NO_ENGINE_SUBSTITUTION';
+        Database::sql("SET SESSION sql_mode = '" . $supportedDiffMode . "'", index: DatabaseConnectionDefaults::PRIMARY_INDEX);
+        try {
+            new BackupRestorer()->restore(
+                self::BACKUP_ID,
+                BackupScope::FULL,
+                RestoreEnvDecision::ALLOW,
+                null,
+                static function (RestorePhase $phase): void {
+                    if ($phase === RestorePhase::MIGRATING) {
+                        Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
+                    }
+                },
+            );
+            $this->fail('The session drift on reconnect before UP must refuse');
+        } catch (RestoreFailedException $failure) {
+            $this->assertTrue($failure->databaseTouched());
+            $this->assertStringContainsString('step=recheck UP session before', $failure->getMessage());
+            $this->assertStringContainsString('Connection 0 is imported but not migrated', $failure->getMessage());
+            $this->assertStringContainsString('the UP session differs from preparation', $failure->getMessage());
+            $this->assertSame([['1', 'alpha']], $this->probeRows(), 'The imported rows must survive');
+            $this->assertNotContains(self::MIGRATED_COLUMN, $this->probeColumns(), 'UP must not have run');
+            $this->assertSame(self::ARCHIVE_MIGRATION_INDEX, Migration::getCurrentIndex());
+        } finally {
+            Database::sql("SET SESSION sql_mode = '" . $originalSessionMode . "'", index: DatabaseConnectionDefaults::PRIMARY_INDEX);
+        }
+    }
+
+    public function testClosedConnectionInMigratingPhaseReconnectedWithSameValuesAllowsUp(): void
+    {
+        $this->listFixtureMigration();
+        $this->publishFixtureBackup(
+            $this->probeDumpSql([['1', 'alpha']]),
+            self::ARCHIVE_MIGRATION_INDEX,
+        );
+        Database::sql('DROP TABLE IF EXISTS `' . self::PROBE_TABLE . '`');
+
+        new BackupRestorer()->restore(
+            self::BACKUP_ID,
+            BackupScope::FULL,
+            RestoreEnvDecision::ALLOW,
+            null,
+            static function (RestorePhase $phase): void {
+                if ($phase === RestorePhase::MIGRATING) {
+                    Database::close(DatabaseConnectionDefaults::PRIMARY_INDEX);
+                }
+            },
+        );
+
+        $this->assertSame(self::CODE_MIGRATION_INDEX, Migration::getCurrentIndex());
+        $this->assertContains(self::MIGRATED_COLUMN, $this->probeColumns());
+        $this->assertSame([['1', 'alpha']], $this->probeRows());
     }
 
     public function testTheMigrateStepOpensALinkTheCallerNeverOpened(): void

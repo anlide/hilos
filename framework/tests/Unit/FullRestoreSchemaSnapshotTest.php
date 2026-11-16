@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Backup\Exception\RestoreFailedException;
+use Hilos\Backup\FullRestore\SchemaMetadata;
+use Hilos\Backup\FullRestore\StructureDefaults;
 use Hilos\Backup\FullRestoreSchemaSnapshot;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -11,6 +14,186 @@ use ReflectionMethod;
 
 final class FullRestoreSchemaSnapshotTest extends TestCase
 {
+    public function testAssertUpSessionValuesAdmitsMatchingValues(): void
+    {
+        $reliance = 'Connection 0 is imported but not migrated';
+
+        $schemaOn = $this->metadata(checks: 'ON', sqlMode: 'STRICT_TRANS_TABLES', engine: 'InnoDB');
+        $schemaOn->assertUpSessionValues('ON', 'STRICT_TRANS_TABLES', 'InnoDB', $reliance);
+
+        $schemaNull = $this->metadata(checks: null, sqlMode: 'STRICT_TRANS_TABLES', engine: 'InnoDB');
+        $schemaNull->assertUpSessionValues(null, 'STRICT_TRANS_TABLES', 'InnoDB', $reliance);
+
+        $schemaEmptyMode = $this->metadata(checks: 'ON', sqlMode: '', engine: 'InnoDB');
+        $schemaEmptyMode->assertUpSessionValues('ON', '', 'InnoDB', $reliance);
+
+        $this->expectNotToPerformAssertions();
+    }
+
+    public function testAssertUpSessionValuesRejectsCheckConstraintChecksChange(): void
+    {
+        $reliance = 'Connection 0 is imported but not migrated';
+        $schema = $this->metadata(checks: 'ON');
+
+        try {
+            $schema->assertUpSessionValues('OFF', 'STRICT_TRANS_TABLES', 'InnoDB', $reliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString($reliance, $e->getMessage());
+            $this->assertStringContainsString('check_constraint_checks was ON, now OFF', $e->getMessage());
+            $this->assertTrue($e->databaseTouched());
+        }
+    }
+
+    public function testAssertUpSessionValuesRejectsSqlModeChange(): void
+    {
+        $reliance = 'Connection 0 is imported but not migrated';
+        $schema = $this->metadata(sqlMode: 'STRICT_TRANS_TABLES');
+
+        try {
+            $schema->assertUpSessionValues('ON', '', 'InnoDB', $reliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString($reliance, $e->getMessage());
+            $this->assertStringContainsString("sql_mode was STRICT_TRANS_TABLES, now ''", $e->getMessage());
+        }
+
+        $schemaEmpty = $this->metadata(sqlMode: '');
+        try {
+            $schemaEmpty->assertUpSessionValues('ON', 'STRICT_TRANS_TABLES', 'InnoDB', $reliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString("sql_mode was '', now STRICT_TRANS_TABLES", $e->getMessage());
+        }
+    }
+
+    public function testAssertUpSessionValuesRejectsDefaultStorageEngineChange(): void
+    {
+        $reliance = 'Connection 0 is imported but not migrated';
+        $schema = $this->metadata(engine: 'InnoDB');
+
+        try {
+            $schema->assertUpSessionValues('ON', 'STRICT_TRANS_TABLES', 'MyISAM', $reliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString($reliance, $e->getMessage());
+            $this->assertStringContainsString('default_storage_engine was InnoDB, now MyISAM', $e->getMessage());
+        }
+    }
+
+    public function testAssertUpSessionValuesRejectsTransitionToAndFromNull(): void
+    {
+        $reliance = 'Connection 0 is imported but not migrated';
+
+        $schemaOn = $this->metadata(checks: 'ON');
+        try {
+            $schemaOn->assertUpSessionValues(null, 'STRICT_TRANS_TABLES', 'InnoDB', $reliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString('check_constraint_checks was ON, now unknown', $e->getMessage());
+        }
+
+        $schemaNull = $this->metadata(checks: null);
+        try {
+            $schemaNull->assertUpSessionValues('ON', 'STRICT_TRANS_TABLES', 'InnoDB', $reliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString('check_constraint_checks was unknown, now ON', $e->getMessage());
+        }
+    }
+
+    public function testAssertUpSessionValuesEnforcesExactComparisonWithoutNormalization(): void
+    {
+        $reliance = 'Connection 0 is imported and UP has run';
+
+        $schemaModes = $this->metadata(sqlMode: 'STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION');
+        try {
+            $schemaModes->assertUpSessionValues(
+                'ON',
+                'NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES',
+                'InnoDB',
+                $reliance,
+            );
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString(
+                'sql_mode was STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION, now NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES',
+                $e->getMessage(),
+            );
+        }
+
+        $schemaEngine = $this->metadata(engine: 'InnoDB');
+        try {
+            $schemaEngine->assertUpSessionValues('ON', 'STRICT_TRANS_TABLES', 'innodb', $reliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString('default_storage_engine was InnoDB, now innodb', $e->getMessage());
+        }
+    }
+
+    public function testAssertUpSessionValuesDistinguishesRelianceBeforeAndAfterUp(): void
+    {
+        $beforeUpReliance = 'Connection 0 is imported but not migrated';
+        $afterUpReliance = 'Connection 0 is imported and UP has run';
+        $schema = $this->metadata(checks: 'ON');
+
+        try {
+            $schema->assertUpSessionValues('OFF', 'STRICT_TRANS_TABLES', 'InnoDB', $beforeUpReliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString($beforeUpReliance, $e->getMessage());
+            $this->assertStringContainsString('not migrated', $e->getMessage());
+        }
+
+        try {
+            $schema->assertUpSessionValues('OFF', 'STRICT_TRANS_TABLES', 'InnoDB', $afterUpReliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString($afterUpReliance, $e->getMessage());
+            $this->assertStringNotContainsString('not migrated', $e->getMessage());
+        }
+    }
+
+    public function testAssertUpSessionValuesFollowsDiagnosticOrder(): void
+    {
+        $reliance = 'Connection 0 is imported and UP has run';
+        $schema = $this->metadata(checks: 'ON', sqlMode: 'STRICT_TRANS_TABLES', engine: 'InnoDB');
+
+        try {
+            $schema->assertUpSessionValues('OFF', 'ANSI', 'MyISAM', $reliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString('check_constraint_checks was ON, now OFF', $e->getMessage());
+        }
+
+        try {
+            $schema->assertUpSessionValues('ON', 'ANSI', 'MyISAM', $reliance);
+            $this->fail('Expected RestoreFailedException was not thrown');
+        } catch (RestoreFailedException $e) {
+            $this->assertStringContainsString('sql_mode was STRICT_TRANS_TABLES, now ANSI', $e->getMessage());
+        }
+    }
+
+    private function metadata(
+        ?string $checks = 'ON',
+        string $sqlMode = 'STRICT_TRANS_TABLES',
+        string $engine = 'InnoDB',
+    ): SchemaMetadata {
+        return new SchemaMetadata(
+            server: '["host",3306,"app"]',
+            objects: [],
+            defaults: [],
+            columns: [],
+            indexes: [],
+            structureDefaults: new StructureDefaults(
+                engine: $engine,
+                charset: 'utf8mb4',
+                collation: 'utf8mb4_general_ci',
+                sqlMode: $sqlMode,
+            ),
+            checkConstraintChecks: $checks,
+        );
+    }
     /**
      * @param string $database Actual selected schema
      * @param string $grant Direct SHOW GRANTS row

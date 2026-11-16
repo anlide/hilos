@@ -1351,6 +1351,84 @@ SQL;
             $object . 'post-import CREATE in 002_journal_check.sql carrying named CHECK chk_journal_late' . $requires . 'unknown'];
     }
 
+    /**
+     * @param string $liveColumn Column definition on the live table candidate
+     * @param ?string $refusal Expected failure, or null when cleanup is proven
+     */
+    #[DataProvider('journalReplayDefaultScenarios')]
+    public function testJournalReplayUsesSourceDefaultsForEngineAndTargetForCollation(
+        string $liveColumn,
+        ?string $refusal,
+    ): void {
+        $primaryIndex = DatabaseConnectionDefaults::PRIMARY_INDEX;
+        $journalIndex = ChangeLogDatabase::CONNECTION_INDEX;
+        $targets = [];
+        foreach ([$primaryIndex => 'target', $journalIndex => 'target-change-log'] as $index => $database) {
+            Database::configure($index, 'unused', 'unused', '', $database);
+            $dump = new Dump([], new MigrationHistory(MigrationHistoryState::RECORDED, [new MigrationRow(1, false)]));
+            $targets[$index] = new PreparedTarget(new BackupConnectionMeta($index, 'source', null), Database::getConnectionConfig($index),
+                json_encode(['server', DatabaseConnectionDefaults::PORT, 1, $database]), 'source', 'digest', 'staged', 'digest', $dump);
+        }
+        $path = $this->root . '/002_journal_create.sql';
+        FsPath::write($path, "CREATE TABLE {{change_log_database}}.journal_table (id INT);\n");
+        $file = MigrationUpFile::read(2, $path);
+        $track = new MigrationUpTrack($this->root, 'Schema', ['002_journal_create.sql'], [$file]);
+        $step = new MigrationStep($file, 0, MigrationOperationReader::read($file->statements[0], 'target')[0]);
+        $liveCreate = "CREATE TABLE `journal_table` (`id` {$liveColumn}) ENGINE=InnoDB"
+            . ' DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci';
+        $collations = ['utf8mb4' => 'utf8mb4_0900_ai_ci', 'latin1' => 'latin1_swedish_ci'];
+        $charsetByCollation = ['utf8mb4_0900_ai_ci' => 'utf8mb4', 'latin1_swedish_ci' => 'latin1'];
+        $primaryDefaults = new StructureDefaults('InnoDB', 'utf8mb4', 'utf8mb4_0900_ai_ci', $collations, '', 'dynamic', $charsetByCollation, false);
+        $journalDefaults = new StructureDefaults(
+            'MyISAM',
+            'latin1',
+            'latin1_swedish_ci',
+            $collations,
+            'ANSI_QUOTES',
+            'dynamic',
+            $charsetByCollation,
+            false,
+        );
+        $records = [new MigrationRecord(1, false), new MigrationRecord(2, false)];
+        $evidence = [];
+        $schemas = [];
+        foreach ([$journalIndex, $primaryIndex] as $index) {
+            $target = $targets[$index];
+            $facts = MigrationFacts::read($targets[$primaryIndex]->dump->migrationHistory, new DatabaseMigrationHistory($records), $track, null);
+            $evidence[$index] = new MigrationTargetEvidence(MigrationBinding::resolve($target, array_values($targets)), $facts, [$step]);
+            $schemas[$index] = new SchemaMetadata(
+                'server',
+                $index === $journalIndex ? ['journal_table' => new LiveObject('BASE TABLE', $liveCreate)] : [],
+                [['lower_case_table_names' => 0]],
+                [],
+                [],
+                $index === $primaryIndex ? $primaryDefaults : $journalDefaults,
+            );
+        }
+        $snapshot = new FullRestoreSchemaSnapshot($schemas, ['server' => new ServerMetadata(true, [], [], [], [], [], [])]);
+        if ($refusal !== null) {
+            $this->expectException(RestoreFailedException::class);
+            $this->expectExceptionMessage($refusal);
+        }
+        $cleanup = FullRestorePlanner::prove($evidence, $track, $snapshot);
+        $this->assertSame([$journalIndex], array_column($cleanup, 'index'));
+        $this->assertSame(['journal_table'], array_column($cleanup, 'table'));
+    }
+
+    /** @return iterable<string, array{string, ?string}> Replay and dependencies defaults */
+    public static function journalReplayDefaultScenarios(): iterable
+    {
+        yield 'positive: source engine and target collation proven with journal first in dependencies' => [
+            'int(11) DEFAULT NULL',
+            null,
+        ];
+        yield 'negative: mismatching live structure forbids cleanup' => [
+            'bigint(20) DEFAULT NULL',
+            'Full restore planner, connection 0: Object target-change-log.journal_table: '
+            . 'live structure differs from its successful CREATE/ALTER lineage',
+        ];
+    }
+
     /** A same-named referenced table on another server is not an incoming dependency of the cleanup target. */
     public function testPhysicalServersDoNotShareSchemaOrDependencyNames(): void
     {

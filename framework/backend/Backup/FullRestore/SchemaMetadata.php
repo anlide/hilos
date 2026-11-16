@@ -10,6 +10,8 @@ use Hilos\Backup\Exception\RestoreFailedException;
 final readonly class SchemaMetadata
 {
     public const string CHECK_CONSTRAINT_CHECKS = 'check_constraint_checks';
+    public const string SQL_MODE = 'sql_mode';
+    public const string DEFAULT_STORAGE_ENGINE = 'default_storage_engine';
     private const string CHECKS_ENFORCED = 'ON';
     private const string CHECKS_DISABLED = 'OFF';
     private const array INCOMPLETE_DECLARATION_MODES = [
@@ -79,5 +81,52 @@ final readonly class SchemaMetadata
         throw new RestoreFailedException($reliance . ' requires ' . self::CHECK_CONSTRAINT_CHECKS . '=' . self::CHECKS_ENFORCED
             . ' in the session that executes UP; in that session it is '
             . ($this->checkConstraintChecks === self::CHECKS_DISABLED ? self::CHECKS_DISABLED : 'unknown'));
+    }
+
+    /**
+     * @param ?string $checkConstraintChecks Actual check_constraint_checks value in the UP session
+     * @param string $sqlMode Actual sql_mode in the UP session
+     * @param string $defaultStorageEngine Actual default_storage_engine in the UP session
+     * @param string $reliance Subject describing the database state for the refusal
+     * @throws RestoreFailedException When any session parameter differs from preparation
+     */
+    public function assertUpSessionValues(
+        ?string $checkConstraintChecks,
+        string $sqlMode,
+        string $defaultStorageEngine,
+        string $reliance,
+    ): void {
+        if ($this->checkConstraintChecks !== $checkConstraintChecks) {
+            throw RestoreFailedException::afterDestructive(
+                $reliance . ': the UP session differs from preparation (' . self::CHECK_CONSTRAINT_CHECKS . ' was '
+                . self::formatSessionValue($this->checkConstraintChecks) . ', now '
+                . self::formatSessionValue($checkConstraintChecks) . ')',
+            );
+        }
+        if ($this->structureDefaults->sqlMode !== $sqlMode) {
+            throw RestoreFailedException::afterDestructive(
+                $reliance . ': the UP session differs from preparation (' . self::SQL_MODE . ' was '
+                . self::formatSessionValue($this->structureDefaults->sqlMode) . ', now '
+                . self::formatSessionValue($sqlMode) . ')',
+            );
+        }
+        if ($this->structureDefaults->engine !== $defaultStorageEngine) {
+            throw RestoreFailedException::afterDestructive(
+                $reliance . ': the UP session differs from preparation (' . self::DEFAULT_STORAGE_ENGINE . ' was '
+                . self::formatSessionValue($this->structureDefaults->engine) . ', now '
+                . self::formatSessionValue($defaultStorageEngine) . ')',
+            );
+        }
+    }
+
+    private static function formatSessionValue(?string $value): string
+    {
+        if ($value === null) {
+            return 'unknown';
+        }
+        if ($value === '') {
+            return "''";
+        }
+        return $value;
     }
 }

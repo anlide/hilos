@@ -17,6 +17,7 @@ use Hilos\Backup\FullRestore\PreparedTarget;
 use Hilos\Backup\FullRestore\ProjectedObject;
 use Hilos\Backup\FullRestore\ServerMetadata;
 use Hilos\Backup\FullRestore\SqlTokens;
+use Hilos\Backup\FullRestore\StructureDefaults;
 use Hilos\Backup\FullRestore\TableDrop;
 use Hilos\Backup\FullRestore\TableName;
 use Hilos\Backup\FullRestore\TableStructure;
@@ -162,6 +163,7 @@ final readonly class FullRestorePlanner
         $sourceIndex = $sourceFacts->binding->source->connection->index;
         $metadata = $schema->servers[$schema->schemas[$sourceIndex]->server];
         $sqlMode = $schema->schemas[$sourceIndex]->structureDefaults->sqlMode;
+        $sourceDefaults = $schema->schemas[$sourceIndex]->structureDefaults;
         if ($sourceFacts->facts->archiveLevel === null) {
             foreach ($pending as $step) {
                 $file = $step->file;
@@ -193,7 +195,7 @@ final readonly class FullRestorePlanner
         $successful = $sourceFacts->facts->current?->successfulIndices() ?? [];
         foreach ($pending as $step) {
             if (in_array($step->file->index, $successful, true)) {
-                self::replay($current, $step, $targets, $schema, false);
+                self::replay($current, $step, $targets, $schema, $sourceDefaults, false);
             }
         }
         $cleanup = [];
@@ -245,7 +247,7 @@ final readonly class FullRestorePlanner
         self::archiveReferences($targets, $future);
         foreach ($pending as $step) {
             DependencyProof::assertReplayCallsSupported($step->operation, $sqlMode, $metadata, basename($step->file->path));
-            self::replay($future, $step, $targets, $schema);
+            self::replay($future, $step, $targets, $schema, $sourceDefaults);
             if ($step->operation->kind !== MigrationOperationKind::CREATE_TABLE) {
                 continue;
             }
@@ -358,6 +360,7 @@ final readonly class FullRestorePlanner
      * @param MigrationStep $step One source effect in SQL order
      * @param array<string, PreparedTarget> $targets Destinations owned by this source
      * @param FullRestoreSchemaSnapshot $schema Structure defaults
+     * @param StructureDefaults $sourceDefaults Source defaults for execution connection
      * @param bool $validateReferences Whether this is the complete future replay rather than current lineage reconstruction
      * @throws RestoreFailedException When an operation collides, touches preserved rows or has unknown effects
      */
@@ -366,6 +369,7 @@ final readonly class FullRestorePlanner
         MigrationStep $step,
         array $targets,
         FullRestoreSchemaSnapshot $schema,
+        StructureDefaults $sourceDefaults,
         bool $validateReferences = true,
     ): void
     {
@@ -409,8 +413,19 @@ final readonly class FullRestorePlanner
                 throw new RestoreFailedException("Object {$table->database}.{$table->table}: post-archive CREATE collides with existing lineage");
             }
             $target = $targets[$table->database];
+            $targetDefaults = $schema->schemas[$target->connection->index]->structureDefaults;
+            $defaults = new StructureDefaults(
+                $sourceDefaults->engine,
+                $targetDefaults->charset,
+                $targetDefaults->collation,
+                $sourceDefaults->collations,
+                $sourceDefaults->sqlMode,
+                $sourceDefaults->rowFormat,
+                $sourceDefaults->charsetByCollation,
+                $sourceDefaults->mariaDbJsonAlias,
+            );
             $objects[$key] = new ProjectedObject($table,
-                TableStructure::read($operation->sql, $table->database, $schema->schemas[$target->connection->index]->structureDefaults), $step);
+                TableStructure::read($operation->sql, $table->database, $defaults), $step);
         } elseif ($operation->kind === MigrationOperationKind::DROP_TABLE) {
             // A normal DROP of an archived object is ordinary UP, never cleanup authority over its neighbours.
             if (!isset($objects[$key])) {
@@ -634,7 +649,8 @@ final readonly class FullRestorePlanner
                     continue;
                 }
                 foreach ($facts->pending ?? [] as $step) {
-                    $proof->assertCallsIndependent($step->operation->sql, $sqlMode, $context . basename($step->file->path));
+                    $stepSqlMode = $schema->schemas[$facts->binding->source->connection->index]->structureDefaults->sqlMode;
+                    $proof->assertCallsIndependent($step->operation->sql, $stepSqlMode, $context . basename($step->file->path));
                 }
                 foreach ($facts->binding->target->dump->objects as $object) {
                     if ($object->type === DumpObjectType::VIEW) {
