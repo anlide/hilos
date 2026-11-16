@@ -82,6 +82,7 @@ test('an account whose moment came is erased: every tab turns guest and the addr
   await expect(page.getByTestId('nav-profile-name')).toHaveCount(0)
   await expect(other.getByTestId('nav-profile-name')).toHaveCount(0)
   await openSignInOnPage(expect, page, resolveHilosPath(HilosPages.DASHBOARD))
+  await openSignInOnPage(expect, other, resolveHilosPath(HilosPages.DASHBOARD))
   await typeInto(page.getByTestId('auth-identifier'), email)
   await expect(page.getByTestId('auth-heading')).toHaveText(
     'Create your account',
