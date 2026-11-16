@@ -91,6 +91,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
   const [zone, setZone] = useState('Europe/Warsaw')
   const [today, setToday] = useState('2026-10-13')
   const [minDate, setMinDate] = useState('')
+  const [maxDate, setMaxDate] = useState('')
   const [seconds, setSeconds] = useState(false)
   const [changes, setChanges] = useState(0)
   const [mountId, setMountId] = useState(0)
@@ -111,6 +112,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
     zone: string
     today: string
     minDate: string
+    maxDate: string
     seconds: boolean
   }): FixturePicker {
     const options = {
@@ -123,6 +125,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
       onChange: () => setChanges((v) => v + 1),
     }
     const minimum = params.minDate === '' ? {} : { minDate: params.minDate }
+    const maximum = params.maxDate === '' ? {} : { maxDate: params.maxDate }
     switch (params.kind) {
       case 'date':
         return createDateTimePickerController({
@@ -130,6 +133,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
           kind: 'date',
           today: () => params.today,
           ...minimum,
+          ...maximum,
         })
       case 'time':
         return createDateTimePickerController({
@@ -143,6 +147,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
           timeZone: params.zone,
           today: () => params.today,
           ...minimum,
+          ...maximum,
         })
     }
   }
@@ -155,6 +160,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
       zone: 'Europe/Warsaw',
       today: '2026-10-13',
       minDate: '',
+      maxDate: '',
       seconds: false,
     }),
   )
@@ -204,6 +210,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
       zone,
       today,
       minDate,
+      maxDate,
       seconds,
     })
     if (previous.status === 'valid') current.setValue(previous.value)
@@ -238,6 +245,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
                   zone,
                   today,
                   minDate,
+                  maxDate,
                   seconds,
                 }),
               )
@@ -268,6 +276,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
                   zone,
                   today,
                   minDate,
+                  maxDate,
                   seconds,
                 }),
               )
@@ -326,6 +335,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
                   zone: nextZone,
                   today,
                   minDate,
+                  maxDate,
                   seconds,
                 }),
               )
@@ -358,6 +368,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
                   zone,
                   today: nextToday,
                   minDate,
+                  maxDate,
                   seconds,
                 }),
               )
@@ -384,6 +395,7 @@ export function DateTimePickerFixture(): React.JSX.Element {
                   zone,
                   today,
                   minDate: nextMinDate,
+                  maxDate,
                   seconds,
                 }),
               )
@@ -391,6 +403,37 @@ export function DateTimePickerFixture(): React.JSX.Element {
           >
             <option value="">none</option>
             <option value="2026-10-13">2026-10-13</option>
+          </select>
+        </div>
+        <div className="col-sm-6 col-lg-4">
+          <label className="form-label" htmlFor="fixture-max">
+            Maximum day
+          </label>
+          <select
+            id="fixture-max"
+            className="form-select"
+            data-id="fixture-max"
+            value={maxDate}
+            onChange={(e) => {
+              const nextMaxDate = e.target.value
+              setMaxDate(nextMaxDate)
+              setPicker(
+                createPicker({
+                  kind,
+                  count,
+                  factors,
+                  zone,
+                  today,
+                  minDate,
+                  maxDate: nextMaxDate,
+                  seconds,
+                }),
+              )
+            }}
+          >
+            <option value="">none</option>
+            <option value="2026-10-13">2026-10-13</option>
+            <option value="2026-10-20">2026-10-20</option>
           </select>
         </div>
       </div>

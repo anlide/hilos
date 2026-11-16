@@ -75,6 +75,7 @@ const factors = ref<keyof typeof FACTORS>('en-GB')
 const zone = ref('Europe/Warsaw')
 const today = ref('2026-10-13')
 const minDate = ref('')
+const maxDate = ref('')
 const seconds = ref(false)
 const busySignal = createSignal(false)
 const disabledSignal = createSignal(false)
@@ -88,6 +89,7 @@ const dark = ref(false)
 function createPicker(): FixturePicker {
   const currentToday = today.value
   const currentMin = minDate.value
+  const currentMax = maxDate.value
   const options = {
     count: count.value,
     value: null,
@@ -104,6 +106,7 @@ function createPicker(): FixturePicker {
         kind: 'date',
         today: () => currentToday,
         ...(currentMin ? { minDate: currentMin } : {}),
+        ...(currentMax ? { maxDate: currentMax } : {}),
       })
     case 'time':
       return createDateTimePickerController({ ...options, kind: 'time' })
@@ -114,6 +117,7 @@ function createPicker(): FixturePicker {
         timeZone: zone.value,
         today: () => currentToday,
         ...(currentMin ? { minDate: currentMin } : {}),
+        ...(currentMax ? { maxDate: currentMax } : {}),
       })
   }
 }
@@ -139,7 +143,7 @@ watch(
   },
   { immediate: true, flush: 'sync' },
 )
-watch([kind, count, zone, today, minDate], () => {
+watch([kind, count, zone, today, minDate, maxDate], () => {
   picker.value.dispose()
   picker.value = createPicker()
 })
@@ -253,6 +257,19 @@ function mountOpenTime(): void {
         >
           <option value="">none</option>
           <option value="2026-10-13">2026-10-13</option>
+        </select>
+      </div>
+      <div class="col-sm-6 col-lg-4">
+        <label class="form-label" for="fixture-max">Maximum day</label>
+        <select
+          id="fixture-max"
+          v-model="maxDate"
+          class="form-select"
+          data-id="fixture-max"
+        >
+          <option value="">none</option>
+          <option value="2026-10-13">2026-10-13</option>
+          <option value="2026-10-20">2026-10-20</option>
         </select>
       </div>
     </div>

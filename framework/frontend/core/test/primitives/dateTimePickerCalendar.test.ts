@@ -40,13 +40,32 @@ function rangePicker(
     ...options,
   })
 }
-function momentPicker(value: number | null = null, timeZone = 'Europe/Warsaw') {
+function momentPicker(
+  value: number | null = null,
+  timeZone = 'Europe/Warsaw',
+  options: Partial<DateTimePickerOptions<'datetime', 'single'>> = {},
+) {
   return createDateTimePickerController({
     kind: 'datetime',
     count: 'single',
     value,
     today,
     timeZone,
+    ...options,
+  })
+}
+function momentRangePicker(
+  value: readonly [number, number] | null = null,
+  timeZone = 'Europe/Warsaw',
+  options: Partial<DateTimePickerOptions<'datetime', 'range'>> = {},
+) {
+  return createDateTimePickerController({
+    kind: 'datetime',
+    count: 'range',
+    value,
+    today,
+    timeZone,
+    ...options,
   })
 }
 function grid(picker: {
@@ -600,6 +619,195 @@ describe('DateTimePicker calendar selection', () => {
     expect(picker.state.get().result).toEqual({
       status: 'valid',
       value: '2026-10-13',
+    })
+  })
+
+  it('enforces inclusive maxDate bound, allows open ceiling when omitted, and rejects selection past maxDate', () => {
+    const onChange = vi.fn()
+    const picker = datePicker('2026-10-17', {
+      minDate: '2026-10-13',
+      maxDate: '2026-10-20',
+      onChange,
+    })
+    picker.calendar.open()
+    expect(day(picker, '2026-10-12').disabled).toBe(true)
+    expect(day(picker, '2026-10-13').disabled).toBe(false)
+    expect(day(picker, '2026-10-20').disabled).toBe(false)
+    expect(day(picker, '2026-10-21').disabled).toBe(true)
+
+    const snapshotBefore = picker.state.get()
+    const localBefore = picker.calendar.state.get()
+    picker.calendar.selectDay('2026-10-21')
+    expect(picker.state.get()).toBe(snapshotBefore)
+    expect(picker.calendar.state.get()).toEqual(localBefore)
+    expect(onChange).not.toHaveBeenCalled()
+
+    picker.calendar.pressKey('ArrowRight', false)
+    picker.calendar.pressKey('ArrowRight', false)
+    picker.calendar.pressKey('ArrowRight', false)
+    picker.calendar.pressKey('ArrowRight', false)
+    expect(grid(picker).focusDate).toBe('2026-10-21')
+    expect(day(picker, '2026-10-21')).toMatchObject({
+      focusTarget: true,
+      disabled: true,
+    })
+
+    expect(picker.calendar.pressKey('Enter', false)).toBe(true)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(picker.state.get()).toBe(snapshotBefore)
+
+    expect(picker.calendar.pressKey(' ', false)).toBe(true)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(picker.state.get()).toBe(snapshotBefore)
+
+    picker.calendar.selectDay('2026-10-20')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(picker.state.get().result).toEqual({
+      status: 'valid',
+      value: '2026-10-20',
+    })
+
+    const unbounded = datePicker('2026-10-17', { minDate: '2026-10-13' })
+    unbounded.calendar.open()
+    expect(day(unbounded, '2026-10-21').disabled).toBe(false)
+    expect(day(unbounded, '2026-10-31').disabled).toBe(false)
+    unbounded.calendar.selectDay('2026-10-25')
+    expect(unbounded.state.get().result).toEqual({
+      status: 'valid',
+      value: '2026-10-25',
+    })
+  })
+
+  it('supports equal minDate and maxDate for single and range pickers', () => {
+    const single = datePicker('2026-10-13', {
+      minDate: '2026-10-13',
+      maxDate: '2026-10-13',
+    })
+    single.calendar.open()
+    expect(day(single, '2026-10-12').disabled).toBe(true)
+    expect(day(single, '2026-10-13').disabled).toBe(false)
+    expect(day(single, '2026-10-14').disabled).toBe(true)
+
+    const range = rangePicker(null, {
+      minDate: '2026-10-13',
+      maxDate: '2026-10-13',
+    })
+    range.calendar.open()
+    expect(day(range, '2026-10-12').disabled).toBe(true)
+    expect(day(range, '2026-10-13').disabled).toBe(false)
+    expect(day(range, '2026-10-14').disabled).toBe(true)
+    range.calendar.selectDay('2026-10-13')
+    range.calendar.selectDay('2026-10-13')
+    expect(range.state.get().result).toEqual({
+      status: 'valid',
+      value: ['2026-10-13', '2026-10-13'],
+    })
+  })
+
+  it('enforces maxDate on both active edges in range pickers and allows programmatic input past maxDate', () => {
+    const onChange = vi.fn()
+    const picker = rangePicker(['2026-10-15', '2026-10-18'], {
+      minDate: '2026-10-13',
+      maxDate: '2026-10-20',
+      onChange,
+    })
+    picker.calendar.open()
+
+    picker.calendar.selectDay('2026-10-22')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(picker.state.get().result).toEqual({
+      status: 'valid',
+      value: ['2026-10-15', '2026-10-18'],
+    })
+
+    picker.calendar.selectDay('2026-10-14')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(picker.calendar.state.get().activeEdge).toBe('end')
+
+    picker.calendar.selectDay('2026-10-25')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(picker.calendar.state.get().activeEdge).toBe('end')
+
+    picker.calendar.selectDay('2026-10-20')
+    expect(onChange).toHaveBeenCalledTimes(2)
+    expect(picker.state.get().result).toEqual({
+      status: 'valid',
+      value: ['2026-10-14', '2026-10-20'],
+    })
+
+    picker.setValue(['2026-10-10', '2026-10-28'])
+    expect(picker.state.get().result).toEqual({
+      status: 'valid',
+      value: ['2026-10-10', '2026-10-28'],
+    })
+    picker.calendar.open()
+    expect(day(picker, '2026-10-28')).toMatchObject({
+      selected: true,
+      disabled: true,
+    })
+  })
+
+  it('enforces maxDate for datetime single and range, preserving time precision', () => {
+    const epoch = Date.UTC(2026, 9, 17, 14, 25, 36, 789)
+    const picker = momentPicker(epoch, 'UTC', {
+      minDate: '2026-10-13',
+      maxDate: '2026-10-20',
+    })
+    picker.calendar.open()
+    expect(day(picker, '2026-10-21').disabled).toBe(true)
+    expect(day(picker, '2026-10-20').disabled).toBe(false)
+
+    picker.calendar.selectDay('2026-10-21')
+    expect(picker.state.get().result).toEqual({
+      status: 'valid',
+      value: epoch,
+    })
+
+    picker.calendar.selectDay('2026-10-20')
+    const expectedEpoch = Date.UTC(2026, 9, 20, 14, 25, 36, 789)
+    expect(picker.state.get().result).toEqual({
+      status: 'valid',
+      value: expectedEpoch,
+    })
+
+    const startEpoch = Date.UTC(2026, 9, 14, 10, 0, 0)
+    const endEpoch = Date.UTC(2026, 9, 16, 12, 0, 0)
+    const range = momentRangePicker([startEpoch, endEpoch], 'UTC', {
+      minDate: '2026-10-13',
+      maxDate: '2026-10-20',
+    })
+    range.calendar.open()
+    expect(day(range, '2026-10-21').disabled).toBe(true)
+    range.calendar.selectDay('2026-10-25')
+    expect(range.state.get().result).toEqual({
+      status: 'valid',
+      value: [startEpoch, endEpoch],
+    })
+  })
+
+  it('continues navigation with showNextMonth, PgDown and showToday beyond maxDate', () => {
+    const readToday = vi.fn(() => '2026-11-15')
+    const picker = datePicker('2026-10-17', {
+      maxDate: '2026-10-20',
+      today: readToday,
+    })
+    picker.calendar.open()
+    expect(grid(picker).month).toBe(10)
+
+    picker.calendar.showNextMonth()
+    expect(grid(picker).month).toBe(11)
+    expect(grid(picker).year).toBe(2026)
+
+    picker.calendar.pressKey('PageDown', false)
+    expect(grid(picker).month).toBe(12)
+
+    picker.calendar.showToday()
+    expect(grid(picker).month).toBe(11)
+    expect(grid(picker).focusDate).toBe('2026-11-15')
+    expect(day(picker, '2026-11-15')).toMatchObject({
+      focusTarget: true,
+      today: true,
+      disabled: true,
     })
   })
 

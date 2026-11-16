@@ -76,6 +76,7 @@ export type DateTimePickerOptions<
         readonly adapter?: DateTimeZoneAdapter
         readonly today: () => CalendarDate
         readonly minDate?: CalendarDate
+        readonly maxDate?: CalendarDate
       }
     : K extends 'date'
       ? {
@@ -83,12 +84,14 @@ export type DateTimePickerOptions<
           readonly adapter?: never
           readonly today: () => CalendarDate
           readonly minDate?: CalendarDate
+          readonly maxDate?: CalendarDate
         }
       : {
           readonly timeZone?: never
           readonly adapter?: never
           readonly today?: never
           readonly minDate?: never
+          readonly maxDate?: never
         })
 
 /** One coherent draft; the parent owns lifetime and explicit resets. */
@@ -151,6 +154,7 @@ export function createDateTimePickerController<
     kind === 'time'
       ? options.today !== undefined ||
         options.minDate !== undefined ||
+        options.maxDate !== undefined ||
         options.timeZone !== undefined ||
         options.adapter !== undefined
       : typeof options.today !== 'function'
@@ -171,6 +175,19 @@ export function createDateTimePickerController<
     parseCalendarDate(options.minDate) === null
   )
     throw new RangeError('Invalid DateTimePicker minimum date')
+  if (
+    options.maxDate !== undefined &&
+    parseCalendarDate(options.maxDate) === null
+  )
+    throw new RangeError('Invalid DateTimePicker maximum date')
+  if (
+    options.minDate !== undefined &&
+    options.maxDate !== undefined &&
+    options.minDate > options.maxDate
+  )
+    throw new RangeError(
+      'DateTimePicker minimum date must not exceed maximum date',
+    )
   if (
     options.showSeconds !== undefined &&
     typeof options.showSeconds !== 'boolean'
@@ -343,6 +360,7 @@ export function createDateTimePickerController<
       state,
       today: options.today,
       minDate: options.minDate,
+      maxDate: options.maxDate,
       factors: () => context.factors,
       blocked,
       disposed: () => disposed,

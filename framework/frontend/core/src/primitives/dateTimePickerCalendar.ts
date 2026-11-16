@@ -98,6 +98,7 @@ export interface PickerCalendarHost {
   >
   readonly today: (() => CalendarDate) | undefined
   readonly minDate: CalendarDate | undefined
+  readonly maxDate: CalendarDate | undefined
   factors(): Readonly<DateTimePickerFactors>
   blocked(): boolean
   disposed(): boolean
@@ -227,7 +228,9 @@ export function createPickerCalendar(
               weekend: factors.weekendDays.includes(weekday),
               today: date === current.today,
               selected: date === start || date === end,
-              disabled: host.minDate !== undefined && date < host.minDate,
+              disabled:
+                (host.minDate !== undefined && date < host.minDate) ||
+                (host.maxDate !== undefined && date > host.maxDate),
               focusTarget: date === focus,
               span,
             }
@@ -255,7 +258,8 @@ export function createPickerCalendar(
     if (
       !current.open ||
       host.blocked() ||
-      (host.minDate !== undefined && date < host.minDate)
+      (host.minDate !== undefined && date < host.minDate) ||
+      (host.maxDate !== undefined && date > host.maxDate)
     )
       return
     const picker = host.state.get()

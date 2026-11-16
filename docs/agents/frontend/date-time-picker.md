@@ -450,6 +450,7 @@ type DateTimePickerOptions<
         readonly adapter?: DateTimeZoneAdapter
         readonly today: () => CalendarDate
         readonly minDate?: CalendarDate
+        readonly maxDate?: CalendarDate
       }
     : K extends 'date'
       ? {
@@ -457,12 +458,14 @@ type DateTimePickerOptions<
           readonly adapter?: never
           readonly today: () => CalendarDate
           readonly minDate?: CalendarDate
+          readonly maxDate?: CalendarDate
         }
       : {
           readonly timeZone?: never
           readonly adapter?: never
           readonly today?: never
           readonly minDate?: never
+          readonly maxDate?: never
         }
 )
 interface DateTimePickerController<
@@ -498,12 +501,15 @@ declare const DEFAULT_DATE_TIME_PICKER_FACTORS: Readonly<DateTimePickerFactors>
 declare const DEFAULT_DATE_TIME_PICKER_LABELS: Readonly<DateTimePickerLabels>
 ```
 
-`kind`, `count`, `timeZone`, `adapter`, `labels` and `minDate` are instance
-configuration. A different meaning requires an explicit new instance, not
-reinterpretation of the old draft. Only `start` is addressable in `single`;
-addressing `end` is a caller error. With no adapter supplied for `datetime`,
-use `createIntlDateTimeZoneAdapter()`. A date receives `today()` but no zone or
-adapter; a time receives no calendar, `minDate`, `today()` or `timeZone`.
+`kind`, `count`, `timeZone`, `adapter`, `labels`, `minDate` and `maxDate` are
+instance configuration. A different meaning requires an explicit new instance,
+not reinterpretation of the old draft. Supplying invalid calendar dates for
+`minDate` or `maxDate`, or a reversed pair where `minDate > maxDate`, throws
+`RangeError`. Equal `minDate` and `maxDate` leave exactly that one day available.
+Only `start` is addressable in `single`; addressing `end` is a caller error.
+With no adapter supplied for `datetime`, use `createIntlDateTimeZoneAdapter()`.
+A date receives `today()` but no zone or adapter; a time receives no calendar,
+`minDate`, `maxDate`, `today()` or `timeZone`.
 
 `setValue()` is the owner's explicit full replacement or reset of the draft.
 `setEndpointValue()` replaces or clears only the addressed endpoint, preserving
@@ -581,9 +587,10 @@ another offset choice.
 invoking Today. For datetime, the owner computes it in the supplied zone; for
 date-only it supplies a day without attaching a zone to the value. A fixture
 may supply a fixed day. The controller does not read the OS zone, global
-`hilosTimeZone` or locale itself. `minDate` is a lower calendar-day bound for
-disabling calendar cells; it neither prevents typing an earlier date nor
-proves business validity.
+`hilosTimeZone` or locale itself. `minDate` and `maxDate` are lower and upper
+calendar-day bounds for disabling calendar cells; neither prevents typing or
+programmatic entry of dates outside the bounds nor proves business validity.
+Calendar navigation, arrow keys and focus are not confined to `[minDate, maxDate]`.
 
 ## Calendar ownership and interaction
 
@@ -742,9 +749,9 @@ month always follows focus; there is no separate displayed-month state.
 `setActiveEdge()` works on an open panel and moves focus to that edge's date
 when one exists. A single picker always addresses `start`; addressing `end`
 raises `RangeError`. `selectDay()` raises `RangeError` for time-only or an
-invalid calendar date. On a closed, disabled or busy picker, or before
-`minDate`, a valid selection is a no-op. For a single picker it changes the
-start date, closes date-only, and leaves datetime open.
+invalid calendar date. On a closed, disabled or busy picker, or outside
+`[minDate, maxDate]`, a valid selection is a no-op. For a single picker it
+changes the start date, closes date-only, and leaves datetime open.
 
 A range has one calendar and a separately accessible active endpoint. Let
 `S` and `E` be the dates before selection, `A` the active edge, and `d` the
@@ -785,10 +792,11 @@ labels use the full weekday name followed by the date in `dateOrder`, with
 spaces and a full month name, such as `Saturday, 17 October 2026`. Years have
 four digits. `weekend` follows `weekendDays` for both cells and column headers;
 unused matrix edges remain `null`. `selected` matches either endpoint date,
-`today` matches the captured today, and `disabled` means before `minDate`.
-Exactly one real day has `focusTarget`, including when that day is disabled.
-`setFactors()` rebuilds names and marks without moving month or focus. Typing
-and `setValue()` change selection marks without moving month or focus.
+`today` matches the captured today, and `disabled` means before `minDate` or
+after `maxDate`. Exactly one real day has `focusTarget`, including when that
+day is disabled. `setFactors()` rebuilds names and marks without moving month or
+focus. Typing and `setValue()` change selection marks without moving month or
+focus.
 
 The calendar model supplies these keyboard transitions. Disabled dates cannot
 be selected through the calendar.

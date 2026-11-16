@@ -189,9 +189,41 @@ describe('DateTimePicker canonical values and configuration', () => {
       today,
       minDate: '2026-02-31',
     },
+    {
+      kind: 'date',
+      count: 'single',
+      value: null,
+      today,
+      maxDate: '2026-02-31',
+    },
+    {
+      kind: 'date',
+      count: 'single',
+      value: null,
+      today,
+      maxDate: '2026-13-01',
+    },
     { kind: 'date', count: 'single', value: null, today, timeZone: 'UTC' },
     { kind: 'time', count: 'single', value: null, today },
     { kind: 'time', count: 'single', value: null, minDate: '2026-01-01' },
+    { kind: 'time', count: 'single', value: null, maxDate: '2026-01-01' },
+    {
+      kind: 'date',
+      count: 'single',
+      value: null,
+      today,
+      minDate: '2026-10-20',
+      maxDate: '2026-10-13',
+    },
+    {
+      kind: 'datetime',
+      count: 'single',
+      value: null,
+      today,
+      timeZone: 'UTC',
+      minDate: '2026-10-20',
+      maxDate: '2026-10-13',
+    },
     {
       kind: 'time',
       count: 'single',
@@ -219,19 +251,53 @@ describe('DateTimePicker canonical values and configuration', () => {
     ).toThrow(RangeError)
   })
 
-  it('allows typing before minDate and accepts zero and negative epochs', () => {
+  it('allows manual and programmatic values before minDate or after maxDate, accepting zero and negative epochs', () => {
     const picker = createDateTimePickerController({
       kind: 'date',
       count: 'single',
       value: null,
       today,
       minDate: '2026-10-13',
+      maxDate: '2026-10-20',
     })
     picker.setDate('start', '0001-01-01')
     expect(picker.state.get().result).toEqual({
       status: 'valid',
       value: '0001-01-01',
     })
+    picker.setDate('start', '2099-12-31')
+    expect(picker.state.get().result).toEqual({
+      status: 'valid',
+      value: '2099-12-31',
+    })
+    picker.setPartText('start', 'year', '2030')
+    picker.setPartText('start', 'month', '11')
+    picker.setPartText('start', 'day', '25')
+    expect(picker.state.get().result).toEqual({
+      status: 'valid',
+      value: '2030-11-25',
+    })
+    picker.setValue('2035-05-01')
+    expect(picker.state.get().result).toEqual({
+      status: 'valid',
+      value: '2035-05-01',
+    })
+    const dtPicker = createDateTimePickerController({
+      kind: 'datetime',
+      count: 'single',
+      value: null,
+      today,
+      timeZone: 'UTC',
+      minDate: '2026-10-13',
+      maxDate: '2026-10-20',
+    })
+    dtPicker.setValue(Date.UTC(2030, 5, 15, 12, 0, 0))
+    expect(dtPicker.state.get().result).toEqual({
+      status: 'valid',
+      value: Date.UTC(2030, 5, 15, 12, 0, 0),
+    })
+    dtPicker.setDate('start', '2030-11-25')
+    expect(dtPicker.state.get().result.status).toBe('valid')
     expect(momentPicker(0, 'UTC').state.get().result).toEqual({
       status: 'valid',
       value: 0,

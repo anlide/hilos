@@ -371,6 +371,136 @@ export function registerDateTimePickerCalendarCases(
       })
     })
 
+    it('exposes a day past maxDate with aria-disabled and reachable focus, rejecting selection', async () => {
+      let changes = 0
+      const picker = createDateTimePickerController({
+        kind: 'date',
+        count: 'single',
+        value: '2026-10-17',
+        minDate: '2026-10-13',
+        maxDate: '2026-10-20',
+        today: () => '2026-10-17',
+        onChange: () => {
+          changes++
+        },
+      })
+      await withView(mount, picker, async (view) => {
+        await click(view, opener(view))
+        const prohibited = day(view, 'Wednesday, 21 October 2026')
+        const allowedBoundary = day(view, 'Tuesday, 20 October 2026')
+        expect(prohibited.getAttribute('aria-disabled')).toBe('true')
+        expect(prohibited.disabled).toBe(false)
+        expect(allowedBoundary.getAttribute('aria-disabled')).toBeNull()
+        expect(allowedBoundary.disabled).toBe(false)
+
+        const before = picker.state.get()
+        await click(view, prohibited)
+        expect(picker.state.get()).toBe(before)
+        expect(changes).toBe(0)
+
+        for (let i = 0; i < 4; i++) {
+          expect(
+            (await view.press(focusDay(view), 'ArrowRight')).defaultPrevented,
+          ).toBe(true)
+        }
+        expect(document.activeElement).toBe(prohibited)
+        expect(prohibited.tabIndex).toBe(0)
+
+        expect((await view.press(prohibited, 'Enter')).defaultPrevented).toBe(
+          true,
+        )
+        expect(picker.state.get()).toBe(before)
+        expect(changes).toBe(0)
+
+        expect((await view.press(prohibited, ' ')).defaultPrevented).toBe(true)
+        expect(picker.state.get()).toBe(before)
+        expect(changes).toBe(0)
+
+        await click(view, allowedBoundary)
+        expect(changes).toBe(1)
+        expect(picker.state.get().result).toEqual({
+          status: 'valid',
+          value: '2026-10-20',
+        })
+      })
+    })
+
+    it('enforces equal minDate and maxDate on range date and datetime pickers', async () => {
+      let dateChanges = 0
+      const dateRange = createDateTimePickerController({
+        kind: 'date',
+        count: 'range',
+        value: null,
+        minDate: '2026-10-13',
+        maxDate: '2026-10-13',
+        today: () => '2026-10-13',
+        onChange: () => {
+          dateChanges++
+        },
+      })
+      await withView(mount, dateRange, async (view) => {
+        await click(view, opener(view))
+        const allowed = day(view, 'Tuesday, 13 October 2026')
+        const prohibitedBefore = day(view, 'Monday, 12 October 2026')
+        const prohibitedAfter = day(view, 'Wednesday, 14 October 2026')
+        expect(allowed.getAttribute('aria-disabled')).toBeNull()
+        expect(allowed.disabled).toBe(false)
+        expect(prohibitedBefore.getAttribute('aria-disabled')).toBe('true')
+        expect(prohibitedBefore.disabled).toBe(false)
+        expect(prohibitedAfter.getAttribute('aria-disabled')).toBe('true')
+        expect(prohibitedAfter.disabled).toBe(false)
+
+        await click(view, prohibitedBefore)
+        expect(dateChanges).toBe(0)
+        await click(view, prohibitedAfter)
+        expect(dateChanges).toBe(0)
+
+        await click(view, allowed)
+        expect(dateChanges).toBe(1)
+        expect(dateRange.state.get().result).toEqual({ status: 'unresolved' })
+
+        await click(view, allowed)
+        expect(dateChanges).toBe(2)
+        expect(dateRange.state.get().result).toEqual({
+          status: 'valid',
+          value: ['2026-10-13', '2026-10-13'],
+        })
+      })
+
+      let dtChanges = 0
+      const dtPicker = createDateTimePickerController({
+        kind: 'datetime',
+        count: 'single',
+        value: Date.UTC(2026, 9, 17, 10, 30, 0),
+        timeZone: 'Europe/Warsaw',
+        minDate: '2026-10-13',
+        maxDate: '2026-10-20',
+        today: () => '2026-10-17',
+        onChange: () => {
+          dtChanges++
+        },
+      })
+      await withView(mount, dtPicker, async (view) => {
+        await click(view, opener(view))
+        const prohibited = day(view, 'Wednesday, 21 October 2026')
+        const boundary = day(view, 'Tuesday, 20 October 2026')
+        expect(prohibited.getAttribute('aria-disabled')).toBe('true')
+        expect(prohibited.disabled).toBe(false)
+        expect(boundary.getAttribute('aria-disabled')).toBeNull()
+        expect(boundary.disabled).toBe(false)
+
+        await click(view, prohibited)
+        expect(dtChanges).toBe(0)
+
+        await click(view, boundary)
+        expect(dtChanges).toBe(1)
+        expect(dtPicker.state.get().result).toEqual({
+          status: 'valid',
+          value: Date.UTC(2026, 9, 20, 10, 30, 0),
+        })
+      })
+    })
+
     it('keeps focus on month buttons and moves the roving day with calendar keys', async () => {
       const picker = createDateTimePickerController({
         kind: 'date',

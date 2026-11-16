@@ -235,6 +235,29 @@ function isFactorKey(value: string): value is FactorKey {
             </option>
           </select>
         </div>
+        <div class="col-sm-6 col-lg-4">
+          <label class="form-label" for="fixture-max">Maximum day</label>
+          <select
+            id="fixture-max"
+            class="form-select"
+            data-id="fixture-max"
+            (change)="onMaxDate($event)"
+          >
+            <option [value]="''" [selected]="maxDate() === ''">none</option>
+            <option
+              [value]="'2026-10-13'"
+              [selected]="maxDate() === '2026-10-13'"
+            >
+              2026-10-13
+            </option>
+            <option
+              [value]="'2026-10-20'"
+              [selected]="maxDate() === '2026-10-20'"
+            >
+              2026-10-20
+            </option>
+          </select>
+        </div>
       </div>
       <div class="d-flex flex-wrap gap-3 mb-4">
         <div class="form-check">
@@ -409,6 +432,7 @@ export class DateTimePickerFixture {
   protected readonly zone = signal('Europe/Warsaw')
   protected readonly today = signal('2026-10-13')
   protected readonly minDate = signal('')
+  protected readonly maxDate = signal('')
   protected readonly seconds = signal(false)
   protected readonly busy = hilosSignal(this.busySignal)
   protected readonly disabled = hilosSignal(this.disabledSignal)
@@ -480,6 +504,11 @@ export class DateTimePickerFixture {
     this.replacePicker()
   }
 
+  protected onMaxDate(event: Event): void {
+    this.maxDate.set((event.target as HTMLSelectElement).value)
+    this.replacePicker()
+  }
+
   protected onSeconds(event: Event): void {
     const show = (event.target as HTMLInputElement).checked
     this.seconds.set(show)
@@ -534,6 +563,7 @@ export class DateTimePickerFixture {
   private createPicker(): FixturePicker {
     const currentToday = this.today()
     const currentMin = this.minDate()
+    const currentMax = this.maxDate()
     const options = {
       count: this.count(),
       value: null,
@@ -550,6 +580,7 @@ export class DateTimePickerFixture {
           kind: 'date',
           today: () => currentToday,
           ...(currentMin ? { minDate: currentMin } : {}),
+          ...(currentMax ? { maxDate: currentMax } : {}),
         })
       case 'time':
         return createDateTimePickerController({
@@ -563,6 +594,7 @@ export class DateTimePickerFixture {
           timeZone: this.zone(),
           today: () => currentToday,
           ...(currentMin ? { minDate: currentMin } : {}),
+          ...(currentMax ? { maxDate: currentMax } : {}),
         })
     }
   }
