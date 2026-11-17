@@ -10,7 +10,8 @@ use Hilos\Socket\Client\WorkerClient;
  * One agent whose next start waits for its earlier worker stop report.
  *
  * A closed worker link ends the wait just as a stop report does. No deadline is needed:
- * the old instance cannot report after its link has gone.
+ * the old instance cannot report after its link has gone. A protected-mode replay remains
+ * one of the freeze's agents while waiting, so a refreeze inherits it for the next lift.
  */
 final readonly class AwaitingStopReportStart
 {
@@ -22,6 +23,7 @@ final readonly class AwaitingStopReportStart
      * @param ?int $preferredWorkerId First worker requested for the new instance, if any
      * @param int $awaitedWorkerId Worker whose earlier stop report is awaited
      * @param WorkerClient $awaitedWorker Exact connection that owes the report
+     * @param bool $protectedModeReplay Request replays an agent stopped by the freeze, without proving it started
      */
     public function __construct(
         public string $agentId,
@@ -31,6 +33,7 @@ final readonly class AwaitingStopReportStart
         public ?int $preferredWorkerId,
         public int $awaitedWorkerId,
         public WorkerClient $awaitedWorker,
+        public bool $protectedModeReplay = false,
     ) {
     }
 }

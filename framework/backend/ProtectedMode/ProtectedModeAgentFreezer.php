@@ -26,7 +26,9 @@ use Hilos\Core\Exception\InvalidFormatException;
  * and the end of each walk is told to the node's switch - {@see ProtectedModeSwitch::onRosterStopped()} and
  * {@see ProtectedModeSwitch::onRosterResumed()} - which is where anything owed after it is said. A
  * request that arrives while the other walk is unfinished takes it over: a lift drops the agents a
- * stop had not reached, and a stop inherits the agents a lift had not asked for yet.
+ * stop had not reached, and a stop inherits the agents a lift had not asked for yet, plus requested
+ * replays still waiting for their old stop report. Requesting a replay does not prove a new start;
+ * the inherited wait keeps its exact old link and the barrier behind that instance's last writes.
  */
 interface ProtectedModeAgentFreezer
 {

@@ -409,6 +409,18 @@ counts itself among the nodes it waits for until its own roster has stopped. The
 lift is stepped the same way, and the frames it owes the browsers go out once the
 roster is back (`ProtectedModeExecutor::finishVerifying()` / `finishLift()`).
 
+A refreeze inherits both the unfinished replay queue and requested replays still
+waiting for the old instance's stop report or the settlement of its last writes.
+The request snapshots those waiting replays before preparation or external hooks,
+so a report before the first preparation portion cannot lose one. It leaves the
+exact old-link wait in place and sends no further stop for it. The next lift
+replays the saved placement through the same start path: before the old report
+or link departure and write settlement there is no new start; afterwards there
+is one. An ordinary deferred start carries no such inheritance. The stop's
+existing closing log line adds `, kept K waiting replay(s) for the lift`, even
+for zero: K counts distinct waiting replays at that request, while the stop and
+pass counts still describe the actual stop walk.
+
 **`active` on a row means the ordinary roster has stopped on every selected node
 (HIL-1128).** The recorded initiator, `HILOS_MAIL` and `HILOS_STATUS` remain
 running; they are not members of the ordinary stop roster.
@@ -1530,8 +1542,12 @@ the cluster and not a history of agents that were stopped earlier.
 
 `stoppedAgentCount` is the distinct agents in the stopped set and in the
 resume queue the walk has not asked to start yet. A start already asked for
-has left that count. Agents still only in the stop queue are running, so they
-are not in it.
+has left that count. A refreeze inherits a requested replay still awaiting its
+old stop report or last writes into the stopped set, so it counts again even
+if the wait ends before preparation. The next replay request reduces the count
+in the same way as before; a request is not proof of a new start and never
+releases the old stop barrier early. Agents still only in the stop queue are
+running, so they are not in it.
 
 `preservedAgentTypes` is the one list both the start gate and the stop walk
 already pass. Today it contains `HILOS_MAIL` and `HILOS_STATUS`. The initiator is

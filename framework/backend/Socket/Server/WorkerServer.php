@@ -279,6 +279,9 @@ abstract class WorkerServer extends AbstractServer implements
     /** @var array<string, AwaitingStopReportStart> Starts held until the old worker reports the agent stopped */
     private array $agentsAwaitingStopReport = [];
 
+    /** @var array<string, FrozenAgentPlacement> Freeze replays still held behind an old stop, indexed at each wait mutation */
+    private array $protectedModeWaitingReplays = [];
+
     private ?ReadyWork $workerWaitWork = null;
 
     private ?EventLoopTimer $workerWaitTimer = null;
@@ -429,6 +432,9 @@ abstract class WorkerServer extends AbstractServer implements
 
     /** @var int Agents the walk in flight has stopped or asked back so far, for the same line */
     private int $protectedModeWalkAgents = 0;
+
+    /** @var int Distinct waiting replays captured by this stop request, even if their waits have since ended */
+    private int $protectedModeWalkWaitingReplays = 0;
 
     private int $protectedModeRosterEpoch = 0;
 
@@ -2372,13 +2378,14 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * The start every entry point shares, with the one bit no caller outside this class may set.
+     * The start every entry point shares, retaining placement sanction and the origin of freeze replays.
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @param bool $placedByLeader True when this node hosts the agent because placement said so
      * @param ?int $preferredWorkerId Worker to hand it back to when that worker is still able to take it
      * @param bool $seatFromQueue True only for the queue's own seat, which takes any free worker
+     * @param bool $protectedModeReplay True only when replaying the freeze's remembered set
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      * @throws HilosException Whatever the project's agent-daemon factory raises
@@ -2389,6 +2396,7 @@ abstract class WorkerServer extends AbstractServer implements
         bool $placedByLeader,
         ?int $preferredWorkerId = null,
         bool $seatFromQueue = false,
+        bool $protectedModeReplay = false,
     ): void {
         // Build agent ID
         $agentId = $this->buildAgentId($agentType, $agentIndex);
@@ -2441,11 +2449,18 @@ abstract class WorkerServer extends AbstractServer implements
                 $awaiting?->preferredWorkerId ?? $preferredWorkerId,
                 $awaitedWorker->getWorkerId(),
                 $awaitedWorker,
+                $protectedModeReplay || ($awaiting?->protectedModeReplay ?? false),
             );
             $this->agentsAwaitingStopReport[$agentId] = $next;
             $this->stopReportWaiters[spl_object_id($awaitedWorker)][$agentId] = $next;
             if (isset($this->stopReportPending[$agentId])) {
                 $this->stopReportPending[$agentId] = $next;
+            }
+            if ($next->protectedModeReplay) {
+                $this->protectedModeWaitingReplays[$agentId] = new FrozenAgentPlacement(
+                    $this->parseAgentId($agentId),
+                    $next->preferredWorkerId,
+                );
             }
             $this->agentHoldWake?->__invoke($agentId);
 
@@ -2769,7 +2784,11 @@ abstract class WorkerServer extends AbstractServer implements
                 unset($this->stopReportWaiters[$id]);
             }
         }
-        unset($this->agentsAwaitingStopReport[$agentId], $this->stopReportPending[$agentId]);
+        unset(
+            $this->agentsAwaitingStopReport[$agentId],
+            $this->stopReportPending[$agentId],
+            $this->protectedModeWaitingReplays[$agentId],
+        );
         if ($this->stopReportPending === []) {
             $this->stopReportWork?->cancel();
         }
@@ -2921,6 +2940,7 @@ abstract class WorkerServer extends AbstractServer implements
                         $awaiting->agentIndex,
                         $awaiting->placedByLeader,
                         $awaiting->preferredWorkerId,
+                        protectedModeReplay: $awaiting->protectedModeReplay,
                     );
                 } catch (Throwable $failure) {
                     Logger::error("Agent {$agentId} could not start after its earlier stop: {$failure->getMessage()}");
@@ -3590,6 +3610,8 @@ abstract class WorkerServer extends AbstractServer implements
      * left running so it can carry out the destructive operation the freeze protects, and so is
      * the mail pool and the public Status publisher. Bringing stopped agents back is the mirror seam,
      * landed in HIL-267 slice 7b.
+     * A refreeze also snapshots replays already requested but still waiting for an old stop report;
+     * their exact worker wait remains in place, and requesting a replay is not a new start.
      *
      * @param string $initiatorAgentType Initiator agent type left running
      * @param ?string $initiatorAgentIndex Initiator agent index, or null for a singleton initiator
@@ -3598,7 +3620,12 @@ abstract class WorkerServer extends AbstractServer implements
     {
         ++$this->protectedModeRosterEpoch;
         $this->protectedModeRosterWork?->cancel();
-        $this->protectedModeStoppedAgents = [...$this->protectedModeStoppedAgents, ...($this->protectedModeResumeQueue ?? [])];
+        $this->protectedModeStoppedAgents = array_merge(
+            $this->protectedModeStoppedAgents,
+            $this->protectedModeResumeQueue ?? [],
+            array_values($this->protectedModeWaitingReplays),
+        );
+        $this->protectedModeWalkWaitingReplays = count($this->protectedModeWaitingReplays);
         $this->protectedModeResumeQueue = null;
         $this->protectedModeStopQueue = [];
         $this->protectedModeStopInitiator = $this->buildAgentId($initiatorAgentType, $initiatorAgentIndex);
@@ -3765,10 +3792,11 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * Read off the remembered set and the replay queue, the two places such an agent stands between
      * its stop and its turn in the walk. A stop over an unfinished lift moves the queue back into the
-     * set (stopAgentsForProtectedMode()), so the answer holds through it; the initiator and preserved
-     * types are never stopped, so never here; once the walk has asked for the agent it is an ordinary
-     * start under way. The master asks this to hold a connection's close for the agent rather than
-     * drop it (HIL-1208).
+     * set (stopAgentsForProtectedMode()), together with requested replays still awaiting an old stop
+     * report. The initiator and preserved types are never stopped, so never here; once the walk has
+     * asked for the agent it is an ordinary start under way until a refreeze inherits it. A request
+     * does not prove the agent started. The master asks this to hold a connection's close for the
+     * agent rather than drop it (HIL-1208).
      *
      * @param string $agentType Agent type to ask about
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -3805,6 +3833,8 @@ abstract class WorkerServer extends AbstractServer implements
      * passes it on its own. The walk ends by firing {@see onProtectedModeLifted()} for whatever
      * else the application wants back, and then telling the switch
      * {@see ProtectedModeSwitch::onRosterResumed()}.
+     * The set includes requested replays inherited by a refreeze while they awaited an old stop.
+     * Replaying them merges with that wait; it never releases the old report or write barrier early.
      */
     public function resumeAgentsForProtectedMode(): void
     {
@@ -3821,6 +3851,7 @@ abstract class WorkerServer extends AbstractServer implements
         $this->protectedModeStoppedAgents = [];
         $this->protectedModeWalkPasses = 0;
         $this->protectedModeWalkAgents = 0;
+        $this->protectedModeWalkWaitingReplays = 0;
         $this->protectedModeRosterWork?->markReady();
         $this->noteProtectedModeDiagnosticsChanged();
     }
@@ -3974,7 +4005,8 @@ abstract class WorkerServer extends AbstractServer implements
         // nothing about the roster it actually stopped on this node, nor how long that took.
         Logger::info(
             'Protected mode: froze this node for ' . $initiatorAgentId . ', stopped '
-            . $this->protectedModeWalkAgents . ' agent(s) over ' . $this->protectedModeWalkPasses . ' pass(es)',
+            . $this->protectedModeWalkAgents . ' agent(s) over ' . $this->protectedModeWalkPasses . ' pass(es)'
+            . ', kept ' . $this->protectedModeWalkWaitingReplays . ' waiting replay(s) for the lift',
         );
 
         Hilos::$cluster?->protectedMode()?->onRosterStopped();
@@ -4000,7 +4032,13 @@ abstract class WorkerServer extends AbstractServer implements
             unset($this->protectedModeResumeQueue[$key]);
             $this->protectedModeWalkAgents++;
             try {
-                $this->startAgentInternal($frozen->agent->type, $frozen->agent->index, true, $frozen->workerId);
+                $this->startAgentInternal(
+                    $frozen->agent->type,
+                    $frozen->agent->index,
+                    true,
+                    $frozen->workerId,
+                    protectedModeReplay: true,
+                );
             } catch (Throwable $e) {
                 $agentId = $this->buildAgentId($frozen->agent->type, $frozen->agent->index);
                 Logger::error("Protected mode: failed to resume agent {$agentId}: {$e->getMessage()}");
