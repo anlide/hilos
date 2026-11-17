@@ -10,6 +10,14 @@ use Hilos\Auth\AccountOperation\AccountErasureCoordinator;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureSessionsResult;
+use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
+use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
+use Hilos\Auth\AccountOperation\AccountMergeSessionsResult;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
+use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
+use Hilos\Auth\AccountOperation\AccountOperationStepRefusal;
 use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
@@ -7409,7 +7417,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             if ($assignment->owner->ownerType === HilosAgentType::HILOS_SESSIONS_LIBRARY) {
                 $answer = AccountOperationAsks::answer(
                     $ask,
-                    fn (AccountOperationAssignment $a): AccountOperationResult => $this->eraseAccountSessionsPart($a->id),
+                    fn (AccountOperationAssignment $a): AccountOperationResult => $this->applyAccountSessionsPart($a->id),
                     $this->getId(),
                 );
                 array_push($assignments, ...$this->afterAccountOperationAnswer($answer));
@@ -7426,6 +7434,31 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             }
             $this->sendToAgent($worker::ACCOUNT_OPERATION_SIGNAL, $ask);
         }
+    }
+
+    /**
+     * Selects the prepared holder entry without advancing the merge coordinator.
+     *
+     * @param int $assignmentId Immutable erasure part or canonical merge duty
+     * @return AccountOperationResult Committed counts or the exact saved result
+     * @throws Throwable When the address, validation or transactional work refuses the step
+     */
+    protected function applyAccountSessionsPart(int $assignmentId): AccountOperationResult
+    {
+        $assignment = Hilos::$db->accountOperationAssignments[$assignmentId] ?? null;
+        if ($assignment === null) {
+            throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::UnknownAssignment);
+        }
+
+        return match ($assignment->operation?->kind) {
+            AccountOperationKind::Erasure => $this->eraseAccountSessionsPart($assignmentId),
+            AccountOperationKind::Merge => match ($assignment->assignmentKey) {
+                AccountMergeDuty::Sessions->value => $this->mergeAccountSessionsPart($assignmentId),
+                AccountMergeDuty::SurvivorSessions->value => $this->finishMergeSurvivorSessions($assignmentId),
+                default => throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::ForeignAssignment),
+            },
+            default => throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::ForeignAssignment),
+        };
     }
 
     /**
@@ -7469,6 +7502,168 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 return (new AccountErasureSessionsResult($sessions, $accessLog))->payload();
             },
         );
+    }
+
+    /**
+     * Transfers the loser's access log and ends touching sessions after its committed give.
+     * SCAFFOLD: HIL-2000 calls this prepared entry; HIL-1999 switches the live merge.
+     *
+     * @param int $assignmentId Canonical go/sessions assignment
+     * @return AccountOperationResult Committed counts or the exact saved result
+     * @throws Throwable When validation or transactional work fails, preserving the original failure
+     */
+    protected function mergeAccountSessionsPart(int $assignmentId): AccountOperationResult
+    {
+        return $this->runMergeSessionsPart($assignmentId, AccountMergeDuty::Sessions);
+    }
+
+    /**
+     * Ends survivor sessions only when the committed give kept the loser's factor, after receipt.
+     * SCAFFOLD: HIL-2000 calls this prepared entry; HIL-1999 switches the live merge.
+     *
+     * @param int $assignmentId Canonical go/survivor_sessions assignment
+     * @return AccountOperationResult Committed counts or the exact saved result
+     * @throws Throwable When validation or transactional work fails, preserving the original failure
+     */
+    protected function finishMergeSurvivorSessions(int $assignmentId): AccountOperationResult
+    {
+        return $this->runMergeSessionsPart($assignmentId, AccountMergeDuty::SurvivorSessions);
+    }
+
+    /**
+     * @param int $assignmentId Immutable holder obligation
+     * @param AccountMergeDuty $duty One of the two holder duties
+     * @return AccountOperationResult Strict committed or replayed counts
+     * @throws Throwable When validation or participant work fails
+     */
+    private function runMergeSessionsPart(int $assignmentId, AccountMergeDuty $duty): AccountOperationResult
+    {
+        $executor = ExecutionContext::currentAgentId();
+        if ($executor === null) {
+            throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::NoParticipant);
+        }
+        if ($executor !== $this->getId()) {
+            throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::ForeignAssignment);
+        }
+        $assignment = Hilos::$db->accountOperationAssignments[$assignmentId] ?? null;
+        if ($assignment === null) {
+            throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::UnknownAssignment);
+        }
+        $this->requireMergeSessionsAssignment($assignment, $assignment->operation, $duty);
+        $saved = Hilos::$db->accountOperationResults->byAssignment($assignmentId);
+        if ($saved !== null) {
+            return $this->checkedMergeSessionsResult($assignment, $saved, $duty);
+        }
+        $result = AccountOperationParticipantStep::run($assignmentId, function (
+            AccountOperationAssignment $assignment,
+        ) use ($duty): AccountOperationResultPayload {
+            $operation = Hilos::$db->accountOperations->fresh($assignment->operationId);
+            $this->requireMergeSessionsAssignment($assignment, $operation, $duty);
+            if ($operation->finishedAt !== null || $operation->stage !== AccountMergeStage::Go->value) {
+                throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::ClosedStage);
+            }
+            $give = $this->mergeSessionsGive($operation);
+            if ($duty === AccountMergeDuty::Sessions) {
+                $accessLog = Hilos::$db->accessLogEntries->actions->rePointToUser($operation->loserUserId, $operation->survivorUserId);
+                $sessions = count(array_unique($this->killUserSessions($operation->loserUserId)));
+            } else {
+                if (AccountMergeReceiveResult::forOperation($operation) === null) {
+                    throw new ValidationException('The merge is waiting for confirmed acceptance.');
+                }
+                $accessLog = 0;
+                $sessions = $give->secondFactorKept === AccountMergeGiveResult::SECOND_FACTOR_LOSER
+                    ? count(array_unique($this->killUserSessions($operation->survivorUserId))) : 0;
+                $survivorId = $operation->survivorUserId;
+                Database::afterCommit(function () use ($survivorId): void {
+                    $this->sendToGroup(
+                        HilosSignalConstants::HILOS_SECOND_FACTOR_STATE,
+                        SecondFactorGroup::forUser($survivorId),
+                        SecondFactorStateProjector::stateFor($survivorId),
+                    );
+                });
+            }
+
+            return (new AccountMergeSessionsResult($sessions, $accessLog))->toPayload();
+        });
+
+        return $this->checkedMergeSessionsResult($assignment, $result, $duty);
+    }
+
+    /**
+     * @param AccountOperationAssignment $assignment Immutable address to check
+     * @param ?AccountOperation $operation Recorded merge, independent of current stage
+     * @param AccountMergeDuty $duty Required holder duty
+     */
+    private function requireMergeSessionsAssignment(
+        AccountOperationAssignment $assignment, ?AccountOperation $operation, AccountMergeDuty $duty,
+    ): void
+    {
+        $owner = new AccountOperationOwnerAddress(HilosAgentType::HILOS_SESSIONS_LIBRARY);
+        if ($operation === null || $operation->kind !== AccountOperationKind::Merge
+            || $operation->loserUserId === null || $operation->loserUserId <= 0
+            || $operation->survivorUserId === null || $operation->survivorUserId <= 0
+            || $operation->loserUserId === $operation->survivorUserId
+            || $assignment->operationId !== $operation->id || $assignment->stage !== AccountMergeStage::Go->value
+            || $assignment->assignmentKey !== $duty->value || !$assignment->owner->equals($owner)
+            || $owner->agentId() !== $this->getId()
+            || $assignment->userId !== ($duty === AccountMergeDuty::Sessions ? $operation->loserUserId : $operation->survivorUserId)
+            || !$assignment->payload->equals(AccountOperationAssignmentPayload::fromJson('{}'))) {
+            throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::ForeignAssignment);
+        }
+    }
+
+    /**
+     * @param AccountOperationAssignment $assignment Checked canonical address
+     * @param AccountOperationResult $result Saved or newly committed result
+     * @param AccountMergeDuty $duty Required holder duty
+     * @return AccountOperationResult Same strict result
+     */
+    private function checkedMergeSessionsResult(
+        AccountOperationAssignment $assignment, AccountOperationResult $result, AccountMergeDuty $duty,
+    ): AccountOperationResult
+    {
+        if ($result->assignmentId !== $assignment->id || $result->ownerAgentId !== $assignment->owner->agentId()) {
+            throw new InvalidFormatException('The merge session result must belong to its exact assigned owner.');
+        }
+        $counts = AccountMergeSessionsResult::of($result->payload);
+        if ($duty === AccountMergeDuty::SurvivorSessions && $counts->accessLog !== 0) {
+            throw new InvalidFormatException('The survivor session result cannot transfer access log rows.');
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param AccountOperation $operation Canonical merge whose committed source fact is needed
+     * @return AccountMergeGiveResult Exact nonsecret source fact
+     */
+    private function mergeSessionsGive(AccountOperation $operation): AccountMergeGiveResult
+    {
+        $assignment = Hilos::$db->accountOperationAssignments->byIdentity(
+            $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Give->value,
+        );
+        if ($assignment === null) {
+            throw new ValidationException('The merge is waiting for the account handover.');
+        }
+        $owner = new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$operation->loserUserId);
+        if ($assignment->operationId !== $operation->id || $assignment->stage !== AccountMergeStage::Go->value
+            || $assignment->assignmentKey !== AccountMergeDuty::Give->value || $assignment->userId !== $operation->loserUserId
+            || !$assignment->owner->equals($owner) || !$assignment->payload->equals(AccountOperationAssignmentPayload::fromJson('{}'))) {
+            throw new InvalidFormatException('The merge handover must belong to its canonical source owner.');
+        }
+        $result = Hilos::$db->accountOperationResults->byAssignment($assignment->id);
+        if ($result === null) {
+            throw new ValidationException('The merge is waiting for the account handover.');
+        }
+        if ($result->assignmentId !== $assignment->id || $result->ownerAgentId !== $owner->agentId()) {
+            throw new InvalidFormatException('The merge handover result must belong to its exact assigned owner.');
+        }
+        $give = AccountMergeGiveResult::of($result->payload);
+        if (($operation->mergeChoice->secondFactorFate === SecondFactorFate::BOTH) !== ($give->effectiveWaitDays !== null)) {
+            throw new InvalidFormatException('The merge handover wait must match its operation choice.');
+        }
+
+        return $give;
     }
 
     /**

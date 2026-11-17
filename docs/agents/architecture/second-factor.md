@@ -148,14 +148,19 @@ writes and the exact `go`/`receive` result commit in one participant transaction
 Warm receive uses applied memory; local startup resumes an existing obligation
 from current mapped own rows, including a new owner in the same worker. Normal
 transport/production cutover and general coordinator recovery remain
-HIL-2000/HIL-1999/HIL-2002. The holder ends loser sessions after the
-fact and survivor sessions after receipt when the loser's factor first
-protects it (not in the code yet — HIL-1995).
+HIL-2000/HIL-1999/HIL-2002. The prepared holder `go/sessions` duty ends loser
+sessions after the exact give; `go/survivor_sessions` ends survivor sessions
+after the exact receipt only when the saved give retained the loser's factor.
+Each commits its strict `{"sessions":<n>,"accessLog":<m>}` result with its
+work and publishes session/profile notifications only after commit (HIL-1995).
+These duties remain prepared: normal merge production is HIL-2000 and the live
+cutover is HIL-1999.
 
-The loser's sessions end after commit. When its factor first protects the
-survivor, the survivor's sessions end too. A confirmed loser factor revokes
-trusts of both accounts; otherwise only the loser's trusts go. The survivor's
-profile receives its updated section after commit. Merge tables expose only
+The loser's sessions end after the prepared duty commits. When its factor first
+protects the survivor, the survivor's sessions end after receipt too. A
+confirmed loser factor revokes trusts of both accounts; otherwise only the
+loser's trusts go. The survivor's profile receives its updated section after
+commit. Merge tables expose only
 confirmed-app presence, hidden from an admin-view-mode viewer, never secrets,
 codes or app labels.
 

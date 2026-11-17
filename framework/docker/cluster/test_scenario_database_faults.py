@@ -72,7 +72,7 @@ class ScenarioDatabaseFaultsTest(unittest.TestCase):
         self.contexts.enter_context(patch.object(scenarios, "DbLoad", return_value=self.load))
         self.converge = self.contexts.enter_context(patch.object(scenarios, "wait_converge"))
         self.steady = self.contexts.enter_context(patch.object(scenarios, "wait_db_steady",
-                                                            return_value={"m1": 0.5, "m2": 0.75}))
+                                                            side_effect=self.fault_steady))
         self.sql = self.contexts.enter_context(patch.object(scenarios, "db_sql", side_effect=self.read_fault_sql))
         self.proxy = self.contexts.enter_context(patch.object(scenarios, "proxy_states", side_effect=self.fault_proxy))
         self.refusal = self.contexts.enter_context(patch.object(scenarios, "db_sql_refusal",
@@ -128,6 +128,11 @@ class ScenarioDatabaseFaultsTest(unittest.TestCase):
     def fault_proxy(self):
         return {member.service: "DOWN" if member.service in self.isolated else "UP"
                 for member in self.stand.database_members}
+
+    def fault_steady(self, *_args, **_kwargs):
+        if self.isolated:
+            self.advance(1)
+        return {"m1": 0.5, "m2": 0.75}
 
     def test_53_keeps_both_data_members_serving_and_returns_the_vote(self):
         self.prepare_fault()
@@ -271,7 +276,7 @@ class ScenarioDatabaseFaultsTest(unittest.TestCase):
         self.assertEqual([call(self.load, 0, scenarios.DB_MEMBER_DEATH_TIMEOUT),
                           call(self.load, 1, scenarios.DB_MEMBER_DEATH_TIMEOUT, "db1")],
                          self.steady.call_args_list)
-        back.assert_called_once_with("db1", 3, scenarios.DB_MEMBER_RETURN_TIMEOUT, 2)
+        back.assert_called_once_with("db1", 3, scenarios.DB_MEMBER_RETURN_TIMEOUT, 3)
         self.assertEqual([call(member, node) for member in ("db1", "db2") for node in ("m1", "m2")],
                          self.value.call_args_list)
         self.assertFalse(self.isolated)
@@ -325,15 +330,66 @@ class ScenarioDatabaseFaultsTest(unittest.TestCase):
         self.prepare_fault()
         minority = scenarios.DbWriteAttempt(1, 1.5, "m2", "minority", True, "db1-host", "")
         self.load.attempts.side_effect = lambda node: [minority, self.writes[node]] if node == "m2" else [self.writes[node]]
-        with self.assertRaisesRegex(AssertionError, "m2 wrote minority through db1.*minority took an operation"):
+        with self.assertRaisesRegex(AssertionError, "m2 wrote minority through db1.*minority took an operation") as caught:
             scenarios.scenario_54_database_member_cut_off_is_fenced()
+        for detail in ("cut_at=1.000000", "mend_started_at=2.000000", "mended_at=3.000000",
+                       "started=1.000000", "finished=1.500000", "node=m2", "value=minority",
+                       "member=db1-host", "ok=True"):
+            self.assertIn(detail, str(caught.exception))
         self.assertFalse(self.isolated)
 
     def test_54_does_not_blame_writes_begun_before_the_cut_or_after_mending(self):
         self.prepare_fault()
         self.load.attempts.side_effect = lambda node: [
-            scenarios.DbWriteAttempt(start, 3, node, "outside", True, "db1-host", "") for start in (0, 2)]
+            scenarios.DbWriteAttempt(start, 3, node, "outside", True, "db1-host", "") for start in (0, 3)]
         scenarios.scenario_54_database_member_cut_off_is_fenced()
+
+    def test_54_does_not_blame_a_probe_begun_under_cut_and_acknowledged_after_healing(self):
+        self.prepare_fault()
+        spanning = scenarios.DbWriteAttempt(1.5, 3, "m2", "spanning", True, "db1-host", "")
+        self.load.attempts.side_effect = lambda node: [spanning] if node == "m2" else [self.writes[node]]
+        scenarios.scenario_54_database_member_cut_off_is_fenced()
+
+    def test_54_does_not_blame_a_probe_completed_after_routes_lift_before_mend_returns(self):
+        self.prepare_fault()
+
+        def execute(stand, command, service):
+            if command != "db-mend":
+                return self.control_fault(stand, command, service)
+            self.assertEqual({"db1"}, self.isolated)
+            self.isolated.remove(service)
+            self.advance(0.25)
+            started = self.now
+            self.advance(0.5)
+            returned = scenarios.DbWriteAttempt(started, self.now, "m2", "returned", True, "db1-host", "")
+            self.load.attempts.side_effect = lambda node: [returned] if node == "m2" else [self.writes[node]]
+            self.advance(0.25)
+            return control.Outcome(0, "", "")
+
+        self.execute.side_effect = execute
+        scenarios.scenario_54_database_member_cut_off_is_fenced()
+
+    def test_54_rejects_a_probe_acknowledged_at_the_start_of_mending(self):
+        self.prepare_fault()
+        minority = scenarios.DbWriteAttempt(1.5, 2, "m2", "minority", True, "db1-host", "")
+        self.load.attempts.side_effect = lambda node: [minority] if node == "m2" else [self.writes[node]]
+        with self.assertRaisesRegex(AssertionError, "minority took an operation"):
+            scenarios.scenario_54_database_member_cut_off_is_fenced()
+
+    def test_54_rejects_a_restarted_node_during_the_cut(self):
+        self.prepare_fault()
+        self.started_at.side_effect = [control.Outcome(0, "started", ""), control.Outcome(0, "started", ""),
+                                       control.Outcome(0, "restarted", "")]
+        with self.assertRaisesRegex(AssertionError, "m1 was restarted while db1 was cut off"):
+            scenarios.scenario_54_database_member_cut_off_is_fenced()
+        self.assertFalse(self.isolated)
+
+    def test_54_rejects_a_returned_member_missing_the_last_acknowledged_write(self):
+        self.prepare_fault()
+        self.value.side_effect = lambda member, node: "stale" if member == "db1" else self.writes[node].value
+        with self.assertRaisesRegex(AssertionError, "db1 holds stale for m1, which last wrote w1"):
+            scenarios.scenario_54_database_member_cut_off_is_fenced()
+        self.assertFalse(self.isolated)
 
     def test_54_failure_during_the_cut_mends_it_without_hiding_the_error(self):
         self.prepare_fault()

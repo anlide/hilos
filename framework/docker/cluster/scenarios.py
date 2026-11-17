@@ -7659,17 +7659,26 @@ def scenario_54_database_member_cut_off_is_fenced():
             assert outcome.code == 0 and outcome.out.strip() == started_at[node], \
                 f"{node} was restarted while {victim} was cut off"
         survivor = by_host.get(load.member_of(MASTERS[0]))
+        mend_started_at = time.monotonic()
         db_mend(victim)
         mended_at = time.monotonic()
         synced, up = member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT, mended_at)
         cut = False
         load.stop()
 
+        # CLI start is not commit time. Routes lift inside db_mend, so only a complete
+        # request and ACK observed before mending starts prove a write under the cut.
         for node in ALL_NODES:
             for attempt in load.attempts(node):
-                assert not (attempt.ok and cut_at <= attempt.started < mended_at
-                            and by_host.get(attempt.member) == victim), \
-                    f"{node} wrote {attempt.value} through {victim} while it was cut off: the minority took an operation"
+                assert not (attempt.ok and cut_at <= attempt.started
+                            and attempt.finished <= mend_started_at
+                            and by_host.get(attempt.member) == victim), (
+                    f"{node} wrote {attempt.value} through {victim} while it was cut off: "
+                    f"the minority took an operation; cut_at={cut_at:.6f}, "
+                    f"mend_started_at={mend_started_at:.6f}, mended_at={mended_at:.6f}; "
+                    f"probe node={attempt.node} value={attempt.value} started={attempt.started:.6f} "
+                    f"finished={attempt.finished:.6f} member={attempt.member} ok={attempt.ok}"
+                )
         for member in members:
             for node in ALL_NODES:
                 last = load.last_acknowledged(node)

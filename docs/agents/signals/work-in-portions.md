@@ -161,8 +161,15 @@ with no live coordinator sender until HIL-2000; the survivor commits its own
 work with its exact receipt in the
 [prepared survivor step](../architecture/account-operations.md#the-prepared-survivor-receipt),
 including local startup resume from current own rows for an existing obligation,
-with no normal producer before HIL-2000 and HIL-1999. The holder commits
-its own work with result (not in the code yet — HIL-1995). Declared project
+with no normal producer before HIL-2000 and HIL-1999. The holder's prepared
+`go/sessions` and `go/survivor_sessions` duties commit their own work with
+strict nonsecret `{"sessions":<n>,"accessLog":<m>}` results: the first follows
+the exact give, and the second follows the exact receipt and ends survivor
+sessions only when the saved give retained the loser's factor. Each replays a
+saved result before current-stage or business reads and publishes
+session/profile notifications only after commit (HIL-1995). No normal merge
+producer is connected before HIL-2000, and the live cutover remains HIL-1999.
+Declared project
 participants follow that same local atomic boundary — `AccountMergeProjectStep`
 commits an owner's move with its result, built and live at the merge switch —
 including chat's prepared author transfer and message count through its

@@ -11,6 +11,7 @@ use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
+use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\SecondFactor\SecondFactorPendingMode;
@@ -456,7 +457,9 @@ final class AccountErasureSessionsParticipantIntegrationTest extends HilosSessio
             return $this->assignToHolder($merge, self::USER_ID);
         });
 
-        $this->assertRefused($assignmentId, 'An account erasure part must belong to an erasure.');
+        $this->assertRefused($assignmentId, 'An account erasure part must belong to an erasure.', direct: true);
+        $this->expectException(AccountOperationStepRefusedException::class);
+        $this->erase($assignmentId);
     }
 
     /**
@@ -567,16 +570,21 @@ final class AccountErasureSessionsParticipantIntegrationTest extends HilosSessio
     /**
      * @param int $assignmentId Assignment the holder is asked to carry
      * @param string $words Words of the refusal
+     * @param bool $direct Exercise the erasure entry's own kind guard
      * @throws HilosException When a row cannot be read
      */
-    private function assertRefused(int $assignmentId, string $words): void
+    private function assertRefused(int $assignmentId, string $words, bool $direct = false): void
     {
         $sessions = self::allSessionRows();
         $log = self::accessLogOf(self::USER_ID);
         $this->drainQueue();
 
         try {
-            $this->erase($assignmentId);
+            if ($direct) {
+                $this->asHolder(fn () => $this->holder->erasePart($assignmentId));
+            } else {
+                $this->erase($assignmentId);
+            }
             self::fail('The part was not refused');
         } catch (ValidationException $refusal) {
             self::assertSame($words, $refusal->getMessage());
@@ -597,7 +605,7 @@ final class AccountErasureSessionsParticipantIntegrationTest extends HilosSessio
      */
     private function erase(int $assignmentId): AccountOperationResult
     {
-        return $this->asHolder(fn (): AccountOperationResult => $this->holder->erasePart($assignmentId));
+        return $this->asHolder(fn (): AccountOperationResult => $this->holder->applyPart($assignmentId));
     }
 
     /**
@@ -894,6 +902,15 @@ final class ErasureSessionsTestHolder extends AbstractSessionsLibraryAgent
 
     public function onStop(): void
     {
+    }
+
+    /**
+     * @param int $assignmentId Assignment selected by the coordinator
+     * @return AccountOperationResult Dispatched erasure result
+     */
+    public function applyPart(int $assignmentId): AccountOperationResult
+    {
+        return $this->applyAccountSessionsPart($assignmentId);
     }
 
     /**
