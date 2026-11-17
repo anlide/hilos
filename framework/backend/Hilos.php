@@ -1320,20 +1320,17 @@ abstract class Hilos implements TruthSourceOwner
         }
         static::bindBrowserContext();
 
-        if (static::$fs === null) {
-            static::$fs = static::createFs();
-            static::$fs?->configure();
-            static::refuseUploadsWithoutTmp();
-            static::refuseImagesWithoutTmp();
-            static::refuseFilesWithoutDirectory();
-            static::refuseDataExportWithoutDirectory();
-            static::refuseLegalExportWithoutDirectory();
-            static::refuseStatusWithoutDirectory();
-            static::refuseAccessLogWithoutSessionAddress();
-            static::refuseAnalyticsWithoutPrivacyDeclaration();
-            static::refuseAnalyticsWithoutJournalDirectory();
-            static::refuseMisdeclaredDirectories();
-        }
+        static::initFs();
+        static::refuseUploadsWithoutTmp();
+        static::refuseImagesWithoutTmp();
+        static::refuseFilesWithoutDirectory();
+        static::refuseDataExportWithoutDirectory();
+        static::refuseLegalExportWithoutDirectory();
+        static::refuseStatusWithoutDirectory();
+        static::refuseAccessLogWithoutSessionAddress();
+        static::refuseAnalyticsWithoutPrivacyDeclaration();
+        static::refuseAnalyticsWithoutJournalDirectory();
+        static::refuseMisdeclaredDirectories();
 
         SourceChangeBus::reset();
         SourceChangeBus::subscribe(new ViewCacheSubscriber());
@@ -1696,6 +1693,20 @@ abstract class Hilos implements TruthSourceOwner
             $cliManagerClass,
             $rtContextClass,
         );
+    }
+
+    /**
+     * Initializes only the filesystem context, configuring it once when created here.
+     * An existing context is retained; feature and ownership checks remain in full init().
+     *
+     * @throws HilosException When the filesystem factory or configuration cannot initialize its context
+     */
+    public static function initFs(): void
+    {
+        if (static::$fs === null) {
+            static::$fs = static::createFs();
+            static::$fs?->configure();
+        }
     }
 
     /**

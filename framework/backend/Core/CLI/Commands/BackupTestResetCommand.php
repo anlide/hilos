@@ -89,12 +89,6 @@ HELP;
             return ExitCode::SUCCESS;
         }
 
-        if (!is_dir($root)) {
-            echo "Nothing to empty: backup root {$root} does not exist yet.\n";
-
-            return ExitCode::SUCCESS;
-        }
-
         $sweeper = new TestPathSweeper();
         $sweeper->emptyDirectory($root);
 
@@ -105,6 +99,12 @@ HELP;
             }
 
             return ExitCode::ERROR;
+        }
+
+        if (!is_dir($root)) {
+            echo "Nothing to empty: backup root {$root} does not exist yet.\n";
+
+            return ExitCode::SUCCESS;
         }
 
         echo "Backup root {$root} emptied: {$sweeper->removed()} path(s) removed.\n";

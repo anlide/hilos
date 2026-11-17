@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Fs\Exception\DirectoryNotFoundException;
+use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 
@@ -52,9 +54,19 @@ final class TestPathSweeper
      */
     public function emptyDirectory(string $directory): void
     {
+        if (self::hasSymlinkComponent($directory)) {
+            $this->failed[] = $directory;
+
+            return;
+        }
+
         try {
             $entries = FsPath::entries($directory);
         } catch (FsException) {
+            if (!self::isMissingPath($directory)) {
+                $this->failed[] = $directory;
+            }
+
             return;
         }
 
@@ -110,6 +122,12 @@ final class TestPathSweeper
      */
     private function removeTree(string $path): void
     {
+        if (self::hasSymlinkComponent(dirname($path)) || (is_link($path) && is_dir($path))) {
+            $this->failed[] = $path;
+
+            return;
+        }
+
         if (!is_dir($path)) {
             try {
                 FsPath::delete($path);
@@ -129,16 +147,19 @@ final class TestPathSweeper
         }
 
         $this->emptyDirectory($path);
+        if (in_array($path, $this->failed, true)) {
+            return;
+        }
 
         // A directory that still holds something is not a failure to report: what stayed is
         // either a name the sweep keeps on purpose, and then the directory around it has to stay
         // as well, or a file already named in `failed` - and saying so twice would make one
         // undeletable file read as two.
-        if (!self::isEmptyDirectory($path)) {
-            return;
-        }
-
         try {
+            if (!self::isEmptyDirectory($path)) {
+                return;
+            }
+
             FsPath::removeDirectory($path);
         } catch (FsException) {
             $this->failed[] = $path;
@@ -151,18 +172,61 @@ final class TestPathSweeper
     /**
      * Says whether a directory holds nothing at all.
      *
-     * A directory that cannot be listed reads as empty, as it did under `?: []`: the removal that
-     * follows is what reports it, and reporting it here as well would name one path twice.
-     *
      * @param string $path Directory to look into
      * @return bool Whether the directory is empty
+     * @throws DirectoryNotFoundException When the directory disappeared
+     * @throws FileReadException When its entries cannot be read
      */
     private static function isEmptyDirectory(string $path): bool
     {
-        try {
-            return FsPath::entries($path) === [];
-        } catch (FsException) {
-            return true;
+        return FsPath::entries($path) === [];
+    }
+
+    /**
+     * Checks the path's components without listing the contents of any directory.
+     * A lexical scope must never authorize a sweep through a link into another scope.
+     *
+     * @param string $path Directory address, possibly with trailing separators
+     * @return bool Whether the address passes through a symlink
+     */
+    private static function hasSymlinkComponent(string $path): bool
+    {
+        $path = rtrim($path, DIRECTORY_SEPARATOR);
+        while (true) {
+            if (is_link($path)) {
+                return true;
+            }
+
+            $parent = dirname($path);
+            if ($parent === $path) {
+                return false;
+            }
+            $path = $parent;
         }
+    }
+
+    /**
+     * An unsuccessful stat proves absence only beneath an accessible directory.
+     * Walks ancestors, without listing or traversing another tree of contents.
+     *
+     * @param string $path Scope whose listing failed
+     * @return bool Whether the scope is absent rather than inaccessible or not a directory
+     */
+    private static function isMissingPath(string $path): bool
+    {
+        if (file_exists($path) || is_link($path)) {
+            return false;
+        }
+
+        $parent = dirname($path);
+        while (!file_exists($parent) && !is_link($parent)) {
+            $next = dirname($parent);
+            if ($next === $parent) {
+                return false;
+            }
+            $parent = $next;
+        }
+
+        return is_dir($parent) && is_executable($parent);
     }
 }

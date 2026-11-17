@@ -4,9 +4,18 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Analytics;
 
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\NodeRole;
+use Hilos\Constants\EnvConstants;
 use Hilos\Core\Analytics\AnalyticsJournalDirectory;
 use Hilos\Core\Analytics\AnalyticsJournalRecord;
+use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
+use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\FsException;
+use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -24,17 +33,109 @@ final class AnalyticsJournalDirectoryTest extends TestCase
 
     private string $path = '';
 
+    private ?FsContext $previousFs;
+    private ?EnvAccessor $previousEnv;
+    private ?ClusterContext $previousCluster;
+
+    /** @var array<string, string|false> Environment values restored after each case */
+    private array $previousValues = [];
+
     protected function setUp(): void
     {
         $this->root = sys_get_temp_dir() . '/hilos-analytics-journal-' . bin2hex(random_bytes(6));
         $this->path = $this->root . '/test/' . self::NODE;
+        $this->previousFs = Hilos::$fs;
+        $this->previousEnv = Hilos::$env;
+        $this->previousCluster = Hilos::$cluster;
+        Hilos::$fs = null;
+        Hilos::$env = new EnvAccessor();
+        Hilos::$cluster = null;
+        foreach ([EnvConstants::APP_ENV, EnvConstants::CLUSTER_ENABLED, EnvConstants::CLUSTER_NODE_ID,
+            EnvConstants::CLUSTER_NODE_NAME, EnvConstants::CLUSTER_NODE_ROLE, EnvConstants::CLUSTER_PEER_ADVERTISE] as $key) {
+            $this->previousValues[$key->name] = getenv($key->name);
+        }
+        putenv(EnvConstants::APP_ENV->name . '=test');
+        putenv(EnvConstants::CLUSTER_ENABLED->name . '=false');
     }
 
     protected function tearDown(): void
     {
+        Hilos::$fs = $this->previousFs;
+        Hilos::$env = $this->previousEnv;
+        Hilos::$cluster = $this->previousCluster;
+        foreach ($this->previousValues as $key => $value) {
+            putenv($key . ($value === false ? '' : '=' . $value));
+        }
         $this->removeTree($this->root);
 
         parent::tearDown();
+    }
+
+    /** The standalone scope does not take the effective id as its directory name. */
+    public function testCurrentStandalonePathIsAlwaysTheEnvironmentAndNode(): void
+    {
+        $this->registerJournal();
+        self::assertSame($this->root . '/test/node', AnalyticsJournalDirectory::currentNodePath());
+
+        putenv(EnvConstants::CLUSTER_NODE_ID->name . '=configured-id');
+        Hilos::$cluster = new ClusterContext();
+        self::assertSame('configured-id', Hilos::$cluster->localNodeId());
+        self::assertSame($this->root . '/test/node', AnalyticsJournalDirectory::currentNodePath());
+        self::assertDirectoryDoesNotExist($this->root);
+    }
+
+    /** Each environment and cluster node resolves its own scope without creating a directory. */
+    public function testCurrentClusterPathSeparatesNeighboringEnvironmentsAndNodes(): void
+    {
+        $this->registerJournal();
+        putenv(EnvConstants::CLUSTER_ENABLED->name . '=true');
+        putenv(EnvConstants::CLUSTER_NODE_ID->name . '=node-a');
+        putenv(EnvConstants::CLUSTER_NODE_NAME->name . '=Journal test node');
+        putenv(EnvConstants::CLUSTER_NODE_ROLE->name . '=' . NodeRole::Master->value);
+        putenv(EnvConstants::CLUSTER_PEER_ADVERTISE->name . '=127.0.0.1');
+        Hilos::$cluster = new ClusterContext();
+        self::assertSame($this->root . '/test/node-a', AnalyticsJournalDirectory::currentNodePath());
+
+        putenv(EnvConstants::APP_ENV->name . '=prod');
+        self::assertSame($this->root . '/prod/node-a', AnalyticsJournalDirectory::currentNodePath());
+
+        putenv(EnvConstants::CLUSTER_NODE_ID->name . '=node-b');
+        Hilos::$cluster = new ClusterContext();
+        self::assertSame($this->root . '/prod/node-b', AnalyticsJournalDirectory::currentNodePath());
+        self::assertDirectoryDoesNotExist($this->root);
+    }
+
+    /** A missing FS context has no journal scope to sweep or open. */
+    public function testCurrentPathRefusesAMissingFilesystem(): void
+    {
+        $this->expectException(DirectoryNotFoundException::class);
+        $this->expectExceptionMessage('analytics_journal');
+        AnalyticsJournalDirectory::currentNodePath();
+    }
+
+    /** A context alone does not imply that the node journal was registered. */
+    public function testCurrentPathRefusesAnUnregisteredJournal(): void
+    {
+        Hilos::$fs = new class extends FsContext {
+            /** Registers no directories. */
+            public function configure(): void
+            {
+            }
+        };
+
+        $this->expectException(DirectoryNotFoundException::class);
+        $this->expectExceptionMessage('analytics_journal');
+        AnalyticsJournalDirectory::currentNodePath();
+    }
+
+    /** A shared directory cannot become the target of this node's journal operations. */
+    public function testCurrentPathRefusesAClusterOwnedJournal(): void
+    {
+        $this->registerJournal(DirectoryScope::CLUSTER);
+
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage('DirectoryScope::NODE');
+        AnalyticsJournalDirectory::currentNodePath();
     }
 
     /**
@@ -358,6 +459,26 @@ final class AnalyticsJournalDirectoryTest extends TestCase
         $journal->start();
 
         return $journal;
+    }
+
+    /** @param DirectoryScope $scope Owner declared for the journal directory */
+    private function registerJournal(DirectoryScope $scope = DirectoryScope::NODE): void
+    {
+        Hilos::$fs = new class($this->root . '/', $scope) extends FsContext {
+            /**
+             * @param string $path Journal root, intentionally not created
+             * @param DirectoryScope $scope Declared owner
+             */
+            public function __construct(string $path, DirectoryScope $scope)
+            {
+                $this->registerDirectory(self::ANALYTICS_JOURNAL, $path, $scope);
+            }
+
+            /** Registration is supplied by the fixture constructor. */
+            public function configure(): void
+            {
+            }
+        };
     }
 
     /**

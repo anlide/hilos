@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Core\Analytics;
 
 use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Constants\CliCommands;
-use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\TimeConstants;
@@ -22,12 +22,12 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalReadSignalData;
 use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingAccessorUnavailableException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\Settings\Exception\SettingInvalidValueException;
 use Hilos\Environment\Exception\EnvException;
-use Hilos\Fs\Context\FsContext;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\FsException;
 use Hilos\Hilos;
@@ -90,9 +90,6 @@ final class AnalyticsJournalAgent extends AbstractAgent
         CliCommands::ANALYTICS_TEST_ROTATE,
     ];
 
-    /** @var string Existing standalone subdirectory, retained so older ready files remain visible. */
-    private const string STANDALONE_NODE = 'node';
-
     private const string LINE_BREAK = "\n";
 
     private const string OPERATION_START = 'set up its directory';
@@ -143,24 +140,17 @@ final class AnalyticsJournalAgent extends AbstractAgent
      *
      * @throws EnvException When the cluster flag, a cluster value or APP_ENV cannot be read
      * @throws ClusterConfigurationException When cluster mode is on but the local node config is missing or invalid
+     * @throws ClusterDisabledException When the cluster reports itself enabled but refuses its identity
      * @throws DirectoryNotFoundException When the project registers no analytics_journal directory
+     * @throws InvalidTopologyException When analytics_journal is declared a cluster directory
      * @throws InvalidArgumentException When a ready notice cannot be named
      */
     public function onStart(): void
     {
-        $cluster = Hilos::$cluster;
-        if (Hilos::$fs === null) {
-            throw new DirectoryNotFoundException('FS directory [' . FsContext::ANALYTICS_JOURNAL . '] has no FS context to live in');
-        }
-
-        $clustered = $cluster?->isEnabled() === true;
-        $nodeId = $cluster?->localNodeId() ?? HilosClusterNode::STANDALONE_NODE_ID;
-        $root = rtrim(Hilos::$fs->getDirectory(FsContext::ANALYTICS_JOURNAL)->getPath(), '/');
+        $path = AnalyticsJournalDirectory::currentNodePath();
+        $nodeId = Hilos::$cluster?->localNodeId() ?? HilosClusterNode::STANDALONE_NODE_ID;
         $this->openJournal(
-            new AnalyticsJournalDirectory(
-                $root . '/' . Hilos::$env[EnvConstants::APP_ENV]->string() . '/' . ($clustered ? $nodeId : self::STANDALONE_NODE),
-                $nodeId,
-            ),
+            new AnalyticsJournalDirectory($path, $nodeId),
             $nodeId,
         );
     }

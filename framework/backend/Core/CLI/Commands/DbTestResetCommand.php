@@ -7,6 +7,7 @@ namespace Hilos\Core\CLI\Commands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\EnvConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\Analytics\AnalyticsJournalDirectory;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\ChangeLog\ChangeLogPartitions;
@@ -33,6 +34,8 @@ use mysqli_sql_exception;
  * Uses DB_* and APP_ENV from environment. Seeds are allowed when APP_ENV=test.
  * CHANGE_LOG recreates the derived journal before primary migrations and prepares
  * its partitions after seeds; projects without the feature reset only primary.
+ * ANALYTICS first empties this environment and node's registered journal scope, so
+ * records from the old database cannot be replayed onto reused account ids.
  *
  * Database-free by contract: it opens its own server-level connection, because the
  * database named by DB_DATABASE is the one it drops and recreates — and on a fresh volume
@@ -76,7 +79,7 @@ class DbTestResetCommand extends TestOnlyCommand implements DatabaseFreeCommand
      */
     public function getDescription(): string
     {
-        return 'Reset test database (DROP, migrate, seed)';
+        return 'Reset test database and this node\'s Analytics journal (DROP, migrate, seed)';
     }
 
     /**
@@ -91,6 +94,9 @@ Command: test:db:reset
 
 Description:
   Drops the database, recreates it, runs migrations, and applies all seeds.
+  With ANALYTICS, first empties the registered journal scope for this environment
+  and node. Git markers, other environments and nodes, and cluster directories stay.
+  A missing FS registration or failed cleanup refuses before the database is dropped.
   Intended for test environments. Seeds are blocked when APP_ENV is PROD or STAGING.
 
 Usage:
@@ -103,7 +109,7 @@ HELP;
     }
 
     /**
-     * Resets the primary and optional journal through the project's primary migration track.
+     * Clears the node's optional Analytics queue, then resets the primary and optional change log.
      *
      * @param array<string, mixed> $options Parsed options (unused)
      * @param list<string> $args Positional args (unused)
@@ -113,7 +119,7 @@ HELP;
      * @throws CantConnectToMysqlServerException When MySQL is unreachable
      * @throws DatabaseRuntimeException When SET NAMES query fails
      * @throws DatabaseException When migration or seed execution fails
-     * @throws HilosException When the migration receipt cannot be opened or closed
+     * @throws HilosException When the filesystem cannot initialize or resolve its node scope, or the migration receipt fails
      */
     protected function run(array $options, array $args): int
     {
@@ -129,6 +135,23 @@ HELP;
         $journalIdentifier = $journalDatabase !== null ? ChangeLogDatabase::identifier($journalDatabase) : null;
 
         echo "\n=== Test DB Reset ===\n\n";
+
+        if (Hilos::hasFeature(HilosFeature::ANALYTICS)) {
+            Hilos::appClass()::initFs();
+            $scope = AnalyticsJournalDirectory::currentNodePath();
+            $sweeper = new TestPathSweeper();
+            $sweeper->emptyDirectory($scope);
+            if ($sweeper->failed() !== []) {
+                echo 'Analytics journal ' . $scope . ' was left with ' . count($sweeper->failed()) . " path(s) behind:\n";
+                foreach ($sweeper->failed() as $path) {
+                    echo "  {$path}\n";
+                }
+
+                return ExitCode::ERROR;
+            }
+
+            echo "Analytics journal {$scope} emptied: {$sweeper->removed()} path(s) removed.\n";
+        }
 
         // Connect without database to run DROP/CREATE
         try {

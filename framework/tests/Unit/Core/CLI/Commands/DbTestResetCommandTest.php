@@ -8,8 +8,12 @@ use Hilos\Constants\CliCommands;
 use Hilos\Core\CLI\Commands\DbTestResetCommand;
 use Hilos\Core\CLI\Commands\TestOnlyCommand;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
+use Hilos\Core\Feature\HilosFeature;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Fs\Context\FsContext;
 use Hilos\Hilos;
+use LogicException;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -26,17 +30,29 @@ final class DbTestResetCommandTest extends TestCase
     /** @var ?EnvAccessor Previous env accessor to restore after the test */
     private ?EnvAccessor $previousEnv = null;
 
+    /** @var class-string<Hilos> Facade to restore */
+    private string $previousFacade;
+
+    private ?FsContext $previousFs;
+
+    /** Binds Analytics so an early filesystem factory call would fail this case. */
     protected function setUp(): void
     {
-        $this->previousEnv = isset(Hilos::$env) ? Hilos::$env : null;
+        $this->previousEnv = Hilos::$env;
+        $this->previousFacade = Hilos::appClass();
+        $this->previousFs = Hilos::$fs;
+        Hilos::$env = new EnvAccessor();
+        ResetGuardHilos::initEnv();
+        Hilos::$fs = null;
     }
 
+    /** Restores facade statics; the suite extension restores the process environment. */
     protected function tearDown(): void
     {
-        if ($this->previousEnv !== null) {
-            Hilos::$env = $this->previousEnv;
-        }
-        putenv('APP_ENV=test');
+        Hilos::$env = new EnvAccessor();
+        $this->previousFacade::initEnv();
+        Hilos::$env = $this->previousEnv;
+        Hilos::$fs = $this->previousFs;
     }
 
     public function testTheCommandIsTestOnlyByContract(): void
@@ -62,5 +78,23 @@ final class DbTestResetCommandTest extends TestCase
 
         $this->expectException(TestOnlyCommandOnProductionException::class);
         new DbTestResetCommand()->execute([], []);
+    }
+}
+
+/** Both storage factories must stay beyond the non-production gate. */
+final class ResetGuardHilos extends Hilos
+{
+    protected const array FEATURES = [HilosFeature::ANALYTICS];
+
+    /** @return HilosDbContext Never initialized by a refused reset */
+    protected static function createDb(): HilosDbContext
+    {
+        throw new LogicException('The refused reset reached the database factory');
+    }
+
+    /** @return ?FsContext Never initialized by a refused reset */
+    protected static function createFs(): ?FsContext
+    {
+        throw new LogicException('The refused reset reached the filesystem factory');
     }
 }

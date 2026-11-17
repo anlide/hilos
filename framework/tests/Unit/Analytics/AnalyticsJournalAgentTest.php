@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Analytics;
 
+use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\NodeRole;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
+use Hilos\Constants\EnvConstants;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Analytics\AnalyticsCommandConstants;
 use Hilos\Core\Analytics\AnalyticsJournalAgent;
@@ -23,6 +26,9 @@ use Hilos\Core\Analytics\DTO\AnalyticsJournalReadySignalData;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Database\Settings\SettingsAccessor;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
@@ -31,6 +37,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\TestOnlyCommandRegistry;
 use Hilos\Utils\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -71,6 +78,77 @@ final class AnalyticsJournalAgentTest extends TestCase
         $this->removeTree($this->root);
 
         parent::tearDown();
+    }
+
+    /** @return iterable<string, array{bool, string}> Node modes and their journal directory names */
+    public static function startupModes(): iterable
+    {
+        yield 'standalone with configured effective id' => [false, 'node'];
+        yield 'cluster' => [true, self::NODE];
+    }
+
+    /**
+     * @param bool $clustered Whether this node participates in a cluster
+     * @param string $directory Expected node directory under APP_ENV
+     */
+    #[DataProvider('startupModes')]
+    public function testOnStartUsesTheSharedPathAndKeepsTheEffectiveNodeId(bool $clustered, string $directory): void
+    {
+        $previousEnv = Hilos::$env;
+        $previousCluster = Hilos::$cluster;
+        $previousFs = Hilos::$fs;
+        $previousSetting = Hilos::$setting;
+        $previousValues = [];
+        foreach ([EnvConstants::APP_ENV, EnvConstants::CLUSTER_ENABLED, EnvConstants::CLUSTER_NODE_ID,
+            EnvConstants::CLUSTER_NODE_NAME, EnvConstants::CLUSTER_NODE_ROLE, EnvConstants::CLUSTER_PEER_ADVERTISE] as $key) {
+            $previousValues[$key->name] = getenv($key->name);
+        }
+
+        try {
+            putenv(EnvConstants::APP_ENV->name . '=test');
+            putenv(EnvConstants::CLUSTER_ENABLED->name . '=' . ($clustered ? 'true' : 'false'));
+            putenv(EnvConstants::CLUSTER_NODE_ID->name . '=' . self::NODE);
+            putenv(EnvConstants::CLUSTER_NODE_NAME->name . '=Journal test node');
+            putenv(EnvConstants::CLUSTER_NODE_ROLE->name . '=' . NodeRole::Master->value);
+            putenv(EnvConstants::CLUSTER_PEER_ADVERTISE->name . '=127.0.0.1');
+            Hilos::$env = new EnvAccessor();
+            Hilos::$cluster = new ClusterContext();
+            Hilos::$setting = null;
+            Hilos::$fs = new class($this->root) extends FsContext {
+                /** @param string $path Root of the fixture's node journal */
+                public function __construct(string $path)
+                {
+                    $this->registerDirectory(self::ANALYTICS_JOURNAL, $path, DirectoryScope::NODE);
+                }
+
+                /** Registration is supplied by the fixture constructor. */
+                public function configure(): void
+                {
+                }
+            };
+            $this->path = $this->root . '/test/' . $directory;
+            self::assertSame($this->path, AnalyticsJournalDirectory::currentNodePath());
+
+            $agent = new AnalyticsJournalAgent();
+            $agent->onStart();
+            $this->append($agent, ['{"t":"a"}']);
+            $agent->onStop();
+
+            $files = $this->files();
+            self::assertCount(1, $files);
+            self::assertTrue(AnalyticsJournalDirectory::isReadyName($files[0]));
+            self::assertSame(self::NODE, $this->journalRecords()[0][AnalyticsJournalRecord::KEY_NODE]);
+            $this->read($agent, '', 0);
+            self::assertSame(self::NODE, $this->portion()->nodeId);
+        } finally {
+            Hilos::$env = $previousEnv;
+            Hilos::$cluster = $previousCluster;
+            Hilos::$fs = $previousFs;
+            Hilos::$setting = $previousSetting;
+            foreach ($previousValues as $key => $value) {
+                putenv($key . ($value === false ? '' : '=' . $value));
+            }
+        }
     }
 
     /**

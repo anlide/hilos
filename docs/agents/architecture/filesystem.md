@@ -53,6 +53,15 @@ or when one path is declared by two owners; the rules live in
 `FsContext::declarationErrors()`, which a project's unit test can call on its
 own context.
 
+The public static method `Hilos::initFs(): void` is the filesystem-only entry
+point. It creates and configures the context only when `Hilos::$fs` is `null`;
+an already supplied context is retained without reconfiguration. This entry
+point does not bootstrap DB, RT, table, settings, topology, or privacy state,
+and it does not promise full startup validation. `Hilos::init()` uses the same
+entry point and still runs its existing feature activation and ownership guards
+when a context was already supplied. The protected project factory `createFs()`
+may return `null` for a project that does not need a filesystem.
+
 ## Node Or Cluster
 
 Two owners, as the two cases of `AgentScope`: a **node directory** is one per

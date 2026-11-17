@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Analytics;
 
+use Hilos\Cluster\Exception\ClusterConfigurationException;
+use Hilos\Cluster\Exception\ClusterDisabledException;
+use Hilos\Constants\EnvConstants;
+use Hilos\Core\Topology\Exception\InvalidTopologyException;
+use Hilos\Environment\Exception\EnvException;
+use Hilos\Fs\Context\FsContext;
+use Hilos\Fs\DirectoryScope;
 use Hilos\Fs\Exception\DirectoryCreateException;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileDeleteException;
@@ -14,6 +21,7 @@ use Hilos\Fs\Exception\FileReadException;
 use Hilos\Fs\Exception\FileWriteException;
 use Hilos\Fs\FsPath;
 use Hilos\Fs\FsException;
+use Hilos\Hilos;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
@@ -63,6 +71,7 @@ final class AnalyticsJournalDirectory
     private const string LOSS_STATE_NAME = 'losses.json';
     private const string LOSS_STATE_TEMP_NAME = 'losses.json.tmp';
     private const int SUMMARY_TAIL_BYTES = 256;
+    private const string STANDALONE_NODE = 'node';
 
     /** @var ?string Stem of the open file, null while none is open */
     private ?string $openStem = null;
@@ -96,6 +105,35 @@ final class AnalyticsJournalDirectory
         private readonly string $path,
         private readonly string $node,
     ) {
+    }
+
+    /**
+     * Resolves this node's journal scope without creating it or starting any storage layer.
+     * Outside a cluster the directory is always node, independently of the effective node id.
+     *
+     * @return string Local journal path under the current environment and node
+     * @throws DirectoryNotFoundException When no FS context or analytics_journal registration exists
+     * @throws InvalidTopologyException When analytics_journal is declared a cluster directory
+     * @throws EnvException When APP_ENV or a cluster environment value cannot be read
+     * @throws ClusterConfigurationException When the enabled cluster has no valid local identity
+     * @throws ClusterDisabledException When the cluster reports itself enabled but refuses its identity
+     */
+    public static function currentNodePath(): string
+    {
+        if (Hilos::$fs === null) {
+            throw new DirectoryNotFoundException('FS directory [' . FsContext::ANALYTICS_JOURNAL . '] has no FS context to live in');
+        }
+
+        $directory = Hilos::$fs->getDirectory(FsContext::ANALYTICS_JOURNAL);
+        if ($directory->getScope() !== DirectoryScope::NODE) {
+            throw InvalidTopologyException::forErrors(Hilos::appClass(), Hilos::$fs->declarationErrors());
+        }
+
+        $node = Hilos::$cluster?->isEnabled() === true
+            ? Hilos::$cluster->localNodeId()
+            : self::STANDALONE_NODE;
+
+        return rtrim($directory->getPath(), '/') . '/' . Hilos::$env[EnvConstants::APP_ENV]->string() . '/' . $node;
     }
 
     /**

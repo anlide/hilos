@@ -108,12 +108,15 @@ preferans. The owner, 04.10.2026: «Аналитику включить во в�
 
 ## The Directory
 
-`analytics_journal` is a reserved `$fs` name, and a **node** directory: the start
-refuses it declared `CLUSTER`. Inside it the journal agent owns the subdirectory
-`<APP_ENV>/<node>` — the cluster node id, or the preserved directory name `node`
-off a cluster even when its effective ID is `standalone` or a configured ID — so the
-environments that mount one data directory (chat's do) and the nodes of one
-volume never see each other's files. Directories are `0700`, files `0600`.
+`analytics_journal` is a reserved `$fs` name and must be declared `NODE`; full
+startup refuses a `CLUSTER` declaration.
+`AnalyticsJournalDirectory::currentNodePath()` resolves its scope from the
+registered directory, `APP_ENV`, and then the cluster's `localNodeId()` or the
+literal `node` when cluster mode is off. The off-cluster path remains `node`
+even when the effective standalone node ID is configured. The journal agent
+owns the resulting subdirectory. The method does not create the directory.
+Environments that mount one data directory (chat's do) and nodes on one volume
+therefore do not see each other's files. Directories are `0700`, files `0600`.
 
 - the open file: `<number, 12 digits>-<16 hex>.open`;
 - a ready file: the same stem with `.jsonl`, pattern `^\d{12}-[0-9a-f]{16}\.jsonl$`.
@@ -130,6 +133,14 @@ It separates a partial final line from the appended `journal_end`, so the writer
 can count the malformed line, and continues the numbers. The start measures the
 open and ready files on that listing. The loss state file is not a journal file
 and does not enter the byte ceiling or the writer's ready-file listing.
+
+For an `ANALYTICS` project, the test-only `test:db:reset` command empties the
+contents of exactly this scope before dropping the database. The sweep removes
+ready `.jsonl` files, an open `.open` file, `losses.json`, and other entries in
+the scope while preserving `.gitignore` and `.gitkeep`. It does not touch
+neighboring environment or node scopes, or cluster-owned paths. A missing scope
+directory is a no-op; the path resolver does not create it. This test-only cleanup
+leaves production replay and ordinary node shutdown unchanged.
 
 ## The Records
 

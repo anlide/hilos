@@ -69,9 +69,25 @@ offline path. No presence address is needed to generate these source files.
 
 | Command | Site | Description |
 |---|---|---|
-| `test:db:reset` | `cli-offline-write` | DROP all tables → migrate → seed (test env only) — runs before the database exists, but needs the server up |
+| `test:db:reset` | `cli-offline-write` | DROP and recreate the database → migrate → seed (test env only); for ANALYTICS, first clears this environment and node's journal scope — runs before the database exists, but needs the server up |
 | `test:orm:forget daemon` / `test:orm:forget worker <workerId>` | `daemon` | Forget loaded ORM state in one live process; test-only use and owner restriction: [Forgetting loaded ORM state](../testing.md#forgetting-loaded-orm-state) |
 | `db:wait` | `cli-read` | Wait until MySQL is accepting connections — runs while the server is still down |
+
+For a project with `ANALYTICS`, `test:db:reset` calls `Hilos::initFs()` and
+empties `AnalyticsJournalDirectory::currentNodePath()` before connecting or
+dropping the database. It clears only the registered `analytics_journal` scope
+for the current `APP_ENV` and node. A missing scope directory or an already
+empty scope succeeds. A null FS context, missing registration, `CLUSTER`
+ownership, inaccessible scope, or deletion failure refuses the reset before
+DROP; `failed()` reports the paths and the command exits without printing its
+final `Done`. `TestPathSweeper` records a directory-enumeration error as a
+failed path instead of treating the directory as empty. `test:logs:reset` and
+`test:backup:reset` propagate that failure through their existing `failed()`
+handling; no second traversal was added. Existing test-only,
+`DatabaseFreeCommand`, and `cli-offline-write` gates remain, as do migrations,
+seeds, and the `CHANGE_LOG` reset pair. The command name and options are
+unchanged; projects without `ANALYTICS` do not initialize or require an FS
+context.
 
 ## System commands
 
@@ -572,9 +588,10 @@ without reading a database),
 answers), `agent:restart` (the master coordinates the stop and start over its command
 socket, and the CLI process has no database work), `test:orm:forget` (only the addressed
 live process forgets ORM state; see [the test-only canon](../testing.md#forgetting-loaded-orm-state)),
-`test:db:reset` (opens its own
-server-level connection, because it drops and recreates the database `DB_DATABASE`
-names), `help` (prints the registry it was handed),
+`test:db:reset` (when `ANALYTICS` is declared, it initializes only the filesystem
+and clears the current journal scope first; then it opens its own server-level
+connection because it drops and recreates the database `DB_DATABASE` names),
+`help` (prints the registry it was handed),
 `test:cluster:inspect` (talks only to the local command socket, so the multi-node harness
 can inspect a network-partitioned node that cannot reach MySQL either), the cluster client
 family `test:cluster:client:attach` / `:detach` / `:send` / `:fanout` and the two drills
