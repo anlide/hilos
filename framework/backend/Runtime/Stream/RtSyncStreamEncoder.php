@@ -182,13 +182,22 @@ final class RtSyncStreamEncoder
             }
         }
         $this->buffer .= ($separator === '{' ? '{}' : '}') . ',' . self::quoted(RtSyncStreamSnapshot::FIELD_STALE_ROWS) . ':';
-        $separator = '{';
-        foreach ($snapshot->staleRows() as $id => $since) {
+        $checkpoint = strlen($this->buffer);
+        do {
+            // The channel only changes metadata before the first part; the head and consumed rows are still buffered.
+            $this->buffer = substr($this->buffer, 0, $checkpoint);
+            $revision = $snapshot->staleRowsRevision();
+            $separator = '{';
+            foreach ($snapshot->staleRows() as $id => $since) {
+                yield new RtWork();
+                if ($revision !== $snapshot->staleRowsRevision()) {
+                    continue 2;
+                }
+                $this->buffer .= $separator . self::quoted((string)$id) . ':' . self::scalar($since);
+                $separator = ',';
+            }
             yield new RtWork();
-            $this->buffer .= $separator . self::quoted((string)$id) . ':' . self::scalar($since);
-            $separator = ',';
-        }
-        yield new RtWork();
+        } while ($revision !== $snapshot->staleRowsRevision());
         $this->buffer .= ($separator === '{' ? '{}' : '}') . '}';
     }
 

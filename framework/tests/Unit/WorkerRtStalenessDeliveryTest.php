@@ -27,11 +27,13 @@ use Hilos\Runtime\DTO\RtStalenessSignalData;
 use Hilos\Runtime\Ordinary\RtOrdinaryAdmission;
 use Hilos\Runtime\RtStaleness;
 use Hilos\Runtime\Snapshot\RtSnapshotScope;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -65,6 +67,9 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
 
     /** @var float Microtime the second collection froze at, later than the first */
     private const float FROZE_LATER = 2000.5;
+
+    private const string SNAPSHOT_ROW = 'row-1';
+    private const int MAX_MANUAL_PASSES = 1000;
 
     /** @var string Connection the page under test is subscribed on */
     private const string ACCEPT_KEY = 'unit-rt-staleness-accept-key';
@@ -175,6 +180,84 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
         $this->deliver($worker, $parts);
 
         $this->assertNull(RtStaleness::staleSince(self::COLLECTION, 'row-1'));
+    }
+
+    /** @return array<string, array{bool, bool, bool}> Deferred apply, a new freeze epoch, and whether the sender includes the freeze */
+    public static function snapshotFreezeBoundaries(): array
+    {
+        return [
+            'normal publication' => [false, false, true],
+            'deferred publication' => [true, false, true],
+            'new epoch' => [false, true, true],
+            'new epoch with deferred publication' => [true, true, true],
+            'old behavior control' => [false, false, false],
+            'deferred old behavior control' => [true, false, false],
+            'old epoch control' => [false, true, false],
+            'deferred old epoch control' => [true, true, false],
+        ];
+    }
+
+    /**
+     * The freeze precedes the snapshot's head. Pausing inside the worker's pass makes that boundary
+     * deterministic without another process or a real-clock delay.
+     *
+     * @param bool $deferred Whether incoming decoding/publication is advanced on explicit allowances
+     * @param bool $renewed Whether the cut held an older mark which was subsequently thawed
+     * @param bool $included Whether the sender uses the new path; false demonstrates the original loss
+     */
+    #[DataProvider('snapshotFreezeBoundaries')]
+    public function testASnapshotNotYetStartedRetainsTheFreezeItOvertakes(bool $deferred, bool $renewed, bool $included): void
+    {
+        $previousRt = Hilos::$rt;
+        Hilos::$rt = null;
+        $worker = new WorkerRtStalenessDeliveryTestManager();
+        $guard = new ReflectionProperty(WorkerManager::class, 'rtPassRunning');
+        try {
+            SourceInterestRegistry::register(SourceChange::KIND_RT, self::COLLECTION, SourceConsumer::agent('unit_rt_staleness:1'));
+            self::reported($worker);
+            $master = $this->master($parts, static function (): void {});
+            $master->sendSnapshot(self::COLLECTION, RtSnapshotScope::whole(),
+                staleRows: $renewed ? [self::SNAPSHOT_ROW => self::FROZE_AT] : [], announcement: self::REPORT);
+            $this->assertSame([], $parts, 'The snapshot is still queued before its head');
+            if ($renewed) {
+                $worker->handleDaemonMessage(new WorkerRtStalenessMessageDTO(self::COLLECTION, [self::SNAPSHOT_ROW], self::FROZE_AT));
+                $worker->handleDaemonMessage(new WorkerRtStalenessMessageDTO(self::COLLECTION, [self::SNAPSHOT_ROW], null));
+                $this->assertNull(RtStaleness::staleSince(self::COLLECTION, self::SNAPSHOT_ROW));
+            }
+            if ($included) {
+                $master->includeStalenessInUnstartedSnapshots(self::COLLECTION, [self::SNAPSHOT_ROW => self::FROZE_LATER]);
+            }
+            // Exactly one new freeze reaches the real manager before any part of the snapshot.
+            $worker->handleDaemonMessage(new WorkerRtStalenessMessageDTO(self::COLLECTION, [self::SNAPSHOT_ROW], self::FROZE_LATER));
+            $this->assertSame(self::FROZE_LATER, RtStaleness::staleSince(self::COLLECTION, self::SNAPSHOT_ROW));
+            $master->pump(new RtWorkBudget());
+            $this->assertCount(1, $parts, 'No separate head frame or extra credit round trip is needed');
+            if ($deferred) {
+                $guard->setValue($worker, true);
+                foreach (array_splice($parts, 0) as $part) {
+                    $worker->handleDaemonMessage(new WorkerRtSyncStreamDTO($part));
+                }
+                $stream = new ReflectionMethod(WorkerManager::class, 'rtSyncStream')->invoke($worker);
+                $stream->pump(new RtWorkBudget(1, 64));
+                $this->assertFalse($stream->isIdle(), 'The RT pass is held before publication');
+                $this->assertSame(self::FROZE_LATER, RtStaleness::staleSince(self::COLLECTION, self::SNAPSHOT_ROW));
+                for ($pass = 0; $pass < self::MAX_MANUAL_PASSES && !$stream->isIdle(); $pass++) {
+                    $stream->pump(new RtWorkBudget(4, 64));
+                }
+                $this->assertTrue($stream->isIdle(), 'Explicit portions finish the worker publication');
+                $guard->setValue($worker, false);
+            }
+            $this->deliver($worker, $parts);
+            $expected = $included ? self::FROZE_LATER : ($renewed ? self::FROZE_AT : null);
+            $this->assertSame($expected, RtStaleness::staleSince(self::COLLECTION, self::SNAPSHOT_ROW),
+                'Only the enriched snapshot preserves the new freeze; no repeat arrives after publication');
+            $this->assertTrue(SourceInterestRegistry::isReady(SourceChange::KIND_RT, self::COLLECTION));
+            $worker->handleDaemonMessage(new WorkerRtStalenessMessageDTO(self::COLLECTION, [self::SNAPSHOT_ROW], null));
+            $this->assertNull(RtStaleness::staleSince(self::COLLECTION, self::SNAPSHOT_ROW), 'An ordinary subsequent thaw still clears the mark');
+        } finally {
+            $guard->setValue($worker, false);
+            Hilos::$rt = $previousRt;
+        }
     }
 
     /**
@@ -363,9 +446,10 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
 
     /**
      * @param list<RtSyncStreamFrame>|null $parts Takes the parts the master's end writes, in order
+     * @param ?Closure(): void $wake Optional explicit pump scheduling, null to pump immediately
      * @return RtSyncStreamChannel The master's end of the worker's RT stream
      */
-    private function master(?array &$parts): RtSyncStreamChannel
+    private function master(?array &$parts, ?Closure $wake = null): RtSyncStreamChannel
     {
         $parts = [];
 
@@ -374,6 +458,7 @@ final class WorkerRtStalenessDeliveryTest extends TestCase
                 $parts[] = $frame;
             },
             static fn (): null => null,
+            $wake,
         );
     }
 

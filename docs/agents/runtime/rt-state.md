@@ -519,6 +519,9 @@ may still wait in the effect queue (`DaemonManager::thawOnWorkers()`) - so the t
 goes behind it, and the worker holds the thaw until the write is applied. A freeze
 goes at once, and takes its rows out of a thaw still waiting on the link
 (`WorkerClient::sendRtStaleness()`); written after the freeze, that thaw would undo it.
+On the master-to-worker link the sender also includes the freeze's effective moments
+in the existing `staleRows` of every snapshot of that collection whose first part has
+not left, including one whose encoder has already begun; its row cut stays unchanged.
 A freeze that comes before the thaw is written keeps its rows out of it as well: the
 thaw names only the rows not frozen here again by the time it goes.
 A worker holds a freeze behind a thaw of the same collection it still holds.

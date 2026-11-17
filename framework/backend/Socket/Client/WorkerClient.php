@@ -1302,6 +1302,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param WorkerRtStalenessMessageDTO $staleness Rows that froze, or thawed
      * @param string $message The same frame packed
+     * @throws NativeLogicException When a queued snapshot has no sending cut
      */
     public function sendRtStaleness(WorkerRtStalenessMessageDTO $staleness, string $message): void
     {
@@ -1314,6 +1315,13 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
                 unset($this->thawsInTurn[$collectionKey]);
             }
             $this->send($message);
+            if ($staleness->since !== null && $this->rtSyncStream !== null) {
+                $staleRows = [];
+                foreach ($staleness->stateIds as $stateId) {
+                    $staleRows[$stateId] = RtStaleness::staleSince($collectionKey, $stateId) ?? $staleness->since;
+                }
+                $this->rtSyncStream->includeStalenessInUnstartedSnapshots($collectionKey, $staleRows);
+            }
 
             return;
         }

@@ -79,6 +79,8 @@ final class RtSyncStreamSnapshot
     /** Whether the host last asked for rows and found none, while more were still to come */
     private bool $starved = false;
     private ?object $receipt = null;
+    /** Local metadata revision, independent of the stream and the pinned row cut */
+    private int $staleRowsRevision = 0;
 
     /**
      * @param int $revision Sender's committed revision in the stream's domain, from one
@@ -223,6 +225,35 @@ final class RtSyncStreamSnapshot
     public function staleRows(): array
     {
         return $this->staleRows;
+    }
+
+    /**
+     * @internal Supplements the sending metadata before the channel writes the first part; the cut stays pinned.
+     *
+     * @param array<string, float> $staleRows Effective moments of the announced rows, replacing only those ids
+     * @throws LogicException When called on the receiving end
+     */
+    public function includeStaleRows(array $staleRows): void
+    {
+        if ($this->cut === null) {
+            throw new LogicException('Only the sending end of an RT stream snapshot includes stale rows');
+        }
+        $changed = false;
+        foreach ($staleRows as $id => $since) {
+            if (($this->staleRows[$id] ?? null) !== $since) {
+                $this->staleRows[$id] = $since;
+                $changed = true;
+            }
+        }
+        if ($changed) {
+            ++$this->staleRowsRevision;
+        }
+    }
+
+    /** @return int Local revision of the sending freshness metadata, changed only by an effective inclusion */
+    public function staleRowsRevision(): int
+    {
+        return $this->staleRowsRevision;
     }
 
     /** @return ?object The host's receipt of the snapshot's final part, null before it was read or without one */

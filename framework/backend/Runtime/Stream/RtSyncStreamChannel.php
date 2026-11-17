@@ -233,6 +233,30 @@ final class RtSyncStreamChannel
     }
 
     /**
+     * Includes an immediate freeze in snapshots whose first part has not left this link, without changing their row cuts.
+     *
+     * @internal Only the master-to-worker sender carries freshness metadata.
+     *
+     * @param string $collectionKey Collection whose rows froze
+     * @param array<string, float> $staleRows Effective moments of the announced rows, by id
+     * @throws LogicException When a queued snapshot has no sending cut
+     */
+    public function includeStalenessInUnstartedSnapshots(string $collectionKey, array $staleRows): void
+    {
+        if ($staleRows === []) {
+            return;
+        }
+        foreach ($this->outbox as $operation) {
+            if ($operation instanceof RtSyncStreamSnapshot && $operation->collectionKey === $collectionKey) {
+                $operation->includeStaleRows($staleRows);
+            }
+        }
+        if ($this->sentPart < 0 && $this->sending instanceof RtSyncStreamSnapshot && $this->sending->collectionKey === $collectionKey) {
+            $this->sending->includeStaleRows($staleRows);
+        }
+    }
+
+    /**
      * Writes a frame of another kind to this channel's link in its turn: at once when every
      * operation taken before it is out to its final part, otherwise right behind the final part of
      * the last of them, before any operation taken after it - the frame never waits for those. An
