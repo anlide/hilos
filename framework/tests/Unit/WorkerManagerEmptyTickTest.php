@@ -109,6 +109,36 @@ final class WorkerManagerEmptyTickTest extends TestCase
         yield 'inherited override' => [EmptyTickTestInheritedOverrideAgent::class, true];
     }
 
+    /**
+     * Worker detection is about implementation identity, before or after a parent call.
+     *
+     * @param class-string<EmptyTickTestManager> $workerClass Hook inheritance case
+     * @param bool $hasOwnTick Whether the worker overrides onTick()
+     */
+    #[DataProvider('workerHookImplementations')]
+    public function testWorkerHookDetectionDoesNotExecuteHooksAndSurvivesParentCalls(string $workerClass, bool $hasOwnTick): void {
+        $worker = new $workerClass();
+        for ($pass = 0; $pass < 2; $pass++) {
+            $this->assertSame($hasOwnTick, $worker->detectOwnTick());
+        }
+        $this->assertSame([], $worker->calls);
+
+        $worker->invokeOwnTick();
+
+        $this->assertSame($hasOwnTick ? ['tick'] : [], $worker->calls);
+        $this->assertSame($hasOwnTick, $worker->detectOwnTick());
+    }
+
+    /** @return iterable<string, array{class-string<EmptyTickTestManager>, bool}> Worker hook cases */
+    public static function workerHookImplementations(): iterable
+    {
+        yield 'default' => [EmptyTickTestManager::class, false];
+        yield 'inherited default' => [EmptyTickTestInheritedDefaultWorker::class, false];
+        yield 'override' => [EmptyTickTestOverrideWorker::class, true];
+        yield 'parent call' => [EmptyTickTestParentCallWorker::class, true];
+        yield 'inherited override' => [EmptyTickTestInheritedOverrideWorker::class, true];
+    }
+
     public function testAnEmptyPassDoesNotEnterAnAgentContextOrOpenOrCloseAUnit(): void
     {
         $manager = new EmptyTickTestManager();
@@ -497,10 +527,13 @@ abstract class EmptyTickTestHilos extends Hilos
     ];
 }
 
-final class EmptyTickTestManager extends WorkerManager
+class EmptyTickTestManager extends WorkerManager
 {
     /** @var list<ContainedFailure> Failures attributed to the units that did the work */
     public array $failures = [];
+
+    /** @var list<string> Worker onTick() calls the fixture actually recorded */
+    public array $calls = [];
 
     public function __construct()
     {
@@ -530,6 +563,18 @@ final class EmptyTickTestManager extends WorkerManager
         }, $this, WorkerManager::class)();
     }
 
+    /** @return bool Whether this worker overrides onTick() */
+    public function detectOwnTick(): bool
+    {
+        return $this->hasOwnTick();
+    }
+
+    /** Runs the worker hook the detection must not run by itself. */
+    public function invokeOwnTick(): void
+    {
+        $this->onTick();
+    }
+
     /** @return SignalRouter Ordinary worker-local router */
     protected function createSignalRouter(): SignalRouter
     {
@@ -557,4 +602,31 @@ final class EmptyTickTestManager extends WorkerManager
     {
         $this->failures[] = $failure;
     }
+}
+
+final class EmptyTickTestInheritedDefaultWorker extends EmptyTickTestManager
+{
+}
+
+class EmptyTickTestOverrideWorker extends EmptyTickTestManager
+{
+    /** Records the worker hook the test invoked. */
+    protected function onTick(): void
+    {
+        $this->calls[] = 'tick';
+    }
+}
+
+final class EmptyTickTestParentCallWorker extends EmptyTickTestManager
+{
+    /** Calls the empty framework hook before recording the override. */
+    protected function onTick(): void
+    {
+        parent::onTick();
+        $this->calls[] = 'tick';
+    }
+}
+
+final class EmptyTickTestInheritedOverrideWorker extends EmptyTickTestOverrideWorker
+{
 }

@@ -756,7 +756,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         if ($deadline <= $shortDeadline || $deadline <= $now) {
             return $deadline;
         }
-        if (($this->hasOwnTick ??= ($this->onTick(...) != self::onTick(...)))
+        if ($this->hasOwnTick()
             || $this->parkedFrames !== []
             || $this->pendingUploadReceiptIds !== []
             || $this->cronFireWaits !== []
@@ -4811,6 +4811,17 @@ abstract class WorkerManager extends BaseManager implements PageResender
         return $freeze !== null
             && $freeze->phase !== StateProtectedModeRuntime::PHASE_INACTIVE
             && $freeze->phase !== StateProtectedModeRuntime::PHASE_VERIFYING;
+    }
+
+    /**
+     * @internal Worker hook detection; inherited overrides count as own implementations.
+     * @return bool True when onTick() differs from the empty framework hook
+     */
+    final protected function hasOwnTick(): bool
+    {
+        // Whether this worker overrides onTick(): the receiver's implementation
+        // compared with the empty framework hook. The comparison does not call it.
+        return $this->hasOwnTick ??= ($this->onTick(...) != self::onTick(...));
     }
 
     /**

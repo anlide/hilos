@@ -192,9 +192,10 @@ Two, and they are named rather than implied:
 
 Nothing in the test suite fails on a new Reflection call. What happens instead
 is a notification: a `post-commit` hook fires when a merge lands in the base
-branch and tells the owner that the merged delta added Reflection — red for
-production code, yellow for tests. It reports, it does not block, and moving or
-re-wrapping an existing call stays silent.
+branch and tells the owner that the merged delta added Reflection to production
+code. Tests are not reported: the rule allows Reflection there (see Exceptions),
+and reporting what is allowed is noise. It reports, it does not block, and
+moving or re-wrapping an existing call stays silent.
 
 **This rule has no machine check on purpose.** It is lexical, so it could have
 one — [automated-checks.md](automated-checks.md) describes exactly how, and

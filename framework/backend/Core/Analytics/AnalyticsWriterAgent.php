@@ -165,9 +165,9 @@ final class AnalyticsWriterAgent extends AbstractAgent
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
-        $payload = $data->data;
         switch ($name) {
             case HilosSignalConstants::ANALYTICS_JOURNAL_PORTION:
+                $payload = $data->data;
                 if (!$payload instanceof AnalyticsJournalPortionSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, AnalyticsJournalPortionSignalData::class, $payload);
                 }
@@ -177,6 +177,7 @@ final class AnalyticsWriterAgent extends AbstractAgent
                 return;
 
             case HilosSignalConstants::ANALYTICS_JOURNAL_READY:
+                $payload = $data->data;
                 if (!$payload instanceof AnalyticsJournalReadySignalData) {
                     throw new InvalidAgentSignalPayloadException($name, AnalyticsJournalReadySignalData::class, $payload);
                 }
