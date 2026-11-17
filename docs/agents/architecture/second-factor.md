@@ -139,10 +139,16 @@ The loser transfers or deletes its factor
 and backup codes by fate, preserving spent status, and removes its other
 second-factor rows with its nonsecret result and separate private copy in the
 [prepared give](account-operations.md#the-prepared-loser-give), with no live
-coordinator sender until HIL-2000. The survivor writes the longer effective
-wait when protection transfers and deletes its own trusts under the existing
-policy, with receipt
-(not in the code yet — HIL-1994). The holder ends loser sessions after the
+coordinator sender until HIL-2000. The [prepared survivor receipt](account-operations.md#the-prepared-survivor-receipt)
+writes the longer saved-source/current-own effective wait for `BOTH`, clears
+pending shortening and preserves app-code misses and lock state. Other fates
+leave settings untouched. It deletes its own trusts when the loser's
+preparation captured a confirmed factor, under the existing policy. These own
+writes and the exact `go`/`receive` result commit in one participant transaction.
+Warm receive uses applied memory; local startup resumes an existing obligation
+from current mapped own rows, including a new owner in the same worker. Normal
+transport/production cutover and general coordinator recovery remain
+HIL-2000/HIL-1999/HIL-2002. The holder ends loser sessions after the
 fact and survivor sessions after receipt when the loser's factor first
 protects it (not in the code yet — HIL-1995).
 

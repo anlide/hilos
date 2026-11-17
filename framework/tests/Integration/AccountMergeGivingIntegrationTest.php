@@ -385,6 +385,7 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
         self::assertSame($both ? [$this->codeId, $this->usedCodeId] : [], $fact->secondFactorBackupCodes);
         self::assertSame($both ? 'both' : 'survivor', $fact->secondFactorKept);
         self::assertSame($both ? 21 : null, $copy->effectiveWaitDays);
+        self::assertSame($both ? 21 : null, $fact->effectiveWaitDays);
         foreach (['hilos_second_factor_reset', 'hilos_second_factor_setting', 'hilos_second_factor_trust'] as $table) {
             self::assertSame([], Database::sql('SELECT * FROM `' . $table . '` WHERE `user_id` = ?', [self::LOSER])->rows());
         }
@@ -419,6 +420,8 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
         self::assertSame($expected, $result->secondFactorKept);
         self::assertSame($source && $both ? [$this->factorId] : [], $result->secondFactors);
         self::assertSame($source && $both ? [$this->codeId, $this->usedCodeId] : [], $result->secondFactorBackupCodes);
+        self::assertSame($source && $both ? 21 : null, $result->effectiveWaitDays);
+        self::assertSame($result->effectiveWaitDays, $this->copy($give)->effectiveWaitDays);
     }
 
     /** @return iterable<string, array{bool, bool, bool, string}> Both, loser, survivor and none outcomes */
@@ -466,13 +469,15 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
             . '`pending_reset_wait_from` = ? WHERE `user_id` = ?', [$days, $pending, $from, self::LOSER]);
         [, $give] = $this->ready();
         $before = $this->snapshot();
-        $this->give($give);
+        $fact = $this->give($give)->payload->toJson();
+        self::assertSame($expected, AccountMergeGiveResult::fromJson($fact)->effectiveWaitDays);
         self::assertSame($expected, $this->copy($give)->effectiveWaitDays);
         $this->assertTargetUnchanged($before);
         $json = $this->copy($give)->toJson();
         Database::sqlRun('UPDATE `hilos_second_factor_setting` SET `reset_wait_days` = 88 WHERE `user_id` = ?', [self::SURVIVOR]);
         $this->freshContext(true);
         self::assertSame($json, $this->copy($give)->toJson());
+        self::assertSame($fact, $this->give($give)->payload->toJson());
         self::assertSame($give->id, $this->give($give)->assignmentId);
     }
 
@@ -492,7 +497,8 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
     {
         Database::sqlRun('DELETE FROM `hilos_second_factor_setting` WHERE `user_id` = ?', [self::LOSER]);
         [, $give] = $this->ready();
-        $this->give($give);
+        $fact = AccountMergeGiveResult::of($this->give($give)->payload);
+        self::assertSame(SecondFactorSettings::DEFAULT_RESET_WAIT_DAYS, $fact->effectiveWaitDays);
         self::assertSame(SecondFactorSettings::DEFAULT_RESET_WAIT_DAYS, $this->copy($give)->effectiveWaitDays);
     }
 
@@ -577,6 +583,65 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
         }
         $this->give($give);
         self::assertNotNull($this->copy($give));
+    }
+
+    /** A failure after storing the private copy rolls its wait back with the fact and all source writes. */
+    public function testRetainedWaitRollsBackWithTheCopyAndFact(): void
+    {
+        [, $give] = $this->ready();
+        $before = $this->snapshot();
+        Database::sqlRun('CREATE TRIGGER `giving_failure` BEFORE INSERT ON `hilos_account_operation_result`'
+            . " FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'giving wait failure'");
+        try {
+            $this->refused(DatabaseException::class, fn () => $this->give($give));
+            self::assertSame($before, $this->snapshot());
+            self::assertNull(Hilos::$db->accountOperationResults->byAssignment($give->id));
+            self::assertArrayNotHasKey($give->id, Hilos::$db->accountMergeCopies);
+        } finally {
+            Database::sqlRun('DROP TRIGGER `giving_failure`');
+        }
+        self::assertSame(21, AccountMergeGiveResult::of($this->give($give)->payload)->effectiveWaitDays);
+        self::assertSame(21, $this->copy($give)->effectiveWaitDays);
+    }
+
+    /** @return iterable<string, array{bool, ?int, ?int, bool}> Copy disagreement and operation-fate mismatches */
+    public static function inconsistentWaits(): iterable
+    {
+        yield 'copy differs from fact' => [true, 21, 22, false];
+        yield 'fact differs from copy' => [true, 22, 21, false];
+        yield 'both requires wait even when copy agrees' => [true, null, null, true];
+        yield 'survivor forbids wait even when copy agrees' => [false, 21, 21, true];
+    }
+
+    /**
+     * @param bool $both Whether the operation retains source protection
+     * @param ?int $savedWait Corrupted durable give wait
+     * @param ?int $copyWait Corrupted source copy wait
+     * @param bool $replayRefused Whether the give itself contradicts its operation
+     */
+    #[DataProvider('inconsistentWaits')]
+    public function testExactReadersRefuseInconsistentWaits(bool $both, ?int $savedWait, ?int $copyWait, bool $replayRefused): void
+    {
+        [, $give] = $this->ready($both ? SecondFactorFate::BOTH : SecondFactorFate::SURVIVOR);
+        $fact = AccountMergeGiveResult::of($this->give($give)->payload)->toArray();
+        $copy = $this->copy($give)->toArray();
+        $fact[AccountMergeGiveResult::effectiveWaitDays] = $savedWait;
+        $copy[AccountMergeHandoverCopy::effectiveWaitDays] = $copyWait;
+        $json = json_encode($fact, JSON_THROW_ON_ERROR);
+        Database::sqlRun('UPDATE `hilos_account_operation_result` SET `payload_json` = ? WHERE `assignment_id` = ?', [$json, $give->id]);
+        Database::sqlRun('UPDATE `hilos_account_merge_copy` SET `payload_json` = ? WHERE `assignment_id` = ?',
+            [json_encode($copy, JSON_THROW_ON_ERROR), $give->id]);
+        $this->freshContext(true);
+        $before = $this->snapshot();
+        $this->asPerson(self::LOSER, fn () => $this->refused(ValidationException::class,
+            static fn () => Hilos::$db->accountMergeCopies[$give->id]->readForMerge()));
+        $this->refused(HilosException::class, fn () => $this->copy($give));
+        if ($replayRefused) {
+            $this->refused(InvalidFormatException::class, fn () => $this->give($give));
+        } else {
+            self::assertSame($json, $this->give($give)->payload->toJson());
+        }
+        self::assertSame($before, $this->snapshot());
     }
 
     /** @return iterable<string, array{string, string, bool}> Failure cuts from the first transfer through result recording */
@@ -1073,8 +1138,20 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
     {
         $json = json_encode($payload, JSON_THROW_ON_ERROR);
         foreach (['password-hash-original', 'totp-secret-original', 'backup-code', '"secret":', '"code":',
-            'loserPasswordIdentityId', 'survivorPasswordIdentityId', 'effectiveWaitDays'] as $secret) {
+            'loserPasswordIdentityId', 'survivorPasswordIdentityId'] as $secret) {
             self::assertStringNotContainsString($secret, $json);
+        }
+        if (is_array($payload)) {
+            foreach ($payload as $key => $value) {
+                self::assertStringNotContainsString('effectiveWaitDays', (string)$key);
+                if (in_array($key, ['payloadJson', 'payload_json'], true) && is_string($value)) {
+                    self::assertSame(21, AccountMergeGiveResult::fromJson($value)->effectiveWaitDays);
+                } else {
+                    $this->assertNonsecret($value);
+                }
+            }
+        } else {
+            self::assertStringNotContainsString('effectiveWaitDays', $json);
         }
         if (is_array($payload) && (($payload['collectionKey'] ?? null) === HilosDbContext::accountMergeCopies
             || ($payload[SourceChange::FIELD_SOURCE_KEY] ?? null) === HilosDbContext::accountMergeCopies)) {

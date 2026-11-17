@@ -13,6 +13,7 @@ use Hilos\Auth\AccountOperation\AccountMergeHandoverCopy;
 use Hilos\Auth\AccountOperation\AccountMergeRefusal;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
 use Hilos\Auth\AccountOperation\AccountMergeGiving;
 use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
@@ -87,6 +88,7 @@ use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\SecondFactorFate;
 use Hilos\Tables\Users\HilosUserDetailBrowserTable;
 use Hilos\Tables\Users\HilosMergeCandidatesTable;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 
 /** Real transfers, commits and worker consumers; no synthetic rollback root. */
@@ -413,7 +415,7 @@ final class AccountMergeAdmissionIntegrationTest extends FrameworkIntegrationTes
         self::assertSame(AccountMergeAdmissionResult::Rejected, AccountMergeAdmission::apply(self::SURVIVOR, $handover));
         self::assertSame(AccountMergeAdmissionResult::Rejected, $this->asPerson(self::LOSER,
             static fn () => AccountMergeAdmission::apply(self::SURVIVOR, $handover)));
-        foreach (['operationId', 'assignmentId', 'survivorPasswordIdentityId'] as $key) {
+        foreach (['operationId', 'assignmentId', 'survivorPasswordIdentityId', 'effectiveWaitDays'] as $key) {
             $copy = $handover->copy->toArray();
             $copy[$key] = 99999;
             $altered = new AccountMergeHandover(AccountMergeHandoverCopy::fromArray($copy), $handover->admission);
@@ -523,6 +525,8 @@ final class AccountMergeAdmissionIntegrationTest extends FrameworkIntegrationTes
         $sourceResult = Hilos::$db->accountOperationResults->byAssignment($source->id);
         $targetResult = Hilos::$db->accountOperationResults->byAssignment($target->id);
         $giveResult = Hilos::$db->accountOperationResults->byAssignment($give->id);
+        $wrongWait = json_decode($giveResult->payload->toJson(), true, flags: JSON_THROW_ON_ERROR);
+        $wrongWait['effectiveWaitDays'] = null;
         $mutations = [
             ['hilos_account_operation_assignment', $source->id, 'user_id', 11],
             ['hilos_account_operation_assignment', $target->id, 'owner_index', '11'],
@@ -533,6 +537,7 @@ final class AccountMergeAdmissionIntegrationTest extends FrameworkIntegrationTes
                 AccountMergePreparationResult::refused(AccountMergeRefusal::Occupied)->toJson()],
             ['hilos_account_operation_result', $targetResult->id, 'payload_json', '{"prepare":"refused","refusal":"invalid"}'],
             ['hilos_account_operation_result', $giveResult->id, 'owner_agent_id', HilosAgentType::HILOS_USER . ':7'],
+            ['hilos_account_operation_result', $giveResult->id, 'payload_json', json_encode($wrongWait, JSON_THROW_ON_ERROR)],
         ];
         $observer = new AdmissionObserver();
         $worker = new AdmissionWorker($observer);
@@ -555,6 +560,38 @@ final class AccountMergeAdmissionIntegrationTest extends FrameworkIntegrationTes
         }
         $this->freshContext();
         self::assertSame(AccountMergeAdmissionResult::Admitted, $this->admit($handover));
+    }
+
+    /** @return iterable<string, array{bool}> Both requires a wait; every other fate forbids one */
+    public static function waitFates(): iterable
+    {
+        yield 'both' => [true];
+        yield 'survivor' => [false];
+    }
+
+    /** @param bool $both Whether source protection was retained by the operation */
+    #[DataProvider('waitFates')]
+    public function testHandoverRejectsWaitContradictingOperationEvenWhenCopyAndFactAgree(bool $both): void
+    {
+        [, $give] = $this->ready(fate: $both ? SecondFactorFate::BOTH : SecondFactorFate::SURVIVOR);
+        $result = $this->give($give);
+        $handover = $this->handover($give);
+        $copy = $handover->copy->toArray();
+        $fact = json_decode($result->payload->toJson(), true, flags: JSON_THROW_ON_ERROR);
+        $copy[AccountMergeHandoverCopy::effectiveWaitDays] = $both ? null : 21;
+        $fact[AccountMergeGiveResult::effectiveWaitDays] = $both ? null : 21;
+        Database::sqlRun('UPDATE `hilos_account_operation_result` SET `payload_json` = ? WHERE `assignment_id` = ?',
+            [json_encode($fact, JSON_THROW_ON_ERROR), $give->id]);
+        $altered = new AccountMergeHandover(AccountMergeHandoverCopy::fromArray($copy), $handover->admission);
+        $this->frames();
+        $this->freshContext();
+        $sources = new AdmissionSourceChanges();
+        SourceChangeBus::subscribe($sources);
+        $updates = $this->updates();
+        self::assertSame(AccountMergeAdmissionResult::Rejected, $this->admit($altered));
+        self::assertSame($updates, $this->updates());
+        self::assertSame([], $sources->changes);
+        self::assertSame([], $this->frames());
     }
 
     public function testHandoverCannotRewindTheNextRealTransferOrReplaceItsCurrentOwner(): void

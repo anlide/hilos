@@ -45,7 +45,7 @@ final class AccountMergeHandoverCopyTest extends TestCase
   {"id":61,"userId":20,"code":"retained-backup-code","usedAt":null,"createdAt":-1}]}
 JSON;
     private const string GIVE_JSON = <<<'JSON'
-{"give":"given","rows":{"identities":[31,32],"passkeyCredentials":[41],"secondFactors":[51],"secondFactorBackupCodes":[61]},"identitiesMoved":2,"passwordKept":"loser","secondFactorKept":"both","admission":{"identities":[{"id":31,"revision":1},{"id":32,"revision":3}],"passkeyCredentials":[{"id":41,"revision":2}],"secondFactors":[{"id":51,"revision":1}],"secondFactorBackupCodes":[{"id":61,"revision":4}]}}
+{"give":"given","rows":{"identities":[31,32],"passkeyCredentials":[41],"secondFactors":[51],"secondFactorBackupCodes":[61]},"identitiesMoved":2,"passwordKept":"loser","secondFactorKept":"both","effectiveWaitDays":14,"admission":{"identities":[{"id":31,"revision":1},{"id":32,"revision":3}],"passkeyCredentials":[{"id":41,"revision":2}],"secondFactors":[{"id":51,"revision":1}],"secondFactorBackupCodes":[{"id":61,"revision":4}]}}
 JSON;
 
     /** The fixture is boundary data; application objects contain concrete row DTOs. */
@@ -392,7 +392,7 @@ JSON;
         $copy = AccountMergeHandoverCopy::fromJson(self::COPY_JSON);
         $fact = new AccountMergeGiveResult(
             [31, 32], [41], [51], [61], PasswordFate::LOSER, AccountMergeGiveResult::SECOND_FACTOR_BOTH,
-            AccountMergeGiveResult::fromJson(self::GIVE_JSON)->admission,
+            AccountMergeGiveResult::fromJson(self::GIVE_JSON)->admission, 14,
         );
         foreach (['retained-password-hash', 'retained-totp-secret', 'retained-backup-code', 'loser@example.test', 'public-key-original'] as $secret) {
             self::assertStringContainsString($secret, $copy->toJson());
@@ -438,7 +438,9 @@ JSON;
             $missing = $fields;
             unset($missing[$key]);
             yield "missing $key" => [json_encode($missing, JSON_THROW_ON_ERROR)];
-            foreach ([null, false, 1, 1.0, 'unknown', []] as $index => $wrong) {
+            $wrongValues = $key === 'effectiveWaitDays' ? [-1, false, 1.0, '1', 'unknown', [], (object)[]]
+                : [null, false, 1, 1.0, 'unknown', []];
+            foreach ($wrongValues as $index => $wrong) {
                 $changed = $fields;
                 $changed[$key] = $wrong;
                 yield "wrong $key $index" => [json_encode($changed, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION)];
@@ -478,15 +480,44 @@ JSON;
     {
         $result = new AccountMergeGiveResult(
             [], [], [], [], PasswordFate::NONE, AccountMergeGiveResult::SECOND_FACTOR_NONE,
-            new AccountMergeAdmissionManifest([], [], [], []),
+            new AccountMergeAdmissionManifest([], [], [], []), null,
         );
         self::assertSame([
             'give' => 'given',
             'rows' => ['identities' => [], 'passkeyCredentials' => [], 'secondFactors' => [], 'secondFactorBackupCodes' => []],
-            'identitiesMoved' => 0, 'passwordKept' => 'none', 'secondFactorKept' => 'none',
+            'identitiesMoved' => 0, 'passwordKept' => 'none', 'secondFactorKept' => 'none', 'effectiveWaitDays' => null,
             'admission' => ['identities' => [], 'passkeyCredentials' => [], 'secondFactors' => [], 'secondFactorBackupCodes' => []],
         ], $result->toArray());
         self::assertSame($result->toArray(), AccountMergeGiveResult::of($result->toPayload())->toArray());
+    }
+
+    /** @return iterable<string, array{?int}> Nullable and nonnegative source waits independent of actual protection outcomes */
+    public static function giveWaits(): iterable
+    {
+        yield 'not retained' => [null];
+        yield 'zero days' => [0];
+        yield 'one day' => [1];
+        yield 'retained' => [14];
+        yield 'integer boundary' => [PHP_INT_MAX];
+    }
+
+    /** @param ?int $days Source wait admitted by the standalone payload type */
+    #[DataProvider('giveWaits')]
+    public function testGiveWaitRoundTripsWithoutCoercion(?int $days): void
+    {
+        $fields = json_decode(self::GIVE_JSON, true, flags: JSON_THROW_ON_ERROR);
+        $fields['effectiveWaitDays'] = $days;
+        $result = AccountMergeGiveResult::fromArray($fields);
+        self::assertSame($days, $result->effectiveWaitDays);
+        self::assertSame($fields, AccountMergeGiveResult::of($result->toPayload())->toArray());
+    }
+
+    /** Direct construction enforces the same nonnegative wait as deserialization. */
+    public function testGiveConstructorRefusesNegativeWait(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        new AccountMergeGiveResult([], [], [], [], PasswordFate::NONE, AccountMergeGiveResult::SECOND_FACTOR_NONE,
+            new AccountMergeAdmissionManifest([], [], [], []), -1);
     }
 
     /** Every saved revision belongs to exactly the rows declared by this give. */

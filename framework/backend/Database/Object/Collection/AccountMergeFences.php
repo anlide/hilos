@@ -4,16 +4,23 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Collection;
 
+use Hilos\Auth\AccountOperation\AccountMergeReceiving;
 use Hilos\Auth\AccountOperation\AccountMergeTransfer;
+use Hilos\Auth\AccountOperation\Exception\AccountMergeReceiveWaitsException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\AccountMergeFenceSnapshot;
+use Hilos\Database\AccountMergeReceiptSnapshot;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Collection\AccountMergeFences as EntityAccountMergeFences;
 use Hilos\Database\Entity\Item\AccountMergeFence as EntityAccountMergeFence;
 use Hilos\Database\Object\Item\AccountMergeFence as ObjectAccountMergeFence;
 use Hilos\Database\Object\Objects;
+use Hilos\Hilos;
 use Hilos\HilosException;
+use JsonException;
 
 /**
  * Composite offsets are collectionKey:decimalRowId; only successful key loads are cached.
@@ -56,6 +63,120 @@ class AccountMergeFences extends Objects
 
         return new AccountMergeFenceSnapshot($entity->collection_key, $entity->row_id, $entity->operation_id,
             $entity->assignment_id, $entity->owner_user_id, $entity->revision, $entity->deleted);
+    }
+
+    /**
+     * The startup read is confined to current own mapped rows; lazy loaders preserve stale held Objects.
+     *
+     * @param int $giveAssignmentId Exact original source assignment
+     * @param int $survivorUserId Canonical executing survivor
+     * @return AccountMergeReceiptSnapshot Attempt-local current rows bracketed by fresh transfer metadata
+     * @throws HilosException When authorization, transaction state, metadata or mapped storage refuses the read
+     * @throws JsonException When a saved preparation cannot be decoded
+     */
+    public function receiptSnapshot(int $giveAssignmentId, int $survivorUserId): AccountMergeReceiptSnapshot
+    {
+        if (Database::hasOpenTransactions()) {
+            throw new InvalidFormatException('A merge receipt snapshot requires autocommit current reads.');
+        }
+        $give = AccountMergeReceiving::receiptManifest($giveAssignmentId, $survivorUserId);
+        $operationId = Hilos::$db->accountOperationAssignments[$giveAssignmentId]->operationId;
+        $fences = [];
+        foreach (self::BUSINESS_COLLECTIONS as $key) {
+            foreach ($give->admission->{$key} as $stamp) {
+                $fenceKey = $key . ':' . $stamp->id;
+                $current = $this->fresh($fenceKey);
+                if ($current === null || $current->operationId !== $operationId || $current->assignmentId !== $giveAssignmentId
+                    || $current->ownerUserId !== $survivorUserId || $current->revision < $stamp->revision) {
+                    throw new AccountMergeReceiveWaitsException();
+                }
+                $fences[$fenceKey] = $current;
+            }
+        }
+        $rows = [];
+        foreach (AccountMergeReceiptSnapshot::COLLECTIONS as $key) {
+            $collection = Hilos::$db->mountedObjectCollection($key);
+            if ($collection === null || !$collection->cachesRows()) {
+                throw new InvalidFormatException('The merge receipt requires its mounted row collections.');
+            }
+            $entityClass = $collection::OBJECT_CLASS::ENTITY_CLASS;
+            $columns = implode(', ', array_map(static fn (string $column): string => '`' . $column . '`', $entityClass::_columns));
+            $rows[$key] = [];
+            foreach (Database::sql('SELECT ' . $columns . ' FROM ' . $entityClass::getSqlTableName() . ' WHERE `user_id` = ?',
+                [$survivorUserId], index: $entityClass::getDatabase()->connectionIndex)->rows() as $row) {
+                $mapped = $entityClass::fromRow($row)->toArray();
+                $rows[$key][$mapped[$entityClass::_primary]] = $mapped;
+            }
+        }
+        foreach ($fences as $key => $expected) {
+            if ($this->fresh($key) != $expected
+                || $expected->deleted === isset($rows[$expected->collectionKey][$expected->rowId])) {
+                throw new AccountMergeReceiveWaitsException();
+            }
+        }
+
+        return new AccountMergeReceiptSnapshot($operationId, $giveAssignmentId, $survivorUserId, $rows, $fences);
+    }
+
+    /**
+     * The participant holds all expected metadata locks before the first memory effect.
+     *
+     * @param AccountMergeReceiptSnapshot $snapshot Current own startup rows, never the original birth copy
+     * @throws HilosException When the transaction, coordinates, current metadata or hydration refuses resume
+     * @throws JsonException When a saved preparation cannot be decoded
+     */
+    public function hydrateReceiptSnapshot(AccountMergeReceiptSnapshot $snapshot): void
+    {
+        if (Database::runtimeTransactionLevel(static::entityClass()::getDatabase()->connectionIndex) === null) {
+            throw new InvalidFormatException('Merge receipt hydration requires its participant transaction.');
+        }
+        $give = AccountMergeReceiving::receiptManifest($snapshot->giveAssignmentId, $snapshot->survivorUserId);
+        if (Hilos::$db->accountOperationAssignments[$snapshot->giveAssignmentId]->operationId !== $snapshot->operationId) {
+            throw new InvalidFormatException('The merge receipt snapshot belongs to another operation.');
+        }
+        foreach (self::BUSINESS_COLLECTIONS as $key) {
+            foreach ($give->admission->{$key} as $stamp) {
+                $fenceKey = $key . ':' . $stamp->id;
+                $expected = $snapshot->fences[$fenceKey] ?? null;
+                if ($expected === null || $expected->operationId !== $snapshot->operationId
+                    || $expected->assignmentId !== $snapshot->giveAssignmentId || $expected->ownerUserId !== $snapshot->survivorUserId
+                    || $expected->revision < $stamp->revision || $this->fresh($fenceKey) != $expected) {
+                    throw new AccountMergeReceiveWaitsException();
+                }
+            }
+        }
+        SourceChangeBus::whileApplyingRemote(function () use ($snapshot): void {
+            foreach (AccountMergeReceiptSnapshot::COLLECTIONS as $key) {
+                $collection = Hilos::$db->mountedObjectCollection($key);
+                $objectClass = $collection::OBJECT_CLASS;
+                $entityClass = $objectClass::ENTITY_CLASS;
+                foreach ($collection->objects as $id => $object) {
+                    $current = $snapshot->fences[$key . ':' . $id] ?? null;
+                    if (($object->userId === $snapshot->survivorUserId || $current?->deleted === true)
+                        && !isset($snapshot->rows[$key][$id])) {
+                        if ($object->hasChanges()) {
+                            throw new InvalidFormatException('Merge receipt hydration refuses unsaved own edits.');
+                        }
+                        unset($collection[$id]);
+                    }
+                }
+                foreach ($snapshot->rows[$key] as $id => $mapped) {
+                    if (isset($collection[$id])) {
+                        if ($collection[$id]->hasChanges()) {
+                            throw new InvalidFormatException('Merge receipt hydration refuses unsaved mapped edits.');
+                        }
+                        $collection[$id]->applyDbSyncEntityUpdate($mapped, invalidateUnmapped: true);
+                    } else {
+                        $object = $objectClass::fromEntity($entityClass::fromRow($mapped));
+                        $object->applyDbSyncUnmappedUpdate();
+                        $collection[$id] = $object;
+                    }
+                }
+            }
+            foreach ($snapshot->fences as $expected) {
+                $this->rememberSnapshot($expected)->markApplied($expected->revision);
+            }
+        });
     }
 
     /**

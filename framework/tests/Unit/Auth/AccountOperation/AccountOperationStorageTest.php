@@ -443,7 +443,7 @@ final class AccountOperationStorageTest extends TestCase
         self::assertSame(['Preparing' => 'preparing', 'Go' => 'go', 'Cancelling' => 'cancelling'],
             array_column(AccountMergeStage::cases(), 'value', 'name'));
         self::assertSame([
-            'PrepareSurvivor' => 'prepare_survivor', 'PrepareLoser' => 'prepare_loser', 'Give' => 'give',
+            'PrepareSurvivor' => 'prepare_survivor', 'PrepareLoser' => 'prepare_loser', 'Give' => 'give', 'Receive' => 'receive',
             'ReleaseLoser' => 'release_loser', 'ReleaseSurvivor' => 'release_survivor',
         ], array_column(AccountMergeDuty::cases(), 'value', 'name'));
     }

@@ -158,7 +158,10 @@ For [merge](../architecture/account-operations.md#merge), the loser commits
 its work, nonsecret result and separate private copy together in the
 [prepared give](../architecture/account-operations.md#the-prepared-loser-give),
 with no live coordinator sender until HIL-2000; the survivor commits its own
-work with receipt (not in the code yet — HIL-1994), and the holder
+work with its exact receipt in the
+[prepared survivor step](../architecture/account-operations.md#the-prepared-survivor-receipt),
+including local startup resume from current own rows for an existing obligation,
+with no normal producer before HIL-2000 and HIL-1999. The holder commits
 its own work with result (not in the code yet — HIL-1995). Declared project
 participants follow that same local atomic boundary — `AccountMergeProjectStep`
 commits an owner's move with its result, built and live at the merge switch —

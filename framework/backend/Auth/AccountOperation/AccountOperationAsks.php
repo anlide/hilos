@@ -10,6 +10,7 @@ use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureUncapturedException;
+use Hilos\Auth\AccountOperation\Exception\AccountMergeReceiveWaitsException;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
@@ -54,7 +55,7 @@ final class AccountOperationAsks
             }
         } catch (AccountErasureUncapturedException) {
             $answer = AccountOperationAnswerKind::Uncaptured;
-        } catch (AccountErasureFinalWaitsException) {
+        } catch (AccountErasureFinalWaitsException|AccountMergeReceiveWaitsException) {
             $answer = AccountOperationAnswerKind::Waits;
         } catch (AccountErasureFinalRefusedException $e) {
             $answer = AccountOperationAnswerKind::FinalRefused;

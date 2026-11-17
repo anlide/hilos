@@ -22,6 +22,7 @@ final readonly class AccountMergeGiveResult
     public const string identitiesMoved = 'identitiesMoved';
     public const string passwordKept = 'passwordKept';
     public const string secondFactorKept = 'secondFactorKept';
+    public const string effectiveWaitDays = 'effectiveWaitDays';
     public const string admission = 'admission';
     public const string GIVEN = 'given';
     public const string SECOND_FACTOR_BOTH = 'both';
@@ -29,7 +30,9 @@ final readonly class AccountMergeGiveResult
     public const string SECOND_FACTOR_SURVIVOR = 'survivor';
     public const string SECOND_FACTOR_NONE = 'none';
 
-    private const array KEYS = [self::give, self::rows, self::identitiesMoved, self::passwordKept, self::secondFactorKept, self::admission];
+    private const array KEYS = [
+        self::give, self::rows, self::identitiesMoved, self::passwordKept, self::secondFactorKept, self::effectiveWaitDays, self::admission,
+    ];
     private const array ROW_KEYS = [self::identities, self::passkeyCredentials, self::secondFactors, self::secondFactorBackupCodes];
     private const array SECOND_FACTOR_OUTCOMES = [
         self::SECOND_FACTOR_BOTH, self::SECOND_FACTOR_LOSER, self::SECOND_FACTOR_SURVIVOR, self::SECOND_FACTOR_NONE,
@@ -45,7 +48,8 @@ final readonly class AccountMergeGiveResult
      * @param PasswordFate $passwordKept Actual retained password outcome
      * @param string $secondFactorKept Actual retained protection outcome
      * @param AccountMergeAdmissionManifest $admission Original revisions assigned by the transfer writes
-     * @throws InvalidFormatException When an outcome or ascending unique positive id list is invalid
+     * @param ?int $effectiveWaitDays Captured source wait for BOTH, otherwise null
+     * @throws InvalidFormatException When an outcome, wait or ascending unique positive id list is invalid
      */
     public function __construct(
         public array $identities,
@@ -55,12 +59,16 @@ final readonly class AccountMergeGiveResult
         public PasswordFate $passwordKept,
         public string $secondFactorKept,
         public AccountMergeAdmissionManifest $admission,
+        public ?int $effectiveWaitDays,
     ) {
         foreach ([$identities, $passkeyCredentials, $secondFactors, $secondFactorBackupCodes] as $ids) {
             self::validateIds($ids);
         }
         if (!in_array($secondFactorKept, self::SECOND_FACTOR_OUTCOMES, true)) {
             throw new InvalidFormatException('The merge give second-factor outcome is unknown.');
+        }
+        if ($effectiveWaitDays !== null && $effectiveWaitDays < 0) {
+            throw new InvalidFormatException('The merge give effective wait must be nonnegative or null.');
         }
         foreach (self::ROW_KEYS as $key) {
             if ($this->{$key} !== array_column($admission->{$key}, AccountMergeRowRevision::id)) {
@@ -141,6 +149,9 @@ final readonly class AccountMergeGiveResult
             || !is_string($data[self::secondFactorKept])) {
             throw new InvalidFormatException('The merge give retention outcomes must be known strings.');
         }
+        if ($data[self::effectiveWaitDays] !== null && !is_int($data[self::effectiveWaitDays])) {
+            throw new InvalidFormatException('The merge give effective wait must be an integer or null.');
+        }
 
         return new self(
             identities: $data[self::rows][self::identities],
@@ -150,6 +161,7 @@ final readonly class AccountMergeGiveResult
             passwordKept: PasswordFate::from($data[self::passwordKept]),
             secondFactorKept: $data[self::secondFactorKept],
             admission: AccountMergeAdmissionManifest::fromArray($data[self::admission]),
+            effectiveWaitDays: $data[self::effectiveWaitDays],
         );
     }
 
@@ -187,6 +199,7 @@ final readonly class AccountMergeGiveResult
             self::identitiesMoved => $this->identitiesMoved,
             self::passwordKept => $this->passwordKept->value,
             self::secondFactorKept => $this->secondFactorKept,
+            self::effectiveWaitDays => $this->effectiveWaitDays,
             self::admission => $this->admission->toArray(),
         ];
     }

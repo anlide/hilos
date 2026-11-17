@@ -107,7 +107,7 @@ final class AccountMergePreparation
 
     /**
      * @param int $userId Account whose reservation is being read
-     * @return ?AccountOperation First open merge with an unreleased saved reservation of this account
+     * @return ?AccountOperation First open merge still holding this account's protection reservation
      * @throws HilosException When an operation, assignment or result cannot be read or has an invalid shape
      * @throws JsonException When a saved preparation or release cannot be decoded
      */
@@ -116,6 +116,9 @@ final class AccountMergePreparation
         foreach (Hilos::$db->accountOperations->openMergesNaming($userId) as $operation) {
             if (AccountMergePreparationResult::forAccount($operation, $userId)?->isReserved()
                 && !AccountMergeReleaseResult::forAccount($operation, $userId)) {
+                if ($operation->survivorUserId === $userId && AccountMergeReceiveResult::forOperation($operation) !== null) {
+                    continue;
+                }
                 return $operation;
             }
         }

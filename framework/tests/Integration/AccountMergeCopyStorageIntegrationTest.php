@@ -10,7 +10,9 @@ use Hilos\Auth\AccountOperation\AccountMergeAdmissionManifest;
 use Hilos\Auth\AccountOperation\AccountMergeRowRevision;
 use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
 use Hilos\Auth\AccountOperation\AccountMergeHandoverCopy;
+use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
@@ -45,6 +47,7 @@ use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\SecondFactorFate;
 use JsonException;
 use RuntimeException;
 
@@ -318,7 +321,7 @@ JSON;
             self::assertTrue(true);
         }
         foreach (['{}', '{"give":"given","rows":{"identities":[],"passkeyCredentials":[],"secondFactors":[],"secondFactorBackupCodes":[]},'
-            . '"identitiesMoved":0,"passwordKept":"survivor","secondFactorKept":"none",'
+            . '"identitiesMoved":0,"passwordKept":"survivor","secondFactorKept":"none","effectiveWaitDays":14,'
             . '"admission":{"identities":[],"passkeyCredentials":[],"secondFactors":[],"secondFactorBackupCodes":[]}}'] as $wrongResult) {
             Database::sql('UPDATE `hilos_account_operation_result` SET `payload_json` = ? WHERE `assignment_id` = ?',
                 [$wrongResult, $assignment->id]);
@@ -335,6 +338,46 @@ JSON;
         self::assertSame([], Database::sql('SELECT * FROM `hilos_account_merge_copy`')->rows());
     }
 
+    /** Receive identity is separate from give, duplicate recording is exact, and its receipt survives the current user slot. */
+    public function testReceiveReceiptKeepsItsExactAssignmentAfterDuplicateRecordingAndFinish(): void
+    {
+        $give = $this->assignment();
+        $operation = $give->operation;
+        self::assertNull(AccountMergeReceiveResult::forOperation($operation));
+        $record = static fn () => Hilos::$db->accountOperationAssignments->actions->record(
+            $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Receive->value,
+            new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)self::SURVIVOR),
+            self::SURVIVOR, AccountOperationAssignmentPayload::fromJson('{}'),
+        );
+        $receive = ExecutionContext::run(new ExecutionFrame(agentId: self::HOLDER_ID), $record);
+        self::assertNotSame($give->id, $receive->id);
+        self::assertSame($receive->id, ExecutionContext::run(new ExecutionFrame(agentId: self::HOLDER_ID), $record)->id);
+        self::assertNull(AccountMergeReceiveResult::forOperation($operation));
+        try {
+            ExecutionContext::run(new ExecutionFrame(agentId: self::HOLDER_ID), static fn () =>
+                Hilos::$db->accountOperationAssignments->actions->record(
+                    $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Receive->value,
+                    new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)self::LOSER),
+                    self::LOSER, AccountOperationAssignmentPayload::fromJson('{}'),
+                ));
+            self::fail('A duplicate receive identity changed its canonical owner');
+        } catch (ValidationException) {
+            self::assertTrue(true);
+        }
+        $result = $this->asPerson(self::SURVIVOR, static fn () => AccountOperationParticipantStep::run(
+            $receive->id, static fn () => AccountMergeReceiveResult::received()->toPayload(),
+        ));
+        self::assertSame($receive->id, $result->assignmentId);
+        self::assertSame('{"receive":"received"}', AccountMergeReceiveResult::forOperation($operation)->toJson());
+        ExecutionContext::run(new ExecutionFrame(agentId: self::HOLDER_ID), static function () use ($operation): void {
+            self::assertTrue($operation->actions->finish(AccountMergeStage::Go->value, AccountOperationOutcome::Completed));
+        });
+        $this->assignment();
+        Hilos::$db = new HilosSessionTestDbContext();
+        Hilos::$db->configure();
+        self::assertSame('{"receive":"received"}', AccountMergeReceiveResult::forOperation(Hilos::$db->accountOperations[$operation->id])->toJson());
+    }
+
     /**
      * @param int $owner Personal participant, normally the canonical loser
      * @param int $loser Source account of this operation
@@ -344,7 +387,7 @@ JSON;
     {
         return ExecutionContext::run(new ExecutionFrame(agentId: self::HOLDER_ID), static function () use ($owner, $loser) {
             $operation = Hilos::$db->accountOperations->actions->recordMerge(
-                self::SURVIVOR, $loser, new AccountMergeChoice(null, null, null, null),
+                self::SURVIVOR, $loser, new AccountMergeChoice(null, SecondFactorFate::BOTH, null, null),
             );
             self::assertTrue($operation->actions->advance($operation->stage, AccountMergeStage::Go->value));
             return Hilos::$db->accountOperationAssignments->actions->record(
@@ -400,7 +443,7 @@ JSON;
             new AccountMergeAdmissionManifest(
                 [new AccountMergeRowRevision(31, 1), new AccountMergeRowRevision(32, 1)],
                 [new AccountMergeRowRevision(41, 1)], [new AccountMergeRowRevision(51, 1)], [new AccountMergeRowRevision(61, 1)],
-            ),
+            ), 14,
         )->toPayload();
     }
 

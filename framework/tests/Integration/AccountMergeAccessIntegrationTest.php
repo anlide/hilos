@@ -27,6 +27,17 @@ use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Runtime\State\Item\HilosSessionRotation;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Auth\AccountOperation\AccountMergeAccess;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeOpening;
+use Hilos\Auth\AccountOperation\AccountMergePreparation;
+use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
+use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Database\Identity\PasswordFate;
+use Hilos\Database\View\Item\AccountOperation;
+use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
@@ -80,6 +91,148 @@ final class AccountMergeAccessIntegrationTest extends AccountMergeGuardIntegrati
         'hilos_identity', 'hilos_second_factor', 'hilos_second_factor_backup_code', 'hilos_second_factor_setting',
         'hilos_second_factor_trust', 'hilos_second_factor_reset', 'hilos_step_up', 'hilos_passkey_credential',
     ];
+
+    /** The genuine give proof owns private copy storage locally; older gate fixtures keep their marker helper. */
+    protected function setUp(): void
+    {
+        parent::setUp();
+        self::copyStub(true);
+        self::copyStub(false);
+    }
+
+    /** Drop the local copy before the shared assignment carriers. */
+    protected function tearDown(): void
+    {
+        try {
+            self::copyStub(true);
+        } finally {
+            parent::tearDown();
+        }
+    }
+
+    /** @return list<array{bool}> Old survivor address and the transferred password address */
+    public static function receiptAddresses(): array
+    {
+        return [[true], [false]];
+    }
+
+    /** @param bool $oldAddress Whether sign-in uses the survivor's preexisting magic-link address */
+    #[DataProvider('receiptAddresses')]
+    public function testGenuineReceiveOpensOldAddressAndLateGrantOnlyAfterItsCommit(bool $oldAddress): void
+    {
+        $this->withProfile(function () use ($oldAddress): void {
+            $survivor = ProfileIntegrationTestCase::USER_ID;
+            $loser = self::person();
+            $receive = $this->genuineReceive($survivor, $loser);
+            $operation = $receive->operation;
+            $preparations = Database::sql('SELECT * FROM `hilos_account_operation_result` ORDER BY `id`')->rows();
+            $login = static fn () => new PasswordCommands(new ProfileIntegrationLibrary())->login(
+                ProfileIntegrationTestCase::ANONYMOUS_ACCEPT_KEY,
+                new LoginActionDTO($oldAddress ? 'old-address@example.test' : 'incoming@example.test', 'chosen-password'),
+            );
+            $this->expectMerging($login);
+            $beforeReceiptSession = Hilos::$db->sessions->findByToken(ProfileIntegrationTestCase::ANONYMOUS_SESSION_TOKEN);
+            $beforeReceiptHolder = new MergeAccessTestSessionsHolder();
+            $this->asHolder(static fn () => $beforeReceiptHolder->onSignalAgent(new AgentSignalData(new AuthSessionGrantSignalData(
+                sessionToken: ProfileIntegrationTestCase::ANONYMOUS_SESSION_TOKEN, userId: $survivor,
+                acceptKey: ProfileIntegrationTestCase::ANONYMOUS_ACCEPT_KEY, provenBy: StepUpMethod::PASSWORD,
+            )), 'test', HilosSignalConstants::HILOS_AUTH_SESSION_GRANT));
+            self::assertNull($beforeReceiptSession->userId);
+            $this->asPerson($survivor, static fn (AbstractUserAgent $agent) => $agent->resumeMergeReceipt($receive->id));
+            self::assertNotNull(AccountMergeReceiveResult::forOperation($operation));
+            self::assertNull(AccountMergePreparation::heldBy($survivor));
+            self::assertSame($operation->id, AccountMergePreparation::heldBy($loser)->id);
+            self::assertSame($preparations, array_slice(Database::sql('SELECT * FROM `hilos_account_operation_result` ORDER BY `id`')->rows(), 0, 3));
+            self::drain();
+            $login();
+            $grants = array_values(array_filter($this->signals(), static fn (SignalDTO $signal): bool =>
+                $signal->data instanceof AgentSignalData && $signal->data->data instanceof AuthSessionGrantSignalData));
+            self::assertCount(1, $grants);
+            self::assertSame($survivor, $grants[0]->data->data->userId);
+            self::assertSame(StepUpMethod::PASSWORD, $grants[0]->data->data->provenBy);
+            $session = Hilos::$db->sessions->findByToken(ProfileIntegrationTestCase::ANONYMOUS_SESSION_TOKEN);
+            $holder = new MergeAccessTestSessionsHolder();
+            RtTruthSourceRegistry::registerDaemon(HilosSessionRotation::RT_COLLECTION);
+            try {
+                $holder->onSignalAgent($grants[0]->data, 'test', HilosSignalConstants::HILOS_AUTH_SESSION_GRANT);
+            } finally {
+                RtTruthSourceRegistry::unregisterDaemon(HilosSessionRotation::RT_COLLECTION);
+            }
+            self::assertSame($survivor, $session->userId);
+            self::assertNull($operation->finishedAt);
+        });
+    }
+
+    /** @return list<array{string}> A different owner, malformed payload and a rolled-back result all retain the reservation */
+    public static function receiptDefects(): array
+    {
+        return [['owner'], ['payload'], ['marker'], ['rollback']];
+    }
+
+    /** @param string $defect Invalid receipt condition */
+    #[DataProvider('receiptDefects')]
+    public function testAnInvalidOrRolledBackReceiptNeverUnlocksProtection(string $defect): void
+    {
+        $survivor = self::person();
+        $loser = self::person();
+        $receive = $this->genuineReceive($survivor, $loser);
+        if ($defect === 'rollback') {
+            Database::sqlRun("CREATE TRIGGER `receiving_failure` BEFORE INSERT ON `hilos_account_operation_result`"
+                . " FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'receipt storage failure'");
+            try {
+                try {
+                    $this->asPerson($survivor, static fn (AbstractUserAgent $agent) => $agent->resumeMergeReceipt($receive->id));
+                    self::fail('A failing receipt committed');
+                } catch (DatabaseException) {
+                }
+            } finally {
+                Database::sqlRun('DROP TRIGGER `receiving_failure`');
+            }
+            self::assertNull(Hilos::$db->accountOperationResults->byAssignment($receive->id));
+            self::assertSame($receive->operationId, AccountMergePreparation::heldBy($survivor)->id);
+            $this->assertProtectionRefused($survivor);
+            $this->expectMerging(static fn () => AccountMergeAccess::requireSignIn($survivor));
+        } else {
+            $this->asPerson($survivor, static fn (AbstractUserAgent $agent) => $agent->resumeMergeReceipt($receive->id));
+            Database::sqlRun('UPDATE `hilos_account_operation_result` SET `owner_agent_id` = ?, `payload_json` = ? WHERE `assignment_id` = ?',
+                [$defect === 'owner' ? 'foreign-owner' : $receive->owner->agentId(),
+                    match ($defect) {
+                        'payload' => '{"receive":"received","extra":true}',
+                        'marker' => '{}',
+                        default => '{"receive":"received"}',
+                    }, $receive->id]);
+            $savedContext = Hilos::$db;
+            Hilos::$db = new HilosSessionTestDbContext();
+            Hilos::$db->configure();
+            try {
+                try {
+                    AccountMergeAccess::requireProtectionChange($survivor);
+                    self::fail('A corrupt receipt unlocked protection');
+                } catch (InvalidFormatException) {
+                }
+                try {
+                    AccountMergeAccess::requireSignIn($survivor);
+                    self::fail('A corrupt receipt unlocked sign-in');
+                } catch (InvalidFormatException) {
+                }
+            } finally {
+                Hilos::$db = $savedContext;
+            }
+        }
+    }
+
+    public function testAnOldGenuineReceiptDoesNotReleaseTheNextReservation(): void
+    {
+        $survivor = self::person();
+        $loser = self::person();
+        $receive = $this->genuineReceive($survivor, $loser);
+        $this->asPerson($survivor, static fn (AbstractUserAgent $agent) => $agent->resumeMergeReceipt($receive->id));
+        $this->asHolder(static fn () => $receive->operation->actions->finish(AccountMergeStage::Go->value, AccountOperationOutcome::Completed));
+        $next = $this->open($survivor, self::person());
+        $this->reserve($next, $survivor);
+        self::assertSame($next->id, AccountMergePreparation::heldBy($survivor)->id);
+        $this->assertProtectionRefused($survivor);
+    }
 
     /** A stage alone never reserves protection; a persisted preparation closes only its own side. */
     public function testPreparingNeedsASavedReservationAndGoNeedsAGiveFact(): void
@@ -575,6 +728,44 @@ final class AccountMergeAccessIntegrationTest extends AccountMergeGuardIntegrati
         } catch (ValidationException $failure) {
             self::assertSame(AccountMergeAccess::REFUSED_MESSAGE, $failure->getMessage());
         }
+    }
+
+    /** @param bool $down Whether to remove the private copy fixture */
+    private static function copyStub(bool $down): void
+    {
+        // external-boundary: migration stub names carry direction only on down
+        $suffix = $down ? '_down' : '';
+        Database::sqlRun((string)file_get_contents(dirname(__DIR__, 2)
+            . '/backend/Database/Migration/Stub/create_hilos_account_merge_copy' . $suffix . '.sql'));
+    }
+
+    /**
+     * @param int $survivor Existing own password and old magic-link address
+     * @param int $loser Source of the chosen password
+     * @return AccountOperationAssignment Real prepared and given survivor obligation
+     */
+    private function genuineReceive(int $survivor, int $loser): AccountOperationAssignment
+    {
+        self::seedIdentity($survivor, IdentityType::PASSWORD, 'survivor@example.test');
+        self::seedIdentity($survivor, IdentityType::MAGIC_LINK, 'old-address@example.test');
+        self::seedIdentity($loser, IdentityType::PASSWORD, 'incoming@example.test');
+        foreach ([$survivor => 'previous-password', $loser => 'chosen-password'] as $userId => $password) {
+            Database::sqlRun('UPDATE `hilos_identity` SET `secret` = ? WHERE `type` = ? AND `user_id` = ?',
+                [Hilos::$db->identities->hashPassword($password), IdentityType::PASSWORD, $userId]);
+        }
+        $operation = $this->asHolder(static fn () => AccountMergeOpening::open(
+            $survivor, $loser, new AccountMergeChoice(PasswordFate::LOSER, null, null, null),
+        ));
+        $this->reserve($operation, $survivor);
+        $this->reserve($operation, $loser);
+        $give = $this->go($operation);
+        $this->asPerson($loser, static fn (AbstractUserAgent $agent) => $agent->giveForMerge($give->id));
+
+        return $this->asHolder(static fn () => Hilos::$db->accountOperationAssignments->actions->record(
+            $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Receive->value,
+            new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$survivor),
+            $survivor, AccountOperationAssignmentPayload::fromJson('{}'),
+        ));
     }
 
     /**

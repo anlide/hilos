@@ -16,6 +16,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Database\Object\Item\AccountMergeCopy as ObjectAccountMergeCopy;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\SecondFactorFate;
 
 /**
  * Only metadata crosses the ordinary ORM boundary. The guarded reader returns a fresh private copy.
@@ -67,7 +68,9 @@ class AccountMergeCopy extends DbItem
         $give = AccountMergeGiveResult::of($result->payload);
         $copy = $this->_object->readPayload();
         if ($copy->assignmentId !== $assignment->id || $copy->operationId !== $operation->id
-            || $copy->loserUserId !== $operation->loserUserId || $copy->survivorUserId !== $operation->survivorUserId) {
+            || $copy->loserUserId !== $operation->loserUserId || $copy->survivorUserId !== $operation->survivorUserId
+            || $copy->effectiveWaitDays !== $give->effectiveWaitDays
+            || ($operation->mergeChoice->secondFactorFate === SecondFactorFate::BOTH) !== ($give->effectiveWaitDays !== null)) {
             throw new ValidationException('The saved merge copy does not match its assignment.');
         }
         foreach ([AccountMergeHandoverCopy::identities, AccountMergeHandoverCopy::passkeyCredentials,

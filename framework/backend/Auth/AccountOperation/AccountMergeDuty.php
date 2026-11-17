@@ -10,6 +10,7 @@ enum AccountMergeDuty: string
     case PrepareSurvivor = 'prepare_survivor';
     case PrepareLoser = 'prepare_loser';
     case Give = 'give';
+    case Receive = 'receive';
     case ReleaseLoser = 'release_loser';
     case ReleaseSurvivor = 'release_survivor';
 }

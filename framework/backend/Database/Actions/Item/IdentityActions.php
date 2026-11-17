@@ -4,16 +4,27 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
+use Hilos\Auth\AccountOperation\AccountMergePreparationResult;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\AccountMergeTransfer;
+use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Identity\IdentityType;
+use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\View\Item\Identity;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
+use JsonException;
 
 /**
  * Metadata writes for one persisted sign-in method.
@@ -47,6 +58,62 @@ class IdentityActions extends DbActions
         $this->ensureCanWrite(TruthSourceOperation::Update);
         Hilos::$db->identities->getObjectCollection()->demotePasswordToMagicLink(
             $this->object, $transfer->loserUserId, $transfer->survivorUserId,
+        );
+    }
+
+    /**
+     * Uses the reserved own password anchor, with ordinary survivor rights and no source transfer capability.
+     *
+     * @param int $operationId Current open merge
+     * @throws HilosException When the caller, source fact, own reservation, anchor or ordinary write refuses demotion
+     * @throws JsonException When the saved own preparation cannot be decoded
+     */
+    public function demoteOwnForMerge(int $operationId): void
+    {
+        $operation = Hilos::$db->accountOperations->fresh($operationId);
+        $userId = $this->object->userId;
+        $owner = new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$userId);
+        if ($operation === null || $operation->kind !== AccountOperationKind::Merge
+            || $operation->survivorUserId !== $userId || $userId <= 0
+            || $operation->loserUserId === null || $operation->loserUserId <= 0 || $operation->loserUserId === $userId
+            || $operation->finishedAt !== null || $operation->stage !== AccountMergeStage::Go->value
+            || ExecutionContext::currentAgentId() !== $owner->agentId()
+            || !in_array($operation->mergeChoice->passwordFate, [PasswordFate::LOSER, PasswordFate::NONE], true)) {
+            throw new ValidationException('The password demotion requires its current receiving account.');
+        }
+        $preparation = Hilos::$db->accountOperationAssignments->byIdentity(
+            $operationId, AccountMergeStage::Preparing->value, AccountMergeDuty::PrepareSurvivor->value,
+        );
+        $give = Hilos::$db->accountOperationAssignments->byIdentity(
+            $operationId, AccountMergeStage::Go->value, AccountMergeDuty::Give->value,
+        );
+        if ($preparation === null || $preparation->operationId !== $operationId || $preparation->userId !== $userId
+            || $preparation->stage !== AccountMergeStage::Preparing->value
+            || $preparation->assignmentKey !== AccountMergeDuty::PrepareSurvivor->value
+            || !$preparation->owner->equals($owner)
+            || !$preparation->payload->equals(AccountOperationAssignmentPayload::fromJson('{}'))
+            || $give === null || $give->operationId !== $operationId || $give->userId !== $operation->loserUserId
+            || $give->stage !== AccountMergeStage::Go->value || $give->assignmentKey !== AccountMergeDuty::Give->value
+            || !$give->payload->equals(AccountOperationAssignmentPayload::fromJson('{}'))
+            || !$give->owner->equals(new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$operation->loserUserId))) {
+            throw new ValidationException('The password demotion requires its reserved preparation and source assignment.');
+        }
+        $prepared = Hilos::$db->accountOperationResults->byAssignment($preparation->id);
+        $given = Hilos::$db->accountOperationResults->byAssignment($give->id);
+        if ($prepared === null || $prepared->assignmentId !== $preparation->id || $prepared->ownerAgentId !== $owner->agentId()
+            || $given === null || $given->assignmentId !== $give->id || $given->ownerAgentId !== $give->owner->agentId()) {
+            throw new ValidationException('The password demotion requires its saved preparation and source result.');
+        }
+        AccountMergeGiveResult::of($given->payload);
+        $anchor = AccountMergePreparationResult::of($prepared->payload);
+        if (!$anchor->isReserved() || $anchor->passwordIdentityId === null || $this->object->id !== $anchor->passwordIdentityId
+            || $this->object->type !== IdentityType::PASSWORD) {
+            throw new ValidationException('The password no longer has its reserved identity.');
+        }
+        $this->ensureCanWrite(TruthSourceOperation::Update);
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        Hilos::$db->identities->getObjectCollection()->demotePasswordToMagicLink(
+            $this->object, $operation->loserUserId, $operation->survivorUserId,
         );
     }
 

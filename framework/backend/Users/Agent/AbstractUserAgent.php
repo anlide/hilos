@@ -20,12 +20,17 @@ use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergeGiving;
+use Hilos\Auth\AccountOperation\AccountMergeHandover;
+use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
+use Hilos\Auth\AccountOperation\AccountMergeReceiving;
 use Hilos\Auth\AccountOperation\AccountMergePreparation;
 use Hilos\Auth\AccountOperation\AccountMergeRelease;
 use Hilos\Auth\AccountOperation\AccountOperationActivation;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
@@ -503,6 +508,8 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::notificationDeliveries,
     ];
 
+    private const int MERGE_RECEIPT_PAGE_SIZE = 100;
+
     private int $userId;
 
     /** The writes of the person's second factor, built on first use. */
@@ -722,6 +729,27 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * @param int $assignmentId Immutable survivor go/receive assignment
+     * @param ?AccountMergeHandover $handover Original source snapshots, or null for warm applied memory
+     * @return AccountOperationResult Committed receipt or its saved durable fact
+     * @throws Throwable When validation, admission or transactional work fails
+     */
+    public function receiveForMerge(int $assignmentId, ?AccountMergeHandover $handover = null): AccountOperationResult
+    {
+        return AccountMergeReceiving::run($assignmentId, $this->userId, $handover);
+    }
+
+    /**
+     * @param int $assignmentId Existing survivor receive obligation
+     * @return AccountOperationResult Committed receipt or its saved durable fact
+     * @throws Throwable When startup snapshot or participant work refuses resume
+     */
+    public function resumeMergeReceipt(int $assignmentId): AccountOperationResult
+    {
+        return AccountMergeReceiving::resume($assignmentId, $this->userId);
+    }
+
+    /**
      * @param int $assignmentId Release assignment the coordinator gave this agent
      * @return AccountOperationResult Committed release or the saved result of an earlier attempt
      * @throws AccountOperationStepRefusedException When the caller, assignment or stage refuses new work
@@ -792,6 +820,7 @@ abstract class AbstractUserAgent extends AbstractAgent
                         AccountMergeDuty::ReleaseLoser->value,
                         AccountMergeDuty::ReleaseSurvivor->value => $this->releaseMergePreparation($assignment->id),
                         AccountMergeDuty::Give->value => $this->giveForMerge($assignment->id),
+                        AccountMergeDuty::Receive->value => $this->receiveForMerge($assignment->id),
                         default => AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
                             && AccountOperationExpectation::participantOf($assignment->payload) === AccountErasureParticipantCatalog::PERSONAL
                                 ? $this->eraseAccountPersonalPart($assignment->id)
@@ -1453,19 +1482,49 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
-     * Applies the stored trust restrictions to the person's trusts when the agent starts (HIL-1901).
+     * Resumes existing own merge receipts before applying stored trust restrictions (HIL-1901).
      *
      * An owner that starts finishes what is owed to it from the facts, not from the next frame
      * (Recovery, docs/agents/architecture/account-operations.md): a restriction saved while this
      * agent slept is applied here, and the frame that woke it then finds nothing left to change.
-     * One count asks whether anything is owed, and only then does a transaction open. Nobody waits
-     * on a start, so nothing is answered. A folded account applies it too - service work on the rows
+     * The trust check counts what is owed before opening its transaction. Nobody waits on a start,
+     * so nothing is answered. A folded account applies it too - service work on the rows
      * it still has - and stops by its ordinary ways. A failure is logged, naming the person and no
      * browser's session, and the start goes on: the session holder's sweep asks again.
      * A merge reservation defers material application without clearing the saved policy or its debt.
      */
     public function onStart(): void
     {
+        try {
+            $owner = new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$this->userId);
+            $afterId = 0;
+            do {
+                $page = Hilos::$db->accountOperationAssignments->openForOwner(
+                    AccountOperationKind::Merge, $owner, $afterId, self::MERGE_RECEIPT_PAGE_SIZE,
+                );
+                foreach ($page as $assignment) {
+                    $afterId = $assignment->id;
+                    if ($assignment->stage !== AccountMergeStage::Go->value
+                        || $assignment->assignmentKey !== AccountMergeDuty::Receive->value
+                        || $assignment->userId !== $this->userId || !$assignment->owner->equals($owner)) {
+                        continue;
+                    }
+                    try {
+                        if (AccountMergeReceiveResult::forOperation($assignment->operation) === null) {
+                            $this->resumeMergeReceipt($assignment->id);
+                        }
+                    } catch (WiringRefusal) {
+                        $this->logAgentError("Merge receipt #{$assignment->id} of #{$this->userId} remains pending at start");
+                    } catch (Throwable) {
+                        $this->logAgentError("Merge receipt #{$assignment->id} of #{$this->userId} remains pending at start");
+                    }
+                }
+            } while (count($page) === self::MERGE_RECEIPT_PAGE_SIZE);
+        } catch (WiringRefusal) {
+            $this->logAgentError("Merge receipts of #{$this->userId} could not be scanned at start");
+        } catch (Throwable) {
+            $this->logAgentError("Merge receipts of #{$this->userId} could not be scanned at start");
+        }
         try {
             if (Hilos::$db->secondFactorTrusts->getObjectCollection()->owes($this->userId)) {
                 if (AccountMergeAccess::reservation($this->userId) !== null) {

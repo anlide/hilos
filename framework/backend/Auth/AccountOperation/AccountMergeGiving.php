@@ -176,7 +176,7 @@ final class AccountMergeGiving
 
             return (new AccountMergeGiveResult(
                 $rows->identities, $rows->passkeyCredentials, $rows->secondFactors, $rows->secondFactorBackupCodes,
-                $passwordKept, $secondFactorKept, $transfer->admissionManifest(),
+                $passwordKept, $secondFactorKept, $transfer->admissionManifest(), $wait,
             ))->toPayload();
         });
         AccountMergeGiveResult::of($result->payload);
@@ -264,7 +264,10 @@ final class AccountMergeGiving
             if ($saved->assignmentId !== $assignment->id || $saved->ownerAgentId !== $assignment->owner->agentId()) {
                 throw new InvalidFormatException('The saved merge give does not match its assigned owner.');
             }
-            AccountMergeGiveResult::of($saved->payload);
+            $give = AccountMergeGiveResult::of($saved->payload);
+            if (($assignment->operation->mergeChoice->secondFactorFate === SecondFactorFate::BOTH) !== ($give->effectiveWaitDays !== null)) {
+                throw new InvalidFormatException('The saved merge give wait does not match its operation choice.');
+            }
         }
 
         return $saved;

@@ -155,8 +155,11 @@ final class AccountMergeAdmission
         $source = self::preparation($operation, AccountMergeDuty::PrepareLoser, $copy->loserUserId);
         $target = self::preparation($operation, AccountMergeDuty::PrepareSurvivor, $survivorUserId);
         $saved = Hilos::$db->accountOperationResults->byAssignment($assignment->id);
+        $give = $saved === null ? null : AccountMergeGiveResult::of($saved->payload);
         if ($saved === null || $saved->assignmentId !== $assignment->id || $saved->ownerAgentId !== $sourceOwner->agentId()
-            || AccountMergeGiveResult::of($saved->payload)->admission->toArray() !== $handover->admission->toArray()
+            || $give->admission->toArray() !== $handover->admission->toArray()
+            || $copy->effectiveWaitDays !== $give->effectiveWaitDays
+            || ($operation->mergeChoice->secondFactorFate === SecondFactorFate::BOTH) !== ($give->effectiveWaitDays !== null)
             || $copy->survivorPasswordIdentityId !== $target->passwordIdentityId
             || ($copy->loserPasswordIdentityId !== $source->passwordIdentityId
                 && !($copy->loserPasswordIdentityId === null && $operation->mergeChoice->passwordFate !== PasswordFate::LOSER

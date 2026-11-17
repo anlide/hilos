@@ -12,6 +12,7 @@ use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
+use Hilos\Auth\AccountOperation\Exception\AccountMergeReceiveWaitsException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureUncapturedException;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
 use Hilos\Constants\HilosAgentType;
@@ -116,6 +117,7 @@ final class AccountOperationAsksTest extends TestCase
                 AccountErasureFinalRefusedException::of(42, 'project_note', $foreignKey), 'final_refused', 42, 'project_note',
             ],
             'final refusal without table' => [AccountErasureFinalRefusedException::of(42, null, $foreignKey), 'final_refused', 42, null],
+            'merge receive waits' => [new AccountMergeReceiveWaitsException(), 'waits', null, null],
             'validation refusal' => [new ValidationException('private validation refusal'), 'refused', null, null],
             'step refusal' => [new AccountOperationStepRefusedException(AccountOperationStepRefusal::ForeignAssignment), 'refused', null, null],
         ];
