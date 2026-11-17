@@ -1,6 +1,7 @@
 import type { Browser, Page } from '@playwright/test'
 import { test, expect } from '../test.js'
 import {
+  cleanupFixtures,
   createTestUser,
   dismissToasts,
   expectHilosUserBlockSettled,
@@ -10,8 +11,34 @@ import {
   gotoPage,
   PAGE_REFUSED,
   grantAdminToSelf,
+  uniqueEmail,
+  type SignedInUser,
+  type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
+
+const usersTest = test.extend<{
+  usersCleanup: TestCleanup
+  ownedUser: SignedInUser
+}>({
+  usersCleanup: cleanupFixtures,
+  ownedUser: async (
+    { browser, baseURL, ignoreHTTPSErrors, locale, timezoneId, usersCleanup },
+    use,
+  ) => {
+    const context = await browser.newContext({
+      baseURL,
+      ignoreHTTPSErrors,
+      locale,
+      timezoneId,
+    })
+    usersCleanup.defer(() => context.close())
+    const user = await createTestUser(expect, await context.newPage(), {
+      email: `hil2128-fgm-${uniqueEmail()}`,
+    })
+    await use(user)
+  },
+})
 
 // Hilos users admin e2e: /hilos/users renders the framework users table over the
 // live socket, the client's own granted row is present, search filters the client
@@ -37,14 +64,11 @@ async function openSecondVisitor(browser: Browser): Promise<Page> {
   return context.newPage()
 }
 
-/** Open the users admin and wait for the live table's first row. */
+/** Open the users admin and wait for the live table. */
 async function openUsers(page: Page): Promise<void> {
   await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await expect(
-    page.locator('[data-id^="hilos-users-open-"]').first(),
-  ).toBeVisible()
 }
 
 test('refuses the users admin to a visitor without the grant', async ({
@@ -60,72 +84,90 @@ test('refuses the users admin to a visitor without the grant', async ({
   await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 })
 
-test('lists users in the framework table and opens a detail page', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
+usersTest(
+  'searches and opens its own user, then commits a live rename',
+  async ({ page, ownedUser }) => {
+    await grantAdminToSelf(expect, page)
 
-  let fullLoads = 0
-  page.on('load', () => {
-    fullLoads += 1
-  })
+    let fullLoads = 0
+    page.on('load', () => {
+      fullLoads += 1
+    })
+    await openUsers(page)
+    const ownOpen = page
+      .getByTestId(`hilos-users-open-${ownedUser.userId}`)
+      .filter({ visible: true })
 
-  await gotoPage(expect, page, '/hilos/users')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-admin-title')).toHaveText('Users')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  const loadsAfterColdLoad = fullLoads
+    await usersTest.step(
+      'filters the users table from the search box',
+      async () => {
+        await expect(
+          page
+            .locator('[data-id^="hilos-users-open-"]')
+            .filter({ visible: true }),
+        ).not.toHaveCount(0)
 
-  // The connected client self-registers, so at least its own row is present.
-  const firstOpen = page.locator('[data-id^="hilos-users-open-"]').first()
-  await expect(firstOpen).toBeVisible()
+        // A query no name matches empties the viewport; clearing it restores rows.
+        const search = page.getByTestId('hilos-table-search')
+        await typeInto(search, 'zzz-no-such-user-zzz')
+        await expect(
+          page.locator('[data-id^="hilos-users-open-"]'),
+        ).toHaveCount(0)
+        await search.fill('')
+        await expect(
+          page
+            .locator('[data-id^="hilos-users-open-"]')
+            .filter({ visible: true }),
+        ).not.toHaveCount(0)
 
-  // Row -> the user detail page, over the live socket (no document reload).
-  await firstOpen.click()
-  await expect(page).toHaveURL(/\/hilos\/user\/\d+$/)
-  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
-  await expect(page.getByTestId('hilos-user-name')).toBeVisible()
-  expect(fullLoads).toBe(loadsAfterColdLoad)
-})
+        await typeInto(search, ownedUser.name)
+        await expect(
+          page
+            .locator('[data-id^="hilos-users-open-"]')
+            .filter({ visible: true }),
+        ).toHaveCount(1)
+        await expect(ownOpen).toBeVisible()
+      },
+    )
 
-test('filters the users table from the search box', async ({ page }) => {
-  await grantAdminToSelf(expect, page)
+    await usersTest.step(
+      'lists users in the framework table and opens a detail page',
+      async () => {
+        await expect(page.getByTestId('conn-state')).toHaveText('connected')
+        await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+          'Users',
+        )
+        await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+        await expect(ownOpen).toBeVisible()
+        const loadsAfterColdLoad = fullLoads
 
-  await gotoPage(expect, page, '/hilos/users')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await expect(
-    page.locator('[data-id^="hilos-users-open-"]').first(),
-  ).toBeVisible()
+        // Open this scenario's person over the live socket, without a document reload.
+        await ownOpen.click()
+        await expect(page).toHaveURL(`/hilos/user/${ownedUser.userId}`)
+        await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+        await expect(page.getByTestId('hilos-user-name')).toBeVisible()
+        await expect(page.getByTestId('hilos-user-name')).toHaveText(
+          ownedUser.name,
+        )
+        expect(fullLoads).toBe(loadsAfterColdLoad)
+      },
+    )
 
-  // A query no name matches empties the viewport; clearing it restores rows.
-  const search = page.getByTestId('hilos-table-search')
-  await typeInto(search, 'zzz-no-such-user-zzz')
-  await expect(page.locator('[data-id^="hilos-users-open-"]')).toHaveCount(0)
-  await search.fill('')
-  await expect(
-    page.locator('[data-id^="hilos-users-open-"]').first(),
-  ).toBeVisible()
-})
+    await usersTest.step(
+      'renames a user from the detail page and re-renders live',
+      async () => {
+        const newName = `${ownedUser.name} Renamed`
+        await clickSubmit(expect, page.getByTestId('hilos-user-edit'))
+        await typeInto(page.getByTestId('hilos-user-name-input'), newName)
+        await clickSubmit(expect, page.getByTestId('hilos-user-save'))
 
-test('renames a user from the detail page and re-renders live', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-
-  await gotoPage(expect, page, '/hilos/users')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await page.locator('[data-id^="hilos-users-open-"]').first().click()
-  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
-
-  const newName = 'E2E Renamed User'
-  await page.getByTestId('hilos-user-edit').click()
-  await typeInto(page.getByTestId('hilos-user-name-input'), newName)
-  await page.getByTestId('hilos-user-save').click()
-
-  // The committed name returns over the live table and the edit form closes.
-  await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
-  await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
-})
+        // The committed name returns over the live table and the edit form closes.
+        await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
+        await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
+      },
+    )
+  },
+)
 
 // FLAKY under the full multi-demo e2e battery: the daemon degrades under
 // concurrent load and the detail table's presence fields under-populate (the
@@ -162,103 +204,118 @@ test(
   },
 )
 
-test('a rename in one tab lands at once in another, raising no Apply', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
+usersTest(
+  'a rename in one tab lands at once in another, raising no Apply',
+  async ({ page, ownedUser, usersCleanup }) => {
+    await grantAdminToSelf(expect, page)
 
-  const newName = `E2E Pending Rename ${Date.now()}`
+    const newName = `${ownedUser.name} Pending Rename`
 
-  // Both tabs watch the users list; tab A then renames a user from its detail page.
-  const tabB = await page.context().newPage()
-  await openUsers(page)
-  await openUsers(tabB)
+    // Both tabs watch the users list; tab A then renames a user from its detail page.
+    const tabB = await page.context().newPage()
+    usersCleanup.defer(() => tabB.close())
+    await openUsers(page)
+    await openUsers(tabB)
+    const controlId = `hilos-users-open-${ownedUser.userId}`
+    for (const tab of [page, tabB]) {
+      await typeInto(tab.getByTestId('hilos-table-search'), ownedUser.name)
+      // Settle the filter before observing a control that was already visible.
+      await expect(
+        tab.locator('[data-id^="hilos-users-open-"]').filter({ visible: true }),
+      ).toHaveCount(1)
+      await expect(
+        tab.getByTestId(controlId).filter({ visible: true }),
+      ).toBeVisible()
+    }
 
-  // Tab A opens the first user and renames it; its own detail applies at once.
-  await page.locator('[data-id^="hilos-users-open-"]').first().click()
-  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
-  await page.getByTestId('hilos-user-edit').click()
-  await typeInto(page.getByTestId('hilos-user-name-input'), newName)
-  await page.getByTestId('hilos-user-save').click()
-  await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
+    // Tab A opens its own person and renames it; its detail applies at once.
+    await page.getByTestId(controlId).filter({ visible: true }).click()
+    await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+    await clickSubmit(expect, page.getByTestId('hilos-user-edit'))
+    await typeInto(page.getByTestId('hilos-user-name-input'), newName)
+    await clickSubmit(expect, page.getByTestId('hilos-user-save'))
+    await expect(page.getByTestId('hilos-user-name-input')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-user-name')).toHaveText(newName)
 
-  // Tab B receives the rename from the other connection and shows it at once: the
-  // window is ordered by id, so a rename moves nothing, and what the gate holds is
-  // the position and the membership of the rows rather than the fields of a record
-  // (HIL-793). The user is an entity reference, so the name cell tracks the rename
-  // reactively; what is new is that no Apply control is raised behind it, and no
-  // press is needed to make the screen true. First two-window test on the React layer.
-  await expect(tabB.locator('tbody tr', { hasText: newName })).toHaveCount(1)
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await expect(tabB.locator('tbody tr', { hasText: newName })).not.toHaveClass(
-    /table-warning/,
-  )
-  await tabB.close()
-})
+    // Tab B receives the rename from the other connection and shows it at once: the
+    // window is ordered by id, so a rename moves nothing, and what the gate holds is
+    // the position and the membership of the rows rather than the fields of a record
+    // (HIL-793). The user is an entity reference, so the name cell tracks the rename
+    // reactively; what is new is that no Apply control is raised behind it, and no
+    // press is needed to make the screen true. First two-window test on the React layer.
+    await expect(tabB.locator('tbody tr', { hasText: newName })).toHaveCount(1)
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await expect(
+      tabB.locator('tbody tr', { hasText: newName }),
+    ).not.toHaveClass(/table-warning/)
+  },
+)
 
-test('opens the refused users admin the moment the grant lands', async ({
-  page,
-}) => {
-  // HIL-621 acceptance, the promotion half. The visitor is sitting on the
-  // refusal - not on a page they navigated to after being granted - and the grant
-  // has to reach that open page on its own. Before this, a granted visitor kept
-  // reading the 403 until they reloaded.
-  const { userId } = await createTestUser(expect, page)
-  await gotoPage(expect, page, '/hilos/users', PAGE_REFUSED)
-  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
-
-  await setAdmin(userId, true)
-
-  // No navigation between the grant and these assertions: the server re-decides
-  // the subscription this tab already holds and answers it with the page.
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await expect(
-    page.locator('[data-id^="hilos-users-open-"]').first(),
-  ).toBeVisible()
-  await expect(page.getByTestId('page-error')).toHaveCount(0)
-})
-
-test('a revoked admin loses the gear and the door', async ({
-  page,
-  browser,
-}) => {
-  // Keeps the framework admin:revoke route walked end to end now that
-  // grantAdminToSelf drives admin:create instead (HIL-609), and the revoke here is
-  // the React one; admin:grant is walked by the promotion test above and by
-  // binance-btc-tracker's admin-gating. Both wire names land on one handler and
-  // differ in nothing but the boolean in the payload, which the framework unit test
-  // pins separately.
-  // Revocation requires another administrator, even when this test runs alone.
-  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  await leaveSecondAdmin(browser, (page) => grantAdminToSelf(expect, page), {
+usersTest(
+  'opens a refused Users page on grant and closes it again on revoke',
+  async ({
+    page,
+    browser,
     baseURL,
     ignoreHTTPSErrors,
-  })
-  const userId = await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/users')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+    locale,
+    timezoneId,
+    usersCleanup,
+  }) => {
+    const { userId } = await createTestUser(expect, page, {
+      email: `hil2128-fgm-${uniqueEmail()}`,
+    })
+    let needsRevoke = false
+    usersCleanup.defer(async () => {
+      if (needsRevoke) await setAdmin(userId, false)
+    })
+    // Revocation has its own second administrator, also on a fresh stand.
+    await leaveSecondAdmin(browser, (page) => grantAdminToSelf(expect, page), {
+      baseURL,
+      ignoreHTTPSErrors,
+      locale,
+      timezoneId,
+    })
 
-  await setAdmin(userId, false)
+    await usersTest.step(
+      'opens the refused users admin the moment the grant lands',
+      async () => {
+        await gotoPage(expect, page, '/hilos/users', PAGE_REFUSED)
+        await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
 
-  // The revoke re-sends the handshake response to this user's live connections,
-  // so the entry goes away without a reload — the same path the grant appeared
-  // by, run backwards.
-  await expect(page.getByTestId('nav-admin')).toHaveCount(0)
+        needsRevoke = true
+        await setAdmin(userId, true)
 
-  // The page standing open is refused where it stands - no navigation, no
-  // reload - and the refusal must not call this visitor a guest: the session is
-  // the same signed-in one, only the flag went (HIL-776). The word alone is
-  // asserted here; the sentence is pinned by the SDK unit.
-  const refusal = page.getByTestId('page-error')
-  await expect(refusal).toBeVisible()
-  await expect(refusal).toHaveAttribute('data-error-code', '403')
-  await expect(refusal).not.toContainText(/guest/i)
+        // The grant must re-answer the open refusal without another navigation.
+        await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+        await expect(
+          page
+            .locator('[data-id^="hilos-users-open-"]')
+            .filter({ visible: true }),
+        ).not.toHaveCount(0)
+        await expect(page.getByTestId('page-error')).toHaveCount(0)
+      },
+    )
 
-  // And the page itself is shut again, not merely unlinked: the access gate
-  // refuses the subscription on the next visit.
-  await gotoPage(expect, page, '/hilos/users', PAGE_REFUSED)
-  await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
-})
+    await usersTest.step(
+      'a revoked admin loses the gear and the door',
+      async () => {
+        await setAdmin(userId, false)
+        needsRevoke = false
+
+        // The open page loses access live, without mistaking its person for a guest.
+        await expect(page.getByTestId('nav-admin')).toHaveCount(0)
+        const refusal = page.getByTestId('page-error')
+        await expect(refusal).toBeVisible()
+        await expect(refusal).toHaveAttribute('data-error-code', '403')
+        await expect(refusal).not.toContainText(/guest/i)
+
+        await gotoPage(expect, page, '/hilos/users', PAGE_REFUSED)
+        await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
+      },
+    )
+  },
+)
 
 // HIL-824: the takeover is drawn by the SDK page, not by this project — on the person's
 // card since HIL-1170 (on the users list before). The backend route is one shared framework

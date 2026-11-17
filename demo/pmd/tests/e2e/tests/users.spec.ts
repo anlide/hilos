@@ -97,7 +97,7 @@ function totalOf(text: string | null): number {
   return Number(/ of (\d+)/.exec(text ?? '')?.[1] ?? Number.NaN)
 }
 
-test('lists users in the framework table and opens a detail page', async ({
+test("windows and searches users, then opens its own person's card without a reload", async ({
   page,
 }) => {
   let fullLoads = 0
@@ -105,61 +105,179 @@ test('lists users in the framework table and opens a detail page', async ({
     fullLoads += 1
   })
 
-  await grantAdminToSelf(expect, page)
+  const userId = await createTestAdmin(expect, page, {
+    email: `hil2128-pmd-list-${uniqueEmail()}`,
+  })
+  const name = await page.getByTestId('nav-profile').getAttribute('title')
+  expect(name).toBeTruthy()
   await gotoPage(expect, page, '/hilos/users')
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Users')
   await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
   const loadsAfterColdLoad = fullLoads
 
-  // A user is registered, so at least its own row is present.
-  const firstOpen = page.locator('[data-id^="hilos-users-open-"]').first()
-  await expect(firstOpen).toBeVisible()
+  // HIL-327: the /hilos/users viewport table on volume. `test:user:seed` seeds 25
+  // deterministic `seed-###` users on stand bring-up, so window paging and server search
+  // run against more than one page — the case a single registered user can never reach.
+  await test.step('windows, paginates, and searches the seeded users', async () => {
+    // The window holds exactly one page of rows regardless of how large the table is.
+    const rows = page.locator('[data-id^="hilos-table-row-"]')
+    await expect(rows).toHaveCount(10)
 
-  // Row -> the user detail page, over the live socket (no document reload).
-  await firstOpen.click()
-  await expect(page).toHaveURL(/\/hilos\/user\/\d+$/)
-  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
-  await expect(page.getByTestId('hilos-page-head-title')).toBeVisible()
-  expect(fullLoads).toBe(loadsAfterColdLoad)
+    // The count reflects the whole selection (>= 25 seeded + this test's own user), so it
+    // is asserted by shape and lower bound, not an exact number on the shared database.
+    const count = page.getByTestId('hilos-table-count')
+    await expect(count).toHaveText(countOf(1, 10))
+    const total = totalOf(await count.textContent())
+    expect(total).toBeGreaterThanOrEqual(26)
+
+    // An exact count draws the page numbers, and the page on screen is the one that
+    // says so.
+    const pageOne = page.getByTestId('hilos-table-page-1')
+    const pageTwo = page.getByTestId('hilos-table-page-2')
+    await expect(pageOne).toHaveAttribute('aria-current', 'page')
+
+    // Next advances the window to a different set of rows; prev restores it. The range
+    // and the number move the moment the control is pressed, so the rows are what says
+    // the window arrived.
+    const rowKeys = async () =>
+      rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-id')))
+    const firstKeys = JSON.stringify(await rowKeys())
+    await page.getByTestId('hilos-table-next').click()
+    await expect(pageTwo).toHaveAttribute('aria-current', 'page')
+    await expect(count).toHaveText(countOf(11, 20))
+    await expect
+      .poll(async () => JSON.stringify(await rowKeys()))
+      .not.toBe(firstKeys)
+    const secondKeys = JSON.stringify(await rowKeys())
+    await page.getByTestId('hilos-table-prev').click()
+    await expect(pageOne).toHaveAttribute('aria-current', 'page')
+    await expect(count).toHaveText(countOf(1, 10))
+    await expect
+      .poll(async () => JSON.stringify(await rowKeys()))
+      .not.toBe(secondKeys)
+
+    // Server search filters the whole selection, not just the loaded window: the shared
+    // `seed-` prefix matches the 25 deterministically seeded users, so the filtered total
+    // is well over one page yet strictly below the unfiltered selection.
+    //
+    // It is asserted by shape, narrowing, and lower bound — never an exact number. On a
+    // freshly brought-up shared stand the viewport count can settle one short as the burst
+    // of window responses from typing lands over the socket (a stable "24 total" on some
+    // runs, "25 total" on others), and the display can briefly stay at the unfiltered count
+    // before the filter settles. Polling for a value below the unfiltered total waits out
+    // that transient and proves the server actually narrowed the selection; the lower bound
+    // then proves search reached the whole seeded fixture across pages. The exact-count
+    // assertion was dropped by owner decision (HIL-327, 2026-08-02) as it raced 24/25.
+    const search = page.getByTestId('hilos-table-search')
+    await typeInto(search, 'seed-')
+    await expect(count).toHaveText(countOf(1, 10))
+    await expect
+      .poll(async () => totalOf(await count.textContent()), {
+        timeout: 15000,
+      })
+      .toBeLessThan(total)
+    const seededTotal = totalOf(await count.textContent())
+    expect(seededTotal).toBeGreaterThanOrEqual(20)
+    await expect(rows).toHaveCount(10)
+  })
+
+  await test.step('filters the users table from the search box', async () => {
+    await expect(
+      page.locator('[data-id^="hilos-users-open-"]').first(),
+    ).toBeVisible()
+
+    // A query no name matches empties the viewport; clearing it restores rows.
+    const search = page.getByTestId('hilos-table-search')
+    await typeInto(search, 'zzz-no-such-user-zzz')
+    await expect(page.locator('[data-id^="hilos-users-open-"]')).toHaveCount(0)
+    await search.fill('')
+    await expect(
+      page.locator('[data-id^="hilos-users-open-"]').first(),
+    ).toBeVisible()
+  })
+
+  await test.step('lists users in the framework table and opens a detail page', async () => {
+    await typeInto(page.getByTestId('hilos-table-search'), name!)
+    const ownOpen = page
+      .getByTestId(`hilos-users-open-${userId}`)
+      .filter({ visible: true })
+    await expect(ownOpen).toBeVisible()
+
+    // Open this scenario's person over the live socket, without a document reload.
+    await ownOpen.click()
+    await expect(page).toHaveURL(new RegExp(`/hilos/user/${userId}$`))
+    await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+    await expect(page.getByTestId('hilos-page-head-title')).toBeVisible()
+    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(name!)
+    await expect(page.getByTestId('hilos-page-head-block')).toContainText(
+      `#${userId}`,
+    )
+    expect(fullLoads).toBe(loadsAfterColdLoad)
+  })
 })
 
-test('user Overview has no empty project section and supports keyboard rename', async ({
+test('reads its own Overview, opens rename from the keyboard and sees the live session', async ({
   page,
 }) => {
   const userId = await createTestAdmin(expect, page)
   const name = await page.getByTestId('nav-profile').getAttribute('title')
   expect(name).toBeTruthy()
   await gotoPage(expect, page, `/hilos/user/${userId}`)
-  await expectHilosUserOverview(expect, page, userId, name!, 'PMD')
-  // With no project slot, only the framework sections exist; no empty panel or
-  // project heading is rendered beside them.
-  await expect(page.getByRole('heading', { level: 2 })).toHaveText([
-    'Profile',
-    'Rights',
-    'Access to the product',
-    'Acting as another person',
-    'Danger zone',
-  ])
-  for (const [key, state] of [
-    ['admin', 'Administrator'],
-    ['block', 'Not blocked'],
-    ['frozen', 'Not frozen'],
-    ['deletion', 'No deletion is scheduled'],
-  ]) {
+
+  await test.step('user Overview has no empty project section and supports keyboard rename', async () => {
+    await expectHilosUserOverview(expect, page, userId, name!, 'PMD')
+    // With no project slot, only the framework sections exist; no empty panel or
+    // project heading is rendered beside them.
+    await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+      'Profile',
+      'Rights',
+      'Access to the product',
+      'Acting as another person',
+      'Danger zone',
+    ])
+    for (const [key, state] of [
+      ['admin', 'Administrator'],
+      ['block', 'Not blocked'],
+      ['frozen', 'Not frozen'],
+      ['deletion', 'No deletion is scheduled'],
+    ]) {
+      await expect(
+        page.getByTestId(`hilos-user-${key}-state`).locator('p.fw-medium'),
+      ).toHaveText(state!)
+    }
+    // The first tile counts the person's sessions — the one this browser signed
+    // in with — and its number leads to the Sessions tab of the card.
+    const sessions = page.getByTestId('hilos-user-sessions')
+    await expect(sessions).toHaveText('1')
+    await expect(sessions.getByRole('link')).toHaveAttribute(
+      'href',
+      `/hilos/user/${userId}/sessions`,
+    )
+    await expectHilosUserOverviewAccessibility(expect, page)
+  })
+
+  await test.step('shows the connected user as online with a live session', async () => {
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+
+    // Regression: a connected user must render online. The detail table's
+    // computed presence fields were never populated (the project browser context
+    // returned null), so the live user rendered as offline with 0 sessions. Here
+    // the first tile counts the person's sign-ins from their sessions list
+    // (HIL-1662), so it holds that this browser's own sign-in is counted; the
+    // detail table's count of open connections is no longer drawn on this demo,
+    // and the users specs of ecommerce-shop and online-testing, whose tile still
+    // draws it, hold that half. The presence badge stands over an invisible twin
+    // holding the room of its widest word (HIL-1566); the visible one is read.
+    await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
     await expect(
-      page.getByTestId(`hilos-user-${key}-state`).locator('p.fw-medium'),
-    ).toHaveText(state!)
-  }
-  // The first tile counts the person's sessions — the one this browser signed
-  // in with — and its number leads to the Sessions tab of the card.
-  const sessions = page.getByTestId('hilos-user-sessions')
-  await expect(sessions).toHaveText('1')
-  await expect(sessions.getByRole('link')).toHaveAttribute(
-    'href',
-    `/hilos/user/${userId}/sessions`,
-  )
-  await expectHilosUserOverviewAccessibility(expect, page)
+      page
+        .getByTestId('hilos-page-head-block')
+        .locator('.badge')
+        .filter({ visible: true }),
+    ).toHaveText('online')
+  })
 })
 
 // HIL-1662: the Sessions tab of a person's card in this demo. The tile's number
@@ -636,34 +754,17 @@ test.describe('people time zones and numeric activity', () => {
   }
 })
 
-test('filters the users table from the search box', async ({ page }) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/users')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await expect(
-    page.locator('[data-id^="hilos-users-open-"]').first(),
-  ).toBeVisible()
-
-  // A query no name matches empties the viewport; clearing it restores rows.
-  const search = page.getByTestId('hilos-table-search')
-  await typeInto(search, 'zzz-no-such-user-zzz')
-  await expect(page.locator('[data-id^="hilos-users-open-"]')).toHaveCount(0)
-  await search.fill('')
-  await expect(
-    page.locator('[data-id^="hilos-users-open-"]').first(),
-  ).toBeVisible()
-})
-
 test('renames a user from the detail page and re-renders live', async ({
   page,
 }) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/users')
+  const userId = await createTestAdmin(expect, page, {
+    email: `hil2128-pmd-rename-${uniqueEmail()}`,
+  })
+  await gotoPage(expect, page, `/hilos/user/${userId}`)
   await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await page.locator('[data-id^="hilos-users-open-"]').first().click()
   await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
 
-  const newName = 'E2E Renamed User'
+  const newName = `hil2128-pmd-renamed-${uniqueEmail()}`
   await page.getByTestId('hilos-user-edit').click()
   await typeInto(page.getByTestId('hilos-user-name-input'), newName)
   await clickSubmit(expect, page.getByTestId('hilos-user-save'))
@@ -747,106 +848,6 @@ async function renameUser(tab: Page, name: string): Promise<void> {
   await expect(tab.getByTestId('hilos-user-name-input')).toHaveCount(0)
   await expect(tab.getByTestId('hilos-page-head-title')).toHaveText(name)
 }
-
-test('shows the connected user as online with a live session', async ({
-  page,
-}) => {
-  // Prepare the client and take its own id, then open its detail directly.
-  // Robust against how many users the shared DB has accumulated: the self row
-  // need not be on the first viewport page of /hilos/users.
-  const userId = await createTestAdmin(expect, page)
-
-  await gotoPage(expect, page, `/hilos/user/${userId}`)
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
-
-  // Regression: a connected user must render online. The detail table's
-  // computed presence fields were never populated (the project browser context
-  // returned null), so the live user rendered as offline with 0 sessions. Here
-  // the first tile counts the person's sign-ins from their sessions list
-  // (HIL-1662), so it holds that this browser's own sign-in is counted; the
-  // detail table's count of open connections is no longer drawn on this demo,
-  // and the users specs of ecommerce-shop and online-testing, whose tile still
-  // draws it, hold that half. The presence badge stands over an invisible twin
-  // holding the room of its widest word (HIL-1566); the visible one is read.
-  await expect(page.getByTestId('hilos-user-sessions')).toHaveText(/[1-9]/)
-  await expect(
-    page
-      .getByTestId('hilos-page-head-block')
-      .locator('.badge')
-      .filter({ visible: true }),
-  ).toHaveText('online')
-})
-
-// HIL-327: the /hilos/users viewport table on volume. `test:user:seed` seeds 25
-// deterministic `seed-###` users on stand bring-up, so window paging and server search
-// run against more than one page — the case a single registered user can never reach.
-test('windows, paginates, and searches the seeded users', async ({ page }) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/users')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-
-  // The window holds exactly one page of rows regardless of how large the table is.
-  const rows = page.locator('[data-id^="hilos-table-row-"]')
-  await expect(rows).toHaveCount(10)
-
-  // The count reflects the whole selection (>= 25 seeded + this test's own user), so it
-  // is asserted by shape and lower bound, not an exact number on the shared database.
-  const count = page.getByTestId('hilos-table-count')
-  await expect(count).toHaveText(countOf(1, 10))
-  const total = totalOf(await count.textContent())
-  expect(total).toBeGreaterThanOrEqual(26)
-
-  // An exact count draws the page numbers, and the page on screen is the one that
-  // says so.
-  const pageOne = page.getByTestId('hilos-table-page-1')
-  const pageTwo = page.getByTestId('hilos-table-page-2')
-  await expect(pageOne).toHaveAttribute('aria-current', 'page')
-
-  // Next advances the window to a different set of rows; prev restores it. The range
-  // and the number move the moment the control is pressed, so the rows are what says
-  // the window arrived.
-  const rowKeys = async () =>
-    rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-id')))
-  const firstKeys = JSON.stringify(await rowKeys())
-  await page.getByTestId('hilos-table-next').click()
-  await expect(pageTwo).toHaveAttribute('aria-current', 'page')
-  await expect(count).toHaveText(countOf(11, 20))
-  await expect
-    .poll(async () => JSON.stringify(await rowKeys()))
-    .not.toBe(firstKeys)
-  const secondKeys = JSON.stringify(await rowKeys())
-  await page.getByTestId('hilos-table-prev').click()
-  await expect(pageOne).toHaveAttribute('aria-current', 'page')
-  await expect(count).toHaveText(countOf(1, 10))
-  await expect
-    .poll(async () => JSON.stringify(await rowKeys()))
-    .not.toBe(secondKeys)
-
-  // Server search filters the whole selection, not just the loaded window: the shared
-  // `seed-` prefix matches the 25 deterministically seeded users, so the filtered total
-  // is well over one page yet strictly below the unfiltered selection.
-  //
-  // It is asserted by shape, narrowing, and lower bound — never an exact number. On a
-  // freshly brought-up shared stand the viewport count can settle one short as the burst
-  // of window responses from typing lands over the socket (a stable "24 total" on some
-  // runs, "25 total" on others), and the display can briefly stay at the unfiltered count
-  // before the filter settles. Polling for a value below the unfiltered total waits out
-  // that transient and proves the server actually narrowed the selection; the lower bound
-  // then proves search reached the whole seeded fixture across pages. The exact-count
-  // assertion was dropped by owner decision (HIL-327, 2026-08-02) as it raced 24/25.
-  const search = page.getByTestId('hilos-table-search')
-  await typeInto(search, 'seed-')
-  await expect(count).toHaveText(countOf(1, 10))
-  await expect
-    .poll(async () => totalOf(await count.textContent()), {
-      timeout: 15000,
-    })
-    .toBeLessThan(total)
-  const seededTotal = totalOf(await count.textContent())
-  expect(seededTotal).toBeGreaterThanOrEqual(20)
-  await expect(rows).toHaveCount(10)
-})
 
 // HIL-824: the takeover is a framework action on the person's card (on the users list
 // until HIL-1170). Its name is closed by that page's ADMIN level and the sessions library

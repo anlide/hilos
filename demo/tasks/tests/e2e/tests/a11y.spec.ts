@@ -99,49 +99,67 @@ test('public Dependencies exposes a named table and keyboard navigation', async 
   await expectLicenseDependenciesAccessibility(expect, page, 'Hilos Tasks')
 })
 
-test('the viewport table has an accessible name and a labelled search', async ({
+test('names Users controls, sorts from the keyboard and announces navigation', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
 
   await openUsers(page)
 
-  // The page heading is the table's accessible name: a table carries no
-  // title of its own, and points at the heading that already names it.
-  await expect(page.getByRole('table', { name: 'Users' })).toBeVisible()
+  await test.step('the viewport table has an accessible name and a labelled search', async () => {
+    // The page heading is the table's accessible name: a table carries no
+    // title of its own, and points at the heading that already names it.
+    await expect(page.getByRole('table', { name: 'Users' })).toBeVisible()
 
-  // The search box is reachable by an accessible name, not just a placeholder.
-  await expect(
-    page.getByRole('searchbox', { name: 'Search users…' }),
-  ).toBeVisible()
-})
+    // The search box is reachable by an accessible name, not just a placeholder.
+    await expect(
+      page.getByRole('searchbox', { name: 'Search users…' }),
+    ).toBeVisible()
+  })
 
-test('a sortable header reports aria-sort and sorts from the keyboard', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
+  await test.step('a sortable header reports aria-sort and sorts from the keyboard', async () => {
+    const header = page
+      .locator('th:has([data-id^="hilos-table-sort-"])')
+      .first()
+    const sortButton = header.locator('[data-id^="hilos-table-sort-"]')
 
-  await openUsers(page)
+    // The sortable header announces a sort state for assistive tech.
+    await expect(header).toHaveAttribute(
+      'aria-sort',
+      /^(none|ascending|descending)$/,
+    )
+    const before = await header.getAttribute('aria-sort')
 
-  const header = page.locator('th:has([data-id^="hilos-table-sort-"])').first()
-  const sortButton = header.locator('[data-id^="hilos-table-sort-"]')
+    // Its sort control is operable from the keyboard: focusing it and pressing
+    // Enter re-sorts the column and the header announces the new direction. The
+    // table is server-windowed, so wait for the announced state to change rather
+    // than snapshot it (the new descriptor round-trips to the backend).
+    await sortButton.focus()
+    await expect(sortButton).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(header).not.toHaveAttribute('aria-sort', before ?? 'none')
+    await expect(header).toHaveAttribute(
+      'aria-sort',
+      /^(ascending|descending)$/,
+    )
+  })
 
-  // The sortable header announces a sort state for assistive tech.
-  await expect(header).toHaveAttribute(
-    'aria-sort',
-    /^(none|ascending|descending)$/,
-  )
-  const before = await header.getAttribute('aria-sort')
+  await test.step('each page titles the tab and announces the page on navigation', async () => {
+    // The users admin titles the browser tab (framework label + app name), and the
+    // live region carries the same title for a screen-reader announcement.
+    await expect(page).toHaveTitle('Users · Hilos Tasks')
+    await expect(page.getByTestId('page-title')).toHaveText(
+      'Users · Hilos Tasks',
+    )
 
-  // Its sort control is operable from the keyboard: focusing it and pressing
-  // Enter re-sorts the column and the header announces the new direction. The
-  // table is server-windowed, so wait for the announced state to change rather
-  // than snapshot it (the new descriptor round-trips to the backend).
-  await sortButton.focus()
-  await expect(sortButton).toBeFocused()
-  await page.keyboard.press('Enter')
-  await expect(header).not.toHaveAttribute('aria-sort', before ?? 'none')
-  await expect(header).toHaveAttribute('aria-sort', /^(ascending|descending)$/)
+    // A no-refresh navigation (the brand → home) updates both the tab title and
+    // the announcement.
+    await page.getByTestId('nav-brand').click()
+    await expect(page).toHaveTitle('Tasks · Hilos Tasks')
+    await expect(page.getByTestId('page-title')).toHaveText(
+      'Tasks · Hilos Tasks',
+    )
+  })
 })
 
 test('the shell names the home page and navigates the dashboard without reloading', async ({
@@ -226,25 +244,6 @@ test('the shell names the home page and navigates the dashboard without reloadin
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     expect(fullLoads).toBe(0)
   })
-})
-
-test('each page titles the tab and announces the page on navigation', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-
-  await openUsers(page)
-
-  // The users admin titles the browser tab (framework label + app name), and the
-  // live region carries the same title for a screen-reader announcement.
-  await expect(page).toHaveTitle('Users · Hilos Tasks')
-  await expect(page.getByTestId('page-title')).toHaveText('Users · Hilos Tasks')
-
-  // A no-refresh navigation (the brand → home) updates both the tab title and
-  // the announcement.
-  await page.getByTestId('nav-brand').click()
-  await expect(page).toHaveTitle('Tasks · Hilos Tasks')
-  await expect(page.getByTestId('page-title')).toHaveText('Tasks · Hilos Tasks')
 })
 
 test('language pages expose one named head and name their tables through it', async ({

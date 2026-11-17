@@ -213,32 +213,56 @@ test('the language Names table takes its name from the shared head', async ({
   await expect(page.getByRole('table', { name: 'English' })).toBeVisible()
 })
 
-test('a sortable header reports aria-sort and sorts from the keyboard', async ({
+test('sorts Users from the keyboard and announces navigation', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
 
   await openUsers(page)
 
-  const header = page.locator('th:has([data-id^="hilos-table-sort-"])').first()
-  const sortButton = header.locator('[data-id^="hilos-table-sort-"]')
+  await test.step('a sortable header reports aria-sort and sorts from the keyboard', async () => {
+    const header = page
+      .locator('th:has([data-id^="hilos-table-sort-"])')
+      .first()
+    const sortButton = header.locator('[data-id^="hilos-table-sort-"]')
 
-  // The sortable header announces a sort state for assistive tech.
-  await expect(header).toHaveAttribute(
-    'aria-sort',
-    /^(none|ascending|descending)$/,
-  )
-  const before = await header.getAttribute('aria-sort')
+    // The sortable header announces a sort state for assistive tech.
+    await expect(header).toHaveAttribute(
+      'aria-sort',
+      /^(none|ascending|descending)$/,
+    )
+    const before = await header.getAttribute('aria-sort')
 
-  // Its sort control is operable from the keyboard: focusing it and pressing
-  // Enter re-sorts the column and the header announces the new direction. The
-  // table is server-windowed, so wait for the announced state to change rather
-  // than snapshot it (the new descriptor round-trips to the backend).
-  await sortButton.focus()
-  await expect(sortButton).toBeFocused()
-  await page.keyboard.press('Enter')
-  await expect(header).not.toHaveAttribute('aria-sort', before ?? 'none')
-  await expect(header).toHaveAttribute('aria-sort', /^(ascending|descending)$/)
+    // Its sort control is operable from the keyboard: focusing it and pressing
+    // Enter re-sorts the column and the header announces the new direction. The
+    // table is server-windowed, so wait for the announced state to change rather
+    // than snapshot it (the new descriptor round-trips to the backend).
+    await sortButton.focus()
+    await expect(sortButton).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(header).not.toHaveAttribute('aria-sort', before ?? 'none')
+    await expect(header).toHaveAttribute(
+      'aria-sort',
+      /^(ascending|descending)$/,
+    )
+  })
+
+  await test.step('each page titles the tab and announces the page on navigation', async () => {
+    // The users admin titles the browser tab (framework label + app name), and the
+    // live region carries the same title for a screen-reader announcement.
+    await expect(page).toHaveTitle('Users · Hilos Polls')
+    await expect(page.getByTestId('page-title')).toHaveText(
+      'Users · Hilos Polls',
+    )
+
+    // A no-refresh navigation (the brand → home) updates both the tab title and
+    // the announcement.
+    await page.getByTestId('nav-brand').click()
+    await expect(page).toHaveTitle('Polls · Hilos Polls')
+    await expect(page.getByTestId('page-title')).toHaveText(
+      'Polls · Hilos Polls',
+    )
+  })
 })
 
 test('the shell supports accessible navigation without reload or reconnect', async ({
@@ -317,25 +341,6 @@ test('the shell supports accessible navigation without reload or reconnect', asy
     await expect(page.getByTestId('conn-state')).toHaveText('connected')
     expect(fullLoads).toBe(0)
   })
-})
-
-test('each page titles the tab and announces the page on navigation', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-
-  await openUsers(page)
-
-  // The users admin titles the browser tab (framework label + app name), and the
-  // live region carries the same title for a screen-reader announcement.
-  await expect(page).toHaveTitle('Users · Hilos Polls')
-  await expect(page.getByTestId('page-title')).toHaveText('Users · Hilos Polls')
-
-  // A no-refresh navigation (the brand → home) updates both the tab title and
-  // the announcement.
-  await page.getByTestId('nav-brand').click()
-  await expect(page).toHaveTitle('Polls · Hilos Polls')
-  await expect(page.getByTestId('page-title')).toHaveText('Polls · Hilos Polls')
 })
 
 test('an admin screen holds the refusal region before there is a refusal', async ({
