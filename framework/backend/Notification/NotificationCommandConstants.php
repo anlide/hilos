@@ -49,4 +49,19 @@ final class NotificationCommandConstants
 
     /** @var string Reply key: channels that received a delivery row, read back from the table */
     public const string FIELD_QUEUED_CHANNELS = 'queuedChannels';
+
+    /** @var string Reply key: delivery journal rows for the exact notification */
+    public const string FIELD_DELIVERIES = 'deliveries';
+
+    /** @var string Reply key: delivery primary key */
+    public const string FIELD_DELIVERY_ID = 'deliveryId';
+
+    /** @var string Reply key: delivery channel */
+    public const string FIELD_CHANNEL = 'channel';
+
+    /** @var string Reply key: delivery lifecycle state */
+    public const string FIELD_STATUS = 'status';
+
+    /** @var string Reply key: whether cleanup removed a notification */
+    public const string FIELD_DELETED = 'deleted';
 }

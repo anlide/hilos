@@ -29,6 +29,7 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\SettingsCatalogStub;
 use Hilos\Database\Settings\SettingsCommandConstants;
 use Hilos\Hilos;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Utils\Logger;
@@ -511,6 +512,94 @@ final class SettingsLibraryAgentTest extends TestCase
 
         $this->assertFalse($reply->isOk());
         $this->assertSame('Write 1 was refused: ' . self::NO_TABLE, $reply->payload['message'] ?? null);
+    }
+
+    public function testRawCommandsRefuseProductionBeforeReadingOrWriting(): void
+    {
+        $previous = Hilos::$env;
+        $previousAppEnv = getenv('APP_ENV');
+        try {
+            foreach (['production', 'staging', null] as $environment) {
+                if ($environment !== null) {
+                    putenv('APP_ENV=' . $environment);
+                }
+                Hilos::$env = $environment === null ? null : new EnvAccessor();
+                foreach ([CliCommands::SETTINGS_TEST_SNAPSHOT, CliCommands::SETTINGS_TEST_RESTORE] as $command) {
+                    $reply = $this->rawCommand($command, []);
+                    self::assertFalse($reply->isOk());
+                    self::assertStringContainsString('test-only', $reply->payload['message']);
+                }
+            }
+        } finally {
+            $previousAppEnv === false ? putenv('APP_ENV') : putenv('APP_ENV=' . $previousAppEnv);
+            Hilos::$env = $previous;
+        }
+    }
+
+    public function testSnapshotRefusesMalformedKeysAndUnreadableStateWithoutAnotherReply(): void
+    {
+        $previous = Hilos::$env;
+        Hilos::$env = new EnvAccessor();
+        try {
+            foreach ([null, false, 4, '', 'unknown_setting'] as $key) {
+                self::assertFalse($this->rawCommand(CliCommands::SETTINGS_TEST_SNAPSHOT, [
+                    SettingsCommandConstants::FIELD_KEY => $key,
+                ])->isOk());
+            }
+        } finally {
+            Hilos::$env = $previous;
+        }
+    }
+
+    /** @return array<string, array{0: mixed}> Broken snapshot boundaries, rejected before the database is reached */
+    public static function malformedSnapshots(): array
+    {
+        $snapshot = ['key' => 'example_string', 'exists' => true, 'type' => 'string', 'rawValue' => '', 'valueSource' => 'override'];
+        $missingRaw = $snapshot;
+        unset($missingRaw['rawValue']);
+
+        return [
+            'snapshot is not an object' => ['secret snapshot'],
+            'exists is not boolean' => [array_replace($snapshot, ['exists' => 1])],
+            'raw is missing' => [$missingRaw],
+            'source contradicts absence' => [array_replace($snapshot, ['exists' => false])],
+        ];
+    }
+
+    /** @param mixed $snapshot Broken snapshot payload */
+    #[DataProvider('malformedSnapshots')]
+    public function testRestoreRejectsMalformedSnapshotBeforeAnyWrite(mixed $snapshot): void
+    {
+        $previous = Hilos::$env;
+        Hilos::$env = new EnvAccessor();
+        try {
+            $reply = $this->rawCommand(CliCommands::SETTINGS_TEST_RESTORE, [SettingsCommandConstants::FIELD_SNAPSHOT => $snapshot]);
+            self::assertFalse($reply->isOk());
+            self::assertStringNotContainsString('secret snapshot', $reply->payload['message']);
+        } finally {
+            Hilos::$env = $previous;
+        }
+    }
+
+    /**
+     * @param string $command Raw settings command
+     * @param array<string, mixed> $payload Request shape under test
+     * @return CommandReplyDTO Single command reply
+     */
+    private function rawCommand(string $command, array $payload): CommandReplyDTO
+    {
+        new SettingsLibraryAgent()->onSignalCommand(new CommandRequestDTO(
+            correlationId: self::TEST_WRITE_CORRELATION_ID,
+            command: $command,
+            payload: $payload,
+        ), 'cli', $command);
+        $signal = $this->queued();
+        self::assertSame(SignalTypeConstants::COMMAND_REPLY, $signal->signalType->getType());
+        self::assertInstanceOf(CommandReplyDTO::class, $signal->data);
+        self::assertSame(self::TEST_WRITE_CORRELATION_ID, $signal->data->correlationId);
+        self::assertNull(Hilos::$sr?->getNextQueuedSignal(), 'Raw commands answer once');
+
+        return $signal->data;
     }
 
     /**

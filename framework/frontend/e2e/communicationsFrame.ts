@@ -272,22 +272,6 @@ export async function resetCommunicationsFrame(
   expectCommunicationsFrameAction(expect, log, before, 'reset')
 }
 
-/** Restore the shared setting through its real reset UI, including failed tests. */
-export async function restoreCommunicationsFrame(
-  expect: Expect,
-  page: Page,
-  log: DeliveryFrameLog,
-  original: HilosLetterFrame,
-): Promise<void> {
-  const current = communicationsFrameReplies(log).at(-1)?.frame
-  expect(current).toBeDefined()
-  if (current!.source === 'settings') {
-    await resetCommunicationsFrame(expect, page, log, original)
-  } else {
-    expect(current).toEqual(original)
-  }
-}
-
 /** An atomic HTML conflict retains both full values and blocks submission. */
 export async function expectCommunicationsFrameConflict(
   expect: Expect,

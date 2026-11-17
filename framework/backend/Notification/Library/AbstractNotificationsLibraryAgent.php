@@ -48,6 +48,8 @@ use Hilos\Database\Object\Collection\NotificationDeliveries as ObjectNotificatio
 use Hilos\Database\Object\Collection\Notifications as ObjectNotifications;
 use Hilos\Database\Object\Item\Notification as ObjectNotification;
 use Hilos\Database\Settings\Exception\SettingException;
+use Hilos\Database\View\Item\Notification;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
@@ -80,6 +82,7 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Users\AddressablePerson;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
+use Hilos\Users\DTO\UserNotificationTestCleanupSignalData;
 use Hilos\Users\DTO\UserPushReleaseDoneSignalData;
 use Hilos\Users\DTO\UserPushReleaseSignalData;
 use Hilos\Users\DTO\UserPushRemoveSignalData;
@@ -248,6 +251,8 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      */
     public const array AGENT_COMMANDS = [
         CliCommands::NOTIFICATION_TEST_EMIT,
+        CliCommands::NOTIFICATION_TEST_INSPECT,
+        CliCommands::NOTIFICATION_TEST_CLEANUP,
     ];
 
     /**
@@ -639,7 +644,7 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Answers the test-only emit command on the command channel (HIL-514, moved by HIL-771).
+     * Answers test emit, exact inspection and terminal cleanup on the command channel.
      *
      * @param CommandRequestDTO $data Command request payload
      * @param string $source Signal source (unused)
@@ -648,13 +653,102 @@ abstract class AbstractNotificationsLibraryAgent extends AbstractAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
-        if ($data->command !== CliCommands::NOTIFICATION_TEST_EMIT) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+        switch ($data->command) {
+            case CliCommands::NOTIFICATION_TEST_EMIT:
+                $this->handleNotificationEmit($data);
 
-            return;
+                return;
+
+            case CliCommands::NOTIFICATION_TEST_INSPECT:
+            case CliCommands::NOTIFICATION_TEST_CLEANUP:
+                $this->handleNotificationTestSubject($data);
+
+                return;
+
+            default:
+                $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+        }
+    }
+
+    /**
+     * Reads one exact test subject, or hands its deletion to the recipient's owner.
+     *
+     * @param CommandRequestDTO $data Generic command carrying the recipient and exact title
+     * @throws InvalidArgumentException When the command reply cannot be queued
+     */
+    private function handleNotificationTestSubject(CommandRequestDTO $data): void
+    {
+        try {
+            if (!NonProductionGate::admitted()) {
+                throw new ValidationException('Notification inspection and cleanup are test-only.');
+            }
+            $userId = $data->payload[NotificationCommandConstants::FIELD_USER_ID] ?? null;
+            $title = $data->payload[NotificationCommandConstants::FIELD_TITLE] ?? null;
+            if (!is_int($userId) || $userId <= 0 || !is_string($title) || count($data->payload) !== 2) {
+                throw new InvalidFormatException('Notification test commands need exactly a positive userId and a string title');
+            }
+            $notification = $this->notificationTestSubject($userId, $title);
+            if ($data->command === CliCommands::NOTIFICATION_TEST_CLEANUP) {
+                if ($notification === null) {
+                    $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [NotificationCommandConstants::FIELD_DELETED => false]));
+
+                    return;
+                }
+                $this->sendToAgent(HilosSignalConstants::HILOS_USER_NOTIFICATION_TEST_CLEANUP, new UserNotificationTestCleanupSignalData(
+                    $userId,
+                    $notification->id,
+                    $title,
+                    $data->correlationId,
+                ));
+
+                return;
+            }
+            $deliveries = [];
+            $queuedChannels = [];
+            if ($notification !== null) {
+                foreach (Hilos::$db->notificationDeliveries->whereColumnIs('notification_id', $notification->id) as $delivery) {
+                    $deliveries[] = [
+                        NotificationCommandConstants::FIELD_DELIVERY_ID => $delivery->id,
+                        NotificationCommandConstants::FIELD_CHANNEL => $delivery->channel,
+                        NotificationCommandConstants::FIELD_STATUS => $delivery->status,
+                    ];
+                    $queuedChannels[] = $delivery->channel;
+                }
+            }
+            $reply = CommandReplyDTO::ok($data->correlationId, [
+                NotificationCommandConstants::FIELD_NOTIFICATION_ID => $notification?->id,
+                NotificationCommandConstants::FIELD_QUEUED_CHANNELS => array_values(array_unique($queuedChannels)),
+                NotificationCommandConstants::FIELD_DELIVERIES => $deliveries,
+            ]);
+        } catch (WiringRefusal $failure) {
+            $reply = CommandReplyDTO::error($data->correlationId, $failure->getMessage());
+        } catch (Throwable $failure) {
+            $reply = CommandReplyDTO::error($data->correlationId, $failure->getMessage());
+        }
+        $this->replyToCommand($reply);
+    }
+
+    /**
+     * @param int $userId Recipient whose bounded DB set is read
+     * @param string $title Exact title, compared without collation folding
+     * @return ?Notification The sole matching row, or null when absent
+     * @throws ValidationException When more than one notification matches
+     * @throws HilosException When the recipient's rows cannot be read
+     */
+    private function notificationTestSubject(int $userId, string $title): ?Notification
+    {
+        $match = null;
+        foreach (Hilos::$db->notifications->whereColumnIs('user_id', $userId) as $notification) {
+            if ($notification->title !== $title) {
+                continue;
+            }
+            if ($match !== null) {
+                throw new ValidationException('More than one notification matches the test recipient and title');
+            }
+            $match = $notification;
         }
 
-        $this->handleNotificationEmit($data);
+        return $match;
     }
 
     /**

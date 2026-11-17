@@ -75,6 +75,10 @@ use Hilos\Database\ChangeLog\JournalReceiptData;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Environment\NonProductionGate;
+use Hilos\Notification\Delivery\DeliveryStatus;
+use Hilos\Notification\NotificationCommandConstants;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\UserPhoto as EntityUserPhoto;
 use Hilos\Database\Exception\DbCollectionNotReadableException;
@@ -124,6 +128,7 @@ use Hilos\Users\DTO\UserLegalHoldForgetDoneSignalData;
 use Hilos\Users\DTO\UserLegalHoldForgetSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
+use Hilos\Users\DTO\UserNotificationTestCleanupSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
@@ -399,6 +404,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => [
             AgentSignalConfigKey::INDEX_FIELD => UserNotificationReadSignalData::userId,
             AgentSignalConfigKey::DTO => UserNotificationReadSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_NOTIFICATION_TEST_CLEANUP => [
+            AgentSignalConfigKey::INDEX_FIELD => UserNotificationTestCleanupSignalData::userId,
+            AgentSignalConfigKey::DTO => UserNotificationTestCleanupSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => [
             AgentSignalConfigKey::INDEX_FIELD => UserNotificationChannelSetSignalData::userId,
@@ -1302,6 +1311,15 @@ abstract class AbstractUserAgent extends AbstractAgent
                     $notificationRead,
                     $this->flagRefusal(fn () => $this->markNotificationsRead($notificationRead->notificationId), 'Notification read'),
                 ));
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_NOTIFICATION_TEST_CLEANUP:
+                $cleanup = $data->data;
+                if (!$cleanup instanceof UserNotificationTestCleanupSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, UserNotificationTestCleanupSignalData::class, $cleanup);
+                }
+                $this->handleNotificationTestCleanup($cleanup);
 
                 return;
 
@@ -2715,6 +2733,44 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         return $proof;
+    }
+
+    /**
+     * Removes only the addressed terminal test notification and answers the original command.
+     *
+     * @param UserNotificationTestCleanupSignalData $ask Exact recipient, notification and command identity
+     * @throws InvalidArgumentException When the command reply cannot be queued
+     */
+    private function handleNotificationTestCleanup(UserNotificationTestCleanupSignalData $ask): void
+    {
+        try {
+            if (!NonProductionGate::admitted()) {
+                throw new ValidationException('Notification cleanup is test-only.');
+            }
+            if ($ask->userId !== $this->userId) {
+                throw new ValidationException('Notification cleanup was addressed to another person');
+            }
+            $notification = Hilos::$db->notifications[$ask->notificationId] ?? null;
+            $deleted = false;
+            if ($notification !== null) {
+                if ($notification->userId !== $ask->userId || $notification->title !== $ask->title) {
+                    throw new ValidationException('Notification does not match the test recipient and title');
+                }
+                foreach (Hilos::$db->notificationDeliveries->whereColumnIs('notification_id', $ask->notificationId) as $delivery) {
+                    if (!in_array($delivery->status, [DeliveryStatus::SENT, DeliveryStatus::FAILED], true)) {
+                        throw new ValidationException('Notification still has a nonterminal delivery');
+                    }
+                }
+                $notification->actions->deleteForTest();
+                $deleted = true;
+            }
+            $reply = CommandReplyDTO::ok($ask->correlationId, [NotificationCommandConstants::FIELD_DELETED => $deleted]);
+        } catch (WiringRefusal $failure) {
+            $reply = CommandReplyDTO::error($ask->correlationId, $failure->getMessage());
+        } catch (Throwable $failure) {
+            $reply = CommandReplyDTO::error($ask->correlationId, $failure->getMessage());
+        }
+        $this->replyToCommand($reply);
     }
 
     /**

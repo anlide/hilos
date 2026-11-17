@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Auth\OAuth\RawOAuthProviderSnapshot;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
@@ -18,6 +20,7 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\SqlParam;
 use Hilos\Database\SqlParamCollection;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Utils\Helpers\TimeHelper;
 
 /**
@@ -33,7 +36,7 @@ use Hilos\Utils\Helpers\TimeHelper;
  * readiness is asked on every handshake: a write in this process sets the answer, a write
  * in another process or node forgets it through the empty diff
  * ({@see applyDbSyncUnmappedUpdate()}), and the next question reads it again. The secret's
- * value is never remembered.
+ * value is never remembered. A gated raw snapshot is available only to the closed stand command exchange.
  *
  * @extends Object_<EntityOAuthProvider>
  *
@@ -149,28 +152,59 @@ class OAuthProvider extends Object_
      */
     public function readClientSecret(): ?string
     {
-        if ($this->entity->id === null) {
-            return null;
+        $secret = $this->readRawClientSecret();
+
+        return $secret !== '' ? $secret : null;
+    }
+
+    /**
+     * @return RawOAuthProviderSnapshot Exact persisted state for the closed test channel
+     * @throws InvalidFormatException When the test gate refuses or the row is not persisted
+     * @throws DatabaseException When the raw secret cannot be read
+     */
+    public function rawSnapshotForTest(): RawOAuthProviderSnapshot
+    {
+        if (!NonProductionGate::admitted() || $this->entity->id === null) {
+            throw new InvalidFormatException('Raw OAuth provider snapshots are test-only and require a persisted row.');
         }
 
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($this->entity->id));
-        $resultSet = Database::sql(
-            'SELECT `' . EntityOAuthProvider::client_secret . '` FROM `' . EntityOAuthProvider::_table
-                . '` WHERE `' . EntityOAuthProvider::id . '` = ?',
-            $params,
-        )->first();
-        if ($resultSet === null) {
-            return null;
-        }
+        return new RawOAuthProviderSnapshot(
+            $this->entity->provider_key,
+            $this->entity->id,
+            $this->entity->client_id,
+            $this->readRawClientSecret(),
+            $this->entity->scope,
+            $this->entity->created_at,
+            $this->entity->updated_at,
+        );
+    }
 
-        $row = $resultSet->first();
-        if ($row === null) {
-            return null;
+    /**
+     * Joins the owner's transaction and preserves its exact stored moments.
+     *
+     * @param RawOAuthProviderSnapshot $snapshot Original state of this same persisted row
+     * @throws InvalidFormatException When the test gate or captured identity refuses
+     * @throws DatabaseException When persistence fails
+     * @throws SourceChangeSubscriberException When an announcement subscriber refuses
+     * @throws InvalidArgumentException When the sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException When the persisted id cannot be read
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the ordinary save door
+     * @throws WriteNotAllowedException When the truth source refuses the write
+     */
+    public function restoreRawForTest(RawOAuthProviderSnapshot $snapshot): void
+    {
+        if (
+            !NonProductionGate::admitted() || $snapshot->id === null
+            || $snapshot->id !== $this->entity->id || $snapshot->providerKey !== $this->entity->provider_key
+        ) {
+            throw new InvalidFormatException('Raw OAuth provider restoration refused.');
         }
-        $secret = $row[EntityOAuthProvider::client_secret] ?? null;
-
-        return is_string($secret) && $secret !== '' ? $secret : null;
+        $this->entity->client_id = $snapshot->clientId;
+        $this->entity->scope = $snapshot->scope;
+        $this->entity->created_at = $snapshot->createdAt;
+        $this->entity->updated_at = $snapshot->updatedAt;
+        parent::sync();
+        $this->storeClientSecret($snapshot->clientSecret, $snapshot->updatedAt);
     }
 
     /**
@@ -191,28 +225,7 @@ class OAuthProvider extends Object_
      */
     public function writeClientSecret(?string $secret): void
     {
-        if ($this->entity->id === null) {
-            return;
-        }
-
-        $idString = (string)$this->entity->id;
-        DbWriteGuard::guardItemWrite(static::getCollectionKey(), $idString, $this->touchedSetKeys(...), TruthSourceOperation::Update);
-
-        $now = TimeHelper::nowMs();
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::auto($secret));
-        $params->add(SqlParam::int($now));
-        $params->add(SqlParam::int($this->entity->id));
-        Database::sql(
-            'UPDATE `' . EntityOAuthProvider::_table . '` SET `' . EntityOAuthProvider::client_secret
-                . '` = ?, `' . EntityOAuthProvider::updated_at . '` = ? WHERE `' . EntityOAuthProvider::id . '` = ?',
-            $params,
-        );
-        $this->entity->updated_at = $now;
-        $this->entitySync->updated_at = $now;
-        $this->clientSecretSet = $secret !== null && $secret !== '';
-
-        $this->announceUnmappedUpdate();
+        $this->storeClientSecret($secret, TimeHelper::nowMs());
     }
 
     /**
@@ -239,5 +252,77 @@ class OAuthProvider extends Object_
             self::clientId => $this->entity->client_id,
             self::scope => $this->entity->scope,
         ];
+    }
+
+    /**
+     * @return ?string DB-only value, preserving the empty string
+     * @throws DatabaseException When the lookup fails
+     */
+    private function readRawClientSecret(): ?string
+    {
+        if ($this->entity->id === null) {
+            return null;
+        }
+
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::int($this->entity->id));
+        $resultSet = Database::sql(
+            'SELECT `' . EntityOAuthProvider::client_secret . '` FROM `' . EntityOAuthProvider::_table
+                . '` WHERE `' . EntityOAuthProvider::id . '` = ?',
+            $params,
+        )->first();
+        if ($resultSet === null) {
+            return null;
+        }
+
+        $row = $resultSet->first();
+        if ($row === null) {
+            return null;
+        }
+        $secret = $row[EntityOAuthProvider::client_secret] ?? null;
+
+        return is_string($secret) ? $secret : null;
+    }
+
+    /**
+     * @param ?string $secret Exact DB-only value
+     * @param int $updatedAt Stored update moment in epoch milliseconds
+     * @throws DatabaseException When the update fails
+     * @throws WriteNotAllowedException When the owner refuses the write
+     * @throws InvalidArgumentException When the sync signal cannot be named
+     * @throws SourceChangeSubscriberException When an announcement subscriber refuses
+     * @throws ObjectGetIdStringNotImplementedException When the persisted id cannot be read
+     */
+    private function storeClientSecret(?string $secret, int $updatedAt): void
+    {
+        if ($this->entity->id === null) {
+            return;
+        }
+
+        $idString = (string)$this->entity->id;
+        DbWriteGuard::guardItemWrite(static::getCollectionKey(), $idString, $this->touchedSetKeys(...), TruthSourceOperation::Update);
+
+        $previousUpdatedAt = $this->entity->updated_at;
+        $previousSyncUpdatedAt = $this->entitySync->updated_at;
+        $previousSecretSet = $this->clientSecretSet;
+        $params = SqlParamCollection::empty();
+        $params->add(SqlParam::auto($secret));
+        $params->add(SqlParam::int($updatedAt));
+        $params->add(SqlParam::int($this->entity->id));
+        Database::sql(
+            'UPDATE `' . EntityOAuthProvider::_table . '` SET `' . EntityOAuthProvider::client_secret
+                . '` = ?, `' . EntityOAuthProvider::updated_at . '` = ? WHERE `' . EntityOAuthProvider::id . '` = ?',
+            $params,
+        );
+        Database::onRollback(function () use ($previousUpdatedAt, $previousSyncUpdatedAt, $previousSecretSet): void {
+            $this->entity->updated_at = $previousUpdatedAt;
+            $this->entitySync->updated_at = $previousSyncUpdatedAt;
+            $this->clientSecretSet = $previousSecretSet;
+        });
+        $this->entity->updated_at = $updatedAt;
+        $this->entitySync->updated_at = $updatedAt;
+        $this->clientSecretSet = $secret !== null && $secret !== '';
+
+        $this->announceUnmappedUpdate();
     }
 }

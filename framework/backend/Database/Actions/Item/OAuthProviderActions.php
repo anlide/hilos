@@ -4,16 +4,21 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Actions\Item;
 
+use Hilos\Auth\OAuth\RawOAuthProviderSnapshot;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\OAuthProvider as ObjectOAuthProvider;
 use Hilos\Database\View\Item\OAuthProvider;
+use Hilos\Environment\NonProductionGate;
 
 /**
  * OAuthProviderActions - write operations for one OAuth provider row (HIL-286).
@@ -92,6 +97,54 @@ class OAuthProviderActions extends DbActions
         $this->requirePersisted();
 
         $this->object->writeClientSecret($secret);
+    }
+
+    /**
+     * @param RawOAuthProviderSnapshot $snapshot Original state of this same item
+     * @throws InvalidFormatException When the non-production gate or snapshot identity refuses
+     * @throws ObjectCollectionNullException When detached from the object collection
+     * @throws DatabaseException When persistence fails
+     * @throws ObjectGetIdStringNotImplementedException When the primary id is unavailable
+     * @throws WriteNotAllowedException When the owner refuses the write
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the item door
+     * @throws InvalidArgumentException When the sync signal cannot be named
+     * @throws SourceChangeSubscriberException When an announcement subscriber refuses
+     */
+    public function restoreRawForTest(RawOAuthProviderSnapshot $snapshot): void
+    {
+        if (!NonProductionGate::admitted()) {
+            throw new InvalidFormatException('Raw OAuth provider restoration is test-only.');
+        }
+        $this->ensureCanWrite(TruthSourceOperation::Update);
+        $this->object->restoreRawForTest($snapshot);
+    }
+
+    /**
+     * Deletes the already selected test row, including its collection membership.
+     *
+     * @throws InvalidFormatException When the non-production gate or snapshot identity refuses
+     * @throws ObjectCollectionNullException When detached from the object collection
+     * @throws DatabaseException When persistence fails
+     * @throws ObjectGetIdStringNotImplementedException When the primary id is unavailable
+     * @throws WriteNotAllowedException When the owner refuses the write
+     * @throws CreateNotAllowedException Never for a persisted row; declared by the item door
+     * @throws InvalidArgumentException When the sync signal cannot be named
+     * @throws SourceChangeSubscriberException When an announcement subscriber refuses
+     * @throws ItemNotFoundForUpdateException When the selected row is not persisted
+     * @throws LogicException When the collection class is not configured
+     */
+    public function deleteForTest(): void
+    {
+        if (!NonProductionGate::admitted()) {
+            throw new InvalidFormatException('OAuth provider test deletion is test-only.');
+        }
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        $this->requirePersisted();
+        $objectCollection = $this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Object collection is null');
+        $idString = $this->object->getIdString();
+        $this->object->delete();
+        unset($objectCollection[$idString]);
     }
 
     /**

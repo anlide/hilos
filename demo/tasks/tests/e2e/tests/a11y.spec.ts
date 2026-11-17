@@ -27,7 +27,6 @@ import {
   expectAnalyticsPersonNavigation,
   expectAnalyticsSessionListAccessibility,
   expectAnalyticsSessionListWindow,
-  expectCommunicationsAccessibility,
   expectDesktopShell,
   expectLicenseDependenciesAccessibility,
   expectLanguagePageHead,
@@ -272,61 +271,6 @@ test('password visibility toggle operates from keyboard on sign-in', async ({
   )
   // Ensure the surface remains open: toggling password visibility does not submit the form.
   await expect(page.getByTestId('auth-surface')).toBeVisible()
-})
-
-test('Communications exposes one named head and keyboard links between channel pages', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/channel/email')
-  await expectCommunicationsAccessibility(
-    expect,
-    page,
-    'overview',
-    'Enable Email',
-  )
-
-  const configuration = page.getByTestId(
-    'hilos-page-tab-hilos_communications_channel_configuration',
-  )
-  await configuration.focus()
-  await expect(configuration).toBeFocused()
-  await configuration.press('Enter')
-  await expectPageReady(expect, page)
-  await expectCommunicationsAccessibility(
-    expect,
-    page,
-    'configuration',
-    'Enable Email',
-  )
-
-  const deliveries = page.getByTestId(
-    'hilos-page-tab-hilos_communications_deliveries',
-  )
-  await deliveries.focus()
-  await expect(deliveries).toBeFocused()
-  await deliveries.press('Enter')
-  await expectPageReady(expect, page)
-  await expectCommunicationsAccessibility(
-    expect,
-    page,
-    'deliveries',
-    'Enable Email',
-  )
-
-  const overview = page.getByTestId(
-    'hilos-page-tab-hilos_communications_channel',
-  )
-  await overview.focus()
-  await expect(overview).toBeFocused()
-  await overview.press('Enter')
-  await expectPageReady(expect, page)
-  await expectCommunicationsAccessibility(
-    expect,
-    page,
-    'overview',
-    'Enable Email',
-  )
 })
 
 test('language pages expose one named head and name their tables through it', async ({

@@ -6,6 +6,8 @@ namespace Hilos\Core\Agent\Hilos;
 
 use Closure;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
+use Hilos\Auth\Method\DTO\AuthMethodsSignalData;
+use Hilos\Auth\OAuth\OAuthProviderTestCommands;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\HilosAgentType;
@@ -141,6 +143,8 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      */
     public const array AGENT_COMMANDS = [
         CliCommands::COMMAND_TEST_ECHO,
+        CliCommands::OAUTH_PROVIDER_TEST_SNAPSHOT,
+        CliCommands::OAUTH_PROVIDER_TEST_RESTORE,
         CliCommands::PROTECTED_MODE_TEST_ENTER,
         CliCommands::PROTECTED_MODE_TEST_LEAVE,
         CliCommands::PROTECTED_MODE_TEST_OPEN,
@@ -488,6 +492,15 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
      */
     public function onSignalCommand(CommandRequestDTO $data, string $source, string $name): void
     {
+        if (in_array($data->command, [CliCommands::OAUTH_PROVIDER_TEST_SNAPSHOT, CliCommands::OAUTH_PROVIDER_TEST_RESTORE], true)) {
+            $this->replyToCommand(OAuthProviderTestCommands::handle(
+                $data,
+                fn(AuthMethodsSignalData $methods) => $this->sendToAllConnected(HilosSignalConstants::HILOS_AUTH_METHODS, $methods),
+            ));
+
+            return;
+        }
+
         if (
             ($this->isProtectedModeTestCommand($data->command) || $this->isProtectedModeOperatorCommand($data->command))
             && $this->protectedModeRequestInFlight()

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Database\View\Item;
 
+use Hilos\Auth\OAuth\RawOAuthProviderSnapshot;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Database\Actions\Item\OAuthProviderActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
@@ -16,7 +18,7 @@ use Hilos\HilosException;
  *
  * The secret has no property here: only its set/not-set state is readable
  * ({@see hasClientSecret()}), and the value itself is read by the resolver alone
- * ({@see readClientSecret()}).
+ * ({@see readClientSecret()}) outside the gated raw stand snapshot.
  *
  * @extends DbItem<ObjectOAuthProvider>
  * @property-read ?int $id
@@ -67,5 +69,15 @@ class OAuthProvider extends DbItem
     public function readClientSecret(): ?string
     {
         return $this->_object->readClientSecret();
+    }
+
+    /**
+     * @return RawOAuthProviderSnapshot Exact stand-only persisted state
+     * @throws InvalidFormatException When the test gate refuses or the row is not persisted
+     * @throws DatabaseException When the raw secret lookup fails
+     */
+    public function rawSnapshotForTest(): RawOAuthProviderSnapshot
+    {
+        return $this->_object->rawSnapshotForTest();
     }
 }

@@ -19,6 +19,7 @@ use Hilos\Database\Settings\Exception\SettingTypeMismatchException;
 use Hilos\Database\Settings\Exception\SettingValueRefusedException;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\Validation\SettingValueRules;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Database\View\Item\Setting;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
@@ -33,6 +34,35 @@ use Hilos\Core\Exception\ItemNotFoundForUpdateException;
  */
 class SettingActions extends DbActions
 {
+    /**
+     * Restores raw persisted fields on a non-production stand, without typed normalization.
+     *
+     * @param string $type Original persisted type
+     * @param ?string $rawValue Original nullable persisted text
+     * @throws ItemNotFoundForUpdateException When setting object has no persisted id
+     * @throws SettingInvalidValueException When the environment refuses test-only writes
+     * @throws DatabaseException When collection loading or setting persistence fails
+     * @throws ObjectCollectionNullException When the setting action is detached from its object collection
+     * @throws ObjectGetIdStringNotImplementedException When the setting primary key is null during the per-item write check
+     * @throws WriteNotAllowedException When the truth source rejects the setting write
+     * @throws CreateNotAllowedException When no truth source in this process may add a row here
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
+     */
+    public function restoreRawForTest(string $type, ?string $rawValue): void
+    {
+        if (!NonProductionGate::admitted()) {
+            throw new SettingInvalidValueException('Raw settings restoration is test-only.');
+        }
+        $this->ensureCanWrite();
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForUpdateException('Setting not found for update (id is null)');
+        }
+        $this->object->type = $type;
+        $this->object->value = $rawValue;
+        $this->object->sync();
+    }
+
     /**
      * Updates setting value.
      *

@@ -24,61 +24,6 @@ const OVERVIEW = 'hilos_communications_channel'
 const CONFIGURATION = 'hilos_communications_channel_configuration'
 const DELIVERIES = 'hilos_communications_deliveries'
 
-test('Configure opens Configuration and channel links bind the real Email and Sms names', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications')
-  for (const [channel, label] of [
-    ['email', 'Email'],
-    ['sms', 'Sms'],
-    ['email', 'Email'],
-  ] as const) {
-    await shownByTestId(page, `hilos-channel-configure-${channel}`).click()
-    await expectPageReady(expect, page)
-    await expect(page).toHaveURL(
-      `/hilos/communications/channel/${channel}/configuration`,
-    )
-    await expectCommunicationsChannelHead(
-      expect,
-      page,
-      'configuration',
-      channel,
-      label,
-    )
-    await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-    await expect(page.getByTestId('hilos-channel-test')).toHaveCount(0)
-
-    await page.getByTestId(`hilos-page-tab-${OVERVIEW}`).click()
-    await expectPageReady(expect, page)
-    await expect(page).toHaveURL(`/hilos/communications/channel/${channel}`)
-    await expectCommunicationsChannelHead(
-      expect,
-      page,
-      'overview',
-      channel,
-      label,
-    )
-    await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(0)
-
-    await page.getByTestId(`hilos-page-tab-${DELIVERIES}`).click()
-    await expectPageReady(expect, page)
-    await expect(page).toHaveURL(
-      `/hilos/communications/channel/${channel}/deliveries`,
-    )
-    await expectCommunicationsChannelHead(
-      expect,
-      page,
-      'deliveries',
-      channel,
-      label,
-    )
-    await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-    await page.getByTestId('hilos-breadcrumb-hilos_communications').click()
-    await expectPageReady(expect, page)
-  }
-})
-
 for (const tab of ['configuration', 'deliveries'] as const) {
   test(`direct ${tab} and F5 resolve the requested channel from its own server reply`, async ({
     page,

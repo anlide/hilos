@@ -172,6 +172,18 @@ final class CliCommands
     /** @var string Command: Write a batch of example settings keys through the settings library, one write per pair (test-only) */
     public const string SETTINGS_TEST_WRITE = 'test:settings:write';
 
+    /** Capture the exact settings row state on a stand. */
+    public const string SETTINGS_TEST_SNAPSHOT = 'test:settings:snapshot';
+
+    /** Restore the exact settings row state on a stand. */
+    public const string SETTINGS_TEST_RESTORE = 'test:settings:restore';
+
+    /** Channel-only raw provider capture; never exposed by a terminal command. */
+    public const string OAUTH_PROVIDER_TEST_SNAPSHOT = 'test:oauth-provider:snapshot';
+
+    /** Channel-only exact provider cleanup; credentials stay out of argv and stdout. */
+    public const string OAUTH_PROVIDER_TEST_RESTORE = 'test:oauth-provider:restore';
+
     /** @var string Command: Publish a Status heartbeat aged past the reader's stale limit and hold the owner's publication (test-only) */
     public const string STATUS_TEST_HEARTBEAT_STALE = 'test:status:heartbeat:stale';
 
@@ -273,6 +285,12 @@ final class CliCommands
      * @var string Command: Emit one notification to a user through the live daemon (test-only)
      */
     public const string NOTIFICATION_TEST_EMIT = 'test:notification:emit';
+
+    /** Inspect the exact recipient and title through the live notifications library (test-only). */
+    public const string NOTIFICATION_TEST_INSPECT = 'test:notification:inspect';
+
+    /** Remove one terminal notification through its personal owner (test-only). */
+    public const string NOTIFICATION_TEST_CLEANUP = 'test:notification:cleanup';
 
     /**
      * Forget every anti-abuse counter and stored block (test-only).

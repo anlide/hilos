@@ -1,7 +1,10 @@
 import type { Locator, Page } from '@playwright/test'
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 
 import {
+  borrowSetting,
+  cleanupFixtures,
+  type TestCleanup,
   clearCustomSetting,
   dismissToasts,
   draftCustomSetting,
@@ -24,6 +27,8 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
+
 // Hilos settings admin e2e (server-windowed table): /hilos/settings renders the
 // framework HilosViewportTable over the live socket. The window comes from the
 // backend — search, sort, and paging change the viewport descriptor and the
@@ -33,10 +38,10 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 // cards for a narrow one — and a control inside a cell is aimed at through the
 // copy on screen (shownByTestId). Live edits from
 // another connection hang as pending (a tinted row + an Apply control), while the
-// tab that made the edit applies its own change at once. Each editing test resets
-// its key to the catalog default, so the suite stays idempotent on the shared
-// database. This catalog has one free string key with no rule and no reader —
-// example_string — and the six two-tab tests all write it, so the file runs its
+// tab that made the edit applies its own change at once. Editing scenarios capture
+// their borrowed keys before changing them and restore their exact raw state.
+// This catalog has one free string key with no rule and no reader —
+// example_string — and the two-tab scenarios write it, so the file runs its
 // tests one by one, in order, instead of in parallel.
 test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
 test.describe.configure({ mode: 'default' })
@@ -118,403 +123,426 @@ test(
   },
 )
 
-test('paginates the server window by its page numbers and its neighbors', async ({
+test('Settings paginates its server windows and restores the initial sort', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
   await openSettings(page)
+  await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
+  await expect(page.getByTestId('hilos-table-page-1')).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await expect(
+    page.locator('th:has([data-id="hilos-table-sort-key"])'),
+  ).toHaveAttribute('aria-sort', 'ascending')
 
-  // Compare the windows themselves: catalog additions legitimately move a
-  // named setting across a page boundary, while page 1 → page 2 must still
-  // replace the ten row keys and both neighbor controls must restore them.
-  const rows = page.locator('[data-id^="hilos-table-row-"]')
-  const rowIds = (): Promise<(string | null)[]> =>
-    rows.evaluateAll((found) => found.map((row) => row.getAttribute('data-id')))
-  const pageOne = page.getByTestId('hilos-table-page-1')
-  const pageTwo = page.getByTestId('hilos-table-page-2')
+  await test.step('paginates the server window by its page numbers and its neighbors', async () => {
+    // Compare the windows themselves: catalog additions legitimately move a
+    // named setting across a page boundary, while page 1 → page 2 must still
+    // replace the ten row keys and both neighbor controls must restore them.
+    const rows = page.locator('[data-id^="hilos-table-row-"]')
+    const rowIds = (): Promise<(string | null)[]> =>
+      rows.evaluateAll((found) =>
+        found.map((row) => row.getAttribute('data-id')),
+      )
+    const pageOne = page.getByTestId('hilos-table-page-1')
+    const pageTwo = page.getByTestId('hilos-table-page-2')
 
-  await expect(rows).toHaveCount(10)
-  await expect(pageOne).toHaveAttribute('aria-current', 'page')
-  await expect(pageTwo).toBeVisible()
-  const firstPageIds = await rowIds()
+    await expect(rows).toHaveCount(10)
+    await expect(pageOne).toHaveAttribute('aria-current', 'page')
+    await expect(pageTwo).toBeVisible()
+    const firstPageIds = await rowIds()
 
-  // A number leads to its own page. The row is what says the window arrived: the
-  // current number moves the moment it is pressed, the rows only with the answer.
-  await pageTwo.click()
-  await expect(pageTwo).toHaveAttribute('aria-current', 'page')
-  await expect.poll(rowIds).not.toEqual(firstPageIds)
-  const secondPageIds = await rowIds()
+    // A number leads to its own page. The row is what says the window arrived: the
+    // current number moves the moment it is pressed, the rows only with the answer.
+    await pageTwo.click()
+    await expect(pageTwo).toHaveAttribute('aria-current', 'page')
+    await expect.poll(rowIds).not.toEqual(firstPageIds)
+    const secondPageIds = await rowIds()
 
-  await pageOne.click()
-  await expect(pageOne).toHaveAttribute('aria-current', 'page')
-  await expect.poll(rowIds).toEqual(firstPageIds)
+    await pageOne.click()
+    await expect(pageOne).toHaveAttribute('aria-current', 'page')
+    await expect.poll(rowIds).toEqual(firstPageIds)
 
-  // Previous and Next stand beside the numbers and still walk one page at a time.
-  await page.getByTestId('hilos-table-next').click()
-  await expect(pageTwo).toHaveAttribute('aria-current', 'page')
-  await expect.poll(rowIds).toEqual(secondPageIds)
+    // Previous and Next stand beside the numbers and still walk one page at a time.
+    await page.getByTestId('hilos-table-next').click()
+    await expect(pageTwo).toHaveAttribute('aria-current', 'page')
+    await expect.poll(rowIds).toEqual(secondPageIds)
 
-  await page.getByTestId('hilos-table-prev').click()
-  await expect(pageOne).toHaveAttribute('aria-current', 'page')
-  await expect.poll(rowIds).toEqual(firstPageIds)
-})
-
-test('a third click on a sorted header returns the table to its initial order', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await openSettings(page)
-
-  // The catalog opens sorted by Key ascending: that is the order the third
-  // click has to hand back.
-  const rows = page.locator('[data-id^="hilos-table-row-"]')
-  const order = (): Promise<(string | null)[]> =>
-    rows.evaluateAll((found) => found.map((row) => row.getAttribute('data-id')))
-  await expect(rows.first()).toBeVisible()
-  const initialOrder = await order()
-  const keyHeader = page.locator('th:has([data-id="hilos-table-sort-key"])')
-  const valueHeader = page.locator('th:has([data-id="hilos-table-sort-value"])')
-  const sortByValue = page.getByTestId('hilos-table-sort-value')
-
-  // aria-sort follows the click without waiting for anything, so the rows
-  // themselves are what says the server window has landed: sorting by Value
-  // rearranges the page.
-  await sortByValue.click()
-  await expect(valueHeader).toHaveAttribute('aria-sort', 'ascending')
-  await expect.poll(order).not.toEqual(initialOrder)
-
-  await sortByValue.click()
-  await expect(valueHeader).toHaveAttribute('aria-sort', 'descending')
-
-  // The third click reports no sort on Value, hands Key its opening direction
-  // back, and the window arrives in the order the page opened with.
-  await sortByValue.click()
-  await expect(valueHeader).toHaveAttribute('aria-sort', 'none')
-  await expect(keyHeader).toHaveAttribute('aria-sort', 'ascending')
-  await expect.poll(order).toEqual(initialOrder)
-})
-
-test('a tab applies its own edit at once, with no pending gate', async ({
-  page,
-}) => {
-  let fullLoads = 0
-  page.on('load', () => {
-    fullLoads += 1
+    await page.getByTestId('hilos-table-prev').click()
+    await expect(pageOne).toHaveAttribute('aria-current', 'page')
+    await expect.poll(rowIds).toEqual(firstPageIds)
   })
 
-  await grantAdminToSelf(expect, page)
-  await openSettings(page)
-  const loadsAfterColdLoad = fullLoads
-  await isolate(page, 'example_integer')
-  const row = page.getByTestId('hilos-table-row-example_integer')
-  await expect(row).toContainText('default')
+  await test.step('a third click on a sorted header returns the table to its initial order', async () => {
+    // Previous restored the first window and its exact row keys above.
+    await expect(page.getByTestId('hilos-table-page-1')).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await expect(page.getByTestId('hilos-table-search')).toHaveValue('')
+    await expect(
+      page.locator('th:has([data-id="hilos-table-sort-key"])'),
+    ).toHaveAttribute('aria-sort', 'ascending')
 
-  // The catalog type stays in the header, and custom-off keeps a disabled,
-  // dimmed field mounted before there is a custom value.
-  await openSettingEdit(page, 'example_integer')
-  await expect(page.getByTestId('hilos-settings-edit-type')).toHaveText(
-    'integer',
-  )
-  const custom = page.getByTestId('hilos-settings-edit-custom')
-  const value = page.getByTestId('hilos-settings-edit-value')
-  await expect(custom).not.toBeChecked()
-  await expect(value).toBeVisible()
-  await expect(value).toHaveAttribute('disabled', '')
-  await expect(value.locator('..')).toHaveClass(/\bopacity-50\b/)
-  const input = await value.elementHandle()
+    // The catalog opens sorted by Key ascending: that is the order the third
+    // click has to hand back.
+    const rows = page.locator('[data-id^="hilos-table-row-"]')
+    const order = (): Promise<(string | null)[]> =>
+      rows.evaluateAll((found) =>
+        found.map((row) => row.getAttribute('data-id')),
+      )
+    await expect(rows.first()).toBeVisible()
+    const initialOrder = await order()
+    const keyHeader = page.locator('th:has([data-id="hilos-table-sort-key"])')
+    const valueHeader = page.locator(
+      'th:has([data-id="hilos-table-sort-value"])',
+    )
+    const sortByValue = page.getByTestId('hilos-table-sort-value')
 
-  // Off/on preserves both the input node and the exact unsaved draft.
-  await custom.check()
-  await expect(value).toBeEnabled()
-  await typeInto(value, '42')
-  await custom.uncheck()
-  await expect(value).toHaveAttribute('disabled', '')
-  await expect(value.locator('..')).toHaveClass(/\bopacity-50\b/)
-  await expect(value).toHaveValue('42')
-  expect(
-    await value.evaluate((node, original) => node === original, input),
-  ).toBe(true)
-  await custom.check()
-  await expect(value).toBeEnabled()
-  await expect(value.locator('..')).not.toHaveClass(/\bopacity-50\b/)
-  await expect(value).toHaveValue('42')
-  expect(
-    await value.evaluate((node, original) => node === original, input),
-  ).toBe(true)
-  const save = page.getByTestId('hilos-settings-edit-save')
-  await clickSubmit(expect, save)
-  await expect(save).toHaveCount(0)
+    // aria-sort follows the click without waiting for anything, so the rows
+    // themselves are what says the server window has landed: sorting by Value
+    // rearranges the page.
+    await sortByValue.click()
+    await expect(valueHeader).toHaveAttribute('aria-sort', 'ascending')
+    await expect.poll(order).not.toEqual(initialOrder)
 
-  // The success sentence is the backend's own, naming the key it saved: the
-  // driver has none of its own to fall back on (HIL-770).
-  await expect(page.getByTestId('hilos-toast-success')).toContainText(
-    'Setting "example_integer" saved.',
-  )
+    await sortByValue.click()
+    await expect(valueHeader).toHaveAttribute('aria-sort', 'descending')
 
-  // The editing tab picks up its own change at once: the row updates and no
-  // pending Apply control ever appears.
-  await expect(row).toContainText('42')
-  await expect(row).toContainText('custom')
-  await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
-  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
-
-  // Saving with custom off resets to the default rather than writing the draft.
-  await dismissToasts(page)
-  await openSettingEdit(page, 'example_integer')
-  await typeInto(value, '43')
-  await custom.uncheck()
-  await expect(value).toHaveAttribute('disabled', '')
-  await expect(value).toHaveValue('43')
-  await clickSubmit(expect, save)
-  await expect(save).toHaveCount(0)
-  await expect(row).toContainText('default')
-  await expect(row).not.toContainText('custom')
-  await expect(row).not.toContainText('43')
-
-  // The reset took the row away, so the key is back to offering a custom value
-  // rather than pretending there is one to edit — this is what the stored row
-  // with no value used to hide.
-  await expect(
-    shownByTestId(page, 'hilos-settings-edit-example_integer'),
-  ).toHaveAttribute('aria-label', 'Set custom value')
-
-  // And re-opening the dialog arms the switch from the value, not from the row:
-  // off, with the disabled value field still visible.
-  await openSettingEdit(page, 'example_integer')
-  await expect(page.getByTestId('hilos-settings-edit-custom')).not.toBeChecked()
-  await expect(value).toBeVisible()
-  await expect(value).toHaveAttribute('disabled', '')
-  await page.getByTestId('modal-close').click()
-
-  // A multi-sentence custom string wraps across the table row without being
-  // clipped to a single line, and leaves no toggle control behind.
-  await isolate(page, 'example_string')
-  const stringRow = page.getByTestId('hilos-table-row-example_string')
-  const longValue =
-    'First sentence of a long custom value that will wrap across multiple lines. ' +
-    'Second sentence ensures enough length to overflow a single table row cell. ' +
-    'Third sentence completes the multi-sentence payload.'
-  await setCustomSetting(page, 'example_string', longValue)
-  const stringValueText = stringRow
-    .getByTestId('setting-value')
-    .locator('.hilos-table-text')
-  await expect(stringValueText).toHaveText(longValue)
-  await fitsWithoutOverflow(stringValueText)
-  await expect(stringRow.getByTestId('hilos-table-text-toggle')).toHaveCount(0)
-  await clearCustomSetting(page, 'example_string')
-  await expect(stringRow).toContainText('default')
-  await expect(stringRow).not.toContainText(longValue)
-
-  // All of it happened over the live socket — no document reload.
-  expect(fullLoads).toBe(loadsAfterColdLoad)
+    // The third click reports no sort on Value, hands Key its opening direction
+    // back, and the window arrives in the order the page opened with.
+    await sortByValue.click()
+    await expect(valueHeader).toHaveAttribute('aria-sort', 'none')
+    await expect(keyHeader).toHaveAttribute('aria-sort', 'ascending')
+    await expect.poll(order).toEqual(initialOrder)
+  })
 })
 
-test('an edit in one tab lands at once in another, raising no Apply', async ({
+test('Settings dismisses its save toast and applies its own scalar edits live', async ({
   page,
+  cleanup,
 }) => {
+  await borrowSetting(cleanup, 'example_boolean')
+  await borrowSetting(cleanup, 'example_integer')
+  await borrowSetting(cleanup, 'example_string')
   await grantAdminToSelf(expect, page)
-  const tabB = await page.context().newPage()
   await openSettings(page)
-  await openSettings(tabB)
-  await isolate(page, 'example_string')
-  await isolate(tabB, 'example_string')
 
-  const rowA = page.getByTestId('hilos-table-row-example_string')
-  const rowB = tabB.getByTestId('hilos-table-row-example_string')
+  await test.step('saving a setting raises a toast the close button dismisses', async () => {
+    await typeInto(page.getByTestId('hilos-table-search'), 'example_boolean')
+    await expect(
+      page.getByTestId('hilos-table-row-example_boolean'),
+    ).toBeVisible()
 
-  // Tab A sets a custom value and applies its own change at once (no Apply).
-  await setCustomSetting(page, 'example_string', 'xx-test')
-  await expect(rowA).toContainText('xx-test')
-  await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await clearCustomSetting(page, 'example_boolean')
+    await dismissToasts(page)
+    const save = page.getByTestId('hilos-settings-edit-save')
+    await setCustomSetting(page, 'example_boolean', true)
 
-  // Tab B takes the change at once, with nothing to press: the window is ordered by
-  // key and a value carries no key, so the edit moved nothing, and the gate holds
-  // position and membership rather than the fields of a record (HIL-793). The
-  // settings value is inline rather than an entity reference, so this row is the
-  // proof the delta itself landed — it could not have changed any other way.
-  await expect(rowB).toContainText('xx-test')
-  // And the row says on itself that it just changed (HIL-803): the tint is checked
-  // HERE, immediately behind the text that is the delta arriving, because it runs on
-  // a two-second timer in the controller. Nothing may be awaited in between — no
-  // wait would make this less racy, only later.
-  await expect(rowB).toHaveClass(/table-success/)
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await expect(rowB).not.toHaveClass(/table-warning/)
-  // A change that landed in place is not a change that waits: no mark stands beside it.
-  await expect(tabB.locator('[data-id^="hilos-table-pending-"]')).toHaveCount(0)
+    // The dialog closes on the action's own `::success` reply, so its going is the
+    // action settling — asserted before the toast, which the same reply raises.
+    await expect(save).toHaveCount(0)
+    const toast = page.getByTestId('hilos-toast-success')
+    await expect(toast).toBeVisible()
+    await expect(page.getByTestId('hilos-toasts')).toBeVisible()
 
-  // And the tint goes by itself, with nobody pressing anything.
-  await expect(rowB).not.toHaveClass(/table-success/, { timeout: 10_000 })
+    // Dismissed by hand, well inside the stack's own expiry — the close button is
+    // what is under test, so the toast has to still be there to close.
+    await page.getByTestId('hilos-toast-close').click()
+    await expect(toast).toHaveCount(0)
 
-  // Reset the key back to its catalog default.
-  await clearCustomSetting(page, 'example_string')
-  await expect(rowA).not.toContainText('xx-test')
-  await tabB.close()
+    // Reset the key back to its catalog default.
+    await clearCustomSetting(page, 'example_boolean')
+    await expect(save).toHaveCount(0)
+  })
+
+  await test.step('a tab applies its own edit at once, with no pending gate', async () => {
+    let fullLoads = 0
+    const countLoad = (): void => {
+      fullLoads += 1
+    }
+    page.on('load', countLoad)
+    cleanup.defer(() => page.off('load', countLoad))
+
+    const loadsAfterColdLoad = fullLoads
+    await isolate(page, 'example_integer')
+    await clearCustomSetting(page, 'example_integer')
+    await dismissToasts(page)
+    const row = page.getByTestId('hilos-table-row-example_integer')
+    await expect(row).toContainText('default')
+
+    // The catalog type stays in the header, and custom-off keeps a disabled,
+    // dimmed field mounted before there is a custom value.
+    await openSettingEdit(page, 'example_integer')
+    await expect(page.getByTestId('hilos-settings-edit-type')).toHaveText(
+      'integer',
+    )
+    const custom = page.getByTestId('hilos-settings-edit-custom')
+    const value = page.getByTestId('hilos-settings-edit-value')
+    await expect(custom).not.toBeChecked()
+    await expect(value).toBeVisible()
+    await expect(value).toHaveAttribute('disabled', '')
+    await expect(value.locator('..')).toHaveClass(/\bopacity-50\b/)
+    const input = await value.elementHandle()
+    cleanup.defer(() => input?.dispose())
+
+    // Off/on preserves both the input node and the exact unsaved draft.
+    await custom.check()
+    await expect(value).toBeEnabled()
+    await typeInto(value, '42')
+    await custom.uncheck()
+    await expect(value).toHaveAttribute('disabled', '')
+    await expect(value.locator('..')).toHaveClass(/\bopacity-50\b/)
+    await expect(value).toHaveValue('42')
+    expect(
+      await value.evaluate((node, original) => node === original, input),
+    ).toBe(true)
+    await custom.check()
+    await expect(value).toBeEnabled()
+    await expect(value.locator('..')).not.toHaveClass(/\bopacity-50\b/)
+    await expect(value).toHaveValue('42')
+    expect(
+      await value.evaluate((node, original) => node === original, input),
+    ).toBe(true)
+    const save = page.getByTestId('hilos-settings-edit-save')
+    await clickSubmit(expect, save)
+    await expect(save).toHaveCount(0)
+
+    // The success sentence is the backend's own, naming the key it saved: the
+    // driver has none of its own to fall back on (HIL-770).
+    await expect(page.getByTestId('hilos-toast-success')).toContainText(
+      'Setting "example_integer" saved.',
+    )
+
+    // The editing tab picks up its own change at once: the row updates and no
+    // pending Apply control ever appears.
+    await expect(row).toContainText('42')
+    await expect(row).toContainText('custom')
+    await expect(page.getByTestId('hilos-settings-edit-value')).toHaveCount(0)
+    await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
+
+    // Saving with custom off resets to the default rather than writing the draft.
+    await dismissToasts(page)
+    await openSettingEdit(page, 'example_integer')
+    await typeInto(value, '43')
+    await custom.uncheck()
+    await expect(value).toHaveAttribute('disabled', '')
+    await expect(value).toHaveValue('43')
+    await clickSubmit(expect, save)
+    await expect(save).toHaveCount(0)
+    await expect(row).toContainText('default')
+    await expect(row).not.toContainText('custom')
+    await expect(row).not.toContainText('43')
+
+    // The reset took the row away, so the key is back to offering a custom value
+    // rather than pretending there is one to edit — this is what the stored row
+    // with no value used to hide.
+    await expect(
+      shownByTestId(page, 'hilos-settings-edit-example_integer'),
+    ).toHaveAttribute('aria-label', 'Set custom value')
+
+    // And re-opening the dialog arms the switch from the value, not from the row:
+    // off, with the disabled value field still visible.
+    await openSettingEdit(page, 'example_integer')
+    await expect(
+      page.getByTestId('hilos-settings-edit-custom'),
+    ).not.toBeChecked()
+    await expect(value).toBeVisible()
+    await expect(value).toHaveAttribute('disabled', '')
+    await page.getByTestId('modal-close').click()
+
+    // A multi-sentence custom string wraps across the table row without being
+    // clipped to a single line, and leaves no toggle control behind.
+    await isolate(page, 'example_string')
+    await clearCustomSetting(page, 'example_string')
+    await dismissToasts(page)
+    const stringRow = page.getByTestId('hilos-table-row-example_string')
+    const longValue =
+      'First sentence of a long custom value that will wrap across multiple lines. ' +
+      'Second sentence ensures enough length to overflow a single table row cell. ' +
+      'Third sentence completes the multi-sentence payload.'
+    await setCustomSetting(page, 'example_string', longValue)
+    const stringValueText = stringRow
+      .getByTestId('setting-value')
+      .locator('.hilos-table-text')
+    await expect(stringValueText).toHaveText(longValue)
+    await fitsWithoutOverflow(stringValueText)
+    await expect(stringRow.getByTestId('hilos-table-text-toggle')).toHaveCount(
+      0,
+    )
+    await clearCustomSetting(page, 'example_string')
+    await expect(stringRow).toContainText('default')
+    await expect(stringRow).not.toContainText(longValue)
+
+    // All of it happened over the live socket — no document reload.
+    expect(fullLoads).toBe(loadsAfterColdLoad)
+  })
 })
 
-test('the edit dialog opens on the value the other tab just wrote', async ({
+test('Settings follows live writes through fresh, pristine and conflicting editors', async ({
   page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  const tabB = await page.context().newPage()
-  await openSettings(page)
-  await openSettings(tabB)
-  await isolate(page, 'example_string')
-  await isolate(tabB, 'example_string')
-
-  const rowB = tabB.getByTestId('hilos-table-row-example_string')
-
-  // Tab A sets a custom value; tab B has it on screen before anyone opens a dialog.
-  await setCustomSetting(page, 'example_string', 'hello-modal')
-  await expect(rowB).toContainText('hello-modal')
-
-  // The dialog is armed from what the row holds, so it edits the value that
-  // arrived and never the one it replaced. Since HIL-793 there is nothing queued
-  // to flush on the way in — a value that leaves the row in its place is applied
-  // when it arrives, and applyAndResolve is left with the removals it still owns.
-  await openSettingEdit(tabB, 'example_string')
-  await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
-    'hello-modal',
-  )
-  await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
-  await tabB.getByTestId('modal-close').click()
-
-  // Reset the key back to its catalog default.
-  await clearCustomSetting(page, 'example_string')
-  await tabB.close()
-})
-
-test('an open pristine edit reloads when the other tab saves', async ({
-  page,
-}) => {
-  // A string with no catalog rule; the file runs in order, so sharing it with the
-  // other two-tab tests is safe.
-  const key = 'example_string'
-  await grantAdminToSelf(expect, page)
-  const tabB = await page.context().newPage()
-  await openSettings(page)
-  await openSettings(tabB)
-  await isolate(page, key)
-  await isolate(tabB, key)
-
-  // Tab B opens and does not type: a pristine modal must follow the live row.
-  // The switch may already be on (an env overlay or an empty stored URL); that
-  // is still pristine as long as the field is not edited.
-  await openSettingEdit(tabB, key)
-
-  await setCustomSetting(page, key, 'elsewhere-url')
-  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
-    'elsewhere-url',
-  )
-
-  await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
-    'elsewhere-url',
-  )
-  await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
-  // The value arrived on its own, and the modal says so on its message line —
-  // the line that was standing there, empty, before the value arrived.
-  await expect(tabB.getByTestId('hilos-settings-edit-notice')).toContainText(
-    'Updated just now',
-  )
-  await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
-  await tabB.getByTestId('modal-close').click()
-
-  await clearCustomSetting(page, key)
-  await tabB.close()
-})
-
-test('a dirty open edit conflicts when the other tab saves, with no Merge', async ({
-  page,
+  cleanup,
 }) => {
   const key = 'example_string'
   await grantAdminToSelf(expect, page)
   const tabB = await page.context().newPage()
+  cleanup.defer(() => tabB.close())
+  await borrowSetting(cleanup, 'example_string')
   await openSettings(page)
-  await openSettings(tabB)
   await isolate(page, key)
+  await clearCustomSetting(page, key)
+  await openSettings(tabB)
   await isolate(tabB, key)
 
-  await draftCustomSetting(tabB, key, 'mine-model')
+  await test.step('an edit in one tab lands at once in another, raising no Apply', async () => {
+    const rowA = page.getByTestId('hilos-table-row-example_string')
+    const rowB = tabB.getByTestId('hilos-table-row-example_string')
 
-  await setCustomSetting(page, key, 'theirs-model')
-  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
-    'theirs-model',
-  )
+    // Tab A sets a custom value and applies its own change at once (no Apply).
+    await setCustomSetting(page, 'example_string', 'xx-test')
+    await expect(rowA).toContainText('xx-test')
+    await expect(page.getByTestId('hilos-table-apply')).toHaveCount(0)
 
-  await expect(tabB.getByTestId('conflict-badge')).toBeVisible()
-  await expect(tabB.getByTestId('hilos-settings-edit-notice')).toContainText(
-    'Changed elsewhere to "theirs-model"',
-  )
-  await expect(tabB.getByTestId('conflict-merge')).toHaveCount(0)
-  await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
+    // Tab B takes the change at once, with nothing to press: the window is ordered by
+    // key and a value carries no key, so the edit moved nothing, and the gate holds
+    // position and membership rather than the fields of a record (HIL-793). The
+    // settings value is inline rather than an entity reference, so this row is the
+    // proof the delta itself landed — it could not have changed any other way.
+    await expect(rowB).toContainText('xx-test')
+    // And the row says on itself that it just changed (HIL-803): the tint is checked
+    // HERE, immediately behind the text that is the delta arriving, because it runs on
+    // a two-second timer in the controller. Nothing may be awaited in between — no
+    // wait would make this less racy, only later.
+    await expect(rowB).toHaveClass(/table-success/)
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await expect(rowB).not.toHaveClass(/table-warning/)
+    // A change that landed in place is not a change that waits: no mark stands beside it.
+    await expect(tabB.locator('[data-id^="hilos-table-pending-"]')).toHaveCount(
+      0,
+    )
 
-  await tabB.getByTestId('conflict-accept-theirs').click()
-  await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
-    'theirs-model',
-  )
-  await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
-  await expect(tabB.getByTestId('hilos-settings-edit-notice')).toContainText(
-    'Updated just now',
-  )
-  await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
-  await tabB.getByTestId('modal-close').click()
+    // And the tint goes by itself, with nobody pressing anything.
+    await expect(rowB).not.toHaveClass(/table-success/, { timeout: 10_000 })
+  })
 
-  await clearCustomSetting(page, key)
-  await tabB.close()
-})
+  await test.step('the edit dialog opens on the value the other tab just wrote', async () => {
+    await dismissToasts(page)
+    const rowB = tabB.getByTestId('hilos-table-row-example_string')
 
-test('Keep mine on a dirty conflict saves the typed value in both tabs', async ({
-  page,
-}) => {
-  const key = 'example_string'
-  await grantAdminToSelf(expect, page)
-  const tabB = await page.context().newPage()
-  await openSettings(page)
-  await openSettings(tabB)
-  await isolate(page, key)
-  await isolate(tabB, key)
+    // Tab A sets a custom value; tab B has it on screen before anyone opens a dialog.
+    await setCustomSetting(page, 'example_string', 'hello-modal')
+    await expect(rowB).toContainText('hello-modal')
 
-  await draftCustomSetting(tabB, key, 'mine-provider')
-  const save = tabB.getByTestId('hilos-settings-edit-save')
-  const cancel = tabB.getByTestId('hilos-settings-edit-cancel')
-  // The choices of a conflict hold their room from the open (HIL-1148): their
-  // arrival and their leaving move neither Cancel nor Save.
-  const wide = [
-    await watchLeft(save),
-    await watchTop(save),
-    await watchLeft(cancel),
-    await watchTop(cancel),
-  ]
+    // The dialog is armed from what the row holds, so it edits the value that
+    // arrived and never the one it replaced. Since HIL-793 there is nothing queued
+    // to flush on the way in — a value that leaves the row in its place is applied
+    // when it arrives, and applyAndResolve is left with the removals it still owns.
+    await openSettingEdit(tabB, 'example_string')
+    await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
+      'hello-modal',
+    )
+    await expect(tabB.getByTestId('hilos-table-apply')).toHaveCount(0)
+    await tabB.getByTestId('modal-close').click()
+  })
 
-  await setCustomSetting(page, key, 'theirs-provider')
-  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
-    'theirs-provider',
-  )
-  await expect(tabB.getByTestId('conflict-badge')).toBeVisible()
-  for (const mark of wide) {
-    await mark.unchanged()
-  }
+  await test.step('an open pristine edit reloads when the other tab saves', async () => {
+    await dismissToasts(page)
+    // Tab B opens and does not type: a pristine modal must follow the live row.
+    // The switch may already be on (an env overlay or an empty stored URL); that
+    // is still pristine as long as the field is not edited.
+    await openSettingEdit(tabB, key)
 
-  await tabB.getByTestId('conflict-accept-mine').click()
-  await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
-  for (const mark of wide) {
-    await mark.unchanged()
-  }
-  await expect(save).toBeEnabled()
-  await clickSubmit(expect, save)
-  await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(
-    'mine-provider',
-  )
-  await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
-    'mine-provider',
-  )
+    await setCustomSetting(page, key, 'elsewhere-url')
+    await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+      'elsewhere-url',
+    )
 
-  await clearCustomSetting(page, key)
-  await tabB.close()
+    await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
+      'elsewhere-url',
+    )
+    await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
+    // The value arrived on its own, and the modal says so on its message line —
+    // the line that was standing there, empty, before the value arrived.
+    await expect(tabB.getByTestId('hilos-settings-edit-notice')).toContainText(
+      'Updated just now',
+    )
+    await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
+    await tabB.getByTestId('modal-close').click()
+  })
+
+  await test.step('a dirty open edit conflicts when the other tab saves, with no Merge', async () => {
+    await dismissToasts(page)
+    await draftCustomSetting(tabB, key, 'mine-model')
+
+    await setCustomSetting(page, key, 'theirs-model')
+    await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+      'theirs-model',
+    )
+
+    await expect(tabB.getByTestId('conflict-badge')).toBeVisible()
+    await expect(tabB.getByTestId('hilos-settings-edit-notice')).toContainText(
+      'Changed elsewhere to "theirs-model"',
+    )
+    await expect(tabB.getByTestId('conflict-merge')).toHaveCount(0)
+    await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
+
+    await tabB.getByTestId('conflict-accept-theirs').click()
+    await expect(tabB.getByTestId('hilos-settings-edit-value')).toHaveValue(
+      'theirs-model',
+    )
+    await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
+    await expect(tabB.getByTestId('hilos-settings-edit-notice')).toContainText(
+      'Updated just now',
+    )
+    await expect(tabB.getByTestId('hilos-settings-edit-save')).toBeDisabled()
+    await tabB.getByTestId('modal-close').click()
+  })
+
+  await test.step('Keep mine on a dirty conflict saves the typed value in both tabs', async () => {
+    await dismissToasts(page)
+    await draftCustomSetting(tabB, key, 'mine-provider')
+    const save = tabB.getByTestId('hilos-settings-edit-save')
+    const cancel = tabB.getByTestId('hilos-settings-edit-cancel')
+    // The choices of a conflict hold their room from the open (HIL-1148): their
+    // arrival and their leaving move neither Cancel nor Save.
+    const wide = [
+      await watchLeft(save),
+      await watchTop(save),
+      await watchLeft(cancel),
+      await watchTop(cancel),
+    ]
+
+    await setCustomSetting(page, key, 'theirs-provider')
+    await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+      'theirs-provider',
+    )
+    await expect(tabB.getByTestId('conflict-badge')).toBeVisible()
+    for (const mark of wide) {
+      await mark.unchanged()
+    }
+
+    await tabB.getByTestId('conflict-accept-mine').click()
+    await expect(tabB.getByTestId('conflict-badge')).toHaveCount(0)
+    for (const mark of wide) {
+      await mark.unchanged()
+    }
+    await expect(save).toBeEnabled()
+    await clickSubmit(expect, save)
+    await expect(save).toHaveCount(0)
+    await expect(tabB.getByTestId(`hilos-table-row-${key}`)).toContainText(
+      'mine-provider',
+    )
+    await expect(page.getByTestId(`hilos-table-row-${key}`)).toContainText(
+      'mine-provider',
+    )
+  })
 })
 
 test('an open edit follows its row past the window edge, and the conflict after it', async ({
   page,
+  cleanup,
 }) => {
   // The dialog holds its row in focus (HIL-1050): the other tab's save takes the
   // row past the edge of this tab's window, and the dialog hears the change all
@@ -526,10 +554,14 @@ test('an open edit follows its row past the window edge, and the conflict after 
   const key = 'example_string'
   await grantAdminToSelf(expect, page)
   const tabB = await page.context().newPage()
+  cleanup.defer(() => tabB.close())
+  await borrowSetting(cleanup, key)
   await openSettings(page)
   await openSettings(tabB)
   await isolate(page, key)
   await isolate(tabB, key)
+  await clearCustomSetting(page, key)
+  await dismissToasts(page)
 
   // A's own value sorts after every other; A then leaves the search and takes
   // Value descending, which puts the row at the head of the first page.
@@ -595,7 +627,6 @@ test('an open edit follows its row past the window edge, and the conflict after 
 
   // B still holds the row in its window; A's page does not.
   await clearCustomSetting(tabB, key)
-  await tabB.close()
 })
 
 test('deletes an orphan setting through the confirm modal', async ({
@@ -724,19 +755,23 @@ test('deletes an orphan setting through the confirm modal', async ({
 
 test('resets a custom setting to its catalog default through the confirm modal', async ({
   page,
+  cleanup,
 }) => {
   // HIL-1147: ↺ never resets in one click — it opens a dialog that says what the
   // value is now and what it goes back to, and resets on its Reset only. The key
   // is read by the delivery-log pruner alone, so no other test leans on it; the
-  // test ends on the catalog default, which is its own cleanup.
+  // UI reset remains the subject; teardown restores the exact borrowed value.
   // HIL-1757: the dark ↺ is explained by a ? in the same row, in the sentence
   // the server put on the row, and the ? follows the row live: it comes with
   // the reset that turns ↺ off and goes with the override that turns it on.
   const key = 'notifications.delivery_log.retention_days'
+  await borrowSetting(cleanup, key)
 
   await grantAdminToSelf(expect, page)
   await openSettings(page)
   await isolate(page, key)
+  await clearCustomSetting(page, key)
+  await dismissToasts(page)
   await setCustomSetting(page, key, '30')
 
   const row = page.getByTestId(`hilos-table-row-${key}`)

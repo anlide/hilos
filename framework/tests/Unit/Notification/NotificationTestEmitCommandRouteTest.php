@@ -9,6 +9,9 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Users\DTO\UserNotificationTestCleanupSignalData;
+use Hilos\Core\Exception\InvalidFormatException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Hilos\Hilos;
 use Hilos\Notification\Library\AbstractNotificationsLibraryAgent;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -77,15 +80,96 @@ final class NotificationTestEmitCommandRouteTest extends TestCase
         self::assertStringContainsString('Unknown command', (string)$reply->payload[CommandConstants::FIELD_MESSAGE]);
     }
 
+    public function testInspectAndCleanupDeclareThemselvesTestOnly(): void
+    {
+        foreach ([CliCommands::NOTIFICATION_TEST_INSPECT, CliCommands::NOTIFICATION_TEST_CLEANUP] as $command) {
+            self::assertContains($command, AbstractNotificationsLibraryAgent::AGENT_COMMANDS);
+            self::assertTrue(TestOnlyCommandRegistry::isTestOnly($command));
+        }
+    }
+
+    public function testInspectAndCleanupRefuseProductionAndMissingEnvironmentBeforeReading(): void
+    {
+        foreach ([AppEnv::PROD->value, null] as $environment) {
+            Hilos::$env = $environment === null ? null : new EnvAccessor();
+            if ($environment !== null) {
+                putenv('APP_ENV=' . $environment);
+            }
+            foreach ([CliCommands::NOTIFICATION_TEST_INSPECT, CliCommands::NOTIFICATION_TEST_CLEANUP] as $command) {
+                $this->sendCommand($command, ['userId' => 1, 'title' => 'Owned']);
+                self::assertFalse($this->consumeReply()->isOk());
+            }
+        }
+    }
+
+    public function testInspectRefusesInvalidSubjectsWithoutReadingTheDatabase(): void
+    {
+        $this->assertInvalidSubjects(CliCommands::NOTIFICATION_TEST_INSPECT);
+    }
+
+    public function testCleanupRefusesInvalidSubjectsWithoutWritingTheDatabase(): void
+    {
+        $this->assertInvalidSubjects(CliCommands::NOTIFICATION_TEST_CLEANUP);
+    }
+
+    public function testCleanupSignalRoundTripsOnlyItsFourFields(): void
+    {
+        $payload = ['userId' => 1, 'notificationId' => 2, 'title' => 'Owned', 'correlationId' => 'test-correlation'];
+        self::assertSame($payload, UserNotificationTestCleanupSignalData::fromArray($payload)->toArray());
+    }
+
+    /** @return array<string, array{array<string, mixed>}> Mistyped or missing signal fields */
+    public static function invalidCleanupPayloads(): array
+    {
+        $valid = ['userId' => 1, 'notificationId' => 2, 'title' => 'Owned', 'correlationId' => 'test-correlation'];
+        $cases = [];
+        foreach (['userId', 'notificationId'] as $field) {
+            foreach ([0, -1, true, 1.5, '1', null] as $index => $value) {
+                $cases[$field . $index] = [array_replace($valid, [$field => $value])];
+            }
+        }
+        foreach (['title', 'correlationId'] as $field) {
+            $cases[$field] = [array_diff_key($valid, [$field => true])];
+        }
+        $cases['empty correlation'] = [array_replace($valid, ['correlationId' => ''])];
+        $cases['unexpected'] = [$valid + ['acceptKey' => 'browser']];
+
+        return $cases;
+    }
+
+    /** @param array<string, mixed> $payload Invalid cleanup signal */
+    #[DataProvider('invalidCleanupPayloads')]
+    public function testCleanupSignalRefusesMalformedFields(array $payload): void
+    {
+        $this->expectException(InvalidFormatException::class);
+        UserNotificationTestCleanupSignalData::fromArray($payload);
+    }
+
+    /** @param string $command Test subject command under test */
+    private function assertInvalidSubjects(string $command): void
+    {
+        putenv('APP_ENV=' . AppEnv::TEST->value);
+        Hilos::$env = new EnvAccessor();
+        foreach ([true, 1.5, '1', 0, -1, null] as $userId) {
+            $this->sendCommand($command, ['userId' => $userId, 'title' => 'Owned']);
+            self::assertFalse($this->consumeReply()->isOk());
+        }
+        foreach ([[], ['userId' => 1], ['userId' => 1, 'title' => false], ['userId' => 1, 'title' => 'Owned', 'extra' => true]] as $payload) {
+            $this->sendCommand($command, $payload);
+            self::assertFalse($this->consumeReply()->isOk());
+        }
+    }
+
     /**
      * Drives one command through the agent under test.
      *
      * @param string $command Command-channel wire name to send
+     * @param array<string, mixed> $payload Command fields
      */
-    private function sendCommand(string $command): void
+    private function sendCommand(string $command, array $payload = []): void
     {
         new NotificationCommandRouteTestAgent()->onSignalCommand(
-            new CommandRequestDTO(correlationId: 'corr-1', command: $command),
+            new CommandRequestDTO(correlationId: 'corr-1', command: $command, payload: $payload),
             '',
             '',
         );

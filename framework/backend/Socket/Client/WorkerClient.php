@@ -392,8 +392,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             return;
         }
 
-        // Log received message data for debugging
-        Logger::debug("Received message from worker: " . $message);
+        Logger::debug('Received message from worker [type=' . $workerDTO->getType() . '] [bytes=' . strlen($message) . ']');
 
         // Handle different message types using match with instanceof
         match (true) {

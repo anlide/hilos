@@ -28,6 +28,7 @@ use Hilos\Database\View\Collection\Settings as DbCollectionSettings;
 use Hilos\Database\View\Item\Setting;
 use Hilos\Database\Object\Collection\Settings as ObjectSettings;
 use Hilos\HilosException;
+use Hilos\Environment\NonProductionGate;
 
 /**
  * Settings Actions - write operations for Settings collection.
@@ -87,6 +88,44 @@ class SettingsActions extends DbActions
         $setting->value = $this->serializeValue($value, $type);
         $setting->sync();
 
+        $this->addObjectToCollection($setting);
+
+        return $this->createDbItemFromObject($setting);
+    }
+
+    /**
+     * Creates an absent raw settings row on a non-production stand.
+     *
+     * @param string $key Original setting key
+     * @param string $type Original persisted type
+     * @param ?string $rawValue Original nullable persisted text
+     * @return Setting Created raw setting Db item
+     * @throws SettingInvalidValueException When the environment refuses test-only writes
+     * @throws DuplicateValueException When a setting row for the key already exists
+     * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
+     * @throws DatabaseException When collection loading or setting persistence fails
+     * @throws DuplicateIdException When the created setting id already exists in the collection
+     * @throws ObjectGetIdStringNotImplementedException When the created setting has no persisted id
+     * @throws TableNameUndeterminedException When duplicate-id reporting cannot resolve the table name
+     * @throws LogicException When the settings object collection entity class is not configured
+     * @throws CreateNotAllowedException When the truth source rejects settings collection creation
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
+     */
+    public function addRawForTest(string $key, string $type, ?string $rawValue): Setting
+    {
+        if (!NonProductionGate::admitted()) {
+            throw new SettingInvalidValueException('Raw settings restoration is test-only.');
+        }
+        $this->ensureCanCreate();
+        if (isset($this->collection[$key])) {
+            throw new DuplicateValueException('Raw settings creation requires an absent row.');
+        }
+        $objectClass = $this->objectCollection::OBJECT_CLASS;
+        $setting = $objectClass::create();
+        $setting->key = $key;
+        $setting->type = $type;
+        $setting->value = $rawValue;
+        $setting->sync();
         $this->addObjectToCollection($setting);
 
         return $this->createDbItemFromObject($setting);

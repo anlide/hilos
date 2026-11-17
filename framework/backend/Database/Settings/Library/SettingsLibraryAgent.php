@@ -44,6 +44,9 @@ use Hilos\Database\Settings\Preset\SettingPresetResolver;
 use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Database\Settings\SettingsCommandConstants;
 use Hilos\Database\Settings\SettingValue;
+use Hilos\Database\Settings\RawSettingSnapshot;
+use Hilos\Database\Settings\Exception\SettingInvalidValueException;
+use Hilos\Environment\NonProductionGate;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
@@ -174,6 +177,10 @@ final class SettingsLibraryAgent extends AbstractAgent
             AgentCommandConfigKey::ADDRESS => [SettingsCommandConstants::FIELD_KEY],
         ],
         CliCommands::SETTINGS_TEST_WRITE,
+        CliCommands::SETTINGS_TEST_SNAPSHOT => [
+            AgentCommandConfigKey::ADDRESS => [SettingsCommandConstants::FIELD_KEY],
+        ],
+        CliCommands::SETTINGS_TEST_RESTORE,
     ];
 
     /**
@@ -251,7 +258,10 @@ final class SettingsLibraryAgent extends AbstractAgent
                 return;
             }
             if ($answer->error === null) {
-                $this->replyToCommand(CommandReplyDTO::ok($requestId, []));
+                $payload = $answer->action === CliCommands::SETTINGS_TEST_RESTORE
+                    ? [SettingsCommandConstants::FIELD_RESTORED => true]
+                    : [];
+                $this->replyToCommand(CommandReplyDTO::ok($requestId, $payload));
             } else {
                 $this->replyToCommand(CommandReplyDTO::error($requestId, $answer->errorDetail ?? $answer->error));
             }
@@ -367,7 +377,136 @@ final class SettingsLibraryAgent extends AbstractAgent
             return;
         }
 
+        if ($data->command === CliCommands::SETTINGS_TEST_SNAPSHOT) {
+            $this->handleSettingsTestSnapshotCommand($data);
+
+            return;
+        }
+        if ($data->command === CliCommands::SETTINGS_TEST_RESTORE) {
+            $this->handleSettingsTestRestoreCommand($data);
+
+            return;
+        }
+
         $this->replyToCommand(CommandReplyDTO::error($data->correlationId, "Unknown command: {$data->command}"));
+    }
+
+    /**
+     * Captures raw state without writing, including the absence of an override.
+     *
+     * @param CommandRequestDTO $data Request carrying a nonempty settings key
+     * @throws InvalidArgumentException When the reply cannot be queued
+     */
+    private function handleSettingsTestSnapshotCommand(CommandRequestDTO $data): void
+    {
+        if (!NonProductionGate::admitted()) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Settings snapshots are test-only.'));
+            return;
+        }
+        $key = $data->payload[SettingsCommandConstants::FIELD_KEY] ?? null;
+        if (!is_string($key) || $key === '') {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'A settings snapshot requires a nonempty key.'));
+            return;
+        }
+        try {
+            $snapshot = $this->rawSnapshot($key);
+        } catch (WiringRefusal) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'The settings snapshot cannot read its required collections.'));
+            return;
+        } catch (HilosException) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'The settings snapshot could not be read.'));
+            return;
+        }
+        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [SettingsCommandConstants::FIELD_SNAPSHOT => $snapshot->toArray()]));
+    }
+
+    /**
+     * Restores raw fields in the owner's transaction and reports the ordinary policy changes.
+     *
+     * @param CommandRequestDTO $data Request carrying the complete original snapshot
+     * @throws InvalidArgumentException When the reply or policy announcement cannot be queued
+     */
+    private function handleSettingsTestRestoreCommand(CommandRequestDTO $data): void
+    {
+        if (!NonProductionGate::admitted()) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Settings restoration is test-only.'));
+            return;
+        }
+        try {
+            $raw = $data->payload[SettingsCommandConstants::FIELD_SNAPSHOT] ?? null;
+            if (!is_array($raw)) {
+                throw new SettingInvalidValueException('The settings snapshot has an invalid shape.');
+            }
+            $snapshot = RawSettingSnapshot::fromArray($raw);
+            // An orphan may have been removed by the scenario. It is recreated by its original key.
+            $catalog = Hilos::$setting?->catalog() ?? [];
+            if (!$snapshot->exists && !array_key_exists($snapshot->key, $catalog)) {
+                throw new SettingInvalidValueException('The settings catalog changed during the scenario.');
+            }
+            if ((isset(Hilos::$db->settings[$snapshot->key]) || array_key_exists($snapshot->key, $catalog))
+                && $this->rawSnapshot($snapshot->key)->toArray() === $snapshot->toArray()) {
+                $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, [SettingsCommandConstants::FIELD_RESTORED => true]));
+                return;
+            }
+            $methodsBefore = $this->offeredMethods();
+            $policyBefore = $this->secondFactorPolicy();
+            $deliveryBefore = CodeDeliverySignalData::current();
+            $impersonationBefore = $this->impersonationPolicy();
+            $themeBefore = $this->themeSettings();
+            $ask = new SettingResetSignalData(
+                replySignal: HilosSignalConstants::HILOS_SETTING_COMMAND_DONE,
+                acceptKey: '',
+                requestId: $data->correlationId,
+                action: $data->command,
+                successMessage: null,
+                key: $snapshot->key,
+            );
+            $saved = $this->saveWithRestriction($ask, $policyBefore, function () use ($snapshot): void {
+                if (!$snapshot->exists) {
+                    if (isset(Hilos::$db->settings[$snapshot->key])) {
+                        Hilos::$db->settings[$snapshot->key]->actions->delete();
+                    }
+                } elseif (isset(Hilos::$db->settings[$snapshot->key])) {
+                    Hilos::$db->settings[$snapshot->key]->actions->restoreRawForTest($snapshot->type, $snapshot->rawValue);
+                } else {
+                    Hilos::$db->settings->actions->addRawForTest($snapshot->key, $snapshot->type, $snapshot->rawValue);
+                }
+                if ($this->rawSnapshot($snapshot->key)->toArray() !== $snapshot->toArray()) {
+                    throw new SettingInvalidValueException('Settings cleanup did not restore the original snapshot.');
+                }
+            });
+        } catch (WiringRefusal) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Settings cleanup cannot read its required collections.'));
+            return;
+        } catch (HilosException) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, 'Settings cleanup could not restore the original snapshot.'));
+            return;
+        }
+        $this->settle($ask, $saved, $methodsBefore, $policyBefore, $deliveryBefore, $impersonationBefore, $themeBefore);
+    }
+
+    /**
+     * Reads the existing raw item and the table's source verdict, without normalizing the value.
+     *
+     * @param string $key Stable settings identity
+     * @return RawSettingSnapshot Current state
+     * @throws HilosException When the key is unknown or its state cannot be read
+     */
+    private function rawSnapshot(string $key): RawSettingSnapshot
+    {
+        $row = $this->settingsTable()->rowForKey($key);
+        if ($row === null) {
+            throw new SettingInvalidValueException('The settings snapshot key is unknown.');
+        }
+        $exists = isset(Hilos::$db->settings[$key]);
+
+        return new RawSettingSnapshot(
+            key: $key,
+            exists: $exists,
+            type: $exists ? Hilos::$db->settings[$key]->type : $row->type,
+            rawValue: $exists ? Hilos::$db->settings[$key]->value : null,
+            valueSource: $row->valueSource,
+        );
     }
 
     /**

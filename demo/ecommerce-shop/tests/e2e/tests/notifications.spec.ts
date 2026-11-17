@@ -1,12 +1,15 @@
 import type { Browser, Locator, Page } from '@playwright/test'
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 
 import {
+  borrowSetting,
+  cleanupFixtures,
+  emitOwnedNotification,
+  ownNotificationSubject,
+  type TestCleanup,
   createTestUserJoined,
-  clearCustomSetting,
   enableEmailChannel,
   openBell,
-  setCustomSetting,
   shownByTestId,
   unreadBadge,
   typeInto,
@@ -14,7 +17,10 @@ import {
   grantAdminToSelf,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
-import { emitNotification } from '../../../../../framework/frontend/scripts/notifications.mjs'
+
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
+
+// spec-owner: demo — carries Ecommerce's notification and account journeys
 
 // Notification-center e2e for this demo (HIL-558), the React half of the
 // same center coverage binance-btc-tracker and online-testing carry. A notification
@@ -83,83 +89,97 @@ async function openJoined(page: Page): Promise<number> {
   return userId
 }
 
-test('an emitted notification reaches the bell as an unread row', async ({
+test('notification read lifecycle follows live unread, single read and read-all', async ({
   page,
+  cleanup,
 }) => {
   const userId = await openJoined(page)
+  const { notificationId } =
+    await test.step('an emitted notification reaches the bell as an unread row', async () => {
+      const emitted = await emitOwnedNotification(
+        cleanup,
+        userId,
+        {
+          type: 'e2e_center',
+          title: 'Deploy finished',
+          body: 'The nightly deploy completed.',
+          severity: 'info',
+        },
+        expect,
+      )
 
-  const { notificationId } = await emitNotification(userId, {
-    type: 'e2e_center',
-    title: 'Deploy finished',
-    body: 'The nightly deploy completed.',
-    severity: 'info',
+      const { notificationId, title } = emitted
+
+      // The badge is fed by the live signal, so it turns without the menu ever
+      // being opened.
+      await expect(unreadBadge(page)).toHaveText(/^1\b/)
+
+      await openBell(page)
+      const row = page.getByTestId(`hilos-notification-item-${notificationId}`)
+      await expect(row).toBeVisible()
+      await expect(row).toContainText(title)
+      await expect(row).toContainText('The nightly deploy completed.')
+      await expect(page.getByTestId('hilos-notification-empty')).toHaveCount(0)
+      return emitted
+    })
+  await test.step('marking a row read clears the badge', async () => {
+    await page
+      .getByTestId(`hilos-notification-mark-read-${notificationId}`)
+      .click()
+
+    // The store never turns read optimistically: it turns when the server fans the
+    // read signal back, so the badge going and the row's own mark-read control
+    // going are both proof the round trip landed.
+    await expect(unreadBadge(page)).toHaveCount(0)
+    await expect(
+      page.getByTestId(`hilos-notification-mark-read-${notificationId}`),
+    ).toHaveCount(0)
+    await expect(
+      page.getByTestId(`hilos-notification-item-${notificationId}`),
+    ).toBeVisible()
   })
+  await test.step('mark-all read clears a badge carrying several', async () => {
+    const first = await emitOwnedNotification(
+      cleanup,
+      userId,
+      {
+        type: 'e2e_mark_all',
+        title: 'First',
+      },
+      expect,
+    )
+    const second = await emitOwnedNotification(
+      cleanup,
+      userId,
+      {
+        type: 'e2e_mark_all',
+        title: 'Second',
+      },
+      expect,
+    )
+    expect(
+      new Set([notificationId, first.notificationId, second.notificationId])
+        .size,
+    ).toBe(3)
+    await expect(unreadBadge(page)).toHaveText(/^2\b/)
 
-  // The badge is fed by the live signal, so it turns without the menu ever
-  // being opened.
-  await expect(unreadBadge(page)).toHaveText(/^1\b/)
+    await page.getByTestId('hilos-notification-mark-all').click()
 
-  await openBell(page)
-  const row = page.getByTestId(`hilos-notification-item-${notificationId}`)
-  await expect(row).toBeVisible()
-  await expect(row).toContainText('Deploy finished')
-  await expect(row).toContainText('The nightly deploy completed.')
-  await expect(page.getByTestId('hilos-notification-empty')).toHaveCount(0)
-})
-
-test('marking a row read clears the badge', async ({ page }) => {
-  const userId = await openJoined(page)
-  const { notificationId } = await emitNotification(userId, {
-    type: 'e2e_mark_read',
-    title: 'One to read',
+    await expect(unreadBadge(page)).toHaveCount(0)
+    await expect(
+      page.getByTestId(`hilos-notification-mark-read-${first.notificationId}`),
+    ).toHaveCount(0)
+    await expect(
+      page.getByTestId(`hilos-notification-mark-read-${second.notificationId}`),
+    ).toHaveCount(0)
+    // With nothing left unread the header control disables itself.
+    await expect(page.getByTestId('hilos-notification-mark-all')).toBeDisabled()
   })
-  await expect(unreadBadge(page)).toHaveText(/^1\b/)
-
-  await openBell(page)
-  await page
-    .getByTestId(`hilos-notification-mark-read-${notificationId}`)
-    .click()
-
-  // The store never turns read optimistically: it turns when the server fans the
-  // read signal back, so the badge going and the row's own mark-read control
-  // going are both proof the round trip landed.
-  await expect(unreadBadge(page)).toHaveCount(0)
-  await expect(
-    page.getByTestId(`hilos-notification-mark-read-${notificationId}`),
-  ).toHaveCount(0)
-  await expect(
-    page.getByTestId(`hilos-notification-item-${notificationId}`),
-  ).toBeVisible()
-})
-
-test('mark-all read clears a badge carrying several', async ({ page }) => {
-  const userId = await openJoined(page)
-  const first = await emitNotification(userId, {
-    type: 'e2e_mark_all',
-    title: 'First',
-  })
-  const second = await emitNotification(userId, {
-    type: 'e2e_mark_all',
-    title: 'Second',
-  })
-  await expect(unreadBadge(page)).toHaveText(/^2\b/)
-
-  await openBell(page)
-  await page.getByTestId('hilos-notification-mark-all').click()
-
-  await expect(unreadBadge(page)).toHaveCount(0)
-  await expect(
-    page.getByTestId(`hilos-notification-mark-read-${first.notificationId}`),
-  ).toHaveCount(0)
-  await expect(
-    page.getByTestId(`hilos-notification-mark-read-${second.notificationId}`),
-  ).toHaveCount(0)
-  // With nothing left unread the header control disables itself.
-  await expect(page.getByTestId('hilos-notification-mark-all')).toBeDisabled()
 })
 
 test('a read in one tab reaches the other tab of the same user', async ({
   page,
+  cleanup,
 }) => {
   const userId = await openJoined(page)
 
@@ -167,6 +187,7 @@ test('a read in one tab reaches the other tab of the same user', async ({
   // rather than picking it up from a reconnect snapshot. It shares the context's
   // session cookie, so the handshake names it the same user.
   const tabB = await page.context().newPage()
+  cleanup.defer(() => tabB.close())
   let tabBLoads = 0
   tabB.on('load', () => {
     tabBLoads += 1
@@ -174,10 +195,15 @@ test('a read in one tab reaches the other tab of the same user', async ({
   await gotoPage(expect, tabB, '/')
   const loadsAfterColdLoad = tabBLoads
 
-  const { notificationId } = await emitNotification(userId, {
-    type: 'e2e_across_tabs',
-    title: 'Seen from both tabs',
-  })
+  const { notificationId } = await emitOwnedNotification(
+    cleanup,
+    userId,
+    {
+      type: 'e2e_across_tabs',
+      title: 'Seen from both tabs',
+    },
+    expect,
+  )
   await expect(unreadBadge(page)).toHaveText(/^1\b/)
   await expect(unreadBadge(tabB)).toHaveText(/^1\b/)
 
@@ -194,105 +220,84 @@ test('a read in one tab reaches the other tab of the same user', async ({
     tabB.getByTestId(`hilos-notification-mark-read-${notificationId}`),
   ).toHaveCount(0)
   expect(tabBLoads).toBe(loadsAfterColdLoad)
-
-  await tabB.close()
 })
 
-test('saving a setting raises a toast the close button dismisses', async ({
+test('email delivery reaches SMTP before the recipient mutes the channel', async ({
   page,
+  cleanup,
 }) => {
-  // The toast host is mounted once by the admin shell (HilosLayout), and a
-  // tracked action toasts its own outcome — so the settings page is simply the
-  // nearest surface that raises one for real. example_boolean is this spec's own
-  // catalog key (settings.spec.ts mutates example_integer), and it is reset to
-  // the catalog default afterwards so the suite stays idempotent.
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/settings')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await typeInto(page.getByTestId('hilos-table-search'), 'example_boolean')
-  await expect(
-    page.getByTestId('hilos-table-row-example_boolean'),
-  ).toBeVisible()
-
-  const save = page.getByTestId('hilos-settings-edit-save')
-  await setCustomSetting(page, 'example_boolean', true)
-
-  // The dialog closes on the action's own `::success` reply, so its going is the
-  // action settling — asserted before the toast, which the same reply raises.
-  await expect(save).toHaveCount(0)
-  const toast = page.getByTestId('hilos-toast-success')
-  await expect(toast).toBeVisible()
-  await expect(page.getByTestId('hilos-toasts')).toBeVisible()
-
-  // Dismissed by hand, well inside the stack's own expiry — the close button is
-  // what is under test, so the toast has to still be there to close.
-  await page.getByTestId('hilos-toast-close').click()
-  await expect(toast).toHaveCount(0)
-
-  // Reset the key back to its catalog default.
-  await clearCustomSetting(page, 'example_boolean')
-  await expect(save).toHaveCount(0)
-})
-
-test('an emitted notification is delivered by email', async ({ page }) => {
   const { email, userId } = await signInAddressableAdmin(page)
+  await borrowSetting(cleanup, 'notifications.channel.email.enabled')
+  await gotoPage(expect, page, '/hilos/communications')
+  await enableEmailChannel(page)
+  await test.step('an emitted notification is delivered by email', async () => {
+    const body = 'This line rode the email channel out of the node.'
+    const { queuedChannels, title } = await emitOwnedNotification(
+      cleanup,
+      userId,
+      {
+        type: 'e2e_delivery',
+        title: `Delivery for user ${userId}`,
+        body,
+      },
+      expect,
+    )
+    expect(queuedChannels).toContain('email')
 
-  const title = `Delivery for user ${userId}`
-  const body = 'This line rode the email channel out of the node.'
-  const { queuedChannels } = await emitNotification(userId, {
-    type: 'e2e_delivery',
-    title,
-    body,
+    const mail = await waitForMailTo(email, title)
+    expect(mail.text).toContain(body)
   })
-  expect(queuedChannels).toContain('email')
+  await test.step('muting the email channel keeps the next emit off it', async () => {
+    await gotoPage(expect, page, '/profile/notifications')
+    const toggle = emailPreference(page)
+    await expect(toggle).toBeEnabled()
+    await expect(toggle).toBeChecked()
 
-  const mail = await waitForMailTo(email, title)
-  expect(mail.text).toContain(body)
-})
+    const allowed = await emitOwnedNotification(
+      cleanup,
+      userId,
+      {
+        type: 'e2e_channel_allowed',
+        title: 'Emitted while the channel is allowed',
+      },
+      expect,
+    )
+    expect(allowed.queuedChannels).toContain('email')
 
-test('muting the email channel keeps the next emit off it', async ({
-  page,
-}) => {
-  const { userId } = await signInAddressableAdmin(page)
+    const tabB = await page.context().newPage()
+    cleanup.defer(() => tabB.close())
+    await gotoPage(expect, tabB, '/profile/notifications')
+    await expect(emailPreference(tabB)).toBeChecked()
 
-  await gotoPage(expect, page, '/profile/notifications')
-  const toggle = emailPreference(page)
-  await expect(toggle).toBeEnabled()
-  await expect(toggle).toBeChecked()
+    await toggle.click()
+    await expect(emailPreference(tabB)).not.toBeChecked()
 
-  const allowed = await emitNotification(userId, {
-    type: 'e2e_channel_allowed',
-    title: 'Emitted while the channel is allowed',
+    await gotoPage(expect, page, '/profile/notifications')
+    await expect(emailPreference(page)).not.toBeChecked()
+
+    const muted = await emitOwnedNotification(
+      cleanup,
+      userId,
+      {
+        type: 'e2e_channel_muted',
+        title: 'Emitted while the channel is muted',
+      },
+      expect,
+    )
+    expect(muted.queuedChannels).not.toContain('email')
   })
-  expect(allowed.queuedChannels).toContain('email')
-
-  const tabB = await page.context().newPage()
-  await gotoPage(expect, tabB, '/profile/notifications')
-  await expect(emailPreference(tabB)).toBeChecked()
-
-  await toggle.click()
-  await expect(emailPreference(tabB)).not.toBeChecked()
-
-  await gotoPage(expect, page, '/profile/notifications')
-  await expect(emailPreference(page)).not.toBeChecked()
-
-  const muted = await emitNotification(userId, {
-    type: 'e2e_channel_muted',
-    title: 'Emitted while the channel is muted',
-  })
-  expect(muted.queuedChannels).not.toContain('email')
-
-  await tabB.close()
 })
 
 test('disabling the email channel globally persists across page reload and can be re-enabled', async ({
   page,
+  cleanup,
 }) => {
   await grantAdminToSelf(expect, page)
   await gotoPage(expect, page, '/hilos/communications')
   await expect(page.getByTestId('page-error')).toHaveCount(0)
 
   // Ensure channel is enabled at start.
+  await borrowSetting(cleanup, 'notifications.channel.email.enabled')
   await enableEmailChannel(page)
 
   const toggle = shownByTestId(page, 'hilos-channel-enabled-email')
@@ -308,7 +313,7 @@ test('disabling the email channel globally persists across page reload and can b
   await expect(reloadedToggle).toBeVisible()
   await expect(reloadedToggle).not.toBeChecked()
 
-  // Clean up: restore the channel to enabled so other tests see email=true.
+  // Re-enable through the UI; teardown restores the original raw setting.
   await enableEmailChannel(page)
   await gotoPage(expect, page, '/hilos/communications')
   await expect(shownByTestId(page, 'hilos-channel-enabled-email')).toBeChecked()
@@ -341,12 +346,14 @@ async function openSecondVisitor(browser: Browser): Promise<Page> {
 test('an administrator renaming somebody reaches the renamed visitor', async ({
   page,
   browser,
+  cleanup,
 }) => {
   // This browser is the account about to be renamed; its socket joins the
   // notification group first, so the row arrives over the live signal.
   const userId = await openJoined(page)
 
   const adminPage = await openSecondVisitor(browser)
+  cleanup.defer(() => adminPage.context().close())
   await grantAdminToSelf(expect, adminPage)
   // Straight to the detail page: the users list pages, and this account is not
   // guaranteed to be on the first page of a database every test writes to.
@@ -356,6 +363,12 @@ test('an administrator renaming somebody reaches the renamed visitor', async ({
   const newName = `Renamed visitor ${userId}`
   await adminPage.getByTestId('hilos-user-edit').click()
   await typeInto(adminPage.getByTestId('hilos-user-name-input'), newName)
+  ownNotificationSubject(
+    cleanup,
+    userId,
+    'An administrator renamed your account',
+    expect,
+  )
   await adminPage.getByTestId('hilos-user-save').click()
   // The rename settles when the committed name returns over the live table.
   await expect(adminPage.getByTestId('hilos-user-name')).toHaveText(newName)
@@ -368,6 +381,4 @@ test('an administrator renaming somebody reaches the renamed visitor', async ({
   const menu = page.getByTestId('hilos-notification-menu')
   await expect(menu).toContainText('An administrator renamed your account')
   await expect(menu).toContainText(`Your name is now ${newName}`)
-
-  await adminPage.context().close()
 })

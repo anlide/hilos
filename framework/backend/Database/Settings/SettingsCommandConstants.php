@@ -34,4 +34,22 @@ final class SettingsCommandConstants
 
     /** @var string Reply key: epoch milliseconds at which the library accepted one pair of a test settings write */
     public const string FIELD_ACCEPTED_AT = 'acceptedAt';
+
+    /** @var string Exact original settings state */
+    public const string FIELD_SNAPSHOT = 'snapshot';
+
+    /** @var string Whether a persisted row exists */
+    public const string FIELD_EXISTS = 'exists';
+
+    /** @var string Raw row or catalog type */
+    public const string FIELD_TYPE = 'type';
+
+    /** @var string Raw nullable persisted value */
+    public const string FIELD_RAW_VALUE = 'rawValue';
+
+    /** @var string Computed source of the effective value */
+    public const string FIELD_VALUE_SOURCE = 'valueSource';
+
+    /** @var string Successful restoration acknowledgement */
+    public const string FIELD_RESTORED = 'restored';
 }

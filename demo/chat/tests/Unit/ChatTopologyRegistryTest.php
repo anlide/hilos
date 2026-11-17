@@ -462,6 +462,7 @@ use Hilos\Users\DTO\UserIdentityUnlinkDoneSignalData;
 use Hilos\Users\DTO\UserIdentityUnlinkSignalData;
 use Hilos\Users\DTO\UserNotificationChannelSetSignalData;
 use Hilos\Users\DTO\UserNotificationReadSignalData;
+use Hilos\Users\DTO\UserNotificationTestCleanupSignalData;
 use Hilos\Users\DTO\UserPasskeyUseDoneSignalData;
 use Hilos\Users\DTO\UserPasskeyUseSignalData;
 use Hilos\Users\DTO\UserPasswordChangeDoneSignalData;
@@ -2199,6 +2200,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PHOTO_PUT => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_TEST_CLEANUP => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => HilosAgentType::HILOS_USER,
@@ -2395,9 +2397,13 @@ final class ChatTopologyRegistryTest extends TestCase
             CliCommands::ACCOUNT_TEST_FORCE_PURGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::SESSION_TEST_BIND => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             CliCommands::NOTIFICATION_TEST_EMIT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            CliCommands::NOTIFICATION_TEST_INSPECT => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            CliCommands::NOTIFICATION_TEST_CLEANUP => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             CliCommands::SETTINGS_SET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             CliCommands::SETTINGS_RESET => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             CliCommands::SETTINGS_TEST_WRITE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            CliCommands::SETTINGS_TEST_SNAPSHOT => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+            CliCommands::SETTINGS_TEST_RESTORE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
             CliCommands::I18N_TEST_LANGUAGE_CREATE => HilosAgentType::HILOS_I18N_LIBRARY,
             CliCommands::I18N_TEST_COUNTRY_CREATE => HilosAgentType::HILOS_I18N_LIBRARY,
             CliCommands::I18N_TEST_LOCALE_CREATE => HilosAgentType::HILOS_I18N_LIBRARY,
@@ -2420,6 +2426,8 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatCommandConstants::BOT_TEST_EXTRAS_CREATE => AgentType::LIBRARY,
             ChatCommandConstants::BOT_TEST_EXTRAS_DELETE => AgentType::LIBRARY,
             CliCommands::COMMAND_TEST_ECHO => AgentType::HILOS_INDEX,
+            CliCommands::OAUTH_PROVIDER_TEST_SNAPSHOT => AgentType::HILOS_INDEX,
+            CliCommands::OAUTH_PROVIDER_TEST_RESTORE => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_ENTER => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_LEAVE => AgentType::HILOS_INDEX,
             CliCommands::PROTECTED_MODE_TEST_OPEN => AgentType::HILOS_INDEX,
@@ -2518,6 +2526,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PHOTO_PUT => 'userId',
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE => 'userId',
             HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => 'userId',
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_TEST_CLEANUP => 'userId',
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => 'userId',
             HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE => 'userId',
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => 'userId',
@@ -2623,6 +2632,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_USER_PHOTO_PUT => UserPhotoPutSignalData::class,
             HilosSignalConstants::HILOS_USER_PHOTO_REMOVE => UserPhotoRemoveSignalData::class,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_READ => UserNotificationReadSignalData::class,
+            HilosSignalConstants::HILOS_USER_NOTIFICATION_TEST_CLEANUP => UserNotificationTestCleanupSignalData::class,
             HilosSignalConstants::HILOS_USER_NOTIFICATION_CHANNEL_SET => UserNotificationChannelSetSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_SUBSCRIBE => UserPushSubscribeSignalData::class,
             HilosSignalConstants::HILOS_USER_PUSH_UNSUBSCRIBE => UserPushUnsubscribeSignalData::class,

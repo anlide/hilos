@@ -1263,6 +1263,9 @@ final class HilosSignalConstants
      */
     public const string HILOS_USER_NOTIFICATION_READ = 'hilos_user_notification_read';
 
+    /** Notifications library to the personal owner: remove one terminal test notification. */
+    public const string HILOS_USER_NOTIFICATION_TEST_CLEANUP = 'hilos_user_notification_test_cleanup';
+
     /**
      * Notifications library → the person's agent: turn one channel on or off (HIL-1408).
      *

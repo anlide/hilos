@@ -265,47 +265,49 @@ test('Legal document links open real clauses from the keyboard and name the tabl
   )
 })
 
-test('the viewport table has an accessible name and a labelled search', async ({
+test('Settings names its table and search and sorts from the keyboard', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
   await openSettings(page)
 
-  // The page heading is the table's accessible name: a table carries no
-  // title of its own, and points at the heading that already names it.
-  await expect(page.getByRole('table', { name: 'Settings' })).toBeVisible()
+  await test.step('the viewport table has an accessible name and a labelled search', async () => {
+    // The page heading is the table's accessible name: a table carries no
+    // title of its own, and points at the heading that already names it.
+    await expect(page.getByRole('table', { name: 'Settings' })).toBeVisible()
 
-  // The search box is reachable by an accessible name, not just a placeholder.
-  await expect(
-    page.getByRole('searchbox', { name: 'Search settings…' }),
-  ).toBeVisible()
-})
+    // The search box is reachable by an accessible name, not just a placeholder.
+    await expect(
+      page.getByRole('searchbox', { name: 'Search settings…' }),
+    ).toBeVisible()
+  })
 
-test('a sortable header reports aria-sort and sorts from the keyboard', async ({
-  page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await openSettings(page)
+  await test.step('a sortable header reports aria-sort and sorts from the keyboard', async () => {
+    const header = page
+      .locator('th:has([data-id^="hilos-table-sort-"])')
+      .first()
+    const sortButton = header.locator('[data-id^="hilos-table-sort-"]')
 
-  const header = page.locator('th:has([data-id^="hilos-table-sort-"])').first()
-  const sortButton = header.locator('[data-id^="hilos-table-sort-"]')
+    // The sortable header announces a sort state for assistive tech.
+    await expect(header).toHaveAttribute(
+      'aria-sort',
+      /^(none|ascending|descending)$/,
+    )
+    const before = await header.getAttribute('aria-sort')
 
-  // The sortable header announces a sort state for assistive tech.
-  await expect(header).toHaveAttribute(
-    'aria-sort',
-    /^(none|ascending|descending)$/,
-  )
-  const before = await header.getAttribute('aria-sort')
-
-  // Its sort control is operable from the keyboard: focusing it and pressing
-  // Enter re-sorts the column and the header announces the new direction. The
-  // table is server-windowed, so wait for the announced state to change rather
-  // than snapshot it (the new descriptor round-trips to the backend).
-  await sortButton.focus()
-  await expect(sortButton).toBeFocused()
-  await page.keyboard.press('Enter')
-  await expect(header).not.toHaveAttribute('aria-sort', before ?? 'none')
-  await expect(header).toHaveAttribute('aria-sort', /^(ascending|descending)$/)
+    // Its sort control is operable from the keyboard: focusing it and pressing
+    // Enter re-sorts the column and the header announces the new direction. The
+    // table is server-windowed, so wait for the announced state to change rather
+    // than snapshot it (the new descriptor round-trips to the backend).
+    await sortButton.focus()
+    await expect(sortButton).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(header).not.toHaveAttribute('aria-sort', before ?? 'none')
+    await expect(header).toHaveAttribute(
+      'aria-sort',
+      /^(ascending|descending)$/,
+    )
+  })
 })
 
 test('Analytics People names its table through the heading and sorts Last seen from the keyboard', async ({

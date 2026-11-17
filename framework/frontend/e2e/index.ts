@@ -778,7 +778,6 @@ export {
   expectCommunicationsFrameLive,
   expectCommunicationsFramePreview,
   resetCommunicationsFrame,
-  restoreCommunicationsFrame,
   saveCommunicationsFrame,
   submitCommunicationsFrame,
   expectCommunicationsFrameEditor,
@@ -813,3 +812,9 @@ export {
   createTestUser,
   type TestUserOptions,
 } from './testUser.js'
+export {
+  borrowSetting,
+  borrowOAuthProvider,
+  ownNotificationSubject,
+  emitOwnedNotification,
+} from './ownedTestState.js'

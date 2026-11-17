@@ -1,26 +1,29 @@
 import type { Locator, Page } from '@playwright/test'
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 
 import {
+  borrowSetting,
+  cleanupFixtures,
+  emitOwnedNotification,
+  ownNotificationSubject,
+  type TestCleanup,
   login,
   logout,
   openSignIn,
-  clearCustomSetting,
   enableEmailChannel,
   expectCommunicationsChannelHead,
   openBell,
-  setCustomSetting,
   shownByTestId,
   unreadBadge,
   typeInto,
   gotoPage,
-  grantAdminToSelf,
   createTestUserJoined,
   tableRowKeys,
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMailbox.mjs'
-import { emitNotification } from '../../../../../framework/frontend/scripts/notifications.mjs'
+
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
 // spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
 
@@ -115,89 +118,104 @@ async function expectJournalSent(page: Page, title: string): Promise<void> {
   }).toPass()
 }
 
-test('an emitted notification reaches the bell as an unread row', async ({
+test('notification read lifecycle follows live unread, single read and read-all', async ({
   page,
+  cleanup,
 }) => {
   const { userId } = await createTestUserJoined(expect, page)
+  const { notificationId } =
+    await test.step('an emitted notification reaches the bell as an unread row', async () => {
+      const emitted = await emitOwnedNotification(
+        cleanup,
+        userId,
+        {
+          type: 'e2e_center',
+          title: 'Deploy finished',
+          body: 'The nightly deploy completed.',
+          severity: 'info',
+        },
+        expect,
+      )
 
-  const { notificationId } = await emitNotification(userId, {
-    type: 'e2e_center',
-    title: 'Deploy finished',
-    body: 'The nightly deploy completed.',
-    severity: 'info',
+      const { notificationId, title } = emitted
+
+      // The badge is fed by the live signal, so it turns without the menu ever
+      // being opened.
+      await expect(unreadBadge(page)).toHaveText(/^1\b/)
+
+      await openBell(page)
+      const row = page.getByTestId(`hilos-notification-item-${notificationId}`)
+      await expect(row).toBeVisible()
+      await expect(row).toContainText(title)
+      await expect(row).toContainText('The nightly deploy completed.')
+      await expect(page.getByTestId('hilos-notification-empty')).toHaveCount(0)
+      return emitted
+    })
+  await test.step('marking a row read clears the badge', async () => {
+    await page
+      .getByTestId(`hilos-notification-mark-read-${notificationId}`)
+      .click()
+
+    // The store never turns read optimistically: it turns when the server fans the
+    // read signal back, so the badge going and the row's own mark-read control
+    // going are both proof the round trip landed.
+    await expect(unreadBadge(page)).toHaveCount(0)
+    await expect(
+      page.getByTestId(`hilos-notification-mark-read-${notificationId}`),
+    ).toHaveCount(0)
+    await expect(
+      page.getByTestId(`hilos-notification-item-${notificationId}`),
+    ).toBeVisible()
   })
+  await test.step('mark-all read clears a badge carrying several', async () => {
+    const first = await emitOwnedNotification(
+      cleanup,
+      userId,
+      {
+        type: 'e2e_mark_all',
+        title: 'First',
+      },
+      expect,
+    )
+    const second = await emitOwnedNotification(
+      cleanup,
+      userId,
+      {
+        type: 'e2e_mark_all',
+        title: 'Second',
+      },
+      expect,
+    )
+    expect(
+      new Set([notificationId, first.notificationId, second.notificationId])
+        .size,
+    ).toBe(3)
+    await expect(unreadBadge(page)).toHaveText(/^2\b/)
 
-  // The badge is fed by the live signal, so it turns without the menu ever
-  // being opened.
-  await expect(unreadBadge(page)).toHaveText(/^1\b/)
+    await page.getByTestId('hilos-notification-mark-all').click()
 
-  await openBell(page)
-  const row = page.getByTestId(`hilos-notification-item-${notificationId}`)
-  await expect(row).toBeVisible()
-  await expect(row).toContainText('Deploy finished')
-  await expect(row).toContainText('The nightly deploy completed.')
-  await expect(page.getByTestId('hilos-notification-empty')).toHaveCount(0)
-})
-
-test('marking a row read clears the badge', async ({ page }) => {
-  const { userId } = await createTestUserJoined(expect, page)
-  const { notificationId } = await emitNotification(userId, {
-    type: 'e2e_mark_read',
-    title: 'One to read',
+    await expect(unreadBadge(page)).toHaveCount(0)
+    await expect(
+      page.getByTestId(`hilos-notification-mark-read-${first.notificationId}`),
+    ).toHaveCount(0)
+    await expect(
+      page.getByTestId(`hilos-notification-mark-read-${second.notificationId}`),
+    ).toHaveCount(0)
+    // With nothing left unread the header control disables itself.
+    await expect(page.getByTestId('hilos-notification-mark-all')).toBeDisabled()
   })
-  await expect(unreadBadge(page)).toHaveText(/^1\b/)
-
-  await openBell(page)
-  await page
-    .getByTestId(`hilos-notification-mark-read-${notificationId}`)
-    .click()
-
-  // The store never turns read optimistically: it turns when the server fans the
-  // read signal back, so the badge going and the row's own mark-read control
-  // going are both proof the round trip landed.
-  await expect(unreadBadge(page)).toHaveCount(0)
-  await expect(
-    page.getByTestId(`hilos-notification-mark-read-${notificationId}`),
-  ).toHaveCount(0)
-  await expect(
-    page.getByTestId(`hilos-notification-item-${notificationId}`),
-  ).toBeVisible()
-})
-
-test('mark-all read clears a badge carrying several', async ({ page }) => {
-  const { userId } = await createTestUserJoined(expect, page)
-  const first = await emitNotification(userId, {
-    type: 'e2e_mark_all',
-    title: 'First',
-  })
-  const second = await emitNotification(userId, {
-    type: 'e2e_mark_all',
-    title: 'Second',
-  })
-  await expect(unreadBadge(page)).toHaveText(/^2\b/)
-
-  await openBell(page)
-  await page.getByTestId('hilos-notification-mark-all').click()
-
-  await expect(unreadBadge(page)).toHaveCount(0)
-  await expect(
-    page.getByTestId(`hilos-notification-mark-read-${first.notificationId}`),
-  ).toHaveCount(0)
-  await expect(
-    page.getByTestId(`hilos-notification-mark-read-${second.notificationId}`),
-  ).toHaveCount(0)
-  // With nothing left unread the header control disables itself.
-  await expect(page.getByTestId('hilos-notification-mark-all')).toBeDisabled()
 })
 
 test('a read in one tab reaches the other tab of the same user', async ({
   page,
+  cleanup,
 }) => {
   const { userId } = await createTestUserJoined(expect, page)
 
   // Tab B joins the group before the emit, so it receives the notification live
   // rather than picking it up from a reconnect snapshot.
   const tabB = await page.context().newPage()
+  cleanup.defer(() => tabB.close())
   let tabBLoads = 0
   tabB.on('load', () => {
     tabBLoads += 1
@@ -205,10 +223,15 @@ test('a read in one tab reaches the other tab of the same user', async ({
   await gotoPage(expect, tabB, '/')
   const loadsAfterColdLoad = tabBLoads
 
-  const { notificationId } = await emitNotification(userId, {
-    type: 'e2e_across_tabs',
-    title: 'Seen from both tabs',
-  })
+  const { notificationId } = await emitOwnedNotification(
+    cleanup,
+    userId,
+    {
+      type: 'e2e_across_tabs',
+      title: 'Seen from both tabs',
+    },
+    expect,
+  )
   await expect(unreadBadge(page)).toHaveText(/^1\b/)
   await expect(unreadBadge(tabB)).toHaveText(/^1\b/)
 
@@ -225,51 +248,15 @@ test('a read in one tab reaches the other tab of the same user', async ({
     tabB.getByTestId(`hilos-notification-mark-read-${notificationId}`),
   ).toHaveCount(0)
   expect(tabBLoads).toBe(loadsAfterColdLoad)
-
-  await tabB.close()
-})
-
-test('saving a setting raises a toast the close button dismisses', async ({
-  page,
-}) => {
-  // The toast host is mounted once by the admin shell (HilosLayout), and a
-  // tracked action toasts its own outcome — so the settings page is simply the
-  // nearest surface that raises one for real. example_boolean is this spec's own
-  // catalog key (settings.spec.ts owns the other example_* keys), and it is reset
-  // to the catalog default afterwards so the suite stays idempotent.
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/settings')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  await typeInto(page.getByTestId('hilos-table-search'), 'example_boolean')
-  await expect(
-    page.getByTestId('hilos-table-row-example_boolean'),
-  ).toBeVisible()
-
-  const save = page.getByTestId('hilos-settings-edit-save')
-  await setCustomSetting(page, 'example_boolean', true)
-
-  // The dialog closes on the action's own `::success` reply, so its going is the
-  // action settling — asserted before the toast, which the same reply raises.
-  await expect(save).toHaveCount(0)
-  const toast = page.getByTestId('hilos-toast-success')
-  await expect(toast).toBeVisible()
-  await expect(page.getByTestId('hilos-toasts')).toBeVisible()
-
-  // Dismissed by hand, well inside the stack's own expiry — the close button is
-  // what is under test, so the toast has to still be there to close.
-  await page.getByTestId('hilos-toast-close').click()
-  await expect(toast).toHaveCount(0)
-
-  // Reset the key back to its catalog default.
-  await clearCustomSetting(page, 'example_boolean')
-  await expect(save).toHaveCount(0)
 })
 
 test('muting the email channel keeps the next emit off it', async ({
   page,
+  cleanup,
 }) => {
   const { email, userId } = await signInAddressableAdmin(page)
   await gotoPage(expect, page, '/hilos/communications')
+  await borrowSetting(cleanup, 'notifications.channel.email.enabled')
   await enableEmailChannel(page)
 
   await gotoPage(expect, page, '/profile/notifications')
@@ -285,10 +272,15 @@ test('muting the email channel keeps the next emit off it', async ({
   await expect(toggle).toBeEnabled()
   await expect(toggle).toBeChecked()
 
-  const allowed = await emitNotification(userId, {
-    type: 'e2e_channel_allowed',
-    title: 'Emitted while the channel is allowed',
-  })
+  const allowed = await emitOwnedNotification(
+    cleanup,
+    userId,
+    {
+      type: 'e2e_channel_allowed',
+      title: 'Emitted while the channel is allowed',
+    },
+    expect,
+  )
   expect(allowed.queuedChannels).toContain('email')
 
   // A second tab is what makes the mute observable. The switch is never set
@@ -297,6 +289,7 @@ test('muting the email channel keeps the next emit off it', async ({
   // of the user, so tab B flipping IS the write landing. Without that wait the
   // emit below would be racing it.
   const tabB = await page.context().newPage()
+  cleanup.defer(() => tabB.close())
   await gotoPage(expect, tabB, '/profile/notifications')
   await expect(emailPreference(tabB)).toBeChecked()
 
@@ -315,50 +308,127 @@ test('muting the email channel keeps the next emit off it', async ({
   ).toHaveText(email, { useInnerText: true })
   await expect(emailPreference(page)).toHaveAccessibleDescription(email)
 
-  const muted = await emitNotification(userId, {
-    type: 'e2e_channel_muted',
-    title: 'Emitted while the channel is muted',
-  })
+  const muted = await emitOwnedNotification(
+    cleanup,
+    userId,
+    {
+      type: 'e2e_channel_muted',
+      title: 'Emitted while the channel is muted',
+    },
+    expect,
+  )
   expect(muted.queuedChannels).not.toContain('email')
-
-  await tabB.close()
 })
 
-test('an emitted notification is mailed out and journaled as sent', async ({
+test('an operator navigates to, reads and expands their sent delivery', async ({
   page,
+  cleanup,
 }) => {
   const { email, userId } = await signInAddressableAdmin(page)
+  await borrowSetting(cleanup, 'notifications.channel.email.enabled')
   await gotoPage(expect, page, '/hilos/communications')
   await enableEmailChannel(page)
+  await test.step("an operator reaches a channel's delivery journal by clicks alone", async () => {
+    // Configure opens the fields tab; Deliveries is reached through the same
+    // channel head without typing an address past the hub.
+    await gotoPage(expect, page, '/hilos/communications')
 
-  // The title doubles as the journal's search term and as the subject the
-  // interceptor is asked for, so it carries the recipient's own id to stay
-  // unique on a database every test shares.
-  const title = `Delivery for user ${userId}`
-  const body = 'This line rode the email channel out of the node.'
-  const { queuedChannels } = await emitNotification(userId, {
-    type: 'e2e_delivery',
-    title,
-    body,
+    // The hub is a table drawn both as rows and as cards, so the button
+    // is aimed at through the copy on screen.
+    await shownByTestId(page, 'hilos-channel-configure-email').click()
+    await expectCommunicationsChannelHead(expect, page, 'configuration')
+    expect(new URL(page.url()).pathname).toBe(
+      '/hilos/communications/channel/email/configuration',
+    )
+
+    await page
+      .getByTestId('hilos-page-tab-hilos_communications_deliveries')
+      .click()
+    await expectCommunicationsChannelHead(expect, page, 'deliveries')
+    expect(new URL(page.url()).pathname).toBe(
+      '/hilos/communications/channel/email/deliveries',
+    )
   })
-  expect(queuedChannels).toContain('email')
+  const title =
+    await test.step('an emitted notification is mailed out and journaled as sent', async () => {
+      // The title doubles as the journal's search term and as the subject the
+      // interceptor is asked for, so it carries the recipient's own id to stay
+      // unique on a database every test shares.
+      const body = 'This line rode the email channel out of the node.'
+      const { queuedChannels, title } = await emitOwnedNotification(
+        cleanup,
+        userId,
+        {
+          type: 'e2e_delivery',
+          title: `Delivery for user ${userId}`,
+          body,
+        },
+        expect,
+      )
+      expect(queuedChannels).toContain('email')
 
-  // The journal is the node's own account of the send...
-  await expectJournalSent(page, title)
+      // The journal is the node's own account of the send...
+      await expectJournalSent(page, title)
 
-  // ...and the interceptor is the independent one: a message really arrived, and
-  // it is this notification (GenericNotificationMailTemplate makes the title the
-  // subject and the body the text).
-  const mail = await waitForMailTo(email, title)
-  expect(mail.text).toContain(body)
+      // ...and the interceptor is the independent one: a message really arrived, and
+      // it is this notification (GenericNotificationMailTemplate makes the title the
+      // subject and the body the text).
+      const mail = await waitForMailTo(email, title)
+      expect(mail.text).toContain(body)
+      return title
+    })
+  await test.step('the journal keeps the reason of a delivery in a panel the row expands into', async () => {
+    // The assertion above left exactly this delivery on the screen, and nothing is
+    // expanded yet, so the one row-shaped handle in the table is the row itself.
+    const rowId = await page
+      .getByTestId(/^hilos-table-row-/)
+      .getAttribute('data-id')
+    const key = String(rowId).replace('hilos-table-row-', '')
+    const row = page.getByTestId(`hilos-table-row-${key}`)
+    // The control and the panel are drawn by the row and by its card alike, so what
+    // the reader sees is the copy on screen, and a closed panel is closed in both.
+    const panel = page.getByTestId(`hilos-table-row-detail-${key}`)
+    const shownPanel = shownByTestId(page, `hilos-table-row-detail-${key}`)
+    const control = shownByTestId(page, `hilos-table-expand-${key}`)
+
+    // The notification title took no column of its own: it waits in the panel, and
+    // the row says nothing of it until the reader opens one.
+    await expect(row).not.toContainText(title)
+    await expect(panel).toHaveCount(0)
+    await expect(control).toHaveAttribute('aria-expanded', 'false')
+
+    await control.click()
+
+    await expect(shownPanel).toBeVisible()
+    await expect(shownPanel).toContainText(title)
+    await expect(control).toHaveAttribute('aria-expanded', 'true')
+
+    await control.click()
+
+    await expect(panel).toHaveCount(0)
+
+    // A change of window closes what the reader opened, and it closes it even where
+    // the row itself stays. The window is changed by SORTING rather than by dropping
+    // the search: the search is what left this one delivery on the screen, and this
+    // suite resets its database once per run, so without the filter the row would
+    // stand among every other test's deliveries and the assertion would be measuring
+    // paging instead of the panel.
+    await control.click()
+    await expect(shownPanel).toBeVisible()
+    await page.getByTestId('hilos-table-sort-createdAt').click()
+    await expect(row).toBeVisible()
+    await expect(panel).toHaveCount(0)
+    await expect(control).toHaveAttribute('aria-expanded', 'false')
+  })
 })
 
-test('a sign-in is mailed to the person', async ({ page }) => {
+test('a sign-in is mailed to the person', async ({ page, cleanup }) => {
   // The administrator who switches the channel on is the person signing in: the
   // hub is one setting for the whole stand, and the account signInAddressableAdmin
   // prepares already has the proven address the mail channel writes to.
-  const { email } = await signInAddressableAdmin(page)
+  const { email, userId } = await signInAddressableAdmin(page)
   await gotoPage(expect, page, '/hilos/communications')
+  await borrowSetting(cleanup, 'notifications.channel.email.enabled')
   await enableEmailChannel(page)
 
   // Account preparation announces no sign-in, so a letter under this subject can only
@@ -366,6 +436,7 @@ test('a sign-in is mailed to the person', async ({ page }) => {
   await gotoPage(expect, page, '/')
   await logout(expect, page)
   await openSignIn(expect, page)
+  ownNotificationSubject(cleanup, userId, 'New sign-in to your account', expect)
   await login(expect, page, email)
 
   // GenericNotificationMailTemplate makes the notification's title the subject
@@ -375,170 +446,104 @@ test('a sign-in is mailed to the person', async ({ page }) => {
   expect(mail.text).toContain('Forgot password?')
 })
 
-test('the journal keeps the reason of a delivery in a panel the row expands into', async ({
-  page,
-}) => {
-  const { userId } = await signInAddressableAdmin(page)
-  await gotoPage(expect, page, '/hilos/communications')
-  await enableEmailChannel(page)
-
-  const title = `Expandable delivery for user ${userId}`
-  await emitNotification(userId, {
-    type: 'e2e_delivery',
-    title,
-    body: 'This line waits in the panel under its row.',
-  })
-  await expectJournalSent(page, title)
-
-  // The assertion above left exactly this delivery on the screen, and nothing is
-  // expanded yet, so the one row-shaped handle in the table is the row itself.
-  const rowId = await page
-    .getByTestId(/^hilos-table-row-/)
-    .getAttribute('data-id')
-  const key = String(rowId).replace('hilos-table-row-', '')
-  const row = page.getByTestId(`hilos-table-row-${key}`)
-  // The control and the panel are drawn by the row and by its card alike, so what
-  // the reader sees is the copy on screen, and a closed panel is closed in both.
-  const panel = page.getByTestId(`hilos-table-row-detail-${key}`)
-  const shownPanel = shownByTestId(page, `hilos-table-row-detail-${key}`)
-  const control = shownByTestId(page, `hilos-table-expand-${key}`)
-
-  // The notification title took no column of its own: it waits in the panel, and
-  // the row says nothing of it until the reader opens one.
-  await expect(row).not.toContainText(title)
-  await expect(panel).toHaveCount(0)
-  await expect(control).toHaveAttribute('aria-expanded', 'false')
-
-  await control.click()
-
-  await expect(shownPanel).toBeVisible()
-  await expect(shownPanel).toContainText(title)
-  await expect(control).toHaveAttribute('aria-expanded', 'true')
-
-  await control.click()
-
-  await expect(panel).toHaveCount(0)
-
-  // A change of window closes what the reader opened, and it closes it even where
-  // the row itself stays. The window is changed by SORTING rather than by dropping
-  // the search: the search is what left this one delivery on the screen, and this
-  // suite resets its database once per run, so without the filter the row would
-  // stand among every other test's deliveries and the assertion would be measuring
-  // paging instead of the panel.
-  await control.click()
-  await expect(shownPanel).toBeVisible()
-  await page.getByTestId('hilos-table-sort-createdAt').click()
-  await expect(row).toBeVisible()
-  await expect(panel).toHaveCount(0)
-})
-
-test("an operator reaches a channel's delivery journal by clicks alone", async ({
-  page,
-}) => {
-  // Configure opens the fields tab; Deliveries is reached through the same
-  // channel head without typing an address past the hub.
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications')
-
-  // The hub is a table drawn both as rows and as cards, so the button
-  // is aimed at through the copy on screen.
-  await shownByTestId(page, 'hilos-channel-configure-email').click()
-  await expectCommunicationsChannelHead(expect, page, 'configuration')
-  expect(new URL(page.url()).pathname).toBe(
-    '/hilos/communications/channel/email/configuration',
-  )
-
-  await page
-    .getByTestId('hilos-page-tab-hilos_communications_deliveries')
-    .click()
-  await expectCommunicationsChannelHead(expect, page, 'deliveries')
-  expect(new URL(page.url()).pathname).toBe(
-    '/hilos/communications/channel/email/deliveries',
-  )
-})
-
 // Table pager on an inexact count (HIL-1077): composer test:db-prepare seeds 501
 // notifications with email delivery rows for seed-002 (501 = TableConstants::COUNT_CEILING + 1),
 // crossing the count ceiling where the total stops being exact. When the count is
 // inexact, the pager draws no page numbers and walks page-by-page via Next and Previous.
-test('paginates the delivery journal across windows when the count exceeds the ceiling', async ({
+test('delivery windows preserve disjoint paging and a held exact window on arrival', async ({
   page,
-}) => {
-  await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/communications/channel/email/deliveries')
-
-  const count = page.getByTestId('hilos-table-count')
-  const prev = page.getByTestId('hilos-table-prev')
-  const next = page.getByTestId('hilos-table-next')
-  const pageNumbers = page.locator('[data-id^="hilos-table-page-"]')
-
-  await expect(count).toHaveText('1 – 25 of 500+')
-  await expect(pageNumbers).toHaveCount(0)
-  await expect(prev).toBeDisabled()
-  await expect(next).toBeEnabled()
-
-  const pageOneKeys = await tableRowKeys(page)
-
-  await next.click()
-  await expect.poll(() => tableRowKeys(page)).not.toEqual(pageOneKeys)
-  await expect(count).toHaveText('26 – 50 of 500+')
-  await expect(prev).toBeEnabled()
-  await expect(pageNumbers).toHaveCount(0)
-
-  const pageTwoKeys = await tableRowKeys(page)
-  for (const key of pageOneKeys) {
-    expect(pageTwoKeys).not.toContain(key)
-  }
-
-  await prev.click()
-  await expect.poll(() => tableRowKeys(page)).toEqual(pageOneKeys)
-  await expect(count).toHaveText('1 – 25 of 500+')
-  await expect(prev).toBeDisabled()
-})
-
-test('keeps an exact delivery window in place until Show after a live arrival above it', async ({
-  page,
+  cleanup,
 }) => {
   // Twenty-seven command emits took 6.8s on an idle stand; slow delivery queues can exceed the base cap.
   test.slow()
-
   const { userId } = await signInAddressableAdmin(page)
+  await borrowSetting(cleanup, 'notifications.channel.email.enabled')
   await gotoPage(expect, page, '/hilos/communications')
   await enableEmailChannel(page)
+  await test.step('paginates the delivery journal across windows when the count exceeds the ceiling', async () => {
+    await gotoPage(
+      expect,
+      page,
+      '/hilos/communications/channel/email/deliveries',
+    )
 
-  const searchTerm = `window_delivery_${userId}`
-  for (let index = 0; index < 26; index += 1) {
-    const emitted = await emitNotification(userId, {
-      type: 'e2e_delivery_window',
-      title: `${searchTerm} ${index}`,
-    })
-    expect(emitted.queuedChannels).toContain('email')
-  }
+    const count = page.getByTestId('hilos-table-count')
+    const prev = page.getByTestId('hilos-table-prev')
+    const next = page.getByTestId('hilos-table-next')
+    const pageNumbers = page.locator('[data-id^="hilos-table-page-"]')
 
-  await gotoPage(expect, page, '/hilos/communications/channel/email/deliveries')
-  await typeInto(page.getByTestId('hilos-table-search'), searchTerm)
-  const count = page.getByTestId('hilos-table-count')
-  const next = page.getByTestId('hilos-table-next')
-  await expect(count).toHaveText('1 – 25 of 26')
-  await next.click()
-  await expect(count).toHaveText('26 – 26 of 26')
-  const standingKeys = await tableRowKeys(page)
-  expect(standingKeys).toHaveLength(1)
-  await expect(next).toBeDisabled()
+    await expect(count).toHaveText('1 – 25 of 500+')
+    await expect(pageNumbers).toHaveCount(0)
+    await expect(prev).toBeDisabled()
+    await expect(next).toBeEnabled()
 
-  const newest = await emitNotification(userId, {
-    type: 'e2e_delivery_window',
-    title: `${searchTerm} newest`,
+    const pageOneKeys = await tableRowKeys(page)
+
+    await next.click()
+    await expect.poll(() => tableRowKeys(page)).not.toEqual(pageOneKeys)
+    await expect(count).toHaveText('26 – 50 of 500+')
+    await expect(prev).toBeEnabled()
+    await expect(pageNumbers).toHaveCount(0)
+
+    const pageTwoKeys = await tableRowKeys(page)
+    for (const key of pageOneKeys) {
+      expect(pageTwoKeys).not.toContain(key)
+    }
+
+    await prev.click()
+    await expect.poll(() => tableRowKeys(page)).toEqual(pageOneKeys)
+    await expect(count).toHaveText('1 – 25 of 500+')
+    await expect(prev).toBeDisabled()
   })
-  expect(newest.queuedChannels).toContain('email')
-  await expect(count).toHaveText('26 – 26 of 27')
-  await expect.poll(() => tableRowKeys(page)).toEqual(standingKeys)
-  await expect(next).toBeDisabled()
+  await test.step('keeps an exact delivery window in place until Show after a live arrival above it', async () => {
+    const searchTerm = `window_delivery_${userId}`
+    for (let index = 0; index < 26; index += 1) {
+      const emitted = await emitOwnedNotification(
+        cleanup,
+        userId,
+        {
+          type: 'e2e_delivery_window',
+          title: `${searchTerm} ${index}`,
+        },
+        expect,
+      )
+      expect(emitted.queuedChannels).toContain('email')
+    }
 
-  await page.getByTestId('hilos-table-announce-show').click()
-  await expect(count).toHaveText('27 – 27 of 27')
-  await expect.poll(() => tableRowKeys(page)).toEqual(standingKeys)
-  await expect(next).toBeDisabled()
+    await gotoPage(
+      expect,
+      page,
+      '/hilos/communications/channel/email/deliveries',
+    )
+    await typeInto(page.getByTestId('hilos-table-search'), searchTerm)
+    const count = page.getByTestId('hilos-table-count')
+    const next = page.getByTestId('hilos-table-next')
+    await expect(count).toHaveText('1 – 25 of 26')
+    await next.click()
+    await expect(count).toHaveText('26 – 26 of 26')
+    const standingKeys = await tableRowKeys(page)
+    expect(standingKeys).toHaveLength(1)
+    await expect(next).toBeDisabled()
+
+    const newest = await emitOwnedNotification(
+      cleanup,
+      userId,
+      {
+        type: 'e2e_delivery_window',
+        title: `${searchTerm} newest`,
+      },
+      expect,
+    )
+    expect(newest.queuedChannels).toContain('email')
+    await expect(count).toHaveText('26 – 26 of 27')
+    await expect.poll(() => tableRowKeys(page)).toEqual(standingKeys)
+    await expect(next).toBeDisabled()
+
+    await page.getByTestId('hilos-table-announce-show').click()
+    await expect(count).toHaveText('27 – 27 of 27')
+    await expect.poll(() => tableRowKeys(page)).toEqual(standingKeys)
+    await expect(next).toBeDisabled()
+  })
 })
 
 test.describe('notifications in Pacific/Honolulu', () => {
@@ -546,6 +551,7 @@ test.describe('notifications in Pacific/Honolulu', () => {
 
   test('notification and delivery timestamps reflect Pacific/Honolulu timezone', async ({
     page,
+    cleanup,
   }) => {
     let capturedNotificationCreated: { id: number; createdAt: number } | null =
       null
@@ -637,15 +643,21 @@ test.describe('notifications in Pacific/Honolulu', () => {
 
     const { userId } = await signInAddressableAdmin(page)
     await gotoPage(expect, page, '/hilos/communications')
+    await borrowSetting(cleanup, 'notifications.channel.email.enabled')
     await enableEmailChannel(page)
     await gotoPage(expect, page, '/')
 
-    const title = `Pacific timezone delivery for user ${userId}`
-    const { notificationId, queuedChannels } = await emitNotification(userId, {
-      type: 'e2e_timezone',
-      title,
-      body: 'Testing Pacific/Honolulu delivery timestamp',
-    })
+    const { notificationId, queuedChannels, title } =
+      await emitOwnedNotification(
+        cleanup,
+        userId,
+        {
+          type: 'e2e_timezone',
+          title: `Pacific timezone delivery for user ${userId}`,
+          body: 'Testing Pacific/Honolulu delivery timestamp',
+        },
+        expect,
+      )
     expect(queuedChannels).toContain('email')
 
     await expect
