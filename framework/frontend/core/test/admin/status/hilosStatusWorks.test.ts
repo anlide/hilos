@@ -1398,6 +1398,104 @@ describe('Works window picker', () => {
     }
   })
 
+  it.each(['baseline', 'incoming'] as const)(
+    'keeps a shown start conflict when picker text passes through %s until Keep mine',
+    async (passes) => {
+      const h = setup()
+      try {
+        h.window()
+        h.edit.open('7')
+        const picker = h.edit.windowPicker.get()!
+        picker.setPartText('start', 'hour', '05')
+        h.update({ startsAt: Date.UTC(2031, 0, 1, 3, 4, 5), version: 2 })
+        expect(h.edit.state.get().conflict).toBe(true)
+        expect(h.edit.noticeText.get()).toBe(
+          HILOS_STATUS_WORK_ACTION_COPY.conflict,
+        )
+
+        picker.setPartText('start', 'hour', '')
+        expect(picker.state.get().start.result).toEqual({
+          status: 'incomplete',
+        })
+        expect(edgeTexts(picker, 'start')).toEqual([
+          '2031',
+          '01',
+          '02',
+          '',
+          '04',
+          '05',
+        ])
+        expect(h.edit.state.get().conflict).toBe(true)
+
+        picker.setPartText('start', 'hour', '03')
+        expect(edgeTexts(picker, 'start')).toEqual([
+          '2031',
+          '01',
+          '02',
+          '03',
+          '04',
+          '05',
+        ])
+        expect(picker.state.get().start.result).toEqual({
+          status: 'valid',
+          value: announcement.startsAt,
+        })
+        expect(h.edit.state.get().conflict).toBe(true)
+
+        const day = passes === 'baseline' ? 2 : 1
+        if (passes === 'incoming') picker.setPartText('start', 'day', '01')
+        expect(picker.state.get().start.result).toEqual({
+          status: 'valid',
+          value: Date.UTC(2031, 0, day, 3, 4, 5),
+        })
+        expect(h.edit.state.get().conflict).toBe(true)
+        expect(h.edit.noticeText.get()).toBe(
+          HILOS_STATUS_WORK_ACTION_COPY.conflict,
+        )
+        expect(h.edit.canSave.get()).toBe(false)
+        expect(await h.edit.submit()).toBe(false)
+        expect(h.edit.opened.get()).toBe(true)
+        expect(h.sent).toHaveLength(0)
+
+        picker.setPartText('start', 'minute', '30')
+        expect(edgeTexts(picker, 'start')).toEqual([
+          '2031',
+          '01',
+          passes === 'baseline' ? '02' : '01',
+          '03',
+          '30',
+          '05',
+        ])
+        expect(h.edit.state.get().conflict).toBe(true)
+        expect(h.edit.canSave.get()).toBe(false)
+        expect(await h.edit.submit()).toBe(false)
+        expect(h.sent).toHaveLength(0)
+
+        const snapshot = picker.state.get()
+        h.edit.keepMine()
+        expect(picker.state.get()).toBe(snapshot)
+        expect(h.edit.state.get().conflict).toBe(false)
+        expect(h.edit.canSave.get()).toBe(true)
+        const pending = h.edit.submit()
+        expect(h.sent).toHaveLength(1)
+        expect(h.sent[0]?.data).toEqual({
+          workId: announcement.id,
+          publicId: announcement.publicId,
+          expectedVersion: 2,
+          title: announcement.title,
+          description: announcement.description,
+          componentKeys: announcement.componentKeys,
+          startsAt: Date.UTC(2031, 0, day, 3, 30, 5),
+          endsAt: announcement.endsAt,
+        })
+        h.answer(true)
+        expect(await pending).toBe(true)
+      } finally {
+        h.dispose()
+      }
+    },
+  )
+
   it('leaves the picker untouched on Keep mine and sends the kept edge', async () => {
     const h = setup()
     try {

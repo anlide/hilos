@@ -99,6 +99,76 @@ describe('profile rename tab memory', () => {
     },
   )
 
+  it.each(['Original', 'Foreign'])(
+    'round-trips a real held conflict with draft %s into a fresh session without send or rebase permission',
+    async (draft) => {
+      const live = createSignal<HilosProfileRenameFields | undefined>({
+        name: 'Original',
+      })
+      const session = () =>
+        createHilosRowEdit<
+          HilosProfileRenameFields,
+          HilosProfileRenameFields,
+          string
+        >(hilosSignalRowEditSource(live), {
+          initial: '',
+          fields: (row) => row,
+          form: (row) => row.name,
+          draft: (form) => ({ name: form }),
+          take: (form, taken) => taken.name ?? form,
+          notice: { conflict: () => 'Changed elsewhere' },
+        })
+      const first = session()
+      first.start()
+      first.open()
+      first.setForm('Typed')
+      live.set({ name: 'Foreign' })
+      first.setForm(draft)
+      const checkpoint = first.checkpoint()!
+      expect(checkpoint.baseline.conflicts).toEqual(['name'])
+      writeProfileRenameMemory({ ...memory(), draft, checkpoint })
+      const restored = readProfileRenameMemory()!
+      expect(restored.checkpoint).toEqual(checkpoint)
+      first.dispose()
+
+      const edit = session()
+      edit.start()
+      edit.open()
+      const publish = vi.fn()
+      expect(
+        edit.rebaseAfterSave(
+          { name: 'Foreign' },
+          restored.checkpoint!,
+          publish,
+        ),
+      ).toBe(false)
+      expect(publish).not.toHaveBeenCalled()
+      expect(edit.restore(restored.checkpoint!)).toBe(true)
+      expect(edit.form.get()).toBe(draft)
+      expect(edit.state.get()).toMatchObject({
+        conflict: true,
+        settle: null,
+        notice: { kind: 'conflict', fields: ['name'] },
+      })
+      expect(edit.checkpoint()!.baseline.values).toEqual({ name: 'Original' })
+      expect(edit.checkpoint()!.baseline.conflicts).toEqual(['name'])
+      expect(edit.canSave.get()).toBe(false)
+      const send = vi.fn(() => Promise.resolve(true))
+      await edit.save(send)
+      expect(send).not.toHaveBeenCalled()
+      expect(edit.opened.get()).toBe(true)
+      expect(
+        edit.rebaseAfterSave({ name: 'Foreign' }, restored.checkpoint!),
+      ).toBe(false)
+      ;(restored.checkpoint!.baseline.conflicts as string[]).length = 0
+      expect(readProfileRenameMemory()!.checkpoint!.baseline.conflicts).toEqual(
+        ['name'],
+      )
+      expect(edit.checkpoint()!.baseline.conflicts).toEqual(['name'])
+      edit.dispose()
+    },
+  )
+
   it.each(['', 'x', ' '.repeat(10), 'x'.repeat(1000)])(
     'preserves intermediate input %j without Save validation',
     (draft) => {
@@ -192,6 +262,10 @@ describe('profile rename tab memory', () => {
         ...memory().checkpoint,
         baseline: { values: { name: 'Original' }, refreshed: [1] },
       },
+      ...[['email'], [1], 'name', null].map((conflicts) => ({
+        ...memory().checkpoint,
+        baseline: { values: { name: 'Original' }, refreshed: [], conflicts },
+      })),
       {
         ...memory().checkpoint,
         baseline: {

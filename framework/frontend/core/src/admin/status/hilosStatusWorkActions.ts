@@ -609,9 +609,6 @@ export function createHilosStatusWorkEdit(
   const source = workSource(table)
   const timeZone = createSignal('UTC')
   const windowPicker = createSignal<HilosStatusWorkWindowPicker | null>(null)
-  // The draft as it stood before a view's write, while the write lands: the
-  // session merges what the write left, never a step on the way to it.
-  const heldDraft = createSignal<HilosStatusWorkEditFields | null>(null)
   const blockedReason = computedSignal(
     () =>
       request.blockedReason.get() ??
@@ -649,7 +646,7 @@ export function createHilosStatusWorkEdit(
         componentKeys: [...row.componentKeys],
       }
     },
-    draft: (text) => heldDraft.get() ?? formFields(text, windowPicker.get()),
+    draft: (text) => formFields(text, windowPicker.get()),
     // A taken edge lands in the picker; the other edge keeps its own draft.
     take: (text, taken) => {
       const picker = windowPicker.get()
@@ -682,16 +679,6 @@ export function createHilosStatusWorkEdit(
     request.dispose()
     edit.dispose()
     windowPicker.get()?.dispose()
-  }
-  // One view write reaches the session as one draft: it merges once, on the
-  // whole entry.
-  const writeWhole = (write: () => void): void => {
-    heldDraft.set(formFields(edit.form.get(), windowPicker.get()))
-    try {
-      write()
-    } finally {
-      heldDraft.set(null)
-    }
   }
   return {
     ...request,
@@ -727,11 +714,11 @@ export function createHilosStatusWorkEdit(
     checkpoint: edit.checkpoint,
     setForm(form) {
       if (edit.saving.get()) return
-      writeWhole(() => edit.setForm(form))
+      edit.setForm(form)
     },
     patchForm(patch) {
       if (edit.saving.get()) return
-      writeWhole(() => edit.patchForm(patch))
+      edit.patchForm(patch)
     },
     keepMine() {
       if (!edit.saving.get()) edit.keepMine()

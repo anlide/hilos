@@ -250,7 +250,7 @@ export type HilosActionRun = (handle: ActionHandle) => Promise<boolean>
  * contract (including the canonical hidden mark).
  */
 export interface HilosRowEditCheckpoint<T extends object, F = T> {
-  /** The accepted saved values and the fields taken from the other side. */
+  /** Accepted saved values, fields taken from the other side and unresolved conflicts. */
   readonly baseline: RowEditBaseline<T>
   /** The shown form, including data outside the edited fields. */
   readonly form: F
@@ -476,6 +476,7 @@ function rebaseBaseline<T extends object>(
 ): RowEditBaseline<T> {
   const values = copyEditData(saved)
   const refreshed: (keyof T & string)[] = []
+  const conflicts: (keyof T & string)[] = []
   for (const key of Object.keys(saved) as (keyof T & string)[]) {
     if (
       !Object.is(live[key], saved[key]) &&
@@ -484,9 +485,15 @@ function rebaseBaseline<T extends object>(
       values[key] = snapshot.values[key]
       if (snapshot.refreshed.includes(key)) refreshed.push(key)
     }
+    if (
+      snapshot.conflicts?.includes(key) &&
+      !Object.is(live[key], values[key])
+    ) {
+      conflicts.push(key)
+    }
   }
 
-  return { values, refreshed }
+  return { values, refreshed, ...(conflicts.length > 0 ? { conflicts } : {}) }
 }
 
 /**
@@ -753,6 +760,17 @@ export function createHilosRowEdit<R, T extends object, F = T>(
       let restored: HilosRowEditCheckpoint<T, F>
       try {
         restored = copyEditData(checkpoint)
+        if (
+          restored.baseline.conflicts !== undefined &&
+          (!Array.isArray(restored.baseline.conflicts) ||
+            !Array.from(restored.baseline.conflicts).every(
+              (key) =>
+                typeof key === 'string' &&
+                Object.hasOwn(restored.baseline.values, key),
+            ))
+        ) {
+          return false
+        }
         if (saved !== undefined) {
           if (!sameFields(saved, restored.baseline.values)) {
             return false

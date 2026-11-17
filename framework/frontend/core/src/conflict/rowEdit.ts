@@ -32,7 +32,7 @@ export type RowEditMergers<T> = {
 
 /**
  * The snapshot an edit compares against: the saved values the person last saw,
- * and which of them the form took from the other side.
+ * fields taken from the other side, and conflicts still awaiting a choice.
  */
 export interface RowEditBaseline<T extends object> {
   /**
@@ -46,6 +46,8 @@ export interface RowEditBaseline<T extends object> {
    * take or Take theirs — and which the person has not touched since.
    */
   readonly refreshed: readonly (keyof T & string)[]
+  /** Unresolved conflicts already shown, in snapshot field order without duplicates. */
+  readonly conflicts?: readonly (keyof T & string)[]
 }
 
 /** One field's merge, plus the live value and whether the form shows a taken one. */
@@ -88,7 +90,9 @@ export interface RowEditState<T extends object> {
   /**
    * The move the view applies as soon as it sees one: a field only the other
    * side changed goes into the form and the snapshot; a field both sides
-   * changed alike only moves the snapshot. Null when there is nothing to move
+   * changed alike only moves the snapshot. Shown conflicts are remembered until
+   * a choice or the live value returns to the accepted baseline.
+   * Null when there is nothing to move
    * — the view applies a step whenever it is there, so a step with nothing in
    * it would run the view in a circle.
    */
@@ -167,7 +171,18 @@ export function resolveRowEdit<T extends object>(
   let moved = false
   let dirty = false
   for (const key of keys) {
-    const merge = threeWayMerge(baseline.values[key], draft[key], live[key])
+    const classified = threeWayMerge(
+      baseline.values[key],
+      draft[key],
+      live[key],
+    )
+    // Once shown, equality of the draft is no longer a choice. Only a return
+    // of incoming to the accepted baseline releases the conflict automatically.
+    const merge =
+      baseline.conflicts?.includes(key) &&
+      !Object.is(live[key], baseline.values[key])
+        ? { status: 'conflict' as const, conflict: true, value: draft[key] }
+        : classified
     // A taken value stays "refreshed" only while the form still shows it: the
     // moment the person types over it, the message about it goes out.
     const isRefreshed =
@@ -196,6 +211,13 @@ export function resolveRowEdit<T extends object>(
       moved = true
     }
   }
+  const previous = baseline.conflicts ?? []
+  if (
+    previous.length !== conflicting.length ||
+    previous.some((key, index) => key !== conflicting[index])
+  ) {
+    moved = true
+  }
 
   let notice: RowEditNotice<T> | null = null
   if (conflicting.length > 0) {
@@ -209,7 +231,16 @@ export function resolveRowEdit<T extends object>(
     fields,
     conflict: conflicting.length > 0,
     dirty,
-    settle: moved ? { baseline: { values, refreshed }, take } : null,
+    settle: moved
+      ? {
+          baseline: {
+            values,
+            refreshed,
+            ...(conflicting.length > 0 ? { conflicts: conflicting } : {}),
+          },
+          take,
+        }
+      : null,
     notice,
   }
 }
@@ -229,6 +260,9 @@ export function keepMineRowEdit<T extends object>(
 ): RowEditBaseline<T> {
   let values = baseline.values
   let refreshed = baseline.refreshed
+  const conflicts = baseline.conflicts?.filter(
+    (key) => !state.fields[key].conflict,
+  )
   for (const key of fieldsOf(baseline.values)) {
     if (state.fields[key].conflict) {
       values = { ...values, [key]: state.fields[key].incoming }
@@ -236,7 +270,7 @@ export function keepMineRowEdit<T extends object>(
     }
   }
 
-  return { values, refreshed }
+  return { values, refreshed, ...(conflicts?.length ? { conflicts } : {}) }
 }
 
 /**
@@ -254,6 +288,9 @@ export function takeTheirsRowEdit<T extends object>(
   const take: Partial<T> = {}
   let values = baseline.values
   let refreshed = baseline.refreshed
+  const conflicts = baseline.conflicts?.filter(
+    (key) => !state.fields[key].conflict,
+  )
   for (const key of fieldsOf(baseline.values)) {
     if (state.fields[key].conflict) {
       take[key] = state.fields[key].incoming
@@ -262,7 +299,14 @@ export function takeTheirsRowEdit<T extends object>(
     }
   }
 
-  return { baseline: { values, refreshed }, take }
+  return {
+    baseline: {
+      values,
+      refreshed,
+      ...(conflicts?.length ? { conflicts } : {}),
+    },
+    take,
+  }
 }
 
 /**
@@ -288,6 +332,9 @@ export function mergeRowEdit<T extends object>(
   const take: Partial<T> = {}
   let values = baseline.values
   let refreshed = baseline.refreshed
+  const conflicts = baseline.conflicts?.filter(
+    (key) => !state.fields[key].conflict,
+  )
   for (const key of fieldsOf(baseline.values)) {
     const field = state.fields[key]
     if (!field.conflict) {
@@ -306,5 +353,12 @@ export function mergeRowEdit<T extends object>(
     refreshed = withoutField(refreshed, key)
   }
 
-  return { baseline: { values, refreshed }, take }
+  return {
+    baseline: {
+      values,
+      refreshed,
+      ...(conflicts?.length ? { conflicts } : {}),
+    },
+    take,
+  }
 }

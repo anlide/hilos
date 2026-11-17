@@ -26,7 +26,7 @@ import {
   isHiddenValue,
   type Hideable,
 } from '../../src/state/hiddenValue.js'
-import { createSignal } from '../../src/state/signal.js'
+import { createSignal, subscribeSignal } from '../../src/state/signal.js'
 
 interface Row {
   readonly id: number
@@ -329,6 +329,177 @@ describe('row-edit session: the live row', () => {
   })
 })
 
+describe('row-edit session: remembered conflicts', () => {
+  it.each(['Ann', 'Carl'])(
+    'keeps the conflict through draft %s and refuses Save, Enter and live-landing sends',
+    async (name) => {
+      const { edit, live } = signalHarness()
+      edit.open()
+      edit.patchForm({ name: 'Bob' })
+      live.set({ id: 1, name: 'Carl', note: null })
+      expect(edit.checkpoint()!.baseline.conflicts).toEqual(['name'])
+      edit.patchForm({ name })
+      expect(edit.form.get().name).toBe(name)
+      expect(edit.state.get()).toMatchObject({
+        conflict: true,
+        dirty: name !== 'Carl',
+        settle: null,
+        notice: { kind: 'conflict', fields: ['name'] },
+      })
+      expect(edit.checkpoint()!.baseline.values.name).toBe('Ann')
+      expect(edit.noticeText.get()).toBe('Changed to "Carl".')
+      expect(edit.saveAvailable.get()).toBe(false)
+      expect(edit.canSave.get()).toBe(false)
+      const send = vi.fn(() => Promise.resolve(true))
+      await edit.save(send)
+      await edit.save(send)
+      const sendLanded = vi.fn(() => true)
+      edit.saveLanded(sendLanded, createSignal<string | null>(null))
+      expect(send).not.toHaveBeenCalled()
+      expect(sendLanded).not.toHaveBeenCalled()
+      expect(edit.opened.get()).toBe(true)
+      expect(edit.saving.get()).toBe(false)
+      live.set({ id: 1, name: 'Dan', note: null })
+      expect(edit.state.get().fields.name.incoming).toBe('Dan')
+      expect(edit.noticeText.get()).toBe('Changed to "Dan".')
+      expect(edit.form.get().name).toBe(name)
+      edit.dispose()
+    },
+  )
+
+  it.each(['keep', 'take', 'merge'] as const)(
+    'resolves the current remembered fields through %s without saving or closing',
+    (choice) => {
+      const merge = vi.fn((_saved: Fields['name'], draft: Fields['name']) => ({
+        merged: true as const,
+        value: draft,
+      }))
+      const { edit, live } = signalHarness(undefined, { name: merge })
+      edit.open()
+      edit.patchForm({ name: 'Bob' })
+      live.set({ id: 1, name: 'Carl', note: 'automatic' })
+      edit.patchForm({ name: 'Ann' })
+      if (choice === 'keep') edit.keepMine()
+      else if (choice === 'take') edit.takeTheirs()
+      else edit.merge()
+      expect(edit.checkpoint()!.baseline).toEqual({
+        values: { name: 'Carl', note: 'automatic' },
+        refreshed: choice === 'take' ? ['note', 'name'] : ['note'],
+      })
+      expect(edit.form.get()).toEqual({
+        hidden: false,
+        name: choice === 'take' ? 'Carl' : 'Ann',
+        note: 'automatic',
+      })
+      expect(edit.state.get().conflict).toBe(false)
+      expect(edit.canSave.get()).toBe(choice !== 'take')
+      expect(edit.opened.get()).toBe(true)
+      expect(edit.saving.get()).toBe(false)
+      if (choice === 'merge')
+        expect(merge).toHaveBeenCalledWith('Ann', 'Ann', 'Carl')
+      edit.dispose()
+    },
+  )
+
+  it('refuses an atomic merge without changing remembered conflicts or either form field', () => {
+    const { edit, live } = signalHarness(undefined, {
+      name: () => ({ merged: true, value: 'joined' }),
+      note: () => ({ merged: false }),
+    })
+    edit.open()
+    edit.patchForm({ name: 'Bob', note: 'mine' })
+    live.set({ id: 1, name: 'Carl', note: 'theirs' })
+    edit.patchForm({ name: 'Ann', note: 'theirs' })
+    const before = edit.checkpoint()
+    expect(before!.baseline.conflicts).toEqual(['name', 'note'])
+    expect(edit.mergeable.get()).toBe(false)
+    edit.merge()
+    expect(edit.checkpoint()).toEqual(before)
+    expect(edit.state.get().notice).toEqual({
+      kind: 'conflict',
+      fields: ['name', 'note'],
+    })
+    edit.dispose()
+  })
+
+  it('releases only the reverted live field without updated and detects the next foreign edit', () => {
+    const { edit, live } = signalHarness()
+    edit.open()
+    edit.patchForm({ name: 'Bob', note: 'mine' })
+    live.set({ id: 1, name: 'Carl', note: 'theirs' })
+    live.set({ id: 1, name: 'Ann', note: 'theirs' })
+    expect(edit.checkpoint()!.baseline).toEqual({
+      values: { name: 'Ann', note: null },
+      refreshed: [],
+      conflicts: ['note'],
+    })
+    expect(edit.state.get().notice).toEqual({
+      kind: 'conflict',
+      fields: ['note'],
+    })
+    live.set({ id: 1, name: 'Ann', note: null })
+    expect(edit.state.get().notice).toBeNull()
+    expect(edit.form.get()).toEqual({
+      hidden: false,
+      name: 'Bob',
+      note: 'mine',
+    })
+    expect(edit.canSave.get()).toBe(true)
+    live.set({ id: 1, name: 'Dan', note: null })
+    expect(edit.checkpoint()!.baseline.conflicts).toEqual(['name'])
+    edit.dispose()
+  })
+
+  it('stabilizes mixed-field reactions and reads state without publishing or changing a checkpoint', () => {
+    const { edit, live } = signalHarness()
+    edit.open()
+    edit.patchForm({ name: 'Bob' })
+    const publish = vi.fn()
+    const off = subscribeSignal(edit.state, publish)
+    live.set({ id: 1, name: 'Carl', note: 'automatic' })
+    expect(edit.form.get().note).toBe('automatic')
+    expect(edit.checkpoint()!.baseline.conflicts).toEqual(['name'])
+    const before = edit.checkpoint()
+    publish.mockClear()
+    for (let index = 0; index < 10; index += 1) {
+      expect(edit.state.get().settle).toBeNull()
+      expect(edit.state.get().conflict).toBe(true)
+    }
+    expect(publish).not.toHaveBeenCalled()
+    expect(edit.checkpoint()).toEqual(before)
+    off()
+    edit.dispose()
+  })
+
+  it('keeps a deleted draft available to copy and starts a fresh opening without memory', async () => {
+    const { edit, live } = signalHarness()
+    edit.open()
+    edit.patchForm({ name: 'Bob' })
+    live.set({ id: 1, name: 'Carl', note: null })
+    edit.patchForm({ name: 'Ann' })
+    const checkpoint = edit.checkpoint()!
+    live.set(undefined)
+    expect(edit.state.get()).toMatchObject({
+      gone: true,
+      conflict: false,
+      notice: { kind: 'deleted', fields: [] },
+    })
+    expect(edit.mergeable.get()).toBe(false)
+    expect(edit.saveLabel.get()).toBe(HILOS_ROW_EDIT_COPY.gone)
+    expect(edit.form.get().name).toBe('Ann')
+    const send = vi.fn(() => Promise.resolve(true))
+    await edit.save(send)
+    expect(send).not.toHaveBeenCalled()
+    edit.close()
+    expect(edit.restore(checkpoint)).toBe(false)
+    live.set({ id: 1, name: 'Carl', note: null })
+    edit.open()
+    expect(edit.checkpoint()!.baseline.conflicts ?? []).toEqual([])
+    expect(edit.state.get().conflict).toBe(false)
+    edit.dispose()
+  })
+})
+
 describe('row-edit session: explicit merge', () => {
   const mergeNote: NonNullable<RowEditMergers<Fields>['note']> = (
     baseline,
@@ -378,6 +549,8 @@ describe('row-edit session: explicit merge', () => {
     live.set({ ...initial, name: 'Carl', note: 'first\nlatest' })
     expect(edit.mergeable.get()).toBe(false)
     edit.patchForm({ name: 'Carl' })
+    expect(edit.mergeable.get()).toBe(false)
+    live.set({ ...initial, note: 'first\nlatest' })
     expect(edit.mergeable.get()).toBe(true)
     edit.merge()
     expect(edit.form.get().note).toBe('new draft\nlatest')
@@ -1093,6 +1266,70 @@ describe('row-edit session: a form held outside', () => {
 })
 
 describe('row-edit session: checkpoints', () => {
+  it.each(['Ann', 'Carl'])(
+    'restores a remembered conflict with matching draft %s and releases a reverted incoming',
+    async (name) => {
+      const first = signalHarness()
+      first.edit.open()
+      first.edit.patchForm({ name: 'Bob' })
+      first.live.set({ id: 1, name: 'Carl', note: null })
+      first.edit.patchForm({ name })
+      const checkpoint = first.edit.checkpoint()!
+      expect(checkpoint.baseline.conflicts).toEqual(['name'])
+      ;(checkpoint.baseline.conflicts as string[]).push('name')
+      expect(first.edit.checkpoint()!.baseline.conflicts).toEqual(['name'])
+      const { edit, live } = signalHarness({ id: 1, name: 'Carl', note: null })
+      edit.open()
+      expect(edit.restore(checkpoint)).toBe(true)
+      expect(edit.form.get().name).toBe(name)
+      expect(edit.checkpoint()!.baseline).toEqual({
+        values: { name: 'Ann', note: null },
+        refreshed: [],
+        conflicts: ['name'],
+      })
+      ;(checkpoint.baseline.conflicts as string[]).length = 0
+      expect(edit.checkpoint()!.baseline.conflicts).toEqual(['name'])
+      const send = vi.fn(() => Promise.resolve(true))
+      await edit.save(send)
+      expect(send).not.toHaveBeenCalled()
+      expect(edit.opened.get()).toBe(true)
+      live.set({ id: 1, name: 'Ann', note: null })
+      expect(edit.form.get().name).toBe(name)
+      expect(edit.state.get().notice).toBeNull()
+      expect(edit.checkpoint()!.baseline.conflicts ?? []).toEqual([])
+      const reverted = signalHarness()
+      reverted.edit.open()
+      expect(reverted.edit.restore(first.edit.checkpoint()!)).toBe(true)
+      expect(reverted.edit.form.get().name).toBe(name)
+      expect(reverted.edit.state.get().notice).toBeNull()
+      expect(reverted.edit.checkpoint()!.baseline.conflicts ?? []).toEqual([])
+      first.edit.dispose()
+      edit.dispose()
+      reverted.edit.dispose()
+    },
+  )
+
+  it.each([null, 'name', ['other'], [1], ['name', 1]])(
+    'rejects malformed conflict memory %j before either restore path changes the edit',
+    (conflicts) => {
+      const { edit, live } = signalHarness()
+      edit.open()
+      edit.patchForm({ name: 'Bob' })
+      live.set({ id: 1, name: 'Carl', note: null })
+      const before = edit.checkpoint()!
+      const invalid = {
+        ...before,
+        baseline: { ...before.baseline, conflicts },
+        form: { ...before.form, name: 'replacement' },
+      } as unknown as HilosRowEditCheckpoint<Fields, Form>
+      expect(edit.restore(invalid)).toBe(false)
+      expect(edit.restore(invalid, { name: 'Carl', note: null })).toBe(false)
+      expect(edit.checkpoint()).toEqual(before)
+      expect(edit.state.get().conflict).toBe(true)
+      edit.dispose()
+    },
+  )
+
   it('restores detached baseline and rich form into a fresh opening without sending', async () => {
     const first = signalHarness()
     first.edit.open()
@@ -1395,6 +1632,43 @@ describe('row-edit session: checkpoints', () => {
 })
 
 describe('row-edit session: own-save rebase', () => {
+  it.each([
+    { method: 'restore', incoming: 'Bob', held: false },
+    { method: 'restore', incoming: 'Dan', held: true },
+    { method: 'rebase', incoming: 'Bob', held: false },
+    { method: 'rebase', incoming: 'Dan', held: true },
+  ] as const)(
+    '$method carries conflict memory only beyond accepted saved values, incoming $incoming',
+    ({ method, incoming, held }) => {
+      const { edit, live } = signalHarness()
+      edit.open()
+      edit.patchForm({ name: 'Bob' })
+      const sent = edit.checkpoint()!
+      edit.patchForm({ name: 'newer' })
+      live.set({ id: 1, name: incoming, note: null })
+      edit.patchForm({ name: held ? incoming : 'Ann' })
+      const remembered = edit.checkpoint()!
+      expect(remembered.baseline.conflicts).toEqual(['name'])
+      const saved = { name: 'Bob', note: null }
+      expect(
+        method === 'restore'
+          ? edit.restore(remembered, saved)
+          : edit.rebaseAfterSave(saved, sent),
+      ).toBe(true)
+      expect(edit.checkpoint()!.baseline.values).toEqual(saved)
+      expect(edit.checkpoint()!.baseline.conflicts ?? []).toEqual(
+        held ? ['name'] : [],
+      )
+      expect(edit.form.get().name).toBe(held ? incoming : 'Ann')
+      expect(edit.state.get().conflict).toBe(held)
+      expect(edit.state.get().notice).toEqual(
+        held ? { kind: 'conflict', fields: ['name'] } : null,
+      )
+      expect(edit.canSave.get()).toBe(!held)
+      edit.dispose()
+    },
+  )
+
   it('restores a draft equal to its old baseline against confirmed own saved fields before merging', () => {
     const first = signalHarness()
     first.edit.open()
@@ -1466,7 +1740,9 @@ describe('row-edit session: own-save rebase', () => {
     edit.patchForm({ name: 'Carl' })
     live.set({ id: 1, name: 'Bob', note: null })
     expect(edit.state.get().conflict).toBe(true)
+    expect(edit.checkpoint()!.baseline.conflicts).toEqual(['name'])
     expect(edit.rebaseAfterSave({ name: 'Bob', note: null }, sent)).toBe(true)
+    expect(edit.checkpoint()!.baseline.conflicts ?? []).toEqual([])
     expect(edit.form.get().name).toBe('Carl')
     expect(edit.state.get().dirty).toBe(true)
     expect(edit.state.get().conflict).toBe(false)

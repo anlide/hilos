@@ -52,6 +52,7 @@ export const profileRenameMemorySchema = z.strictObject({
       baseline: z.strictObject({
         values: z.strictObject({ name: z.string() }),
         refreshed: z.array(z.literal('name')),
+        conflicts: z.array(z.literal('name')).optional(),
       }),
       form: z.string(),
       awaitingOccupation: z.boolean(),

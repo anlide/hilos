@@ -112,8 +112,88 @@ describe('resolveRowEdit', () => {
     expect(state).toMatchObject({
       conflict: true,
       dirty: true,
-      settle: null,
+      settle: {
+        baseline: { ...opened, conflicts: ['overrideValue'] },
+        take: {},
+      },
       notice: { kind: 'conflict', fields: ['overrideValue'] },
+    })
+  })
+
+  it.each(['en', 'de'])(
+    'holds a shown conflict when the draft becomes %s, without advancing or taking',
+    (draft) => {
+      const remembered = field('de', 'fr').settle!.baseline
+      const before = structuredClone(remembered)
+      const state = field('de', draft, remembered)
+      expect(state.fields.overrideValue).toEqual({
+        status: 'conflict',
+        conflict: true,
+        value: draft,
+        incoming: 'de',
+        refreshed: false,
+      })
+      expect(state).toMatchObject({
+        conflict: true,
+        dirty: draft !== 'de',
+        settle: null,
+        notice: { kind: 'conflict', fields: ['overrideValue'] },
+      })
+      expect(remembered).toEqual(before)
+      expect(field('it', draft, remembered).fields.overrideValue.incoming).toBe(
+        'it',
+      )
+    },
+  )
+
+  it('releases memory when incoming returns to baseline, keeping the draft and saved values', () => {
+    const remembered = field('de', 'fr').settle!.baseline
+    const released = field('en', 'fr', remembered)
+    expect(released).toMatchObject({
+      conflict: false,
+      dirty: true,
+      notice: null,
+      settle: { baseline: opened, take: {} },
+    })
+    expect(field('en', 'fr', released.settle!.baseline).settle).toBeNull()
+    expect(field('de', 'fr', released.settle!.baseline).conflict).toBe(true)
+    expect(remembered.conflicts).toEqual(['overrideValue'])
+  })
+
+  it('normalizes remembered fields and lets another field merge independently', () => {
+    const baseline: RowEditBaseline<Pair> = {
+      values: { name: 'a', note: 'x' },
+      refreshed: [],
+      conflicts: ['note', 'name', 'note'],
+    }
+    const state = resolveRowEdit(
+      { name: 'b', note: 'y' },
+      baseline,
+      baseline.values,
+    )
+    expect(state.settle).toEqual({
+      baseline: { ...baseline, conflicts: ['name', 'note'] },
+      take: {},
+    })
+    const released = resolveRowEdit(
+      { name: 'b', note: 'x' },
+      state.settle!.baseline,
+      { name: 'a', note: 'x' },
+    )
+    const next = resolveRowEdit(
+      { name: 'b', note: 'z' },
+      released.settle!.baseline,
+      { name: 'a', note: 'x' },
+    )
+    expect(next.fields.name.status).toBe('conflict')
+    expect(next.fields.note.status).toBe('incoming')
+    expect(next.settle).toEqual({
+      baseline: {
+        values: { name: 'a', note: 'z' },
+        refreshed: ['note'],
+        conflicts: ['name'],
+      },
+      take: { note: 'z' },
     })
   })
 
@@ -247,7 +327,11 @@ describe('resolveRowEdit', () => {
     expect(state.fields.note.status).toBe('conflict')
     expect(state.conflict).toBe(true)
     expect(state.settle).toEqual({
-      baseline: { values: { name: 'b', note: 'x' }, refreshed: ['name'] },
+      baseline: {
+        values: { name: 'b', note: 'x' },
+        refreshed: ['name'],
+        conflicts: ['note'],
+      },
       take: { name: 'b' },
     })
     expect(state.notice).toEqual({ kind: 'conflict', fields: ['note'] })
@@ -255,6 +339,31 @@ describe('resolveRowEdit', () => {
 })
 
 describe('keepMineRowEdit', () => {
+  it.each(['keep', 'take'] as const)(
+    'clears a held conflict through %s with a reverted draft',
+    (choice) => {
+      const opened = openRowEdit({ name: 'original' })
+      const live = { name: 'theirs' }
+      const baseline = resolveRowEdit(live, opened, { name: 'mine' }).settle!
+        .baseline
+      const draft = { name: 'original' }
+      const state = resolveRowEdit(live, baseline, draft)
+      const step =
+        choice === 'keep'
+          ? { baseline: keepMineRowEdit(state, baseline), take: {} }
+          : takeTheirsRowEdit(state, baseline)
+      expect(step.baseline.values).toEqual(live)
+      expect(step.baseline.conflicts ?? []).toEqual([])
+      expect({ ...draft, ...step.take }).toEqual({
+        name: choice === 'keep' ? 'original' : 'theirs',
+      })
+      expect(
+        resolveRowEdit(live, step.baseline, { ...draft, ...step.take })
+          .conflict,
+      ).toBe(false)
+    },
+  )
+
   it('moves the snapshot of the conflicting field to the live value and keeps the draft', () => {
     const baseline = openRowEdit({ overrideValue: 'en' })
     const state = resolveRowEdit({ overrideValue: 'de' }, baseline, {
@@ -320,13 +429,45 @@ describe('takeTheirsRowEdit', () => {
 })
 
 describe('mergeRowEdit', () => {
+  it.each(['first\nsecond', 'first\ntheirs'])(
+    'merges a held conflict using the current draft %j and clears its memory',
+    (note) => {
+      const opened = openRowEdit({ note: 'first\nsecond' })
+      const live = { note: 'first\ntheirs' }
+      const baseline = resolveRowEdit(live, opened, { note: 'mine\nsecond' })
+        .settle!.baseline
+      const state = resolveRowEdit(live, baseline, { note })
+      const merge = (saved: string, draft: string, incoming: string) => {
+        expect([saved, draft, incoming]).toEqual([
+          'first\nsecond',
+          note,
+          'first\ntheirs',
+        ])
+        return mergeTextLines(saved, draft, incoming)
+      }
+      const step = mergeRowEdit(state, baseline, { note: merge })!
+      expect(step.baseline.conflicts ?? []).toEqual([])
+      expect(step.baseline.values).toEqual(live)
+      expect(step.take).toEqual(live)
+      expect(
+        resolveRowEdit(live, step.baseline, { ...step.take } as {
+          note: string
+        }).conflict,
+      ).toBe(false)
+      expect(baseline.conflicts).toEqual(['note'])
+    },
+  )
+
   it('merges one conflict explicitly and refuses gone or non-conflicting edits', () => {
     const baseline = openRowEdit({ note: 'first\nsecond' })
     const draft = { note: 'mine\nsecond' }
     const live = { note: 'first\ntheirs' }
     const state = resolveRowEdit(live, baseline, draft)
     expect(state.conflict).toBe(true)
-    expect(state.settle).toBeNull()
+    expect(state.settle).toEqual({
+      baseline: { ...baseline, conflicts: ['note'] },
+      take: {},
+    })
     const step = mergeRowEdit(state, baseline, { note: mergeTextLines })
     expect(step).toEqual({
       baseline: { values: live, refreshed: [] },
@@ -398,6 +539,7 @@ describe('mergeRowEdit', () => {
     const baseline: RowEditBaseline<Pair> = Object.freeze({
       values: Object.freeze({ name: 'first\nsecond', note: 'original' }),
       refreshed: Object.freeze(['name', 'note'] as const),
+      conflicts: Object.freeze(['name', 'note'] as const),
     })
     const live = Object.freeze({ name: 'first\ntheirs', note: 'theirs' })
     const draft = Object.freeze({ name: 'mine\nsecond', note: 'mine' })

@@ -134,8 +134,8 @@ showing committed data until the user's save commits.
 
 ### The per-field three-way merge
 
-For each field, compare against the session's current baseline, starting with
-what the form showed on open:
+For each field without a previously shown unresolved conflict, compare against
+the session's current baseline, starting with what the form showed on open:
 
 - `userChanged = draft ≠ baseline`
 - `serverChanged = incoming ≠ baseline`
@@ -145,26 +145,41 @@ what the form showed on open:
 | Neither side changed | Keep the field as it is. |
 | Only the user changed | Keep the draft. |
 | Only incoming changed | Take incoming automatically, with an update notice and no choice. |
-| Both changed to the same value | Keep the matching value, mark it updated, and ask for no choice. |
+| Both changed to the same value | Keep the matching value, advance the baseline, and ask for no choice. |
 | Both changed the same field to different values | Mark the conflict, explain "Changed elsewhere", and offer **Keep mine / Take theirs**, plus explicit **Merge** when all conflicts can merge safely (below). |
 | The user and incoming changed different fields | Merge those fields automatically. |
 
-An untouched prefill is unchanged and does not conflict with incoming. An
-untouched `''` and a user-entered `''` are the same value: if the baseline is
-`''`, new incoming replaces either without a conflict. This also holds where
-an empty name is valid; validity and record existence are separate decisions.
-After automatic acceptance or a choice, the session moves the baseline. Later
-incoming compares against that snapshot, not forever against the initial empty
-field or prefill.
+For those fields, an untouched prefill is unchanged and does not conflict with
+incoming. An untouched `''` and a user-entered `''` are the same value: if the
+baseline is `''`, new incoming replaces either without a conflict. This also
+holds where an empty name is valid; validity and record existence are separate
+decisions. After automatic acceptance or a choice, the session moves the
+baseline. Later incoming compares against that snapshot, not forever against
+the initial empty field or prefill. Ordinary convergence does not add an
+updated mark; the first occupation of a known place has its own mark below.
 
 ### Surfacing conflicts
 
 When a field conflicts, the user must know it exists and that it needs a choice:
 present both values (the draft and incoming) and let the user pick. The merge is
 per field, so non-conflicting fields stay merged while the user resolves the one
-that conflicts. `threeWayMerge` and `resolveRowEdit` keep this automatic field
-classification; splicing text inside a conflicting field requires the explicit
-Merge choice below.
+that conflicts. `threeWayMerge` classifies the current three values using the
+table above. `resolveRowEdit` combines that classification with the baseline's
+memory of unresolved conflicts to produce the effective field verdict.
+
+A conflict already shown for a field remains until **Keep mine**, **Take theirs**
+or a successful **Merge** while incoming differs from that field's accepted
+baseline. Editing the draft through either value does not resolve it. If
+incoming returns to baseline, clear the conflict without replacing the draft or
+advancing baseline. This release adds no updated mark. Each field has its own
+memory: releasing one leaves the others unresolved, and fields without a shown
+conflict keep the automatic table above.
+
+The effective verdict supplies `state.conflict`, the conflict notice's fields
+and the save guards. `dirty` still compares draft with incoming: a draft equal
+to incoming may be clean while its shown conflict still blocks Save and Enter.
+Splicing text inside a conflicting field requires the explicit Merge choice
+below.
 
 ### The row-edit session
 
@@ -215,12 +230,27 @@ of an edit window is written once, not once per window.
   window keeps for more than the edit (`formSignal` — a form shared with a
   creation, a draft a flow hands out as its own).
 - **The step** of the merge is applied by the session from `start()` to
-  `dispose()`: a field only the other side changed lands in the form without a
-  choice and the snapshot moves. Matching draft and incoming also move it. The
-  snapshot starts with the shown values, then holds the latest saved values
-  accepted automatically or through **Keep mine** / **Take theirs** / **Merge**,
-  so a second change compares against that, not against what the modal opened
-  with. The window supplies projections; the view does not assemble its own merge.
+  `dispose()`: for a field without a shown conflict, a change only on the other
+  side lands in the form without a choice and the snapshot moves. Matching
+  draft and incoming also move its accepted values. A remembered conflict does
+  neither while incoming differs from its accepted baseline. The snapshot
+  starts with the shown values, then holds the latest saved values accepted
+  automatically or through **Keep mine** / **Take theirs** / **Merge**, so a
+  second change compares against that, not against what the modal opened with.
+  **Keep mine** advances each conflicting field's baseline to fresh incoming
+  and preserves the current draft, even when it equals the old baseline.
+  **Take theirs** accepts fresh incoming into both form and baseline and marks
+  it refreshed. Each choice clears the resolved fields' conflict memory;
+  saving remains separate. The window supplies projections; the view does not
+  assemble its own merge.
+  The same baseline holds optional `conflicts`, the unresolved keys already
+  shown, unique and in snapshot field order; absent or empty means none.
+  `resolveRowEdit` remains pure: it returns a `settle` step even for a change
+  only to that memory, with `take: {}` and unchanged accepted values. An
+  unchanged snapshot returns `settle: null`, so repeated reads do not loop.
+  Computed state does not write memory; the existing `start()` subscription
+  applies the step before the next draft publication. A new `open` starts with
+  `openRowEdit` and no remembered conflicts.
   The optional `creating(live)` projection, false by default, reports whether
   the known place still has no record independently of those field values.
   On the first occupation, the session marks visible fields whose merged
@@ -314,12 +344,14 @@ field hides Merge for the whole edit. There is no partial application.
 Strategies must be pure: reading `mergeable` changes neither the baseline nor
 the form. On click, `merge()` recomputes from the fresh baseline, draft and
 incoming rather than applying a cached preview. If any current conflict
-refuses, it writes nothing. On success, it applies all merged fields in one
-step through the ordinary `take` / `draft` projections, advances each resolved
-field's baseline to its current **incoming**, and clears its `refreshed` mark.
-Other fields keep their ordinary settle behavior. A later external change
-compares against this advanced snapshot. Hidden values move the snapshot and
-never enter the form.
+refuses, it writes nothing, including no change to conflict memory. The current
+conflicts include remembered ones even when their draft equals baseline or
+incoming. On success, it applies all merged fields in one step through the
+ordinary `take` / `draft` projections, advances each resolved field's baseline
+to its current **incoming**, clears its `refreshed` mark and removes its
+remembered conflict. Other fields keep their ordinary settle behavior. A later
+external change compares against this advanced snapshot. Hidden values move
+the snapshot and never enter the form.
 
 Merge sends no action and does not close the modal. The resolved conflicts
 disappear, and the ordinary `canSave` verdict still governs both Save and
@@ -353,25 +385,39 @@ without Merge.
 ### Checkpoints and own-save rebase
 
 `checkpoint()` returns detached row-edit data only for an open, cloneable edit:
-its baseline (saved values and refreshed-field marks), the shown form, and
-whether a known place still awaits its first occupation. It carries no live row,
-source, pending save or permission to call a later echo one's own.
+its baseline (saved values, refreshed-field marks and optional unresolved
+`conflicts`), the shown form, and whether a known place still awaits its first
+occupation. It copies the conflict keys along with the other baseline data.
+It carries no live row, source, pending save or permission to call a later echo
+one's own.
 
 `restore(checkpoint, saved?)` is for a caller that has already validated its
 serialized shape. Open a new edit on a fresh, present source first; then restore
-the checkpoint against that live row. It never opens a window or sends an
-action, and a refusal leaves the current edit unchanged. If the caller has
+the checkpoint against that live row. The session also checks that optional
+`conflicts` is an array of string keys belonging to its baseline before changing
+the active edit. It never opens a window or sends an action, refuses while
+closed or not yet opened, and a refusal leaves the current edit unchanged.
+Restore retains a shown conflict even if the restored draft equals baseline or
+fresh incoming; if fresh incoming has returned to baseline, it clears that
+field's memory without changing draft or accepted values. If the caller has
 separately confirmed an own save, `saved` can advance the restored baseline
-before the first live merge. Take a new checkpoint after a successful restore.
+before the first live merge. Take a new checkpoint after a successful restore;
+restored or JSON-decoded data does not itself grant own-save rebase permission.
 
 `rebaseAfterSave(saved, checkpoint, publish?)` is a one-use operation for an
 own save confirmed by the caller's live correlation. It accepts only a
 checkpoint issued by the current opening, advances the baseline to the saved
-values and preserves the form as it stands, including a newer draft. The
+values without rewinding a later live value already accepted, and preserves the
+form as it stands, including a newer draft. Both this path and
+`restore(checkpoint, saved)` carry remembered conflicts only for fields whose
+live value differs from the resulting accepted baseline. An accepted own echo
+does not remain a conflict; a still-unresolved later foreign value does. The
 optional `publish` callback synchronously delivers the trusted own echo before
 the regular merge can take it as an external change. It belongs to the live
 caller; never serialize or restore a callback or the permission to rebase.
-Ordinary `save`, `saveLanded` and conflict handling remain window-bound.
+Closing, reopening or restoring invalidates prior checkpoint permissions, and
+a late outcome cannot move a different opening. Ordinary `save`, `saveLanded`
+and conflict handling remain window-bound.
 
 ## The standard own-name window is session-held
 
@@ -389,11 +435,14 @@ through `browserStorage` under `hilos.profile.rename.window` and the registered
 session `browserValue` labeled `Name change window`: owner id, open flag, step,
 draft, edit checkpoint and request id. The strict versioned shape is untrusted
 tab data; it does not store a server phase, refusal, permission or step-up
-proof. Explicit close writes `open: false`; dispose and F5 preserve the prior
-open intent. After authoritative handshake and name state, the same tab and
-person may restore its open checkpoint without sending again. A new tab has no
-checkpoint to open. Sign-out, an identity change and browser value erase clear
-the tab data; inaccessible or invalid storage leaves the live window usable.
+proof. Its strict checkpoint baseline permits optional `conflicts` containing
+only `name`, so unresolved name conflicts survive storage without admitting
+other fields. Explicit close writes `open: false`; dispose and F5 preserve the
+prior open intent. After authoritative handshake and name state, the same tab
+and person may restore its open checkpoint without sending again. A new tab has
+no checkpoint to open. Sign-out, an identity change and browser value erase
+clear the tab data; inaccessible or invalid storage leaves the live window
+usable.
 
 The restored edit merges against a fresh live name. A tab may rebase a result
 only when its local attempt correlation matches that operation. An already
@@ -432,10 +481,11 @@ exception is described above.
 Choose add or update from the place's current occupancy. If another tab fills
 the place, the primary action changes from **Add** to **Save**; keep the title
 the modal opened with, and let the notice explain the event and its merge
-outcome. If the arriving record matches the draft, show an update notice without
-a choice, even when the value also matches the opening prefill; there is nothing
-to save. A conflict needs a choice before saving. Existing permissions and domain
-prohibitions still hold.
+outcome. For a field without a shown conflict, if the arriving record matches
+the draft, show the first-occupation update notice without a choice, even when
+the value also matches the opening prefill; there is nothing to save. A shown
+conflict keeps the per-field resolution rules above and blocks saving while
+unresolved. Existing permissions and domain prohibitions still hold.
 
 An "already exists" refusal protects the instant race between sending add and
 the backend writing the record. Keep the modal live and retain the input; let
@@ -451,6 +501,9 @@ If the edited entity is deleted while its modal is open, the modal **stays
 open**, save is **blocked**, and the primary button reads **"Deleted"**. The
 user's draft stays visible and **extractable** so unsaved input can be copied out
 — it is never silently discarded.
+
+The deleted verdict takes precedence over remembered conflicts; while the row
+is gone, the window offers no conflict resolution.
 
 For a user-requested close, show the standard unsaved-changes confirmation when
 any projected draft field is not `Object.is`-equal to its value in the last
