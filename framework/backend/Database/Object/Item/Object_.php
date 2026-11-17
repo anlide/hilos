@@ -13,6 +13,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Sync\DTO\DbSyncAdmissionData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -21,6 +22,8 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\ChangeLog\JournalReceiptScope;
+use Hilos\Database\AccountMergeFenceSnapshot;
+use Hilos\Database\AccountMergeRowWrite;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Entity;
@@ -123,14 +126,26 @@ abstract class Object_
      * A collection with no key announces nothing, the same skip the local write makes: there is
      * no name to announce the change under.
      *
-     * @param array<string, mixed> $row Column name => value (diff)
+     * @param array<string, mixed> $row Column name => value (diff or admitted full snapshot)
+     * @param bool $invalidateUnmapped Whether the snapshot also invalidates values derived from unmapped fields
      * @throws HilosException Whatever the applied write of the update raises
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
-    public function applyDbSyncEntityUpdate(array $row): void
+    public function applyDbSyncEntityUpdate(array $row, bool $invalidateUnmapped = false): void
     {
+        $before = $this->entitySync->toArray();
+        Database::onRollback(function () use ($before, $row, $invalidateUnmapped): void {
+            $this->restoreSaved($before, related: true);
+            if ($invalidateUnmapped) {
+                $this->applyDbSyncUnmappedUpdate();
+            }
+            $this->announceUndoneUpdate($row, array_intersect_key($before, $row));
+        }, index: $this->entity::getDatabase()->connectionIndex);
         $this->entity->applySyncPartialRow($row);
         $this->syncRelated();
+        if ($invalidateUnmapped) {
+            $this->applyDbSyncUnmappedUpdate();
+        }
 
         $collectionKey = static::getCollectionKey();
         if ($collectionKey === '' || $row === []) {
@@ -138,13 +153,14 @@ abstract class Object_
         }
 
         $idString = $this->getIdString();
-        SourceChangeBus::whileApplyingRemote(function () use ($collectionKey, $idString, $row): void {
+        SourceChangeBus::whileApplyingRemote(function () use ($collectionKey, $idString, $row, $before, $invalidateUnmapped): void {
             SourceChangeBus::publish(SourceChange::dbUpdated(
                 $collectionKey,
                 $idString,
                 $row,
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
+                previous: $invalidateUnmapped ? $before : [],
             ), connectionIndex: $this->entity::getDatabase()->connectionIndex);
         });
     }
@@ -199,7 +215,16 @@ abstract class Object_
      */
     public function sync(): void
     {
-        $this->save(fn () => $this->guardWrite(!$this->entity->isRelated()));
+        try {
+            AccountMergeRowWrite::run($this, false, function (?AccountMergeFenceSnapshot $fence): void {
+                $this->save(fn () => $this->guardWrite(!$this->entity->isRelated()), $fence);
+            });
+        } catch (HilosException $failure) {
+            if ($this->isRelated() && $this->hasChanges()) {
+                $this->revert();
+            }
+            throw $failure;
+        }
     }
 
     /**
@@ -210,7 +235,16 @@ abstract class Object_
      */
     public function syncForMerge(AccountMergeTransfer $transfer): void
     {
-        $this->save(fn () => DbWriteGuard::guardMergeTransfer(static::getCollectionKey(), $this, $transfer));
+        try {
+            AccountMergeRowWrite::transfer($this, $transfer, function (AccountMergeFenceSnapshot $fence) use ($transfer): void {
+                $this->save(fn () => DbWriteGuard::guardMergeTransfer(static::getCollectionKey(), $this, $transfer), $fence, transfer: true);
+            });
+        } catch (HilosException $failure) {
+            if ($this->isRelated() && $this->hasChanges()) {
+                $this->revert();
+            }
+            throw $failure;
+        }
     }
 
     /**
@@ -242,34 +276,37 @@ abstract class Object_
      */
     public function delete(): void
     {
-        Database::assertCanWrite($this->entity::getDatabase()->connectionIndex);
-        $stored = $this->entitySync->toArray();
-        $collectionKey = static::getCollectionKey();
-        if ($collectionKey === '') {
+        AccountMergeRowWrite::run($this, true, function (?AccountMergeFenceSnapshot $fence): void {
+            Database::assertCanWrite($this->entity::getDatabase()->connectionIndex);
+            $stored = $this->entitySync->toArray();
+            $collectionKey = static::getCollectionKey();
+            if ($collectionKey === '') {
+                $this->entity->delete();
+                Database::onRollback(function () use ($stored): void {
+                    $this->restoreSaved($stored, related: true);
+                }, index: $this->entity::getDatabase()->connectionIndex);
+
+                return;
+            }
+
+            $idString = $this->getIdString();
+
+            DbWriteGuard::guardItemWrite($collectionKey, $idString, $this->touchedSetKeys(...), TruthSourceOperation::Remove, $this);
+
+            // Keep a tombstone row for DB_SYNC_DELETED consumers; it is no longer
+            // available from the object collection after the physical delete.
+            $row = $idString !== '' ? ($fence === null ? $this->toArray() : $stored) : [];
+
             $this->entity->delete();
             Database::onRollback(function () use ($stored): void {
                 $this->restoreSaved($stored, related: true);
             }, index: $this->entity::getDatabase()->connectionIndex);
 
-            return;
-        }
-
-        $idString = $this->getIdString();
-
-        DbWriteGuard::guardItemWrite($collectionKey, $idString, $this->touchedSetKeys(...), TruthSourceOperation::Remove, $this);
-
-        // Keep a tombstone row for DB_SYNC_DELETED consumers; it is no longer
-        // available from the object collection after the physical delete.
-        $row = $idString !== '' ? $this->toArray() : [];
-
-        $this->entity->delete();
-        Database::onRollback(function () use ($stored): void {
-            $this->restoreSaved($stored, related: true);
-        }, index: $this->entity::getDatabase()->connectionIndex);
-
-        if ($idString !== '') {
-            $this->queueDbSyncDeleted($collectionKey, $idString, $row);
-        }
+            if ($idString !== '') {
+                $admission = AccountMergeRowWrite::complete($this, $fence, delete: true);
+                $this->queueDbSyncDeleted($collectionKey, $idString, $row, $admission);
+            }
+        });
     }
 
     /**
@@ -356,12 +393,13 @@ abstract class Object_
      * column held by a reader moved. The skip of empty results in ordinary ORM updates remains:
      * there an empty diff means nothing changed at all.
      *
+     * @param ?DbSyncAdmissionData $admission Successful scoped write coordinates, or null for legacy rows
      * @throws DatabaseException When the Entity's logical database cannot be resolved
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
-    protected function announceUnmappedUpdate(): void
+    protected function announceUnmappedUpdate(?DbSyncAdmissionData $admission = null): void
     {
         $collectionKey = static::getCollectionKey();
         if ($collectionKey === '') {
@@ -369,7 +407,7 @@ abstract class Object_
         }
 
         $idString = $this->getIdString();
-        $this->queueDbSyncUpdated($collectionKey, $idString, [], []);
+        $this->queueDbSyncUpdated($collectionKey, $idString, [], [], $admission);
         SourceChangeBus::publish(SourceChange::dbUpdated(
             $collectionKey,
             $idString,
@@ -378,6 +416,43 @@ abstract class Object_
             ExecutionContext::currentRequestId(),
             previous: [],
         ), connectionIndex: $this->entity::getDatabase()->connectionIndex);
+    }
+
+    /**
+     * @param array<string, mixed> $before Saved mapped row before the targeted SQL
+     * @param ?AccountMergeFenceSnapshot $fence Fresh coordinates obtained before that SQL
+     * @param bool $announceLegacy Whether an unfenced write has a legacy announcement
+     * @throws DatabaseException When the row connection or metadata cannot complete the write
+     * @throws WriteNotAllowedException When the fence refuses this writer
+     * @throws SourceChangeSubscriberException When a source subscriber refuses the announcement
+     * @throws InvalidArgumentException When the sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException When the row has no primary key
+     */
+    protected function completeRawWrite(array $before, ?AccountMergeFenceSnapshot $fence, bool $announceLegacy = true): void
+    {
+        if (Database::affectedRows($this->entity::getDatabase()->connectionIndex) !== 1) {
+            return;
+        }
+        $diff = array_intersect_key($this->entity->toArray(), array_flip($this->getChangedColumns()));
+        $previous = array_intersect_key($before, $diff);
+        $announce = $announceLegacy || $fence !== null;
+        Database::onRollback(function () use ($before, $diff, $previous, $announce): void {
+            $this->restoreSaved($before, related: true);
+            if ($announce) {
+                $this->announceUndoneUpdate($diff, $previous);
+            }
+        }, index: $this->entity::getDatabase()->connectionIndex);
+        $this->syncRelated();
+        $this->applyDbSyncUnmappedUpdate();
+        $admission = AccountMergeRowWrite::complete($this, $fence);
+        if (!$announce) {
+            return;
+        }
+        if ($diff === []) {
+            $this->announceUnmappedUpdate($admission);
+        } else {
+            $this->broadcastDbSyncAfterSync(false, $diff, $previous, $admission);
+        }
     }
 
     /**
@@ -465,12 +540,13 @@ abstract class Object_
      * @param bool $isCreate True if this was a create (new row)
      * @param array<string, mixed> $result Full row for create, diff for update
      * @param array<string, mixed> $previous Previous values of updated columns
+     * @param ?DbSyncAdmissionData $admission Successful scoped write coordinates, or null for legacy rows
      * @throws DatabaseException When the Entity's logical database cannot be resolved
      * @throws SourceChangeSubscriberException Whatever a subscriber to the announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If getIdString() is not implemented or primary key is null
      */
-    protected function broadcastDbSyncAfterSync(bool $isCreate, array $result, array $previous): void
+    protected function broadcastDbSyncAfterSync(bool $isCreate, array $result, array $previous, ?DbSyncAdmissionData $admission = null): void
     {
         $collectionKey = static::getCollectionKey();
         if ($collectionKey === '' || $result === []) {
@@ -479,12 +555,12 @@ abstract class Object_
 
         $idString = $this->getIdString();
         if ($isCreate) {
-            $this->queueDbSyncCreated($collectionKey, $idString, $result);
+            $this->queueDbSyncCreated($collectionKey, $idString, $result, $admission);
 
             return;
         }
 
-        $this->queueDbSyncUpdated($collectionKey, $idString, $result, $previous);
+        $this->queueDbSyncUpdated($collectionKey, $idString, $result, $previous, $admission);
         SourceChangeBus::publish(SourceChange::dbUpdated(
             $collectionKey,
             $idString,
@@ -501,9 +577,10 @@ abstract class Object_
      * @param string $collectionKey Collection key for broadcast
      * @param string $idString Item ID as string
      * @param array<string, mixed> $row Full row data
+     * @param ?DbSyncAdmissionData $admission Successful scoped write coordinates, or null for legacy rows
      * @throws DatabaseException When the Entity's logical database cannot be resolved
      */
-    private function queueDbSyncCreated(string $collectionKey, string $idString, array $row): void
+    private function queueDbSyncCreated(string $collectionKey, string $idString, array $row, ?DbSyncAdmissionData $admission = null): void
     {
         $receiptId = JournalReceiptScope::currentId();
         Hilos::$sr?->queueDbSyncSignal(
@@ -515,7 +592,8 @@ abstract class Object_
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
                 receiptId: $receiptId,
-                writerAgentId: $receiptId === null ? null : ExecutionContext::currentAgentId(),
+                writerAgentId: $receiptId === null && $admission === null ? null : ExecutionContext::currentAgentId(),
+                admission: $admission,
             ),
             connectionIndex: $this->entity::getDatabase()->connectionIndex,
         );
@@ -528,10 +606,16 @@ abstract class Object_
      * @param string $idString Item ID as string
      * @param array<string, mixed> $row Diff row data
      * @param array<string, mixed> $previous Previous values of changed columns
+     * @param ?DbSyncAdmissionData $admission Successful scoped write coordinates, or null for legacy rows
      * @throws DatabaseException When the Entity's logical database cannot be resolved
      */
-    private function queueDbSyncUpdated(string $collectionKey, string $idString, array $row, array $previous): void
-    {
+    private function queueDbSyncUpdated(
+        string $collectionKey,
+        string $idString,
+        array $row,
+        array $previous,
+        ?DbSyncAdmissionData $admission = null,
+    ): void {
         $receiptId = JournalReceiptScope::currentId();
         Hilos::$sr?->queueDbSyncSignal(
             SignalConstants::DB_SYNC_UPDATED,
@@ -543,7 +627,8 @@ abstract class Object_
                 ExecutionContext::currentRequestId(),
                 previous: $previous,
                 receiptId: $receiptId,
-                writerAgentId: $receiptId === null ? null : ExecutionContext::currentAgentId(),
+                writerAgentId: $receiptId === null && $admission === null ? null : ExecutionContext::currentAgentId(),
+                admission: $admission,
             ),
             connectionIndex: $this->entity::getDatabase()->connectionIndex,
         );
@@ -555,10 +640,11 @@ abstract class Object_
      * @param string $collectionKey Collection key for broadcast
      * @param string $idString Item ID as string
      * @param array<string, mixed> $row Previous row data
+     * @param ?DbSyncAdmissionData $admission Successful scoped write coordinates, or null for legacy rows
      * @throws DatabaseException When the Entity's logical database cannot be resolved
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      */
-    protected function queueDbSyncDeleted(string $collectionKey, string $idString, array $row): void
+    protected function queueDbSyncDeleted(string $collectionKey, string $idString, array $row, ?DbSyncAdmissionData $admission = null): void
     {
         $receiptId = JournalReceiptScope::currentId();
         Hilos::$sr?->queueDbSyncSignal(
@@ -570,7 +656,8 @@ abstract class Object_
                 ExecutionContext::currentAcceptKey(),
                 ExecutionContext::currentRequestId(),
                 receiptId: $receiptId,
-                writerAgentId: $receiptId === null ? null : ExecutionContext::currentAgentId(),
+                writerAgentId: $receiptId === null && $admission === null ? null : ExecutionContext::currentAgentId(),
+                admission: $admission,
             ),
             connectionIndex: $this->entity::getDatabase()->connectionIndex,
         );
@@ -761,8 +848,10 @@ abstract class Object_
 
     /**
      * @param Closure(): void $guard Write door to judge inside the failure/revert boundary
+     * @param ?AccountMergeFenceSnapshot $fence Current write coordinates
+     * @param bool $transfer Whether the transfer already assigned this revision
      */
-    private function save(Closure $guard): void
+    private function save(Closure $guard, ?AccountMergeFenceSnapshot $fence = null, bool $transfer = false): void
     {
         $isCreate = !$this->entity->isRelated();
         $before = $isCreate ? $this->entity->toArray() : $this->entitySync->toArray();
@@ -799,6 +888,7 @@ abstract class Object_
 
         // Outside the failure path on purpose: the row stands in the table by now, and an
         // announcement that fails does not take the object back from it.
-        $this->broadcastDbSyncAfterSync($isCreate, $result, $previous);
+        $admission = $result === [] ? null : AccountMergeRowWrite::complete($this, $fence, transfer: $transfer);
+        $this->broadcastDbSyncAfterSync($isCreate, $result, $previous, $admission);
     }
 }

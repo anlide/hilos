@@ -6,11 +6,19 @@ namespace Hilos\Tests\Unit\Database;
 
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\AccountMergeCopiesActions;
+use Hilos\Database\Actions\Collection\AccountMergeFencesActions;
+use Hilos\Database\Actions\Item\AccountMergeFenceActions;
+use Hilos\Database\Entity\Collection\AccountMergeFences as EntityAccountMergeFences;
+use Hilos\Database\Entity\Item\AccountMergeFence as EntityAccountMergeFence;
+use Hilos\Database\Object\Collection\AccountMergeFences as ObjectAccountMergeFences;
+use Hilos\Database\Object\Item\AccountMergeFence as ObjectAccountMergeFence;
+use Hilos\Database\View\Item\AccountMergeFence as DbAccountMergeFence;
 use Hilos\Database\Entity\Collection\AccountMergeCopies as EntityAccountMergeCopies;
 use Hilos\Database\Entity\Item\AccountMergeCopy as EntityAccountMergeCopy;
 use Hilos\Database\Object\Collection\AccountMergeCopies as ObjectAccountMergeCopies;
 use Hilos\Database\Object\Item\AccountMergeCopy as ObjectAccountMergeCopy;
 use Hilos\Database\View\Collection\AccountMergeCopies as DbCollectionAccountMergeCopies;
+use Hilos\Database\View\Collection\AccountMergeFences as DbCollectionAccountMergeFences;
 use Hilos\Database\View\Item\AccountMergeCopy as DbAccountMergeCopy;
 use Hilos\Database\Actions\Item\IdentityActions;
 use Hilos\Database\Actions\Item\PasskeyCredentialActions;
@@ -128,6 +136,7 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::accountOperationAssignments => DbCollectionAccountOperationAssignments::class,
         HilosDbContext::accountOperationResults => DbCollectionAccountOperationResults::class,
         HilosDbContext::accountMergeCopies => DbCollectionAccountMergeCopies::class,
+        HilosDbContext::accountMergeFences => DbCollectionAccountMergeFences::class,
         HilosDbContext::dataExports => DbCollectionDataExports::class,
         HilosDbContext::legalAcceptanceExports => DbCollectionLegalAcceptanceExports::class,
         HilosDbContext::files => DbCollectionFiles::class,
@@ -145,6 +154,42 @@ final class FrameworkExtensionMountTest extends TestCase
         HilosDbContext::userMerges => DbCollectionUserMerges::class,
         HilosDbContext::userPhotos => DbCollectionUserPhotos::class,
     ];
+
+    public function testFenceWholeExtensionPreservesCompositeOffsetsAndBothActionLayers(): void
+    {
+        $context = new DeclaringDbContext([
+            HilosDbContext::accountMergeFences => new FrameworkExtension(
+                ExtendedFenceViews::class, ExtendedFenceActions::class, ExtendedFenceItemActions::class,
+            ),
+        ]);
+        $context->configure();
+        $objects = $context->mountedObjectCollection(HilosDbContext::accountMergeFences);
+        self::assertInstanceOf(ExtendedFenceObjects::class, $objects);
+        self::assertSame(Objects::LAZY_STRATEGY_KEY, $objects->getLazyStrategy());
+        self::assertInstanceOf(ExtendedFenceActions::class, $context->accountMergeFences->actions);
+        $entity = ExtendedFenceEntity::fromRow([
+            'collection_key' => 'identities', 'row_id' => 19, 'operation_id' => 2, 'assignment_id' => 3,
+            'owner_user_id' => 7, 'revision' => 4, 'deleted' => false,
+        ]);
+        $objects->fixture(ExtendedFenceObject::fromEntity($entity));
+        $fence = $context->accountMergeFences['identities:19'];
+        self::assertInstanceOf(ExtendedFenceView::class, $fence);
+        self::assertInstanceOf(ExtendedFenceItemActions::class, $fence->actions);
+        self::assertSame($fence->getObject(), $fence->actions->object);
+        self::assertSame([
+            'collectionKey' => 'identities', 'rowId' => 19, 'operationId' => 2, 'assignmentId' => 3,
+            'ownerUserId' => 7, 'revision' => 4, 'deleted' => false,
+        ], $fence->toArray());
+        self::assertSame(['operationId' => 2, 'assignmentId' => 3, 'ownerUserId' => 7, 'revision' => 4, 'deleted' => false],
+            $fence->toArray(withId: false));
+        $previousDb = Hilos::$db;
+        Hilos::$db = $context;
+        try {
+            FrameworkExtensionGuard::assertMountedExtensionsWhole();
+        } finally {
+            Hilos::$db = $previousDb;
+        }
+    }
 
     public function testCopyExtensionKeepsAssignmentOffsetsAndExcludesItsPayload(): void
     {
@@ -561,5 +606,44 @@ class ExtendedCopyViews extends DbCollectionAccountMergeCopies
     public const string OBJECT_COLLECTION_CLASS = ExtendedCopyObjects::class;
 }
 class ExtendedCopyActions extends AccountMergeCopiesActions
+{
+}
+
+class ExtendedFenceEntity extends EntityAccountMergeFence
+{
+}
+class ExtendedFenceEntities extends EntityAccountMergeFences
+{
+    public const string ENTITY_CLASS = ExtendedFenceEntity::class;
+}
+class ExtendedFenceObject extends ObjectAccountMergeFence
+{
+    public const string ENTITY_CLASS = ExtendedFenceEntity::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedFenceObjects::class;
+}
+class ExtendedFenceObjects extends ObjectAccountMergeFences
+{
+    public const string OBJECT_CLASS = ExtendedFenceObject::class;
+    public const string ENTITY_COLLECTION_CLASS = ExtendedFenceEntities::class;
+
+    /** @param ExtendedFenceObject $object Already hydrated fixture row, with no database read */
+    public function fixture(ExtendedFenceObject $object): void
+    {
+        $this->hydrate($object->getIdString(), $object);
+    }
+}
+class ExtendedFenceView extends DbAccountMergeFence
+{
+}
+class ExtendedFenceViews extends DbCollectionAccountMergeFences
+{
+    public const string DB_ITEM_CLASS = ExtendedFenceView::class;
+    public const string OBJECT_COLLECTION_CLASS = ExtendedFenceObjects::class;
+}
+class ExtendedFenceActions extends AccountMergeFencesActions
+{
+}
+
+class ExtendedFenceItemActions extends AccountMergeFenceActions
 {
 }

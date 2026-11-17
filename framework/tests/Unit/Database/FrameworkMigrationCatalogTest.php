@@ -120,7 +120,7 @@ final class FrameworkMigrationCatalogTest extends TestCase
         $this->assertContains('oauth_provider', $keys);
         $this->assertContains('legal_acceptance_export', $keys);
         $this->assertNotContains('verifier_circle', $keys);
-        $this->assertCount(29, $keys);
+        $this->assertCount(30, $keys);
     }
 
     public function testAuthSelectsCopyWithItsAssignmentDependencyAndCoreDoesNot(): void
@@ -145,6 +145,33 @@ final class FrameworkMigrationCatalogTest extends TestCase
             '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_assignment',
         ], $parts[0]->requires);
         $unit = $schema->unit('account_merge_copy');
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $parts[0]->afterStubUpSha256);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $parts[0]->afterStubDownSha256);
+        $catalog->verifyCurrentStubs();
+    }
+
+    public function testAuthSelectsFenceWithItsAssignmentDependencyAndCoreDoesNot(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $auth = array_column($schema->selectedUnits(SchemaAuthCodesHilos::class), 'key');
+        self::assertContains('account_merge_fence', $auth);
+        self::assertContains('account_erasure_assignment', $auth);
+        self::assertSame(['account_erasure_assignment'], $schema->unit('account_merge_fence')->dependencies);
+        self::assertLessThan(array_search('account_merge_fence', $auth, true), array_search('account_erasure_assignment', $auth, true));
+        self::assertNotContains('account_merge_fence', array_column($schema->selectedUnits(SchemaCoreHilos::class), 'key'));
+    }
+
+    public function testFenceIntroducingSourceAndCurrentStubsPassTheImmutableCanon(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $parts = [$catalog->part('20261116191447189798_HIL-1993_account_merge_fence', 'account_merge_fence')];
+        self::assertSame('20261116191447189798_HIL-1993_account_merge_fence/account_merge_fence', $parts[0]->key());
+        self::assertTrue($parts[0]->introducesUnit);
+        self::assertSame([
+            '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_assignment',
+        ], $parts[0]->requires);
+        $unit = $schema->unit('account_merge_fence');
         self::assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $parts[0]->afterStubUpSha256);
         self::assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $parts[0]->afterStubDownSha256);
         $catalog->verifyCurrentStubs();

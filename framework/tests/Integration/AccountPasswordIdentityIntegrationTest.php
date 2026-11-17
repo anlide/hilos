@@ -54,6 +54,7 @@ final class AccountPasswordIdentityIntegrationTest extends FrameworkIntegrationT
     private const array TABLES = [
         'hilos_user',
         'hilos_identity',
+        'hilos_account_merge_fence',
     ];
 
     private const string PASSWORD = 'survivor-secret-42';

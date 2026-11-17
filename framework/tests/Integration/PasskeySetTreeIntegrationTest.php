@@ -36,6 +36,7 @@ final class PasskeySetTreeIntegrationTest extends FrameworkIntegrationTestCase
         'hilos_user',
         'hilos_identity',
         'hilos_passkey_credential',
+        'hilos_account_merge_fence',
     ];
 
     /** Agent id the claim over one person's set is laid under. */

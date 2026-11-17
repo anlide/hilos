@@ -22,13 +22,14 @@ final readonly class AccountMergeGiveResult
     public const string identitiesMoved = 'identitiesMoved';
     public const string passwordKept = 'passwordKept';
     public const string secondFactorKept = 'secondFactorKept';
+    public const string admission = 'admission';
     public const string GIVEN = 'given';
     public const string SECOND_FACTOR_BOTH = 'both';
     public const string SECOND_FACTOR_LOSER = 'loser';
     public const string SECOND_FACTOR_SURVIVOR = 'survivor';
     public const string SECOND_FACTOR_NONE = 'none';
 
-    private const array KEYS = [self::give, self::rows, self::identitiesMoved, self::passwordKept, self::secondFactorKept];
+    private const array KEYS = [self::give, self::rows, self::identitiesMoved, self::passwordKept, self::secondFactorKept, self::admission];
     private const array ROW_KEYS = [self::identities, self::passkeyCredentials, self::secondFactors, self::secondFactorBackupCodes];
     private const array SECOND_FACTOR_OUTCOMES = [
         self::SECOND_FACTOR_BOTH, self::SECOND_FACTOR_LOSER, self::SECOND_FACTOR_SURVIVOR, self::SECOND_FACTOR_NONE,
@@ -43,6 +44,7 @@ final readonly class AccountMergeGiveResult
      * @param list<int> $secondFactorBackupCodes Original transferred backup-code ids
      * @param PasswordFate $passwordKept Actual retained password outcome
      * @param string $secondFactorKept Actual retained protection outcome
+     * @param AccountMergeAdmissionManifest $admission Original revisions assigned by the transfer writes
      * @throws InvalidFormatException When an outcome or ascending unique positive id list is invalid
      */
     public function __construct(
@@ -52,12 +54,18 @@ final readonly class AccountMergeGiveResult
         public array $secondFactorBackupCodes,
         public PasswordFate $passwordKept,
         public string $secondFactorKept,
+        public AccountMergeAdmissionManifest $admission,
     ) {
         foreach ([$identities, $passkeyCredentials, $secondFactors, $secondFactorBackupCodes] as $ids) {
             self::validateIds($ids);
         }
         if (!in_array($secondFactorKept, self::SECOND_FACTOR_OUTCOMES, true)) {
             throw new InvalidFormatException('The merge give second-factor outcome is unknown.');
+        }
+        foreach (self::ROW_KEYS as $key) {
+            if ($this->{$key} !== array_column($admission->{$key}, AccountMergeRowRevision::id)) {
+                throw new InvalidFormatException('The merge give rows must match their original admission stamps.');
+            }
         }
         $this->identitiesMoved = count($identities);
     }
@@ -91,6 +99,10 @@ final readonly class AccountMergeGiveResult
         }
         $data = get_object_vars($object);
         $data[self::rows] = get_object_vars($object->{self::rows});
+        if (!($object->{self::admission} ?? null) instanceof stdClass) {
+            throw new InvalidFormatException('The merge give result requires its admission object.');
+        }
+        $data[self::admission] = AccountMergeAdmissionManifest::fromObject($object->{self::admission})->toArray();
 
         return self::fromArray($data);
     }
@@ -113,6 +125,9 @@ final readonly class AccountMergeGiveResult
         if ($data[self::give] !== self::GIVEN || !is_array($data[self::rows]) || count($data[self::rows]) !== count(self::ROW_KEYS)) {
             throw new InvalidFormatException('The merge give result requires a given fact and its exact row manifest.');
         }
+        if (!is_array($data[self::admission])) {
+            throw new InvalidFormatException('The merge give result requires its original admission manifest.');
+        }
         foreach (self::ROW_KEYS as $key) {
             if (!array_key_exists($key, $data[self::rows]) || !is_array($data[self::rows][$key])) {
                 throw new InvalidFormatException('The merge give manifest requires every transferred id list.');
@@ -134,6 +149,7 @@ final readonly class AccountMergeGiveResult
             secondFactorBackupCodes: $data[self::rows][self::secondFactorBackupCodes],
             passwordKept: PasswordFate::from($data[self::passwordKept]),
             secondFactorKept: $data[self::secondFactorKept],
+            admission: AccountMergeAdmissionManifest::fromArray($data[self::admission]),
         );
     }
 
@@ -171,6 +187,7 @@ final readonly class AccountMergeGiveResult
             self::identitiesMoved => $this->identitiesMoved,
             self::passwordKept => $this->passwordKept->value,
             self::secondFactorKept => $this->secondFactorKept,
+            self::admission => $this->admission->toArray(),
         ];
     }
 

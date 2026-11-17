@@ -63,6 +63,7 @@ final class PasskeyUnlinkCascadeIntegrationTest extends FrameworkIntegrationTest
         'hilos_account_operation',
         'hilos_identity',
         'hilos_passkey_credential',
+        'hilos_account_merge_fence',
     ];
 
     private const string PASSWORD = 'anchor-secret-42';

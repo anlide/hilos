@@ -53,6 +53,8 @@ use Hilos\Core\TruthSource\TruthSourceOperations;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\SqlRuntime\LockWaitTimeoutException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Identity\PasswordFate;
@@ -84,7 +86,7 @@ final class AccountMergeTransferIntegrationTest extends FrameworkIntegrationTest
     ];
     private const array TABLES = [
         ...self::BUSINESS_TABLES, 'hilos_user_merge', 'hilos_account_deletion', 'hilos_second_factor_reset',
-        'hilos_account_operation', 'hilos_account_operation_assignment', 'hilos_account_operation_result',
+        'hilos_account_operation', 'hilos_account_operation_assignment', 'hilos_account_operation_result', 'hilos_account_merge_fence',
     ];
 
     private ?HilosDbContext $previousDb;
@@ -1397,6 +1399,105 @@ final class AccountMergeTransferIntegrationTest extends FrameworkIntegrationTest
         return (int)Database::sql("SHOW SESSION STATUS LIKE 'Handler_update'")->firstRow()['Value'];
     }
 
+    /** Metadata birth must be part of the same actual captured business transfer, never a standalone stamp. */
+    public function testFenceBirthRequiresItsCapturedTransferAndCannotCommitMetadataAlone(): void
+    {
+        [, $give] = $this->ready();
+        $key = 'secondFactors:' . $this->factorId;
+        self::assertNull(Hilos::$db->accountMergeFences[$key] ?? null);
+        $this->asPerson($this->loser, function () use ($give, $key): void {
+            $this->assertRefused(WriteNotAllowedException::class, function () use ($give): void {
+                AccountMergeTransfer::run($give->id, $this->selection(), function ($transfer) {
+                    Hilos::$db->accountMergeFences->actions->birthForMerge($transfer, HilosDbContext::secondFactors, $this->factorId);
+                    return self::payload();
+                });
+            });
+            self::assertNull(Hilos::$db->accountMergeFences->fresh($key));
+            self::assertNull(Hilos::$db->accountMergeFences[$key] ?? null);
+            AccountMergeTransfer::run($give->id, $this->selection(), function ($transfer) use ($key) {
+                $this->assertRefused(WriteNotAllowedException::class, fn () =>
+                    Hilos::$db->accountMergeFences->actions->birthForMerge($transfer, HilosDbContext::secondFactors, $this->unconfirmedId));
+                Hilos::$db->secondFactors[$this->factorId]->actions->transferForMerge($transfer);
+                $fence = Hilos::$db->accountMergeFences[$key];
+                self::assertSame(1, $fence->revision);
+                self::assertSame(self::SURVIVOR_ID, $fence->ownerUserId);
+                self::assertSame($transfer->assignmentId, $fence->assignmentId);
+                self::assertSame($transfer->operationId, $fence->operationId);
+                self::assertSame($fence->getObject(), Hilos::$db->accountMergeFences[$key]->getObject());
+                $this->assertRefused(WriteNotAllowedException::class, fn () => $fence->actions->advanceForWrite());
+                return self::payload();
+            });
+        });
+        self::assertSame(1, Hilos::$db->accountMergeFences->fresh($key)->revision);
+        self::assertSame(self::SURVIVOR_ID, Hilos::$db->secondFactors[$this->factorId]->userId);
+    }
+
+    /** Existing metadata moves by owner/revision CAS and rolls back with its business row and result. */
+    public function testFenceGiveRollsBackWithTheBusinessTransferThenRetriesAtTheNextRevision(): void
+    {
+        [, $give] = $this->ready();
+        $key = 'secondFactors:' . $this->factorId;
+        Database::sql('INSERT INTO `hilos_account_merge_fence` VALUES (?, ?, 71, 81, ?, 7, 0)',
+            [HilosDbContext::secondFactors, $this->factorId, self::LOSER_ID]);
+        $fence = Hilos::$db->accountMergeFences[$key];
+        $attempt = function (bool $fail) use ($give, $fence): void {
+            $this->asPerson($this->loser, function () use ($give, $fence, $fail): void {
+                AccountMergeTransfer::run($give->id, $this->selection(), function ($transfer) use ($fence, $fail) {
+                    Hilos::$db->secondFactors[$this->factorId]->actions->transferForMerge($transfer);
+                    self::assertSame(8, $fence->revision);
+                    self::assertSame(self::SURVIVOR_ID, $fence->ownerUserId);
+                    if ($fail) {
+                        throw new RuntimeException('rollback fence and business');
+                    }
+                    return self::payload();
+                });
+            });
+        };
+        $this->assertRefused(RuntimeException::class, fn () => $attempt(true));
+        self::assertSame(7, $fence->revision);
+        self::assertSame(self::LOSER_ID, $fence->ownerUserId);
+        self::assertSame(self::LOSER_ID, Hilos::$db->secondFactors[$this->factorId]->userId);
+        self::assertSame(7, Hilos::$db->accountMergeFences->fresh($key)->revision);
+        self::assertNull(Hilos::$db->accountOperationResults->byAssignment($give->id));
+        $attempt(false);
+        self::assertSame(8, $fence->revision);
+        self::assertSame(8, Hilos::$db->accountMergeFences->fresh($key)->revision);
+    }
+
+    /** The metadata door asks both live grants, captured identity and revision without lending target Update. */
+    public function testFenceTransferRejectsRevokedMetadataGrantStaleCasAndLeakedCapability(): void
+    {
+        [, $give] = $this->ready();
+        $key = 'secondFactors:' . $this->factorId;
+        Database::sql('INSERT INTO `hilos_account_merge_fence` VALUES (?, ?, 71, 81, ?, 7, 0)',
+            [HilosDbContext::secondFactors, $this->factorId, self::LOSER_ID]);
+        $fence = Hilos::$db->accountMergeFences[$key];
+        $leaked = null;
+        $this->asPerson($this->loser, function () use ($give, $fence, &$leaked): void {
+            $this->assertRefused(WriteNotAllowedException::class, function () use ($give, $fence, &$leaked): void {
+                AccountMergeTransfer::run($give->id, $this->selection(), function ($transfer) use ($fence, &$leaked) {
+                    $leaked = $transfer;
+                    TruthSourceRegistry::unregister(HilosDbContext::accountMergeFences, $this->loser->getId());
+                    $fence->actions->giveForMerge($transfer);
+                    return self::payload();
+                });
+            });
+            OwnershipDeclaration::claimAll($this->loser);
+            Database::sql('UPDATE `hilos_account_merge_fence` SET `revision` = 8');
+            $this->assertRefused(DatabaseException::class, function () use ($give, $fence): void {
+                AccountMergeTransfer::run($give->id, $this->selection(), static function ($transfer) use ($fence) {
+                    $fence->actions->giveForMerge($transfer);
+                    return self::payload();
+                });
+            });
+            $this->assertRefused(WriteNotAllowedException::class, fn () => Database::transaction(DatabaseNames::PRIMARY,
+                static fn () => $fence->actions->giveForMerge($leaked)));
+        });
+        self::assertSame(self::LOSER_ID, Hilos::$db->secondFactors[$this->factorId]->userId);
+        self::assertSame(self::LOSER_ID, Hilos::$db->accountMergeFences->fresh($key)->ownerUserId);
+        self::assertSame(8, Hilos::$db->accountMergeFences->fresh($key)->revision);
+    }
+
     /**
      * @param SecondFactorFate $fate Choice to record before the real preparation pair
      * @param ?PasswordFate $passwordFate Password choice to record with the preparation pair
@@ -1652,6 +1753,7 @@ final class AccountMergeTransferPerson extends AbstractAgent
         HilosDbContext::secondFactors => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::accountOperationResults => [TruthSourceOperation::Add],
+        HilosDbContext::accountMergeFences => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
     public const array READS_DB = [
         HilosDbContext::users, HilosDbContext::userMerges, HilosDbContext::accountDeletions, HilosDbContext::secondFactorResets,

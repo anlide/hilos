@@ -264,6 +264,10 @@ final class AgentTruthSourceOperationsTest extends TestCase
         self::assertFalse($claims[HilosDbContext::accountMergeCopies]->allows(TruthSourceOperation::Update));
         self::assertFalse($claims[HilosDbContext::accountMergeCopies]->allows(TruthSourceOperation::Remove));
         self::assertSame($person->getId(), $person->ownedDbSetKey(HilosDbContext::accountMergeCopies));
+        self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Update],
+            CopyOperationsTestPerson::OWNS_DB_SET[HilosDbContext::accountMergeFences]);
+        self::assertFalse($claims[HilosDbContext::accountMergeFences]->allows(TruthSourceOperation::Remove));
+        self::assertSame('7', $person->ownedDbSetKey(HilosDbContext::accountMergeFences));
         self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Remove],
             CopyOperationsTestPerson::OWNS_DB_SET[HilosDbContext::userMerges]);
         foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials, HilosDbContext::secondFactors,

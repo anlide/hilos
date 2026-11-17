@@ -46,6 +46,7 @@ final class PasswordRecoveryCodeIntegrationTest extends FrameworkIntegrationTest
         'hilos_user_merge',
         'hilos_account_deletion',
         'hilos_account_operation',
+        'hilos_account_merge_fence',
         'hilos_identity',
         'hilos_user_verification',
         'hilos_second_factor_trust',

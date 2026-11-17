@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Object\Item;
 
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
+
+use Hilos\Core\Exception\InvalidArgumentException;
+
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+
 use Hilos\Auth\WebAuthn\AssertionVerifier;
 use Hilos\Auth\WebAuthn\Exception\WebAuthnVerificationException;
 use Hilos\Auth\WebAuthn\PasskeyAlgorithm;
 use Hilos\Core\TruthSource\DbWriteGuard;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\AccountMergeFenceSnapshot;
+use Hilos\Database\AccountMergeRowWrite;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
@@ -136,6 +144,9 @@ class PasskeyCredential extends Object_
      * @param int $newCount New signature counter reported by the authenticator
      * @throws DatabaseException When the sign-count update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException When a source subscriber refuses the completed write
+     * @throws InvalidArgumentException When the DB sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException When the completed row has no primary key
      */
     public function updateSignCount(int $newCount): void
     {
@@ -143,23 +154,27 @@ class PasskeyCredential extends Object_
             return;
         }
 
-        DbWriteGuard::guardItemWrite(
-            static::getCollectionKey(),
-            (string)$this->entity->id,
-            $this->touchedSetKeys(...),
-            TruthSourceOperation::Update,
-        );
+        AccountMergeRowWrite::raw($this, function (?AccountMergeFenceSnapshot $fence) use ($newCount): void {
+            $before = $this->entitySync->toArray();
+            DbWriteGuard::guardItemWrite(
+                static::getCollectionKey(),
+                (string)$this->entity->id,
+                $this->touchedSetKeys(...),
+                TruthSourceOperation::Update,
+            );
 
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($newCount));
-        $params->add(SqlParam::int($this->entity->id));
-        Database::sql(
-            'UPDATE `' . EntityPasskeyCredential::_table . '` SET `' . EntityPasskeyCredential::sign_count
-                . '` = ? WHERE `' . EntityPasskeyCredential::id . '` = ?',
-            $params,
-        );
+            $params = SqlParamCollection::empty();
+            $params->add(SqlParam::int($newCount));
+            $params->add(SqlParam::int($this->entity->id));
+            Database::sql(
+                'UPDATE `' . EntityPasskeyCredential::_table . '` SET `' . EntityPasskeyCredential::sign_count
+                    . '` = ? WHERE `' . EntityPasskeyCredential::id . '` = ?',
+                $params,
+            );
 
-        $this->entity->sign_count = $newCount;
+            $this->entity->sign_count = $newCount;
+            $this->completeRawWrite($before, $fence);
+        });
     }
 
     /**
@@ -172,6 +187,9 @@ class PasskeyCredential extends Object_
      *
      * @throws DatabaseException When the last-used update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException When a source subscriber refuses the completed write
+     * @throws InvalidArgumentException When the DB sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException When the completed row has no primary key
      */
     public function touchLastUsed(): void
     {
@@ -179,26 +197,30 @@ class PasskeyCredential extends Object_
             return;
         }
 
-        $now = TimeHelper::nowMs();
+        AccountMergeRowWrite::raw($this, function (?AccountMergeFenceSnapshot $fence): void {
+            $before = $this->entitySync->toArray();
+            $now = TimeHelper::nowMs();
 
-        DbWriteGuard::guardItemWrite(
-            static::getCollectionKey(),
-            (string)$this->entity->id,
-            $this->touchedSetKeys(...),
-            TruthSourceOperation::Update,
-        );
+            DbWriteGuard::guardItemWrite(
+                static::getCollectionKey(),
+                (string)$this->entity->id,
+                $this->touchedSetKeys(...),
+                TruthSourceOperation::Update,
+            );
 
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($now));
-        $params->add(SqlParam::int($this->entity->id));
-        Database::sql(
-            'UPDATE `' . EntityPasskeyCredential::_table
-                . '` SET `' . EntityPasskeyCredential::last_used_at
-                . '` = ? WHERE `' . EntityPasskeyCredential::id . '` = ?',
-            $params,
-        );
+            $params = SqlParamCollection::empty();
+            $params->add(SqlParam::int($now));
+            $params->add(SqlParam::int($this->entity->id));
+            Database::sql(
+                'UPDATE `' . EntityPasskeyCredential::_table
+                    . '` SET `' . EntityPasskeyCredential::last_used_at
+                    . '` = ? WHERE `' . EntityPasskeyCredential::id . '` = ?',
+                $params,
+            );
 
-        $this->entity->last_used_at = $now;
+            $this->entity->last_used_at = $now;
+            $this->completeRawWrite($before, $fence);
+        });
     }
 
     /**
@@ -246,8 +268,8 @@ class PasskeyCredential extends Object_
      * read: two assertions of a cloned key could both pass that check before either is written,
      * and the agent, as the one writer of the person's keys taking its frames one at a time,
      * is where the second one is caught. The stored counter is read with a targeted query, since
-     * a delayed ORM mirror must not weaken the replay check. The accepted use is synchronized
-     * through the ordinary ORM door, leaving the loaded row clean for the owner's next step.
+     * a delayed ORM mirror must not weaken the replay check. The targeted writes update their
+     * ORM baseline and announce the accepted use without writing the business columns twice.
      * An unchanged counter - the 0/0 pair of a key that never counts - is not written again.
      *
      * @param int $signCount Signature counter the authenticator reported
@@ -258,16 +280,15 @@ class PasskeyCredential extends Object_
      */
     public function recordUse(int $signCount): void
     {
-        $storedSignCount = $this->storedSignCount();
-        AssertionVerifier::assertCounterAdvances($storedSignCount, $signCount);
-        if ($signCount !== $storedSignCount) {
-            $this->updateSignCount($signCount);
-        }
+        AccountMergeRowWrite::raw($this, function (?AccountMergeFenceSnapshot $fence) use ($signCount): void {
+            $storedSignCount = $this->storedSignCount();
+            AssertionVerifier::assertCounterAdvances($storedSignCount, $signCount);
+            if ($signCount !== $storedSignCount) {
+                $this->updateSignCount($signCount);
+            }
 
-        $this->touchLastUsed();
-        if ($this->entity->id !== null) {
-            $this->sync();
-        }
+            $this->touchLastUsed();
+        });
     }
 
     /**

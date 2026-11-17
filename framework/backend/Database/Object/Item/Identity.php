@@ -14,6 +14,8 @@ use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\AccountMergeFenceSnapshot;
+use Hilos\Database\AccountMergeRowWrite;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
@@ -202,6 +204,9 @@ class Identity extends Object_
      * @param string $passwordHash `password_hash()` value to store as the secret
      * @throws DatabaseException When the secret update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException When a source subscriber refuses the completed write
+     * @throws InvalidArgumentException When the DB sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException When the completed row has no primary key
      */
     public function setPasswordHash(string $passwordHash): void
     {
@@ -209,25 +214,28 @@ class Identity extends Object_
             return;
         }
 
-        DbWriteGuard::guardItemWrite(
-            static::getCollectionKey(),
-            (string)$this->entity->id,
-            $this->touchedSetKeys(...),
-            TruthSourceOperation::Update,
-        );
+        AccountMergeRowWrite::raw($this, function (?AccountMergeFenceSnapshot $fence) use ($passwordHash): void {
+            $before = $this->entitySync->toArray();
+            DbWriteGuard::guardItemWrite(
+                static::getCollectionKey(),
+                (string)$this->entity->id,
+                $this->touchedSetKeys(...),
+                TruthSourceOperation::Update,
+            );
 
-        $now = TimeHelper::nowMs();
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($passwordHash));
-        $params->add(SqlParam::int($now));
-        $params->add(SqlParam::int($this->entity->id));
-        Database::sql(
-            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = ?, `'
-                . EntityIdentity::updated_at . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
-            $params,
-        );
-        $this->entity->updated_at = $now;
-        $this->entitySync->updated_at = $now;
+            $now = TimeHelper::nowMs();
+            $params = SqlParamCollection::empty();
+            $params->add(SqlParam::string($passwordHash));
+            $params->add(SqlParam::int($now));
+            $params->add(SqlParam::int($this->entity->id));
+            Database::sql(
+                'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = ?, `'
+                    . EntityIdentity::updated_at . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
+                $params,
+            );
+            $this->entity->updated_at = $now;
+            $this->completeRawWrite($before, $fence, announceLegacy: false);
+        });
     }
 
     /**
@@ -243,6 +251,9 @@ class Identity extends Object_
      *
      * @throws DatabaseException When the secret update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException When a source subscriber refuses the completed write
+     * @throws InvalidArgumentException When the DB sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException When the completed row has no primary key
      */
     public function clearPassword(): void
     {
@@ -250,30 +261,27 @@ class Identity extends Object_
             return;
         }
 
-        DbWriteGuard::guardItemWrite(
-            static::getCollectionKey(),
-            (string)$this->entity->id,
-            $this->touchedSetKeys(...),
-            TruthSourceOperation::Update,
-        );
+        AccountMergeRowWrite::raw($this, function (?AccountMergeFenceSnapshot $fence): void {
+            $before = $this->entitySync->toArray();
+            DbWriteGuard::guardItemWrite(
+                static::getCollectionKey(),
+                (string)$this->entity->id,
+                $this->touchedSetKeys(...),
+                TruthSourceOperation::Update,
+            );
 
-        $now = TimeHelper::nowMs();
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($now));
-        $params->add(SqlParam::int($this->entity->id));
-        Database::sql(
-            'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = NULL, `'
-                . EntityIdentity::updated_at . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
-            $params,
-        );
-        $updatedAt = $this->entity->updated_at;
-        $syncedUpdatedAt = $this->entitySync->updated_at;
-        Database::onRollback(function () use ($updatedAt, $syncedUpdatedAt): void {
-            $this->entity->updated_at = $updatedAt;
-            $this->entitySync->updated_at = $syncedUpdatedAt;
-        }, index: $this->entity::getDatabase()->connectionIndex);
-        $this->entity->updated_at = $now;
-        $this->entitySync->updated_at = $now;
+            $now = TimeHelper::nowMs();
+            $params = SqlParamCollection::empty();
+            $params->add(SqlParam::int($now));
+            $params->add(SqlParam::int($this->entity->id));
+            Database::sql(
+                'UPDATE `' . EntityIdentity::_table . '` SET `' . EntityIdentity::secret . '` = NULL, `'
+                    . EntityIdentity::updated_at . '` = ? WHERE `' . EntityIdentity::id . '` = ?',
+                $params,
+            );
+            $this->entity->updated_at = $now;
+            $this->completeRawWrite($before, $fence);
+        });
     }
 
     /**

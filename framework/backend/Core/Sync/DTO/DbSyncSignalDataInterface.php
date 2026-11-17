@@ -23,4 +23,7 @@ interface DbSyncSignalDataInterface extends EmitterStampedSyncSignalDataInterfac
 
     /** @var ?string Writing agent under the receipt, or null without an active agent */
     public ?string $writerAgentId { get; }
+
+    /** @var ?DbSyncAdmissionData Protected row coordinates, or null for legacy rows */
+    public ?DbSyncAdmissionData $admission { get; }
 }

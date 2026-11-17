@@ -175,6 +175,7 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Database\DbSyncAdmission;
 use Hilos\Database\DTO\ReHydrateVerdict;
 use Hilos\Database\ReHydrateRound;
 use Hilos\DaemonSection\DaemonCronPicture;
@@ -7789,6 +7790,10 @@ abstract class DaemonManager extends BaseManager implements
     protected function handleDaemonSignal(SignalDTO $signal, ?string $originNodeId = null): void
     {
         $signalType = $signal->signalType->getType();
+        if ($signal->data instanceof SyncSignalDataInterface && DbSyncAdmission::transportOnly($signal->data->collectionKey)
+            && in_array($signalType, PeerDbSyncDTO::SIGNAL_TYPES, true)) {
+            return;
+        }
         match ($signalType) {
             SignalTypeConstants::DB_SYNC_CREATED => DbSyncApplicator::applyCreated(
                 self::syncSignalData($signal->data, DbSyncCreatedSignalData::class),

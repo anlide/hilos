@@ -1719,7 +1719,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         if ($this->isOwnDbSyncEcho($data->signalData)) {
             return;
         }
-        match (true) {
+        $result = match (true) {
             $data->signalData instanceof DbSyncCreatedSignalData => DbSyncApplicator::applyCreated(
                 $data->signalData,
                 skipSelfBroadcastCheck: false,
@@ -1739,7 +1739,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 'handleDbSyncMessage - unexpected payload: ' . get_class($data->signalData),
             ),
         };
-        $this->recordBrowserSourceChange($data->signalData);
+        if ($result === null || !$result->accepted) {
+            return;
+        }
+        $this->recordBrowserSourceChange($data->signalData, $result->sourceChange);
         $this->dispatchDbSyncToAgents($data->signalData);
     }
 
@@ -2794,14 +2797,15 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * writer, an array off the wire - so forwarding it converts and materializes nothing.
      *
      * @param SyncSignalDataInterface $signalData Sync payload
+     * @param ?SourceChange $change Normalized admitted snapshot fact, or null to use the original write
      */
-    private function recordBrowserSourceChange(SyncSignalDataInterface $signalData): void
+    private function recordBrowserSourceChange(SyncSignalDataInterface $signalData, ?SourceChange $change = null): void
     {
         if (Hilos::$browser === null) {
             return;
         }
 
-        $change = match (true) {
+        $change ??= match (true) {
             $signalData instanceof DbSyncCreatedSignalData => SourceChange::dbCreated(
                 $signalData->collectionKey,
                 $signalData->idString,

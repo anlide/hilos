@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Auth\AccountOperation;
 
+use Hilos\Auth\AccountOperation\AccountMergeAdmissionManifest;
 use Hilos\Auth\AccountOperation\AccountMergeBackupCodeRow;
 use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
 use Hilos\Auth\AccountOperation\AccountMergeHandoverCopy;
+use Hilos\Auth\AccountOperation\AccountMergeHandover;
 use Hilos\Auth\AccountOperation\AccountMergeIdentityRow;
 use Hilos\Auth\AccountOperation\AccountMergePasskeyRow;
 use Hilos\Auth\AccountOperation\AccountMergeSecondFactorRow;
@@ -43,7 +45,7 @@ final class AccountMergeHandoverCopyTest extends TestCase
   {"id":61,"userId":20,"code":"retained-backup-code","usedAt":null,"createdAt":-1}]}
 JSON;
     private const string GIVE_JSON = <<<'JSON'
-{"give":"given","rows":{"identities":[31,32],"passkeyCredentials":[41],"secondFactors":[51],"secondFactorBackupCodes":[61]},"identitiesMoved":2,"passwordKept":"loser","secondFactorKept":"both"}
+{"give":"given","rows":{"identities":[31,32],"passkeyCredentials":[41],"secondFactors":[51],"secondFactorBackupCodes":[61]},"identitiesMoved":2,"passwordKept":"loser","secondFactorKept":"both","admission":{"identities":[{"id":31,"revision":1},{"id":32,"revision":3}],"passkeyCredentials":[{"id":41,"revision":2}],"secondFactors":[{"id":51,"revision":1}],"secondFactorBackupCodes":[{"id":61,"revision":4}]}}
 JSON;
 
     /** The fixture is boundary data; application objects contain concrete row DTOs. */
@@ -388,7 +390,10 @@ JSON;
     public function testSecretBearingCopyIsSeparateFromGiveResult(): void
     {
         $copy = AccountMergeHandoverCopy::fromJson(self::COPY_JSON);
-        $fact = new AccountMergeGiveResult([31, 32], [41], [51], [61], PasswordFate::LOSER, AccountMergeGiveResult::SECOND_FACTOR_BOTH);
+        $fact = new AccountMergeGiveResult(
+            [31, 32], [41], [51], [61], PasswordFate::LOSER, AccountMergeGiveResult::SECOND_FACTOR_BOTH,
+            AccountMergeGiveResult::fromJson(self::GIVE_JSON)->admission,
+        );
         foreach (['retained-password-hash', 'retained-totp-secret', 'retained-backup-code', 'loser@example.test', 'public-key-original'] as $secret) {
             self::assertStringContainsString($secret, $copy->toJson());
             self::assertStringNotContainsString($secret, $fact->toPayload()->toJson());
@@ -471,13 +476,55 @@ JSON;
     /** Empty give is still a complete fact with a zero identity count. */
     public function testEmptyGiveHasExactNonsecretShape(): void
     {
-        $result = new AccountMergeGiveResult([], [], [], [], PasswordFate::NONE, AccountMergeGiveResult::SECOND_FACTOR_NONE);
+        $result = new AccountMergeGiveResult(
+            [], [], [], [], PasswordFate::NONE, AccountMergeGiveResult::SECOND_FACTOR_NONE,
+            new AccountMergeAdmissionManifest([], [], [], []),
+        );
         self::assertSame([
             'give' => 'given',
             'rows' => ['identities' => [], 'passkeyCredentials' => [], 'secondFactors' => [], 'secondFactorBackupCodes' => []],
             'identitiesMoved' => 0, 'passwordKept' => 'none', 'secondFactorKept' => 'none',
+            'admission' => ['identities' => [], 'passkeyCredentials' => [], 'secondFactors' => [], 'secondFactorBackupCodes' => []],
         ], $result->toArray());
         self::assertSame($result->toArray(), AccountMergeGiveResult::of($result->toPayload())->toArray());
+    }
+
+    /** Every saved revision belongs to exactly the rows declared by this give. */
+    public function testGiveRequiresAdmissionAndRejectsEveryMismatchedList(): void
+    {
+        $fields = json_decode(self::GIVE_JSON, true, flags: JSON_THROW_ON_ERROR);
+        $old = $fields;
+        unset($old['admission']);
+        $invalid = [$old];
+        foreach (array_keys($fields['rows']) as $key) {
+            $wrong = $fields;
+            $wrong['admission'][$key] = [];
+            $invalid[] = $wrong;
+            $wrong = $fields;
+            $wrong['admission'][$key][0]['id']++;
+            $invalid[] = $wrong;
+        }
+        foreach ($invalid as $wrong) {
+            try {
+                AccountMergeGiveResult::fromArray($wrong);
+                self::fail('An absent or mismatched original admission was accepted');
+            } catch (InvalidFormatException) {
+                self::assertTrue(true);
+            }
+        }
+    }
+
+    /** The immutable envelope preserves the private copy contract and refuses unrelated admission rows. */
+    public function testHandoverPairsExactSavedSnapshotsWithOriginalStamps(): void
+    {
+        $copy = AccountMergeHandoverCopy::fromJson(self::COPY_JSON);
+        $admission = AccountMergeGiveResult::fromJson(self::GIVE_JSON)->admission;
+        $handover = new AccountMergeHandover($copy, $admission);
+        self::assertSame($copy, $handover->copy);
+        self::assertSame($admission, $handover->admission);
+        self::assertSame(self::copyFields(), $handover->copy->toArray());
+        $this->expectException(InvalidFormatException::class);
+        new AccountMergeHandover($copy, new AccountMergeAdmissionManifest([], [], [], []));
     }
 
     /** @return array<string, mixed> Literal approved copy fixture at the JSON boundary */

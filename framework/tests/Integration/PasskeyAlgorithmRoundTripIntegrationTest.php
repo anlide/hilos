@@ -36,6 +36,7 @@ final class PasskeyAlgorithmRoundTripIntegrationTest extends FrameworkIntegratio
         'hilos_user',
         'hilos_identity',
         'hilos_passkey_credential',
+        'hilos_account_merge_fence',
     ];
 
     private const string PERSON_AGENT = 'passkey-algorithm-person-agent';

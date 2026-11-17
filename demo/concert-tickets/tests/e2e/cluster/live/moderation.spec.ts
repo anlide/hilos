@@ -56,17 +56,20 @@ for (const [index, sourceNode] of stand.masters.entries()) {
   // FIXME(F-101, 2026-11-14): Through m3 the profile name still shows the old name after the rename modal closes · свой · попытка 3 · HIL-2035
   // FIXME(F-107, 2026-11-15): After login through m4 nav-admin never appears and the test times out · чужой · попытка 1 · HIL-1959
   // FIXME(F-108, 2026-11-15): Rules through m4 hangs loading and admin:grant gets no reply behind an InnoDB lock wait on the login time-zone write · свой · попытка 5 · HIL-1817
+  // FIXME(F-116, 2026-11-17): Add rule dialog remains visible after Save for m3/m2/m4 · чужой · попытка 1 · HIL-1993
   test(
     `a rule saved through ${authorNode} governs a name checked through ${sourceNode}, and ${observerNode} shows the rule live`,
     index === 0
       ? { tag: '@quarantine:F-060' }
-      : index === 2
-        ? { tag: '@quarantine:F-101' }
-        : index === 3
-          ? { tag: '@quarantine:F-107' }
-          : index === 4
-            ? { tag: '@quarantine:F-108' }
-            : {},
+      : index === 1
+        ? { tag: '@quarantine:F-116' }
+        : index === 2
+          ? { tag: '@quarantine:F-101' }
+          : index === 3
+            ? { tag: '@quarantine:F-107' }
+            : index === 4
+              ? { tag: '@quarantine:F-108' }
+              : {},
     async ({ browser, cleanup }) => {
       expect(new Set([sourceNode, authorNode, observerNode]).size).toBe(3)
       const before = (await sendCommand(

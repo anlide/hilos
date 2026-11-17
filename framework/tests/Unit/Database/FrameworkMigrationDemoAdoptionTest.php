@@ -333,6 +333,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $copy = $this->copyInstallPair($project->root, 26, $catalog, $schema);
                 $origins[] = $copy;
                 $coveredParts[] = $copy->parts[0];
+                $fence = $this->fenceInstallPair($project->root, 27, $catalog, $schema);
+                $origins[] = $fence;
+                $coveredParts[] = $fence->parts[0];
                 $selectedUnits = array_column($schema->selectedUnits($project->facade), 'key');
                 self::assertSame(
                     $this->partRecords($catalog->partsForUnits($selectedUnits)),
@@ -974,6 +977,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $copyIndices = [173, 130, 130, 111, 111, 113];
             $copyBase = $project->root . '/' . sprintf('%03d', $copyIndices[$index]) . '_framework_install_account_merge_copy';
             $origins[] = $catalog->verifyPair(FsPath::read($copyBase . '.sql'), FsPath::read($copyBase . '_down.sql'));
+            $origins[] = $this->fenceInstallPair($project->root, $copyIndices[$index] + 1, $catalog, $schema);
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);
@@ -989,6 +993,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $numbers = [173, 130, 130, 111, 111, 113, 26, 28, 16, 19, 16, 14];
         foreach ($projects as $index => $project) {
             $this->copyInstallPair($project->root, $numbers[$index], $catalog, $schema);
+            $this->fenceInstallPair($project->root, $numbers[$index] + 1, $catalog, $schema);
         }
     }
 
@@ -1015,6 +1020,34 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         self::assertCount(1, $origin->parts);
         self::assertSame('20261116090449292760_HIL-1992_account_merge_copy/account_merge_copy', $origin->parts[0]->key());
         $unit = $schema->unit('account_merge_copy');
+        self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+        self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+        return $origin;
+    }
+
+    /**
+     * @param string $root Project migration track
+     * @param int $number Installer-assigned pair number
+     * @param FrameworkMigrationCatalog $catalog Immutable framework sources
+     * @param FrameworkSchemaCatalog $schema Current framework stubs
+     * @return FrameworkMigrationOrigin Verified exact fence install
+     */
+    private function fenceInstallPair(
+        string $root,
+        int $number,
+        FrameworkMigrationCatalog $catalog,
+        FrameworkSchemaCatalog $schema,
+    ): FrameworkMigrationOrigin
+    {
+        $base = $root . '/' . sprintf('%03d', $number) . '_framework_install_account_merge_fence';
+        $up = FsPath::read($base . '.sql');
+        $down = FsPath::read($base . '_down.sql');
+        $origin = $catalog->verifyPair($up, $down);
+        self::assertSame(FrameworkMigrationOrigin::INSTALL, $origin->kind);
+        self::assertSame(['account_merge_fence'], $origin->units);
+        self::assertCount(1, $origin->parts);
+        self::assertSame('20261116191447189798_HIL-1993_account_merge_fence/account_merge_fence', $origin->parts[0]->key());
+        $unit = $schema->unit('account_merge_fence');
         self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
         self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
         return $origin;
@@ -1188,6 +1221,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 14, 'legal_acceptance_export', $catalog, $schema);
         $copyBase = $root . '/016_framework_install_account_merge_copy';
         $momentChanges[] = $this->copyInstallPair($root, 16, $catalog, $schema);
+        $fenceBase = $root . '/017_framework_install_account_merge_fence';
+        $momentChanges[] = $this->fenceInstallPair($root, 17, $catalog, $schema);
         $probeUnit = $schema->unit('probe_value');
         $probeBase = $root . '/015_framework_install_probe_value';
         $probeUp = FsPath::read($probeBase . '.sql');
@@ -1221,6 +1256,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $probeBase . '_down.sql',
             $copyBase . '.sql',
             $copyBase . '_down.sql',
+            $fenceBase . '.sql',
+            $fenceBase . '_down.sql',
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1458,6 +1495,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $momentChanges[] = $this->assertExportLegalMomentPair($root, 13, 'legal_acceptance_export', $catalog, $schema);
         $copyBase = $root . '/014_framework_install_account_merge_copy';
         $momentChanges[] = $this->copyInstallPair($root, 14, $catalog, $schema);
+        $fenceBase = $root . '/015_framework_install_account_merge_fence';
+        $momentChanges[] = $this->fenceInstallPair($root, 15, $catalog, $schema);
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
@@ -1470,6 +1509,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             ...$this->exportLegalMomentFiles($root, 13, 'legal_acceptance_export'),
             $copyBase . '.sql',
             $copyBase . '_down.sql',
+            $fenceBase . '.sql',
+            $fenceBase . '_down.sql',
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);

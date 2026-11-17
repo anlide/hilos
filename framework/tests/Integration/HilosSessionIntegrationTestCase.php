@@ -53,6 +53,7 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
         'hilos_user',
         'hilos_user_rename',
         'hilos_user_merge',
+        'hilos_account_merge_fence',
         'hilos_session',
         'hilos_identity',
         'hilos_setting',

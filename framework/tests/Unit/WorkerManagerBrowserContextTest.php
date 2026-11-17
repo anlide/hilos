@@ -22,6 +22,7 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
@@ -30,16 +31,20 @@ use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
 use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Item\Identity;
 use Hilos\Hilos;
 use Hilos\Runtime\Snapshot\RtWorkDriver;
 use Hilos\Socket\Worker\DTO\AgentStartDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncClearedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncCreatedMessageDTO;
+use Hilos\Socket\Worker\DTO\WorkerDbSyncDeletedMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerDbSyncUpdatedMessageDTO;
 use Hilos\Socket\Worker\DaemonConnectionState;
 use Hilos\Socket\Worker\WorkerDaemonClient;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Utils\Logger;
 use Hilos\Utils\WorkerTickFailureLog;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Closure;
 use RuntimeException;
@@ -292,12 +297,19 @@ final class WorkerManagerBrowserContextTest extends TestCase
     }
 
     /**
-     * The DB half of the same contract, through the worker's own door for a daemon frame: an own
-     * row update and an own clear are dropped before they are applied, recorded or dispatched,
-     * and a foreign update of the same row goes all the way.
+     * Own echoes and protected facts without metadata stop before consumer effects.
+     * A foreign legacy fact reaches consumers even when no local collection is mounted.
+     *
+     * @param class-string<DbSyncSignalDataInterface> $signalClass Row fact payload
+     * @param class-string<WorkerDTO> $messageClass Worker transport for that payload
+     * @param TableMutationType $mutationType Expected browser mutation
      */
-    public function testOwnDbEchoesReachNeitherTheBrowserNorTheAgent(): void
-    {
+    #[DataProvider('dbRowKinds')]
+    public function testOwnDbEchoesReachNeitherTheBrowserNorTheAgent(
+        string $signalClass,
+        string $messageClass,
+        TableMutationType $mutationType,
+    ): void {
         Hilos::$db = new WorkerManagerBrowserContextTestDbContext();
         $browser = new WorkerManagerBrowserContextTestBrowserContext();
         Hilos::$browser = $browser;
@@ -306,22 +318,41 @@ final class WorkerManagerBrowserContextTest extends TestCase
         $ownEmitter = Hilos::$sr?->getEmitter();
         $this->assertIsString($ownEmitter);
 
-        $manager->deliver(new WorkerDbSyncUpdatedMessageDTO(
-            new DbSyncUpdatedSignalData('users', '1', ['name' => 'Grace'], emitter: $ownEmitter, previous: ['name' => 'Ada']),
+        $manager->deliver(new $messageClass(
+            new $signalClass(HilosDbContext::users, '1', ['name' => 'Grace'], emitter: $ownEmitter),
         ));
         $manager->deliver(new WorkerDbSyncClearedMessageDTO(new DbSyncClearedSignalData('users', emitter: $ownEmitter)));
+        $manager->deliver(new $messageClass(
+            new $signalClass(HilosDbContext::identities, '1', [Identity::user_id => 1], emitter: 'another-process'),
+        ));
 
         $this->assertFalse($browser->hasChanges());
         $this->assertSame(0, $agent->dbSyncCalls);
 
-        $manager->deliver(new WorkerDbSyncUpdatedMessageDTO(
-            new DbSyncUpdatedSignalData('users', '1', ['name' => 'Linus'], emitter: 'another-process', previous: ['name' => 'Grace']),
+        $manager->deliver(new $messageClass(
+            new $signalClass(HilosDbContext::users, '1', ['name' => 'Linus'], emitter: 'another-process'),
         ));
 
+        $this->assertNull(Hilos::$db->mountedObjectCollection(HilosDbContext::users));
         $this->assertSame(1, $agent->dbSyncCalls);
         $browser->flushToSignalRouter();
         $this->assertCount(1, $browser->emittedChangeSets);
         $this->assertCount(1, $browser->emittedChangeSets[0]->all());
+        $change = $browser->emittedChangeSets[0]->all()[0];
+        $this->assertSame($mutationType, $change->mutationType);
+        $this->assertSame(HilosDbContext::users, $change->sourceKey);
+        $this->assertSame('1', $change->sourceId);
+        $this->assertSame(['name' => 'Linus'], $change->row);
+    }
+
+    /** @return array<string, array{class-string<DbSyncSignalDataInterface>, class-string<WorkerDTO>, TableMutationType}> Row fact kinds */
+    public static function dbRowKinds(): array
+    {
+        return [
+            'create' => [DbSyncCreatedSignalData::class, WorkerDbSyncCreatedMessageDTO::class, TableMutationType::Create],
+            'update' => [DbSyncUpdatedSignalData::class, WorkerDbSyncUpdatedMessageDTO::class, TableMutationType::Update],
+            'delete' => [DbSyncDeletedSignalData::class, WorkerDbSyncDeletedMessageDTO::class, TableMutationType::Delete],
+        ];
     }
 
     /**

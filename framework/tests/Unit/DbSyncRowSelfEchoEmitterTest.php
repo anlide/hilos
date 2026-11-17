@@ -233,6 +233,30 @@ final class DbSyncRowSelfEchoEmitterTest extends TestCase
         $this->assertSame('v2', $this->heldValue($collection, '0'), 'The oldest own echo was applied as foreign');
     }
 
+    public function testOwnEchoVerdictRejectsAllThreeRowKindsBeforeMemoryEffects(): void
+    {
+        $collection = $this->holdRow('alpha', 'current');
+        $router = $this->installRouter();
+        $update = $this->echoOf($router, SignalTypeConstants::DB_SYNC_UPDATED, $this->updated('alpha', 'stale'));
+        self::assertFalse(DbSyncApplicator::applyUpdated($update)->accepted);
+        self::assertFalse(DbSyncApplicator::applyCreated(new DbSyncCreatedSignalData('rows', 'alpha',
+            ['id' => 'alpha', 'value' => 'stale'], emitter: $router->getEmitter()))->accepted);
+        self::assertFalse(DbSyncApplicator::applyDeleted(new DbSyncDeletedSignalData('rows', 'alpha',
+            emitter: $router->getEmitter()))->accepted);
+        self::assertSame('current', $this->heldValue($collection, 'alpha'));
+    }
+
+    public function testForeignVerdictIsAcceptedAfterAnOwnWriteOfTheSameRow(): void
+    {
+        $collection = $this->holdRow('alpha', 'local');
+        $router = $this->installRouter();
+        $this->echoOf($router, SignalTypeConstants::DB_SYNC_UPDATED, $this->updated('alpha', 'local'));
+        $result = DbSyncApplicator::applyUpdated($this->updated('alpha', 'foreign')->withEmitter('another-process'));
+        self::assertTrue($result->accepted);
+        self::assertTrue($result->memoryChanged);
+        self::assertSame('foreign', $this->heldValue($collection, 'alpha'));
+    }
+
     /**
      * Queues a row sync of this process, so its echo is still to come.
      *

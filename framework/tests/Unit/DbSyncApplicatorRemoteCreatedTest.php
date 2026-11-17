@@ -93,6 +93,33 @@ final class DbSyncApplicatorRemoteCreatedTest extends TestCase
         $this->assertTrue(isset($collection[self::ROW_ID]));
     }
 
+    public function testLazyRemoteSkipIsAnAcceptedFactWithoutMemoryChange(): void
+    {
+        $collection = $this->registerCollection(allLoaded: false);
+        $result = DbSyncApplicator::applyCreated($this->created(), originNodeId: self::REMOTE_NODE);
+        self::assertTrue($result->accepted);
+        self::assertFalse($result->memoryChanged);
+        self::assertFalse(isset($collection[self::ROW_ID]));
+    }
+
+    public function testCachedRemoteCreationReportsItsMemoryChange(): void
+    {
+        $this->registerCollection(allLoaded: true);
+        $result = DbSyncApplicator::applyCreated($this->created(), originNodeId: self::REMOTE_NODE);
+        self::assertTrue($result->accepted);
+        self::assertTrue($result->memoryChanged);
+    }
+
+    public function testCachelessCreationIsAcceptedWithoutRetainingTheRow(): void
+    {
+        $collection = RemoteCreatedCachelessObjects::initEmpty();
+        Hilos::$db = RemoteCreatedDbContext::create(self::COLLECTION_KEY, $collection);
+        $result = DbSyncApplicator::applyCreated($this->created(), originNodeId: self::REMOTE_NODE);
+        self::assertTrue($result->accepted);
+        self::assertFalse($result->memoryChanged);
+        self::assertFalse(isset($collection[self::ROW_ID]));
+    }
+
     /**
      * Registers a collection making a definite claim about how much of its table it holds.
      *
@@ -180,5 +207,16 @@ final class RemoteCreatedDbContext extends HilosDbContext
 
     public function configure(): void
     {
+    }
+}
+
+final class RemoteCreatedCachelessObjects extends Objects
+{
+    public const string OBJECT_CLASS = RemoteCreatedObject::class;
+
+    /** @return bool This transport reader retains no rows */
+    public function cachesRows(): bool
+    {
+        return false;
     }
 }

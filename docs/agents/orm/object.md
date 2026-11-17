@@ -34,7 +34,8 @@ class MyObject extends Object_ {
 
 ## Rules
 
-- Object is **read-only** — never write back to DB from Object
+- View items expose reads; persist an Object through its existing `sync()` or
+  `delete()` door, under the owning agent's actions and write guard
 - Object is created from Entity, not fetched from DB directly
 - Business logic for creating objects belongs in Object layer or Db collection methods, not in agents
 - Do not use Repository or Service pattern on top of Object — use `DbCollection` methods directly
@@ -47,6 +48,40 @@ class MyObject extends Object_ {
 - Under a transaction the object goes back with it: an edit to the saved values, an
   insert to a new object, a delete to the row
   ([transactions.md](transactions.md#what-a-rollback-restores))
+
+## Scoped Merge Revision Hooks
+
+The merge fence covers only previously transferred `identities`,
+`passkeyCredentials`, `secondFactors` and `secondFactorBackupCodes` rows. An
+ordinary write to a row without a fence stays unstamped and creates no fence.
+`AccountMergeRowWrite::run()` wraps a mapped `sync()` or `delete()` in the row's
+transaction, joining the caller's transaction when present. It reads current
+metadata before business SQL and checks the canonical owner and its metadata
+grant. `complete()` runs after a physical mutation, advances the metadata by
+optimistic revision comparison and produces the full mapped admission snapshot;
+delete produces a null snapshot and a retained tombstone. Business and metadata
+commit or roll back together, including held announcements and the same Object
+and View wrappers. A no-op or failed conditional proof advances nothing.
+
+Targeted raw and proof writers use `AccountMergeRowWrite::raw()`. It refuses
+unrelated unsaved mapped edits before SQL. A successful writer updates its saved
+mapped baseline before completion; an unmapped-only write keeps the ordinary
+`row=[]` announcement and adds the full mapped snapshot. This avoids announcing
+draft fields as saved. `syncForMerge()` instead uses the active captured-row
+transfer capability: the first transfer births revision 1 and a later transfer
+advances it once, in the same transaction as the business write. Giving adds no
+second revision bump or business `UPDATE`.
+
+Incoming stamped DB_SYNC and `AccountMergeAdmission::apply()` hydrate mapped
+snapshots in memory after fresh metadata validation. They never call `sync()` to
+admit a row, reread the business table or rebuild a missing private copy.
+`applyDbSyncEntityUpdate()` updates the existing Object and its saved baseline,
+related fields, membership and indices; accepted full snapshots also invalidate
+derived unmapped values. The fence Object holds rollback-aware applied progress,
+separate from the independently read durable revision. This memory is local to
+the mounted context and resets with it. For the admission verdicts, retained
+metadata and cold-context boundary, see
+[merge admission](../architecture/account-operations.md#durable-merge-admission).
 
 ## The two roads into an object store
 

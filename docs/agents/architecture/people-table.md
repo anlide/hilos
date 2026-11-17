@@ -301,7 +301,8 @@ the fate to its own previous password, then writes the merge row and its own
 block in the same transaction with its nonsecret result and separate private
 hand-over copy. This [prepared give](account-operations.md#the-prepared-loser-give)
 has no live coordinator sender until HIL-2000. The survivor's memory admission
-and fence against stale frames (not in the code yet — HIL-1993) are separate from its
+and [durable fence against stale frames](account-operations.md#durable-merge-admission)
+are built as a prepared API, separate from its
 own password/protection writes and receipt (not in the code yet — HIL-1994).
 The loser stops only after deleting its copy following receipt
 (not in the code yet — HIL-1998). The keys, chain and readers below retain

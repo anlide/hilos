@@ -9,8 +9,10 @@ use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Object\Item\Object_;
@@ -47,13 +49,14 @@ final class DbSyncApplicator
      * @param DbSyncCreatedSignalData $data Full created row payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
+     * @return DbSyncApplyResult Accepted fact and whether held memory changed
      * @throws HilosException Whatever the applied write raises
      */
     public static function applyCreated(
         DbSyncCreatedSignalData $data,
         bool $skipSelfBroadcastCheck = true,
         ?string $originNodeId = null,
-    ): void {
+    ): DbSyncApplyResult {
         if (
             !self::shouldApplyDbSyncRow(
                 $data->collectionKey,
@@ -63,31 +66,39 @@ final class DbSyncApplicator
                 $skipSelfBroadcastCheck,
             )
         ) {
-            return;
+            return new DbSyncApplyResult(false);
+        }
+
+        $admission = DbSyncAdmission::check($data);
+        if (!$admission->accepted) {
+            return $admission;
+        }
+        if ($data->admission !== null) {
+            return self::applyStamped($data, $admission, $originNodeId);
         }
 
         $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
-            return;
+            return new DbSyncApplyResult(true);
         }
 
         if ($collection->cachesRows() && $originNodeId !== null && !$collection->isAllLoaded()) {
-            return;
+            return new DbSyncApplyResult(true);
         }
 
         $objectClass = $collection::OBJECT_CLASS;
         if (!is_subclass_of($objectClass, Object_::class)) {
-            return;
+            return new DbSyncApplyResult(false);
         }
 
         /** @var class-string<Entity> $entityClass */
         $entityClass = $objectClass::ENTITY_CLASS;
         if (!is_subclass_of($entityClass, Entity::class)) {
-            return;
+            return new DbSyncApplyResult(false);
         }
 
         if (isset($collection[$data->idString])) {
-            return;
+            return new DbSyncApplyResult(true);
         }
 
         $entity = $entityClass::fromRow($data->row);
@@ -95,6 +106,8 @@ final class DbSyncApplicator
         SourceChangeBus::whileApplyingRemote(static function () use ($collection, $data, $object): void {
             $collection[$data->idString] = $object;
         });
+
+        return new DbSyncApplyResult(true, $collection->cachesRows());
     }
 
     /**
@@ -116,6 +129,7 @@ final class DbSyncApplicator
      * @param DbSyncUpdatedSignalData $data Diff payload from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
+     * @return DbSyncApplyResult Accepted fact and whether held memory changed
      * @throws HilosException Whatever the applied write raises
      * @throws ObjectGetIdStringNotImplementedException When the updated row's primary key is null
      */
@@ -123,14 +137,22 @@ final class DbSyncApplicator
         DbSyncUpdatedSignalData $data,
         bool $skipSelfBroadcastCheck = true,
         ?string $originNodeId = null,
-    ): void {
+    ): DbSyncApplyResult {
         if (!self::shouldApplyDbSync($data->collectionKey, $data->idString, $data->emitter, $skipSelfBroadcastCheck)) {
-            return;
+            return new DbSyncApplyResult(false);
+        }
+
+        $admission = DbSyncAdmission::check($data);
+        if (!$admission->accepted) {
+            return $admission;
+        }
+        if ($data->admission !== null) {
+            return self::applyStamped($data, $admission, $originNodeId);
         }
 
         $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
-            return;
+            return new DbSyncApplyResult(true);
         }
 
         if (!$collection->cachesRows()) {
@@ -145,12 +167,12 @@ final class DbSyncApplicator
                 ), connectionIndex: $collection->getDatabase()?->connectionIndex);
             });
 
-            return;
+            return new DbSyncApplyResult(true);
         }
 
         $object = $collection[$data->idString] ?? null;
         if (!$object instanceof Object_) {
-            return;
+            return new DbSyncApplyResult(true);
         }
 
         if ($data->row === []) {
@@ -158,6 +180,8 @@ final class DbSyncApplicator
         } else {
             $object->applyDbSyncEntityUpdate($data->row);
         }
+
+        return new DbSyncApplyResult(true, true);
     }
 
     /**
@@ -170,20 +194,29 @@ final class DbSyncApplicator
      * @param DbSyncDeletedSignalData $data Deleted row identity from another process
      * @param bool $skipSelfBroadcastCheck When true, ignores echoes of this process's own sync write
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
+     * @return DbSyncApplyResult Accepted fact and whether held memory changed
      * @throws HilosException Whatever the applied write raises
      */
     public static function applyDeleted(
         DbSyncDeletedSignalData $data,
         bool $skipSelfBroadcastCheck = true,
         ?string $originNodeId = null,
-    ): void {
+    ): DbSyncApplyResult {
         if (!self::shouldApplyDbSync($data->collectionKey, $data->idString, $data->emitter, $skipSelfBroadcastCheck)) {
-            return;
+            return new DbSyncApplyResult(false);
+        }
+
+        $admission = DbSyncAdmission::check($data);
+        if (!$admission->accepted) {
+            return $admission;
+        }
+        if ($data->admission !== null) {
+            return self::applyStamped($data, $admission, $originNodeId);
         }
 
         $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
         if (!$collection instanceof Objects) {
-            return;
+            return new DbSyncApplyResult(true);
         }
 
         if (!$collection->cachesRows()) {
@@ -197,14 +230,85 @@ final class DbSyncApplicator
                 ), connectionIndex: $collection->getDatabase()?->connectionIndex);
             });
 
-            return;
+            return new DbSyncApplyResult(true);
         }
 
-        if (isset($collection[$data->idString])) {
+        $changed = isset($collection[$data->idString]);
+        if ($changed) {
             SourceChangeBus::whileApplyingRemote(static function () use ($collection, $data): void {
                 unset($collection[$data->idString]);
             });
         }
+
+        return new DbSyncApplyResult(true, $changed);
+    }
+
+    /**
+     * Uses only the admitted mapped snapshot and held business membership; never reads a business row.
+     *
+     * @param DbSyncSignalDataInterface $data Freshly admitted fact
+     * @param DbSyncApplyResult $admission Verdict with the process-local progress carrier
+     * @param ?string $originNodeId Origin node for ordinary lazy-create policy
+     * @return DbSyncApplyResult Accepted application with exact memory-change information
+     * @throws HilosException When hydration or a source subscriber refuses the accepted fact
+     */
+    private static function applyStamped(DbSyncSignalDataInterface $data, DbSyncApplyResult $admission, ?string $originNodeId): DbSyncApplyResult
+    {
+        $collection = Hilos::$db->mountedObjectCollection($data->collectionKey);
+        if (!$collection instanceof Objects) {
+            return new DbSyncApplyResult(false);
+        }
+        $held = isset($collection[$data->idString]);
+        $sourceChange = null;
+        if ($data instanceof DbSyncUpdatedSignalData) {
+            $previous = $data->previous;
+            if ($held) {
+                $previous = [];
+                foreach (array_keys($data->admission->snapshot) as $column) {
+                    $previous[$column] = $collection[$data->idString]->valueForColumn($column);
+                }
+            }
+            $sourceChange = SourceChange::dbUpdated($data->collectionKey, $data->idString, $data->admission->snapshot,
+                $data->origin, $data->originRequestId, $previous);
+        }
+        $changed = false;
+        SourceChangeBus::whileApplyingRemote(static function () use ($collection, $data, $held, $originNodeId, &$changed): void {
+            if ($data instanceof DbSyncDeletedSignalData) {
+                if (!$collection->cachesRows()) {
+                    SourceChangeBus::publish(SourceChange::dbDeleted($data->collectionKey, $data->idString, $data->row,
+                        $data->origin, $data->originRequestId), connectionIndex: $collection->getDatabase()?->connectionIndex);
+                } elseif ($held) {
+                    unset($collection[$data->idString]);
+                    $changed = true;
+                }
+                return;
+            }
+            $snapshot = $data->admission->snapshot;
+            if ($held) {
+                $object = $collection[$data->idString];
+                $object->applyDbSyncEntityUpdate($snapshot, invalidateUnmapped: true);
+                $changed = true;
+                return;
+            }
+            if (!$collection->cachesRows() && $data instanceof DbSyncUpdatedSignalData) {
+                SourceChangeBus::publish(SourceChange::dbUpdated($data->collectionKey, $data->idString, $snapshot,
+                    $data->origin, $data->originRequestId, $data->previous), connectionIndex: $collection->getDatabase()?->connectionIndex);
+                return;
+            }
+            if ($collection->cachesRows() && !$collection->isAllLoaded()
+                && ($originNodeId !== null || $data instanceof DbSyncUpdatedSignalData)) {
+                return;
+            }
+            $objectClass = $collection::OBJECT_CLASS;
+            $entityClass = $objectClass::ENTITY_CLASS;
+            $object = $objectClass::fromEntity($entityClass::fromRow($snapshot));
+            $object->applyDbSyncUnmappedUpdate();
+            $collection[$data->idString] = $object;
+            $changed = $collection->cachesRows();
+        });
+        $admission->fence->markApplied($data->admission->revision);
+
+        return new DbSyncApplyResult(true, $changed, sourceChange: $sourceChange);
     }
 
     /**
@@ -234,7 +338,7 @@ final class DbSyncApplicator
         bool $skipSelfBroadcastCheck = true,
         ?string $originNodeId = null,
     ): void {
-        if ($data->collectionKey === '') {
+        if ($data->collectionKey === '' || $data->collectionKey === HilosDbContext::accountMergeFences) {
             return;
         }
 

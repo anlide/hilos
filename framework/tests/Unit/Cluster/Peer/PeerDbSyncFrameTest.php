@@ -13,6 +13,8 @@ use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Sync\DTO\DbSyncAdmissionData;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncSignalDataInterface;
@@ -124,6 +126,21 @@ final class PeerDbSyncFrameTest extends TestCase
             $this->assertSame($signalData->receiptId, $delivered->signalData->receiptId);
             $this->assertSame($signalData->writerAgentId, $delivered->signalData->writerAgentId);
         }
+    }
+
+    public function testAdmissionTombstoneSurvivesPeerAndWorkerWireBoundaries(): void
+    {
+        $data = new DbSyncDeletedSignalData(HilosDbContext::secondFactorBackupCodes, '7',
+            writerAgentId: 'hilos_user:12', admission: new DbSyncAdmissionData(10, 11, 12, 13, null));
+        $peer = new PeerDbSyncDTO('node-A', SignalTypeConstants::DB_SYNC_DELETED,
+            new SignalDTO(new SignalSource(SignalSource::DB), new SignalType(SignalTypeConstants::DB_SYNC_DELETED),
+                new SignalName(SignalConstants::DB_SYNC_DELETED), $data->withEmitter('emitter')));
+        $restored = PeerDTO::fromWire($peer->toJson());
+        $worker = new WorkerDbSyncDeletedMessageDTO($restored->signal->data, 'node-A');
+        $delivered = WorkerDbSyncDeletedMessageDTO::fromJson($worker->toJson())->signalData;
+        self::assertSame($data->admission->toArray($data->collectionKey), $delivered->admission->toArray($data->collectionKey));
+        self::assertSame('emitter', $delivered->emitter);
+        self::assertSame($data->writerAgentId, $delivered->writerAgentId);
     }
 
     public function testRejectsMissingOriginNodeId(): void

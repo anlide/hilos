@@ -19,4 +19,5 @@ final class SyncSignalDataKey
     public const string EMITTER = 'emitter';
     public const string RECEIPT_ID = 'receiptId';
     public const string WRITER_AGENT_ID = 'writerAgentId';
+    public const string ADMISSION = 'admission';
 }

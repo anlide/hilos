@@ -185,6 +185,7 @@ final class AbstractUserAgentTest extends TestCase
             HilosDbContext::userMerges,
             HilosDbContext::accountOperationResults,
             HilosDbContext::accountMergeCopies,
+            HilosDbContext::accountMergeFences,
         ], array_keys(TestUserAgent::OWNS_DB_SET));
         foreach (self::borrowedSets() as $collection) {
             $operations = in_array($collection, [HilosDbContext::secondFactors, HilosDbContext::secondFactorBackupCodes,
@@ -216,6 +217,8 @@ final class AbstractUserAgentTest extends TestCase
             TestUserAgent::OWNS_DB_SET[HilosDbContext::accountOperationResults],
         );
         self::assertSame([TruthSourceOperation::Add], TestUserAgent::OWNS_DB_SET[HilosDbContext::accountMergeCopies]);
+        self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Update],
+            TestUserAgent::OWNS_DB_SET[HilosDbContext::accountMergeFences]);
         self::assertSame([], TestUserAgent::OWNS_DB);
         self::assertSame(
             [
@@ -705,6 +708,7 @@ final class AbstractUserAgentTest extends TestCase
                 HilosDbContext::legalAcceptances,
                 HilosDbContext::accountOperationResults,
                 HilosDbContext::accountMergeCopies,
+                HilosDbContext::accountMergeFences,
             ],
         ));
     }

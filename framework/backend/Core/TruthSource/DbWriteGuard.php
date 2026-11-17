@@ -11,6 +11,7 @@ use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
 use Hilos\Database\Entity\Item\SecondFactor as EntitySecondFactor;
 use Hilos\Database\Entity\Item\SecondFactorBackupCode as EntitySecondFactorBackupCode;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
+use Hilos\Database\Object\Item\AccountMergeFence as ObjectAccountMergeFence;
 use Hilos\Database\Object\Item\PasskeyCredential as ObjectPasskeyCredential;
 use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
 use Hilos\Database\Object\Item\SecondFactorBackupCode as ObjectSecondFactorBackupCode;
@@ -91,6 +92,44 @@ class DbWriteGuard
     }
 
     /**
+     * Grants only metadata birth or movement for one captured source row, never a business grant.
+     *
+     * @param ObjectAccountMergeFence $fence Actual mounted metadata object
+     * @param AccountMergeTransfer $transfer Active source capability
+     * @param bool $birth Whether source Add rather than source Update is required
+     * @throws HilosException When the chain, source grant, capability or stored source membership refuses the write
+     */
+    public static function guardMergeFenceTransfer(ObjectAccountMergeFence $fence, AccountMergeTransfer $transfer, bool $birth): void
+    {
+        $mounted = Hilos::$db?->mountedObjectCollection(HilosDbContext::accountMergeFences);
+        if ($mounted === null || $mounted::COLLECTION_KEY !== HilosDbContext::accountMergeFences
+            || $mounted::OBJECT_CLASS !== $fence::class
+            || !is_a($mounted, $fence::OBJECT_COLLECTION_CLASS)
+            || $mounted::ENTITY_COLLECTION_CLASS::ENTITY_CLASS !== $fence::ENTITY_CLASS) {
+            throw new WriteNotAllowedException('Merge fence metadata requires its actual mounted chain.');
+        }
+        $item = $transfer->guardFenceRow($fence->collectionKey, $fence->rowId);
+        $base = self::MERGE_ROWS[$fence->collectionKey] ?? null;
+        $business = Hilos::$db->mountedObjectCollection($fence->collectionKey);
+        if ($base === null || $business === null || !$item instanceof $base
+            || $business::COLLECTION_KEY !== $fence->collectionKey || $business::OBJECT_CLASS !== $item::class
+            || !is_a($business, $item::OBJECT_COLLECTION_CLASS)
+            || $business::ENTITY_COLLECTION_CLASS::ENTITY_CLASS !== $item::ENTITY_CLASS
+            || !is_a($item::ENTITY_CLASS, $base::ENTITY_CLASS, true)) {
+            throw new WriteNotAllowedException('Merge fence metadata requires its captured mounted business chain.');
+        }
+        $source = (string)$transfer->loserUserId;
+        if ($birth) {
+            TruthSourceRegistry::checkCanCreate(HilosDbContext::accountMergeFences, static fn (): array => [$source]);
+        } else {
+            TruthSourceRegistry::checkCanGiveSet(HilosDbContext::accountMergeFences, $source);
+            if ($fence->storedSetTop() !== $source || $fence->ownerUserId !== $transfer->loserUserId) {
+                throw new WriteNotAllowedException('Only source-owned merge metadata may follow its captured row.');
+            }
+        }
+    }
+
+    /**
      * Judges creating a row in a collection.
      *
      * The door hands over the set keys the new row lands in, because a claim over a set creates
@@ -110,6 +149,9 @@ class DbWriteGuard
             return;
         }
 
+        if ($collection === HilosDbContext::accountMergeFences) {
+            throw new CreateNotAllowedException('Merge fence creation requires its captured transfer birth door.');
+        }
         TruthSourceRegistry::checkCanCreate($collection, $setKeys);
     }
 
@@ -197,6 +239,9 @@ class DbWriteGuard
         }
 
         TruthSourceRegistry::checkCanWriteItem($collection, $idString, $setKeys, $operation);
+        if ($collection === HilosDbContext::accountMergeFences && $item !== null && $item->hasChanges()) {
+            throw new WriteNotAllowedException('Merge fence metadata changes require its dedicated revision door.');
+        }
         if ($collection !== HilosDbContext::notificationDeliveries) {
             return;
         }

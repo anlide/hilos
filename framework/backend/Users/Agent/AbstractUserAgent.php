@@ -484,6 +484,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::userMerges => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::accountOperationResults => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::accountMergeCopies => [TruthSourceOperation::Add],
+        HilosDbContext::accountMergeFences => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
 
     /**

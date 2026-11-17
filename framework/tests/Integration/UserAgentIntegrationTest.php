@@ -294,6 +294,17 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
             TruthSourceOperation::Update,
         );
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, '43', ['43']);
+        TruthSourceRegistry::checkCanWriteItem(
+            HilosDbContext::accountMergeFences,
+            'identities:1',
+            static fn (): array => [self::USER_ID],
+            TruthSourceOperation::Update,
+        );
+        $this->assertWriteDenied(HilosDbContext::accountMergeFences, 'identities:2', ['43']);
+        $this->assertWriteDenied(HilosDbContext::accountMergeFences, 'identities:1', [self::AGENT_ID]);
+        $this->assertCreateDenied(HilosDbContext::accountMergeFences, [self::AGENT_ID]);
+        $this->assertWriteDenied(HilosDbContext::accountMergeFences, 'identities:1', [self::USER_ID], TruthSourceOperation::Remove);
+        $this->assertWriteDenied(HilosDbContext::accountMergeFences, 'identities:2', ['43'], TruthSourceOperation::Remove);
         foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials, HilosDbContext::secondFactors,
             HilosDbContext::secondFactorBackupCodes, HilosDbContext::secondFactorResets, HilosDbContext::secondFactorTrusts] as $collection) {
             foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
@@ -338,6 +349,21 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
             $this->assertCreateDenied($collection, [self::setKeyOf($collection, self::USER_ID)]);
         }
         $this->assertWriteDenied(HilosDbContext::secondFactorSettings, self::USER_ID, [self::USER_ID]);
+        try {
+            TruthSourceRegistry::checkCanWriteItem(
+                HilosDbContext::accountMergeFences,
+                'identities:1',
+                static fn (): array => [self::USER_ID],
+                TruthSourceOperation::Update,
+            );
+            self::fail('A stopped person retained its fence update claim');
+        } catch (WriteNotAllowedException $refusal) {
+            self::assertSame(
+                "Write operation not allowed: no truth source registered for table 'accountMergeFences'. "
+                    . 'Register via TruthSourceRegistry::register() first.',
+                $refusal->getMessage(),
+            );
+        }
         $this->assertWriteDenied(HilosDbContext::userMerges, self::USER_ID, [self::USER_ID], TruthSourceOperation::Remove);
         foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials, HilosDbContext::secondFactors,
             HilosDbContext::secondFactorBackupCodes, HilosDbContext::secondFactorResets, HilosDbContext::secondFactorTrusts] as $collection) {
@@ -381,6 +407,7 @@ final class UserAgentIntegrationTest extends HilosSessionIntegrationTestCase
             HilosDbContext::userMerges,
             HilosDbContext::accountOperationResults,
             HilosDbContext::accountMergeCopies,
+            HilosDbContext::accountMergeFences,
         ];
     }
 

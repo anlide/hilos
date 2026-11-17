@@ -176,7 +176,7 @@ final class AccountMergeGiving
 
             return (new AccountMergeGiveResult(
                 $rows->identities, $rows->passkeyCredentials, $rows->secondFactors, $rows->secondFactorBackupCodes,
-                $passwordKept, $secondFactorKept,
+                $passwordKept, $secondFactorKept, $transfer->admissionManifest(),
             ))->toPayload();
         });
         AccountMergeGiveResult::of($result->payload);
@@ -202,6 +202,24 @@ final class AccountMergeGiving
         return isset(Hilos::$db->accountMergeCopies[$assignmentId])
             ? Hilos::$db->accountMergeCopies[$assignmentId]->readForMerge()
             : null;
+    }
+
+    /**
+     * @param int $assignmentId Immutable loser go/give assignment
+     * @param int $userId Account represented by the current person owner
+     * @return ?AccountMergeHandover Saved snapshots and their original revisions, or null after copy removal
+     * @throws HilosException When the source address, saved give or copy refuses the read
+     */
+    public static function handover(int $assignmentId, int $userId): ?AccountMergeHandover
+    {
+        $assignment = self::assignment($assignmentId, $userId);
+        $saved = self::saved($assignment);
+        if ($saved === null) {
+            throw new InvalidFormatException('A merge handover requires its saved give fact.');
+        }
+        $copy = self::copy($assignmentId, $userId);
+
+        return $copy === null ? null : new AccountMergeHandover($copy, AccountMergeGiveResult::of($saved->payload)->admission);
     }
 
     /**

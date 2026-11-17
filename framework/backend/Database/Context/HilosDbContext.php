@@ -39,6 +39,9 @@ use Hilos\Database\Actions\Collection\AccountOperationsActions;
 use Hilos\Database\Actions\Collection\AccountOperationAssignmentsActions;
 use Hilos\Database\Actions\Collection\AccountOperationResultsActions;
 use Hilos\Database\Actions\Collection\AccountMergeCopiesActions;
+use Hilos\Database\Actions\Collection\AccountMergeFencesActions;
+use Hilos\Database\Actions\Item\AccountMergeFenceActions;
+use Hilos\Database\View\Collection\AccountMergeFences as DbCollectionAccountMergeFences;
 use Hilos\Database\Actions\Item\AccountOperationActions;
 use Hilos\Database\View\Collection\LegalAcceptances as DbCollectionLegalAcceptances;
 use Hilos\Database\View\Collection\LegalAcceptanceExports as DbCollectionLegalAcceptanceExports;
@@ -207,6 +210,7 @@ use Hilos\Database\Exception\InvalidMountedCollectionException;
  * @property-read DbCollectionAccountOperationAssignments $accountOperationAssignments
  * @property-read DbCollectionAccountOperationResults $accountOperationResults
  * @property-read DbCollectionAccountMergeCopies $accountMergeCopies
+ * @property-read DbCollectionAccountMergeFences $accountMergeFences
  * @property-read DbCollectionLegalAcceptances $legalAcceptances
  * @property-read DbCollectionLegalAcceptanceExports $legalAcceptanceExports Administrators' files of acceptance records
  * @property-read DbCollectionFiles $files
@@ -305,6 +309,7 @@ abstract class HilosDbContext extends DbContext
     public const string accountOperationAssignments = 'accountOperationAssignments';
     public const string accountOperationResults = 'accountOperationResults';
     public const string accountMergeCopies = 'accountMergeCopies';
+    public const string accountMergeFences = 'accountMergeFences';
     public const string legalAcceptances = 'legalAcceptances';
     public const string legalAcceptance = 'legalAcceptance';
     public const string dataExports = 'dataExports';
@@ -594,6 +599,13 @@ abstract class HilosDbContext extends DbContext
             Objects::LAZY_STRATEGY_KEY,
             DbCollectionAccountMergeCopies::class,
             AccountMergeCopiesActions::class,
+        );
+        $this->mountFramework(
+            self::accountMergeFences,
+            Objects::LAZY_STRATEGY_KEY,
+            DbCollectionAccountMergeFences::class,
+            AccountMergeFencesActions::class,
+            AccountMergeFenceActions::class,
         );
         $this->mountFramework(
             self::dataExports,
@@ -899,6 +911,7 @@ abstract class HilosDbContext extends DbContext
             self::userPhotos,
             self::accountDeletions,
             self::legalAcceptances,
+            self::accountMergeFences,
         ];
     }
 

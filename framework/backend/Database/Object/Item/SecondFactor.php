@@ -7,9 +7,10 @@ namespace Hilos\Database\Object\Item;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\DbWriteGuard;
-use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\AccountMergeFenceSnapshot;
+use Hilos\Database\AccountMergeRowWrite;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\SecondFactor as EntitySecondFactor;
@@ -134,6 +135,9 @@ class SecondFactor extends Object_
      * @param string $secret Base32 shared secret
      * @throws DatabaseException When the secret update query fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
+     * @throws SourceChangeSubscriberException When a source subscriber refuses the completed write
+     * @throws InvalidArgumentException When the DB sync signal cannot be named
+     * @throws ObjectGetIdStringNotImplementedException When the completed row has no primary key
      */
     public function writeSecret(string $secret): void
     {
@@ -141,21 +145,25 @@ class SecondFactor extends Object_
             return;
         }
 
-        DbWriteGuard::guardItemWrite(
-            static::getCollectionKey(),
-            (string)$this->entity->id,
-            $this->touchedSetKeys(...),
-            TruthSourceOperation::Add,
-        );
+        AccountMergeRowWrite::raw($this, function (?AccountMergeFenceSnapshot $fence) use ($secret): void {
+            $before = $this->entitySync->toArray();
+            DbWriteGuard::guardItemWrite(
+                static::getCollectionKey(),
+                (string)$this->entity->id,
+                $this->touchedSetKeys(...),
+                TruthSourceOperation::Add,
+            );
 
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::string($secret));
-        $params->add(SqlParam::int($this->entity->id));
-        Database::sql(
-            'UPDATE `' . EntitySecondFactor::_table . '` SET `' . EntitySecondFactor::secret
-                . '` = ? WHERE `' . EntitySecondFactor::id . '` = ?',
-            $params,
-        );
+            $params = SqlParamCollection::empty();
+            $params->add(SqlParam::string($secret));
+            $params->add(SqlParam::int($this->entity->id));
+            Database::sql(
+                'UPDATE `' . EntitySecondFactor::_table . '` SET `' . EntitySecondFactor::secret
+                    . '` = ? WHERE `' . EntitySecondFactor::id . '` = ?',
+                $params,
+            );
+            $this->completeRawWrite($before, $fence);
+        });
     }
 
     /**
@@ -165,14 +173,13 @@ class SecondFactor extends Object_
      * even inside its own 30 seconds. The UPDATE carries `last_used_step < ?`, so of two
      * workers accepting the same code exactly one changes the row and gets true; false means
      * the step (or a later one) was already taken and never that the write failed - a failing
-     * write throws. The winner's row is re-announced through {@see sync()}, so every reader of
-     * the collection sees the new stamps. An unpersisted authenticator answers false.
+     * write throws. The winner updates its ORM baseline and announces the
+     * new stamps without a second business write. An unpersisted authenticator answers false.
      *
      * @param int $step Time step the code matched (Unix seconds divided by the period)
      * @return bool True when this call took the step, false when it was taken already
      * @throws DatabaseException When the update, the row count or the re-announcement fails
      * @throws WriteNotAllowedException When no truth source in this process may write that row
-     * @throws CreateNotAllowedException Never for a persisted row; declared by the re-announcing sync
      * @throws SourceChangeSubscriberException Whatever a subscriber to the update announcement raises
      * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
      * @throws ObjectGetIdStringNotImplementedException If the primary key is null during the re-announcement
@@ -183,35 +190,38 @@ class SecondFactor extends Object_
             return false;
         }
 
-        DbWriteGuard::guardItemWrite(
-            static::getCollectionKey(),
-            (string)$this->entity->id,
-            $this->touchedSetKeys(...),
-            TruthSourceOperation::Update,
-        );
+        return AccountMergeRowWrite::raw($this, function (?AccountMergeFenceSnapshot $fence) use ($step): bool {
+            $before = $this->entitySync->toArray();
+            DbWriteGuard::guardItemWrite(
+                static::getCollectionKey(),
+                (string)$this->entity->id,
+                $this->touchedSetKeys(...),
+                TruthSourceOperation::Update,
+            );
 
-        $now = TimeHelper::nowMs();
-        $params = SqlParamCollection::empty();
-        $params->add(SqlParam::int($step));
-        $params->add(SqlParam::int($now));
-        $params->add(SqlParam::int($this->entity->id));
-        $params->add(SqlParam::int($step));
-        Database::sql(
-            'UPDATE `' . EntitySecondFactor::_table . '` SET `' . EntitySecondFactor::last_used_step . '` = ?, `'
-                . EntitySecondFactor::last_used_at . '` = ? WHERE `' . EntitySecondFactor::id . '` = ?'
-                . ' AND (`' . EntitySecondFactor::last_used_step . '` IS NULL OR `'
-                . EntitySecondFactor::last_used_step . '` < ?)',
-            $params,
-        );
-        if (Database::affectedRows() !== 1) {
-            return false;
-        }
+            $now = TimeHelper::nowMs();
+            $params = SqlParamCollection::empty();
+            $params->add(SqlParam::int($step));
+            $params->add(SqlParam::int($now));
+            $params->add(SqlParam::int($this->entity->id));
+            $params->add(SqlParam::int($step));
+            Database::sql(
+                'UPDATE `' . EntitySecondFactor::_table . '` SET `' . EntitySecondFactor::last_used_step . '` = ?, `'
+                    . EntitySecondFactor::last_used_at . '` = ? WHERE `' . EntitySecondFactor::id . '` = ?'
+                    . ' AND (`' . EntitySecondFactor::last_used_step . '` IS NULL OR `'
+                    . EntitySecondFactor::last_used_step . '` < ?)',
+                $params,
+            );
+            if (Database::affectedRows() !== 1) {
+                return false;
+            }
 
-        $this->entity->last_used_step = $step;
-        $this->entity->last_used_at = $now;
-        $this->sync();
+            $this->entity->last_used_step = $step;
+            $this->entity->last_used_at = $now;
+            $this->completeRawWrite($before, $fence);
 
-        return true;
+            return true;
+        });
     }
 
     /**

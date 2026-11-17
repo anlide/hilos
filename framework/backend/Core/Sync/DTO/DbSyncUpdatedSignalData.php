@@ -25,7 +25,8 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
      * @param ?string $emitter Identity of the process that sent this fact, or null when unstamped
      * @param array<string, mixed> $previous Previous values of the changed columns
      * @param ?int $receiptId Existing receipt primary key for the write, or null outside a receipt
-     * @param ?string $writerAgentId Current writing agent under the receipt, or null without an active agent
+     * @param ?string $writerAgentId Actual writing agent, or null without an active agent
+     * @param ?DbSyncAdmissionData $admission Protected row revision and complete mapped snapshot
      */
     public function __construct(
         public readonly string $collectionKey,
@@ -37,6 +38,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
         public readonly array $previous = [],
         public readonly ?int $receiptId = null,
         public readonly ?string $writerAgentId = null,
+        public readonly ?DbSyncAdmissionData $admission = null,
     ) {
     }
 
@@ -58,6 +60,7 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
             previous: $this->previous,
             receiptId: $this->receiptId,
             writerAgentId: $this->writerAgentId,
+            admission: $this->admission,
         );
     }
 
@@ -71,13 +74,15 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
         return [
             SyncSignalDataKey::COLLECTION_KEY => $this->collectionKey,
             SyncSignalDataKey::ID_STRING => $this->idString,
-            SyncSignalDataKey::ROW => $this->row,
-            SyncSignalDataKey::PREVIOUS => $this->previous,
+            SyncSignalDataKey::ROW => $this->admission === null ? $this->row : DbSyncAdmissionData::encodeRow($this->collectionKey, $this->row),
+            SyncSignalDataKey::PREVIOUS => $this->admission === null
+                ? $this->previous : DbSyncAdmissionData::encodeRow($this->collectionKey, $this->previous),
             SyncSignalDataKey::ORIGIN => $this->origin,
             SyncSignalDataKey::ORIGIN_REQUEST_ID => $this->originRequestId,
             SyncSignalDataKey::EMITTER => $this->emitter,
             SyncSignalDataKey::RECEIPT_ID => $this->receiptId,
             SyncSignalDataKey::WRITER_AGENT_ID => $this->writerAgentId,
+            SyncSignalDataKey::ADMISSION => $this->admission?->toArray($this->collectionKey),
         ];
     }
 
@@ -90,16 +95,30 @@ class DbSyncUpdatedSignalData extends BaseDTO implements DbSyncSignalDataInterfa
      */
     public static function fromArray(array $data): static
     {
+        $collectionKey = self::requireString($data, SyncSignalDataKey::COLLECTION_KEY);
+        $rawAdmission = self::optionalArray($data, SyncSignalDataKey::ADMISSION);
+        $admission = $rawAdmission === null ? null : DbSyncAdmissionData::fromArray($rawAdmission, $collectionKey);
+        $row = self::requireArray($data, SyncSignalDataKey::ROW);
+        $previous = self::requireArray($data, SyncSignalDataKey::PREVIOUS);
+
+        $row = $admission === null ? $row : DbSyncAdmissionData::decodeRow($collectionKey, $row);
+        $previous = $admission === null ? $previous : DbSyncAdmissionData::decodeRow($collectionKey, $previous);
+        if ($admission !== null) {
+            $admission->validate($collectionKey, self::requireString($data, SyncSignalDataKey::ID_STRING),
+                delete: false, row: $row, previous: $previous);
+        }
+
         return new static(
-            collectionKey: self::requireString($data, SyncSignalDataKey::COLLECTION_KEY),
+            collectionKey: $collectionKey,
             idString: self::requireString($data, SyncSignalDataKey::ID_STRING),
-            row: self::requireArray($data, SyncSignalDataKey::ROW),
+            row: $row,
             origin: self::optionalString($data, SyncSignalDataKey::ORIGIN),
             originRequestId: self::optionalString($data, SyncSignalDataKey::ORIGIN_REQUEST_ID),
             emitter: self::optionalString($data, SyncSignalDataKey::EMITTER),
-            previous: self::requireArray($data, SyncSignalDataKey::PREVIOUS),
+            previous: $previous,
             receiptId: self::optionalInt($data, SyncSignalDataKey::RECEIPT_ID),
             writerAgentId: self::optionalString($data, SyncSignalDataKey::WRITER_AGENT_ID),
+            admission: $admission,
         );
     }
 }

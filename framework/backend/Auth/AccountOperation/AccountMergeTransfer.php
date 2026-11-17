@@ -30,6 +30,7 @@ use Hilos\Users\SecondFactorFate;
 use JsonException;
 use Throwable;
 use WeakMap;
+use WeakReference;
 
 /**
  * An attempt-local right to give selected rows, with no ambient permission to write either account.
@@ -48,6 +49,12 @@ final class AccountMergeTransfer
 
     /** @var WeakMap<Object_, string> Captured collection and row id, without retaining row data */
     private readonly WeakMap $members;
+
+    /** @var array<string, WeakReference<Object_>> Attempt-local obligations survive even if a captured Object is released */
+    private array $fencedMembers = [];
+
+    /** @var array<string, array<int, AccountMergeRowRevision>> Attempt-local stamps; the saved give result is the durable manifest */
+    private array $admissions = [];
 
     /** @var WeakMap<Object_, int> Own preparation password anchor, independent of the transfer manifest */
     private readonly WeakMap $passwordAnchors;
@@ -134,9 +141,20 @@ final class AccountMergeTransfer
             try {
                 $transfer->capture($rows, $operation->mergeChoice, $source);
 
-                return $work($transfer);
+                $payload = $work($transfer);
+                foreach ($transfer->fencedMembers as $reference) {
+                    $item = $reference->get();
+                    if ($item === null || !$item->isRelated() || $item->hasChanges()
+                        || $item->storedSetTop() !== (string)$survivorUserId) {
+                        throw new WriteNotAllowedException('Merge fence metadata must commit with its captured business transfer.');
+                    }
+                }
+
+                return $payload;
             } finally {
                 $transfer->active = false;
+                $transfer->fencedMembers = [];
+                $transfer->admissions = [];
             }
         });
     }
@@ -174,6 +192,77 @@ final class AccountMergeTransfer
                 throw new WriteNotAllowedException('A passkey must follow its captured identity into the merge target set.');
             }
         }
+    }
+
+    /**
+     * Records a commit obligation for a captured row, without retaining its business data.
+     *
+     * @internal The metadata guard uses the same live source capability as the business save
+     * @param string $collection Captured business collection
+     * @param int $rowId Captured positive row id
+     * @return Object_ Exact captured source Object
+     * @throws HilosException When the capability, source grant, stored membership or passkey anchor refuses the row
+     */
+    public function guardFenceRow(string $collection, int $rowId): Object_
+    {
+        foreach ($this->members as $item => $key) {
+            if ($key === $collection . ':' . $rowId) {
+                $this->guardRow($collection, $item);
+                $this->fencedMembers[$key] = WeakReference::create($item);
+
+                return $item;
+            }
+        }
+
+        throw new WriteNotAllowedException('Merge fence metadata requires its captured business row.');
+    }
+
+    /**
+     * Joins the scoped business save before its SQL; the outstanding obligation prevents a metadata-only commit.
+     *
+     * @internal Only the guarded syncForMerge save stamps a captured row
+     * @param string $collection Captured business collection
+     * @param Object_ $item Exact business Object being transferred
+     * @throws HilosException When the capture, metadata grant, membership or optimistic comparison refuses the stamp
+     */
+    public function stampRow(string $collection, Object_ $item): void
+    {
+        $this->guardRow($collection, $item);
+        $rowId = $item->valueForColumn(self::ROW_ENTITIES[$collection]::id);
+        if (isset($this->admissions[$collection][$rowId])) {
+            throw new WriteNotAllowedException('A merge transfer can stamp its captured row only once.');
+        }
+        $fence = Hilos::$db->accountMergeFences[$collection . ':' . $rowId] ?? null;
+        $revision = $fence === null
+            ? Hilos::$db->accountMergeFences->actions->birthForMerge($this, $collection, $rowId)->revision
+            : $fence->actions->giveForMerge($this)->revision;
+        $this->admissions[$collection][$rowId] = new AccountMergeRowRevision($rowId, $revision);
+    }
+
+    /**
+     * @return AccountMergeAdmissionManifest Original revisions of completed writes in this active attempt
+     * @throws HilosException When the attempt is closed or a stamped business transfer has not completed
+     */
+    public function admissionManifest(): AccountMergeAdmissionManifest
+    {
+        if (!$this->active || ExecutionContext::currentAgentId() !== $this->executorId) {
+            throw new WriteNotAllowedException('A merge admission manifest belongs to its active source attempt.');
+        }
+        foreach ($this->fencedMembers as $reference) {
+            $item = $reference->get();
+            if ($item === null || !$item->isRelated() || $item->hasChanges()
+                || $item->storedSetTop() !== (string)$this->survivorUserId) {
+                throw new WriteNotAllowedException('Merge admission requires completed captured business transfers.');
+            }
+        }
+        $lists = [];
+        foreach (array_keys(self::ROW_ENTITIES) as $collection) {
+            $stamps = $this->admissions[$collection] ?? [];
+            ksort($stamps, SORT_NUMERIC);
+            $lists[] = array_values($stamps);
+        }
+
+        return new AccountMergeAdmissionManifest(...$lists);
     }
 
     /**

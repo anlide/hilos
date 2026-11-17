@@ -175,6 +175,8 @@ final class SecondFactorMomentStorageIntegrationTest extends FrameworkIntegratio
 
     private const string USER_STUB = 'create_hilos_user';
 
+    private const string FENCE_STUB = 'create_hilos_account_merge_fence';
+
     /** Person the rows are recorded on. */
     private const int USER_ID = 1922001;
 
@@ -195,6 +197,7 @@ final class SecondFactorMomentStorageIntegrationTest extends FrameworkIntegratio
         $this->previousRouter = Hilos::$sr;
         self::dropFixtureTables();
         self::runStub(self::USER_STUB);
+        self::runStub(self::FENCE_STUB);
         Database::sql(
             'INSERT INTO `' . User::_table . '` (`' . User::id . '`, `' . User::name . '`) VALUES (?, ?), (?, ?)',
             [self::USER_ID, 'Second factor owner', self::OTHER_USER_ID, 'Second factor other'],
@@ -828,6 +831,7 @@ final class SecondFactorMomentStorageIntegrationTest extends FrameworkIntegratio
         foreach (self::TABLES as $table) {
             self::runStub('create_' . $table . '_down');
         }
+        self::runStub(self::FENCE_STUB . '_down');
         self::runStub(self::USER_STUB . '_down');
     }
 

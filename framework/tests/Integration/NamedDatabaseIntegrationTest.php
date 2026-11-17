@@ -1744,6 +1744,7 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
             if ($db) {
                 $keys[] = SyncSignalDataKey::RECEIPT_ID;
                 $keys[] = SyncSignalDataKey::WRITER_AGENT_ID;
+                $keys[] = SyncSignalDataKey::ADMISSION;
             }
             if (in_array($name, [SignalConstants::DB_SYNC_UPDATED, SignalConstants::RT_SYNC_UPDATED], true)) {
                 $keys[] = SyncSignalDataKey::PREVIOUS;
@@ -1756,6 +1757,7 @@ final class NamedDatabaseIntegrationTest extends FrameworkIntegrationTestCase
             if ($db) {
                 self::assertNull($payload[SyncSignalDataKey::RECEIPT_ID]);
                 self::assertNull($payload[SyncSignalDataKey::WRITER_AGENT_ID]);
+                self::assertNull($payload[SyncSignalDataKey::ADMISSION]);
                 self::assertFalse(Hilos::$sr->shouldSkipDbSyncApply('foreign-emitter'));
                 self::assertTrue(Hilos::$sr->shouldSkipDbSyncApply($payload[SyncSignalDataKey::EMITTER]));
             } else {

@@ -25,6 +25,10 @@ use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Sync\DTO\DbReHydrateSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncCreatedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
+use Hilos\Core\Sync\DTO\DbSyncClearedSignalData;
+use Hilos\Database\Object\Objects;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Hilos;
@@ -96,6 +100,47 @@ final class DaemonManagerDbSyncPeerTest extends TestCase
         );
         $announced = $daemon->mesh->singleAnnouncement();
         $this->assertSame(SignalTypeConstants::DB_SYNC_UPDATED, $announced->signalType);
+    }
+
+    public function testProtectedBusinessAndFenceFramesNeverReadTheMasterOrm(): void
+    {
+        foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials, HilosDbContext::secondFactors,
+            HilosDbContext::secondFactorBackupCodes, HilosDbContext::accountMergeFences] as $key) {
+            foreach ([
+                [SignalTypeConstants::DB_SYNC_CREATED, new DbSyncCreatedSignalData($key, '7', ['id' => 7])],
+                [SignalTypeConstants::DB_SYNC_UPDATED, new DbSyncUpdatedSignalData($key, '7', [])],
+                [SignalTypeConstants::DB_SYNC_DELETED, new DbSyncDeletedSignalData($key, '7')],
+            ] as [$type, $data]) {
+                $daemon = new DbSyncPeerTestManager();
+                $daemon->workerReads($key);
+                Hilos::$db = new DbSyncMasterNoReadContext();
+                $daemon->receive(new SignalDTO(new SignalSource(SignalSource::DB), new SignalType($type), new SignalName($type), $data));
+                self::assertCount(1, $daemon->workerServer->writtenFrames());
+                self::assertSame([], $daemon->mesh->announcements);
+            }
+        }
+    }
+
+    public function testProtectedLocalWriteUsesTheExistingTransportAndReaderInterests(): void
+    {
+        $daemon = new DbSyncPeerTestManager();
+        $daemon->workerReads(HilosDbContext::identities);
+        Hilos::$db = new DbSyncMasterNoReadContext();
+        Hilos::$sr->queueSignal(new SignalSource(SignalSource::DB), new SignalType(SignalTypeConstants::DB_SYNC_UPDATED),
+            new SignalName(SignalConstants::DB_SYNC_UPDATED), new DbSyncUpdatedSignalData(HilosDbContext::identities, '7', []));
+        $daemon->dispatch();
+        self::assertCount(1, $daemon->workerServer->writtenFrames());
+        self::assertCount(1, $daemon->mesh->announcements);
+    }
+
+    public function testProtectedClearIsTransportedWithoutMasterRehydrate(): void
+    {
+        $daemon = new DbSyncPeerTestManager();
+        $daemon->workerReads(HilosDbContext::identities);
+        Hilos::$db = new DbSyncMasterNoReadContext();
+        $daemon->receive(new SignalDTO(new SignalSource(SignalSource::DB), new SignalType(SignalTypeConstants::DB_SYNC_CLEARED),
+            new SignalName(SignalConstants::DB_SYNC_CLEARED), new DbSyncClearedSignalData(HilosDbContext::identities)));
+        self::assertCount(1, $daemon->workerServer->writtenFrames());
     }
 
     /**
@@ -793,5 +838,24 @@ final class DbSyncPeerTestWorkerClient extends WorkerClient
     public function writtenFrames(): array
     {
         return $this->written;
+    }
+}
+
+/** A transport-only master cannot look up a row or re-read the protected collection. */
+final class DbSyncMasterNoReadContext extends HilosDbContext
+{
+    /**
+     * @param string $name Collection an accidental apply would look up
+     * @return ?Objects Never returns
+     */
+    public function mountedObjectCollection(string $name): ?Objects
+    {
+        throw new RuntimeException('Master attempted a protected ORM lookup.');
+    }
+
+    /** @param string $name Collection an accidental clear would re-read */
+    public function reHydrateCollection(string $name): void
+    {
+        throw new RuntimeException('Master attempted a protected collection reload.');
     }
 }

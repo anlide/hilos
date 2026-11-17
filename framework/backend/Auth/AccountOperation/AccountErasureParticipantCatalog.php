@@ -41,6 +41,7 @@ final class AccountErasureParticipantCatalog
         HilosDbContext::accountOperationAssignments => AccountErasureExemption::ServiceRecord,
         HilosDbContext::accountOperationResults => AccountErasureExemption::ServiceRecord,
         HilosDbContext::accountMergeCopies => AccountErasureExemption::ServiceRecord,
+        HilosDbContext::accountMergeFences => AccountErasureExemption::ServiceRecord,
         HilosDbContext::secondFactorTrustRestrictions => AccountErasureExemption::InstallationPolicy,
         HilosDbContext::files => AccountErasureExemption::ReferenceNullified,
         HilosDbContext::registrationReservations => AccountErasureExemption::OutsideAccount,

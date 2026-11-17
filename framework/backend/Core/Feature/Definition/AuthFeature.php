@@ -17,6 +17,7 @@ use Hilos\Database\Entity\Item\AccountOperation;
 use Hilos\Database\Entity\Item\AccountOperationAssignment;
 use Hilos\Database\Entity\Item\AccountOperationResult;
 use Hilos\Database\Entity\Item\AccountMergeCopy;
+use Hilos\Database\Entity\Item\AccountMergeFence;
 use Hilos\Database\Entity\Item\LegalAcceptanceExport;
 use Hilos\Database\Entity\Item\DataExport;
 use Hilos\Database\Entity\Item\Identity;
@@ -127,6 +128,7 @@ final class AuthFeature extends FeatureDefinition
                 AccountOperationAssignment::_table,
                 AccountOperationResult::_table,
                 AccountMergeCopy::_table,
+                AccountMergeFence::_table,
                 LegalAcceptance::_table,
                 DataExport::_table,
                 UserRename::_table,

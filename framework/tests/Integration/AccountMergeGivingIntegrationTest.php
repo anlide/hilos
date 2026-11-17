@@ -6,6 +6,8 @@ namespace Hilos\Tests\Integration;
 
 use Closure;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeHandover;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergeOpening;
 use Hilos\Auth\AccountOperation\AccountMergePreparationResult;
@@ -36,6 +38,7 @@ use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
+use Hilos\Database\DatabaseNames;
 use Hilos\Database\Entity\Item\AccountMergeCopy as EntityAccountMergeCopy;
 use Hilos\Database\Entity\Item\AccountOperationResult as EntityAccountOperationResult;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
@@ -83,7 +86,7 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
         'hilos_user', 'hilos_identity', 'hilos_passkey_credential', 'hilos_second_factor', 'hilos_second_factor_backup_code',
         'hilos_second_factor_setting', 'hilos_second_factor_reset', 'hilos_second_factor_trust',
         'hilos_user_merge', 'hilos_account_deletion', 'hilos_account_operation', 'hilos_account_operation_assignment',
-        'hilos_account_operation_result', 'hilos_account_merge_copy',
+        'hilos_account_operation_result', 'hilos_account_merge_copy', 'hilos_account_merge_fence',
     ];
     private ?HilosDbContext $previousDb;
     private ?SignalRouter $previousRouter;
@@ -194,6 +197,85 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
             }
         }
         self::assertSame($copy->toJson(), AccountMergeHandoverCopy::fromJson($copy->toJson())->toJson());
+    }
+
+    /** Real transfers stamp once, subsequent gives advance, and old source replay keeps its original snapshots. */
+    public function testBirthManifestSurvivesOwnerAdvanceAndTheNextRealTransfer(): void
+    {
+        [$operation, $give] = $this->ready();
+        $result = AccountMergeGiveResult::of($this->give($give)->payload);
+        $expected = [
+            'identities' => [['id' => $this->identityId, 'revision' => 1]],
+            'passkeyCredentials' => [['id' => $this->passkeyId, 'revision' => 1]],
+            'secondFactors' => [['id' => $this->factorId, 'revision' => 1]],
+            'secondFactorBackupCodes' => [['id' => $this->codeId, 'revision' => 1], ['id' => $this->usedCodeId, 'revision' => 1]],
+        ];
+        self::assertSame($expected, $result->admission->toArray());
+        foreach ($expected as $collection => $rows) {
+            foreach ($rows as $row) {
+                $fence = Hilos::$db->accountMergeFences[$collection . ':' . $row['id']];
+                self::assertSame([1, self::SURVIVOR, $operation->id, $give->id],
+                    [$fence->revision, $fence->ownerUserId, $fence->operationId, $fence->assignmentId]);
+            }
+        }
+        $copy = $this->handover($give)->copy->toJson();
+        $key = 'secondFactors:' . $this->factorId;
+        $this->asPerson(self::SURVIVOR, static fn () => Database::transaction(DatabaseNames::PRIMARY,
+            static fn () => Hilos::$db->accountMergeFences[$key]->actions->advanceForWrite()));
+        self::assertTrue($operation->actions->finish(AccountMergeStage::Go->value, AccountOperationOutcome::Completed));
+        [, $next] = $this->ready(survivor: 11, loser: self::SURVIVOR);
+        $nextResult = $this->asPerson(self::SURVIVOR, static fn () => AccountMergeGiving::run($next->id, self::SURVIVOR));
+        $nextAdmission = AccountMergeGiveResult::of($nextResult->payload)->admission;
+        self::assertSame([['id' => $this->identityId, 'revision' => 2]], $nextAdmission->toArray()['identities']);
+        self::assertSame([['id' => $this->passkeyId, 'revision' => 2]], $nextAdmission->toArray()['passkeyCredentials']);
+        self::assertSame(3, Hilos::$db->accountMergeFences[$key]->revision);
+        self::assertSame(11, Hilos::$db->accountMergeFences[$key]->ownerUserId);
+        self::assertSame(3, array_column($nextAdmission->secondFactors, 'revision', 'id')[$this->factorId]);
+        Database::close();
+        Database::connect();
+        $this->freshContext(true);
+        $writes = $this->writeCounters();
+        self::assertSame($expected, $this->handover($give)->admission->toArray());
+        self::assertSame($copy, $this->handover($give)->copy->toJson());
+        self::assertSame($expected, AccountMergeGiveResult::of($this->give($give)->payload)->admission->toArray());
+        self::assertSame($writes, $this->writeCounters());
+    }
+
+    /** Existing and newborn fences roll back with rows, copies and facts, then retry at the original next revision. */
+    public function testFenceAndBirthManifestRollbackTogetherBeforeResultCommit(): void
+    {
+        [, $give] = $this->ready();
+        $key = 'identities:' . $this->identityId;
+        Database::sql('INSERT INTO `hilos_account_merge_fence` VALUES (?, ?, 9001, 9002, ?, 7, 0)',
+            [HilosDbContext::identities, $this->identityId, self::LOSER]);
+        $fence = Hilos::$db->accountMergeFences[$key];
+        $row = Hilos::$db->identities[$this->identityId]->getObject();
+        $before = $this->snapshot();
+        $reaction = new MergeGivingReaction();
+        SourceChangeBus::subscribe($reaction);
+        $this->drain();
+        Database::sqlRun("CREATE TRIGGER `giving_failure` BEFORE INSERT ON `hilos_account_operation_result`"
+            . " FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'manifest rollback'");
+        try {
+            $this->refused(DatabaseException::class, fn () => $this->give($give));
+            self::assertSame($before, $this->snapshot());
+            self::assertSame($fence->getObject(), Hilos::$db->accountMergeFences[$key]->getObject());
+            self::assertSame([7, self::LOSER, 9001, 9002], [$fence->revision, $fence->ownerUserId, $fence->operationId, $fence->assignmentId]);
+            self::assertSame($row, Hilos::$db->identities[$this->identityId]->getObject());
+            self::assertSame(self::LOSER, $row->userId);
+            self::assertFalse($row->hasChanges());
+            self::assertNull(Hilos::$db->accountMergeFences['passkeyCredentials:' . $this->passkeyId] ?? null);
+            self::assertNull(Hilos::$db->accountOperationResults->byAssignment($give->id));
+            self::assertNull(Hilos::$db->accountMergeCopies[$give->id] ?? null);
+            self::assertSame([], $reaction->seen);
+            self::assertSame([], $this->drain());
+        } finally {
+            Database::sqlRun('DROP TRIGGER `giving_failure`');
+        }
+        $result = AccountMergeGiveResult::of($this->give($give)->payload);
+        self::assertSame([['id' => $this->identityId, 'revision' => 8]], $result->admission->toArray()['identities']);
+        self::assertSame(8, $fence->revision);
+        self::assertSame($result->admission->toArray(), $this->handover($give)->admission->toArray());
     }
 
     /**
@@ -502,7 +584,7 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
     {
         foreach ([false, true] as $deleted) {
             foreach ([['hilos_passkey_credential', 'UPDATE'], ['hilos_user_merge', 'INSERT'], ['hilos_user', 'UPDATE'],
-                ['hilos_account_merge_copy', 'INSERT'], ['hilos_account_merge_copy', 'UPDATE'],
+                ['hilos_account_merge_fence', 'INSERT'], ['hilos_account_merge_copy', 'INSERT'], ['hilos_account_merge_copy', 'UPDATE'],
                 ['hilos_account_operation_result', 'INSERT']] as [$table, $event]) {
                 yield $table . '-' . $event . '-' . (int)$deleted => [$table, $event, $deleted];
             }
@@ -566,6 +648,7 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
         [, $give] = $this->ready();
         $fact = $this->give($give)->payload->toJson();
         $copy = $this->copy($give)->toJson();
+        $admission = $this->handover($give)->admission->toArray();
         $before = $this->snapshot();
         self::assertSame($fact, $this->give($give)->payload->toJson());
         Database::sqlRun('UPDATE `hilos_account_operation` SET `stage` = ?, `finished_at` = ? WHERE `id` = ?',
@@ -577,6 +660,8 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
         $writes = $this->writeCounters();
         self::assertSame($fact, $this->give($give)->payload->toJson());
         self::assertSame($copy, $this->copy($give)->toJson());
+        self::assertSame($copy, $this->handover($give)->copy->toJson());
+        self::assertSame($admission, $this->handover($give)->admission->toArray());
         self::assertSame($writes, $this->writeCounters());
         self::assertSame([], $this->drain());
         $after = $this->snapshot();
@@ -593,11 +678,15 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
         if ($defect === 'owner') {
             $this->asPerson(self::SURVIVOR,
                 fn () => $this->refused(AccountOperationStepRefusedException::class, fn () => AccountMergeGiving::copy($give->id, self::LOSER)));
+            $this->asPerson(self::SURVIVOR, fn () => $this->refused(AccountOperationStepRefusedException::class,
+                fn () => AccountMergeGiving::handover($give->id, self::LOSER)));
             return;
         }
         if ($defect === 'assignment') {
             $this->asPerson(self::LOSER,
                 fn () => $this->refused(AccountOperationStepRefusedException::class, fn () => AccountMergeGiving::copy($give->id, self::SURVIVOR)));
+            $this->asPerson(self::LOSER, fn () => $this->refused(AccountOperationStepRefusedException::class,
+                fn () => AccountMergeGiving::handover($give->id, self::SURVIVOR)));
             return;
         }
         if ($defect === 'missing') {
@@ -618,10 +707,12 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
         $before = $this->snapshot();
         if ($defect === 'missing') {
             self::assertNull($this->copy($give));
+            self::assertNull($this->handover($give));
             self::assertSame($give->id, $this->give($give)->assignmentId);
             self::assertSame($give->id, Hilos::$db->accountOperations[$give->operationId]->mergeFact()->assignmentId);
         } else {
             $this->refused(HilosException::class, fn () => $this->copy($give));
+            $this->refused(HilosException::class, fn () => $this->handover($give));
             if ($defect === 'fact') {
                 $this->refused(InvalidFormatException::class, fn () => $this->give($give));
             }
@@ -791,20 +882,25 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
     /**
      * @param ?SecondFactorFate $fate Protection outcome for the real preparation pair
      * @param ?PasswordFate $password Password outcome from the immutable choice
+     * @param int $survivor Target account of this operation
+     * @param int $loser Source account of this operation
      * @return array{AccountOperation, AccountOperationAssignment} Prepared operation and give address
      */
-    private function ready(?SecondFactorFate $fate = SecondFactorFate::BOTH, ?PasswordFate $password = null): array
+    private function ready(
+        ?SecondFactorFate $fate = SecondFactorFate::BOTH, ?PasswordFate $password = null,
+        int $survivor = self::SURVIVOR, int $loser = self::LOSER,
+    ): array
     {
-        $operation = AccountMergeOpening::open(self::SURVIVOR, self::LOSER, new AccountMergeChoice($password, $fate, null, null));
-        foreach ([[self::SURVIVOR, AccountMergeDuty::PrepareSurvivor], [self::LOSER, AccountMergeDuty::PrepareLoser]] as [$user, $duty]) {
+        $operation = AccountMergeOpening::open($survivor, $loser, new AccountMergeChoice($password, $fate, null, null));
+        foreach ([[$survivor, AccountMergeDuty::PrepareSurvivor], [$loser, AccountMergeDuty::PrepareLoser]] as [$user, $duty]) {
             $assignment = Hilos::$db->accountOperationAssignments->byIdentity($operation->id, AccountMergeStage::Preparing->value, $duty->value);
             $result = $this->asPerson($user, static fn (AbstractUserAgent $agent) => $agent->prepareForMerge($assignment->id));
             self::assertTrue(AccountMergePreparationResult::of($result->payload)->isReserved());
         }
         self::assertTrue($operation->actions->advance(AccountMergeStage::Preparing->value, AccountMergeStage::Go->value));
         $give = Hilos::$db->accountOperationAssignments->actions->record($operation->id, AccountMergeStage::Go->value,
-            AccountMergeDuty::Give->value, new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)self::LOSER),
-            self::LOSER, AccountOperationAssignmentPayload::fromJson('{}'));
+            AccountMergeDuty::Give->value, new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$loser),
+            $loser, AccountOperationAssignmentPayload::fromJson('{}'));
 
         return [$operation, $give];
     }
@@ -825,6 +921,15 @@ final class AccountMergeGivingIntegrationTest extends FrameworkIntegrationTestCa
     private function copy(AccountOperationAssignment $give): ?AccountMergeHandoverCopy
     {
         return $this->asPerson(self::LOSER, static fn () => AccountMergeGiving::copy($give->id, self::LOSER));
+    }
+
+    /**
+     * @param AccountOperationAssignment $give Assignment whose original envelope is read
+     * @return ?AccountMergeHandover Stored copy and original admission, never current business metadata
+     */
+    private function handover(AccountOperationAssignment $give): ?AccountMergeHandover
+    {
+        return $this->asPerson(self::LOSER, static fn () => AccountMergeGiving::handover($give->id, self::LOSER));
     }
 
     /**
@@ -1016,7 +1121,8 @@ final class MergeGivingReplayContext extends HilosDbContext
     public function __get(string $name): mixed
     {
         if (in_array($name, [self::identities, self::passkeyCredentials, self::secondFactors, self::secondFactorBackupCodes,
-            self::secondFactorSettings, self::secondFactorTrusts, self::secondFactorResets, self::accountDeletions, self::users], true)) {
+            self::secondFactorSettings, self::secondFactorTrusts, self::secondFactorResets, self::accountDeletions, self::users,
+            self::accountMergeFences], true)) {
             throw new RuntimeException('Replay read a business collection: ' . $name);
         }
 

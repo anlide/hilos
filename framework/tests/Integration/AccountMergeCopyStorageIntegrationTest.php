@@ -6,6 +6,8 @@ namespace Hilos\Tests\Integration;
 
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeAdmissionManifest;
+use Hilos\Auth\AccountOperation\AccountMergeRowRevision;
 use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
 use Hilos\Auth\AccountOperation\AccountMergeHandoverCopy;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
@@ -316,7 +318,8 @@ JSON;
             self::assertTrue(true);
         }
         foreach (['{}', '{"give":"given","rows":{"identities":[],"passkeyCredentials":[],"secondFactors":[],"secondFactorBackupCodes":[]},'
-            . '"identitiesMoved":0,"passwordKept":"survivor","secondFactorKept":"none"}'] as $wrongResult) {
+            . '"identitiesMoved":0,"passwordKept":"survivor","secondFactorKept":"none",'
+            . '"admission":{"identities":[],"passkeyCredentials":[],"secondFactors":[],"secondFactorBackupCodes":[]}}'] as $wrongResult) {
             Database::sql('UPDATE `hilos_account_operation_result` SET `payload_json` = ? WHERE `assignment_id` = ?',
                 [$wrongResult, $assignment->id]);
             Hilos::$db = new HilosSessionTestDbContext();
@@ -394,6 +397,10 @@ JSON;
     {
         return new AccountMergeGiveResult(
             [31, 32], [41], [51], [61], PasswordFate::SURVIVOR, AccountMergeGiveResult::SECOND_FACTOR_BOTH,
+            new AccountMergeAdmissionManifest(
+                [new AccountMergeRowRevision(31, 1), new AccountMergeRowRevision(32, 1)],
+                [new AccountMergeRowRevision(41, 1)], [new AccountMergeRowRevision(51, 1)], [new AccountMergeRowRevision(61, 1)],
+            ),
         )->toPayload();
     }
 
