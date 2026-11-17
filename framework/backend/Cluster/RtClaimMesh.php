@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\PeerServer;
@@ -41,8 +42,9 @@ interface RtClaimMesh
      * frame: the caller says what it owns and never asks who judges it.
      *
      * @param list<PeerRtClaimEntry> $claims What each agent of this node owns
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function announceRtClaims(array $claims): void;
+    public function announceRtClaims(array $claims, ?SignalDispatch $origin = null): void;
 
     /**
      * Tells one node everything this node's agents own, because that link has just appeared.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Generator;
 use Hilos\Cluster\ClusterContext;
@@ -978,14 +979,16 @@ final class PeerServerRtHandOverTest extends TestCase
              * @param SignalDTO $signal RT sync signal to apply
              * @param bool $partialOwner Whether the origin holds only part of the right
              * @param ?RtReplicaConfirmation $receipt Receipt taken when it arrived
-             */
+                     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
             public function applyRemoteRtSync(
                 string $originNodeId,
                 string $signalType,
                 SignalDTO $signal,
                 bool $partialOwner = false,
                 ?RtReplicaConfirmation $receipt = null,
-            ): void
+        ?SignalDispatch $origin = null,
+    ): void
             {
             }
 
@@ -1015,15 +1018,17 @@ final class PeerServerRtHandOverTest extends TestCase
              * @param Closure(bool): void $settled The stream's answer
              * @param Closure(): void $recover Lifts the link's holds of the collection
              * @param Closure(bool): void $askAgain Asks the node for another snapshot, told whether a live change canceled this one
-             * @return Generator<int, RtWork, int, void> The staging
-             */
+             * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     * @return Generator<int, RtWork, int, void> The staging
+                     */
             public function stageRemoteRtSnapshot(
                 string $originNodeId,
                 RtSyncStreamSnapshot $snapshot,
                 Closure $settled,
                 Closure $recover,
                 Closure $askAgain,
-            ): Generator {
+        ?SignalDispatch $origin = null,
+    ): Generator {
                 $rows = [];
                 while (!$snapshot->isWhole() || $snapshot->hasRows()) {
                     $portion = $snapshot->takeRows();
@@ -1067,8 +1072,9 @@ final class PeerServerRtHandOverTest extends TestCase
              * @param string $nodeId Node that announced
              * @param list<string> $addedCollectionKeys RT collections the announcement added
              * @param int $announcement Number of the announcement
-             */
-            public function answerSourceInterest(string $nodeId, array $addedCollectionKeys, int $announcement): void
+                     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
+            public function answerSourceInterest(string $nodeId, array $addedCollectionKeys, int $announcement, ?SignalDispatch $origin = null): void
             {
                 $this->interestsAnswered[] = [$nodeId, $addedCollectionKeys, $announcement];
             }
@@ -1076,8 +1082,9 @@ final class PeerServerRtHandOverTest extends TestCase
             /**
              * @param string $nodeId Node that answered
              * @param int $announcement Number of the announcement it answered
-             */
-            public function noteSourceInterestAnswered(string $nodeId, int $announcement): void
+                     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
+            public function noteSourceInterestAnswered(string $nodeId, int $announcement, ?SignalDispatch $origin = null): void
             {
                 $this->answersNoted[] = [$nodeId, $announcement];
             }
@@ -1103,12 +1110,14 @@ final class PeerServerRtHandOverTest extends TestCase
              * @param string $originNodeId Id of the node that wrote these rows
              * @param string $collectionKey RT collection being topped up
              * @param array<string, array<string, mixed>> $rows Rows by state id
-             */
+                     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
             public function applyRemoteRtReplicaOffer(
                 string $originNodeId,
                 string $collectionKey,
                 array $rows,
-            ): void {
+        ?SignalDispatch $origin = null,
+    ): void {
                 $this->offered[] = [$originNodeId, $collectionKey, $rows];
             }
 

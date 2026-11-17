@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 use Event;
 use EventBase;
@@ -86,7 +87,7 @@ final class DaemonManagerWakeupTest extends TestCase
     {
         $this->guard();
         $seen = [];
-        $this->invoke('queueSignalEffect', static function () use (&$seen): Generator {
+        SignalDispatcherFixture::queue($this->manager, static function () use (&$seen): Generator {
             for ($step = 0; $step < 2000; ++$step) {
                 $seen[] = $step;
                 yield;
@@ -275,7 +276,7 @@ final class DaemonManagerWakeupTest extends TestCase
         $link = new ReflectionClass(PeerLink::class)->newInstanceWithoutConstructor();
         new ReflectionProperty(PeerLink::class, 'remoteIdentity')->setValue($link, NodeIdentity::of('node-b', 'Node B', NodeRole::Master, []));
         $head = 0;
-        $this->invoke('queueSignalEffect', static function () use (&$head): Generator {
+        SignalDispatcherFixture::queue($this->manager, static function () use (&$head): Generator {
             yield;
             for ($step = 0; $step < 512; $step++) {
                 $head++;
@@ -299,7 +300,7 @@ final class DaemonManagerWakeupTest extends TestCase
             $frame = new PeerRtReplicaOfferDTO('node-b', $key, ['7' => ['id' => '7', 'name' => 'bad']]);
             $peer->onRtReplicaOfferReceived($link, PeerRtReplicaOfferDTO::fromArray($frame->toArray()));
         }
-        $state = $this->invoke('signalDispatchState');
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $failed = $state->effects[array_key_last($state->effects)];
         $prefix = $state->browsers = $this->invoke('newSignalDispatchPrefix');
         $disposals = 0;

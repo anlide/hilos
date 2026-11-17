@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
@@ -513,9 +514,10 @@ final class AgentStartRefusedTestWorkerServer extends WorkerServer
     /**
      * @param string $agentType Agent type the frame is addressed to
      * @param ?string $agentIndex Agent index for a pooled agent, or null
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      * @throws NoSuitableWorkerException For the agent no worker is left for
      */
-    public function ensureAgentUp(string $agentType, ?string $agentIndex): void
+    public function ensureAgentUp(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): void
     {
         if ($agentType === AgentStartRefusedTestRouter::REFUSED_AGENT) {
             throw new NoSuitableWorkerException(WorkerConstants::TYPE_MONOPOLISTIC, true);
@@ -535,9 +537,15 @@ final class AgentStartRefusedTestWorkerServer extends WorkerServer
      * @param string $agentType Agent type the signal was routed to
      * @param ?string $agentIndex Agent index for a pooled agent, or null
      * @param DaemonAgentMessageDTO $messageDto Signal wrapped for the worker
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      * @throws AgentNotFoundException For the agent gone after its start
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         if ($agentType === AgentStartRefusedTestRouter::LOST_AGENT) {
             throw new AgentNotFoundException($messageDto->agentId);

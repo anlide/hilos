@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Closure;
 use Generator;
@@ -176,7 +177,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     /** @var ?WeakReference<SourceReaderMap> Exact source of the complete pending pair */
     private ?WeakReference $changedReaderInterestMap = null;
 
-    /** @var ?Closure(Generator<int, void>): void Exact master's guarded source FIFO, absent for consuming callers */
+    /** @var ?Closure(Closure(SignalDispatch): Generator<int, void>): void Exact master's guarded source FIFO, absent for consuming callers */
     private ?Closure $readerInterestDelivery = null;
 
     /**
@@ -224,7 +225,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     private int $streamedWrites = 0;
 
     /**
-     * @var list<array{int, Closure(): void}> Work held behind the writes streamed before it, oldest first: the last
+     * @var list<array{int, Closure(?SignalDispatch): void}> Work held behind the writes streamed before it, oldest first: the last
      *      one's number, the work. Framework-first: the same process-local bookkeeping as the writes it waits for.
      */
     private array $behindStreamedWrites = [];
@@ -577,15 +578,16 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      *
      * @param string $agentId Id of the agent whose start failed, in the `type` or `type:index` form
      * @param string $reason Why the start did not finish
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws InvalidArgumentException When the start sink cannot name an answer it owes a held frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function reportAgentStartFailed(string $agentId, string $reason): void
+    public function reportAgentStartFailed(string $agentId, string $reason, ?AgentStartSink $immediateStartSink = null): void
     {
         $this->removeAgent($agentId);
 
-        $this->agentStartSink?->onAgentStartFailed($agentId, $reason);
+        ($immediateStartSink ?? $this->agentStartSink)?->onAgentStartFailed($agentId, $reason);
     }
 
     /**
@@ -595,12 +597,13 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * a failed start - startup-held frames are let go (HIL-1041); test node-report waits are refused.
      *
      * @param string $agentId Id of the agent that stopped, in the `type` or `type:index` form
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws InvalidFormatException When a pending page recovery address is malformed
      * @throws EventLoopException When a live node-report deadline cannot be armed or canceled
      */
-    public function reportAgentStopped(string $agentId): void
+    public function reportAgentStopped(string $agentId, ?AgentStartSink $immediateStartSink = null): void
     {
-        $this->agentStartSink?->onAgentStopped($agentId);
+        ($immediateStartSink ?? $this->agentStartSink)?->onAgentStopped($agentId);
     }
 
     /**
@@ -1109,14 +1112,15 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * ({@see self::afterStreamedWrites()}).
      *
      * @param RtSyncStreamOperation $operation Operation read from its parts
-     * @param Closure(bool): void $settled The stream's answer
+     * @param Closure(bool, ?SignalDispatch): void $settled The stream's answer
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidArgumentException When the queued signal is malformed
      */
-    public function handleWorkerRtSyncStream(RtSyncStreamOperation $operation, Closure $settled): void
+    public function handleWorkerRtSyncStream(RtSyncStreamOperation $operation, Closure $settled, ?SignalDispatch $origin = null): void
     {
         if ($operation->originNodeId !== null) {
             Logger::warning("Refusing a streamed RT write from a worker that names a node [node={$operation->originNodeId}]");
-            $settled(false);
+            $settled(false, $origin);
 
             return;
         }
@@ -1125,8 +1129,8 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $number = ++$this->streamedWrites;
         $this->unsettledStreamedWrites[$number] = true;
         $owner = WeakReference::create($this);
-        RtSyncStreamSettle::await($data, static function (bool $applied) use ($settled, $owner, $number): void {
-            $settled($applied);
+        RtSyncStreamSettle::await($data, static function (bool $applied, ?SignalDispatch $origin = null) use ($settled, $owner, $number): void {
+            $settled($applied, $origin);
             $owner->get()?->settleStreamedWrite($number);
         });
         Hilos::$sr->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $data);
@@ -1147,13 +1151,16 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * {@see WorkerServer::removeClient()}). It holds the next start of an agent that stopped unasked here
      * as well, and of one lost with a worker whose link closed ({@see WorkerServer::holdStartsOfLostAgents()}).
      *
-     * @param Closure(): void $work Work that must not go ahead of those writes
+     * Deferred work receives null; it must not capture the immediate origin or an operation-bound sink.
+     *
+     * @param Closure(?SignalDispatch): void $work Work that must not go ahead of those writes
+     * @param ?SignalDispatch $immediateOrigin Origin used only if the barrier is already clear
      */
-    public function afterStreamedWrites(Closure $work): void
+    public function afterStreamedWrites(Closure $work, ?SignalDispatch $immediateOrigin = null): void
     {
         $last = array_key_last($this->unsettledStreamedWrites);
         if ($last === null) {
-            $work();
+            $work($immediateOrigin);
 
             return;
         }
@@ -1172,7 +1179,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $oldest = array_key_first($this->unsettledStreamedWrites);
         while ($this->behindStreamedWrites !== [] && ($oldest === null || $this->behindStreamedWrites[0][0] < $oldest)) {
             [, $work] = array_shift($this->behindStreamedWrites);
-            $work();
+            $work(null);
         }
     }
 
@@ -1253,13 +1260,13 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $this->noteReaderInterestChange($announced);
     }
 
-    /** @param Closure(Generator<int, void>): void $deliver Exact master's existing guarded source FIFO */
+    /** @param Closure(Closure(SignalDispatch): Generator<int, void>): void $deliver Exact master's existing guarded source FIFO */
     public function setReaderInterestDelivery(Closure $deliver): void
     {
         $this->readerInterestDelivery = $deliver;
     }
 
-    /** @param Closure(Generator<int, void>): void $deliver Original binding, unable to remove its replacement */
+    /** @param Closure(Closure(SignalDispatch): Generator<int, void>): void $deliver Original binding, unable to remove its replacement */
     public function removeReaderInterestDelivery(Closure $deliver): void
     {
         if ($this->readerInterestDelivery === $deliver) {
@@ -1283,7 +1290,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         $map = WeakReference::create($this->workerReaderMap());
         $isCurrent = static fn(): bool => $owner->get() !== null && $map->get() !== null
             && $owner->get()->workerReaderMap === $map->get();
-        $delivery = (static function () use ($announced, $reads, $owner, $map, $isCurrent): Generator {
+        $work = static function () use ($announced, $reads, $owner, $map, $isCurrent): Generator {
             yield;
             if (!$isCurrent()) {
                 return;
@@ -1307,12 +1314,12 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
                 $owner->get()->changedReaderInterest = $reads->collections;
                 $owner->get()->changedReaderInterestMap = $map;
             }
-        })();
+        };
         if ($this->readerInterestDelivery === null) {
-            foreach ($delivery as $_) {
+            foreach ($work() as $_) {
             }
         } else {
-            ($this->readerInterestDelivery)($delivery);
+            ($this->readerInterestDelivery)($work);
         }
     }
 

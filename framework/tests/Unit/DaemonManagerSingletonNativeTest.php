@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 use Generator;
 use Hilos\Cluster\ClusterContext;
@@ -141,7 +142,7 @@ final class DaemonManagerSingletonNativeTest extends TestCase
         $this->worker->report(new WorkerAgentStartedDTO(SingletonNativeHilos::COMPONENT, SingletonNativeHilos::COMPONENT));
         $this->server->disconnectWorker();
         // A real finite predecessor keeps the loss effects beyond the eager intake portion.
-        $this->invoke('queueSignalEffect', static function (): Generator {
+        SignalDispatcherFixture::queue($this->manager, static function (): Generator {
             for ($step = 0; $step < 256; ++$step) {
                 yield;
             }

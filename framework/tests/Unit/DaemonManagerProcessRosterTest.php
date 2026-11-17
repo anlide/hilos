@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Leadership;
 use Hilos\Constants\CliCommands;
@@ -250,8 +251,14 @@ final class ProcessRosterManagerWorkerServer extends WorkerServer
      * @param string $agentType Receiver type
      * @param ?string $agentIndex Receiver index
      * @param DaemonAgentMessageDTO $messageDto Addressed master frame
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->delivered[] = $messageDto;
     }
@@ -270,8 +277,9 @@ final class ProcessRosterManagerWorkerServer extends WorkerServer
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index
      * @param bool $placedByLeader Placement sanction
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function restartAgentHere(string $agentType, ?string $agentIndex, bool $placedByLeader): void
+    public function restartAgentHere(string $agentType, ?string $agentIndex, bool $placedByLeader, ?AgentStartSink $immediateStartSink = null): void
     {
     }
 

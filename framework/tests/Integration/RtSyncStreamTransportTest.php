@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
+use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Error;
 use Generator;
@@ -351,7 +353,7 @@ final class RtSyncStreamTransportTest extends TestCase
             [$source, $sourceLink] = $this->link(1);
             $this->reader->received = [];
             $busy = 0;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->master, static function () use (&$busy): Generator {
+            SignalDispatcherFixture::queue($this->master, static function () use (&$busy): Generator {
                 for (; $busy < 256; $busy++) {
                     yield;
                 }
@@ -400,7 +402,7 @@ final class RtSyncStreamTransportTest extends TestCase
                 RtSyncStreamTransportTestAgent::AGENT_TYPE));
             $this->reader->received = [];
             $busy = 0;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->master, static function () use (&$busy): Generator {
+            SignalDispatcherFixture::queue($this->master, static function () use (&$busy): Generator {
                 for (; $busy < 256; $busy++) {
                     yield;
                 }
@@ -464,7 +466,7 @@ final class RtSyncStreamTransportTest extends TestCase
                 [self::COLLECTION]));
             $this->reader->received = [];
             $busy = 0;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->master, static function () use (&$busy): Generator {
+            SignalDispatcherFixture::queue($this->master, static function () use (&$busy): Generator {
                 for (; $busy < 256; $busy++) {
                     yield;
                 }
@@ -509,7 +511,7 @@ final class RtSyncStreamTransportTest extends TestCase
             [$source, $sourceLink] = $this->link(1);
             $this->reader->received = [];
             $busy = 0;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->master, static function () use (&$busy): Generator {
+            SignalDispatcherFixture::queue($this->master, static function () use (&$busy): Generator {
                 for (; $busy < 256; $busy++) {
                     yield;
                 }
@@ -756,6 +758,16 @@ final class RtSyncStreamTransportTest extends TestCase
             new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
             [$source, $sourceLink] = $this->link(1);
             $agents = $this->master->getAgentManagerDaemon();
+            $origin = SignalDispatcherFixture::direct();
+            $originReference = WeakReference::create($origin);
+            $notifications = [];
+            $notify = static function (?SignalDispatch $dispatch) use (&$notifications): void {
+                $notifications[] = $dispatch;
+            };
+            $agents->afterStreamedWrites($notify, $origin);
+            $this->assertSame([$origin], $notifications, 'A clear barrier keeps the synchronous caller');
+            $notifications = [];
+
             // The other agent keeps the stopping one's worker the busier, so the start picks the reading worker.
             foreach ([RtSyncStreamTransportTestAgent::AGENT_TYPE, 'stream_neighbour'] as $agentId) {
                 $agent = new RtSyncStreamTransportTestAgent();
@@ -787,6 +799,11 @@ final class RtSyncStreamTransportTest extends TestCase
                 $agents->hasAgent(RtSyncStreamTransportTestAgent::AGENT_TYPE),
             ], 'The master read the report');
             $this->assertTrue(Hilos::$sr->hasQueuedSignals(), 'with the write still in its router');
+            $agents->afterStreamedWrites($notify, $origin);
+            unset($origin);
+            $this->assertNull($originReference->get(), 'A deferred lifecycle notification cannot retain the startup operation');
+            $this->assertSame([], $notifications, 'The notification waits behind the real streamed write');
+
             if (!$askedBeforeReport) {
                 $this->master->worker->startHere(RtSyncStreamTransportTestAgent::AGENT_TYPE);
             }
@@ -804,6 +821,7 @@ final class RtSyncStreamTransportTest extends TestCase
             $this->assertSame([WorkerRtSyncStreamDTO::class, WorkerRtSyncStreamDTO::class, AgentStartDTO::class],
                 $this->reader->received, 'The start goes behind the last part of the write read before the report');
             $this->assertSame(2, $agents->getAgentWorkerInfo(RtSyncStreamTransportTestAgent::AGENT_TYPE)?->workerIndex);
+            $this->assertSame([null], $notifications, 'The deferred fact cannot borrow the write that freed its barrier');
         } finally {
             new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
             $loop->close();
@@ -1331,7 +1349,7 @@ final class RtSyncStreamTransportTest extends TestCase
             $hold = new ReflectionProperty(WorkerServer::class, 'rtSyncStreamHold')->getValue($this->master->worker);
             $this->reader->received = [];
             $busy = 0;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->master, static function () use (&$busy): Generator {
+            SignalDispatcherFixture::queue($this->master, static function () use (&$busy): Generator {
                 for (; $busy < 256; $busy++) {
                     yield;
                 }
@@ -1610,7 +1628,7 @@ final class RtSyncStreamTransportTest extends TestCase
             [$here, $there] = $this->peerLinks();
             $this->reader->received = [];
             $busy = 0;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->master, static function () use (&$busy): Generator {
+            SignalDispatcherFixture::queue($this->master, static function () use (&$busy): Generator {
                 for (; $busy < 256; $busy++) {
                     yield;
                 }
@@ -1831,7 +1849,7 @@ final class RtSyncStreamTransportTest extends TestCase
                     RtSyncStreamTransportTestAgent::AGENT_TYPE, null), INF)]);
             $this->reader->received = [];
             $busy = 0;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->master, static function () use (&$busy): Generator {
+            SignalDispatcherFixture::queue($this->master, static function () use (&$busy): Generator {
                 for (; $busy < 256; $busy++) {
                     yield;
                 }
@@ -1979,7 +1997,7 @@ final class RtSyncStreamTransportTest extends TestCase
             $b->setRtSyncStreamWake(static function (): void {
             });
             $busy = 0;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->master, static function () use (&$busy): Generator {
+            SignalDispatcherFixture::queue($this->master, static function () use (&$busy): Generator {
                 for (; $busy < 256; ++$busy) {
                     yield;
                 }

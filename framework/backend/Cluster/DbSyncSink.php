@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Hilos\Cluster\Peer\DTO\PeerDbSyncDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -45,9 +46,10 @@ interface DbSyncSink
      * @param string $originNodeId Id of the node the write happened on
      * @param string $signalType DB sync signal type the frame carried
      * @param SignalDTO $signal DB sync signal to apply and fan out locally
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws HilosException When a collection refuses the fact it is handed
      */
-    public function applyRemoteDbSync(string $originNodeId, string $signalType, SignalDTO $signal): void;
+    public function applyRemoteDbSync(string $originNodeId, string $signalType, SignalDTO $signal, ?SignalDispatch $origin = null): void;
 
     /**
      * Stops believing this node's own copies of database rows, on a link being established.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeIdentity;
@@ -795,8 +796,14 @@ final class MeasurementsNativeWorkers extends WorkerServer
      * @param string $agentType Original receiver
      * @param ?string $agentIndex Original receiver index
      * @param DaemonAgentMessageDTO $messageDto Typed frame delivered through the original sender
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         if ($this->problem !== null) {
             throw new LogicException($this->problem);

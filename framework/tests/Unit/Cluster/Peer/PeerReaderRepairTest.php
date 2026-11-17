@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 use Generator;
 use Hilos\Cluster\ClusterContext;
@@ -100,7 +101,9 @@ final class PeerReaderRepairTest extends TestCase
         $bindings = [];
         foreach ([$a, $b] as $index => $server) {
             $queue = $queues[$index];
-            $bindings[$index] = static function (Generator $delivery) use ($queue): void { $queue->enqueue($delivery); };
+            $bindings[$index] = static function (Closure $delivery) use ($queue): void {
+                $queue->enqueue($delivery(SignalDispatcherFixture::direct()));
+            };
             $server->setSourceInterestDelivery($bindings[$index]);
         }
         $rt = $empty ? [] : ['rows', 'second'];
@@ -196,8 +199,8 @@ final class PeerReaderRepairTest extends TestCase
         $this->relay($oldB, $oldA);
         $before = $this->take($oldA);
         $queue = new SplQueue();
-        $binding = static function (Generator $delivery) use ($queue): void {
-            $queue->enqueue($delivery);
+        $binding = static function (Closure $delivery) use ($queue): void {
+            $queue->enqueue($delivery(SignalDispatcherFixture::direct()));
         };
         $a->setSourceInterestDelivery($binding);
         $migrated = $waiting ? [new PeerRtClaimsDTO('node-a', [new PeerRtClaimEntry('owner', 'owner', null, [$collection])])] : [];
@@ -299,8 +302,8 @@ final class PeerReaderRepairTest extends TestCase
         RtSnapshot::replace($collection, []);
         self::assertFalse($agents->rtNodeSourceMap()->owns($collection), 'The accepted delta outlives this node\'s ownership');
         $queue = new SplQueue();
-        $binding = static function (Generator $delivery) use ($queue): void {
-            $queue->enqueue($delivery);
+        $binding = static function (Closure $delivery) use ($queue): void {
+            $queue->enqueue($delivery(SignalDispatcherFixture::direct()));
         };
         $a->setSourceInterestDelivery($binding);
         $new = $this->connect($a, $b, true, [$collection], []);
@@ -390,8 +393,8 @@ final class PeerReaderRepairTest extends TestCase
         $this->relay($oldB, $oldA);
         $asked = $this->take($oldA);
         $queue = new SplQueue();
-        $binding = static function (Generator $delivery) use ($queue): void {
-            $queue->enqueue($delivery);
+        $binding = static function (Closure $delivery) use ($queue): void {
+            $queue->enqueue($delivery(SignalDispatcherFixture::direct()));
         };
         $a->setSourceInterestDelivery($binding);
         $new = $this->connect($a, $b, true, [$collection], []);
@@ -449,7 +452,7 @@ final class PeerReaderRepairTest extends TestCase
             self::assertEquals([$answer], $answers($this->take($oldA)), 'The announcement is answered on the old link');
 
             $busy = true;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($owner, static function () use (&$busy): Generator {
+            SignalDispatcherFixture::queue($owner, static function () use (&$busy): Generator {
                 // Work of the FIFO ahead of the request's, still going when the link is replaced.
                 while ($busy) {
                     yield;
@@ -860,6 +863,7 @@ final class ReaderRepairManager extends DaemonManager
      * @param Closure(bool): void $settled The stream's answer
      * @param Closure(): void $recover Lifts the link's holds of the collection
      * @param Closure(bool): bool $askAgain Asks the node for another snapshot
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return Generator<int, RtWork, int, void> The staging
      */
     public function stageRemoteRtSnapshot(
@@ -868,8 +872,9 @@ final class ReaderRepairManager extends DaemonManager
         Closure $settled,
         Closure $recover,
         Closure $askAgain,
+        ?SignalDispatch $origin = null,
     ): Generator {
-        $staging = parent::stageRemoteRtSnapshot($originNodeId, $snapshot, $settled, $recover, $askAgain);
+        $staging = parent::stageRemoteRtSnapshot($originNodeId, $snapshot, $settled, $recover, $askAgain, $origin);
         $act = $this->staging;
         while ($staging->valid()) {
             $work = $staging->current();

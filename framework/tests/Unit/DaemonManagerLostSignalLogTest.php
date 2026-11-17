@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -260,8 +261,14 @@ final class DaemonManagerLostSignalLogTestWorkerServer extends WorkerServer
      * @param string $agentType Agent type the signal was routed to
      * @param ?string $agentIndex Agent index for a pooled agent, or null
      * @param DaemonAgentMessageDTO $messageDto Signal wrapped for the worker
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->deliveredAgentTypes[] = $agentType;
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Hilos\Cluster\ClientMesh;
 use Hilos\Cluster\ClusterContext;
@@ -625,10 +626,11 @@ final class OwnershipNativeManager extends DaemonManager
     /**
      * @param ?RtClaimMesh $mesh Actual registered claim port
      * @param ?string $nodeId Original report addressee
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function sendRtClaims(?RtClaimMesh $mesh, ?string $nodeId): void
+    protected function sendRtClaims(?RtClaimMesh $mesh, ?string $nodeId, ?SignalDispatch $origin = null): void
     {
-        parent::sendRtClaims($mesh === null ? null : $this->mesh, $nodeId);
+        parent::sendRtClaims($mesh === null ? null : $this->mesh, $nodeId, $origin);
     }
 
     /**
@@ -636,14 +638,16 @@ final class OwnershipNativeManager extends DaemonManager
      * @param string $nodeId Original handover addressee
      * @param ?list<string> $onlyCollectionKeys The collections whose areas go, or null for every collection
      * @param ?int $answering Number of the node's announcement the hand-over answers, or null when it answers none
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
     protected function sendRtSnapshotsToNode(
         ?RtSyncMesh $mesh,
         string $nodeId,
         ?array $onlyCollectionKeys = null,
         ?int $answering = null,
+        ?SignalDispatch $origin = null,
     ): void {
-        parent::sendRtSnapshotsToNode($mesh === null ? null : $this->mesh, $nodeId, $onlyCollectionKeys, $answering);
+        parent::sendRtSnapshotsToNode($mesh === null ? null : $this->mesh, $nodeId, $onlyCollectionKeys, $answering, $origin);
     }
 
     /** @param ?ClientMesh $mesh Connection announcement port */
@@ -653,18 +657,24 @@ final class OwnershipNativeManager extends DaemonManager
         parent::announceConnectionChanges($mesh);
     }
 
-    /** @param ?SourceInterestMesh $mesh Interest announcement port */
-    protected function announceReaderInterest(?SourceInterestMesh $mesh): void
+    /**
+     * @param ?SourceInterestMesh $mesh Interest announcement port
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
+    protected function announceReaderInterest(?SourceInterestMesh $mesh, ?SignalDispatch $origin = null): void
     {
         $this->order[] = 'interest';
-        parent::announceReaderInterest(null);
+        parent::announceReaderInterest(null, $origin);
     }
 
-    /** @param ?RtSyncMesh $mesh Missing-snapshot port */
-    protected function askRtSnapshotsForMissingCollections(?RtSyncMesh $mesh): void
+    /**
+     * @param ?RtSyncMesh $mesh Missing-snapshot port
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
+    protected function askRtSnapshotsForMissingCollections(?RtSyncMesh $mesh, ?SignalDispatch $origin = null): void
     {
         $this->order[] = 'missing';
-        parent::askRtSnapshotsForMissingCollections(null);
+        parent::askRtSnapshotsForMissingCollections(null, $origin);
     }
 
     /** @return SignalRouter Actual empty router */
@@ -752,8 +762,11 @@ final class OwnershipNativePeer implements RtSyncMesh, RtClaimMesh
         return ['remote'];
     }
 
-    /** @param array $claims Complete original report */
-    public function announceRtClaims(array $claims): void
+    /**
+     * @param array $claims Complete original report
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
+    public function announceRtClaims(array $claims, ?SignalDispatch $origin = null): void
     {
         $this->claims[] = $claims;
     }
@@ -765,8 +778,15 @@ final class OwnershipNativePeer implements RtSyncMesh, RtClaimMesh
      * @param string $collectionKey Snapshot source
      * @param RtSnapshotScope $scope Area this node owns
      * @param bool $partialOwner Whether this node holds only part of the right
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void
+    public function streamRtSnapshotToNode(
+        string $nodeId,
+        string $collectionKey,
+        RtSnapshotScope $scope,
+        bool $partialOwner,
+        ?SignalDispatch $origin = null,
+    ): void
     {
         if ($this->refuseSnapshot) {
             throw new RuntimeException('snapshot refused');
@@ -809,8 +829,9 @@ final class OwnershipNativePeer implements RtSyncMesh, RtClaimMesh
      * @param string $signalType Sync type
      * @param SignalDTO $signal Original delta
      * @param bool $partialOwner Claim width
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void
+    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false, ?SignalDispatch $origin = null): void
     {
     }
 

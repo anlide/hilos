@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 use Hilos\Cluster\ClientLocation;
 use Hilos\Cluster\ClusterContext;
@@ -356,7 +357,7 @@ final class ProtectedModeLockedOutDeliveryIntegrationTest extends TestCase
             new ReflectionProperty(DaemonManager::class, 'shutdownStartTime')->setValue($manager, microtime(true));
             $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
             $dispatch->invoke($manager);
-            $prefix = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager)->browsers;
+            $prefix = SignalDispatcherFixture::owner($manager)->signalDispatchState()->browsers;
             self::assertNotNull($prefix);
             self::assertFalse($prefix->complete);
             self::assertNotNull($reference->get());

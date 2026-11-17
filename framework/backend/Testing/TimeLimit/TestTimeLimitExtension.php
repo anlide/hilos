@@ -36,6 +36,7 @@ final class TestTimeLimitExtension implements Extension
         }
 
         $timeLimit = new TestTimeLimit();
+        $facade->registerTracer(new TestProgress());
         $facade->registerSubscribers(
             new ExecutionStartedSubscriber($timeLimit),
             new SuiteStartedSubscriber($timeLimit),

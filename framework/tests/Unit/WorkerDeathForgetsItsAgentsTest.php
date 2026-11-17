@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
@@ -362,7 +363,12 @@ final class WorkerDeathTestWorkerServer extends WorkerServer
     /** The same manager the base class holds privately, so the start below can reach it. */
     public WorkerDeathTestAgentManagerDaemon $managerDouble;
 
-    protected function startAgent(string $agentType, ?string $agentIndex = null): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    protected function startAgent(string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
         $this->startedAgentIds[] = $agentId;
@@ -524,7 +530,13 @@ final class WorkerDeathTestPlacementExecutor implements PlacementExecutor
         return ResourceProfile::none();
     }
 
-    public function executePlacement(string $agentType, ?string $agentIndex): ?int
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     * @return ?int Fixture placement result
+     */
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?int
     {
         return 3;
     }
@@ -534,7 +546,18 @@ final class WorkerDeathTestPlacementExecutor implements PlacementExecutor
         return 3;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?Closure $stopped Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    public function revokePlacement(
+        string $agentType,
+        ?string $agentIndex,
+        ?Closure $stopped = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $stopped?->__invoke();
     }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Leadership;
 use Hilos\Cluster\NodeIdentity;
@@ -823,7 +825,7 @@ final class AgentRestartsTest extends TestCase
             $this->restarts->request($this->request('replica', 'old'));
         }
         $headSteps = 0;
-        new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($manager,
+        SignalDispatcherFixture::queue($manager,
             static function () use (&$headSteps): Generator {
                 yield;
                 for ($step = 0; $step < 512; $step++) {
@@ -1000,8 +1002,9 @@ final class AgentRestartsTestWorker extends WorkerServer
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index
      * @param bool $placedByLeader Placement sanction
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function restartAgentHere(string $agentType, ?string $agentIndex, bool $placedByLeader): void
+    public function restartAgentHere(string $agentType, ?string $agentIndex, bool $placedByLeader, ?AgentStartSink $immediateStartSink = null): void
     {
         ($this->afterRestart)?->__invoke();
         if ($this->failure !== null) {
@@ -1109,7 +1112,13 @@ final class AgentRestartsTestExecutor implements PlacementExecutor
         return ResourceProfile::none();
     }
 
-    public function executePlacement(string $agentType, ?string $agentIndex): ?int
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     * @return ?int Fixture placement result
+     */
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?int
     {
         return 1;
     }
@@ -1119,7 +1128,18 @@ final class AgentRestartsTestExecutor implements PlacementExecutor
         return 1;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?Closure $stopped Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    public function revokePlacement(
+        string $agentType,
+        ?string $agentIndex,
+        ?Closure $stopped = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $stopped?->__invoke();
     }

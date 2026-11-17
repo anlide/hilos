@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\PeerServer;
@@ -819,7 +820,12 @@ final class UploadMemoryActivationServer extends WorkerServer
         new ReflectionMethod(WorkerServer::class, 'tickWorkerProcess')->invoke($this, $this->process, WorkerConstants::TYPE_REGULAR, 1, 'regular:1');
     }
 
-    public function ensureAgentUp(string $agentType, ?string $agentIndex): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    public function ensureAgentUp(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): void
     {
         $agent = new UploadMemoryActivationAgent();
         $agent->setWorkerClient($this->worker);

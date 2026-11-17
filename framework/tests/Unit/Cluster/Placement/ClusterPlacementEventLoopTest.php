@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
@@ -837,7 +838,13 @@ final class NativePlacementExecutor implements PlacementExecutor
         return ResourceProfile::none();
     }
 
-    public function executePlacement(string $agentType, ?string $agentIndex): ?int
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     * @return ?int Fixture placement result
+     */
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?int
     {
         $this->executed[] = [$agentType, $agentIndex];
         $this->executing?->__invoke($agentType, $agentIndex);
@@ -850,7 +857,18 @@ final class NativePlacementExecutor implements PlacementExecutor
         return $this->waitsForWorker ? null : 1;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?Closure $stopped Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    public function revokePlacement(
+        string $agentType,
+        ?string $agentIndex,
+        ?Closure $stopped = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->revoked[] = [$agentType, $agentIndex];
         $this->revoking?->__invoke($agentType, $agentIndex);

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
+use Hilos\Core\Daemon\SignalDispatcher;
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\ClusterNode;
 use Hilos\Cluster\ClusterContext;
@@ -234,7 +237,8 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
             $client->write();
             self::assertSame([], $this->read($socket));
             $browser->identity = ConnectionIdentity::resolved(null);
-            new ReflectionMethod(DaemonManager::class, 'queueIdentityDiscovery')->invoke($this->master, $client->acceptKey);
+            new ReflectionMethod(SignalDispatcher::class, 'queueIdentityDiscovery')
+                ->invoke(SignalDispatcherFixture::owner($this->master), $client->acceptKey);
             $this->master->drain();
         }
         self::assertCount(1, $this->worker->requests);
@@ -451,13 +455,15 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $this->master->drain();
         self::assertSame([], $this->worker->requests);
         self::assertSame([], $this->pending());
-        self::assertCount(1, new ReflectionProperty(DaemonManager::class, 'parkedSignals')->getValue($this->master));
+        self::assertCount(1, new ReflectionProperty(SignalDispatcher::class, 'parkedSignals')
+            ->getValue(SignalDispatcherFixture::owner($this->master)));
         $client->sendFrame('{"type":"toast","data":1}');
         $client->now = 10_000;
         $client->write();
         self::assertSame([], $this->read($socket));
         $this->browser->identity = ConnectionIdentity::resolved(null);
-        new ReflectionMethod(DaemonManager::class, 'queueIdentityDiscovery')->invoke($this->master, $client->acceptKey);
+        new ReflectionMethod(SignalDispatcher::class, 'queueIdentityDiscovery')
+            ->invoke(SignalDispatcherFixture::owner($this->master), $client->acceptKey);
         $this->master->drain();
         self::assertCount(1, $this->worker->requests);
         $request = array_pop($this->worker->requests)->signal;
@@ -635,7 +641,8 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $parked = $this->heldAgentFrames($serving);
         self::assertCount(1, $parked);
         self::assertSame($request->data->deliveryId, $parked[0]->signal->data->deliveryId);
-        self::assertCount(1, new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($serving));
+        self::assertCount(1, new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')
+            ->getValue(SignalDispatcherFixture::owner($serving)));
         $starts = $worker->startRequests;
         $client->now = 10_000;
         $client->write();
@@ -652,7 +659,8 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         self::assertSame($request->data->deliveryId, $signals[1]->data->data->deliveryId);
         if ($peer) {
             $signals = $this->forwardFromServing($serving, $signals, $client->acceptKey);
-            self::assertSame([], new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($serving));
+            self::assertSame([],
+                new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')->getValue(SignalDispatcherFixture::owner($serving)));
         }
         Hilos::$sr = $socketRouter;
         $this->deliver($signals[0], $client, $peer);
@@ -669,7 +677,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         self::assertSame([], $this->pending());
         self::assertSame([], $this->heldAgentFrames($serving));
         self::assertSame([], $this->heldAgentFrames($serving, released: true));
-        self::assertSame([], new ReflectionProperty(DaemonManager::class, 'parkedSignals')->getValue($serving));
+        self::assertSame([], new ReflectionProperty(SignalDispatcher::class, 'parkedSignals')->getValue(SignalDispatcherFixture::owner($serving)));
         $this->deliver($signals[1], $client, $peer);
         $serving->onAgentStartFailed('owner', 'late duplicate');
         $serving->drain();
@@ -743,11 +751,11 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
                 self::assertInstanceOf(PeerSignalDTO::class, $forwarded);
                 $serving->deliverSignalToAgent('owner', null, $forwarded->signal);
             }
-            $servingLedger = new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries');
-            $before = $servingLedger->getValue($serving);
+            $servingLedger = new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries');
+            $before = $servingLedger->getValue(SignalDispatcherFixture::owner($serving));
             Hilos::$sr->queueSignal($control->signalSource, $control->signalType, $control->signalName, $control->data);
             $serving->drain();
-            self::assertSame($before, $servingLedger->getValue($serving));
+            self::assertSame($before, $servingLedger->getValue(SignalDispatcherFixture::owner($serving)));
             Hilos::$sr = $socketRouter;
             $this->deliver($control, $client, peer: true);
         } else {
@@ -958,14 +966,16 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $forwarded = PeerDTO::fromWire(new PeerSignalDTO('socket', 'remote', 'owner', null, $request)->toJson());
         self::assertInstanceOf(PeerSignalDTO::class, $forwarded);
         $serving->deliverSignalToAgent('owner', null, $forwarded->signal);
-        self::assertCount(1, new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($serving));
+        self::assertCount(1, new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')
+            ->getValue(SignalDispatcherFixture::owner($serving)));
         $client->sendFrame('{"type":"own_state","data":{"incomplete":true}}');
         $serving->reportAgentsLostWithWorker(4, false, ['owner']);
         $signals = $this->takeSignals();
         self::assertCount(1, $signals);
         self::assertSame('page_resubscribe', $signals[0]->signalName->getName());
         $serving->drain();
-        self::assertSame([], new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($serving));
+        self::assertSame([], new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')
+            ->getValue(SignalDispatcherFixture::owner($serving)));
         Hilos::$sr = $router;
         $this->deliver($signals[0], $client, peer: true);
         $client->write();
@@ -1007,13 +1017,15 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
         $serving = new DeliveryFlowMaster();
         $serving->registerServer(new DeliveryFlowWorkerServer());
         $serving->deliverSignalToAgent('owner', null, $request);
-        self::assertCount(1, new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($serving));
+        self::assertCount(1, new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')
+            ->getValue(SignalDispatcherFixture::owner($serving)));
         $client->acceptJson('{"type":"page_unsubscribe","page":"delivery"}');
         $unsubscribe = Hilos::$sr->getNextQueuedSignal();
         $forwarded = PeerDTO::fromWire(new PeerSignalDTO('socket', 'remote', 'owner', null, $unsubscribe)->toJson());
         self::assertInstanceOf(PeerSignalDTO::class, $forwarded);
         $serving->deliverSignalToAgent('owner', null, $forwarded->signal);
-        self::assertSame([], new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($serving));
+        self::assertSame([], new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')
+            ->getValue(SignalDispatcherFixture::owner($serving)));
         $serving->reportAgentsLostWithWorker(4, false, ['owner']);
         self::assertSame([], $this->takeSignals());
         Hilos::$sr = $router;
@@ -1179,7 +1191,7 @@ final class WebSocketDeliveryIntegrationTest extends TestCase
     /** @return array<string, mixed> Master process's actual pending address ledger */
     private function pending(): array
     {
-        return new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($this->master);
+        return new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')->getValue(SignalDispatcherFixture::owner($this->master));
     }
 
     /**
@@ -1298,7 +1310,12 @@ final class DeliveryFlowWorkerServer extends WorkerServer
     {
     }
 
-    public function ensureAgentUp(string $agentType, ?string $agentIndex): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    public function ensureAgentUp(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): void
     {
         ++$this->startRequests;
     }
@@ -1313,7 +1330,18 @@ final class DeliveryFlowWorkerServer extends WorkerServer
         return false;
     }
 
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param DaemonAgentMessageDTO $messageDto Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         if ($this->refuse) {
             throw new NoSuitableWorkerException('regular', false);
@@ -1345,7 +1373,7 @@ final class DeliveryFlowMaster extends DaemonManager
 
     public function route(SignalDTO $signal, AgentAddressedDestination $destination, WorkerServer $worker): void
     {
-        $this->deliverToAgentDestination($worker, new DeliveryFlowMesh(), $destination, $signal);
+        $this->deliverToAgentDestination(SignalDispatcherFixture::direct($signal), $worker, new DeliveryFlowMesh(), $destination, $signal);
     }
 
     protected function createSignalRouter(): SignalRouter

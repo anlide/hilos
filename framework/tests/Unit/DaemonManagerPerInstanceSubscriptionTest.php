@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Generator;
 use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\ClusterContext;
@@ -19,6 +21,8 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\AgentDeliveryOutcome;
 use Hilos\Core\Daemon\SignalDispatchPrefix;
 use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Daemon\PageSubscriptionContext;
+use Hilos\Core\Daemon\SignalDispatcher;
 use Hilos\Core\Daemon\ParkedSignal;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\EventLoopTimer;
@@ -44,6 +48,7 @@ use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use ReflectionMethod;
 use ReflectionProperty;
 use WeakReference;
 
@@ -352,16 +357,19 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         $this->queueSubscribe(PerInstanceChatPage::PAGE, ['chatId' => '42']);
         $manager->drainQueue();
         $manager->forgetDeliveries();
-        new ReflectionClass(DaemonManager::class)->getMethod('queueSignalEffect')->invoke($manager, static function (): Generator {
+        SignalDispatcherFixture::queue($manager, static function (): Generator {
             yield;
             for ($step = 0; $step < 256; $step++) {
                 yield;
             }
         });
-        new ReflectionClass(DaemonManager::class)->getMethod('unsubscribeReplacedPageAgent')->invoke(
-            $manager, self::ACCEPT_KEY, PerInstancePlainPage::PAGE, null,
+        $original = new PageSubscriptionContext(Hilos::$sr, self::ACCEPT_KEY, Hilos::$sr->pageSubscription(self::ACCEPT_KEY));
+        SignalDispatcherFixture::owner($manager)->queueSignalEffect(
+            static fn(SignalDispatch $dispatch): Generator => new ReflectionMethod(DaemonManager::class, 'replacedPageDelivery')->invoke(
+                $manager, $dispatch, $original, PerInstancePlainPage::PAGE, null,
+            ), null,
         );
-        self::assertSame([], $manager->deliveries(), 'The compatibility adapter must retain its physical continuation');
+        self::assertSame([], $manager->deliveries(), 'The queued unsubscribe must retain its physical continuation');
         Hilos::$sr->subscribeToPage(PerInstanceChatPage::PAGE,
             new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, PerInstanceChatPage::PAGE, ['chatId' => '43']));
         Hilos::$sr->bindPageAgent(self::ACCEPT_KEY, PerInstanceChatPage::PAGE, PerInstanceChatPage::SUBSCRIPTION_AGENT_TYPE, '43');
@@ -380,7 +388,7 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         $manager->drainQueue();
         $manager->forgetDeliveries();
         $delivery = new ReflectionClass(DaemonManager::class)->getMethod('unsubscribeReplacedPageDelivery')->invoke(
-            $manager, self::ACCEPT_KEY, PerInstancePlainPage::PAGE, null,
+            $manager, SignalDispatcherFixture::direct(), self::ACCEPT_KEY, PerInstancePlainPage::PAGE, null,
         );
         $delivery->current();
         $delivery->next();
@@ -407,16 +415,16 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
             Hilos::$sr->bindPageAgent($acceptKey, PerInstanceNodePage::PAGE, PerInstanceNodePage::SUBSCRIPTION_AGENT_TYPE, null, 'node-B');
         }
         $reference = WeakReference::create(Hilos::$sr->pageSubscription('first'));
-        $work = new ReflectionClass(DaemonManager::class)->getMethod('nodePageReroute')->invoke(
-            $manager, Hilos::$sr, 'node-B', Hilos::$sr->nodePageCandidates('node-B'),
-        );
-        $dispatch = new SignalDispatch(null, static fn(): Generator => $work);
-        $advance = new ReflectionClass(DaemonManager::class)->getMethod('runSignalPortion');
-        $advance->invoke($manager, $dispatch, 2);
+        $dispatch = new SignalDispatch(null, static fn(SignalDispatch $dispatch): Generator =>
+            new ReflectionClass(DaemonManager::class)->getMethod('nodePageReroute')->invoke(
+                $manager, $dispatch, Hilos::$sr, 'node-B', Hilos::$sr->nodePageCandidates('node-B'),
+            ));
+        $advance = new ReflectionClass(SignalDispatcher::class)->getMethod('runSignalPortion');
+        $advance->invoke(new ReflectionClass(DaemonManager::class)->getMethod('signalDispatcher')->invoke($manager), $dispatch, 2);
         self::assertNotNull($reference->get());
         Hilos::$sr->subscribeToPage(PerInstancePlainPage::PAGE,
             new WebSocketPageSubscribeSignalDTO('first', PerInstancePlainPage::PAGE));
-        $advance->invoke($manager, $dispatch, 1);
+        $advance->invoke(new ReflectionClass(DaemonManager::class)->getMethod('signalDispatcher')->invoke($manager), $dispatch, 1);
         self::assertTrue($dispatch->hasWork(), 'The second original candidate still waits');
         self::assertNull($reference->get(), 'An abandoned candidate cannot pin its old record across the next candidate yield');
         $dispatch->cancel();
@@ -435,7 +443,7 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
             $router->bindPageAgent($acceptKey, PerInstanceNodePage::PAGE, PerInstanceNodePage::SUBSCRIPTION_AGENT_TYPE, null, 'node-B');
         }
         new ReflectionClass(DaemonManager::class)->getMethod('rerouteNodeAddressedPages')->invoke($manager, 'node-B');
-        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        $state = SignalDispatcherFixture::owner($manager)->retainedState();
         self::assertNotEmpty($state->effects);
         $boundary = new SignalDispatchPrefix(1, $state->intake, [], 0, 0, 0, effectWatermark: $state->effectSequence);
         $state->browsers = $boundary;
@@ -542,7 +550,7 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         $this->assertNull(Hilos::$sr->pageSubscription(self::ACCEPT_KEY));
 
         Hilos::$browser->identity = ConnectionIdentity::resolved(7);
-        new ReflectionClass(DaemonManager::class)->getMethod('queueIdentityDiscovery')->invoke($manager, self::ACCEPT_KEY);
+        new ReflectionMethod(SignalDispatcher::class, 'queueIdentityDiscovery')->invoke(SignalDispatcherFixture::owner($manager), self::ACCEPT_KEY);
         $manager->drainQueue();
 
         $this->assertSame(
@@ -579,14 +587,14 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         }
         $last = WeakReference::create($signal->data);
         unset($signal);
-        new ReflectionClass(DaemonManager::class)->getMethod('queueSignalEffect')->invoke($manager, static function (): Generator {
+        SignalDispatcherFixture::queue($manager, static function (): Generator {
             yield;
             for ($step = 0; $step < 1024; $step++) {
                 yield;
             }
         });
-        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
-        $probe = new ReflectionClass(DaemonManager::class)->getMethod('probeIdentitySignals')->invoke($manager);
+        $state = SignalDispatcherFixture::owner($manager)->retainedState();
+        $probe = new ReflectionMethod(SignalDispatcher::class, 'probeIdentitySignals')->invoke(SignalDispatcherFixture::owner($manager));
         if ($ready) {
             Hilos::$browser->identity = ConnectionIdentity::resolved(7);
             iterator_to_array($probe);
@@ -595,7 +603,8 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
             $probe->current();
             $state->identityProbe = $probe;
         }
-        new ReflectionClass(DaemonManager::class)->getMethod('cancelPendingPageDeliveries')->invoke($manager, self::ACCEPT_KEY, $page);
+        new ReflectionClass(DaemonManager::class)->getMethod('cancelPendingPageDeliveries')->invoke(
+            $manager, SignalDispatcherFixture::direct(), self::ACCEPT_KEY, $page);
         self::assertNotNull($last->get(), 'Cancellation must retain its payload until a bounded physical cleanup step');
         Hilos::$browser->identity = ConnectionIdentity::pending();
         self::assertTrue($park->invoke($manager, new SignalDTO(new SignalSource(SignalSource::WEBSOCKET),
@@ -603,13 +612,13 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
             new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, PerInstanceProfilePage::PAGE, ['new' => true]),
         )));
         Hilos::$browser->identity = ConnectionIdentity::resolved(7);
-        new ReflectionClass(DaemonManager::class)->getMethod('queueIdentityDiscovery')->invoke($manager);
+        new ReflectionMethod(SignalDispatcher::class, 'queueIdentityDiscovery')->invoke(SignalDispatcherFixture::owner($manager));
         for ($portion = 0; $portion < 256; $portion++) {
             $manager->drainQueue();
         }
         self::assertNull($last->get());
         self::assertSame([], $state->identities);
-        self::assertSame([], new ReflectionProperty(DaemonManager::class, 'parkedSignals')->getValue($manager));
+        self::assertSame([], new ReflectionProperty(SignalDispatcher::class, 'parkedSignals')->getValue(SignalDispatcherFixture::owner($manager)));
         $worker = new ReflectionProperty(PerInstanceMasterTestManager::class, 'workerServer')->getValue($manager);
         self::assertSame([...array_map(static fn(int $index): string => 'live-' . $index, range(0, 129)), self::ACCEPT_KEY],
             $worker->subscribeAcceptKeys);
@@ -697,7 +706,7 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         $manager->drainQueue();
         $manager->forgetDeliveries();
 
-        new ReflectionClass(DaemonManager::class)->getMethod('queueIdentityDiscovery')->invoke($manager, null, true);
+        new ReflectionMethod(SignalDispatcher::class, 'queueIdentityDiscovery')->invoke(SignalDispatcherFixture::owner($manager), null, true);
         $manager->drainQueue();
 
         $this->assertSame([], $manager->deliveries());
@@ -717,7 +726,7 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
         try {
             $this->queueSubscribe(PerInstanceProfilePage::PAGE, []);
             $manager->drainQueue();
-            $timer = new ReflectionProperty(DaemonManager::class, 'identitySignalTimer')->getValue($manager);
+            $timer = new ReflectionProperty(SignalDispatcher::class, 'identitySignalTimer')->getValue(SignalDispatcherFixture::owner($manager));
             self::assertInstanceOf(EventLoopTimer::class, $timer);
             $original = $timer->getDeadline();
             self::assertGreaterThan(hrtime(true) / 1e9, $original);
@@ -732,7 +741,7 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
             $attach->invoke($manager);
             $loop->tick();
             self::assertNull($timer->getDeadline());
-            $current = new ReflectionProperty(DaemonManager::class, 'identitySignalTimer')->getValue($manager);
+            $current = new ReflectionProperty(SignalDispatcher::class, 'identitySignalTimer')->getValue(SignalDispatcherFixture::owner($manager));
             self::assertSame($original, $current->getDeadline());
             self::assertSame([], $manager->deliveries());
 
@@ -778,7 +787,8 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
             }
             self::assertSame([SignalTypeConstants::PAGE_SUBSCRIBE . '@' . PerInstanceProfilePage::SUBSCRIPTION_AGENT_TYPE . ':7'],
                 $manager->deliveries());
-            self::assertCount(1, new ReflectionProperty(DaemonManager::class, 'parkedSignals')->getValue($manager));
+            self::assertCount(1,
+                new ReflectionProperty(SignalDispatcher::class, 'parkedSignals')->getValue(SignalDispatcherFixture::owner($manager)));
             self::assertFalse(new ReflectionClass(DaemonManager::class)->getMethod('hasRunnableSignalDispatch')->invoke($manager));
         } finally {
             Hilos::$rt = $previousRt;
@@ -807,15 +817,15 @@ final class DaemonManagerPerInstanceSubscriptionTest extends TestCase
      */
     private function expireIdentity(PerInstanceMasterTestManager $manager): void
     {
-        $property = new ReflectionProperty(DaemonManager::class, 'parkedSignals');
-        $parked = $property->getValue($manager);
+        $property = new ReflectionProperty(SignalDispatcher::class, 'parkedSignals');
+        $parked = $property->getValue(SignalDispatcherFixture::owner($manager));
         foreach ($parked as $id => $wait) {
             $parked[$id] = new ParkedSignal($wait->signal, hrtime(true) / 1e9 - 1.0);
         }
-        $property->setValue($manager, $parked);
-        new ReflectionClass(DaemonManager::class)->getMethod('rearmIdentitySignalTimer')->invoke($manager);
-        if (new ReflectionProperty(DaemonManager::class, 'identitySignalTimer')->getValue($manager) === null) {
-            new ReflectionClass(DaemonManager::class)->getMethod('queueIdentityDiscovery')->invoke($manager, null, true);
+        $property->setValue(SignalDispatcherFixture::owner($manager), $parked);
+        new ReflectionMethod(SignalDispatcher::class, 'rearmIdentitySignalTimer')->invoke(SignalDispatcherFixture::owner($manager));
+        if (new ReflectionProperty(SignalDispatcher::class, 'identitySignalTimer')->getValue(SignalDispatcherFixture::owner($manager)) === null) {
+            new ReflectionMethod(SignalDispatcher::class, 'queueIdentityDiscovery')->invoke(SignalDispatcherFixture::owner($manager), null, true);
         }
     }
 
@@ -922,7 +932,16 @@ final class PerInstanceMasterTestManager extends DaemonManager
         return $this->addressed;
     }
 
+    /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
+     * @param WorkerServer $workerServer Local worker transport
+     * @param ?AgentSignalMesh $mesh Peer transport
+     * @param AgentAddressedDestination $destination Original agent address
+     * @param SignalDTO $signal Original envelope
+     * @return AgentDeliveryOutcome Observed delivery outcome
+     */
     protected function deliverToAgentDestination(
+        SignalDispatch $dispatch,
         WorkerServer $workerServer,
         ?AgentSignalMesh $mesh,
         AgentAddressedDestination $destination,
@@ -934,7 +953,7 @@ final class PerInstanceMasterTestManager extends DaemonManager
         }
         $this->addressed[] = $address . $destination->agentType;
 
-        return parent::deliverToAgentDestination($workerServer, $mesh, $destination, $signal);
+        return parent::deliverToAgentDestination($dispatch, $workerServer, $mesh, $destination, $signal);
     }
 
     protected function createSignalRouter(): SignalRouter
@@ -987,8 +1006,14 @@ final class PerInstanceMasterTestWorkerServer extends WorkerServer
      * @param string $agentType Agent type the signal was routed to
      * @param ?string $agentIndex Agent index for an indexed agent, or null
      * @param DaemonAgentMessageDTO $messageDto Signal wrapped for the worker
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $address = $agentIndex === null ? $agentType : "{$agentType}:{$agentIndex}";
         $this->deliveries[] = $messageDto->signal->signalType->getType() . '@' . $address;

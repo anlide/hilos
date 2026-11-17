@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
+use Closure;
 use Generator;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -27,7 +29,9 @@ final class AgentManagerReaderInterestTest extends TestCase
             $manager->consumeChangedReaderInterest());
         self::assertFalse($manager->hasChangedReaderInterest());
         $queue = [];
-        $manager->setReaderInterestDelivery(static function (Generator $delivery) use (&$queue): void { $queue[] = $delivery; });
+        $manager->setReaderInterestDelivery(static function (Closure $delivery) use (&$queue): void {
+            $queue[] = $delivery(SignalDispatcherFixture::direct());
+        });
         $runtime = [];
         $database = [];
         for ($index = 0; $index < 8192; $index++) {
@@ -77,7 +81,9 @@ final class AgentManagerReaderInterestTest extends TestCase
     {
         $manager = new ReaderInterestAgentManager();
         $queue = [];
-        $manager->setReaderInterestDelivery(static function (Generator $delivery) use (&$queue): void { $queue[] = $delivery; });
+        $manager->setReaderInterestDelivery(static function (Closure $delivery) use (&$queue): void {
+            $queue[] = $delivery(SignalDispatcherFixture::direct());
+        });
         $manager->handleSourceInterest(new WorkerSourceInterestDTO(array_fill(0, 8192, 'duplicate'), ['db'], 1), 3);
         $queue[0]->rewind();
         $queue[0]->next();
@@ -94,8 +100,8 @@ final class AgentManagerReaderInterestTest extends TestCase
         $manager = new ReaderInterestAgentManager();
         $first = [];
         $second = [];
-        $old = static function (Generator $delivery) use (&$first): void { $first[] = $delivery; };
-        $current = static function (Generator $delivery) use (&$second): void { $second[] = $delivery; };
+        $old = static function (Closure $delivery) use (&$first): void { $first[] = $delivery(SignalDispatcherFixture::direct()); };
+        $current = static function (Closure $delivery) use (&$second): void { $second[] = $delivery(SignalDispatcherFixture::direct()); };
         $manager->setReaderInterestDelivery($old);
         $manager->setReaderInterestDelivery($current);
         $manager->removeReaderInterestDelivery($old);

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Generator;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
@@ -2716,7 +2718,7 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         try {
             // Older work holds the head of the FIFO, so both hand-overs and the delete between them
             // wait their turn behind it, in the order they came.
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon, static function (): Generator {
+            SignalDispatcherFixture::queue($daemon, static function (): Generator {
                 yield;
                 for ($step = 0; $step < 512; $step++) {
                     yield;
@@ -3516,7 +3518,7 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
         try {
             $head = 0;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon,
+            SignalDispatcherFixture::queue($daemon,
                 static function () use (&$head): Generator {
                     yield;
                     for ($step = 0; $step < 512; $step++) {
@@ -3577,7 +3579,7 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($daemon, $loop);
         new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
         try {
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon, static function (): Generator {
+            SignalDispatcherFixture::queue($daemon, static function (): Generator {
                 yield;
                 for ($step = 0; $step < 512; $step++) {
                     yield;
@@ -3649,7 +3651,7 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($daemon, $loop);
         new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($daemon);
         try {
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon, static function (): Generator {
+            SignalDispatcherFixture::queue($daemon, static function (): Generator {
                 for ($step = 0; $step < 512; $step++) {
                     yield;
                 }
@@ -4016,10 +4018,11 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $this->assertSame([], $worker->snapshotAnnouncements(), 'The worker waits with the copy');
         $worker->onOperation = static function () use ($daemon, $worker): void {
             $worker->onOperation = null;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon, static function () use ($daemon): Generator {
-                $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1);
+            SignalDispatcherFixture::owner($daemon)->queueSignalEffect(static function (SignalDispatch $dispatch) use ($daemon): Generator {
+                $daemon->noteSourceInterestAnswered(self::REMOTE_NODE, 1, $dispatch);
                 yield;
-            });
+            }, null);
+            SignalDispatcherFixture::owner($daemon)->markReady();
         };
 
         $daemon->queueRtSyncCreated('Ada');
@@ -5026,12 +5029,13 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      *
      * @param ?RtSyncMesh $mesh Peer server the dispatch pass found, or null off-cluster
      * @param SignalDTO $signal Signal being dispatched
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function broadcastRtSyncToPeers(?RtSyncMesh $mesh, SignalDTO $signal): void
+    protected function broadcastRtSyncToPeers(?RtSyncMesh $mesh, SignalDTO $signal, ?SignalDispatch $origin = null): void
     {
         $this->announcedThrough[] = $mesh;
 
-        parent::broadcastRtSyncToPeers($mesh === null ? null : $this->mesh, $signal);
+        parent::broadcastRtSyncToPeers($mesh === null ? null : $this->mesh, $signal, $origin);
     }
 
     /**
@@ -5053,14 +5057,16 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      * @param string $nodeId Node that joined
      * @param ?list<string> $onlyCollectionKeys The collections whose areas go, or null for every collection
      * @param ?int $answering Number of the node's announcement the hand-over answers, or null when it answers none
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
     protected function sendRtSnapshotsToNode(
         ?RtSyncMesh $mesh,
         string $nodeId,
         ?array $onlyCollectionKeys = null,
         ?int $answering = null,
+        ?SignalDispatch $origin = null,
     ): void {
-        parent::sendRtSnapshotsToNode($mesh === null ? null : $this->mesh, $nodeId, $onlyCollectionKeys, $answering);
+        parent::sendRtSnapshotsToNode($mesh === null ? null : $this->mesh, $nodeId, $onlyCollectionKeys, $answering, $origin);
     }
 
     /**
@@ -5069,10 +5075,11 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      *
      * @param ?RtSyncMesh $mesh Peer server this node found, or null off-cluster
      * @param string $nodeId Node being asked
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function sendRtSnapshotQueryToNode(?RtSyncMesh $mesh, string $nodeId): void
+    protected function sendRtSnapshotQueryToNode(?RtSyncMesh $mesh, string $nodeId, ?SignalDispatch $origin = null): void
     {
-        parent::sendRtSnapshotQueryToNode($mesh === null ? null : $this->mesh, $nodeId);
+        parent::sendRtSnapshotQueryToNode($mesh === null ? null : $this->mesh, $nodeId, $origin);
     }
 
     /**
@@ -5081,10 +5088,11 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      *
      * @param ?RtSyncMesh $mesh Peer server this node found, or null off-cluster
      * @param list<string> $collections Collections just confirmed for the first time
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function askHoldersOfConfirmedRtCopies(?RtSyncMesh $mesh, array $collections): void
+    protected function askHoldersOfConfirmedRtCopies(?RtSyncMesh $mesh, array $collections, ?SignalDispatch $origin = null): void
     {
-        parent::askHoldersOfConfirmedRtCopies($mesh === null ? null : $this->mesh, $collections);
+        parent::askHoldersOfConfirmedRtCopies($mesh === null ? null : $this->mesh, $collections, $origin);
     }
 
     /**
@@ -5093,10 +5101,11 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      *
      * @param ?SourceInterestMesh $mesh Peer server of this node, or null off-cluster
      * @param int $announcement Number of the announcement the reopened wait awaits the answer to
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function reannounceReaderInterest(?SourceInterestMesh $mesh, int $announcement): void
+    protected function reannounceReaderInterest(?SourceInterestMesh $mesh, int $announcement, ?SignalDispatch $origin = null): void
     {
-        parent::reannounceReaderInterest($mesh === null ? null : $this->mesh, $announcement);
+        parent::reannounceReaderInterest($mesh === null ? null : $this->mesh, $announcement, $origin);
     }
 
     /**
@@ -5106,10 +5115,11 @@ final class DaemonManagerRtSyncPeerTestManager extends DaemonManager
      * @param ?RtSyncMesh $mesh Peer server this node found, or null off-cluster
      * @param string $nodeId Node that asked
      * @param list<string> $collectionKeys RT collections it asked about
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function sendRtReplicaOffersToNode(?RtSyncMesh $mesh, string $nodeId, array $collectionKeys): void
+    protected function sendRtReplicaOffersToNode(?RtSyncMesh $mesh, string $nodeId, array $collectionKeys, ?SignalDispatch $origin = null): void
     {
-        parent::sendRtReplicaOffersToNode($mesh === null ? null : $this->mesh, $nodeId, $collectionKeys);
+        parent::sendRtReplicaOffersToNode($mesh === null ? null : $this->mesh, $nodeId, $collectionKeys, $origin);
     }
 
     /**
@@ -5201,8 +5211,9 @@ final class DaemonManagerRtSyncPeerTestMesh implements RtClaimMesh, RtSyncMesh, 
 
     /**
      * @param list<PeerRtClaimEntry> $claims What each agent of the announcing node owns
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function announceRtClaims(array $claims): void
+    public function announceRtClaims(array $claims, ?SignalDispatch $origin = null): void
     {
         $this->announcedClaims[] = $claims;
     }
@@ -5294,8 +5305,9 @@ final class DaemonManagerRtSyncPeerTestMesh implements RtClaimMesh, RtSyncMesh, 
      * @param string $signalType RT sync signal type being announced
      * @param SignalDTO $signal RT sync signal the other nodes apply
      * @param bool $partialOwner Whether the announcing node holds only part of the right
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void
+    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false, ?SignalDispatch $origin = null): void
     {
         $this->announcements[] = new DaemonManagerRtSyncPeerTestAnnouncement($signalType, $signal, $partialOwner);
     }
@@ -5315,8 +5327,15 @@ final class DaemonManagerRtSyncPeerTestMesh implements RtClaimMesh, RtSyncMesh, 
      * @param string $collectionKey RT collection this node owns all or part of
      * @param RtSnapshotScope $scope The area this node owns
      * @param bool $partialOwner Whether this node holds only part of the right over the collection
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void
+    public function streamRtSnapshotToNode(
+        string $nodeId,
+        string $collectionKey,
+        RtSnapshotScope $scope,
+        bool $partialOwner,
+        ?SignalDispatch $origin = null,
+    ): void
     {
         $export = RtSnapshot::capture($collectionKey, $scope);
         $rows = [];
@@ -6098,7 +6117,13 @@ final class DaemonManagerRtSyncPeerTestPlacementExecutor implements PlacementExe
         return ResourceProfile::none();
     }
 
-    public function executePlacement(string $agentType, ?string $agentIndex): ?int
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     * @return ?int Fixture placement result
+     */
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?int
     {
         return 1;
     }
@@ -6108,7 +6133,18 @@ final class DaemonManagerRtSyncPeerTestPlacementExecutor implements PlacementExe
         return 1;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?Closure $stopped Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    public function revokePlacement(
+        string $agentType,
+        ?string $agentIndex,
+        ?Closure $stopped = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $stopped?->__invoke();
     }

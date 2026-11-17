@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -163,7 +164,12 @@ final class RestartAfterIdleTestWorkerServer extends WorkerServer
     /** The same manager the base class holds privately, so the start below can reach it. */
     public RestartAfterIdleTestAgentManagerDaemon $managerDouble;
 
-    protected function startAgent(string $agentType, ?string $agentIndex = null): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    protected function startAgent(string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
         $this->startedAgentIds[] = $agentId;

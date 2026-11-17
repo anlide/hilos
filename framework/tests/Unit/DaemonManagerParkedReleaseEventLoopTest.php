@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Daemon\SignalDispatcher;
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\PendingLeadership;
@@ -95,7 +97,7 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
         $asks = new ReflectionProperty(ClusterPlacement::class, 'placementAsks')->getValue($this->placement);
         self::assertInstanceOf(PlacementAsks::class, $asks);
         $asks->remember(HeldAgentSignalTestRouter::COLD_AGENT, hrtime(true) / 1e9 - 1.0);
-        new ReflectionMethod(DaemonManager::class, 'rearmPlacementSignalTimer')->invoke($this->manager,
+        new ReflectionMethod(SignalDispatcher::class, 'rearmPlacementSignalTimer')->invoke(SignalDispatcherFixture::owner($this->manager),
             HeldAgentSignalTestRouter::COLD_AGENT);
         $this->loop->tick();
         $this->settle();
@@ -148,8 +150,9 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
         $this->settle();
         $old = $this->timer();
         $original = $old->getDeadline();
-        $oldPlacementWake = new ReflectionProperty(DaemonManager::class, 'placementHoldWake')->getValue($this->manager);
-        $oldWorkerWake = new ReflectionProperty(DaemonManager::class, 'workerHoldWake')->getValue($this->manager);
+        $oldPlacementWake = new ReflectionProperty(SignalDispatcher::class, 'placementHoldWake')
+            ->getValue(SignalDispatcherFixture::owner($this->manager));
+        $oldWorkerWake = new ReflectionProperty(SignalDispatcher::class, 'workerHoldWake')->getValue(SignalDispatcherFixture::owner($this->manager));
         $old->armAt(hrtime(true) / 1e9 - 1.0);
         $this->attach();
         $this->settle();
@@ -168,7 +171,7 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
         $this->placement->registry()->put(new PlacementRecord(
             HeldAgentSignalTestRouter::COLD_AGENT, null, 'elsewhere', PlacementState::Started,
         ));
-        new ReflectionMethod(DaemonManager::class, 'parkUntilAgentUp')->invoke($this->manager,
+        new ReflectionMethod(DaemonManager::class, 'parkUntilAgentUp')->invoke($this->manager, SignalDispatcherFixture::direct(),
             new SignalDTO(new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::AGENT_SIGNAL),
                 new SignalName(HeldAgentSignalTestRouter::COLD_PUSH), new SignalData([])),
             HeldAgentSignalTestRouter::COLD_AGENT, true);
@@ -264,7 +267,7 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
     /** @return array<string, EventLoopTimer> Native retries for unresolved placement addresses only */
     private function timers(): array
     {
-        return new ReflectionProperty(DaemonManager::class, 'placementSignalTimers')->getValue($this->manager);
+        return new ReflectionProperty(SignalDispatcher::class, 'placementSignalTimers')->getValue(SignalDispatcherFixture::owner($this->manager));
     }
 
     /** @return EventLoopTimer This scenario's one unresolved address */

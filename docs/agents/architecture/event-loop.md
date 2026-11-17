@@ -328,6 +328,24 @@ use monotonic deadlines; saved epoch fields and calendar cron retain the
 its own next wake through
 [`armRoleTickAt()`](daemon-lifecycle.md#scheduling-a-role-hook).
 
+The master's lazily composed
+[`SignalDispatcher`](../../../framework/backend/Core/Daemon/SignalDispatcher.php)
+owns signal readiness, retained traversal, hold/identity discovery and their
+exact watches, timers and source bindings. `attachEventLoop()` binds them;
+native callbacks only wake the existing guarded phase after ownership and
+reader-interest announcements. Its 64-step portions retain eight-step slots for
+prefix validation and discovery, then share delivery among four services, with
+unused slots available to delivery. The master checks its 2 ms budget between
+portions; these limits do not bound payload bytes or destruction cost.
+
+`detachEventLoop()` releases the exact native/source bindings while retaining
+delivery progress. `discard()` finally cancels the dispatcher's original
+prefixes and causal families and releases independent retained owners even if
+one finalizer throws. An old owner cannot detach replacement bindings or drain
+another router. Physical delivery still checks the originally captured
+socket/peer/group incarnation and prepares each shared frame once; moving the
+scheduler does not move those guards or the master's retirement pass.
+
 The container watchdog waits in libevent for `SIGCHLD`, `SIGTERM`, `SIGINT`,
 `SIGHUP`, the current daemon's heartbeat pipe, or a one-shot timer. Its persistent
 signal watches are installed before the first daemon check and remain active

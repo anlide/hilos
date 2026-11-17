@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\Stream;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use WeakMap;
@@ -28,7 +29,7 @@ final class RtSyncStreamSettle
     private bool $settled = false;
 
     /**
-     * @param Closure(bool): void $settle The channel's answer: true once applied, false when refused
+     * @param Closure(bool, ?SignalDispatch): void $settle The channel's answer: true once applied, false when refused
      */
     private function __construct(private readonly Closure $settle)
     {
@@ -44,7 +45,7 @@ final class RtSyncStreamSettle
      * Owes the carrier's channel an answer until the dispatch settles it.
      *
      * @param RtSyncSignalDataInterface $carrier Carrier the dispatch will walk
-     * @param Closure(bool): void $settle The channel's answer
+     * @param Closure(bool, ?SignalDispatch): void $settle The channel's answer
      */
     public static function await(RtSyncSignalDataInterface $carrier, Closure $settle): void
     {
@@ -58,26 +59,28 @@ final class RtSyncStreamSettle
      *
      * @param RtSyncSignalDataInterface $carrier Carrier the dispatch walked
      * @param bool $applied Whether the operation was applied and its further delivery queued
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public static function settle(RtSyncSignalDataInterface $carrier, bool $applied): void
+    public static function settle(RtSyncSignalDataInterface $carrier, bool $applied, ?SignalDispatch $origin = null): void
     {
         $owed = self::$owed[$carrier] ?? null;
         if ($owed === null) {
             return;
         }
         unset(self::$owed[$carrier]);
-        $owed->answer($applied);
+        $owed->answer($applied, $origin);
     }
 
     /**
      * @param bool $applied Whether the operation was applied
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private function answer(bool $applied): void
+    private function answer(bool $applied, ?SignalDispatch $origin = null): void
     {
         if ($this->settled) {
             return;
         }
         $this->settled = true;
-        ($this->settle)($applied);
+        ($this->settle)($applied, $origin);
     }
 }

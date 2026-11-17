@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -51,16 +53,19 @@ final class DaemonManagerSubscriptionUpdateTest extends TestCase
 
             public int $calls = 0;
 
-            /** @param SignalDTO $signal Original envelope passed to the project's declared callback */
-            protected function updateSubscriptions(SignalDTO $signal): void
+            /**
+             * @param SignalDispatch $dispatch Original callback lifetime
+             * @param SignalDTO $signal Original envelope passed to the project's declared callback
+             */
+            protected function updateSubscriptions(SignalDispatch $dispatch, SignalDTO $signal): void
             {
                 $this->calls++;
-                parent::updateSubscriptions($signal);
+                parent::updateSubscriptions($dispatch, $signal);
             }
         };
         $signal = new SignalDTO(new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::GROUP_SUBSCRIBE),
             new SignalName(self::GROUP), new WebSocketGroupSubscribeSignalDTO(self::LIVE_ACCEPT_KEY, self::GROUP));
-        $work = new ReflectionMethod(DaemonManager::class, 'subscriptionPreparation')->invoke($manager, $signal);
+        $work = new ReflectionMethod(DaemonManager::class, 'subscriptionPreparation')->invoke($manager, SignalDispatcherFixture::direct(), $signal);
         self::assertSame(0, $manager->calls);
         foreach ($work as $_) {
         }
@@ -182,7 +187,7 @@ class DaemonManagerSubscriptionUpdateTestManager extends DaemonManager
     {
         $drained = 0;
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
-            $this->updateSubscriptions($signal);
+            $this->updateSubscriptions(SignalDispatcherFixture::direct(), $signal);
             $drained++;
         }
 

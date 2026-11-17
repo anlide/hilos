@@ -22,6 +22,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/stand-registry.php';
+require_once __DIR__ . '/test-diagnostics.php';
 
 /**
  * The label docker puts on every container and network of a compose project. Asking by label
@@ -460,31 +461,36 @@ function teardownNames(string $output): array
  */
 function runTeardownCommand(string $command, ?string $cwd): string
 {
-    $outputPath = tempnam(sys_get_temp_dir(), 'hilos-teardown-');
-    if ($outputPath === false) {
-        return '';
-    }
-
-    $handle = proc_open($command, [1 => ['file', $outputPath, 'w'], 2 => ['redirect', 1]], $pipes, $cwd);
-    if (!is_resource($handle)) {
-        unlink($outputPath);
-
-        return '';
-    }
-
-    $deadline = microtime(true) + TEARDOWN_COMMAND_TIMEOUT_SECONDS;
-    while (proc_get_status($handle)['running']) {
-        if (microtime(true) > $deadline) {
-            proc_terminate($handle, TEARDOWN_KILL_SIGNAL);
-            proc_close($handle);
-
-            return readTeardownOutput($outputPath);
+    $phase = testPhase('compose-teardown', 'command', 'begin');
+    try {
+        $outputPath = tempnam(sys_get_temp_dir(), 'hilos-teardown-');
+        if ($outputPath === false) {
+            return '';
         }
-        usleep(TEARDOWN_POLL_INTERVAL_MICROSECONDS);
-    }
-    proc_close($handle);
 
-    return readTeardownOutput($outputPath);
+        $handle = proc_open($command, [1 => ['file', $outputPath, 'w'], 2 => ['redirect', 1]], $pipes, $cwd);
+        if (!is_resource($handle)) {
+            unlink($outputPath);
+
+            return '';
+        }
+
+        $deadline = microtime(true) + TEARDOWN_COMMAND_TIMEOUT_SECONDS;
+        while (proc_get_status($handle)['running']) {
+            if (microtime(true) > $deadline) {
+                proc_terminate($handle, TEARDOWN_KILL_SIGNAL);
+                proc_close($handle);
+
+                return readTeardownOutput($outputPath);
+            }
+            usleep(TEARDOWN_POLL_INTERVAL_MICROSECONDS);
+        }
+        proc_close($handle);
+
+        return readTeardownOutput($outputPath);
+    } finally {
+        testPhase('compose-teardown', 'command', 'end', $phase);
+    }
 }
 
 /** Read a command's captured output and drop the file it was captured in. */

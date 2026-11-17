@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 use Generator;
 use Hilos\Constants\SignalConstants;
@@ -149,7 +150,7 @@ final class DaemonManagerPeerInboundOrderTest extends TestCase
     private function busyManager(): PeerInboundOrderTestManager
     {
         $daemon = $this->manager();
-        new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($daemon, static function (): Generator {
+        SignalDispatcherFixture::queue($daemon, static function (): Generator {
             yield;
             // 512 yields outlive one 64-step portion, so this head is still queued afterwards.
             for ($step = 0; $step < 512; $step++) {

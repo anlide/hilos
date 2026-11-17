@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\HilosAgentType;
@@ -374,8 +375,14 @@ final class AgentStoppedReportTestWorkerServer extends WorkerServer
      * @param string $agentType Already linked local test receiver
      * @param ?string $agentIndex Unused singleton index
      * @param DaemonAgentMessageDTO $messageDto Frame queued without starting a worker process
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Generator;
 use Hilos\Cluster\ClusterContext;
@@ -763,9 +764,10 @@ final class DeclarationNativeServer extends WorkerServer
 
     /** @param string $agentType Real placement type
      * @param ?string $agentIndex Real placement index
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      * @return ?int Production linked worker or accepted wait
      */
-    public function executePlacement(string $agentType, ?string $agentIndex): ?int
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?int
     {
         $this->attempts[] = [$agentType, $agentIndex];
         return parent::executePlacement($agentType, $agentIndex);

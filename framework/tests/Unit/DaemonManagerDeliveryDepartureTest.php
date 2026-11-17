@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Daemon\SignalDispatcher;
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
+use Hilos\Runtime\Row\RtRowArena;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Closure;
 use Generator;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\Agent\Exception\AgentDaemonCreationFailedException;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Core\Daemon\CommandSignalCancellation;
 use Hilos\Core\Daemon\DaemonDeparture;
 use Hilos\Core\Daemon\DaemonManager;
@@ -60,7 +65,9 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         $loop = new EventLoop();
         new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
         new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($manager);
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
+        $owner = SignalDispatcherFixture::owner($manager);
+        $state = $owner->signalDispatchState();
+        $holds = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($manager);
         $prefixFactory = new ReflectionMethod(DaemonManager::class, 'newSignalDispatchPrefix');
         if (!$included) {
             $state->browsers = $prefixFactory->invoke($manager);
@@ -71,45 +78,98 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         $memory->enqueueTest('local', 'probe', null, 1,
             static function ($delivery, SignalDTO $signal) use ($manager, &$raw): void {
                 $raw = WeakReference::create($signal->data);
-                new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($manager, static function () use ($signal): Generator {
-                    yield;
-                    for ($step = 0; $step < 66; $step++) {
-                        self::assertNotNull($signal->data);
+                new ReflectionMethod(DaemonManager::class, 'queueSignalEffectInDispatch')->invoke(
+                    $manager, static function (SignalDispatch $dispatch) use ($signal): Generator {
                         yield;
-                    }
-                });
+                        for ($step = 0; $step < 66; $step++) {
+                            self::assertNotNull($signal->data);
+                            yield;
+                        }
+                }, null);
             });
         $original = $state->effects[key($state->effects)];
+        $original->stopPrefixId = 101;
+        $hold = $holds->add(new ParkedAgentSignal(new SignalDTO(
+            new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalName('page'), new WebSocketPageSubscribeSignalDTO('nested-connection', 'page'),
+        ), 'agent', 0.0, false), $original->stopPrefixId);
+        $holds->release($hold->id);
+        $holds->begin($hold->id, $original);
+        unset($hold);
         for ($index = 0; $index < 512; $index++) {
             $original->agentsDelivered[] = new AgentDestination('agent', (string)$index);
             $original->predecessorsChecked['agent:' . $index] = true;
         }
         if ($included) {
             $state->browsers = $prefixFactory->invoke($manager);
-        } else {
-            $caller = new SignalDispatch(null, static function (): Generator { yield; });
-            $caller->browserPrefixId = $state->browsers->id;
-            new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($manager, $caller);
         }
+        $originalCohort = $original->effectCohortId;
+        $caller = new SignalDispatch(null, static function (SignalDispatch $dispatch) use ($manager): Generator {
+            yield;
+            new ReflectionMethod(DaemonManager::class, 'cancelPendingPageDeliveries')->invoke(
+                $manager, $dispatch, 'nested-connection', null, false,
+            );
+        });
+        $caller->stopPrefixId = 202;
+        $caller->browserPrefixId = $included ? null : $state->browsers->id;
         try {
-            $original->cancel();
+            $owner->runSignalPortion($caller, 1);
+            $cleanup = $state->effects[array_key_last($state->effects)];
+            self::assertSame($caller->effectCohortId, $cleanup->effectCohortId);
+            self::assertNotSame($originalCohort, $cleanup->effectCohortId);
+            self::assertSame($caller->browserPrefixId, $cleanup->browserPrefixId);
+            for ($step = 0; $step < 16 && $original->hasWork(); $step++) {
+                $owner->runSignalPortion($cleanup, 1);
+            }
             self::assertSame(SignalDispatchPhase::Canceled, $original->phase);
             self::assertNull($raw->get());
             $memory->afterDispatch();
             self::assertSame(0, $memory->inspect()['usedBytes']);
-            self::assertCount(3, $state->effects);
+            self::assertSame($state->browsers->id, $cleanup->browserPrefixId,
+                'The connection callback transfers captured hold debt before settlement releases its raw owner');
+            self::assertCount(4, $state->effects);
             foreach ($state->effects as $effect) {
-                if ($effect !== $original) {
+                if ($effect !== $original && $effect !== $cleanup) {
+                    self::assertSame($originalCohort, $effect->effectCohortId);
+                    self::assertSame(101, $effect->stopPrefixId);
                     self::assertSame($included ? $state->browsers->id : null, $effect->browserPrefixId,
                         'Metadata debt belongs to the canceled source, even when the caller has another dispatch context');
                 }
             }
-            unset($state->effects[$original->effectId]);
+            unset($effect);
+            for ($index = 0; $index < 512; $index++) {
+                $cleanup->agentsDelivered[] = new AgentDestination('nested-agent', (string)$index);
+                $cleanup->predecessorsChecked['nested-agent:' . $index] = true;
+            }
+            $cleanupTail = $state->effectSequence;
+            $cleanupCohort = $cleanup->effectCohortId;
+            $owner->runSignalPortion($cleanup, 16);
+            self::assertFalse($cleanup->hasWork());
+            self::assertCount(6, $state->effects);
+            foreach ($state->effects as $effect) {
+                if ($effect->effectId > $cleanupTail) {
+                    self::assertSame($cleanupCohort, $effect->effectCohortId);
+                    self::assertSame(202, $effect->stopPrefixId);
+                    self::assertSame($state->browsers->id, $effect->browserPrefixId,
+                        'Nested retirement inherits the cleanup lifetime after its held-prefix transfer');
+                }
+            }
+            unset($effect);
+            $owner->advanceInitialSignalEffect($original);
             $weakOriginal = WeakReference::create($original);
-            unset($original);
+            unset($original, $caller, $cleanup);
             self::assertNull($weakOriginal->get(), 'Queued cleanup keeps scalar prefix debt, never the canceled lifetime');
+            for ($step = 0; $step < 4; $step++) {
+                $state->browsers->advanceValidation($holds);
+            }
+            self::assertFalse($state->browsers->isReadyForAccounting());
+            $drain = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
+            for ($portion = 0; $portion < 300; $portion++) {
+                $drain->invoke($manager);
+            }
+            self::assertSame([], $state->effects);
+            self::assertTrue($state->browsers->complete, 'The captured prefix ends only after its nested cleanup');
         } finally {
-            new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($manager, null);
             new ReflectionMethod(DaemonManager::class, 'discardSignalDispatch')->invoke($manager);
             $loop->close();
             Hilos::$env = $previousEnv;
@@ -126,7 +186,7 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         $loop = new EventLoop();
         new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
         new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($manager);
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
+        $state = SignalDispatcherFixture::owner($manager)->signalDispatchState();
         $memory = new UploadMemoryMaster('native-metadata-retirement');
         $memory->setTestLimit(1);
         new ReflectionProperty(DaemonManager::class, 'uploadMemory')->setValue($manager, $memory);
@@ -134,7 +194,7 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         $memory->enqueueTest('local', 'probe', null, 1,
             static function ($delivery, SignalDTO $signal) use ($manager, &$raw): void {
                 $raw = WeakReference::create($signal->data);
-                new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($manager, static function () use ($signal): Generator {
+                SignalDispatcherFixture::queue($manager, static function () use ($signal): Generator {
                     yield;
                     for ($step = 0; $step < 66; $step++) {
                         self::assertNotNull($signal->data);
@@ -196,13 +256,13 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         $previousRouter = Hilos::$sr;
         Hilos::$env = new EnvAccessor();
         $manager = new DeliveryDepartureTestManager();
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
+        $state = SignalDispatcherFixture::owner($manager)->signalDispatchState();
         $holds = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($manager);
         $memory = new UploadMemoryMaster('departure');
         $memory->setTestLimit(10);
         $references = [];
         $lifetimes = [];
-        $slots = ['active', 'released', 'peer', 'effect', 'identity', 'parked', 'held', 'executing', 'scratch', 'retired'];
+        $slots = ['active', 'released', 'peer', 'effect', 'identity', 'parked', 'held', 'executing', 'secondPeer', 'retired'];
         $boundary = new SignalDispatchPrefix(1, $state->intake, [], 0, 0, 0);
         $state->browsers = $boundary;
         try {
@@ -215,8 +275,8 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
                             return;
                         }
                         if ($slot === 'parked') {
-                            new ReflectionProperty(DaemonManager::class, 'parkedSignals')->setValue(
-                                $manager, [1 => new ParkedSignal($signal, 0.0)],
+                            new ReflectionProperty(SignalDispatcher::class, 'parkedSignals')->setValue(
+                                SignalDispatcherFixture::owner($manager), [1 => new ParkedSignal($signal, 0.0)],
                             );
                             return;
                         }
@@ -240,8 +300,8 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
                             $holds->release($hold->id);
                             $holds->begin($hold->id, $dispatch);
                             $state->suspendedReleases[] = $hold->id;
-                        } elseif ($slot === 'scratch') {
-                            new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($manager, $dispatch);
+                        } elseif ($slot === 'secondPeer') {
+                            $state->peers[2] = $dispatch;
                         } elseif ($slot === 'peer') {
                             $state->peers[1] = $dispatch;
                         } elseif ($slot === 'effect') {
@@ -286,9 +346,10 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
             self::assertSame([], $state->abandonedCommands);
             self::assertTrue($boundary->failed);
             self::assertFalse($boundary->complete, 'Final discard cannot acknowledge an unfinished boundary');
-            self::assertNull(new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager));
-            self::assertNull(new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->getValue($manager));
-            self::assertSame([], new ReflectionProperty(DaemonManager::class, 'parkedSignals')->getValue($manager));
+            self::assertNull(SignalDispatcherFixture::owner($manager)->retainedState());
+            self::assertSame([], $state->peers);
+            self::assertSame([],
+                new ReflectionProperty(SignalDispatcher::class, 'parkedSignals')->getValue(SignalDispatcherFixture::owner($manager)));
             self::assertSame($router, Hilos::$sr);
             self::assertSame('independent', $router->getNextQueuedSignal()?->signalName->getName());
             self::assertFalse($router->hasQueuedSignals());
@@ -305,7 +366,7 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         Hilos::$env = new EnvAccessor();
         $manager = new DeliveryDepartureTestManager();
         $router = Hilos::$sr;
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
+        $state = SignalDispatcherFixture::owner($manager)->signalDispatchState();
         $holds = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($manager);
         $boundary = new SignalDispatchPrefix(1, $state->intake, [], 0, 0, 0);
         $state->browsers = $boundary;
@@ -314,16 +375,16 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         $references = [];
         $lifetimes = [];
         $first = new RuntimeException('first disposal failure');
-        foreach (['scratch', 'active', 'peer', 'effect', 'held'] as $slot) {
-            $failure = $slot === 'scratch' ? $first : new RuntimeException($slot . ' disposal failure');
+        foreach (['secondPeer', 'active', 'peer', 'effect', 'held'] as $slot) {
+            $failure = $slot === 'active' ? $first : new RuntimeException($slot . ' disposal failure');
             $memory->enqueueTest('local', 'probe', null, 1,
                 function ($delivery, SignalDTO $signal) use ($slot, $manager, $state, $holds, $failure, &$references, &$lifetimes): void {
                     $references[] = WeakReference::create($signal->data);
                     $dispatch = new SignalDispatch($signal, fn(): Generator => $this->throwingDepartureWork($signal, $failure));
                     $dispatch->runPortion(1);
                     $lifetimes[] = $dispatch;
-                    if ($slot === 'scratch') {
-                        new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($manager, $dispatch);
+                    if ($slot === 'secondPeer') {
+                        $state->peers[2] = $dispatch;
                     } elseif ($slot === 'active') {
                         $state->active = $dispatch;
                     } elseif ($slot === 'peer') {
@@ -369,8 +430,8 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
             self::assertFalse($holds->hasReleased());
             self::assertTrue($boundary->failed);
             self::assertFalse($boundary->complete);
-            self::assertNull(new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager));
-            self::assertNull(new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->getValue($manager));
+            self::assertNull(SignalDispatcherFixture::owner($manager)->retainedState());
+            self::assertSame([], $state->peers);
             $router->queueSignal(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::SYSTEM),
                 new SignalName('replacement-fifo'), new SignalData());
             self::assertTrue($loop->hasReadyWork());
@@ -398,7 +459,7 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         $previousRouter = Hilos::$sr;
         Hilos::$env = new EnvAccessor();
         $manager = new DeliveryDepartureTestManager();
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
+        $state = SignalDispatcherFixture::owner($manager)->signalDispatchState();
         $failure = new RuntimeException('run disposal failure');
         $signal = new SignalDTO(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::SYSTEM),
             new SignalName('unfinished'), new SignalData());
@@ -435,7 +496,7 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         $previousRouter = Hilos::$sr;
         Hilos::$env = new EnvAccessor();
         $manager = new DeliveryDepartureTestManager();
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
+        $state = SignalDispatcherFixture::owner($manager)->signalDispatchState();
         $owned = new SignalDispatchPrefix(1, $state->intake, [], 0, 0, 0);
         $independent = new SignalDispatchPrefix(2, $state->intake, [], 0, 0, 0);
         $state->stop = $owned;
@@ -462,7 +523,7 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
         try {
             $caught = null;
             try {
-                new ReflectionMethod(DaemonManager::class, 'runSignalPortion')->invoke($manager, $dispatch, 64);
+                new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($manager)->runSignalPortion($dispatch, 64);
             } catch (Throwable $problem) {
                 $caught = $problem;
             }
@@ -485,6 +546,10 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
 
     public function testFinalRunCleanupCannotDetachAManagerThatTookOverItsRouter(): void
     {
+        // The scenario starts idle; previous tests may have left independent RT retirement.
+        while (RtRowArena::process()->hasPendingRetirement()) {
+            RtRowArena::process()->advanceRetirement(new RtWorkBudget());
+        }
         $previousEnv = Hilos::$env;
         $previousRouter = Hilos::$sr;
         Hilos::$env = new EnvAccessor();
@@ -518,7 +583,7 @@ final class DaemonManagerDeliveryDepartureTest extends TestCase
             self::assertSame([], $router->getTableViewports('replacement-socket'));
             self::assertNotNull($references[0]->get(), 'Old departure cannot detach the replacement cleanup owner');
             self::assertTrue($replacementLoop->hasReadyWork());
-            self::assertNull(new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager));
+            self::assertNull(SignalDispatcherFixture::owner($manager)->retainedState());
             $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
             for ($portion = 0; $portion < 16; $portion++) {
                 $dispatch->invoke($replacement);

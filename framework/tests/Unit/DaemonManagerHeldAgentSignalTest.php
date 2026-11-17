@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\PlacementVerdictSink;
+use Hilos\Core\Agent\Daemon\AgentStartSink;
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
+use Closure;
 use Generator;
 use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\ClusterContext;
@@ -27,6 +31,7 @@ use Hilos\Core\Daemon\AgentDeliveryOutcome;
 use Hilos\Core\Daemon\AgentSignalHold;
 use Hilos\Core\Daemon\AgentSignalHolds;
 use Hilos\Core\Daemon\DaemonManager;
+use Hilos\Core\Daemon\SignalDispatcher;
 use Hilos\Core\Daemon\ParkedAgentSignal;
 use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Core\Daemon\SignalDispatchPhase;
@@ -65,6 +70,7 @@ use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use ReflectionMethod;
 use ReflectionProperty;
 use RuntimeException;
 use WeakReference;
@@ -188,10 +194,11 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
             new CommandRequestDTO('cohort-later', HeldAgentSignalTestRouter::COLD_COMMAND),
         ));
 
-        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
-        $advance = new ReflectionClass(DaemonManager::class)->getMethod('advanceSignalEffect');
+        $state = SignalDispatcherFixture::owner($manager)->retainedState();
+        $dispatcher = new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($manager);
+        $advance = new ReflectionMethod(SignalDispatcher::class, 'advanceSignalEffect');
         for ($step = 0; $step < 1000 && $state->effects !== []; $step++) {
-            $advance->invoke($manager, key($state->effects));
+            $advance->invoke($dispatcher, key($state->effects));
         }
         self::assertSame([], $state->effects);
         self::assertCount(1, $manager->heldFrames(), 'Later admissions were outside the report cohort');
@@ -244,7 +251,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->refusalFailure = null;
         $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT);
         self::assertCount(1, $manager->pageErrorFrames());
-        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        $state = SignalDispatcherFixture::owner($manager)->retainedState();
         self::assertSame([], $state->effects);
     }
 
@@ -386,10 +393,11 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
             new SignalName(HeldAgentSignalTestRouter::COLD_COMMAND),
             new CommandRequestDTO('two-channels-later', HeldAgentSignalTestRouter::COLD_COMMAND),
         ));
-        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
-        $advance = new ReflectionClass(DaemonManager::class)->getMethod('advanceSignalEffect');
+        $state = SignalDispatcherFixture::owner($manager)->retainedState();
+        $dispatcher = new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($manager);
+        $advance = new ReflectionMethod(SignalDispatcher::class, 'advanceSignalEffect');
         for ($step = 0; $step < 1000 && $state->effects !== []; $step++) {
-            $advance->invoke($manager, key($state->effects));
+            $advance->invoke($dispatcher, key($state->effects));
         }
         self::assertSame([], $state->effects);
         self::assertCount(1, $manager->heldFrames());
@@ -717,8 +725,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->placedReleases = [];
 
         $this->placeOrderedAgent(AgentLocation::onNode(self::OTHER_NODE));
-        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')
-            ->invoke($manager, HeldAgentSignalTestRouter::ORDERED_AGENT, true);
+        new ReflectionMethod(SignalDispatcher::class, 'queueAgentDiscovery')
+            ->invoke(SignalDispatcherFixture::owner($manager), HeldAgentSignalTestRouter::ORDERED_AGENT, true);
         $manager->drainQueue();
 
         $this->assertSame([], $manager->heldFrames());
@@ -745,8 +753,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->drainQueue();
 
         $this->placeOrderedAgent(AgentLocation::here());
-        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')
-            ->invoke($manager, HeldAgentSignalTestRouter::ORDERED_AGENT, true);
+        new ReflectionMethod(SignalDispatcher::class, 'queueAgentDiscovery')
+            ->invoke(SignalDispatcherFixture::owner($manager), HeldAgentSignalTestRouter::ORDERED_AGENT, true);
         $manager->drainQueue();
 
         $this->assertCount(1, $manager->heldFrames());
@@ -952,7 +960,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertTrue($manager->heldFrames()[0]->awaitingPlacement);
 
         $this->placeOnAnotherNode(HeldAgentSignalTestRouter::COLD_AGENT);
-        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
+        new ReflectionMethod(SignalDispatcher::class, 'queueAgentDiscovery')
+            ->invoke(SignalDispatcherFixture::owner($manager), HeldAgentSignalTestRouter::COLD_AGENT, true);
         $manager->drainQueue();
 
         $this->assertSame([], $manager->heldFrames());
@@ -985,6 +994,47 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertSame([], $manager->heldFrames());
     }
 
+    /** The real hold-before-ask path receives its negative verdict on the asking stack. */
+    public function testSynchronousPlacementRefusalKeepsTheOriginalPrefixAndCohort(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $manager->leaderVerdict = 'unplaced: no capable node';
+        $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
+        $owner = SignalDispatcherFixture::owner($manager);
+        $state = $owner->signalDispatchState();
+        $boundary = new ReflectionMethod(DaemonManager::class, 'newSignalDispatchPrefix')->invoke($manager);
+        $state->browsers = $boundary;
+        $answered = 0;
+        $manager->afterPlacementVerdict = static function () use ($manager, $state, $boundary, &$answered): void {
+            ++$answered;
+            self::assertCount(1, $manager->heldFrames(), 'The hold must precede the synchronous ask and its deferred effect');
+            $origin = $state->active;
+            self::assertNotNull($origin);
+            self::assertCount(1, $state->effects, 'A nested verdict is queued once without recursively advancing the current generator');
+            $effect = $state->effects[array_key_last($state->effects)];
+            self::assertNotSame($origin, $effect);
+            self::assertNull($effect->getSignal());
+            self::assertNotNull($origin->effectCohortId);
+            self::assertSame($origin->effectCohortId, $effect->effectCohortId);
+            self::assertSame($boundary->id, $effect->browserPrefixId);
+            self::assertFalse($boundary->isReadyForAccounting(), 'The refusal and held frame still owe this original prefix');
+            self::assertSame([], $manager->pageErrorFrames(), 'The child executes in its own scheduler portion');
+        };
+        for ($portion = 0; $portion < 128 && !$boundary->complete; $portion++) {
+            $manager->drainQueue();
+        }
+        self::assertSame(1, $answered);
+        self::assertSame(1, $manager->placementAsks);
+        self::assertCount(1, $manager->pageErrorFrames());
+        self::assertSame('node_unreachable', $manager->pageErrorFrames()[0]->data->errorCode);
+        self::assertSame([], $manager->heldFrames());
+        self::assertSame([], $state->effects);
+        self::assertSame([], $state->effectCohortCounts);
+        self::assertTrue($boundary->complete);
+        self::assertFalse($boundary->failed);
+        $manager->afterPlacementVerdict = null;
+    }
+
     /** An unchanged hold is idle; an actual placement fact permits another ask and its final verdict. */
     public function testAWaitingFrameAsksAgainOnlyOnPlacementProgress(): void
     {
@@ -1001,7 +1051,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertSame([], $manager->pageErrorFrames());
         $manager->leaderVerdict = 'unplaced: no capable node';
         $this->leaveUnplaced(HeldAgentSignalTestRouter::COLD_AGENT);
-        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
+        new ReflectionMethod(SignalDispatcher::class, 'queueAgentDiscovery')
+            ->invoke(SignalDispatcherFixture::owner($manager), HeldAgentSignalTestRouter::COLD_AGENT, true);
         $manager->drainQueue();
         $this->assertSame($asksAfterPark + 1, $manager->placementAsks);
         $this->assertCount(1, $manager->pageErrorFrames());
@@ -1165,7 +1216,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
 
         $manager->leaderVerdict = $reason;
         $this->leaveUnplaced(HeldAgentSignalTestRouter::COLD_AGENT);
-        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
+        new ReflectionMethod(SignalDispatcher::class, 'queueAgentDiscovery')
+            ->invoke(SignalDispatcherFixture::owner($manager), HeldAgentSignalTestRouter::COLD_AGENT, true);
         $manager->drainQueue();
         $this->assertCount(1, $manager->pageErrorFrames());
         $this->assertSame([], $manager->heldFrames());
@@ -1236,7 +1288,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         self::assertSame([], $manager->workerServer->deliveries);
         self::assertSame([], $manager->heldFrames());
         self::assertFalse(Hilos::$sr->hasQueuedSignals());
-        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        $state = SignalDispatcherFixture::owner($manager)->retainedState();
         self::assertSame([], $state->commandCancellations);
         self::assertSame([], $state->abandonedCommands);
     }
@@ -1252,7 +1304,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
             $manager->drainQueue();
         }
         self::assertCount(1, $manager->heldFrames(), 'Only the new-router request survives the finite cancellation');
-        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        $state = SignalDispatcherFixture::owner($manager)->retainedState();
         self::assertSame(0, $state->retiredRemaining);
         self::assertSame([], $state->commandCancellations);
         self::assertSame([], $state->abandonedCommands);
@@ -1284,7 +1336,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         }
         $last = WeakReference::create($manager->heldFrames()[259]->signal->data);
         $manager->reportNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT);
-        new ReflectionClass(DaemonManager::class)->getMethod('cancelPendingPageDeliveries')->invoke($manager, self::ACCEPT_KEY, $page);
+        new ReflectionClass(DaemonManager::class)->getMethod('cancelPendingPageDeliveries')->invoke(
+            $manager, SignalDispatcherFixture::direct(), self::ACCEPT_KEY, $page);
         self::assertGreaterThan(130, count($manager->heldFrames()), 'Cancellation must not synchronously settle its whole indexed cohort');
         self::assertNotNull($last->get());
         $manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, new SignalDTO(
@@ -1331,7 +1384,7 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         self::assertSame([], $manager->heldFrames());
         self::assertSame(array_map(static fn(int $index): string => 'live-' . $index, range(0, 129)),
             Hilos::$sr->returnedCorrelations);
-        $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+        $state = SignalDispatcherFixture::owner($manager)->retainedState();
         self::assertSame([], $state->commandCancellations);
         self::assertSame([], $state->abandonedCommands);
     }
@@ -1342,13 +1395,13 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $dispatch = new SignalDispatch(new SignalDTO(new SignalSource(SignalSource::DAEMON),
             new SignalType(SignalTypeConstants::COMMAND_REQUEST), new SignalName(HeldAgentSignalTestRouter::COLD_COMMAND),
             new CommandRequestDTO(self::CORRELATION_ID, HeldAgentSignalTestRouter::COLD_COMMAND)),
-            static function () use ($manager): Generator {
+            static function (SignalDispatch $dispatch) use ($manager): Generator {
                 yield;
-                $manager->onCommandAbandoned(self::CORRELATION_ID);
+                $manager->onCommandAbandoned(self::CORRELATION_ID, $dispatch);
                 $manager->sendToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null, 'independent_after_abandon', new SignalData());
                 yield;
             });
-        new ReflectionClass(DaemonManager::class)->getMethod('runSignalPortion')->invoke($manager, $dispatch, 1);
+        new ReflectionClass(DaemonManager::class)->getMethod('signalDispatcher')->invoke($manager)->runSignalPortion($dispatch, 1);
         self::assertSame(SignalDispatchPhase::Canceled, $dispatch->phase);
         self::assertCount(1, $manager->heldFrames());
         self::assertSame('independent_after_abandon', $manager->heldFrames()[0]->signal->signalName->getName());
@@ -1644,7 +1697,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertCount(1, $manager->heldFrames());
 
         $this->placeOnAnotherNode(HeldAgentSignalTestRouter::COLD_AGENT);
-        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
+        new ReflectionMethod(SignalDispatcher::class, 'queueAgentDiscovery')
+            ->invoke(SignalDispatcherFixture::owner($manager), HeldAgentSignalTestRouter::COLD_AGENT, true);
         $manager->drainQueue();
 
         $this->assertSame([], $manager->heldFrames());
@@ -1664,7 +1718,8 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $manager->placedReleases = [];
 
         $this->placeOnAnotherNode(HeldAgentSignalTestRouter::COLD_AGENT);
-        new ReflectionClass(DaemonManager::class)->getMethod('queueAgentDiscovery')->invoke($manager, HeldAgentSignalTestRouter::COLD_AGENT, true);
+        new ReflectionMethod(SignalDispatcher::class, 'queueAgentDiscovery')
+            ->invoke(SignalDispatcherFixture::owner($manager), HeldAgentSignalTestRouter::COLD_AGENT, true);
         $manager->drainQueue();
 
         $this->assertSame([HeldAgentSignalTestRouter::COLD_AGENT], $manager->placedReleases);
@@ -1948,6 +2003,9 @@ final class HeldAgentSignalTestManager extends DaemonManager
     /** @var ?string Not-placed reason an ask answers in place, as the leader's own does; null answers nothing */
     public ?string $leaderVerdict = null;
 
+    /** @var ?Closure(): void Observer after the typed immediate callback returns */
+    public ?Closure $afterPlacementVerdict = null;
+
     /** @var list<int> Exact queue size when the original worker-loss hook runs */
     public array $lossHookQueuedCounts = [];
 
@@ -1972,6 +2030,7 @@ final class HeldAgentSignalTestManager extends DaemonManager
     /**
      * Records that the placing door was asked, which is the door a forwarded frame must not reach.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WorkerServer $workerServer Worker server hosting the agents of this node
      * @param ?AgentSignalMesh $mesh Outbound peer port, or null when no peer server is registered
      * @param AgentAddressedDestination $destination Agent to reach, already placed
@@ -1981,6 +2040,7 @@ final class HeldAgentSignalTestManager extends DaemonManager
      * @throws HilosException Whatever the project's agent-daemon factory raises while the local agent starts
      */
     protected function deliverToAgentDestination(
+        SignalDispatch $dispatch,
         WorkerServer $workerServer,
         ?AgentSignalMesh $mesh,
         AgentAddressedDestination $destination,
@@ -1988,7 +2048,7 @@ final class HeldAgentSignalTestManager extends DaemonManager
     ): AgentDeliveryOutcome {
         $this->placedReleases[] = $destination->agentType;
 
-        return parent::deliverToAgentDestination($workerServer, $mesh, $destination, $signal);
+        return parent::deliverToAgentDestination($dispatch, $workerServer, $mesh, $destination, $signal);
     }
 
     /**
@@ -1997,15 +2057,17 @@ final class HeldAgentSignalTestManager extends DaemonManager
      *
      * @param string $agentType Agent type that could not be addressed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?PlacementVerdictSink $immediateVerdict Synchronous answer port for the original delivery
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws CoreInvalidArgumentException When a refusal answering a page or a command cannot be named
      */
-    protected function requireOnDemandPlacement(string $agentType, ?string $agentIndex): void
+    protected function requireOnDemandPlacement(string $agentType, ?string $agentIndex, ?PlacementVerdictSink $immediateVerdict = null): void
     {
         $this->placementAsks++;
-        parent::requireOnDemandPlacement($agentType, $agentIndex);
+        parent::requireOnDemandPlacement($agentType, $agentIndex, $immediateVerdict);
         if ($this->leaderVerdict !== null) {
-            $this->onAgentNotPlaced($agentType, $agentIndex, $this->leaderVerdict);
+            ($immediateVerdict ?? $this)->onAgentNotPlaced($agentType, $agentIndex, $this->leaderVerdict);
+            $this->afterPlacementVerdict?->__invoke();
         }
     }
 
@@ -2119,8 +2181,9 @@ final class HeldAgentSignalTestManager extends DaemonManager
     {
         $owner = new ReflectionClass(DaemonManager::class)->getMethod('agentSignalHolds')->invoke($this);
         $holdId = $owner->firstReleasedId();
-        $cursor = new ReflectionClass(DaemonManager::class)->getMethod('createReleasedAgentDispatch')->invoke(
-            $this, $owner->get($holdId), $this->workerServer, null,
+        $cursor = new ReflectionMethod(SignalDispatcher::class, 'createReleasedAgentDispatch')->invoke(
+            new ReflectionClass(DaemonManager::class)->getMethod('signalDispatcher')->invoke($this),
+            $owner->get($holdId), $this->workerServer, null,
         );
         $owner->begin($holdId, $cursor);
         return $cursor;
@@ -2132,7 +2195,7 @@ final class HeldAgentSignalTestManager extends DaemonManager
      */
     public function advanceReleasedCursor(SignalDispatch $cursor, int $steps): void
     {
-        new ReflectionClass(DaemonManager::class)->getMethod('runSignalPortion')->invoke($this, $cursor, $steps);
+        new ReflectionClass(DaemonManager::class)->getMethod('signalDispatcher')->invoke($this)->runSignalPortion($cursor, $steps);
         $owner = new ReflectionClass(DaemonManager::class)->getMethod('agentSignalHolds')->invoke($this);
         if (!$cursor->hasWork() && $cursor->heldId !== null && $owner->get($cursor->heldId)?->dispatch === $cursor) {
             $owner->settle($cursor->heldId);
@@ -2352,8 +2415,9 @@ final class HeldAgentSignalTestWorkerServer extends WorkerServer
     /**
      * @param string $agentType Agent type the frame is addressed to
      * @param ?string $agentIndex Agent index for a pooled agent, or null
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function ensureAgentUp(string $agentType, ?string $agentIndex): void
+    public function ensureAgentUp(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): void
     {
         $this->startedAgentTypes[] = $agentType;
         if ($agentType === HeldAgentSignalTestRouter::FROZEN_AGENT || $agentType === HeldAgentSignalTestRouter::ORDERED_AGENT) {
@@ -2404,8 +2468,14 @@ final class HeldAgentSignalTestWorkerServer extends WorkerServer
      * @param string $agentType Agent type the signal was routed to
      * @param ?string $agentIndex Agent index for a pooled agent, or null
      * @param DaemonAgentMessageDTO $messageDto Signal wrapped for the worker
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->deliveries[] = $messageDto->signal->signalName->getName() . '@' . $agentType;
     }

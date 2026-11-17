@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
@@ -618,9 +619,10 @@ final class PlacementViewTestExecutor implements PlacementExecutor
     /**
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      * @return int Worker id a placement would land on
      */
-    public function executePlacement(string $agentType, ?string $agentIndex): int
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): int
     {
         return 1;
     }
@@ -639,8 +641,14 @@ final class PlacementViewTestExecutor implements PlacementExecutor
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param ?Closure(): void $stopped Told at once: this fake runs nothing to wait for
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
+    public function revokePlacement(
+        string $agentType,
+        ?string $agentIndex,
+        ?Closure $stopped = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $stopped?->__invoke();
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Generator;
 use Hilos\Core\EventLoop\EventLoop;
@@ -1485,13 +1486,14 @@ final class PeerLink extends AbstractClient
                     RtSyncStreamOperation|RtSyncStreamSnapshot $operation,
                     Closure $settled,
                     ?RtReplicaConfirmation $receipt = null,
+                    ?SignalDispatch $origin = null,
                 ) use ($link, $server): ?Generator {
                     $owner = $link->get();
                     if ($owner !== null && $operation instanceof RtSyncStreamSnapshot) {
                         unset($owner->rtSnapshotsAsked[$operation->collectionKey]);
                     }
 
-                    return $server->onRtSyncStreamReceived($owner, $operation, $settled, $receipt);
+                    return $server->onRtSyncStreamReceived($owner, $operation, $settled, $receipt, $origin);
                 },
                 $this->server->rtSyncStreamWake(),
                 null,
@@ -1500,9 +1502,9 @@ final class PeerLink extends AbstractClient
 
                     return $owner === null ? null : $server->rtSyncReceipt($owner);
                 },
-                static function (string $collectionKey, array $stateIds, ?float $since) use ($link, $hold): void {
+                static function (string $collectionKey, array $stateIds, ?float $since, ?SignalDispatch $origin = null) use ($link, $hold): void {
                     if ($hold !== null) {
-                        $hold(null, $collectionKey, $stateIds, $since);
+                        $hold(null, $collectionKey, $stateIds, $since, $origin);
                     } elseif ($since === null) {
                         RtStaleness::clear($collectionKey, $stateIds);
                     } else {
@@ -1525,11 +1527,12 @@ final class PeerLink extends AbstractClient
      * that never opened its stream holds nothing.
      *
      * @param string $collectionKey Collection the snapshot replaced
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function recoverRtSyncStream(string $collectionKey): void
+    public function recoverRtSyncStream(string $collectionKey, ?SignalDispatch $origin = null): void
     {
         unset($this->rtSnapshotsContested[$collectionKey]);
-        $this->rtSyncStream?->recover($collectionKey);
+        $this->rtSyncStream?->recover($collectionKey, $origin);
     }
 
     /**

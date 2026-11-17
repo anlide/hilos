@@ -127,12 +127,8 @@ use Hilos\Core\Router\Destination\AllClientsDestination;
 use Hilos\Core\Router\Destination\SessionClientsDestination;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\Destination\Destination;
-use Hilos\Core\Router\Destination\HttpReplyDestination;
 use Hilos\Core\Router\Destination\RemoteAgentDestination;
-use Hilos\Core\Router\Destination\RemoteClientDestination;
-use Hilos\Core\Router\Destination\RemoteHttpReplyDestination;
 use Hilos\Core\Router\Destination\UnknownAgentDestination;
-use Hilos\Core\Router\Destination\RemoteFanoutDestination;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\PageAgentAddress;
@@ -140,7 +136,6 @@ use Hilos\Core\Router\PageSubscription;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalRouter;
-use Hilos\Core\Router\LocalClientSignalBatch;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\Interest\SourceReaderMap;
 use Hilos\Files\Upload\UploadMemoryMaster;
@@ -156,7 +151,6 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Utils\Helpers\RandomHelper;
 use Hilos\Socket\WebSocket\DTO\DeliveryCompleteSignalData;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
-use Hilos\Socket\WebSocket\DTO\WebSocketFrameBinarySignalDTO;
 use Hilos\Files\Upload\DTO\UploadCreditRequestSignalData;
 use Hilos\Files\Upload\DTO\UploadStateSignalData;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
@@ -173,7 +167,6 @@ use Hilos\Core\Sync\DTO\RtSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\RtSyncSignalDataInterface;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
 use Hilos\Core\Sync\DTO\SyncSignalDataInterface;
-use Hilos\Database\DatabaseException;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\DbSyncAdmission;
 use Hilos\Database\DTO\ReHydrateVerdict;
@@ -202,7 +195,6 @@ use Hilos\ProtectedMode\ProtectedModeEntryGate;
 use Hilos\ProtectedMode\ProtectedModeCommandConstants;
 use Hilos\ProtectedMode\ProtectedModeFreezeStore;
 use Hilos\ProtectedMode\ProtectedModeInitiatorRelay;
-use Hilos\ProtectedMode\ProtectedModeStubCopy;
 use Hilos\ProtectedMode\ProtectedModeWatchdog;
 use Hilos\ProtectedMode\ProtectedModeSourceBinding;
 use Hilos\ProtectedMode\ProtectedModeSyncScheduler;
@@ -325,6 +317,7 @@ use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
  * node up/down defaults also drive placement failover, so an override must call the parent.
  */
 abstract class DaemonManager extends BaseManager implements
+    SignalDispatchHost,
     UploadMemoryTestDoor,
     MembershipObserver,
     LeadershipObserver,
@@ -427,17 +420,6 @@ abstract class DaemonManager extends BaseManager implements
     /** @var string What a restored freeze whose row names no operation is called in the startup line */
     private const string UNNAMED_FROZEN_OPERATION = '(unnamed)';
 
-    /**
-     * @var int Milliseconds a subscription waits for the identity behind its connection before
-     *     it is routed on whatever is known (HIL-627)
-     *
-     * Deliberately its own number and not the worker's {@see PageSignalRouter} wait under a shared
-     * name. The two happen to be equal today and are answerable to different things: the worker
-     * waits for an RT row to reach the worker that judges a frame, this one waits for it to reach
-     * the master that addresses a subscription. Either may move without the other.
-     */
-    private const int SUBSCRIPTION_IDENTITY_WAIT_TIMEOUT_MS = 500;
-
     /** @var float Seconds between attempts at a policy placement that has not taken */
     private const float POLICY_PLACEMENT_RETRY_SEC = 5.0;
 
@@ -448,9 +430,6 @@ abstract class DaemonManager extends BaseManager implements
     /** Maximum sockets examined by the leader-page recovery walk in one master pass. */
     private const int LEADER_PAGE_RECOVERY_SOCKETS_PER_PASS = 64;
 
-    private const int SIGNAL_DISPATCH_STEPS_PER_PORTION = 64;
-
-    private const int AGENT_REPORT_STEPS_PER_PORTION = 64;
     /** Steps a staged snapshot generation takes for each unit of work it asks of its link stream's share */
     private const int RT_SNAPSHOT_STEPS_PER_WORK = 8;
     /** Logical bytes a staged snapshot generation asks of its link stream's share for each unit of work */
@@ -458,20 +437,6 @@ abstract class DaemonManager extends BaseManager implements
 
     /** Maximum dispatch time before returning to the iteration's I/O and due owners. */
     private const int SIGNAL_DISPATCH_BUDGET_NS = 2 * TimeConstants::NS_PER_MILLISECOND;
-
-    /** Up to four maintenance steps per group; idle reservations belong to delivery. */
-    private const int SIGNAL_DISPATCH_SCHEDULING_GROUP_STEPS = 8;
-
-    private const int SIGNAL_RELEASE_SERVICE = 0;
-    private const int SIGNAL_ORDINARY_SERVICE = 1;
-    private const int SIGNAL_CANCELLATION_SERVICE = 2;
-    private const int SIGNAL_EFFECT_SERVICE = 3;
-    private const int SIGNAL_SERVICE_COUNT = 4;
-
-    private const int SIGNAL_IDENTITY_ADMISSION = 0;
-    private const int SIGNAL_PEER_ADMISSION = 1;
-    private const int SIGNAL_INPUT_ADMISSION = 2;
-    private const int SIGNAL_ADMISSION_COUNT = 3;
 
     private const float CRON_FRAME_REANNOUNCE_SECONDS = 60.0;
     private const float STANDING_SAMPLE_SECONDS = 1.0;
@@ -502,47 +467,8 @@ abstract class DaemonManager extends BaseManager implements
     /** @var AgentManagerDaemon Agent manager daemon instance */
     protected AgentManagerDaemon $agentManagerDaemon;
 
-    /** @var ?ReadyWork Native wake ticket; dispatch remains in its guarded phase after source announcements */
-    private ?ReadyWork $signalDispatchWake = null;
-
-    /** Exact process-local binding token; a departed owner cannot detach its replacement. */
-    private ?Closure $signalDispatchNotifier = null;
-
-    /** @var ?SignalRouter Exact router incarnation whose local enqueue cue this master owns */
-    private ?SignalRouter $signalDispatchRouter = null;
-
-    /** @var ?WorkerServer Exact server whose empty stop barrier wakes that same dispatch phase */
-    private ?WorkerServer $signalDispatchWorkerServer = null;
-
-    /** @var ?WeakReference<AgentManagerDaemon> Exact report owner bound to this master's source FIFO */
-    private ?WeakReference $signalDispatchAgentManager = null;
-
-    /** @var ?WeakReference<PeerServer> Exact source-interest transport on the same guarded source FIFO */
-    private ?WeakReference $signalDispatchPeerServer = null;
-
-    /** @var ?Closure(Generator<int, void>): void Weak binding; no escaped peer retains its old manager */
-    private ?Closure $sourceInterestDeliveryBinding = null;
-
-    private ?ClusterPlacement $signalHoldPlacement = null;
-
-    private ?WorkerServer $signalHoldWorkerServer = null;
-
-    /** @var ?Closure(?string): void Exact local placement binding, independent of readiness */
-    private ?Closure $placementHoldWake = null;
-
-    /** @var ?Closure(?string): void Exact local start/resume binding, independent of capacity and stop dispatch */
-    private ?Closure $workerHoldWake = null;
-
-    /** @var array<string, EventLoopTimer> Only addresses with unresolved placement obligations */
-    private array $placementSignalTimers = [];
-
-    private int $signalHoldGeneration = 0;
-
-    /** @var ?SignalDispatch Scratch context installed only while one guarded signal portion executes */
-    private ?SignalDispatch $currentSignalDispatch = null;
-
-    /** Sole retained progress owner of the existing guarded master dispatch phase. */
-    private ?SignalDispatchState $signalDispatchState = null;
+    /** Sole owner of retained signal work and scheduling. */
+    private ?SignalDispatcher $signalDispatcher = null;
 
     /** @var ?Closure(ReHydrateVerdict): void Continuation owned only by the current local catch-up round */
     private ?Closure $reHydrateContinuation = null;
@@ -704,41 +630,11 @@ abstract class DaemonManager extends BaseManager implements
     /** @var list<string> Unstarted agents collected by the current portioned walk */
     private array $readinessPending = [];
 
-    /** @var array<int, ParkedSignal> Signals held until their identity arrives; stable keys support finite live probes */
-    private array $parkedSignals = [];
-
-    private int $parkedSignalSequence = 0;
-
-    /** Scalar connection/page index across the original parked and ready identity lifetimes. */
-    private ?IdentitySignalIndex $identitySignals = null;
-
-    private ?EventLoopTimer $identitySignalTimer = null;
-
-    private bool $identityDeadlinePending = false;
-
-    /** @var ?WeakReference<RtContext> Runtime incarnation used by the last guarded identity discovery */
-    private ?WeakReference $identityRuntime = null;
-
-    /** @var ?WeakReference<BrowserContext> Project identity resolver incarnation */
-    private ?WeakReference $identityBrowser = null;
-
     /** Sole process-private upload ledger; test-only activation also works without the product feature. */
     private ?UploadMemoryMaster $uploadMemory = null;
 
     /** Process-private delivery settings, shared by this master's transport servers. */
     private ?DeliverySettingsMirror $deliverySettings = null;
-
-    /** Retired socket arrays remain private to this master's guarded effect queue. */
-    private ?DeliveryCleanup $deliveryCleanup = null;
-
-    /** @var array<string, array<string, PendingPageDelivery>> Connection and attempt to selected serving address */
-    private array $pendingPageDeliveries = [];
-
-    /** Scalar address and lifetime index; the original ledger above keeps sole payload ownership. */
-    private ?PendingPageIndex $pendingPageIndex = null;
-
-    /** Sole local payload owner for blocked, released and active one-agent obligations. */
-    private ?AgentSignalHolds $agentSignalHolds = null;
 
     /** @var ?float Monotonic seconds of the last stuck-readiness log line */
     private ?float $lastReadinessLogAt = null;
@@ -1178,6 +1074,169 @@ abstract class DaemonManager extends BaseManager implements
      * @return AgentManagerDaemon Agent manager daemon instance
      */
     abstract protected function createAgentManagerDaemon(): AgentManagerDaemon;
+
+    /** @return SignalDispatcher Project-selected owner of this master's signal work */
+    protected function createSignalDispatcher(): SignalDispatcher
+    {
+        return new SignalDispatcher($this);
+    }
+
+    /** @return SignalDispatcher Lazily composed owner, safe before the other master collaborators exist */
+    private function signalDispatcher(): SignalDispatcher
+    {
+        return $this->signalDispatcher ??= $this->createSignalDispatcher();
+    }
+
+    /** @return ?DeliveryCleanup Cleanup scheduler only while native dispatch is attached */
+    public function signalDeliveryCleanup(): ?DeliveryCleanup
+    {
+        return $this->signalDispatcher?->signalDeliveryCleanup();
+    }
+
+    /** @return bool Whether the current lifecycle still accepts source delivery */
+    public function acceptsSignalWork(): bool
+    {
+        return !$this->shouldExit;
+    }
+
+    /**
+     * @param string $agentId Address whose start report is being checked
+     * @return bool Whether the master has received the agent's start report
+     */
+    public function isSignalAgentStarted(string $agentId): bool
+    {
+        return $this->agentManagerDaemon->isAgentStarted($agentId);
+    }
+
+    /** @param ?string $agentId Changed worker address, absent for a resume completion */
+    public function noteSignalWorkerFact(?string $agentId): void
+    {
+        $this->policyDeclarations->noteChanged($agentId);
+        $this->probeFleetSupervisor->noteChanged($agentId);
+    }
+
+    /** @param ?string $agentId Changed placement address, absent for a new authority basis */
+    public function noteSignalPlacementFact(?string $agentId): void
+    {
+        $this->noteSignalWorkerFact($agentId);
+        if ($agentId === null) {
+            $this->noteSlaveSyncAuthorityChanged();
+        }
+    }
+
+    /**
+     * Release upload accounting after the guarded portion, including on failure.
+     *
+     * @throws HilosException When upload admission accounting or its delivery fails
+     */
+    public function afterSignalDispatch(): void
+    {
+        $this->uploadMemory?->afterDispatch();
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original one-agent release
+     * @return Generator<int, void, void, SignalDispatchPhase> Lookup and original page guard
+     */
+    public function prepareReleasedSignalDispatch(SignalDispatch $dispatch): Generator
+    {
+        yield from $this->resolveSignalClient($dispatch, $this->findWebSocketServer());
+        return $this->isAbandonedPageDelivery($dispatch, $dispatch->getSignal(), $dispatch->release->localOnly)
+            ? SignalDispatchPhase::Terminal : SignalDispatchPhase::Destinations;
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
+     * @param ?BrowserDeliveryTarget $target Captured socket incarnation
+     * @param DeliveryFrame $frame Shared encoded frame
+     * @param ?WebSocketDestination $destination Original subscription guard
+     * @return Generator<int, void> Bounded physical send
+     */
+    public function deliverSignalTarget(
+        SignalDispatch $dispatch, ?BrowserDeliveryTarget $target, DeliveryFrame $frame, ?WebSocketDestination $destination,
+    ): Generator
+    {
+        return $this->walkTargetClientFrame($target, $frame, $destination);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
+     * @param WorkerServer $workers Worker transport
+     * @param ?AgentSignalMesh $mesh Peer transport
+     * @param AgentAddressedDestination $destination Placed agent address
+     * @param SignalDTO $signal Original envelope
+     * @return AgentDeliveryOutcome Existing delivery verdict
+     * @throws Throwable When the delivery hook or group authority cleanup fails
+     */
+    public function deliverSignalAgent(
+        SignalDispatch $dispatch, WorkerServer $workers, ?AgentSignalMesh $mesh,
+        AgentAddressedDestination $destination, SignalDTO $signal,
+    ): AgentDeliveryOutcome
+    {
+        return $this->deliverToAgentDestination($dispatch, $workers, $mesh, $destination, $signal);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original forwarded lifetime
+     * @param WorkerServer $workers Worker transport
+     * @param AgentDestination $destination Local agent address
+     * @param SignalDTO $signal Original envelope
+     * @return AgentDeliveryOutcome Local-only delivery verdict
+     * @throws InvalidArgumentException When a local refusal cannot be named
+     */
+    public function deliverLocalSignalAgent(
+        SignalDispatch $dispatch, WorkerServer $workers, AgentDestination $destination, SignalDTO $signal,
+    ): AgentDeliveryOutcome
+    {
+        return $this->sendSignalToAgentDestination($dispatch, $workers, $destination, $signal, true);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original attempted lifetime
+     * @param SignalDTO $signal Original envelope
+     * @param AgentDeliveryOutcome $outcome Verdict to answer
+     * @throws InvalidArgumentException When a refusal cannot be named
+     * @throws InvalidFormatException When a subscription refusal reads invalid recovery configuration
+     */
+    public function answerSignalAgentOutcome(SignalDispatch $dispatch, SignalDTO $signal, AgentDeliveryOutcome $outcome): void
+    {
+        if ($outcome === AgentDeliveryOutcome::RemoteUnreachable) {
+            $this->answerUnreachableSubscription($signal);
+            $this->refuseUndeliveredCommand($signal, self::COMMAND_NODE_UNREACHABLE_MESSAGE);
+        } elseif ($outcome === AgentDeliveryOutcome::StartRefused) {
+            $this->answerStartRefusedSubscription($signal);
+            $this->refuseUndeliveredCommand($signal, self::COMMAND_START_REFUSED_MESSAGE);
+        }
+    }
+
+    /**
+     * @param ?SignalDispatch $origin Original asking lifetime; null is a root
+     * @param string $agentType Addressed type
+     * @param ?string $agentIndex Addressed instance
+     * @throws EnvException When cluster configuration is invalid
+     * @throws EventLoopException When the placement retry deadline cannot be armed
+     */
+    public function requireSignalPlacement(?SignalDispatch $origin, string $agentType, ?string $agentIndex): void
+    {
+        $this->requireOnDemandPlacement($agentType, $agentIndex, $origin === null ? null : $this->signalLifecycleSink($origin));
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original receipt and resolved page context
+     * @return bool Whether the master's receipt and page guards still permit this lifetime
+     */
+    public function mayContinueSignalDispatch(SignalDispatch $dispatch): bool
+    {
+        if ($dispatch->rtConfirmation !== null && !$dispatch->rtConfirmation->isCurrent(
+            $this->agentManagerDaemon->rtReplicaOriginMap(), $this->agentManagerDaemon->rtNodeSourceMap(),
+        )) {
+            return false;
+        }
+        $signal = $dispatch->getSignal();
+        return !$dispatch->clientResolved || $signal === null
+            || (!$this->isAbandonedPageDelivery($dispatch, $signal, $dispatch->release?->localOnly ?? false)
+                && !$this->isStalePageRecovery($dispatch, $signal));
+    }
 
     /**
      * The node-selection policy this project places its agents by, or null to keep the default.
@@ -3426,7 +3485,7 @@ abstract class DaemonManager extends BaseManager implements
         if ($workerServer !== null && !$workerServer->isReadyToShutdown()) {
             return;
         }
-        if (!$this->signalDispatchState?->browsers?->complete) {
+        if (!($this->signalDispatcher?->isBrowserPrefixComplete() ?? false)) {
             return;
         }
 
@@ -3613,18 +3672,20 @@ abstract class DaemonManager extends BaseManager implements
         foreach ($agentIds as $agentId) {
             $this->policyDeclarations->noteChanged($agentId);
         }
-        $recovery = $this->pendingPageRecovery($agentIds);
+        $recovery = $this->pendingPageIndex()->recoveryCandidates($agentIds);
         $watermark = $this->agentSignalHolds()->getWatermark();
         $restartLosses = array_map($this->agentRestarts->captureAgentLoss(...), $agentIds);
-        $this->queueSignalEffect(function () use ($workerIndex, $isMonopolistic, $agentIds, $recovery, $watermark, $restartLosses): Generator {
+        $this->queueSignalEffectInDispatch(function (SignalDispatch $dispatch) use (
+            $workerIndex, $isMonopolistic, $agentIds, $recovery, $watermark, $restartLosses,
+        ): Generator {
             yield;
             foreach ($restartLosses as $restartLoss) {
                 $restartLoss();
                 yield;
             }
-            yield from $recovery;
+            yield from $this->walkPendingPageRecovery($dispatch, $recovery);
             foreach ($agentIds as $agentId) {
-                yield from $this->refuseHeldSignalCandidates($this->agentSignalHolds()->agentCandidates($agentId, $watermark),
+                yield from $this->refuseHeldSignalCandidates($dispatch, $this->agentSignalHolds()->agentCandidates($agentId, $watermark),
                     " the worker running agent {$agentId} went down before its start was reported", self::COMMAND_WORKER_LOST_MESSAGE);
             }
             yield from $this->agentsGoneAnnouncement($agentIds, AgentsGoneSignalData::REASON_WORKER_DIED);
@@ -3639,7 +3700,7 @@ abstract class DaemonManager extends BaseManager implements
                     $hookFailure->getMessage()
                 ));
             }
-        });
+        }, null);
     }
 
     /**
@@ -3657,6 +3718,17 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onAgentStarted(string $agentId): void
     {
+        $this->onAgentStartedInDispatch(null, $agentId);
+    }
+
+    /**
+     * @param ?SignalDispatch $origin Immediate causal operation; null is an independent report
+     * @param string $agentId Id of the agent that started, in the `type` or `type:index` form
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When the next restart caller deadline cannot be armed or canceled
+     */
+    private function onAgentStartedInDispatch(?SignalDispatch $origin, string $agentId): void
+    {
         $this->wakeReadiness();
         $this->policyDeclarations->noteChanged($agentId);
         $this->agentRestarts->onAgentStarted($agentId);
@@ -3664,15 +3736,17 @@ abstract class DaemonManager extends BaseManager implements
             $this->forceDaemonNodeFrames();
         }
         $candidates = $this->agentSignalHolds()->agentCandidates($agentId);
-        $this->queueSignalEffect(function () use ($candidates): Generator {
+        $this->queueSignalEffectInDispatch(function () use ($candidates): Generator {
             yield;
             foreach ($candidates as $holdId) {
                 $this->agentSignalHolds()->release($holdId);
                 yield;
             }
-        });
+        }, $origin);
         $agent = AgentId::fromId($agentId);
-        Hilos::$cluster?->placement()?->noteAgentStarted($agent->type, $agent->index);
+        Hilos::$cluster?->placement()?->noteAgentStarted(
+            $agent->type, $agent->index, $origin === null ? null : $this->signalLifecycleSink($origin),
+        );
     }
 
     /**
@@ -3691,20 +3765,31 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onAgentStopped(string $agentId): void
     {
+        $this->onAgentStoppedInDispatch(null, $agentId);
+    }
+
+    /**
+     * @param ?SignalDispatch $origin Immediate causal operation; null is an independent report
+     * @param string $agentId Id of the agent that stopped, in the `type` or `type:index` form
+     * @throws InvalidFormatException When the recovery page or params are malformed
+     * @throws EventLoopException When the next node-report deadline cannot be armed or canceled
+     */
+    private function onAgentStoppedInDispatch(?SignalDispatch $origin, string $agentId): void
+    {
         if ($agentId === HilosAgentType::HILOS_DAEMON_NODE) {
             $this->daemonNodeReportTestRequests->agentStopped();
         }
         $this->wakeReadiness();
         $this->policyDeclarations->noteChanged($agentId);
-        $recovery = $this->pendingPageRecovery([$agentId]);
+        $recovery = $this->pendingPageIndex()->recoveryCandidates([$agentId]);
         $candidates = $this->agentSignalHolds()->agentCandidates($agentId);
-        $this->queueSignalEffect(function () use ($recovery, $candidates): Generator {
-            yield from $recovery;
+        $this->queueSignalEffectInDispatch(function (SignalDispatch $dispatch) use ($recovery, $candidates): Generator {
+            yield from $this->walkPendingPageRecovery($dispatch, $recovery);
             foreach ($candidates as $holdId) {
                 $this->agentSignalHolds()->release($holdId);
                 yield;
             }
-        });
+        }, $origin);
     }
 
     /**
@@ -3726,17 +3811,30 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onAgentStartFailed(string $agentId, string $reason): void
     {
+        $this->onAgentStartFailedInDispatch(null, $agentId, $reason);
+    }
+
+    /**
+     * @param ?SignalDispatch $origin Immediate causal operation; null is an independent report
+     * @param string $agentId Id of the agent whose start failed, in the `type` or `type:index` form
+     * @param string $reason Why the start did not finish, as the failure said it
+     * @throws InvalidArgumentException When a refusal answering a page or a command cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
+     * @throws EventLoopException When the next restart caller deadline cannot be armed or canceled
+     */
+    private function onAgentStartFailedInDispatch(?SignalDispatch $origin, string $agentId, string $reason): void
+    {
         $this->wakeReadiness();
         $this->policyDeclarations->noteChanged($agentId);
         $this->agentRestarts->onAgentStartFailed($agentId, $reason);
         $candidates = $this->agentSignalHolds()->agentCandidates($agentId);
-        $this->queueSignalEffect(function () use ($agentId, $reason, $candidates): Generator {
-            yield from $this->refuseHeldSignalCandidates($candidates,
+        $this->queueSignalEffectInDispatch(function (SignalDispatch $dispatch) use ($agentId, $reason, $candidates): Generator {
+            yield from $this->refuseHeldSignalCandidates($dispatch, $candidates,
                 " the start of agent {$agentId} failed - {$reason}", self::COMMAND_START_REFUSED_MESSAGE);
             $agent = AgentId::fromId($agentId);
-            Hilos::$cluster?->placement()?->noteAgentStartFailed($agent->type, $agent->index, $reason);
+            Hilos::$cluster?->placement()?->noteAgentStartFailed($agent->type, $agent->index, $reason, $this->signalLifecycleSink($dispatch));
             yield from $this->agentsGoneAnnouncement([$agentId], AgentsGoneSignalData::REASON_START_FAILED);
-        });
+        }, $origin);
     }
 
     /**
@@ -3758,13 +3856,41 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function onAgentNotPlaced(string $agentType, ?string $agentIndex, string $reason): void
     {
+        $this->onAgentNotPlacedInDispatch(null, $agentType, $agentIndex, $reason);
+    }
+
+    /**
+     * @param ?SignalDispatch $origin Immediate causal operation; null is an independent report
+     * @param string $agentType Agent type that was not placed
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param string $reason Why the agent was not placed, including the record state
+     * @throws InvalidArgumentException When a refusal answering a page or a command cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
+     */
+    private function onAgentNotPlacedInDispatch(?SignalDispatch $origin, string $agentType, ?string $agentIndex, string $reason): void
+    {
         $agentId = $this->agentManagerDaemon->buildAgentId($agentType, $agentIndex);
         $candidates = $this->agentSignalHolds()->agentCandidates($agentId);
-        $this->queueSignalEffect(function () use ($agentId, $reason, $candidates): Generator {
-            yield from $this->refuseHeldSignalCandidates($candidates,
+        $this->queueSignalEffectInDispatch(function (SignalDispatch $dispatch) use ($agentId, $reason, $candidates): Generator {
+            yield from $this->refuseHeldSignalCandidates($dispatch, $candidates,
                 " agent {$agentId} was not placed - {$reason}", self::COMMAND_UNPLACED_MESSAGE, unreachable: true);
             yield from $this->agentsGoneAnnouncement([$agentId], AgentsGoneSignalData::REASON_NOT_PLACED);
-        });
+        }, $origin);
+    }
+
+    /**
+     * @param SignalDispatch $origin Synchronous operation whose notifications inherit its debt
+     * @return AgentStartSink&PlacementVerdictSink Per-call ports, never registered or retained by a waiter
+     */
+    private function signalLifecycleSink(SignalDispatch $origin): AgentStartSink&PlacementVerdictSink
+    {
+        $owner = WeakReference::create($this);
+        return new SignalLifecycleSink(
+            static fn(string $id) => $owner->get()?->onAgentStartedInDispatch($origin, $id),
+            static fn(string $id) => $owner->get()?->onAgentStoppedInDispatch($origin, $id),
+            static fn(string $id, string $reason) => $owner->get()?->onAgentStartFailedInDispatch($origin, $id, $reason),
+            static fn(string $type, ?string $index, string $reason) => $owner->get()?->onAgentNotPlacedInDispatch($origin, $type, $index, $reason),
+        );
     }
 
     /**
@@ -3818,15 +3944,16 @@ abstract class DaemonManager extends BaseManager implements
      * now that it waits on a fact, the caller leaving has to be one of the facts.
      *
      * @param string $correlationId Correlation id nobody is waiting on any more
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws EventLoopException When the next command-request deadline cannot be armed or canceled
      */
-    public function onCommandAbandoned(string $correlationId): void
+    public function onCommandAbandoned(string $correlationId, ?SignalDispatch $origin = null): void
     {
         $this->testOrmForgetRequests->abandon($correlationId);
         $this->daemonNodeReportTestRequests->abandon($correlationId);
         $this->cronFireTestRequests->abandon($correlationId);
         $this->agentRestarts->onCommandAbandoned($correlationId);
-        $this->dropParkedCommandSignals($correlationId);
+        $this->dropParkedCommandSignals($correlationId, $origin);
     }
 
     /**
@@ -4039,6 +4166,7 @@ abstract class DaemonManager extends BaseManager implements
      * Across physical lookup yields only scalar identities survive, so cancellation can free
      * the original payload without waiting for this cursor to resume.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param Generator<int, int> $candidates Original finite held cohort
      * @param string $diagnostic Existing diagnostic suffix after the signal name
      * @param string $commandReason Existing command/HTTP refusal text
@@ -4047,7 +4175,7 @@ abstract class DaemonManager extends BaseManager implements
      * @throws InvalidArgumentException When a refusal cannot be named
      * @throws InvalidFormatException When a page completion address is malformed
      */
-    private function refuseHeldSignalCandidates(Generator $candidates, string $diagnostic, string $commandReason,
+    private function refuseHeldSignalCandidates(SignalDispatch $dispatch, Generator $candidates, string $diagnostic, string $commandReason,
         bool $unreachable = false): Generator
     {
         yield;
@@ -4057,7 +4185,7 @@ abstract class DaemonManager extends BaseManager implements
                 yield;
                 continue;
             }
-            $this->captureSignalEffectHold($hold);
+            $this->signalDispatcher()->captureSignalEffectHold($dispatch, $hold);
             if ($this->agentSignalHolds()->isCanceled($hold)) {
                 $this->agentSignalHolds()->settle($holdId);
                 unset($hold);
@@ -4066,7 +4194,7 @@ abstract class DaemonManager extends BaseManager implements
             }
             $acceptKey = $hold->acceptKey;
             unset($hold);
-            yield from $this->resolveSignalEffectClient($acceptKey);
+            yield from $this->resolveSignalEffectClient($dispatch, $acceptKey);
             $hold = $this->agentSignalHolds()->get($holdId);
             if ($hold !== null && $this->agentSignalHolds()->isCanceled($hold)) {
                 $this->agentSignalHolds()->settle($holdId);
@@ -4095,20 +4223,20 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param ?string $acceptKey Current held/recovery connection, absent for a command or push
      * @return Generator<int, void> Physical lookup cached only during this lifecycle effect
      */
-    private function resolveSignalEffectClient(?string $acceptKey): Generator
+    private function resolveSignalEffectClient(SignalDispatch $dispatch, ?string $acceptKey): Generator
     {
-        $effect = $this->currentSignalDispatch;
         $server = $this->findWebSocketServer();
-        $effect->clientAcceptKey = $acceptKey;
-        $effect->clientTarget = null;
-        $effect->clientServer = $server;
-        $effect->clientResolved = false;
+        $dispatch->clientAcceptKey = $acceptKey;
+        $dispatch->clientTarget = null;
+        $dispatch->clientServer = $server;
+        $dispatch->clientResolved = false;
         if ($acceptKey !== null && $server !== null) {
-            $effect->clientTarget = yield from $this->clientLookup($server, $acceptKey);
-            $effect->clientResolved = true;
+            $dispatch->clientTarget = yield from $this->clientLookup($dispatch, $server, $acceptKey);
+            $dispatch->clientResolved = true;
         }
     }
 
@@ -4303,7 +4431,9 @@ abstract class DaemonManager extends BaseManager implements
             }
 
             $destination = Hilos::$sr->placeAgentDestination(new AgentDestination($agentType, $agentIndex));
-            switch ($this->deliverToAgentDestination($workerServer, $this->findPeerServer(), $destination, $signal)) {
+            switch ($this->deliverToAgentDestination(
+                $this->directSignalDispatch($signal), $workerServer, $this->findPeerServer(), $destination, $signal,
+            )) {
                 case AgentDeliveryOutcome::AddressUnknown:
                     $this->reportMasterSignalDropped($signalName, $agentLabel, self::AGENT_NO_KNOWN_NODE_REASON);
                     // This signal stays dropped, but an agent that starts by being addressed is
@@ -4370,23 +4500,36 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
     {
-        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
+        if ($this->signalDispatcher?->isAttached() ?? false) {
             $owner = WeakReference::create($this);
-            $this->queueSignalEffect(static function () use ($owner, $agentType, $agentIndex, $signal): Generator {
-                $owner->get()?->deliverSignalToAgent($agentType, $agentIndex, $signal);
+            $this->queueSignalEffectInDispatch(static function (SignalDispatch $dispatch) use ($owner, $agentType, $agentIndex, $signal): Generator {
+                $owner->get()?->deliverSignalToAgentInDispatch($dispatch, $agentType, $agentIndex, $signal);
                 yield;
-            }, peerApplyContext: "signal to agent '{$agentType}'");
+            }, null, peerApplyContext: "signal to agent '{$agentType}'");
             return;
         }
+        $this->deliverSignalToAgentInDispatch($this->directSignalDispatch($signal), $agentType, $agentIndex, $signal);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original root delivery lifetime
+     * @param string $agentType Target agent type
+     * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param SignalDTO $signal Signal to deliver
+     * @throws InvalidArgumentException When a tracked subscription refusal cannot be named
+     * @throws InvalidFormatException When the tracked delivery has an invalid completion address
+     */
+    private function deliverSignalToAgentInDispatch(SignalDispatch $dispatch, string $agentType, ?string $agentIndex, SignalDTO $signal): void
+    {
         $signalType = $signal->signalType->getType();
         $signalName = $signal->signalName->getName();
         $agentLabel = $agentIndex !== null ? "{$agentType} (index: {$agentIndex})" : $agentType;
 
         $request = $signal->data;
         if ($signalType === SignalTypeConstants::PAGE_UNSUBSCRIBE && $request instanceof WebSocketPageUnsubscribeSignalDTO) {
-            $this->cancelPendingPageDeliveries($request->acceptKey, $request->page ?? $signalName);
+            $this->cancelPendingPageDeliveries($dispatch, $request->acceptKey, $request->page ?? $signalName);
         } elseif ($signalType === SignalTypeConstants::CONNECTION_CLOSE && $request instanceof WebSocketCloseSignalDTO) {
-            $this->cancelPendingPageDeliveries($request->acceptKey);
+            $this->cancelPendingPageDeliveries($dispatch, $request->acceptKey);
         }
         // This door receives only peer-forwarded frames; locally queued requests never enter it.
         if ($request instanceof CommandRequestDTO && $request->originNodeId !== null) {
@@ -4402,6 +4545,7 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $outcome = $this->sendSignalToAgentDestination(
+            $dispatch,
             $workerServer,
             new AgentDestination($agentType, $agentIndex),
             $signal,
@@ -5467,7 +5611,7 @@ abstract class DaemonManager extends BaseManager implements
     {
         $client->detachEventLoop();
         if ($client instanceof WebSocketClient) {
-            $this->cancelPendingPageDeliveries($client->acceptKey);
+            $this->cancelPendingPageDeliveries($this->directSignalDispatch(null), $client->acceptKey);
         }
         $socket = $client->getSocket();
         if ($socket !== null) {
@@ -5567,110 +5711,30 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function attachSignalDispatchEventLoop(): void
     {
-        $this->detachSignalDispatchEventLoop();
-        $this->signalDispatchWake = $this->eventLoop->createReadyWork(static function (): void {
-            // The poll has woken; the manager's dispatch phase follows it in this iteration.
-        });
-        $this->signalDispatchNotifier = $this->signalDispatchWake->markReady(...);
-        RtRowArena::process()->bindPassWake($this->signalDispatchNotifier);
-        $this->signalDispatchState();
-        $this->bindSignalDispatchRouter();
-        $this->identitySignalTimer = $this->eventLoop->createTimer(function (): void {
-            $this->identityDeadlinePending = true;
-            $this->queueIdentityDiscovery(deadline: true);
-        });
-        $this->rearmIdentitySignalTimer();
-        $this->signalDispatchWorkerServer = $this->findWorkerServer();
-        $this->signalDispatchWorkerServer?->setStopDispatchWake($this->signalDispatchNotifier);
-        $owner = WeakReference::create($this);
-        $wake = WeakReference::create($this->signalDispatchWake);
-        $this->sourceInterestDeliveryBinding = static function (Generator $delivery) use ($owner, $wake): void {
-            $manager = $owner->get();
-            if ($manager !== null && !$manager->shouldExit && $wake->get() !== null && $manager->signalDispatchWake === $wake->get()) {
-                $manager->queueSignalEffect(static fn(): Generator => $delivery);
-            }
-        };
-        $this->bindSourceInterestDeliverySources();
-        $this->bindParkedSignalOwners();
-        $this->wakeSignalDispatchRemainder();
+        $this->signalDispatcher()->attachEventLoop($this->eventLoop, $this->findWorkerServer(),
+            $this->agentManagerDaemon, $this->findPeerServer());
         $this->wakeRetirementRemainder();
     }
 
-    /** Releases the exact bound owners, even when the facade already names a replacement router. */
+    /** Releases only dispatch native bindings, keeping its retained progress. */
     private function detachSignalDispatchEventLoop(): void
     {
-        $this->signalHoldGeneration++;
-        if ($this->placementHoldWake !== null) {
-            $this->signalHoldPlacement?->removeHoldWake($this->placementHoldWake);
-        }
-        if ($this->workerHoldWake !== null) {
-            $this->signalHoldWorkerServer?->removeAgentHoldWake($this->workerHoldWake);
-        }
-        $this->signalHoldPlacement = null;
-        $this->signalHoldWorkerServer = null;
-        $this->placementHoldWake = null;
-        $this->workerHoldWake = null;
-        if ($this->signalDispatchState !== null) {
-            $this->signalDispatchState->agentProbe = null;
-            $this->signalDispatchState->agentDiscoveries = [];
-        }
-        foreach ($this->placementSignalTimers as $timer) {
-            $timer->close();
-        }
-        $this->placementSignalTimers = [];
-        if ($this->signalDispatchNotifier !== null) {
-            $this->signalDispatchRouter?->removeQueueWake($this->signalDispatchNotifier);
-            $this->signalDispatchWorkerServer?->removeStopDispatchWake($this->signalDispatchNotifier);
-            RtRowArena::process()->unbindPassWake($this->signalDispatchNotifier);
-        }
-        if ($this->sourceInterestDeliveryBinding !== null) {
-            $this->signalDispatchPeerServer?->get()?->removeSourceInterestDelivery($this->sourceInterestDeliveryBinding);
-            $this->signalDispatchAgentManager?->get()?->removeReaderInterestDelivery($this->sourceInterestDeliveryBinding);
-        }
-        $this->signalDispatchRouter = null;
-        $this->signalDispatchWorkerServer = null;
-        $this->signalDispatchAgentManager = null;
-        $this->signalDispatchPeerServer = null;
-        $this->sourceInterestDeliveryBinding = null;
-        $this->identitySignalTimer?->close();
-        $this->identitySignalTimer = null;
-        $this->signalDispatchWake?->close();
-        $this->signalDispatchWake = null;
-        $this->signalDispatchNotifier = null;
+        $this->signalDispatcher?->detachEventLoop();
     }
 
     /** Moves the existing exclusive FIFO binding only when its actual source owner changes. */
     private function bindSourceInterestDeliverySources(): void
     {
-        if ($this->sourceInterestDeliveryBinding === null) {
-            return;
-        }
-        if ($this->signalDispatchAgentManager?->get() !== $this->agentManagerDaemon) {
-            $this->signalDispatchAgentManager?->get()?->removeReaderInterestDelivery($this->sourceInterestDeliveryBinding);
-            $this->signalDispatchAgentManager = WeakReference::create($this->agentManagerDaemon);
-            $this->agentManagerDaemon->setReaderInterestDelivery($this->sourceInterestDeliveryBinding);
-        }
-        $peer = $this->findPeerServer();
-        if ($this->signalDispatchPeerServer?->get() !== $peer) {
-            $this->signalDispatchPeerServer?->get()?->removeSourceInterestDelivery($this->sourceInterestDeliveryBinding);
-            $this->signalDispatchPeerServer = $peer === null ? null : WeakReference::create($peer);
-            $peer?->setSourceInterestDelivery($this->sourceInterestDeliveryBinding);
-        }
+        $this->signalDispatcher?->bindSourceInterestDeliverySources($this->agentManagerDaemon, $this->findPeerServer());
     }
 
-    /** Moves this master's cue to the active facade without consuming either router's FIFO. */
-    private function bindSignalDispatchRouter(): void
+    /** Cues independent leader-page recovery when its router basis changes. */
+    public function noteSignalRouterChanged(): void
     {
         if ($this->leaderPageRecoveryOwner !== null && $this->leaderPageRecoveryBasisRouter?->get() !== Hilos::$sr) {
             $this->leaderPageRecoveryReady = true;
             $this->leaderPageRecoveryWork?->markReady();
         }
-        if ($this->signalDispatchNotifier === null || $this->signalDispatchRouter === Hilos::$sr) {
-            return;
-        }
-        $this->signalDispatchRouter?->removeQueueWake($this->signalDispatchNotifier);
-        $this->signalDispatchRouter = Hilos::$sr;
-        $this->signalDispatchRouter?->setQueueWake($this->signalDispatchNotifier);
     }
 
     /**
@@ -5680,40 +5744,26 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function discardSignalDispatch(): void
     {
-        $this->deliveryCleanup?->detach();
-        $this->detachSignalDispatchEventLoop();
-        $this->detachReHydrateEventLoop();
-        $this->detachLeaderPageRecoveryEventLoop();
-        $this->leaderPageRecoveryBasisOwner = null;
-        $this->leaderPageRecoveryBasisRouter = null;
-        $this->leaderPageRecoveryRevision = null;
         $failure = null;
         try {
-            $this->currentSignalDispatch?->cancel();
+            $this->signalDispatcher?->discard();
         } catch (Throwable $disposalFailure) {
             $failure = $disposalFailure;
         }
         try {
-            $this->signalDispatchState?->discard();
+            $this->detachReHydrateEventLoop();
         } catch (Throwable $disposalFailure) {
             $failure ??= $disposalFailure;
         }
         try {
-            $this->agentSignalHolds?->discard();
+            $this->detachLeaderPageRecoveryEventLoop();
         } catch (Throwable $disposalFailure) {
             $failure ??= $disposalFailure;
         }
-        foreach (['currentSignalDispatch', 'signalDispatchState', 'agentSignalHolds', 'identitySignals',
-            'pendingPageIndex', 'leaderPageRecovery', 'reHydrateContinuation', 'reHydrateContinuationRound'] as $field) {
+        foreach (['leaderPageRecovery', 'leaderPageRecoveryBasisOwner',
+            'leaderPageRecoveryBasisRouter', 'leaderPageRecoveryRevision', 'reHydrateContinuation', 'reHydrateContinuationRound'] as $field) {
             try {
                 $this->$field = null;
-            } catch (Throwable $disposalFailure) {
-                $failure ??= $disposalFailure;
-            }
-        }
-        foreach (['parkedSignals', 'pendingPageDeliveries'] as $field) {
-            try {
-                $this->$field = [];
             } catch (Throwable $disposalFailure) {
                 $failure ??= $disposalFailure;
             }
@@ -5758,6 +5808,14 @@ abstract class DaemonManager extends BaseManager implements
         $this->wakeRetirementRemainder();
     }
 
+    /** Retired masters cannot bind a new held-source generation. */
+    private function bindParkedSignalOwners(): void
+    {
+        if (!$this->nativeOwnersRetired) {
+            $this->signalDispatcher()->bindParkedSignalOwners($this->findWorkerServer());
+        }
+    }
+
     /**
      * Dispatch accumulated signals
      *
@@ -5773,79 +5831,8 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function dispatchSignals(): void
     {
-        $this->signalDispatchWake?->cancel();
         $this->bindParkedSignalOwners();
-        if ($this->identityRuntime?->get() !== Hilos::$rt || $this->identityBrowser?->get() !== Hilos::$browser) {
-            $this->identityRuntime = Hilos::$rt === null ? null : WeakReference::create(Hilos::$rt);
-            $this->identityBrowser = Hilos::$browser === null ? null : WeakReference::create(Hilos::$browser);
-            $this->queueIdentityDiscovery();
-        }
-        $this->captureSignalDispatchPrefixes();
-        try {
-            try {
-                $this->drainSignals();
-            } finally {
-                $this->uploadMemory?->afterDispatch();
-            }
-            $state = $this->signalDispatchState();
-            if ($state->stop?->isReadyForAccounting()) {
-                $state->stop->completeAfterAccounting();
-                $state->stop->workerServer->completeStopDispatch($state->stop->workerGeneration, []);
-            }
-            if ($state->browsers?->isReadyForAccounting()) {
-                $state->browsers->completeAfterAccounting();
-            }
-        } finally {
-            $this->wakeSignalDispatchRemainder();
-        }
-    }
-
-    /**
-     * Advance original FIFO and physical continuations; completed payload locals end before accounting.
-     *
-     * @throws InvalidArgumentException When a queued signal cannot be named
-     * @throws EnvException When destination configuration is invalid
-     * @throws ClusterConfigurationException When a node-addressed destination cannot resolve its node
-     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
-     */
-    private function drainSignals(): void
-    {
-        $workerServer = $this->findWorkerServer();
-        if ($workerServer === null) {
-            $state = $this->signalDispatchState();
-            for ($step = 0; $step < self::SIGNAL_DISPATCH_STEPS_PER_PORTION; $step++) {
-                if ($step % self::SIGNAL_DISPATCH_SCHEDULING_GROUP_STEPS === 0 && ($state->stop?->hasRunnableValidation() ?? false)) {
-                    $state->stop?->advanceValidation($this->agentSignalHolds(), key($state->identities), key($state->peers), key($state->effects));
-                    continue;
-                }
-                if ($step % self::SIGNAL_DISPATCH_SCHEDULING_GROUP_STEPS === 1 && ($state->browsers?->hasRunnableValidation() ?? false)) {
-                    $state->browsers?->advanceValidation($this->agentSignalHolds(), key($state->identities),
-                        key($state->peers), key($state->effects));
-                    continue;
-                }
-                switch ($this->selectSignalService(false)) {
-                    case self::SIGNAL_ORDINARY_SERVICE:
-                        if ($state->active !== null) {
-                            $this->advanceSignalDelivery($state->active);
-                        } else {
-                            $peerId = key($state->peers);
-                            $state->active = $state->peers[$peerId];
-                            unset($state->peers[$peerId]);
-                            $this->trackSignalDispatch($state->active);
-                        }
-                        break;
-                    case self::SIGNAL_CANCELLATION_SERVICE:
-                        $this->settleCommandCancellation($this->readyCommandCancellationId());
-                        break;
-                    case self::SIGNAL_EFFECT_SERVICE:
-                        $this->advanceSignalEffect(key($state->effects));
-                        break;
-                }
-            }
-            return;
-        }
-        $state = $this->signalDispatchState();
-        $webSocketServer = $this->findWebSocketServer();
+        $this->signalDispatcher()->prepareDispatch();
         $commandServer = null;
         foreach ($this->servers as $server) {
             if ($server instanceof CommandServer) {
@@ -5853,436 +5840,47 @@ abstract class DaemonManager extends BaseManager implements
                 break;
             }
         }
-
-        $httpServer = $this->findHttpServer();
-        $peerServer = $this->findPeerServer();
-        for ($step = 0; $step < self::SIGNAL_DISPATCH_STEPS_PER_PORTION; $step++) {
-            // A fixed share keeps finite validation progressing under continuous later intake.
-            if ($step % self::SIGNAL_DISPATCH_SCHEDULING_GROUP_STEPS === 0 && ($state->stop?->hasRunnableValidation() ?? false)) {
-                $state->stop?->advanceValidation($this->agentSignalHolds(), key($state->identities), key($state->peers), key($state->effects));
-                continue;
-            }
-            if ($step % self::SIGNAL_DISPATCH_SCHEDULING_GROUP_STEPS === 1 && ($state->browsers?->hasRunnableValidation() ?? false)) {
-                $state->browsers?->advanceValidation($this->agentSignalHolds(), key($state->identities), key($state->peers), key($state->effects));
-                continue;
-            }
-            if ($step % self::SIGNAL_DISPATCH_SCHEDULING_GROUP_STEPS === 2
-                && ($state->agentProbe !== null || $state->agentDiscoveries !== [])) {
-                if ($state->agentProbe === null) {
-                    $key = key($state->agentDiscoveries);
-                    $state->agentProbe = $state->agentDiscoveries[$key];
-                    unset($state->agentDiscoveries[$key]);
-                }
-                $this->advanceSignalDiscovery($state->agentProbe);
-                continue;
-            }
-            if ($step % self::SIGNAL_DISPATCH_SCHEDULING_GROUP_STEPS === 3
-                && ($state->identityProbe !== null || $state->identityDiscoveries !== [])) {
-                if ($state->identityProbe === null) {
-                    $key = key($state->identityDiscoveries);
-                    $state->identityProbe = $state->identityDiscoveries[$key];
-                    unset($state->identityDiscoveries[$key]);
-                }
-                $this->advanceSignalDiscovery($state->identityProbe);
-                continue;
-            }
-            switch ($this->selectSignalService(true)) {
-                case self::SIGNAL_RELEASE_SERVICE:
-                    $this->advanceReleasedSignal($workerServer, $peerServer);
-                    break;
-                case self::SIGNAL_ORDINARY_SERVICE:
-                    $this->advanceOrdinarySignal($workerServer, $webSocketServer, $commandServer, $httpServer, $peerServer);
-                    break;
-                case self::SIGNAL_CANCELLATION_SERVICE:
-                    $this->settleCommandCancellation($this->readyCommandCancellationId());
-                    break;
-                case self::SIGNAL_EFFECT_SERVICE:
-                    $this->advanceSignalEffect(key($state->effects));
-                    break;
-            }
-        }
-    }
-
-    /**
-     * Ready categories rotate after each actual step, including failures. Empty categories
-     * donate their share; none can grow the wait ahead of another category's next step.
-     *
-     * @param bool $withWorkers Whether ordinary intake and one-agent releases can be served
-     * @return ?int Next nonempty service, absent when only parked work remains
-     */
-    private function selectSignalService(bool $withWorkers): ?int
-    {
-        $state = $this->signalDispatchState();
-        for ($candidate = 0; $candidate < self::SIGNAL_SERVICE_COUNT; $candidate++) {
-            $service = $state->nextService;
-            $state->nextService = ($service + 1) % self::SIGNAL_SERVICE_COUNT;
-            $ready = match ($service) {
-                self::SIGNAL_RELEASE_SERVICE => $withWorkers && ($state->released !== null || $state->suspendedReleases !== []
-                    || $this->agentSignalHolds()->hasReleased()),
-                self::SIGNAL_ORDINARY_SERVICE => $state->active !== null || $state->peers !== []
-                    || ($withWorkers && ($state->identities !== [] || $state->retired !== [] || $state->intake->hasQueuedSignals())),
-                self::SIGNAL_CANCELLATION_SERVICE => $this->readyCommandCancellationId() !== null,
-                self::SIGNAL_EFFECT_SERVICE => $state->effects !== [],
-            };
-            if ($ready) {
-                return $service;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * @param WorkerServer $workerServer Original worker transport
-     * @param ?PeerServer $peerServer Original peer transport
-     * @throws Throwable When a selected hold, predecessor or delivery fails
-     */
-    private function advanceReleasedSignal(WorkerServer $workerServer, ?PeerServer $peerServer): void
-    {
-        $state = $this->signalDispatchState();
-        if ($state->released?->preemptHoldId !== null) {
-            $holdId = $state->released->preemptHoldId;
-            $state->released->preemptHoldId = null;
-            $hold = $this->agentSignalHolds()->get($holdId);
-            if ($hold !== null && $this->agentSignalHolds()->isCanceled($hold)) {
-                $this->agentSignalHolds()->settle($holdId);
-            } elseif ($hold?->released) {
-                $state->suspendedReleases[] = $state->released->heldId;
-                $state->released = $this->createReleasedAgentDispatch($hold, $workerServer, $peerServer);
-                $this->agentSignalHolds()->begin($holdId, $state->released);
-            }
-            unset($hold);
-            return;
-        }
-        if ($state->released === null && $state->suspendedReleases !== []) {
-            $state->released = $this->agentSignalHolds()->get(array_pop($state->suspendedReleases))?->dispatch;
-            return;
-        }
-        if ($state->released === null && ($holdId = $this->agentSignalHolds()->firstReleasedId()) !== null) {
-            $hold = $this->agentSignalHolds()->get($holdId);
-            if ($this->agentSignalHolds()->isCanceled($hold)) {
-                $this->agentSignalHolds()->settle($holdId);
-                unset($hold);
-                return;
-            }
-            $state->released = $this->createReleasedAgentDispatch($hold, $workerServer, $peerServer);
-            $this->agentSignalHolds()->begin($holdId, $state->released);
-            unset($hold);
-            return;
-        }
-        if ($state->released !== null) {
-            $this->advanceSignalDelivery($state->released);
-        }
-    }
-
-    /**
-     * Active ordinary work retains its whole cursor. A discovered same-agent predecessor
-     * settles through the existing release slot before this cursor may resume.
-     *
-     * @param WorkerServer $workerServer Original worker transport
-     * @param ?WebSocketServer $webSocketServer Original browser transport
-     * @param ?CommandServer $commandServer Original command transport
-     * @param ?HttpServer $httpServer Original HTTP transport
-     * @param ?PeerServer $peerServer Original peer transport
-     * @throws Throwable When an original admission, predecessor or delivery fails
-     */
-    private function advanceOrdinarySignal(WorkerServer $workerServer, ?WebSocketServer $webSocketServer,
-        ?CommandServer $commandServer, ?HttpServer $httpServer, ?PeerServer $peerServer): void
-    {
-        $state = $this->signalDispatchState();
-        if ($state->active !== null) {
-            $predecessor = $state->active->preemptHoldId === null ? null : $this->agentSignalHolds()->get($state->active->preemptHoldId);
-            if ($predecessor !== null && !$predecessor->isParked()) {
-                unset($predecessor);
-                $this->advanceReleasedSignal($workerServer, $peerServer);
-                return;
-            }
-            unset($predecessor);
-            $state->active->preemptHoldId = null;
-            $this->advanceSignalDelivery($state->active);
-            return;
-        }
-        $admission = $this->selectSignalAdmission();
-        if ($admission === self::SIGNAL_IDENTITY_ADMISSION) {
-            $identityId = key($state->identities);
-            $identity = $this->identitySignals()->releasedEntry($identityId);
-            if ($identity === null || $this->identitySignals()->isCanceled($identity)) {
-                if ($identity !== null) {
-                    $this->identitySignals()->settle($identity->id);
-                } else {
-                    unset($state->identities[$identityId]);
-                    $state->stop?->noteIdentitySettled($identityId);
-                    $state->browsers?->noteIdentitySettled($identityId);
-                }
-                unset($identity);
-                return;
-            }
-            $signal = $state->identities[$identityId];
-            $this->identitySignals()->settle($identity->id);
-            unset($identity);
-            $state->active = $this->createSignalDispatch($signal, true, $workerServer, $webSocketServer,
-                $commandServer, $httpServer, $peerServer);
-            $state->active->identityReleaseId = $identityId;
-        } elseif ($admission === self::SIGNAL_PEER_ADMISSION) {
-            $peerId = key($state->peers);
-            $state->active = $state->peers[$peerId];
-            unset($state->peers[$peerId]);
-        } elseif (($intakeId = key($state->retired)) !== null) {
-            $intake = $state->retired[$intakeId];
-            if (!$intake->hasQueuedSignals()) {
-                unset($state->retired[$intakeId]);
-                return;
-            }
-            $state->active = $this->admitSignalInput($intake, $workerServer, $webSocketServer,
-                $commandServer, $httpServer, $peerServer);
-        } elseif ($state->intake->hasQueuedSignals()) {
-            $state->active = $this->admitSignalInput($state->intake, $workerServer, $webSocketServer,
-                $commandServer, $httpServer, $peerServer);
-        }
-        $this->trackSignalDispatch($state->active);
-        unset($signal, $intake);
-    }
-
-    /**
-     * Admission rotates between ready identity, peer and original input FIFOs. An active
-     * lifetime finishes before another is admitted; each FIFO keeps its original head.
-     *
-     * @return int Selected ready queue; callers establish that ordinary work is available
-     * @throws LogicException When no ordinary queue is ready
-     */
-    private function selectSignalAdmission(): int
-    {
-        $state = $this->signalDispatchState();
-        for ($candidate = 0; $candidate < self::SIGNAL_ADMISSION_COUNT; $candidate++) {
-            $admission = $state->nextAdmission;
-            $state->nextAdmission = ($admission + 1) % self::SIGNAL_ADMISSION_COUNT;
-            $ready = match ($admission) {
-                self::SIGNAL_IDENTITY_ADMISSION => $state->identities !== [],
-                self::SIGNAL_PEER_ADMISSION => $state->peers !== [],
-                self::SIGNAL_INPUT_ADMISSION => $state->retired !== [] || $state->intake->hasQueuedSignals(),
-            };
-            if ($ready) {
-                return $admission;
-            }
-        }
-        throw new LogicException('No ordinary signal admission is ready');
-    }
-
-    /** @return SignalDispatchState Exact original intake and retained guarded progress */
-    private function signalDispatchState(): SignalDispatchState
-    {
-        Hilos::$sr->setSubscriptionCleanup($this->deliveryCleanup());
-        $state = $this->signalDispatchState ??= new SignalDispatchState(Hilos::$sr);
-        if ($state->intake->router !== Hilos::$sr) {
-            $state->intake->retire();
-            $state->retiredRemaining += $state->intake->getWatermark() - $state->intake->consumed;
-            $state->retired[$state->intake->id] = $state->intake;
-            $state->intake = new SignalDispatchIntake(++$state->intakeSequence, Hilos::$sr);
-        }
-        $this->bindSignalDispatchRouter();
-        return $state;
-    }
-
-    /**
-     * @param SignalDispatchIntake $intake Original consuming router API and its finite position
-     * @param WorkerServer $workers Worker transport
-     * @param ?WebSocketServer $browsers Browser transport
-     * @param ?CommandServer $commands Command transport
-     * @param ?HttpServer $http HTTP transport
-     * @param ?PeerServer $peers Peer transport
-     * @return SignalDispatch Original admitted lifetime
-     */
-    private function admitSignalInput(SignalDispatchIntake $intake, WorkerServer $workers, ?WebSocketServer $browsers,
-        ?CommandServer $commands, ?HttpServer $http, ?PeerServer $peers): SignalDispatch
-    {
-        $state = $this->signalDispatchState();
-        $wasRetired = $intake !== $state->intake;
-        $signal = $intake->consumeSignal();
-        $state->admissionSequence++;
-        if ($wasRetired) {
-            $state->retiredRemaining--;
-        }
-        $dispatch = $signal instanceof LocalClientSignalBatch
-            ? new SignalDispatch(null, fn(SignalDispatch $dispatch): Generator => $this->localClientSignalDelivery($dispatch, $signal),
-                cleanup: $this->signalDispatchNotifier === null ? null : $this->deliveryCleanup())
-            : $this->createSignalDispatch($signal, false, $workers, $browsers, $commands, $http, $peers);
-        $dispatch->intakeId = $intake->id;
-        $dispatch->inputPosition = $intake->consumed;
-        $payload = $signal instanceof SignalDTO ? $signal->data : null;
-        if (($payload instanceof CommandRequestDTO || $payload instanceof HttpRequestDTO)
-            && ($state->abandonedCommands[$payload->correlationId]->inputTail ?? 0) >= $state->admissionSequence) {
-            $dispatch->cancel();
-        }
-        return $dispatch;
-    }
-
-    /**
-     * The batch's original FIFO entry settles after all physical sends. Later input stays
-     * behind it, and stop/browser prefixes account this one retained obligation in full.
-     *
-     * @param SignalDispatch $dispatch Original local batch lifetime
-     * @param LocalClientSignalBatch $batch Shared frame and finite indexed transport admissions
-     * @return Generator<int, void> Effect-free admission, then one preparation, physical visit or send step
-     * @throws Throwable When original preparation, candidate source or admission callback fails
-     */
-    private function localClientSignalDelivery(SignalDispatch $dispatch, LocalClientSignalBatch $batch): Generator
-    {
-        yield;
-        $dispatch->phase = SignalDispatchPhase::Destinations;
-        while (!$batch->isComplete()) {
-            $target = $batch->consumeTarget();
-            if ($target !== null) {
-                if (!$dispatch->framePrepared) {
-                    $dispatch->frame = $this->prepareSignalFrame($batch->signal);
-                    $dispatch->framePrepared = true;
-                }
-                if ($dispatch->frame !== null) {
-                    yield from $this->walkTargetClientFrame($target, $dispatch->frame, null);
-                }
-            }
-            unset($target);
-            yield;
-        }
-    }
-
-    /**
-     * @param SignalDispatch $dispatch Newly admitted ordinary, identity or peer lifetime
-     */
-    private function trackSignalDispatch(SignalDispatch $dispatch): void
-    {
-        $state = $this->signalDispatchState();
-        if ($state->stop?->track($dispatch)) {
-            $dispatch->stopPrefixId = $state->stop->id;
-        }
-        if ($state->browsers?->track($dispatch)) {
-            $dispatch->browserPrefixId = $state->browsers->id;
-        }
-    }
-
-    /**
-     * Later independent effects cannot extend a selected delivery's prerequisites. Descendants
-     * retain their causal family; reaching one still drains every older head in the same FIFO.
-     *
-     * @param ?SignalDispatch $dispatch Selected original or one-agent lifetime
-     * @throws Throwable When a prerequisite or delivery fails under the existing manager guard
-     */
-    private function advanceSignalDelivery(?SignalDispatch &$dispatch): void
-    {
-        $state = $this->signalDispatchState();
-        $dispatch->effectCohortWatermark ??= $state->effectCohortSequence;
-        $first = $state->effectCohorts->successor(null);
-        if (($first !== null && $first <= $dispatch->effectCohortWatermark)
-            || ($dispatch->effectCohortId !== null && isset($state->effectCohortCounts[$dispatch->effectCohortId]))) {
-            $effectId = key($state->effects);
-            if ($effectId !== null) {
-                $this->advanceSignalEffect($effectId);
-                return;
-            }
-        }
-        $this->advanceOwnedSignal($dispatch);
-    }
-
-    /**
-     * @param ?SignalDispatch $dispatch Actual retained owner slot, cleared before receipt accounting
-     * @throws Throwable When an ordinary delivery fails under the existing manager guard
-     */
-    private function advanceOwnedSignal(?SignalDispatch &$dispatch): void
-    {
         try {
-            $this->runSignalPortion($dispatch, 1);
-        } catch (Throwable $failure) {
-            if ($dispatch->peerApplyContext !== null) {
-                Logger::warning("Failed to apply peer {$dispatch->peerApplyContext}: {$failure->getMessage()}");
-            } elseif ($dispatch->peerOrigin !== null) {
-                Logger::warning("Failed to fan out peer client signal from node '{$dispatch->peerOrigin}': {$failure->getMessage()}");
-            } else {
-                throw $failure;
-            }
+            $this->signalDispatcher()->dispatch(
+                $this->findWorkerServer(), $this->findWebSocketServer(), $commandServer,
+                $this->findHttpServer(), $this->findPeerServer(), $this->shutdownStartTime !== null,
+            );
         } finally {
-            if (!$dispatch->hasWork()) {
-                $state = $this->signalDispatchState();
-                $state->stop?->settle($dispatch);
-                $state->browsers?->settle($dispatch);
-                if ($dispatch->heldId !== null && $this->agentSignalHolds()->get($dispatch->heldId)?->dispatch === $dispatch) {
-                    $this->agentSignalHolds()->settle($dispatch->heldId);
-                }
-                $dispatch = null;
-            }
+            $this->wakeSignalDispatchRemainder();
         }
     }
 
     /**
-     * @param ?Generator<int, void> $probe Finite fact or deadline discovery, runnable until its cohort ends
+     * Capture each exact owner/generation and the independent final-browser boundary once.
+     *
+     * @throws LogicException When a new prefix cannot capture its original intake
      */
-    private function advanceSignalDiscovery(?Generator &$probe): void
-    {
-        if ($probe->valid()) {
-            $probe->next();
-        }
-        if (!$probe->valid()) {
-            $probe = null;
-        }
-    }
-
-    /** Capture each exact owner/generation and the independent final-browser boundary once. */
     private function captureSignalDispatchPrefixes(): void
     {
-        $state = $this->signalDispatchState();
-        $workers = $this->findWorkerServer();
-        $generation = $workers?->pendingStopDispatch();
-        if ($generation !== null && ($state->stop?->workerServer !== $workers || $state->stop?->workerGeneration !== $generation)) {
-            $state->stop = $this->newSignalDispatchPrefix($workers, $generation);
-        }
-        if ($state->browsers === null && $this->shutdownStartTime !== null && ($workers === null || $workers->isReadyToShutdown())) {
-            $state->browsers = $this->newSignalDispatchPrefix();
-        }
+        $this->signalDispatcher()->captureSignalDispatchPrefixes($this->findWorkerServer(), $this->shutdownStartTime !== null);
     }
 
     /**
      * @param ?WorkerServer $workers Exact worker stop owner, absent for the independent browser boundary
      * @param ?int $generation Its captured stop generation
      * @return SignalDispatchPrefix Finite metadata debt, including already active physical work
+     * @throws LogicException When a prefix cannot capture its original intake
      */
     private function newSignalDispatchPrefix(?WorkerServer $workers = null, ?int $generation = null): SignalDispatchPrefix
     {
-        $state = $this->signalDispatchState();
-        $prefix = new SignalDispatchPrefix(++$state->prefixSequence, $state->intake, $state->retired,
-            $this->agentSignalHolds()->getWatermark(), $state->identitySequence, $state->peerSequence, $workers, $generation,
-            $state->effectSequence);
-        if ($state->active !== null) {
-            $prefix->captureActive($state->active);
-            if ($workers !== null) {
-                $state->active->stopPrefixId = $prefix->id;
-            } else {
-                $state->active->browserPrefixId = $prefix->id;
-            }
-        }
-        return $prefix;
+        return $this->signalDispatcher()->newSignalDispatchPrefix($workers, $generation);
     }
 
     /** @return bool Actual ready continuations; blocked identity/start/placement occupancy is excluded */
     private function hasRunnableSignalDispatch(): bool
     {
-        $state = $this->signalDispatchState();
-        $workers = $this->findWorkerServer();
-        $generation = $workers?->pendingStopDispatch();
-        return $state->active !== null || $state->peers !== [] || $state->effects !== []
-            || $this->readyCommandCancellationId() !== null
-            || ($workers !== null && ($state->identityProbe !== null || $state->identityDiscoveries !== []))
-            || ($workers !== null && ($state->agentProbe !== null || $state->agentDiscoveries !== []))
-            || ($workers !== null && ($state->released !== null || $state->suspendedReleases !== [] || $this->agentSignalHolds()->hasReleased()
-                || $state->identities !== [] || $state->retired !== [] || $state->intake->hasQueuedSignals()))
-            || ($state->stop?->hasRunnableValidation() ?? false)
-            || ($state->browsers?->hasRunnableValidation() ?? false)
-            || ($generation !== null && ($state->stop?->workerServer !== $workers || $state->stop?->workerGeneration !== $generation));
+        return $this->signalDispatcher()->hasRunnableSignalDispatch($this->findWorkerServer());
     }
 
     /** Re-cues only runnable retained work; the ready callback never delivers a frame. */
     private function wakeSignalDispatchRemainder(): void
     {
-        $this->signalDispatchWake?->cancel();
-        if ($this->signalDispatchWake !== null && $this->hasRunnableSignalDispatch()) {
-            $this->signalDispatchWake->markReady();
-        }
+        $this->signalDispatcher()->wakeRemainder($this->findWorkerServer());
     }
 
     /**
@@ -6292,236 +5890,32 @@ abstract class DaemonManager extends BaseManager implements
     private function wakeRetirementRemainder(): void
     {
         if (RtRowArena::process()->hasPendingRetirement()) {
-            $this->signalDispatchWake?->markReady();
-        }
-    }
-
-    /** @return ?int Oldest finite caller cancellation ready to forget, excluding unconsumed input */
-    private function readyCommandCancellationId(): ?int
-    {
-        $state = $this->signalDispatchState;
-        $id = $state === null ? null : key($state->commandCancellations);
-        return $id !== null && $state->commandCancellations[$id]->holdsComplete
-            && $state->admissionSequence >= $state->commandCancellations[$id]->inputTail ? $id : null;
-    }
-
-    /** @param int $id Exact completed cancellation generation */
-    private function settleCommandCancellation(int $id): void
-    {
-        $state = $this->signalDispatchState();
-        $cancellation = $state->commandCancellations[$id];
-        unset($state->commandCancellations[$id]);
-        if (($state->abandonedCommands[$cancellation->correlationId] ?? null) === $cancellation) {
-            unset($state->abandonedCommands[$cancellation->correlationId]);
+            $this->signalDispatcher?->markReady();
         }
     }
 
     /**
-     * Keeps a report's original finite cohort before later destination delivery. The report
-     * may settle one bounded portion immediately; only the guarded dispatch phase delivers
-     * released frames. A synchronous nested report joins the same FIFO without recursion.
-     *
-     * @param Closure(SignalDispatch): Generator<int, void> $work Report bookkeeping and its ordered final effects
-     * @param ?SignalDispatch $origin Explicit retiring metadata owner, absent to inherit the current guarded context
-     * @param ?string $peerApplyContext Original peer apply warning context, inherited only by its cleanup effects
-     * @param ?RtReplicaConfirmation $rtConfirmation Original RT receipt interval, absent for other lifecycle work
+     * @param Closure(SignalDispatch): Generator<int, void> $work Finite work bound to its created lifetime
+     * @param ?SignalDispatch $origin Exact causal owner; null starts an independent root
+     * @param ?string $peerApplyContext Original peer warning context
+     * @param ?RtReplicaConfirmation $rtConfirmation Original receipt interval
      */
-    private function queueSignalEffect(
-        Closure $work,
-        ?SignalDispatch $origin = null,
-        ?string $peerApplyContext = null,
-        ?RtReplicaConfirmation $rtConfirmation = null,
+    private function queueSignalEffectInDispatch(
+        Closure $work, ?SignalDispatch $origin, ?string $peerApplyContext = null, ?RtReplicaConfirmation $rtConfirmation = null,
     ): void {
-        $state = $this->signalDispatchState();
-        $effect = new SignalDispatch(null, $work, cleanup: $this->signalDispatchNotifier === null ? null : $this->deliveryCleanup());
-        $effect->effectId = ++$state->effectSequence;
-        $origin ??= $this->currentSignalDispatch;
-        $effect->peerApplyContext = $peerApplyContext ?? $origin?->peerApplyContext;
-        $effect->rtConfirmation = $rtConfirmation;
-        $hold = $origin?->heldId === null ? null : $this->agentSignalHolds()->get($origin->heldId);
-        $effect->stopPrefixId = $origin?->stopPrefixId;
-        $effect->browserPrefixId = $origin?->browserPrefixId;
-        if ($origin !== null) {
-            if ($state->stop !== null && ($state->stop->includesDispatch($origin) || ($hold !== null && $state->stop->includesHold($hold)))) {
-                $effect->stopPrefixId = $state->stop->id;
-            }
-            if ($state->browsers !== null && ($state->browsers->includesDispatch($origin)
-                || ($hold !== null && $state->browsers->includesHold($hold)))) {
-                $effect->browserPrefixId = $state->browsers->id;
-            }
+        $effect = $this->signalDispatcher()->queueSignalEffect(
+            $work, $origin, $peerApplyContext, $rtConfirmation,
+        );
+        if ($origin === null || $origin->isDirect()) {
+            $this->signalDispatcher()->advanceInitialSignalEffect($effect);
         }
-        unset($hold);
-        $cohortId = $origin?->effectCohortId;
-        if ($cohortId === null || !isset($state->effectCohortCounts[$cohortId])) {
-            $cohortId = ++$state->effectCohortSequence;
-            $state->effectCohorts->add($cohortId);
-        }
-        if ($origin !== null) {
-            $origin->effectCohortId = $cohortId;
-        }
-        $effect->effectCohortId = $cohortId;
-        $state->effectCohortCounts[$cohortId] = ($state->effectCohortCounts[$cohortId] ?? 0) + 1;
-        $state->effects[$effect->effectId] = $effect;
-        $this->trackSignalDispatch($effect);
-        if ($this->currentSignalDispatch === null && key($state->effects) === $effect->effectId) {
-            for ($step = 0; $step < self::AGENT_REPORT_STEPS_PER_PORTION && isset($state->effects[$effect->effectId]); $step++) {
-                $this->advanceSignalEffect($effect->effectId);
-            }
-        }
-        $this->signalDispatchWake?->markReady();
+        $this->signalDispatcher?->markReady();
     }
 
     /** @return DeliveryCleanup Existing guarded effects, without a strong callback retaining this manager */
-    private function deliveryCleanup(): DeliveryCleanup
+    public function deliveryCleanup(): DeliveryCleanup
     {
-        if ($this->deliveryCleanup === null) {
-            $manager = WeakReference::create($this);
-            $this->deliveryCleanup = new DeliveryCleanup(static function (Generator $cleanup, ?SignalDispatch $origin = null) use ($manager): void {
-                $owner = $manager->get();
-                if ($owner !== null) {
-                    $owner->queueSignalEffect(static fn(): Generator => $cleanup, $origin);
-                } else {
-                    foreach ($cleanup as $_) {
-                    }
-                }
-            });
-        }
-        return $this->deliveryCleanup;
-    }
-
-    /** @param int $id Head finite lifecycle cohort */
-    private function advanceSignalEffect(int $id): void
-    {
-        $state = $this->signalDispatchState();
-        $cohortId = $state->effects[$id]->effectCohortId;
-        $this->trackSignalDispatch($state->effects[$id]);
-        try {
-            $this->advanceOwnedSignal($state->effects[$id]);
-        } finally {
-            if ($state->effects[$id] === null) {
-                unset($state->effects[$id]);
-                if ($cohortId !== null && --$state->effectCohortCounts[$cohortId] === 0) {
-                    unset($state->effectCohortCounts[$cohortId]);
-                    $state->effectCohorts->remove($cohortId);
-                }
-            }
-        }
-    }
-
-    /**
-     * Transfers completion ownership before removing a qualifying captured wait. A report
-     * received after capture cannot make its earlier held destination disappear from the debt.
-     *
-     * @param AgentSignalHold $hold Original pending destination
-     */
-    private function captureSignalEffectHold(AgentSignalHold $hold): void
-    {
-        $effect = $this->currentSignalDispatch;
-        if ($effect?->effectId === null) {
-            return;
-        }
-        $state = $this->signalDispatchState();
-        if ($state->stop !== null && !$state->stop->complete && $state->stop->includesHold($hold)) {
-            $effect->stopPrefixId = $state->stop->id;
-            $state->stop->captureActive($effect);
-        }
-        if ($state->browsers !== null && !$state->browsers->complete && $state->browsers->includesHold($hold)) {
-            $effect->browserPrefixId = $state->browsers->id;
-            $state->browsers->captureActive($effect);
-        }
-    }
-
-    /**
-     * The guarded owner retains this lifetime until its one-time terminal phase finishes.
-     *
-     * @param SignalDTO $signal Original envelope
-     * @param bool $wasParked Whether the identity wait already ended
-     * @param WorkerServer $workerServer Owning worker server
-     * @param ?WebSocketServer $webSocketServer Owning browser server
-     * @param ?CommandServer $commandServer Console reply server
-     * @param ?HttpServer $httpServer HTTP reply server
-     * @param ?PeerServer $peerServer Peer transport of this node
-     * @return SignalDispatch One signal's exact delivery lifetime
-     */
-    private function createSignalDispatch(
-        SignalDTO $signal,
-        bool $wasParked,
-        WorkerServer $workerServer,
-        ?WebSocketServer $webSocketServer,
-        ?CommandServer $commandServer,
-        ?HttpServer $httpServer,
-        ?PeerServer $peerServer,
-    ): SignalDispatch {
-        $dispatch = new SignalDispatch($signal, fn(SignalDispatch $dispatch): Generator => $this->walkSignal(
-            $dispatch, $wasParked, $workerServer, $webSocketServer, $commandServer, $httpServer, $peerServer,
-        ), cleanup: $this->signalDispatchNotifier === null ? null : $this->deliveryCleanup());
-        $dispatch->precedingHoldWatermark = $this->agentSignalHolds()->getWatermark();
-        return $dispatch;
-    }
-
-    /**
-     * Resolved local lookups are visible only to helpers executing this exact portion.
-     * No current-dispatch context escapes a yield into other socket or manager work.
-     *
-     * @param SignalDispatch $dispatch Exact lifetime to advance
-     * @param int $steps Maximum bounded steps
-     * @throws Throwable When an existing delivery or terminal effect fails
-     */
-    private function runSignalPortion(SignalDispatch $dispatch, int $steps): void
-    {
-        $previous = $this->currentSignalDispatch;
-        $this->currentSignalDispatch = $dispatch;
-        $intake = $this->signalDispatchState?->intake;
-        $before = $intake?->getWatermark();
-        $hold = $dispatch->heldId === null ? null : $this->agentSignalHolds()->get($dispatch->heldId);
-        $canceledHold = $hold !== null && $this->agentSignalHolds()->isCanceled($hold);
-        $stop = $this->signalDispatchState?->stop;
-        $stopOwned = $stop !== null && ($dispatch->stopPrefixId === $stop->id || ($hold !== null && $stop->includesHold($hold)));
-        $browsers = $this->signalDispatchState?->browsers;
-        $browserOwned = $browsers !== null && ($dispatch->browserPrefixId === $browsers->id || ($hold !== null && $browsers->includesHold($hold)));
-        unset($hold);
-        try {
-            $signal = $dispatch->getSignal();
-            if ($canceledHold) {
-                $dispatch->cancel();
-            } elseif ($dispatch->groupOperation !== null && !$dispatch->groupOperation->isCurrent()) {
-                $this->guardGroupOperation($dispatch);
-            } elseif ($dispatch->rtConfirmation !== null && !$dispatch->rtConfirmation->isCurrent(
-                $this->agentManagerDaemon->rtReplicaOriginMap(), $this->agentManagerDaemon->rtNodeSourceMap(),
-            )) {
-                $dispatch->cancel();
-            } elseif ($dispatch->clientResolved && $signal !== null
-                && ($this->isAbandonedPageDelivery($signal, $dispatch->release?->localOnly ?? false)
-                    || $this->isStalePageRecovery($signal))) {
-                $dispatch->cancel();
-            } else {
-                $dispatch->runPortion($steps);
-            }
-        } catch (Throwable $failure) {
-            if ($stopOwned || ($stop?->includesDispatch($dispatch) ?? false)) {
-                $stop->fail();
-            }
-            if ($browserOwned || ($browsers?->includesDispatch($dispatch) ?? false)) {
-                $browsers->fail();
-            }
-            try {
-                $dispatch->fail();
-            } catch (Throwable) {
-                // The original delivery failure remains the guard's failure after independent cleanup.
-            }
-            throw $failure;
-        } finally {
-            if ($intake !== null && $before !== null && $intake->router === Hilos::$sr) {
-                $last = $intake->getWatermark();
-                if ($stopOwned || ($stop !== null && $dispatch->stopPrefixId === $stop->id)) {
-                    $stop->addChildren($intake, $before + 1, $last);
-                }
-                if ($browserOwned || ($browsers !== null && $dispatch->browserPrefixId === $browsers->id)) {
-                    $browsers->addChildren($intake, $before + 1, $last);
-                }
-            }
-            $this->currentSignalDispatch = $previous;
-        }
+        return $this->signalDispatcher()->deliveryCleanup();
     }
 
     /**
@@ -6529,7 +5923,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param ?WebSocketServer $webSocketServer Owning local browser server
      * @return Generator<int, void> One bounded lookup, cached only for this signal
      */
-    private function resolveDispatchClient(SignalDispatch $dispatch, ?WebSocketServer $webSocketServer): Generator
+    public function resolveSignalClient(SignalDispatch $dispatch, ?WebSocketServer $webSocketServer): Generator
     {
         $signal = $dispatch->getSignal();
         if ($signal === null) {
@@ -6540,42 +5934,29 @@ abstract class DaemonManager extends BaseManager implements
             : ($signal->data instanceof WebSocketSignalData ? $signal->data->targetAcceptKey : null);
         if ($webSocketServer !== null && $dispatch->clientAcceptKey !== null) {
             $dispatch->clientServer = $webSocketServer;
-            $dispatch->clientTarget = yield from $this->clientLookup($webSocketServer, $dispatch->clientAcceptKey);
+            $dispatch->clientTarget = yield from $this->clientLookup($dispatch, $webSocketServer, $dispatch->clientAcceptKey);
             $dispatch->clientResolved = true;
         }
     }
 
     /**
-     * Every phase is entered once; the generator retains only this signal's unfinished work.
-     *
-     * @param SignalDispatch $dispatch Exact lifetime being advanced
-     * @param bool $wasParked Whether to skip an already completed identity wait
+     * @param SignalDispatch $dispatch Original lifetime
+     * @param bool $wasParked Whether identity admission already completed
      * @param WorkerServer $workerServer Worker transport
      * @param ?WebSocketServer $webSocketServer Browser transport
-     * @param ?CommandServer $commandServer Console reply transport
-     * @param ?HttpServer $httpServer HTTP reply transport
      * @param ?PeerServer $peerServer Peer transport
-     * @return Generator<int, void> Ordered phase and destination steps, starting with an effect-free yield
-     * @throws InvalidArgumentException When an internally produced signal cannot be named
-     * @throws EnvException When destination configuration is invalid
-     * @throws ClusterConfigurationException When a named-node destination cannot resolve this node
-     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @return Generator<int, void, void, SignalDispatchPhase> Preparation or an early terminal outcome
+     * @throws Throwable When subscription preparation or shared apply fails
      */
-    private function walkSignal(
-        SignalDispatch $dispatch,
-        bool $wasParked,
-        WorkerServer $workerServer,
-        ?WebSocketServer $webSocketServer,
-        ?CommandServer $commandServer,
-        ?HttpServer $httpServer,
-        ?PeerServer $peerServer,
-    ): Generator {
-        yield;
+    public function prepareSignalDispatch(
+        SignalDispatch $dispatch, bool $wasParked, WorkerServer $workerServer,
+        ?WebSocketServer $webSocketServer, ?PeerServer $peerServer,
+    ): Generator
+    {
         $signal = $dispatch->getSignal();
         if ($signal === null) {
-            return;
+            return SignalDispatchPhase::Terminal;
         }
-        yield from $this->resolveDispatchClient($dispatch, $webSocketServer);
         // Sync signals: always send to workers and daemon
         $syncTypes = [
             SignalTypeConstants::DB_SYNC_CREATED,
@@ -6588,42 +5969,42 @@ abstract class DaemonManager extends BaseManager implements
             SignalTypeConstants::RT_SYNC_DELETED,
         ];
 
-        if ($this->isAbandonedPageDelivery($signal) || $this->isStalePageRecovery($signal)) {
-            return;
+        if ($this->isAbandonedPageDelivery($dispatch, $signal) || $this->isStalePageRecovery($dispatch, $signal)) {
+            return SignalDispatchPhase::Terminal;
         }
-        $this->acceptPageDeliveryControl($signal);
+        $this->acceptPageDeliveryControl($dispatch, $signal);
 
         if ($signal->signalType->getType() === SignalTypeConstants::UPLOAD_CREDIT_REQUEST) {
             if ($signal->signalSource->getSource() === SignalSource::WEBSOCKET
                 && $signal->data instanceof UploadCreditRequestSignalData) {
                 $this->uploadMemory?->requestCredit($signal->data);
             }
-            return;
+            return SignalDispatchPhase::Terminal;
         }
 
         if (!$wasParked && $this->parkUntilIdentified($signal)) {
-            return;
+            return SignalDispatchPhase::Terminal;
         }
 
         if ($this->refusePageInstanceMove($signal)) {
-            return;
+            return SignalDispatchPhase::Terminal;
         }
 
         $dispatch->phase = SignalDispatchPhase::Preparation;
         yield;
 
         // Update subscriptions BEFORE routing (routing may depend on current subscriptions)
-        yield from $this->subscriptionPreparation($signal);
+        yield from $this->subscriptionPreparation($dispatch, $signal);
         if (!$dispatch->hasWork()) {
-            return;
+            return SignalDispatchPhase::Terminal;
         }
 
         if ($signal->signalType->getType() === SignalTypeConstants::DB_REHYDRATE) {
             yield from $this->reHydrateDelivery($workerServer, $peerServer,
                 self::syncSignalData($signal->data, DbReHydrateSignalData::class),
                 function () use ($signal): void { $this->handleDaemonSignal($signal); });
-            yield from $this->peerAnnouncementDelivery($peerServer, function () use ($peerServer, $signal): void {
-                $this->broadcastRtSyncToPeers($peerServer, $signal);
+            yield from $this->peerAnnouncementDelivery($peerServer, function () use ($peerServer, $signal, $dispatch): void {
+                $this->broadcastRtSyncToPeers($peerServer, $signal, $dispatch);
                 $this->broadcastDbSyncToPeers($peerServer, $signal);
             });
         } elseif (in_array($signal->signalType->getType(), $syncTypes, true)) {
@@ -6642,19 +6023,19 @@ abstract class DaemonManager extends BaseManager implements
                 // handed is cut from the copy, and a cut between the two - a copy confirmed on the
                 // effect turn, an interest read off a link - would miss a write its stream already
                 // carries or a reader the walk had passed, for good (HIL-1817).
-                $this->sendSyncToWorkers($workerServer, $signal);
+                $this->sendSyncToWorkers($workerServer, $signal, origin: $dispatch);
                 $this->thawOnWorkers($signal->data->collectionKey, $thawed);
             } else {
                 yield from $this->syncFrameDelivery($workerServer, $signal);
             }
             $this->handleDaemonSignal($signal);
-            yield from $this->peerAnnouncementDelivery($peerServer, function () use ($peerServer, $signal): void {
-                $this->broadcastRtSyncToPeers($peerServer, $signal);
+            yield from $this->peerAnnouncementDelivery($peerServer, function () use ($peerServer, $signal, $dispatch): void {
+                $this->broadcastRtSyncToPeers($peerServer, $signal, $dispatch);
                 $this->broadcastDbSyncToPeers($peerServer, $signal);
             });
             // A write a worker streamed is answered now: applied here and its further delivery queued.
             if ($signal->data instanceof RtSyncSignalDataInterface) {
-                RtSyncStreamSettle::settle($signal->data, true);
+                RtSyncStreamSettle::settle($signal->data, true, $dispatch);
             }
         }
 
@@ -6753,11 +6134,16 @@ abstract class DaemonManager extends BaseManager implements
             $this->uploadMemory?->cancel($signal->data->targetAcceptKey, $signal->data->data->clientUploadId);
             $this->uploadMemory?->onUploadsChanged();
         }
+        return SignalDispatchPhase::Destinations;
+    }
 
-        // Get destinations for signal
-        $dispatch->phase = SignalDispatchPhase::Destinations;
-        $dispatch->destinations = Hilos::$sr->destinationCandidates($signal);
-        yield;
+    /**
+     * @param SignalDispatch $dispatch Original prepared lifetime
+     * @throws EventLoopException When readiness or cron cannot be cued
+     */
+    public function beginSignalDestinations(SignalDispatch $dispatch): void
+    {
+        $signal = $dispatch->getSignal();
         $signalName = $signal->signalName->getName();
         $signalType = $signal->signalType->getType();
 
@@ -6769,27 +6155,19 @@ abstract class DaemonManager extends BaseManager implements
             $this->reconcileCronSchedule();
             Logger::info("Workers ready - cron jobs are now enabled");
         }
+    }
 
-        // Prepare application JSON lazily, once for the signal's whole local fan-out.
-        $hasDestination = false;
-        foreach ($dispatch->destinations as $destination) {
-            if ($dispatch->skip) {
-                break;
-            }
-            if ($destination === null) {
-                yield;
-                continue;
-            }
-            $hasDestination = true;
-            $dispatch->physical = $this->walkSignalDestination($dispatch, $destination, $workerServer,
-                $webSocketServer, $commandServer, $httpServer, $peerServer);
-            yield from $dispatch->physical;
-            if (!$dispatch->hasWork()) {
-                return;
-            }
-            $dispatch->physical = null;
-        }
-        $dispatch->destinations = null;
+    /**
+     * @param SignalDispatch $dispatch Original routed lifetime
+     * @param bool $hasDestination Whether the router produced a target
+     * @throws InvalidArgumentException When an unserved refusal cannot be named
+     * @throws InvalidFormatException When subscription recovery configuration is invalid
+     */
+    public function finishUnservedSignal(SignalDispatch $dispatch, bool $hasDestination): void
+    {
+        $signal = $dispatch->getSignal();
+        $signalName = $signal->signalName->getName();
+        $signalType = $signal->signalType->getType();
 
         if (!$hasDestination && $signalType === SignalTypeConstants::GROUP_SUBSCRIBE) {
             $this->refuseUnservedGroupSubscription($signal, $signalName);
@@ -6812,210 +6190,63 @@ abstract class DaemonManager extends BaseManager implements
             );
             $this->refuseUnownedCommand($signal);
         }
-
-        $dispatch->phase = SignalDispatchPhase::Terminal;
-        yield;
-        yield from $this->connectionCloseDelivery($workerServer, $signal, $dispatch->agentsDelivered);
-        $this->forgetSubscriptionsAfterRouting($signal);
     }
 
     /**
-     * Addresses one destination once; its nested physical walk retains the prepared frame.
-     *
-     * @param SignalDispatch $dispatch Original signal's lifetime
-     * @param Destination $destination One resolved target
+     * @param SignalDispatch $dispatch Original lifetime and addressed agents
      * @param WorkerServer $workerServer Worker transport
-     * @param ?WebSocketServer $webSocketServer Browser transport
-     * @param ?CommandServer $commandServer Console reply transport
-     * @param ?HttpServer $httpServer HTTP reply transport
-     * @param ?PeerServer $peerServer Peer transport
-     * @return Generator<int, void> Effect-free destination boundary followed by physical visits
-     * @throws InvalidArgumentException When an internally produced refusal cannot be named
-     * @throws EnvException When agent placement configuration is invalid
-     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @return Generator<int, void> Existing connection-close and subscription cleanup
+     * @throws Throwable When final delivery fails
      */
-    private function walkSignalDestination(
-        SignalDispatch $dispatch,
-        Destination $destination,
-        WorkerServer $workerServer,
-        ?WebSocketServer $webSocketServer,
-        ?CommandServer $commandServer,
-        ?HttpServer $httpServer,
-        ?PeerServer $peerServer,
-    ): Generator {
-        yield;
+    public function finishSignalDispatch(SignalDispatch $dispatch, WorkerServer $workerServer): Generator
+    {
         $signal = $dispatch->getSignal();
-        if ($signal === null) {
-            return;
-        }
+        yield from $this->connectionCloseDelivery($dispatch, $workerServer, $signal, $dispatch->agentsDelivered);
+        $this->forgetSubscriptionsAfterRouting($dispatch, $signal);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original reply lifetime
+     * @param CommandReplyDestination $destination Original correlation
+     * @param ?CommandServer $commandServer Local command transport
+     * @param ?PeerServer $peerServer Peer transport
+     * @return Generator<int, void> Original waiter settlement or bounded peer delivery
+     * @throws EventLoopException When a reply deadline cannot be canceled
+     */
+    public function deliverSignalCommandReply(
+        SignalDispatch $dispatch, CommandReplyDestination $destination, ?CommandServer $commandServer, ?PeerServer $peerServer,
+    ): Generator
+    {
+        $signal = $dispatch->getSignal();
         $signalName = $signal->signalName->getName();
-        $signalType = $signal->signalType->getType();
-
-        if ($destination instanceof WebSocketDestination || $destination instanceof AllClientsDestination
-            || $destination instanceof SessionClientsDestination) {
-            if ($webSocketServer !== null) {
-                yield from $this->clientDestinationDelivery($dispatch, $webSocketServer, $destination);
+        // The answering node remembers which node parked the console connection.
+        $originNodeId = $this->commandReplyOrigins->take($destination->correlationId, microtime(true));
+        if ($originNodeId !== null) {
+            if ($peerServer === null) {
+                Logger::error("Peer command reply dropped: {$signalName} -> node {$originNodeId} - no peer server");
+            } else {
+                $delivered = false;
+                yield from $peerServer->addressedDelivery($originNodeId,
+                    function () use ($peerServer, $originNodeId, $signal, &$delivered): void {
+                        $delivered = $peerServer->sendCommandReplyToNode($originNodeId, $signal);
+                    });
+                if (!$delivered) {
+                    Logger::warning("Peer command reply dropped: {$signalName} -> node {$originNodeId} - no live link");
+                }
             }
             return;
         }
-
-        if ($destination instanceof AgentAddressedDestination) {
-            // Counted as reached before anything is attempted, and in every case:
-            // what the connection-close fan-out must not do twice is ADDRESS the same
-            // agent, and a delivery that failed here has already been reported to the
-            // browser by the branches below (HIL-745).
-            $dispatch->agentsDelivered[] = $destination;
-
-            // The delivery itself owes nobody an answer and asks for no placement - the
-            // reactions to what it reports are this walk's, and the two callers that
-            // reach the same agent from a subscription record have different ones.
-            $outcome = yield from $this->agentDestinationDelivery($workerServer, $peerServer, $destination, $signal);
-            switch ($outcome) {
-                case AgentDeliveryOutcome::ShutdownSkipped:
-                    $dispatch->skip = true;
-                    break;
-                case AgentDeliveryOutcome::RemoteUnreachable:
-                    // A subscription waiting on the answer is told, and so is an operator
-                    // waiting on a command; anything else stays dropped with the line the
-                    // delivery already wrote.
-                    $this->answerUnreachableSubscription($signal);
-                    $this->refuseUndeliveredCommand($signal, self::COMMAND_NODE_UNREACHABLE_MESSAGE);
-                    break;
-                case AgentDeliveryOutcome::AddressUnknown:
-                    // An agent that starts by being addressed is asked for first, so the
-                    // address can come to exist (HIL-628), and this frame is held until the
-                    // agent is up rather than dropped (HIL-629). The asker is answered when
-                    // the wait ends - by the agent, or by the placement verdict that says
-                    // nobody could host it (HIL-1041). There is no clock: a placement that
-                    // takes longer than the old six seconds is still a placement, and a
-                    // missing leader is waited out by asking again. The wait becomes a
-                    // start-under-way wait the moment the agent turns up starting here.
-                    // Held BEFORE the ask: on the leader the verdict of its own ask comes
-                    // back in the same call stack, and it answers only frames already held.
-                    $this->parkUntilAgentUp(
-                        $signal,
-                        $this->agentManagerDaemon->buildAgentId(
-                            $destination->agentType,
-                            $destination->agentIndex,
-                        ),
-                        true,
-                    );
-                    $this->requireOnDemandPlacement($destination->agentType, $destination->agentIndex);
-                    break;
-                case AgentDeliveryOutcome::StartRefused:
-                    // The agent belongs here and did not come up; the node already wrote
-                    // it down and told the project. The askers are answered as above, and
-                    // the signal's other destinations go on: one agent costs only itself.
-                    // No placement is asked for - the address is known, it is this node.
-                    $this->answerStartRefusedSubscription($signal);
-                    $this->refuseUndeliveredCommand($signal, self::COMMAND_START_REFUSED_MESSAGE);
-                    break;
-                case AgentDeliveryOutcome::Held:
-                    // The door held the frame for an agent coming up on this node; like
-                    // any other one agent, it does not stop the other destinations.
-                    break;
-                case AgentDeliveryOutcome::Delivered:
-                    break;
-            }
-        } elseif ($destination instanceof RemoteClientDestination) {
-            // Forward the signal to the browser on the node holding its socket. Same
-            // best-effort contract as the agent forward above: no live link drops and
-            // logs, matching the local path that writes to nobody when the socket is
-            // already gone.
-            if ($peerServer === null) {
-                Logger::error("Peer client signal dropped: {$signalType}/{$signalName}"
-                    . " -> node {$destination->nodeId} client {$destination->acceptKey} - no peer server");
+        $reply = $signal->data;
+        if ($reply instanceof CommandReplyDTO) {
+            if ($this->pageAgentRestarts->hasWaiter($reply->correlationId)) {
+                $this->pageAgentRestarts->acceptReply($reply);
                 return;
             }
-
-            $delivered = false;
-            $abandoned = false;
-            yield from $peerServer->addressedDelivery($destination->nodeId,
-                function () use ($peerServer, $destination, $signal, &$delivered, &$abandoned): void {
-                    if ($destination->original !== null && !Hilos::$sr->isCurrentClientDestination($destination->original)) {
-                        $abandoned = true;
-                        return;
-                    }
-                    $delivered = $peerServer->sendSignalToClientNode($destination->nodeId, $destination->acceptKey, $signal);
-                });
-            if (!$delivered && !$abandoned) {
-                Logger::warning("Peer client signal dropped: {$signalType}/{$signalName}"
-                    . " -> node {$destination->nodeId} client {$destination->acceptKey} - no live link");
-            }
-        } elseif ($destination instanceof RemoteFanoutDestination) {
-            // Carry the fan-out to the rest of the cluster. This marker travels
-            // ALONGSIDE the local destinations, not instead of them: the browsers of
-            // this node are served by those, and the other nodes are served by this one
-            // frame, which each of them expands against its own subscription registry.
-            if ($peerServer === null) {
-                Logger::error("Peer client fanout dropped: {$signalType}/{$signalName} - no peer server");
+            if ($this->daemonNodeReportTestRequests->hasWaiter($reply->correlationId)) {
+                $this->daemonNodeReportTestRequests->acceptReply($reply);
                 return;
             }
-
-            yield from $peerServer->clientFanoutDelivery($signal);
-        } elseif ($destination instanceof CommandReplyDestination) {
-            // The answering node remembers which node parked the console connection.
-            $originNodeId = $this->commandReplyOrigins->take($destination->correlationId, microtime(true));
-            if ($originNodeId !== null) {
-                if ($peerServer === null) {
-                    Logger::error("Peer command reply dropped: {$signalName} -> node {$originNodeId} - no peer server");
-                } else {
-                    $delivered = false;
-                    yield from $peerServer->addressedDelivery($originNodeId,
-                        function () use ($peerServer, $originNodeId, $signal, &$delivered): void {
-                            $delivered = $peerServer->sendCommandReplyToNode($originNodeId, $signal);
-                        });
-                    if (!$delivered) {
-                        Logger::warning("Peer command reply dropped: {$signalName} -> node {$originNodeId} - no live link");
-                    }
-                }
-                return;
-            }
-
-            $reply = $signal->data;
-            if ($reply instanceof CommandReplyDTO) {
-                if ($this->pageAgentRestarts->hasWaiter($reply->correlationId)) {
-                    $this->pageAgentRestarts->acceptReply($reply);
-                    return;
-                }
-                if ($this->daemonNodeReportTestRequests->hasWaiter($reply->correlationId)) {
-                    $this->daemonNodeReportTestRequests->acceptReply($reply);
-                    return;
-                }
-                $commandServer?->deliver($destination->correlationId, $reply);
-            }
-        } elseif ($destination instanceof RemoteHttpReplyDestination) {
-            // Carry the agent reply to the node that parked the connection. Same
-            // best-effort contract as the client forward above: no live link drops and
-            // logs, and the browser is left to its own timeout.
-            if ($peerServer === null) {
-                Logger::error("Peer HTTP reply dropped: {$signalType}/{$signalName}"
-                    . " -> node {$destination->nodeId} - no peer server");
-                return;
-            }
-
-            $delivered = false;
-            yield from $peerServer->addressedDelivery($destination->nodeId,
-                function () use ($peerServer, $destination, $signal, &$delivered): void {
-                    $delivered = $peerServer->sendHttpReplyToNode($destination->nodeId, $signal);
-                });
-            if (!$delivered) {
-                Logger::warning("Peer HTTP reply dropped: {$signalType}/{$signalName}"
-                    . " -> node {$destination->nodeId} - no live link");
-            }
-        } elseif ($destination instanceof HttpReplyDestination) {
-            // Write the agent reply to the connection this node parked for it
-            if ($httpServer === null) {
-                return;
-            }
-
-            $reply = $signal->data;
-            if ($reply instanceof HttpReplyDTO) {
-                $httpServer->deliver($destination->correlationId, $reply);
-            }
-        } else {
-            // Unknown destination type, skip
-            Logger::error("Unknown destination type: " . get_class($destination) . " for signal: {$signalType}/{$signalName}");
+            $commandServer?->deliver($destination->correlationId, $reply);
         }
     }
 
@@ -7026,7 +6257,7 @@ abstract class DaemonManager extends BaseManager implements
      * @return Generator<int, void> Shared frame preparation and bounded physical delivery
      * @throws InvalidFormatException When a matching completion reads an invalid delivery window
      */
-    private function clientDestinationDelivery(SignalDispatch $dispatch, WebSocketServer $server, Destination $destination): Generator
+    public function deliverSignalClient(SignalDispatch $dispatch, WebSocketServer $server, Destination $destination): Generator
     {
         yield;
         $signal = $dispatch->getSignal();
@@ -7035,7 +6266,7 @@ abstract class DaemonManager extends BaseManager implements
         }
         if ($signal->signalName->getName() === SignalConstants::DELIVERY_COMPLETE) {
             if ($destination instanceof WebSocketDestination) {
-                yield from $this->browserSignalDelivery($server, $signal, $destination);
+                yield from $this->browserSignalDelivery($dispatch, $server, $signal, $destination);
             }
             return;
         }
@@ -7052,70 +6283,36 @@ abstract class DaemonManager extends BaseManager implements
                 Logger::error('Accept key is missing in WebSocket destination');
                 return;
             }
-            yield from $this->clientFrameDelivery($server, $dispatch->frame,
+            yield from $this->clientFrameDelivery($dispatch, $server, $dispatch->frame,
                 acceptKey: $destination->acceptKey, subscriptionDestination: $destination);
         } elseif ($destination instanceof AllClientsDestination) {
-            yield from $this->clientFrameDelivery($server, $dispatch->frame,
+            yield from $this->clientFrameDelivery($dispatch, $server, $dispatch->frame,
                 excludeAcceptKey: $destination->excludeAcceptKey, excludeSessionTokenHash: $destination->excludeSessionTokenHash);
         } elseif ($destination instanceof SessionClientsDestination) {
-            yield from $this->clientFrameDelivery($server, $dispatch->frame, sessionTokenHash: $destination->sessionTokenHash);
+            yield from $this->clientFrameDelivery($dispatch, $server, $dispatch->frame, sessionTokenHash: $destination->sessionTokenHash);
         }
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WorkerServer $workerServer Worker transport
      * @param ?PeerServer $peerServer Peer transport
      * @param AgentAddressedDestination $destination One named agent
      * @param SignalDTO $signal Original envelope
      * @return Generator<int, void, void, AgentDeliveryOutcome> One existing delivery attempt and its domain outcome
      * @throws EnvException When delivery reads invalid cluster configuration
+     * @throws Throwable When the delivery hook or predecessor cleanup fails
      */
     private function agentDestinationDelivery(
+        SignalDispatch $dispatch,
         WorkerServer $workerServer,
         ?PeerServer $peerServer,
         AgentAddressedDestination $destination,
         SignalDTO $signal,
     ): Generator {
-        yield;
-        yield from $this->agentSignalPredecessors($workerServer, $destination);
-        if ($this->currentSignalDispatch !== null && !$this->currentSignalDispatch->hasWork()) {
-            return AgentDeliveryOutcome::Delivered;
-        }
-        if ($destination instanceof RemoteAgentDestination && $peerServer !== null) {
-            $outcome = null;
-            yield from $peerServer->addressedDelivery($destination->nodeId,
-                function () use ($workerServer, $peerServer, $destination, $signal, &$outcome): void {
-                    $outcome = $this->deliverToAgentDestination($workerServer, $peerServer, $destination, $signal);
-                });
-            return $outcome;
-        }
-        return $this->deliverToAgentDestination($workerServer, $peerServer, $destination, $signal);
-    }
-
-    /**
-     * A bounded global discovery may not have reached an older wait yet. Visit that agent's
-     * original predecessors before a newer addressed attempt; released priority runs between visits.
-     *
-     * @param WorkerServer $workerServer Existing placement/start owner
-     * @param AgentAddressedDestination $destination Agent the newer attempt is addressing
-     * @return Generator<int, void> Scalar predecessor probes, never the original signal's other destinations
-     * @throws EnvException When existing placement configuration is invalid
-     * @throws LogicException When a held obligation changes its addressee
-     */
-    private function agentSignalPredecessors(WorkerServer $workerServer, AgentAddressedDestination $destination): Generator
-    {
-        $dispatch = $this->currentSignalDispatch;
-        if ($dispatch === null) {
-            return;
-        }
-        $agentId = $this->agentManagerDaemon->buildAgentId($destination->agentType, $destination->agentIndex);
-        if (isset($dispatch->predecessorsChecked[$agentId])) {
-            return;
-        }
-        $dispatch->predecessorsChecked[$agentId] = true;
-        $watermark = $dispatch->heldId !== null ? $dispatch->heldId - 1 : $dispatch->precedingHoldWatermark;
-        $candidates = $this->agentSignalHolds()->agentCandidates($agentId, $watermark);
-        yield from $this->probeAgentSignalHolds($workerServer, $candidates, $dispatch);
+        return $this->signalDispatcher()->agentDestinationDelivery(
+            $dispatch, $workerServer, $peerServer, $destination, $signal,
+        );
     }
 
     /**
@@ -7125,14 +6322,16 @@ abstract class DaemonManager extends BaseManager implements
      * @param SignalDTO $signal Signal DTO to send
      * @param ?string $originNodeId Node the write happened on, or null when it was this one
      * @param int $reHydrateRound Round the workers are to answer under; read by the re-hydrate arm alone
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
     private function sendSyncToWorkers(
         WorkerServer $workerServer,
         SignalDTO $signal,
         ?string $originNodeId = null,
         int $reHydrateRound = 0,
+        ?SignalDispatch $origin = null,
     ): void {
-        foreach ($this->syncFrameDelivery($workerServer, $signal, $originNodeId, $reHydrateRound) as $_) {
+        foreach ($this->syncFrameDelivery($workerServer, $signal, $originNodeId, $reHydrateRound, $origin) as $_) {
         }
     }
 
@@ -7143,6 +6342,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param SignalDTO $signal Existing DB or RT sync envelope
      * @param ?string $originNodeId Origin node, or null for a local write
      * @param int $reHydrateRound Existing re-hydrate round identity
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return Generator<int, void> Captured worker delivery, or an empty walk for an unknown sync name
      */
     private function syncFrameDelivery(
@@ -7150,6 +6350,7 @@ abstract class DaemonManager extends BaseManager implements
         SignalDTO $signal,
         ?string $originNodeId = null,
         int $reHydrateRound = 0,
+        ?SignalDispatch $origin = null,
     ): Generator {
         $signalName = $signal->signalName->getName();
         $rtData = match ($signalName) {
@@ -7159,7 +6360,7 @@ abstract class DaemonManager extends BaseManager implements
             default => null,
         };
         if ($rtData instanceof RtSyncSignalDataInterface) {
-            return $this->workerRtSyncDelivery($workerServer, $rtData);
+            return $this->workerRtSyncDelivery($workerServer, $rtData, $origin);
         }
 
         $dto = match ($signalName) {
@@ -7228,12 +6429,13 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param WorkerServer $server Owning worker server
      * @param RtSyncSignalDataInterface $data RT sync carrier
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return Generator<int, void> Effect-free initial yield, then one worker link per yield; the
      *     callers do not spend a step on them, they drain the walk in one
      */
-    private function workerRtSyncDelivery(WorkerServer $server, RtSyncSignalDataInterface $data): Generator
+    private function workerRtSyncDelivery(WorkerServer $server, RtSyncSignalDataInterface $data, ?SignalDispatch $origin = null): Generator
     {
-        return $this->walkWorkerRtSync($server->clientCandidates(), $data);
+        return $this->walkWorkerRtSync($server->clientCandidates(), $data, $origin);
     }
 
     /**
@@ -7243,28 +6445,30 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param Generator<int, ?ClientInterface> $clients Original worker roster slots
      * @param RtSyncSignalDataInterface $data RT sync carrier, shared by every stream that takes it
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return Generator<int, void> One worker link per yield after the initial yield, drained whole by the caller
      */
-    private function walkWorkerRtSync(Generator $clients, RtSyncSignalDataInterface $data): Generator
+    private function walkWorkerRtSync(Generator $clients, RtSyncSignalDataInterface $data, ?SignalDispatch $origin = null): Generator
     {
         yield;
         foreach ($clients as $client) {
             if ($client instanceof WorkerClient && $this->agentManagerDaemon->workerReaderMap()->holds(
                 AgentManagerDaemon::workerHolderId($client->getWorkerIndex()), SourceChange::KIND_RT, $data->collectionKey,
             )) {
-                $client->rtSyncStream()->send($data);
+                $client->rtSyncStream()->send($data, origin: $origin);
             }
             yield;
         }
     }
 
     /**
+     * @param SignalDispatch $origin Operation owning this continuation
      * @param WorkerServer $workerServer Worker server instance
      * @param RtSyncSignalDataInterface $data RT sync carrier for every worker reading its collection
      */
-    private function streamRtSyncToWorkers(WorkerServer $workerServer, RtSyncSignalDataInterface $data): void
+    private function streamRtSyncToWorkers(WorkerServer $workerServer, RtSyncSignalDataInterface $data, SignalDispatch $origin): void
     {
-        foreach ($this->workerRtSyncDelivery($workerServer, $data) as $_) {
+        foreach ($this->workerRtSyncDelivery($workerServer, $data, $origin) as $_) {
         }
     }
 
@@ -7276,8 +6480,9 @@ abstract class DaemonManager extends BaseManager implements
      * Implements the wake the worker and peer servers hand their links' streams.
      *
      * @param RtSyncStreamChannel $channel Stream with work to do
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function wakeRtSyncStream(RtSyncStreamChannel $channel): void
+    public function wakeRtSyncStream(RtSyncStreamChannel $channel, ?SignalDispatch $origin = null): void
     {
         $this->rtSyncStreamWakes ??= new WeakMap();
         $wakes = ($this->rtSyncStreamWakes[$channel] ?? 0) + 1;
@@ -7285,21 +6490,22 @@ abstract class DaemonManager extends BaseManager implements
         if ($wakes > 1) {
             return;
         }
-        $this->dispatchSourceWork(fn (): Generator => $this->pumpRtSyncStream($channel));
+        $this->dispatchSourceWork(fn(SignalDispatch $dispatch): Generator => $this->pumpRtSyncStream($channel, $dispatch), $origin);
     }
 
     /**
+     * @param SignalDispatch $origin Operation owning this continuation
      * @param RtSyncStreamChannel $channel Stream with work to do
      * @return Generator<int, void> One budgeted pump per step, until only credit or input can move it
      */
-    private function pumpRtSyncStream(RtSyncStreamChannel $channel): Generator
+    private function pumpRtSyncStream(RtSyncStreamChannel $channel, SignalDispatch $origin): Generator
     {
         try {
             do {
                 $seen = $this->rtSyncStreamWakes[$channel];
-                while ($channel->pump($this->signalDispatchNotifier === null
+                while ($channel->pump(!($this->signalDispatcher?->isAttached() ?? false)
                     ? new RtWorkBudget()
-                    : $this->rtWork->budget(RtWorkLane::Ordinary))) {
+                    : $this->rtWork->budget(RtWorkLane::Ordinary), $origin)) {
                     yield;
                 }
             } while ($this->rtSyncStreamWakes[$channel] !== $seen);
@@ -7432,11 +6638,12 @@ abstract class DaemonManager extends BaseManager implements
      * Source bookkeeping and its physical broadcast stay in the same guarded FIFO entry.
      * The existing peer hook is called once; its transport walk is then retained as usual.
      *
+     * @param SignalDispatch $dispatch Operation owning the announcement
      * @param WeakReference<RtClaimMesh|RtSyncMesh|SourceInterestMesh> $mesh Original source transport
-     * @param Closure(object): void $announce Existing typed source announcement
+     * @param Closure(object, SignalDispatch): void $announce Existing typed source announcement
      * @return Generator<int, void> One announcement followed by its original physical peer visits
      */
-    private static function sourceBroadcastDelivery(WeakReference $mesh, Closure $announce): Generator
+    private static function sourceBroadcastDelivery(WeakReference $mesh, Closure $announce, SignalDispatch $dispatch): Generator
     {
         yield;
         $transport = $mesh->get();
@@ -7444,26 +6651,27 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
         if ($transport instanceof PeerServer) {
-            $delivery = $transport->captureBroadcastDelivery(static fn() => $announce($transport));
+            $delivery = $transport->captureBroadcastDelivery(static fn() => $announce($transport, $dispatch));
             unset($transport);
             yield from $delivery;
         } else {
-            $announce($transport);
+            $announce($transport, $dispatch);
             unset($transport);
             yield;
         }
     }
 
     /**
-     * @param Closure(): Generator<int, void> $work One finite source operation on the existing effect FIFO
+     * @param ?SignalDispatch $origin Explicit causal owner, or null for a root
+     * @param Closure(SignalDispatch): Generator<int, void> $work One finite source operation on the existing effect FIFO
      */
-    private function dispatchSourceWork(Closure $work): void
+    private function dispatchSourceWork(Closure $work, ?SignalDispatch $origin): void
     {
-        if ($this->signalDispatchNotifier !== null) {
-            $this->queueSignalEffect($work);
+        if ($this->signalDispatcher?->isAttached() ?? false) {
+            $this->queueSignalEffectInDispatch($work, $origin);
             return;
         }
-        foreach ($work() as $_) {
+        foreach ($work($origin ?? $this->directSignalDispatch(null)) as $_) {
         }
     }
 
@@ -7471,6 +6679,15 @@ abstract class DaemonManager extends BaseManager implements
     private function emptySignalDelivery(): Generator
     {
         yield from [];
+    }
+
+    /**
+     * @param ?SignalDTO $signal Independent synchronous envelope, absent for a connection departure
+     * @return SignalDispatch Standalone context without another operation's address, hold or prefixes
+     */
+    private function directSignalDispatch(?SignalDTO $signal): SignalDispatch
+    {
+        return new SignalDispatch($signal, fn(): Generator => $this->emptySignalDelivery());
     }
 
     /**
@@ -7496,8 +6713,9 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param ?RtSyncMesh $mesh Peer server found for this dispatch pass, or null off-cluster
      * @param SignalDTO $signal Signal being dispatched
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function broadcastRtSyncToPeers(?RtSyncMesh $mesh, SignalDTO $signal): void
+    protected function broadcastRtSyncToPeers(?RtSyncMesh $mesh, SignalDTO $signal, ?SignalDispatch $origin = null): void
     {
         if ($mesh === null) {
             return;
@@ -7518,6 +6736,7 @@ abstract class DaemonManager extends BaseManager implements
             $signalType,
             $signal,
             $map->owns($syncData->collectionKey) && !$map->ownsFully($syncData->collectionKey),
+            $origin,
         );
     }
 
@@ -7603,12 +6822,14 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $nodeId Node the collections go to
      * @param ?list<string> $onlyCollectionKeys The collections whose areas go, or null for every collection
      * @param ?int $answering Number of the node's announcement the hand-over answers, or null when it answers none
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
     protected function sendRtSnapshotsToNode(
         ?RtSyncMesh $mesh,
         string $nodeId,
         ?array $onlyCollectionKeys = null,
         ?int $answering = null,
+        ?SignalDispatch $origin = null,
     ): void {
         if ($mesh === null) {
             return;
@@ -7623,7 +6844,9 @@ abstract class DaemonManager extends BaseManager implements
                 $server->noteRtHandOverOwed($nodeId);
             }
         };
-        $work = static function () use ($mesh, $claims, $nodeId, $route, $routeLost, $onlyCollectionKeys, $answering): Generator {
+        $work = static function (SignalDispatch $dispatch) use (
+            $mesh, $claims, $nodeId, $route, $routeLost, $onlyCollectionKeys, $answering,
+        ): Generator {
             yield;
             if ($mesh->get() === null) {
                 return;
@@ -7639,13 +6862,14 @@ abstract class DaemonManager extends BaseManager implements
                 $route,
                 $routeLost,
                 $onlyCollectionKeys,
+                $dispatch,
             ): void {
                 if (($onlyCollectionKeys !== null && !in_array($collectionKey, $onlyCollectionKeys, true))
                     || !self::isHandedOverInSnapshot($collectionKey) || $scope->isEmpty()) {
                     return;
                 }
                 if ($route()) {
-                    $mesh->get()?->streamRtSnapshotToNode($nodeId, $collectionKey, $scope, $partialOwner);
+                    $mesh->get()?->streamRtSnapshotToNode($nodeId, $collectionKey, $scope, $partialOwner, $dispatch);
                 } else {
                     $routeLost();
                 }
@@ -7662,7 +6886,7 @@ abstract class DaemonManager extends BaseManager implements
                 $routeLost();
             }
         };
-        $this->dispatchSourceWork($work);
+        $this->dispatchSourceWork($work, $origin);
     }
 
     /**
@@ -7716,13 +6940,14 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $nodeId Node that announced
      * @param list<string> $addedCollectionKeys RT collections the announcement added to what that node reads
      * @param int $announcement Number of the announcement
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function answerSourceInterest(string $nodeId, array $addedCollectionKeys, int $announcement): void
+    public function answerSourceInterest(string $nodeId, array $addedCollectionKeys, int $announcement, ?SignalDispatch $origin = null): void
     {
-        $this->sendRtSnapshotsToNode($this->findPeerServer(), $nodeId, $addedCollectionKeys, $announcement);
+        $this->sendRtSnapshotsToNode($this->findPeerServer(), $nodeId, $addedCollectionKeys, $announcement, $origin);
         // What this node claims goes with a new reading, as with the hand-over of a new link.
         if ($addedCollectionKeys !== []) {
-            $this->reportRtClaims($nodeId);
+            $this->reportRtClaims($nodeId, $origin);
         }
     }
 
@@ -7735,19 +6960,36 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param string $nodeId Node that answered
      * @param int $announcement Number of the announcement it answered
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function noteSourceInterestAnswered(string $nodeId, int $announcement): void
+    public function noteSourceInterestAnswered(string $nodeId, int $announcement, ?SignalDispatch $origin = null): void
     {
-        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
-            $owner = WeakReference::create($this);
-            $this->queueSignalEffect(static function () use ($owner, $nodeId, $announcement): Generator {
-                $owner->get()?->noteSourceInterestAnswered($nodeId, $announcement);
-                yield;
-            });
-
+        if ($origin !== null) {
+            $this->noteSourceInterestAnsweredInDispatch($origin, $nodeId, $announcement);
             return;
         }
-        $this->sendConfirmedRtCopies($this->agentManagerDaemon->rtCopyConfirmation()->noteAnswered($nodeId, $announcement));
+        if ($this->signalDispatcher?->isAttached() ?? false) {
+            $owner = WeakReference::create($this);
+            $this->queueSignalEffectInDispatch(static function (SignalDispatch $dispatch) use ($owner, $nodeId, $announcement): Generator {
+                $owner->get()?->noteSourceInterestAnsweredInDispatch($dispatch, $nodeId, $announcement);
+                yield;
+            }, null);
+            return;
+        }
+        $this->noteSourceInterestAnsweredInDispatch($this->directSignalDispatch(null), $nodeId, $announcement);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Exact operation executing this apply
+     * @param string $nodeId Node that answered
+     * @param int $announcement Number of the announcement it answered
+     */
+    private function noteSourceInterestAnsweredInDispatch(
+        SignalDispatch $dispatch,
+        string $nodeId,
+        int $announcement,
+    ): void {
+        $this->sendConfirmedRtCopies($this->agentManagerDaemon->rtCopyConfirmation()->noteAnswered($nodeId, $announcement), $dispatch);
     }
 
     /**
@@ -7756,13 +6998,14 @@ abstract class DaemonManager extends BaseManager implements
      * ({@see WorkerClient::sendConfirmedRtSnapshot()}).
      *
      * @param list<string> $collectionKeys Collections whose copy was confirmed
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private function sendConfirmedRtCopies(array $collectionKeys): void
+    private function sendConfirmedRtCopies(array $collectionKeys, ?SignalDispatch $origin = null): void
     {
         $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
         $first = $confirmation->takeFirstConfirmed($collectionKeys);
         if ($first !== []) {
-            $this->askHoldersOfConfirmedRtCopies($this->findPeerServer(), $first);
+            $this->askHoldersOfConfirmedRtCopies($this->findPeerServer(), $first, $origin);
         }
         $workerServer = $this->findWorkerServer();
         foreach ($collectionKeys as $collectionKey) {
@@ -7772,7 +7015,7 @@ abstract class DaemonManager extends BaseManager implements
             }
             foreach ($workerServer->clientCandidates() as $client) {
                 if ($client instanceof WorkerClient && isset($waiting[$client->getWorkerIndex()])) {
-                    $client->sendConfirmedRtSnapshot($collectionKey, $waiting[$client->getWorkerIndex()]);
+                    $client->sendConfirmedRtSnapshot($collectionKey, $waiting[$client->getWorkerIndex()], $origin);
                 }
             }
         }
@@ -7828,7 +7071,7 @@ abstract class DaemonManager extends BaseManager implements
             $this->uploadMemory?->onUploadsChanged();
         }
         if ($signal->data instanceof RtSyncSignalDataInterface) {
-            $this->onIdentitySourceChanged($signal->data->collectionKey, $signal->data->stateId);
+            $this->signalDispatcher?->onIdentitySourceChanged($signal->data->collectionKey, $signal->data->stateId);
         }
     }
 
@@ -7882,6 +7125,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param SignalDTO $signal RT sync signal to apply and fan out locally
      * @param bool $partialOwner Whether the origin holds only part of the right over the collection
      * @param ?RtReplicaConfirmation $receipt Taken when the fact arrived, or null to take it now
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function applyRemoteRtSync(
@@ -7890,20 +7134,47 @@ abstract class DaemonManager extends BaseManager implements
         SignalDTO $signal,
         bool $partialOwner = false,
         ?RtReplicaConfirmation $receipt = null,
+        ?SignalDispatch $origin = null,
     ): void {
-        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
-            $owner = WeakReference::create($this);
-            $this->queueSignalEffect(static function () use ($owner, $originNodeId, $signalType, $signal, $partialOwner): Generator {
-                $owner->get()?->applyRemoteRtSync($originNodeId, $signalType, $signal, $partialOwner);
-                yield;
-            }, peerApplyContext: "RT sync from node '{$originNodeId}'", rtConfirmation: $receipt ?? $this->captureRtSyncReceipt($originNodeId));
+        if ($origin !== null) {
+            $this->applyRemoteRtSyncInDispatch($origin, $originNodeId, $signalType, $signal, $partialOwner, $receipt);
             return;
         }
+        if ($this->signalDispatcher?->isAttached() ?? false) {
+            $owner = WeakReference::create($this);
+            $this->queueSignalEffectInDispatch(static function (SignalDispatch $dispatch) use (
+                $owner, $originNodeId, $signalType, $signal, $partialOwner, $receipt,
+            ): Generator {
+                $owner->get()?->applyRemoteRtSyncInDispatch($dispatch, $originNodeId, $signalType, $signal, $partialOwner, $receipt);
+                yield;
+            }, null, peerApplyContext: "RT sync from node '{$originNodeId}'", rtConfirmation: $receipt ?? $this->captureRtSyncReceipt($originNodeId));
+            return;
+        }
+        $this->applyRemoteRtSyncInDispatch($this->directSignalDispatch(null), $originNodeId, $signalType, $signal, $partialOwner, $receipt);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Exact operation executing this apply
+     * @param string $originNodeId Id of the node the write happened on
+     * @param string $signalType RT sync signal type the frame carried
+     * @param SignalDTO $signal RT sync signal to apply and fan out locally
+     * @param bool $partialOwner Whether the origin holds only part of the right over the collection
+     * @param ?RtReplicaConfirmation $receipt Taken when the fact arrived, or null to take it now
+     * @throws HilosException When a collection refuses to be re-read from the replaced database
+     */
+    private function applyRemoteRtSyncInDispatch(
+        SignalDispatch $dispatch,
+        string $originNodeId,
+        string $signalType,
+        SignalDTO $signal,
+        bool $partialOwner = false,
+        ?RtReplicaConfirmation $receipt = null,
+    ): void {
         if ($receipt !== null && !$receipt->isCurrent(
             $this->agentManagerDaemon->rtReplicaOriginMap(), $this->agentManagerDaemon->rtNodeSourceMap(),
         )) {
             Logger::warning("Dropping peer RT sync from node '{$originNodeId}': its runtime or owners changed since it arrived");
-            self::settleRtSyncStream($signal, false);
+            self::settleRtSyncStream($signal, false, $dispatch);
 
             return;
         }
@@ -7919,7 +7190,7 @@ abstract class DaemonManager extends BaseManager implements
                 . " carried type '{$carriedType}' name '{$carriedName}'"
                 . ' - only a matching RT sync fact is applied',
             );
-            self::settleRtSyncStream($signal, false);
+            self::settleRtSyncStream($signal, false, $dispatch);
 
             return;
         }
@@ -7945,7 +7216,7 @@ abstract class DaemonManager extends BaseManager implements
                 "RT collection {$syncData->collectionKey} has truth sources on two nodes:"
                 . " local and {$originNodeId}",
             );
-            self::settleRtSyncStream($signal, false);
+            self::settleRtSyncStream($signal, false, $dispatch);
 
             return;
         }
@@ -7973,18 +7244,18 @@ abstract class DaemonManager extends BaseManager implements
                 $thawed = $this->liftStaleness($syncData->collectionKey, [$stateId]);
             } else {
                 $originMap->note($originNodeId, $syncData->collectionKey, [$stateId]);
-                $thawed = $this->confirmRemoteRtRows($syncData->collectionKey, [$stateId], $receipt);
+                $thawed = $this->confirmRemoteRtRows($dispatch, $syncData->collectionKey, [$stateId], $receipt);
             }
         }
 
         $workerServer = $this->findWorkerServer();
         if ($workerServer !== null) {
-            $this->sendSyncToWorkers($workerServer, $signal);
+            $this->sendSyncToWorkers($workerServer, $signal, origin: $dispatch);
         }
         $this->thawOnWorkers($syncData->collectionKey, $thawed);
 
         $this->handleDaemonSignal($signal);
-        self::settleRtSyncStream($signal, true);
+        self::settleRtSyncStream($signal, true, $dispatch);
     }
 
     /**
@@ -8005,11 +7276,12 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param SignalDTO $signal RT sync signal of a streamed operation
      * @param bool $applied Whether it was applied
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private static function settleRtSyncStream(SignalDTO $signal, bool $applied): void
+    private static function settleRtSyncStream(SignalDTO $signal, bool $applied, ?SignalDispatch $origin = null): void
     {
         if ($signal->data instanceof RtSyncSignalDataInterface) {
-            RtSyncStreamSettle::settle($signal->data, $applied);
+            RtSyncStreamSettle::settle($signal->data, $applied, $origin);
         }
     }
 
@@ -8040,18 +7312,41 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $originNodeId Id of the node the write happened on
      * @param string $signalType DB sync signal type the frame carried
      * @param SignalDTO $signal DB sync signal to apply and fan out locally
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws HilosException When a collection refuses the fact it is handed
      */
-    public function applyRemoteDbSync(string $originNodeId, string $signalType, SignalDTO $signal): void
+    public function applyRemoteDbSync(string $originNodeId, string $signalType, SignalDTO $signal, ?SignalDispatch $origin = null): void
     {
-        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
-            $owner = WeakReference::create($this);
-            $this->queueSignalEffect(static function () use ($owner, $originNodeId, $signalType, $signal): Generator {
-                $owner->get()?->applyRemoteDbSync($originNodeId, $signalType, $signal);
-                yield;
-            }, peerApplyContext: "DB sync from node '{$originNodeId}'");
+        if ($origin !== null) {
+            $this->applyRemoteDbSyncInDispatch($origin, $originNodeId, $signalType, $signal);
             return;
         }
+        if ($this->signalDispatcher?->isAttached() ?? false) {
+            $owner = WeakReference::create($this);
+            $this->queueSignalEffectInDispatch(static function (SignalDispatch $dispatch) use (
+                $owner, $originNodeId, $signalType, $signal,
+            ): Generator {
+                $owner->get()?->applyRemoteDbSyncInDispatch($dispatch, $originNodeId, $signalType, $signal);
+                yield;
+            }, null, peerApplyContext: "DB sync from node '{$originNodeId}'");
+            return;
+        }
+        $this->applyRemoteDbSyncInDispatch($this->directSignalDispatch(null), $originNodeId, $signalType, $signal);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Exact operation executing this apply
+     * @param string $originNodeId Id of the node the write happened on
+     * @param string $signalType DB sync signal type the frame carried
+     * @param SignalDTO $signal DB sync signal to apply and fan out locally
+     * @throws HilosException When a collection refuses the fact it is handed
+     */
+    private function applyRemoteDbSyncInDispatch(
+        SignalDispatch $dispatch,
+        string $originNodeId,
+        string $signalType,
+        SignalDTO $signal,
+    ): void {
         $carriedType = $signal->signalType->getType();
         $carriedName = $signal->signalName->getName();
         if (
@@ -8073,7 +7368,7 @@ abstract class DaemonManager extends BaseManager implements
 
         $workerServer = $this->findWorkerServer();
         if ($workerServer !== null) {
-            $this->sendSyncToWorkers($workerServer, $signal, $originNodeId);
+            $this->sendSyncToWorkers($workerServer, $signal, $originNodeId, origin: $dispatch);
         }
 
         $this->handleDaemonSignal($signal, $originNodeId);
@@ -8134,9 +7429,9 @@ abstract class DaemonManager extends BaseManager implements
             $onComplete(new ReHydrateVerdict(null, null, false, ['Protected-mode database catch-up has no worker server']));
             return;
         }
-        $delivery = $this->reHydrateDelivery($workerServer, null, new DbReHydrateSignalData(null),
-            $this->applyReHydrateContained(...), $onComplete);
-        $this->queueSignalEffect(static fn(): Generator => $delivery);
+        $this->queueSignalEffectInDispatch(fn(SignalDispatch $dispatch): Generator => $this->reHydrateDelivery(
+            $workerServer, null, new DbReHydrateSignalData(null), $this->applyReHydrateContained(...), $onComplete,
+        ), null);
     }
 
     /**
@@ -8195,6 +7490,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param Closure(): void $recover Lifts the holds the link's stream keeps on the rows of the collection
      * @param Closure(bool): bool $askAgain Asks the linked node for another snapshot of the collection, told
      *     whether a live change of its area here canceled this one, and answers whether another is still to come
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return Generator<int, RtWork, int, void> The staging on the stream's share, answered at its end
      * @throws LogicException When a portion arrives beyond the generation's reserve, or the generation is
      *     published inside a transaction
@@ -8208,11 +7504,13 @@ abstract class DaemonManager extends BaseManager implements
         Closure $settled,
         Closure $recover,
         Closure $askAgain,
+        ?SignalDispatch $origin = null,
     ): Generator {
+        $origin ??= $this->directSignalDispatch(null);
         $collectionKey = $snapshot->collectionKey;
         $this->rtSnapshotsStaging[$collectionKey][$originNodeId] = ($this->rtSnapshotsStaging[$collectionKey][$originNodeId] ?? 0) + 1;
         try {
-            yield from $this->stageRemoteRtSnapshotArea($originNodeId, $snapshot, $settled, $recover, $askAgain);
+            yield from $this->stageRemoteRtSnapshotArea($originNodeId, $snapshot, $settled, $recover, $askAgain, $origin);
         } finally {
             if (--$this->rtSnapshotsStaging[$collectionKey][$originNodeId] === 0) {
                 unset($this->rtSnapshotsStaging[$collectionKey][$originNodeId]);
@@ -8227,6 +7525,7 @@ abstract class DaemonManager extends BaseManager implements
      * The staging of {@see self::stageRemoteRtSnapshot()}, counted there among the snapshots the node
      * stages here for as long as it runs.
      *
+     * @param SignalDispatch $origin Operation owning this continuation
      * @param string $originNodeId Id of the node at the other end of the link, which owns the area
      * @param RtSyncStreamSnapshot $snapshot Snapshot at its head
      * @param Closure(bool): void $settled The stream's answer
@@ -8246,6 +7545,7 @@ abstract class DaemonManager extends BaseManager implements
         Closure $settled,
         Closure $recover,
         Closure $askAgain,
+        SignalDispatch $origin,
     ): Generator {
         $collectionKey = $snapshot->collectionKey;
         $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
@@ -8302,7 +7602,7 @@ abstract class DaemonManager extends BaseManager implements
             }
         }
         if (!$held) {
-            $settled(true);
+            $settled(true, $origin);
 
             return;
         }
@@ -8317,6 +7617,7 @@ abstract class DaemonManager extends BaseManager implements
             $originNodeId,
             $originMap,
             $receipt,
+            $origin,
             &$wereFrozen,
             &$wereHeld,
             &$published,
@@ -8332,7 +7633,7 @@ abstract class DaemonManager extends BaseManager implements
             // that thawed are named by the marks taken right before it.
             $thawed = [
                 ...array_values(array_filter($sweptIds, static fn (string $stateId): bool => isset($wereFrozen[$stateId]))),
-                ...$this->confirmRemoteRtRows($collectionKey, $arrivedIds, $receipt),
+                ...$this->confirmRemoteRtRows($origin, $collectionKey, $arrivedIds, $receipt),
             ];
             $published = [$arrivedIds, [...$sweptIds, ...$replacedIds], $thawed];
         });
@@ -8355,7 +7656,7 @@ abstract class DaemonManager extends BaseManager implements
         }
         if ($status !== RtSnapshotStatus::Published || $published === null) {
             $import->cancel();
-            $settled(false);
+            $settled(false, $origin);
             if ($status === RtSnapshotStatus::Refused) {
                 Logger::error("A row of the RT snapshot of {$collectionKey} from node '{$originNodeId}' failed its validator;"
                     . ' another is asked for on the next event only');
@@ -8373,14 +7674,14 @@ abstract class DaemonManager extends BaseManager implements
             if ($askAgain($byLiveChange) === true) {
                 $reopened = $confirmation->reopen($collectionKey, $originNodeId);
                 if ($reopened !== null) {
-                    $this->reannounceReaderInterest($this->findPeerServer(), $reopened);
+                    $this->reannounceReaderInterest($this->findPeerServer(), $reopened, $origin);
                 }
             }
 
             return;
         }
         [$arrivedIds, $droppedIds, $thawed] = $published;
-        $this->onIdentitySourceChanged($collectionKey);
+        $this->signalDispatcher?->onIdentitySourceChanged($collectionKey);
         if ($collectionKey === StateHilosUpload::RT_COLLECTION) {
             $this->uploadMemory?->onUploadsChanged();
         }
@@ -8388,13 +7689,13 @@ abstract class DaemonManager extends BaseManager implements
         if ($workerServer !== null) {
             foreach ($droppedIds as $stateId) {
                 yield new RtWork();
-                $this->streamRtSyncToWorkers($workerServer, new RtSyncDeletedSignalData($collectionKey, $stateId));
+                $this->streamRtSyncToWorkers($workerServer, new RtSyncDeletedSignalData($collectionKey, $stateId), $origin);
             }
             foreach ($arrivedIds as $stateId) {
                 yield new RtWork();
                 $row = RtSnapshot::row($collectionKey, $stateId);
                 if ($row !== null) {
-                    $this->streamRtSyncToWorkers($workerServer, new RtSyncCreatedSignalData($collectionKey, $stateId, $row));
+                    $this->streamRtSyncToWorkers($workerServer, new RtSyncCreatedSignalData($collectionKey, $stateId, $row), $origin);
                 }
             }
         }
@@ -8403,7 +7704,7 @@ abstract class DaemonManager extends BaseManager implements
         // the link's later operations of them are applied, and their copy here thaws (H4).
         $recover();
         $confirmation->notePublished($collectionKey, $originNodeId);
-        $settled(true);
+        $settled(true, $origin);
     }
 
     /**
@@ -8547,19 +7848,41 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $originNodeId Id of the node that wrote these rows
      * @param string $collectionKey RT collection being topped up
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the holder keeps them
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws HilosException Whatever the write of the missing rows raises
      */
-    public function applyRemoteRtReplicaOffer(string $originNodeId, string $collectionKey, array $rows): void
+    public function applyRemoteRtReplicaOffer(string $originNodeId, string $collectionKey, array $rows, ?SignalDispatch $origin = null): void
     {
-        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
-            $owner = WeakReference::create($this);
-            $this->queueSignalEffect(static function () use ($owner, $originNodeId, $collectionKey, $rows): Generator {
-                $owner->get()?->applyRemoteRtReplicaOffer($originNodeId, $collectionKey, $rows);
-                yield;
-            }, peerApplyContext: "RT replica offer from node '{$originNodeId}'", rtConfirmation:
-                $this->agentManagerDaemon->rtReplicaOriginMap()->captureConfirmation($originNodeId, $this->agentManagerDaemon->rtNodeSourceMap()));
+        if ($origin !== null) {
+            $this->applyRemoteRtReplicaOfferInDispatch($origin, $originNodeId, $collectionKey, $rows);
             return;
         }
+        if ($this->signalDispatcher?->isAttached() ?? false) {
+            $owner = WeakReference::create($this);
+            $this->queueSignalEffectInDispatch(static function (SignalDispatch $dispatch) use (
+                $owner, $originNodeId, $collectionKey, $rows,
+            ): Generator {
+                $owner->get()?->applyRemoteRtReplicaOfferInDispatch($dispatch, $originNodeId, $collectionKey, $rows);
+                yield;
+            }, null, peerApplyContext: "RT replica offer from node '{$originNodeId}'", rtConfirmation: $this->captureRtSyncReceipt($originNodeId));
+            return;
+        }
+        $this->applyRemoteRtReplicaOfferInDispatch($this->directSignalDispatch(null), $originNodeId, $collectionKey, $rows);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Exact operation executing this apply
+     * @param string $originNodeId Id of the node that wrote these rows
+     * @param string $collectionKey RT collection being topped up
+     * @param array<string, array<string, mixed>> $rows Rows by state id, as the holder keeps them
+     * @throws HilosException Whatever the write of the missing rows raises
+     */
+    private function applyRemoteRtReplicaOfferInDispatch(
+        SignalDispatch $dispatch,
+        string $originNodeId,
+        string $collectionKey,
+        array $rows,
+    ): void {
         if ($this->agentManagerDaemon->workerReaderMap()->holders(SourceChange::KIND_RT, $collectionKey) === []) {
             return;
         }
@@ -8605,8 +7928,8 @@ abstract class DaemonManager extends BaseManager implements
         RtSnapshot::replaceScope($collectionKey, $delivered, $missing);
 
         $this->agentManagerDaemon->rtReplicaOriginMap()->note($originNodeId, $collectionKey, $delivered);
-        $thawed = $this->confirmRemoteRtRows($collectionKey, $delivered);
-        $this->onIdentitySourceChanged($collectionKey);
+        $thawed = $this->confirmRemoteRtRows($dispatch, $collectionKey, $delivered);
+        $this->signalDispatcher?->onIdentitySourceChanged($collectionKey);
 
         $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
@@ -8616,7 +7939,7 @@ abstract class DaemonManager extends BaseManager implements
         // Creations only, and not one deletion: nothing was deleted for a worker to be told about.
         // The readers are told of the thaw behind them.
         foreach ($missing as $stateId => $row) {
-            $this->streamRtSyncToWorkers($workerServer, new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row));
+            $this->streamRtSyncToWorkers($workerServer, new RtSyncCreatedSignalData($collectionKey, (string)$stateId, $row), $dispatch);
         }
         $this->thawOnWorkers($collectionKey, $thawed);
     }
@@ -8869,10 +8192,11 @@ abstract class DaemonManager extends BaseManager implements
      * on either side to drift.
      *
      * @param ?string $nodeId Node to report to, or null to announce to the whole mesh
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function reportRtClaims(?string $nodeId): void
+    public function reportRtClaims(?string $nodeId, ?SignalDispatch $origin = null): void
     {
-        $this->sendRtClaims($this->findPeerServer(), $nodeId);
+        $this->sendRtClaims($this->findPeerServer(), $nodeId, $origin);
     }
 
     /**
@@ -8884,8 +8208,9 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param ?RtClaimMesh $mesh Peer server of this node, or null off-cluster
      * @param ?string $nodeId Node to report to, or null to announce to the whole mesh
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function sendRtClaims(?RtClaimMesh $mesh, ?string $nodeId): void
+    protected function sendRtClaims(?RtClaimMesh $mesh, ?string $nodeId, ?SignalDispatch $origin = null): void
     {
         if ($mesh === null) {
             return;
@@ -8893,7 +8218,7 @@ abstract class DaemonManager extends BaseManager implements
         $route = $nodeId !== null && $mesh instanceof PeerServer ? $mesh->nodeRouteGuard($nodeId) : static fn(): bool => true;
         $mesh = WeakReference::create($mesh);
         $reports = $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports();
-        $work = static function () use ($mesh, $reports, $nodeId, $route): Generator {
+        $work = static function (SignalDispatch $dispatch) use ($mesh, $reports, $nodeId, $route): Generator {
             $plan = $reports->plan();
             yield from $plan->build();
             $claims = [];
@@ -8905,15 +8230,15 @@ abstract class DaemonManager extends BaseManager implements
                 return;
             }
             if ($nodeId === null) {
-                yield from self::sourceBroadcastDelivery($mesh, static function (RtClaimMesh $transport) use ($claims): void {
-                    $transport->announceRtClaims($claims);
-                });
+                yield from self::sourceBroadcastDelivery($mesh, static function (RtClaimMesh $transport) use ($claims, $dispatch): void {
+                    $transport->announceRtClaims($claims, $dispatch);
+                }, $dispatch);
             } else {
                 $mesh->get()?->sendRtClaimsToNode($nodeId, $claims);
                 yield;
             }
         };
-        $this->dispatchSourceWork($work);
+        $this->dispatchSourceWork($work, $origin);
     }
 
     /**
@@ -8940,18 +8265,36 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param string $nodeId Node whose agents hold the claims
      * @param list<PeerRtClaimEntry> $claims What each agent of that node owns
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function applyRemoteRtClaims(string $nodeId, array $claims): void
+    public function applyRemoteRtClaims(string $nodeId, array $claims, ?SignalDispatch $origin = null): void
     {
-        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
-            $owner = WeakReference::create($this);
-            $this->queueSignalEffect(static function () use ($owner, $nodeId, $claims): Generator {
-                $owner->get()?->applyRemoteRtClaims($nodeId, $claims);
-                yield;
-            });
+        if ($origin !== null) {
+            $this->applyRemoteRtClaimsInDispatch($origin, $nodeId, $claims);
             return;
         }
-        $this->dropRtCopiesClaimedElsewhere($claims);
+        if ($this->signalDispatcher?->isAttached() ?? false) {
+            $owner = WeakReference::create($this);
+            $this->queueSignalEffectInDispatch(static function (SignalDispatch $dispatch) use ($owner, $nodeId, $claims): Generator {
+                $owner->get()?->applyRemoteRtClaimsInDispatch($dispatch, $nodeId, $claims);
+                yield;
+            }, null);
+            return;
+        }
+        $this->applyRemoteRtClaimsInDispatch($this->directSignalDispatch(null), $nodeId, $claims);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Exact operation executing this apply
+     * @param string $nodeId Node whose agents hold the claims
+     * @param list<PeerRtClaimEntry> $claims What each agent of that node owns
+     */
+    private function applyRemoteRtClaimsInDispatch(
+        SignalDispatch $dispatch,
+        string $nodeId,
+        array $claims,
+    ): void {
+        $this->dropRtCopiesClaimedElsewhere($claims, $dispatch);
         if (!$this->amLeader()) {
             return;
         }
@@ -8979,7 +8322,9 @@ abstract class DaemonManager extends BaseManager implements
             // And the outcome, over the frame the leader already revokes a placement with. Sent
             // after the verdict on purpose: the node marks the agent unstartable as it reads the
             // refusal, so the stop cannot be undone by a start racing it.
-            Hilos::$cluster?->placement()?->refusePlacement($refusal->agentType, $refusal->agentIndex, $nodeId);
+            Hilos::$cluster?->placement()?->refusePlacement(
+                $refusal->agentType, $refusal->agentIndex, $nodeId, $this->signalLifecycleSink($dispatch),
+            );
         }
     }
 
@@ -8988,8 +8333,9 @@ abstract class DaemonManager extends BaseManager implements
      * reads nor owns any part of ({@see self::applyRemoteRtClaims()}).
      *
      * @param list<PeerRtClaimEntry> $claims What each agent of the claiming node owns
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private function dropRtCopiesClaimedElsewhere(array $claims): void
+    private function dropRtCopiesClaimedElsewhere(array $claims, ?SignalDispatch $origin = null): void
     {
         $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
         if (!$confirmation->awaitsPeers()) {
@@ -9006,7 +8352,7 @@ abstract class DaemonManager extends BaseManager implements
                 $this->dropRtCopy($collectionKey, $this->linkedOriginSweep(
                     $collectionKey,
                     static fn (string $stateId): bool => $claimedKeys === null || in_array($stateId, $claimedKeys, true),
-                ));
+                ), $origin);
             }
         }
     }
@@ -9176,8 +8522,9 @@ abstract class DaemonManager extends BaseManager implements
      * subclass sees what this node tells the mesh.
      *
      * @param ?SourceInterestMesh $mesh Peer server of this node, or null off-cluster
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function announceReaderInterest(?SourceInterestMesh $mesh): void
+    protected function announceReaderInterest(?SourceInterestMesh $mesh, ?SignalDispatch $origin = null): void
     {
         if ($this->readerInterestQueryCollections !== null) {
             return;
@@ -9195,35 +8542,36 @@ abstract class DaemonManager extends BaseManager implements
 
         $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
         $wasRead = $confirmation->readCollections();
-        $announcement = $this->moveRtCopies($reads[SourceChange::KIND_RT], $mesh !== null);
+        $announcement = $this->moveRtCopies($reads[SourceChange::KIND_RT], $mesh !== null, $origin);
         if ($mesh === null) {
-            $this->sendConfirmedRtCopies($confirmation->addressed($announcement, []));
+            $this->sendConfirmedRtCopies($confirmation->addressed($announcement, []), $origin);
 
             return;
         }
 
         $owner = WeakReference::create($this);
         $mesh = WeakReference::create($mesh);
-        $this->dispatchSourceWork(static function () use ($mesh, $owner, $reads, $announcement, $wasRead): Generator {
+        $this->dispatchSourceWork(static function (SignalDispatch $dispatch) use ($mesh, $owner, $reads, $announcement, $wasRead): Generator {
             $addressed = null;
             yield from self::sourceBroadcastDelivery(
                 $mesh,
                 static function (SourceInterestMesh $transport) use ($reads, $announcement, &$addressed): void {
                     $addressed = $transport->announceSourceInterest($reads[SourceChange::KIND_RT], $reads[SourceChange::KIND_DB], $announcement);
                 },
+                $dispatch,
             );
             $manager = $owner->get();
             if ($manager === null) {
                 return;
             }
             $confirmation = $manager->agentManagerDaemon->rtCopyConfirmation();
-            $manager->sendConfirmedRtCopies($confirmation->addressed($announcement, $addressed ?? []));
+            $manager->sendConfirmedRtCopies($confirmation->addressed($announcement, $addressed ?? []), $dispatch);
             foreach (array_diff($wasRead, $reads[SourceChange::KIND_RT]) as $collectionKey) {
                 if (!$confirmation->isRead($collectionKey) && self::isHandedOverInSnapshot($collectionKey)) {
-                    $manager->dropRtCopy($collectionKey, $manager->linkedOriginSweep($collectionKey));
+                    $manager->dropRtCopy($collectionKey, $manager->linkedOriginSweep($collectionKey), $dispatch);
                 }
             }
-        });
+        }, $origin);
     }
 
     /**
@@ -9243,15 +8591,16 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param ?SourceInterestMesh $mesh Peer server of this node, or null off-cluster
      * @param int $announcement Number of the announcement the reopened wait awaits the answer to
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function reannounceReaderInterest(?SourceInterestMesh $mesh, int $announcement): void
+    protected function reannounceReaderInterest(?SourceInterestMesh $mesh, int $announcement, ?SignalDispatch $origin = null): void
     {
         if ($mesh === null) {
             return;
         }
         $owner = WeakReference::create($this);
         $mesh = WeakReference::create($mesh);
-        $this->dispatchSourceWork(static function () use ($mesh, $owner, $announcement): Generator {
+        $this->dispatchSourceWork(static function (SignalDispatch $dispatch) use ($mesh, $owner, $announcement): Generator {
             yield from self::sourceBroadcastDelivery(
                 $mesh,
                 static function (SourceInterestMesh $transport) use ($owner, $announcement): void {
@@ -9260,8 +8609,9 @@ abstract class DaemonManager extends BaseManager implements
                         $transport->reannounceSourceInterest($number);
                     }
                 },
+                $dispatch,
             );
-        });
+        }, $origin);
     }
 
     /**
@@ -9273,9 +8623,10 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param list<string> $reads RT collections the announcement names
      * @param bool $meshed Whether the announcement goes to a mesh
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return int Number of the announcement
      */
-    private function moveRtCopies(array $reads, bool $meshed): int
+    private function moveRtCopies(array $reads, bool $meshed, ?SignalDispatch $origin = null): int
     {
         $confirmation = $this->agentManagerDaemon->rtCopyConfirmation();
         $confirmation->awaitPeers($meshed);
@@ -9291,7 +8642,7 @@ abstract class DaemonManager extends BaseManager implements
             }
         }
         $announcement = $confirmation->announce($reads, $awaiting);
-        $this->sendConfirmedRtCopies(array_values(array_diff($added, $awaiting)));
+        $this->sendConfirmedRtCopies(array_values(array_diff($added, $awaiting)), $origin);
 
         return $announcement;
     }
@@ -9309,8 +8660,9 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param string $collectionKey RT collection whose copy is dropped
      * @param Closure(string): bool $maySweep Whether the drop sweeps a row, by its id
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private function dropRtCopy(string $collectionKey, Closure $maySweep): void
+    private function dropRtCopy(string $collectionKey, Closure $maySweep, ?SignalDispatch $origin = null): void
     {
         ($this->rtCopyDrops[$collectionKey] ?? null)?->cancel();
         $sourceMap = $this->agentManagerDaemon->rtNodeSourceMap();
@@ -9334,10 +8686,14 @@ abstract class DaemonManager extends BaseManager implements
         $this->rtCopyDrops[$collectionKey] = $drop;
         $this->rtCopyDropSweeps[$collectionKey] = $maySweep;
         $owner = WeakReference::create($this);
-        $this->dispatchSourceWork(static fn (): Generator => self::rtCopyDropWork($owner, $collectionKey, $drop));
+        $this->dispatchSourceWork(
+            static fn(SignalDispatch $dispatch): Generator => self::rtCopyDropWork($owner, $collectionKey, $drop, $dispatch),
+            $origin,
+        );
     }
 
     /**
+     * @param SignalDispatch $origin Operation owning this continuation
      * @param WeakReference<self> $owner Master the drop belongs to
      * @param string $collectionKey RT collection whose copy is dropped
      * @param RtSnapshotImport $drop The drop's generation
@@ -9346,16 +8702,22 @@ abstract class DaemonManager extends BaseManager implements
      * @throws InvalidArgumentException Never: the allowances are not negative
      * @throws HilosException Whatever a subscriber raises on an announcement of the swept rows
      */
-    private static function rtCopyDropWork(WeakReference $owner, string $collectionKey, RtSnapshotImport $drop): Generator
+    private static function rtCopyDropWork(
+        WeakReference $owner,
+        string $collectionKey,
+        RtSnapshotImport $drop,
+        SignalDispatch $origin,
+    ): Generator
     {
         do {
             yield;
-        } while ($owner->get()?->advanceRtCopyDrop($collectionKey, $drop) ?? false);
+        } while ($owner->get()?->advanceRtCopyDrop($collectionKey, $drop, $origin) ?? false);
     }
 
     /**
      * One bounded step of a drop of this node's copy of a collection ({@see self::dropRtCopy()}).
      *
+     * @param SignalDispatch $origin Operation owning this continuation
      * @param string $collectionKey RT collection whose copy is dropped
      * @param RtSnapshotImport $drop The drop's generation
      * @return bool Whether the drop owes another step
@@ -9363,7 +8725,7 @@ abstract class DaemonManager extends BaseManager implements
      * @throws InvalidArgumentException Never: the allowances are not negative
      * @throws HilosException Whatever a subscriber raises on an announcement of the swept rows
      */
-    private function advanceRtCopyDrop(string $collectionKey, RtSnapshotImport $drop): bool
+    private function advanceRtCopyDrop(string $collectionKey, RtSnapshotImport $drop, SignalDispatch $origin): bool
     {
         if (($this->rtCopyDrops[$collectionKey] ?? null) !== $drop) {
             return false;
@@ -9381,12 +8743,12 @@ abstract class DaemonManager extends BaseManager implements
         $maySweep = $this->rtCopyDropSweeps[$collectionKey];
         unset($this->rtCopyDrops[$collectionKey], $this->rtCopyDropSweeps[$collectionKey]);
         if ($status === RtSnapshotStatus::Published) {
-            $this->onIdentitySourceChanged($collectionKey);
+            $this->signalDispatcher?->onIdentitySourceChanged($collectionKey);
             if ($collectionKey === StateHilosUpload::RT_COLLECTION) {
                 $this->uploadMemory?->onUploadsChanged();
             }
         } elseif ($status === RtSnapshotStatus::Canceled && RtSnapshot::hasRows($collectionKey)) {
-            $this->dropRtCopy($collectionKey, $maySweep);
+            $this->dropRtCopy($collectionKey, $maySweep, $origin);
         }
 
         return false;
@@ -9459,8 +8821,9 @@ abstract class DaemonManager extends BaseManager implements
      * this node asks the mesh for.
      *
      * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function askRtSnapshotsForMissingCollections(?RtSyncMesh $mesh): void
+    protected function askRtSnapshotsForMissingCollections(?RtSyncMesh $mesh, ?SignalDispatch $origin = null): void
     {
         if ($this->readerInterestQueryCollections === null) {
             return;
@@ -9477,20 +8840,23 @@ abstract class DaemonManager extends BaseManager implements
 
         $mesh = WeakReference::create($mesh);
         $confirmation = WeakReference::create($this->agentManagerDaemon->rtCopyConfirmation());
-        $delivery = self::missingRtCollectionsDelivery(
-            $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports(),
-            (static function () use ($collections, $confirmation): Generator {
-                foreach ($collections as $collectionKey) {
-                    yield $confirmation->get()?->isAwaited($collectionKey) === true ? null : $collectionKey;
-                }
-            })(),
-            static function (array $missing) use ($mesh): Generator {
-                yield from self::sourceBroadcastDelivery($mesh, static function (RtSyncMesh $transport) use ($missing): void {
-                    $transport->broadcastRtSnapshotQuery($missing);
-                });
-            },
-        );
-        $this->dispatchSourceWork(static fn(): Generator => $delivery);
+        $reports = $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports();
+        $work = static function (SignalDispatch $dispatch) use ($mesh, $confirmation, $collections, $reports): Generator {
+            return self::missingRtCollectionsDelivery(
+                $reports,
+                (static function () use ($collections, $confirmation): Generator {
+                    foreach ($collections as $collectionKey) {
+                        yield $confirmation->get()?->isAwaited($collectionKey) === true ? null : $collectionKey;
+                    }
+                })(),
+                static function (array $missing) use ($mesh, $dispatch): Generator {
+                    yield from self::sourceBroadcastDelivery($mesh, static function (RtSyncMesh $transport) use ($missing): void {
+                        $transport->broadcastRtSnapshotQuery($missing);
+                    }, $dispatch);
+                },
+            );
+        };
+        $this->dispatchSourceWork($work, $origin);
     }
 
     /**
@@ -9508,26 +8874,30 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
      * @param list<string> $collections Collections just confirmed for the first time
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function askHoldersOfConfirmedRtCopies(?RtSyncMesh $mesh, array $collections): void
+    protected function askHoldersOfConfirmedRtCopies(?RtSyncMesh $mesh, array $collections, ?SignalDispatch $origin = null): void
     {
         if ($mesh === null) {
             return;
         }
         $mesh = WeakReference::create($mesh);
-        $delivery = self::missingRtCollectionsDelivery(
-            $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports(),
-            $collections,
-            static function (array $missing) use ($mesh): Generator {
-                if ($missing !== []) {
-                    yield from self::sourceBroadcastDelivery($mesh, static function (RtSyncMesh $transport) use ($missing): void {
-                        $transport->broadcastRtSnapshotQuery($missing);
-                    });
-                }
-            },
-            evenHeld: true,
-        );
-        $this->dispatchSourceWork(static fn(): Generator => $delivery);
+        $reports = $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports();
+        $work = static function (SignalDispatch $dispatch) use ($mesh, $collections, $reports): Generator {
+            return self::missingRtCollectionsDelivery(
+                $reports,
+                $collections,
+                static function (array $missing) use ($mesh, $dispatch): Generator {
+                    if ($missing !== []) {
+                        yield from self::sourceBroadcastDelivery($mesh, static function (RtSyncMesh $transport) use ($missing): void {
+                            $transport->broadcastRtSnapshotQuery($missing);
+                        }, $dispatch);
+                    }
+                },
+                evenHeld: true,
+            );
+        };
+        $this->dispatchSourceWork($work, $origin);
     }
 
     /**
@@ -9718,25 +9088,30 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
      * @param string $nodeId Node being asked
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function sendRtSnapshotQueryToNode(?RtSyncMesh $mesh, string $nodeId): void
+    protected function sendRtSnapshotQueryToNode(?RtSyncMesh $mesh, string $nodeId, ?SignalDispatch $origin = null): void
     {
         if ($mesh === null) {
             return;
         }
         $route = $mesh instanceof PeerServer ? $mesh->nodeRouteGuard($nodeId) : static fn(): bool => true;
         $mesh = WeakReference::create($mesh);
-        $delivery = self::missingRtCollectionsDelivery(
-            $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports(),
-            $this->agentManagerDaemon->workerReaderMap()->collectionCandidates(SourceChange::KIND_RT),
-            static function (array $missing) use ($mesh, $nodeId, $route): Generator {
-                if ($route()) {
-                    $mesh->get()?->sendRtSnapshotQueryToNode($nodeId, $missing);
-                }
-                yield;
-            },
-        );
-        $this->dispatchSourceWork(static fn(): Generator => $delivery);
+        $reports = $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports();
+        $collections = $this->agentManagerDaemon->workerReaderMap()->collectionCandidates(SourceChange::KIND_RT);
+        $work = static function (SignalDispatch $dispatch) use ($mesh, $nodeId, $route, $collections, $reports): Generator {
+            return self::missingRtCollectionsDelivery(
+                $reports,
+                $collections,
+                static function (array $missing) use ($mesh, $nodeId, $route): Generator {
+                    if ($route()) {
+                        $mesh->get()?->sendRtSnapshotQueryToNode($nodeId, $missing);
+                    }
+                    yield;
+                },
+            );
+        };
+        $this->dispatchSourceWork($work, $origin);
     }
 
     /**
@@ -9778,8 +9153,9 @@ abstract class DaemonManager extends BaseManager implements
      * @param ?RtSyncMesh $mesh Peer server of this node, or null off-cluster
      * @param string $nodeId Node that asked
      * @param list<string> $collectionKeys RT collections it asked about
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    protected function sendRtReplicaOffersToNode(?RtSyncMesh $mesh, string $nodeId, array $collectionKeys): void
+    protected function sendRtReplicaOffersToNode(?RtSyncMesh $mesh, string $nodeId, array $collectionKeys, ?SignalDispatch $origin = null): void
     {
         if ($mesh === null) {
             return;
@@ -9790,7 +9166,7 @@ abstract class DaemonManager extends BaseManager implements
         $claims = $this->agentManagerDaemon->rtNodeSourceMap()->sourceReports();
         $origins = WeakReference::create($this->agentManagerDaemon->rtReplicaOriginMap());
         $rtWork = $this->rtWork;
-        $work = static function () use ($mesh, $claims, $origins, $nodeId, $collectionKeys, $route, $rtWork): Generator {
+        $work = static function (SignalDispatch $dispatch) use ($mesh, $claims, $origins, $nodeId, $collectionKeys, $route, $rtWork): Generator {
             $transport = $mesh->get();
             $originMap = $origins->get();
             if ($transport === null || $originMap === null || !$route()) {
@@ -9806,7 +9182,7 @@ abstract class DaemonManager extends BaseManager implements
             unset($transport, $originMap);
             yield from $delivery;
         };
-        $this->dispatchSourceWork($work);
+        $this->dispatchSourceWork($work, $origin);
     }
 
     /**
@@ -9913,14 +9289,20 @@ abstract class DaemonManager extends BaseManager implements
      * the write that confirmed them is handed to their streams ({@see self::thawOnWorkers()}); a freeze
      * is told to them at once.
      *
+     * @param SignalDispatch $dispatch Operation owning the confirmation
      * @param string $collectionKey RT collection the receipt speaks for
      * @param list<string> $stateIds Confirmed rows, excluding deletions
      * @param ?RtReplicaConfirmation $receipt Receipt the rows arrived with, or null for the retained work's own
      * @return list<string> Rows thawed here, whose readers are still to be told
      */
-    private function confirmRemoteRtRows(string $collectionKey, array $stateIds, ?RtReplicaConfirmation $receipt = null): array
+    private function confirmRemoteRtRows(
+        SignalDispatch $dispatch,
+        string $collectionKey,
+        array $stateIds,
+        ?RtReplicaConfirmation $receipt = null,
+    ): array
     {
-        $lostAt = ($receipt ?? $this->currentSignalDispatch?->rtConfirmation)?->lostAt;
+        $lostAt = ($receipt ?? $dispatch->rtConfirmation)?->lostAt;
         if ($lostAt === null) {
             return $this->liftStaleness($collectionKey, $stateIds);
         }
@@ -9955,22 +9337,44 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $collectionKey RT collection the rows belong to
      * @param list<string> $stateIds Rows held, or let go of
      * @param ?float $since Microtime the hold began, or null when the rows have a base again
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private function markRtSyncStreamHold(?int $workerIndex, string $collectionKey, array $stateIds, ?float $since): void
+    private function markRtSyncStreamHold(
+        ?int $workerIndex,
+        string $collectionKey,
+        array $stateIds,
+        ?float $since,
+        ?SignalDispatch $origin = null,
+    ): void
     {
         if ($since === null) {
-            $thawed = $this->liftStaleness($collectionKey, $stateIds);
-            if ($thawed !== [] && $this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
+            $stateIds = $this->liftStaleness($collectionKey, $stateIds);
+            if ($stateIds !== [] && $origin === null && ($this->signalDispatcher?->isAttached() ?? false)) {
                 $owner = WeakReference::create($this);
-                $this->queueSignalEffect(static function () use ($owner, $collectionKey, $thawed): Generator {
-                    $owner->get()?->thawOnWorkers($collectionKey, $thawed);
+                $this->queueSignalEffectInDispatch(static function (SignalDispatch $dispatch) use (
+                    $owner, $workerIndex, $collectionKey, $stateIds,
+                ): Generator {
+                    $owner->get()?->markRtSyncStreamHoldInDispatch($dispatch, $workerIndex, $collectionKey, $stateIds, null);
                     yield;
-                });
-
+                }, null);
                 return;
             }
-            $this->thawOnWorkers($collectionKey, $thawed);
+        }
+        $this->markRtSyncStreamHoldInDispatch($origin ?? $this->directSignalDispatch(null), $workerIndex, $collectionKey, $stateIds, $since);
+    }
 
+    /**
+     * @param SignalDispatch $dispatch Operation holding or recovering the rows
+     * @param ?int $workerIndex Writing worker, or null for a peer
+     * @param string $collectionKey Held collection
+     * @param list<string> $stateIds Held rows, or rows whose local mark was already lifted
+     * @param ?float $since Hold moment, or null for the worker thaw
+     */
+    private function markRtSyncStreamHoldInDispatch(
+        SignalDispatch $dispatch, ?int $workerIndex, string $collectionKey, array $stateIds, ?float $since,
+    ): void {
+        if ($since === null) {
+            $this->thawOnWorkers($collectionKey, $stateIds);
             return;
         }
         RtStaleness::mark($collectionKey, $stateIds, $since);
@@ -10101,7 +9505,7 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $this->sendSignalToWebSocketClient($webSocketServer, $signal, $acceptKey);
+        $this->sendSignalToWebSocketClient($this->directSignalDispatch($signal), $webSocketServer, $signal, $acceptKey);
     }
 
     /**
@@ -10144,14 +9548,24 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function deliverCommandReply(SignalDTO $signal): void
     {
-        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
+        if ($this->signalDispatcher?->isAttached() ?? false) {
             $owner = WeakReference::create($this);
-            $this->queueSignalEffect(static function () use ($owner, $signal): Generator {
-                $owner->get()?->deliverCommandReply($signal);
+            $this->queueSignalEffectInDispatch(static function (SignalDispatch $dispatch) use ($owner, $signal): Generator {
+                $owner->get()?->deliverCommandReplyInDispatch($dispatch, $signal);
                 yield;
-            }, peerApplyContext: 'forwarded command reply');
+            }, null, peerApplyContext: 'forwarded command reply');
             return;
         }
+        $this->deliverCommandReplyInDispatch($this->directSignalDispatch($signal), $signal);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original root delivery lifetime
+     * @param SignalDTO $signal COMMAND_REPLY signal already addressed by correlation id
+     * @throws EventLoopException When the next restart caller deadline cannot be armed or canceled
+     */
+    private function deliverCommandReplyInDispatch(SignalDispatch $dispatch, SignalDTO $signal): void
+    {
         $reply = $signal->data;
         if (!$reply instanceof CommandReplyDTO) {
             Logger::warning('Forwarded command reply dropped: the frame carries ' . get_debug_type($reply) . ', not a reply');
@@ -10190,10 +9604,11 @@ abstract class DaemonManager extends BaseManager implements
      *
      * @param string $agentType Agent type that could not be addressed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?PlacementVerdictSink $immediateVerdict Only the current call may answer through this port
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws EventLoopException When the unresolved address's existing retry deadline cannot be armed
      */
-    protected function requireOnDemandPlacement(string $agentType, ?string $agentIndex): void
+    protected function requireOnDemandPlacement(string $agentType, ?string $agentIndex, ?PlacementVerdictSink $immediateVerdict = null): void
     {
         $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
         if (AgentRegistry::scope($registryEntry) !== AgentScope::CLUSTER
@@ -10201,8 +9616,10 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        Hilos::$cluster?->placement()?->requirePlacement($agentType, $agentIndex);
-        $this->rearmPlacementSignalTimer($this->agentManagerDaemon->buildAgentId($agentType, $agentIndex));
+        Hilos::$cluster?->placement()?->requirePlacement(
+            $agentType, $agentIndex, $immediateVerdict, $immediateVerdict instanceof AgentStartSink ? $immediateVerdict : null,
+        );
+        $this->signalDispatcher?->rearmPlacementSignalTimer($this->agentManagerDaemon->buildAgentId($agentType, $agentIndex));
     }
 
     /**
@@ -10586,52 +10003,8 @@ abstract class DaemonManager extends BaseManager implements
             );
             return;
         }
-
-        $state = $this->signalDispatchState();
-        $dispatch = $this->createClientFanoutDispatch($signal, $webSocketServer);
-        $dispatch->peerFanoutId = ++$state->peerSequence;
-        $dispatch->peerOrigin = $originNodeId;
-        $state->peers[$dispatch->peerFanoutId] = $dispatch;
-        $this->signalDispatchWake?->markReady();
-    }
-
-    /**
-     * @param SignalDTO $signal Forwarded fan-out, already routed by its sending node
-     * @param WebSocketServer $server Local browser server
-     * @return SignalDispatch Local-only lifetime with subscriptions captured before its first portion
-     */
-    private function createClientFanoutDispatch(SignalDTO $signal, WebSocketServer $server): SignalDispatch
-    {
-        $destinations = Hilos::$sr->localClientCandidates($signal);
-        return new SignalDispatch($signal, fn(SignalDispatch $dispatch): Generator =>
-            $this->walkClientFanout($dispatch, $server, $destinations),
-            cleanup: $this->signalDispatchNotifier === null ? null : $this->deliveryCleanup());
-    }
-
-    /**
-     * This path never discovers agents or adds another mesh-forward marker.
-     *
-     * @param SignalDispatch $dispatch Original forwarded lifetime
-     * @param WebSocketServer $server Exact local browser server
-     * @param Generator<int, ?Destination> $destinations Captured local-only candidates
-     * @return Generator<int, void> One-hop local destination and physical portions
-     * @throws InvalidFormatException When a matching completion reads an invalid delivery window
-     */
-    private function walkClientFanout(SignalDispatch $dispatch, WebSocketServer $server, Generator $destinations): Generator
-    {
-        yield;
-        $dispatch->phase = SignalDispatchPhase::Destinations;
-        $dispatch->destinations = $destinations;
-        foreach ($destinations as $destination) {
-            if (!$destination instanceof WebSocketDestination && !$destination instanceof AllClientsDestination
-                && !$destination instanceof SessionClientsDestination) {
-                yield;
-                continue;
-            }
-            $dispatch->physical = $this->clientDestinationDelivery($dispatch, $server, $destination);
-            yield from $dispatch->physical;
-            $dispatch->physical = null;
-        }
+        $this->signalDispatcher()->queueClientFanout($originNodeId, $signal, $webSocketServer);
+        $this->signalDispatcher?->markReady();
     }
 
     /**
@@ -10677,14 +10050,24 @@ abstract class DaemonManager extends BaseManager implements
      */
     public function deliverPageAccessReassess(string $originNodeId, SignalDTO $signal): void
     {
-        if ($this->signalDispatchNotifier !== null && $this->currentSignalDispatch === null) {
+        if ($this->signalDispatcher?->isAttached() ?? false) {
             $owner = WeakReference::create($this);
-            $this->queueSignalEffect(static function () use ($owner, $originNodeId, $signal): Generator {
-                $owner->get()?->deliverPageAccessReassess($originNodeId, $signal);
+            $this->queueSignalEffectInDispatch(static function (SignalDispatch $dispatch) use ($owner, $originNodeId, $signal): Generator {
+                $owner->get()?->deliverPageAccessReassessInDispatch($dispatch, $originNodeId, $signal);
                 yield;
-            }, peerApplyContext: "page access re-decision from node '{$originNodeId}'");
+            }, null, peerApplyContext: "page access re-decision from node '{$originNodeId}'");
             return;
         }
+        $this->deliverPageAccessReassessInDispatch($this->directSignalDispatch($signal), $originNodeId, $signal);
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original root delivery lifetime
+     * @param string $originNodeId Id of the announcing node
+     * @param SignalDTO $signal By-user or by-connection announcement
+     */
+    private function deliverPageAccessReassessInDispatch(SignalDispatch $dispatch, string $originNodeId, SignalDTO $signal): void
+    {
         $workerServer = $this->findWorkerServer();
         if ($workerServer === null) {
             return;
@@ -11335,12 +10718,13 @@ abstract class DaemonManager extends BaseManager implements
     /**
      * Send a signal to one WebSocket client by accept key.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WebSocketServer $server WebSocket server
      * @param SignalDTO $signal Signal DTO
      * @param string $acceptKey Accept key
      * @throws InvalidFormatException When a matching completion reads an invalid delivery window
      */
-    private function sendSignalToWebSocketClient(WebSocketServer $server, SignalDTO $signal, string $acceptKey): void
+    private function sendSignalToWebSocketClient(SignalDispatch $dispatch, WebSocketServer $server, SignalDTO $signal, string $acceptKey): void
     {
         if ($signal->signalName->getName() === SignalConstants::DELIVERY_COMPLETE) {
             $targeting = $signal->data;
@@ -11348,8 +10732,8 @@ abstract class DaemonManager extends BaseManager implements
                 && $targeting instanceof WebSocketSignalData && $targeting->data instanceof DeliveryCompleteSignalData
                 && $targeting->targetAcceptKey === $acceptKey
             ) {
-                $this->acceptPageDeliveryControl($signal);
-                $walk = $this->clientLookup($server, $acceptKey);
+                $this->acceptPageDeliveryControl($dispatch, $signal);
+                $walk = $this->clientLookup($dispatch, $server, $acceptKey);
                 foreach ($walk as $_) {
                 }
                 $walk->getReturn()?->getClient()?->completeDelivery($targeting->data->page, $targeting->data->deliveryId);
@@ -11357,41 +10741,45 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        if ($this->isStalePageRecovery($signal)) {
+        if ($this->isStalePageRecovery($dispatch, $signal)) {
             return;
         }
-        $this->acceptPageDeliveryControl($signal);
+        $this->acceptPageDeliveryControl($dispatch, $signal);
         $message = $this->prepareSignalFrame($signal);
         if ($message === null) {
             return;
         }
 
-        $this->sendToClient($server, $acceptKey, $message);
+        $this->sendToClient($dispatch, $server, $acceptKey, $message);
     }
 
     /**
      * Captures the exact lookup roster before completion can yield to another portion.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WebSocketServer $server Owning browser server
      * @param SignalDTO $signal Internal completion envelope
      * @param WebSocketDestination $destination Original local recipient
      * @return Generator<int, void> Bounded lookup and one matching completion
      * @throws InvalidFormatException When a matching completion reads an invalid delivery window
      */
-    private function browserSignalDelivery(WebSocketServer $server, SignalDTO $signal, WebSocketDestination $destination): Generator
-    {
-        return $this->walkBrowserCompletion($this->clientLookup($server, $destination->acceptKey), $signal, $destination);
+    private function browserSignalDelivery(
+        SignalDispatch $dispatch, WebSocketServer $server, SignalDTO $signal, WebSocketDestination $destination,
+    ): Generator {
+        return $this->walkBrowserCompletion($dispatch, $this->clientLookup($dispatch, $server, $destination->acceptKey), $signal, $destination);
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param Generator<int, void, void, ?BrowserDeliveryTarget> $lookup Captured exact transport search
      * @param SignalDTO $signal Internal completion envelope
      * @param WebSocketDestination $destination Original local recipient
      * @return Generator<int, void> One lookup visit per step, without serializing a control frame
      * @throws InvalidFormatException When completion reads an invalid delivery window
      */
-    private function walkBrowserCompletion(Generator $lookup, SignalDTO $signal, WebSocketDestination $destination): Generator
-    {
+    private function walkBrowserCompletion(
+        SignalDispatch $dispatch, Generator $lookup, SignalDTO $signal, WebSocketDestination $destination,
+    ): Generator {
         yield;
         $targeting = $signal->data;
         if ($signal->signalType->getType() !== SignalTypeConstants::WS_USER
@@ -11401,7 +10789,7 @@ abstract class DaemonManager extends BaseManager implements
             return;
         }
 
-        $this->acceptPageDeliveryControl($signal);
+        $this->acceptPageDeliveryControl($dispatch, $signal);
         $target = yield from $lookup;
         $client = $target?->getClient();
         if ($client !== null && Hilos::$sr->isCurrentClientDestination($destination)) {
@@ -11410,20 +10798,21 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param string $acceptKey Connection accepted on this node
      * @return ?WebSocketClient Its live transport, absent for remote or closed connections
      */
-    private function deliveryClient(string $acceptKey): ?WebSocketClient
+    private function deliveryClient(SignalDispatch $dispatch, string $acceptKey): ?WebSocketClient
     {
-        if ($this->currentSignalDispatch?->clientResolved
-            && $this->currentSignalDispatch->clientAcceptKey === $acceptKey) {
-            return $this->currentSignalDispatch->clientTarget?->getClient();
+        if ($dispatch->clientResolved
+            && $dispatch->clientAcceptKey === $acceptKey) {
+            return $dispatch->clientTarget?->getClient();
         }
         $server = $this->findWebSocketServer();
         if ($server === null) {
             return null;
         }
-        $walk = $this->clientLookup($server, $acceptKey);
+        $walk = $this->clientLookup($dispatch, $server, $acceptKey);
         foreach ($walk as $_) {
         }
 
@@ -11433,16 +10822,17 @@ abstract class DaemonManager extends BaseManager implements
     /**
      * Admission and DELIVERY_COMPLETE capture the same exact indexed address before yielding.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WebSocketServer $server Exact browser server being searched
      * @param string $acceptKey Target connection
      * @return Generator<int, void, void, ?BrowserDeliveryTarget> One constant-time lookup and retained incarnation check
      */
-    private function clientLookup(WebSocketServer $server, string $acceptKey): Generator
+    private function clientLookup(SignalDispatch $dispatch, WebSocketServer $server, string $acceptKey): Generator
     {
-        if ($this->currentSignalDispatch?->clientResolved
-            && $this->currentSignalDispatch->clientServer === $server
-            && $this->currentSignalDispatch->clientAcceptKey === $acceptKey) {
-            return $this->knownClientLookup($this->currentSignalDispatch->clientTarget);
+        if ($dispatch->clientResolved
+            && $dispatch->clientServer === $server
+            && $dispatch->clientAcceptKey === $acceptKey) {
+            return $this->knownClientLookup($dispatch->clientTarget);
         }
         return $this->knownClientLookup($server->clientTarget($acceptKey));
     }
@@ -11458,11 +10848,12 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Queued or released browser request
      * @param bool $localOnly Whether this request was forwarded by a peer to this serving node
      * @return bool Whether a socket-local token was superseded before dispatch
      */
-    private function isAbandonedPageDelivery(SignalDTO $signal, bool $localOnly = false): bool
+    private function isAbandonedPageDelivery(SignalDispatch $dispatch, SignalDTO $signal, bool $localOnly = false): bool
     {
         $data = $signal->data;
         if (!$data instanceof WebSocketPageSubscribeSignalDTO && !$data instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
@@ -11471,7 +10862,7 @@ abstract class DaemonManager extends BaseManager implements
         if ($data->deliveryId === null) {
             return false;
         }
-        $client = $this->deliveryClient($data->acceptKey);
+        $client = $this->deliveryClient($dispatch, $data->acceptKey);
 
         if ($client !== null) {
             return !$client->isDeliveryPending($data->page ?? $signal->signalName->getName(), $data->deliveryId);
@@ -11486,10 +10877,11 @@ abstract class DaemonManager extends BaseManager implements
      * Record the selected address before writing to a worker or a peer. Unknown placement is
      * deliberately absent; start parking retains the actual local agent it waits for.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Request being dispatched
      * @param AgentAddressedDestination $destination Selected serving address
      */
-    private function trackPageDelivery(SignalDTO $signal, AgentAddressedDestination $destination): void
+    private function trackPageDelivery(SignalDispatch $dispatch, SignalDTO $signal, AgentAddressedDestination $destination): void
     {
         $data = $signal->data;
         if (($signal->signalType->getType() !== SignalTypeConstants::PAGE_SUBSCRIBE
@@ -11501,7 +10893,7 @@ abstract class DaemonManager extends BaseManager implements
         }
         if ($data instanceof WebSocketPageSubscribeSignalDTO
             && $this->pendingPageIndex()->get($data->acceptKey, $data->deliveryId) === null) {
-            $this->cancelPendingPageDeliveries($data->acceptKey, cancelSocket: false);
+            $this->cancelPendingPageDeliveries($dispatch, $data->acceptKey, cancelSocket: false);
         }
         $pending = new PendingPageDelivery(
             $data->acceptKey,
@@ -11511,17 +10903,17 @@ abstract class DaemonManager extends BaseManager implements
             $this->agentManagerDaemon->buildAgentId($destination->agentType, $destination->agentIndex),
             $destination instanceof RemoteAgentDestination ? $destination->nodeId : null,
         );
-        $this->pendingPageIndex()->record($pending);
-        $this->pendingPageDeliveries[$data->acceptKey][$data->deliveryId] = $pending;
+        $this->signalDispatcher()->recordPendingPageDelivery($pending);
     }
 
     /**
      * Completion forgets only its exact attempt, including on the serving node before a peer
      * forward. Recovery first abandons the page hold so the control frame can reach the socket.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Addressed internal boundary or existing page recovery control
      */
-    private function acceptPageDeliveryControl(SignalDTO $signal): void
+    private function acceptPageDeliveryControl(SignalDispatch $dispatch, SignalDTO $signal): void
     {
         $target = $signal->data;
         if ($signal->signalType->getType() !== SignalTypeConstants::WS_USER
@@ -11534,8 +10926,8 @@ abstract class DaemonManager extends BaseManager implements
                 $this->pendingPageIndex()->remove($pending->acceptKey, $pending->deliveryId);
             }
         } elseif ($signal->signalName->getName() === SignalConstants::PAGE_RESUBSCRIBE
-            && $target->data instanceof PageResubscribeSignalData && !$this->isStalePageRecovery($signal)) {
-            $this->cancelPendingPageDeliveries($target->targetAcceptKey, $target->data->page);
+            && $target->data instanceof PageResubscribeSignalData && !$this->isStalePageRecovery($dispatch, $signal)) {
+            $this->cancelPendingPageDeliveries($dispatch, $target->targetAcceptKey, $target->data->page);
         }
     }
 
@@ -11543,10 +10935,11 @@ abstract class DaemonManager extends BaseManager implements
      * Compare before mutating any socket, ledger or start queue. The accepted socket request
      * outranks the dispatched registry; the serving node can instead use its address ledger.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Possible addressed recovery control
      * @return bool Whether a known current subscription disagrees with the control's identity
      */
-    private function isStalePageRecovery(SignalDTO $signal): bool
+    private function isStalePageRecovery(SignalDispatch $dispatch, SignalDTO $signal): bool
     {
         $target = $signal->data;
         if ($signal->signalType->getType() !== SignalTypeConstants::WS_USER
@@ -11556,7 +10949,7 @@ abstract class DaemonManager extends BaseManager implements
             return false;
         }
 
-        $current = $this->deliveryClient($target->targetAcceptKey)?->pendingPageSubscribe()
+        $current = $this->deliveryClient($dispatch, $target->targetAcceptKey)?->pendingPageSubscribe()
             ?? Hilos::$sr->pageSubscription($target->targetAcceptKey);
         if ($current !== null) {
             return $current->page !== $target->data->page || !self::samePageParams($current->params, $target->data->params);
@@ -11595,24 +10988,31 @@ abstract class DaemonManager extends BaseManager implements
      * Cancel before recovery/unsubscribe can queue anything else. Both start queues are filtered:
      * a frame already released by a start report must not resurrect the abandoned attempt.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param string $acceptKey Connection whose transport obligation ended
      * @param ?string $page Page being abandoned, or null for the whole connection
      * @param bool $cancelSocket Whether to cancel the transport too, false when recording a new attempt
      */
-    private function cancelPendingPageDeliveries(string $acceptKey, ?string $page = null, bool $cancelSocket = true): void
+    private function cancelPendingPageDeliveries(SignalDispatch $dispatch, string $acceptKey, ?string $page = null, bool $cancelSocket = true): void
     {
         $pendingCleanup = $this->pendingPageIndex()->cancelConnection($acceptKey, $page);
         if ($cancelSocket) {
-            $this->deliveryClient($acceptKey)?->cancelDeliveries($page);
+            $this->deliveryClient($dispatch, $acceptKey)?->cancelDeliveries($page);
         }
         $identityCleanup = $this->identitySignals()->cancelConnection($acceptKey, $page);
-        $cleanup = $this->agentSignalHolds()->cancelConnection($acceptKey, $page, $this->captureSignalEffectHold(...));
-        $this->queueSignalEffect(static function () use ($pendingCleanup, $identityCleanup, $cleanup): Generator {
-            yield from $pendingCleanup;
-            yield from $identityCleanup;
-            yield from $cleanup;
-        });
-        $this->signalDispatchWake?->markReady();
+        // The factory runs at admission: invalidate now, then transfer debt to this cleanup's own lifetime.
+        $this->queueSignalEffectInDispatch(function (SignalDispatch $cleanupDispatch) use (
+            $acceptKey, $page, $pendingCleanup, $identityCleanup,
+        ): Generator {
+            $cleanup = $this->agentSignalHolds()->cancelConnection($acceptKey, $page,
+                fn(AgentSignalHold $hold) => $this->signalDispatcher()->captureSignalEffectHold($cleanupDispatch, $hold));
+            return (static function () use ($pendingCleanup, $identityCleanup, $cleanup): Generator {
+                yield from $pendingCleanup;
+                yield from $identityCleanup;
+                yield from $cleanup;
+            })();
+        }, $dispatch);
+        $this->signalDispatcher?->markReady();
     }
 
     /**
@@ -11624,6 +11024,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param ?string $nodeId Remote node lost by the socket master, or null for local agents
      * @param ?string $acceptKey One connection moving to a different owner, or null for an owner loss
      * @param ?string $page Previous page of that connection
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidFormatException When the recovery page or params are malformed
      */
     private function recoverPendingPageDeliveries(
@@ -11631,46 +11032,50 @@ abstract class DaemonManager extends BaseManager implements
         ?string $nodeId = null,
         ?string $acceptKey = null,
         ?string $page = null,
+        ?SignalDispatch $origin = null,
     ): void {
-        $recovery = $this->pendingPageRecovery($agentIds, $nodeId, $acceptKey, $page);
-        $this->queueSignalEffect(static fn(): Generator => $recovery);
+        $recovery = $this->pendingPageIndex()->recoveryCandidates($agentIds, $nodeId, $acceptKey, $page);
+        $this->queueSignalEffectInDispatch(fn(SignalDispatch $dispatch): Generator => $this->walkPendingPageRecovery($dispatch, $recovery), $origin);
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param list<string> $agentIds Original local loss cohort
      * @param ?string $nodeId Lost remote node
      * @param ?string $acceptKey Connection changing its page owner
      * @param ?string $page Its original page
      * @return Generator<int, void> Recovery over the original immutable attempt records
      */
-    private function pendingPageRecovery(array $agentIds = [], ?string $nodeId = null,
+    private function pendingPageRecovery(SignalDispatch $dispatch, array $agentIds = [], ?string $nodeId = null,
         ?string $acceptKey = null, ?string $page = null): Generator
     {
-        return $this->walkPendingPageRecovery($this->pendingPageIndex()->recoveryCandidates($agentIds, $nodeId, $acceptKey, $page));
+        return $this->walkPendingPageRecovery($dispatch, $this->pendingPageIndex()->recoveryCandidates($agentIds, $nodeId, $acceptKey, $page));
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param Generator<int, ?int> $candidates Original selected-address identities, never pending payload snapshots
      * @return Generator<int, void> One original source or physical client step per visit
      * @throws InvalidFormatException When recovery has malformed page params
      */
-    private function walkPendingPageRecovery(Generator $candidates): Generator
+    private function walkPendingPageRecovery(SignalDispatch $dispatch, Generator $candidates): Generator
     {
         yield;
         foreach ($candidates as $sourceId) {
             yield;
             if ($sourceId !== null) {
-                yield from $this->pendingPageRecoveryCandidate($sourceId);
+                yield from $this->pendingPageRecoveryCandidate($dispatch, $sourceId);
             }
         }
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param int $sourceId Original selected-address generation
      * @return Generator<int, void> One exact original attempt, with no payload local held across client lookup yields
      * @throws InvalidFormatException When its recovery parameters are malformed
      */
-    private function pendingPageRecoveryCandidate(int $sourceId): Generator
+    private function pendingPageRecoveryCandidate(SignalDispatch $dispatch, int $sourceId): Generator
     {
         $pending = $this->pendingPageIndex()->candidate($sourceId);
         if ($pending === null) {
@@ -11678,18 +11083,18 @@ abstract class DaemonManager extends BaseManager implements
         }
         $acceptKey = $pending->acceptKey;
         unset($pending);
-        yield from $this->resolveSignalEffectClient($acceptKey);
+        yield from $this->resolveSignalEffectClient($dispatch, $acceptKey);
         $pending = $this->pendingPageIndex()->candidate($sourceId);
         if ($pending === null) {
             return;
         }
-        $client = $this->deliveryClient($acceptKey);
+        $client = $this->deliveryClient($dispatch, $acceptKey);
         if ($client !== null && !$client->isDeliveryPending($pending->page, $pending->deliveryId)) {
             $this->pendingPageIndex()->remove($acceptKey, $pending->deliveryId);
             return;
         }
         unset($client);
-        $this->cancelPendingPageDeliveries($acceptKey, $pending->page);
+        $this->cancelPendingPageDeliveries($dispatch, $acceptKey, $pending->page);
         try {
             Hilos::$sr->queueSignal(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::WS_USER),
                 new SignalName(SignalConstants::PAGE_RESUBSCRIBE),
@@ -11707,7 +11112,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param SignalDTO $signal Signal whose encoded text is shared by every local recipient
      * @return ?DeliveryFrame Immutable prepared text, absent when the encoder refused it
      */
-    private function prepareSignalFrame(SignalDTO $signal): ?DeliveryFrame
+    public function prepareSignalFrame(SignalDTO $signal): ?DeliveryFrame
     {
         $json = $this->encodeSignalFrame($signal);
         $inner = $signal->data instanceof WebSocketSignalData ? $signal->data->data : $signal->data;
@@ -11767,13 +11172,14 @@ abstract class DaemonManager extends BaseManager implements
     /**
      * Send message to specific client
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WebSocketServer $server WebSocket server
      * @param string $acceptKey Accept key
      * @param DeliveryFrame $message Shared immutable application frame
      */
-    private function sendToClient(WebSocketServer $server, string $acceptKey, DeliveryFrame $message): void
+    private function sendToClient(SignalDispatch $dispatch, WebSocketServer $server, string $acceptKey, DeliveryFrame $message): void
     {
-        foreach ($this->clientFrameDelivery($server, $message, acceptKey: $acceptKey) as $_) {
+        foreach ($this->clientFrameDelivery($dispatch, $server, $message, acceptKey: $acceptKey) as $_) {
         }
     }
 
@@ -11782,6 +11188,7 @@ abstract class DaemonManager extends BaseManager implements
      * The initial yield performs no delivery. Each later step checks one physical target,
      * including a filtered, removed or replaced client; addressed delivery never scans the roster.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WebSocketServer $server Owning browser server
      * @param DeliveryFrame $message Frame prepared once for the original signal
      * @param ?string $acceptKey One connection, or null for a fan-out
@@ -11792,6 +11199,7 @@ abstract class DaemonManager extends BaseManager implements
      * @return Generator<int, void> Effect-free initial yield, then one physical visit per step
      */
     private function clientFrameDelivery(
+        SignalDispatch $dispatch,
         WebSocketServer $server,
         DeliveryFrame $message,
         ?string $acceptKey = null,
@@ -11801,9 +11209,9 @@ abstract class DaemonManager extends BaseManager implements
         ?WebSocketDestination $subscriptionDestination = null,
     ): Generator {
         if ($acceptKey !== null && $sessionTokenHash === null && $excludeAcceptKey === null && $excludeSessionTokenHash === null) {
-            $target = $this->currentSignalDispatch?->clientResolved && $this->currentSignalDispatch->clientServer === $server
-                && $this->currentSignalDispatch->clientAcceptKey === $acceptKey
-                ? $this->currentSignalDispatch->clientTarget : $server->clientTarget($acceptKey);
+            $target = $dispatch->clientResolved && $dispatch->clientServer === $server
+                && $dispatch->clientAcceptKey === $acceptKey
+                ? $dispatch->clientTarget : $server->clientTarget($acceptKey);
             return $this->walkTargetClientFrame($target, $message, $subscriptionDestination);
         }
         return $this->walkClientFrame(
@@ -11922,45 +11330,48 @@ abstract class DaemonManager extends BaseManager implements
      * Only the three subscription exceptions are contained here - a broader catch would
      * hide real router failures.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Signal DTO
      * @throws EnvException When locating the replaced subscription's agent reads cluster configuration and it is invalid
      * @throws InvalidArgumentException When the unsubscribe of a replaced subscription cannot be named
      * @throws InvalidFormatException When a pending recovery address is malformed
      * @throws Throwable When abandoning the replaced subscription fails during retained cleanup
      */
-    protected function updateSubscriptions(SignalDTO $signal): void
+    protected function updateSubscriptions(SignalDispatch $dispatch, SignalDTO $signal): void
     {
-        foreach ($this->walkSubscriptionPreparation($signal) as $_) {
+        foreach ($this->walkSubscriptionPreparation($dispatch, $signal) as $_) {
         }
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Subscription envelope
      * @return Generator<int, void> Inherited framework phases, or one existing project callback
      * @throws EnvException When a replaced subscription cannot locate its agent
      * @throws InvalidArgumentException When an unsubscribe cannot be named
      * @throws InvalidFormatException When a pending recovery address is malformed
      */
-    private function subscriptionPreparation(SignalDTO $signal): Generator
+    private function subscriptionPreparation(SignalDispatch $dispatch, SignalDTO $signal): Generator
     {
         if (static::USE_SUBSCRIPTION_CALLBACK) {
-            $this->updateSubscriptions($signal);
+            $this->updateSubscriptions($dispatch, $signal);
             yield;
             return;
         }
-        yield from $this->walkSubscriptionPreparation($signal);
+        yield from $this->walkSubscriptionPreparation($dispatch, $signal);
     }
 
     /**
      * The old owner's unsubscribe completes before the new subscription record is written.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Subscription envelope
      * @return Generator<int, void> One-time subscription preparation, including an old-owner physical lookup
      * @throws EnvException When locating a replaced subscription reads invalid cluster configuration
      * @throws InvalidArgumentException When its unsubscribe cannot be named
      * @throws InvalidFormatException When a pending recovery address is malformed
      */
-    private function walkSubscriptionPreparation(SignalDTO $signal): Generator
+    private function walkSubscriptionPreparation(SignalDispatch $dispatch, SignalDTO $signal): Generator
     {
         yield;
         $signalType = $signal->signalType->getType();
@@ -11973,9 +11384,9 @@ abstract class DaemonManager extends BaseManager implements
                 }
                 $page = $signal->data->page ?? $signalName;
                 $address = $this->settledPageAgentAddress($page, $signal->data->acceptKey, $signal->data->params);
-                $original = yield from $this->unsubscribeReplacedPageDelivery($signal->data->acceptKey, $page, $address);
+                $original = yield from $this->unsubscribeReplacedPageDelivery($dispatch, $signal->data->acceptKey, $page, $address);
                 if (!$original->isCurrent()) {
-                    $this->currentSignalDispatch?->cancel();
+                    $dispatch->cancel();
                     return;
                 }
                 Hilos::$sr->subscribeToPage($page, $signal->data);
@@ -12012,10 +11423,11 @@ abstract class DaemonManager extends BaseManager implements
                 );
                 if ($reassessedAddress !== null) {
                     $original = yield from $this->unsubscribeReplacedPageDelivery(
+            $dispatch,
                         $signal->data->acceptKey, $reassessedPage, $reassessedAddress,
                     );
                     if (!$original->isCurrent()) {
-                        $this->currentSignalDispatch?->cancel();
+                        $dispatch->cancel();
                         return;
                     }
                     Hilos::$sr->bindPageAgent(
@@ -12055,7 +11467,7 @@ abstract class DaemonManager extends BaseManager implements
             // fan-out list while its verdict was still being taken (HIL-721).
             case SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION:
             case SignalTypeConstants::GROUP_UNSUBSCRIBE:
-                yield from $this->prepareGroupSubscriptionOperation($signal);
+                yield from $this->prepareGroupSubscriptionOperation($dispatch, $signal);
                 break;
         }
     }
@@ -12064,10 +11476,11 @@ abstract class DaemonManager extends BaseManager implements
      * Only an unchanged absent lookup keeps the requested name for its existing worker refusal.
      * Capture remaining authority after the operation's own mutation, without an intervening yield.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Original group update or unsubscribe
      * @return Generator<int, void> Bounded original name lookup and one local preparation
      */
-    private function prepareGroupSubscriptionOperation(SignalDTO $signal): Generator
+    private function prepareGroupSubscriptionOperation(SignalDispatch $dispatch, SignalDTO $signal): Generator
     {
         $update = $signal->signalType->getType() === SignalTypeConstants::GROUP_UPDATE_SUBSCRIPTION;
         if (($update && !$signal->data instanceof WebSocketGroupUpdateSubscriptionSignalDTO)
@@ -12080,7 +11493,7 @@ abstract class DaemonManager extends BaseManager implements
         $revision = $router->groupSubscriptionRevision($acceptKey);
         $group = yield from $router->groupSubscriptionNameCandidates($acceptKey, $requested);
         if (Hilos::$sr !== $router || ($group === null && $router->groupSubscriptionRevision($acceptKey) !== $revision)) {
-            $this->currentSignalDispatch?->cancel();
+            $dispatch->cancel();
             return;
         }
         if ($update) {
@@ -12092,9 +11505,7 @@ abstract class DaemonManager extends BaseManager implements
         } else {
             $router->unsubscribeFromGroup($group ?? $requested, $signal->data);
         }
-        if ($this->currentSignalDispatch !== null) {
-            $this->currentSignalDispatch->groupOperation = $router->groupOperationAuthority($acceptKey, $requested, $group);
-        }
+        $dispatch->groupOperation = $router->groupOperationAuthority($acceptKey, $requested, $group);
     }
 
     /**
@@ -12240,37 +11651,7 @@ abstract class DaemonManager extends BaseManager implements
     }
 
     /**
-     * Retains an old-owner unsubscribe in the existing guarded effect FIFO.
-     *
-     * The original router and subscription record are captured before queuing the physical
-     * continuation. Its frame addresses that old owner directly, without routing against
-     * a later replacement record; a changed original lifetime abandons the continuation.
-     *
-     * No-op when the connection held nothing, when nobody serves its previous page, or when
-     * the next page is served by the same agent: its worker replaces the old subscription in
-     * its own mirror. A page served by its type used to be left out, and its worker never
-     * heard that the connection had moved on (HIL-1142).
-     *
-     * The previous addressee is looked up before it is written to, not assumed to be here
-     * (HIL-745): a per-instance page moves between nodes, so the agent that used to serve this
-     * connection may well be on another one, and a straight local send would have told this
-     * node's workers about a subscription they never held. What the delivery reports is ignored
-     * on purpose - a page_unsubscribe owes nobody an answer, least of all the tab that has
-     * already moved on to its next page.
-     *
-     * @param string $acceptKey Connection whose subscription is being replaced
-     * @param string $page Page the connection is moving to
-     * @param ?PageAgentAddress $address Settled address the subscription is moving to, null when the new page is not per-instance
-     * @throws EnvException When the placement lookup reads cluster configuration and it is invalid
-     * @throws InvalidFormatException When a pending recovery address is malformed
-     */
-    private function unsubscribeReplacedPageAgent(string $acceptKey, string $page, ?PageAgentAddress $address): void
-    {
-        $delivery = $this->unsubscribeReplacedPageDelivery($acceptKey, $page, $address);
-        $this->queueSignalEffect(static fn(): Generator => $delivery);
-    }
-
-    /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param string $acceptKey Original connection
      * @param string $page Next page
      * @param ?PageAgentAddress $address Next resolved page owner
@@ -12279,14 +11660,15 @@ abstract class DaemonManager extends BaseManager implements
      * @throws InvalidArgumentException When its unsubscribe cannot be named
      * @throws InvalidFormatException When a pending recovery address is malformed
      */
-    private function unsubscribeReplacedPageDelivery(string $acceptKey, string $page, ?PageAgentAddress $address): Generator
+    private function unsubscribeReplacedPageDelivery(SignalDispatch $dispatch, string $acceptKey, string $page, ?PageAgentAddress $address): Generator
     {
         $router = Hilos::$sr;
-        return $this->replacedPageDelivery(new PageSubscriptionContext($router, $acceptKey, $router->pageSubscription($acceptKey)),
+        return $this->replacedPageDelivery($dispatch, new PageSubscriptionContext($router, $acceptKey, $router->pageSubscription($acceptKey)),
             $page, $address);
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param PageSubscriptionContext $original Original routing and subscription incarnation
      * @param string $page Next page
      * @param ?PageAgentAddress $address Next resolved page owner
@@ -12295,8 +11677,9 @@ abstract class DaemonManager extends BaseManager implements
      * @throws InvalidArgumentException When its unsubscribe cannot be named
      * @throws InvalidFormatException When a pending recovery address is malformed
      */
-    private function replacedPageDelivery(PageSubscriptionContext $original, string $page, ?PageAgentAddress $address): Generator
-    {
+    private function replacedPageDelivery(
+        SignalDispatch $dispatch, PageSubscriptionContext $original, string $page, ?PageAgentAddress $address,
+    ): Generator {
         yield;
         $previous = $original->subscription;
         $previousAgent = $previous === null ? null : $original->router->pageServingAgent($previous);
@@ -12314,13 +11697,14 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         yield from $this->whileSubscriptionCurrent($original,
-            $this->pendingPageRecovery(acceptKey: $original->acceptKey, page: $previous->page));
+            $this->pendingPageRecovery($dispatch, acceptKey: $original->acceptKey, page: $previous->page));
         $workerServer = $this->findWorkerServer();
         if (!$original->isCurrent() || $workerServer === null) {
             return $original;
         }
 
         yield from $this->whileSubscriptionCurrent($original, $this->agentDestinationDelivery(
+            $dispatch,
             $workerServer,
             $this->findPeerServer(),
             $original->router->placeAgentDestination($previousAgent),
@@ -12433,6 +11817,7 @@ abstract class DaemonManager extends BaseManager implements
      * instance keeps that address; a page served by type keeps its declared fallback owner.
      * Already addressed lifecycle destinations are skipped to avoid a duplicate close.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WorkerServer $workerServer Worker transport
      * @param SignalDTO $signal Original connection-close envelope
      * @param list<AgentAddressedDestination> $agentsDelivered Already addressed destinations
@@ -12440,6 +11825,7 @@ abstract class DaemonManager extends BaseManager implements
      * @throws EnvException When page-owner placement configuration is invalid
      */
     private function connectionCloseDelivery(
+        SignalDispatch $dispatch,
         WorkerServer $workerServer,
         SignalDTO $signal,
         array $agentsDelivered,
@@ -12471,6 +11857,7 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         yield from $this->agentDestinationDelivery(
+            $dispatch,
             $workerServer,
             $this->findPeerServer(),
             Hilos::$sr->placeAgentDestination($servingAgent),
@@ -12485,16 +11872,17 @@ abstract class DaemonManager extends BaseManager implements
      * address the unsubscribe has to reach, and a record removed first takes that address with
      * it (HIL-627).
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalDTO $signal Signal just routed
      */
-    private function forgetSubscriptionsAfterRouting(SignalDTO $signal): void
+    private function forgetSubscriptionsAfterRouting(SignalDispatch $dispatch, SignalDTO $signal): void
     {
         $data = $signal->data;
 
         if ($signal->signalType->getType() === SignalTypeConstants::PAGE_UNSUBSCRIBE
             && $data instanceof WebSocketPageUnsubscribeSignalDTO
         ) {
-            $this->cancelPendingPageDeliveries($data->acceptKey, $signal->signalName->getName());
+            $this->cancelPendingPageDeliveries($dispatch, $data->acceptKey, $signal->signalName->getName());
             Hilos::$sr->unsubscribeFromPage($signal->signalName->getName(), $data);
 
             return;
@@ -12504,7 +11892,7 @@ abstract class DaemonManager extends BaseManager implements
             && $data instanceof WebSocketCloseSignalDTO
             && $data->acceptKey !== ''
         ) {
-            $this->cancelPendingPageDeliveries($data->acceptKey);
+            $this->cancelPendingPageDeliveries($dispatch, $data->acceptKey);
             Hilos::$sr->unsubscribeFromAll($data->acceptKey);
         }
     }
@@ -12518,27 +11906,11 @@ abstract class DaemonManager extends BaseManager implements
      * ({@see cancelPendingPageDeliveries()}).
      *
      * @param string $correlationId Correlation id of the request that was given up on
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private function dropParkedCommandSignals(string $correlationId): void
+    private function dropParkedCommandSignals(string $correlationId, ?SignalDispatch $origin = null): void
     {
-        $state = $this->signalDispatchState();
-        $inputTail = $state->admissionSequence + $state->retiredRemaining + $state->intake->getWatermark() - $state->intake->consumed;
-        $cancellation = new CommandSignalCancellation(++$state->commandCancellationSequence, $correlationId, $inputTail);
-        $state->commandCancellations[$cancellation->id] = $cancellation;
-        $state->abandonedCommands[$correlationId] = $cancellation;
-        $cleanup = $this->agentSignalHolds()->cancelCorrelation($correlationId);
-        // Three exact executing slots; suspended releases remain indexed under their holds.
-        foreach ([$state->active, $state->released, $this->currentSignalDispatch] as $dispatch) {
-            $payload = $dispatch?->getSignal()?->data;
-            if (($payload instanceof CommandRequestDTO || $payload instanceof HttpRequestDTO) && $payload->correlationId === $correlationId) {
-                $dispatch->cancel();
-            }
-        }
-        unset($payload);
-        $this->queueSignalEffect(static function () use ($cleanup, $cancellation): Generator {
-            yield from $cleanup;
-            $cancellation->holdsComplete = true;
-        });
+        $this->signalDispatcher()->dropParkedCommandSignals($correlationId, $origin);
     }
 
     /**
@@ -12572,15 +11944,34 @@ abstract class DaemonManager extends BaseManager implements
             return false;
         }
 
-        $this->parkedSignals[++$this->parkedSignalSequence] = new ParkedSignal(
-            $signal,
-            hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND
-                + self::SUBSCRIPTION_IDENTITY_WAIT_TIMEOUT_MS / TimeConstants::MS_PER_SECOND,
-        );
-        $this->identitySignals()->add($this->parkedSignalSequence, $data->acceptKey, $page);
-        $this->rearmIdentitySignalTimer();
+        $this->signalDispatcher()->parkIdentitySignal($signal, $data->acceptKey, $page);
 
         return true;
+    }
+
+    /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
+     * @param SignalDTO $signal Signal the walk was delivering
+     * @param string $agentId Agent it waits for
+     * @param bool $awaitingPlacement Whether the wait is for a placement verdict rather than a start here
+     * @param bool $localOnly Whether the frame arrived over the mesh, so the release never places it again
+     * @param bool $awaitingResume Whether the frame is a connection's close waiting for the lift to bring its agent back
+     * @param bool $awaitingPlacementOrder Whether the leader's order to start the agent here has not arrived
+     * @throws LogicException When a retained obligation changes its addressed agent
+     * @throws EnvException When held-agent discovery reads invalid placement configuration
+     * @throws EventLoopException When a placement retry deadline cannot be armed
+     */
+    private function parkUntilAgentUp(
+        SignalDispatch $dispatch,
+        SignalDTO $signal,
+        string $agentId,
+        bool $awaitingPlacement = false,
+        bool $localOnly = false,
+        bool $awaitingResume = false,
+        bool $awaitingPlacementOrder = false,
+    ): void {
+        $this->parkSignalAgent($dispatch, $signal, $agentId,
+            $awaitingPlacement, $localOnly, $awaitingResume, $awaitingPlacementOrder);
     }
 
     /**
@@ -12593,8 +11984,9 @@ abstract class DaemonManager extends BaseManager implements
      * the protected-mode freeze stopped, until the lift brings it back. The walk holds for an
      * agent no node is known to host and marks the hold as waiting on a placement verdict,
      * because that is the fact that is coming. In every case the frame is let go by
-     * {@see drainSignals()}.
+     * the dispatcher's released-agent traversal.
      *
+     * @param ?SignalDispatch $dispatch Exact causal owner; null is a root
      * @param SignalDTO $signal Signal the walk was delivering
      * @param string $agentId Agent it waits for
      * @param bool $awaitingPlacement Whether the wait is for a placement verdict rather than a start here
@@ -12602,8 +11994,11 @@ abstract class DaemonManager extends BaseManager implements
      * @param bool $awaitingResume Whether the frame is a connection's close waiting for the lift to bring its agent back
      * @param bool $awaitingPlacementOrder Whether the leader's order to start the agent here has not arrived
      * @throws LogicException When a retained obligation changes its addressed agent
+     * @throws EnvException When held-agent discovery reads invalid placement configuration
+     * @throws EventLoopException When a placement retry deadline cannot be armed
      */
-    private function parkUntilAgentUp(
+    public function parkSignalAgent(
+        ?SignalDispatch $dispatch,
         SignalDTO $signal,
         string $agentId,
         bool $awaitingPlacement = false,
@@ -12611,74 +12006,26 @@ abstract class DaemonManager extends BaseManager implements
         bool $awaitingResume = false,
         bool $awaitingPlacementOrder = false,
     ): void {
-        $payload = $signal->data;
-        if ($this->currentSignalDispatch !== null && !$this->currentSignalDispatch->hasWork()
-            && ($payload instanceof CommandRequestDTO || $payload instanceof HttpRequestDTO)
-            && isset($this->signalDispatchState->abandonedCommands[$payload->correlationId])) {
-            return;
-        }
-        $parked = new ParkedAgentSignal(
-            $signal,
-            $agentId,
-            microtime(true),
-            $awaitingPlacement,
-            $localOnly,
-            $awaitingResume,
-            $awaitingPlacementOrder,
-            $this->currentSignalDispatch?->getSignal() === $signal ? $this->currentSignalDispatch->groupOperation : null,
-        );
-        $existing = $this->currentSignalDispatch?->heldId;
-        if ($existing !== null && $this->agentSignalHolds()->get($existing)?->agentId === $agentId) {
-            $this->agentSignalHolds()->park($existing, $parked);
-            $holdId = $existing;
-        } else {
-            $holdId = $this->agentSignalHolds()->add($parked, $this->currentSignalDispatch?->stopPrefixId,
-                $this->currentSignalDispatch?->browserPrefixId)->id;
-        }
-        if (!$awaitingPlacement) {
-            $this->queueAgentCandidates('admission:' . $holdId, (static function () use ($holdId): Generator {
-                yield $holdId;
-            })());
-        }
+        $this->signalDispatcher()->parkSignalAgent($dispatch, $signal, $agentId, $this->findWorkerServer(),
+            $awaitingPlacement, $localOnly, $awaitingResume, $awaitingPlacementOrder);
     }
 
     /** @return AgentSignalHolds Sole payload owner for this master's agent waits */
-    private function agentSignalHolds(): AgentSignalHolds
+    public function agentSignalHolds(): AgentSignalHolds
     {
-        return $this->agentSignalHolds ??= new AgentSignalHolds(function (AgentSignalHold $hold): void {
-            $this->signalDispatchState?->stop?->noteHoldChanged($hold);
-            $this->signalDispatchState?->browsers?->noteHoldChanged($hold);
-            $this->rearmPlacementSignalTimer($hold->agentId);
-            $this->signalDispatchWake?->markReady();
-        });
+        return $this->signalDispatcher()->agentSignalHolds();
     }
 
     /** @return IdentitySignalIndex Scalar index over this master's original parked and ready arrays */
-    private function identitySignals(): IdentitySignalIndex
+    public function identitySignals(): IdentitySignalIndex
     {
-        return $this->identitySignals ??= new IdentitySignalIndex(function (IdentitySignalEntry $entry): void {
-            unset($this->parkedSignals[$entry->id]);
-            if ($entry->releaseId !== null && $this->signalDispatchState !== null) {
-                unset($this->signalDispatchState->identities[$entry->releaseId]);
-                $this->signalDispatchState->stop?->noteIdentitySettled($entry->releaseId);
-                $this->signalDispatchState->browsers?->noteIdentitySettled($entry->releaseId);
-            }
-            $this->rearmIdentitySignalTimer();
-        });
+        return $this->signalDispatcher()->identitySignals();
     }
 
     /** @return PendingPageIndex Scalar indexes over the original process-private pending payload ledger */
     private function pendingPageIndex(): PendingPageIndex
     {
-        return $this->pendingPageIndex ??= new PendingPageIndex(
-            fn(string $acceptKey, string $deliveryId): ?PendingPageDelivery => $this->pendingPageDeliveries[$acceptKey][$deliveryId] ?? null,
-            function (PendingPageEntry $entry): void {
-                unset($this->pendingPageDeliveries[$entry->acceptKey][$entry->deliveryId]);
-                if (($this->pendingPageDeliveries[$entry->acceptKey] ?? []) === []) {
-                    unset($this->pendingPageDeliveries[$entry->acceptKey]);
-                }
-            },
-        );
+        return $this->signalDispatcher()->pendingPageIndex();
     }
 
     /**
@@ -12703,7 +12050,7 @@ abstract class DaemonManager extends BaseManager implements
      * @param string $agentId Agent to ask about
      * @return bool Whether a start for that agent is under way on this node
      */
-    private function isAgentStartUnderWay(WorkerServer $workerServer, string $agentId): bool
+    public function isAgentStartUnderWay(WorkerServer $workerServer, string $agentId): bool
     {
         if ($this->agentManagerDaemon->isAgentStarted($agentId)) {
             return false;
@@ -12712,448 +12059,6 @@ abstract class DaemonManager extends BaseManager implements
         return $this->agentManagerDaemon->getAgent($agentId)?->hasWorkerClient() === true
             || $workerServer->isAgentAwaitingWorker($agentId)
             || $workerServer->isAgentAwaitingStopReport($agentId);
-    }
-
-    /**
-     * @param string $collectionKey Applied runtime source
-     * @param ?string $acceptKey Changed row, absent for a replacement of the connection source
-     */
-    private function onIdentitySourceChanged(string $collectionKey, ?string $acceptKey = null): void
-    {
-        if ($this->parkedSignals !== [] && Hilos::$rt?->connectionsRegistry()?->getCollectionName() === $collectionKey) {
-            $this->queueIdentityDiscovery($acceptKey);
-        }
-    }
-
-    /**
-     * @param ?string $acceptKey Exact dependent connection, absent for a deadline or context replacement
-     * @param bool $deadline Whether this is the native expiry of the oldest original wait
-     */
-    private function queueIdentityDiscovery(?string $acceptKey = null, bool $deadline = false): void
-    {
-        if ($this->parkedSignals === []) {
-            $this->identityDeadlinePending = false;
-            return;
-        }
-        $state = $this->signalDispatchState();
-        $key = $deadline ? 'deadline' : ($acceptKey === null ? 'all' : 'connection:' . $acceptKey);
-        $state->identityDiscoveries[$key] ??= $this->probeIdentitySignals($acceptKey === null
-            ? $this->identitySignals()->parkedCandidates() : $this->identitySignals()->connectionCandidates($acceptKey), $deadline);
-        $this->signalDispatchWake?->markReady();
-    }
-
-    /**
-     * Arms only the oldest original wait; monotonic park order is also deadline order.
-     *
-     * @throws EventLoopException When the native identity deadline cannot be armed
-     */
-    private function rearmIdentitySignalTimer(): void
-    {
-        if ($this->identitySignalTimer === null || $this->identityDeadlinePending) {
-            return;
-        }
-        $first = $this->identitySignals?->firstParkedId();
-        $this->identitySignalTimer->armAt($first === null ? null : $this->parkedSignals[$first]->deadline);
-    }
-
-    /**
-     * @param ?Generator<int, int> $candidates Finite dependent cohort, absent for a direct whole-source check
-     * @param bool $deadline Whether only the already-due original prefix needs discovery
-     * @return Generator<int, void> One original identity waiter per visit
-     */
-    private function probeIdentitySignals(?Generator $candidates = null, bool $deadline = false): Generator
-    {
-        $candidates ??= $this->identitySignals()->parkedCandidates();
-        yield;
-        foreach ($candidates as $id) {
-            $identity = $this->identitySignals()->get($id);
-            if ($identity === null || $this->identitySignals()->isCanceled($identity)) {
-                $this->identitySignals()->settle($id);
-                unset($this->parkedSignals[$id], $identity);
-                yield;
-                continue;
-            }
-            unset($identity);
-            $parked = $this->parkedSignals[$id] ?? null;
-            if ($parked !== null) {
-                $due = $parked->deadline <= hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
-                if ($deadline && !$due) {
-                    break;
-                }
-                $data = $parked->signal->data;
-                $pending = $data instanceof WebSocketPageSubscribeSignalDTO
-                    && (Hilos::$browser?->connectionIdentity($data->acceptKey)->pending ?? false);
-                $identity = $this->identitySignals()->get($id);
-                if ($identity !== null && !$this->identitySignals()->isCanceled($identity)
-                    && (!$pending || $due)) {
-                    if ($pending) {
-                        Logger::error("Subscription of connection {$data->acceptKey} routed without its identity:"
-                            . ' it did not arrive within ' . self::SUBSCRIPTION_IDENTITY_WAIT_TIMEOUT_MS . 'ms');
-                    }
-                    $state = $this->signalDispatchState();
-                    $state->identities[++$state->identitySequence] = $parked->signal;
-                    $this->identitySignals()->release($id, $state->identitySequence);
-                    unset($this->parkedSignals[$id]);
-                    $this->rearmIdentitySignalTimer();
-                    $this->signalDispatchWake?->markReady();
-                }
-            }
-            unset($data, $parked, $identity);
-            yield;
-        }
-        if ($deadline) {
-            $this->identityDeadlinePending = false;
-        }
-        $this->rearmIdentitySignalTimer();
-    }
-
-    /** Rebinds exact local owners; only an actual owner change creates a finite recovery cohort. */
-    private function bindParkedSignalOwners(): void
-    {
-        if ($this->nativeOwnersRetired) {
-            return;
-        }
-        $placement = Hilos::$cluster?->placement();
-        $workers = $this->findWorkerServer();
-        if ($placement === $this->signalHoldPlacement && $workers === $this->signalHoldWorkerServer) {
-            return;
-        }
-        if ($this->placementHoldWake !== null) {
-            $this->signalHoldPlacement?->removeHoldWake($this->placementHoldWake);
-        }
-        if ($this->workerHoldWake !== null) {
-            $this->signalHoldWorkerServer?->removeAgentHoldWake($this->workerHoldWake);
-        }
-        foreach ($this->placementSignalTimers as $timer) {
-            $timer->close();
-        }
-        $this->placementSignalTimers = [];
-        if ($this->signalDispatchState !== null) {
-            $this->signalDispatchState->agentProbe = null;
-            $this->signalDispatchState->agentDiscoveries = [];
-        }
-        $generation = ++$this->signalHoldGeneration;
-        $owner = WeakReference::create($this);
-        $this->placementHoldWake = static function (?string $agentId) use ($owner, $generation): void {
-            $manager = $owner->get();
-            if ($manager !== null && $manager->signalHoldGeneration === $generation) {
-                $manager->queueAgentDiscovery($agentId, placementFact: true);
-                $manager->policyDeclarations->noteChanged($agentId);
-                $manager->probeFleetSupervisor->noteChanged($agentId);
-                if ($agentId === null) {
-                    $manager->noteSlaveSyncAuthorityChanged();
-                }
-            }
-        };
-        $this->workerHoldWake = static function (?string $agentId) use ($owner, $generation): void {
-            $manager = $owner->get();
-            if ($manager !== null && $manager->signalHoldGeneration === $generation) {
-                $manager->queueAgentDiscovery($agentId);
-                $manager->policyDeclarations->noteChanged($agentId);
-                $manager->probeFleetSupervisor->noteChanged($agentId);
-            }
-        };
-        $this->signalHoldPlacement = $placement;
-        $this->signalHoldWorkerServer = $workers;
-        $placement?->setHoldWake($this->placementHoldWake);
-        $workers?->setAgentHoldWake($this->workerHoldWake);
-        $this->queueAgentCandidates('binding', $this->agentSignalHolds()->candidates());
-    }
-
-    /**
-     * @param ?string $agentId Address whose start or placement changed; null for a basis or resume completion
-     * @param bool $placementFact Whether a new placement basis permits a fresh on-demand ask
-     */
-    private function queueAgentDiscovery(?string $agentId = null, bool $placementFact = false): void
-    {
-        $key = ($placementFact ? 'placement:' : 'progress:') . ($agentId ?? 'all');
-        $candidates = $agentId === null
-            ? ($placementFact ? $this->agentSignalHolds()->placementCandidates() : $this->agentSignalHolds()->resumeCandidates())
-            : $this->agentSignalHolds()->agentCandidates($agentId);
-        $this->queueAgentCandidates($key, $candidates, $placementFact);
-    }
-
-    /**
-     * @param string $key Coalescing identity of the actual fact or binding change
-     * @param Generator<int, int> $candidates Captured original dependent obligations
-     * @param bool $placementFact Whether this fact invalidates an unresolved ask's suppression
-     */
-    private function queueAgentCandidates(string $key, Generator $candidates, bool $placementFact = false): void
-    {
-        $workers = $this->findWorkerServer();
-        if ($workers === null || ($this->agentSignalHolds?->getParkedCount() ?? 0) === 0) {
-            return;
-        }
-        $state = $this->signalDispatchState();
-        $state->agentDiscoveries[$key] ??= $this->probeAgentSignalHolds($workers, $candidates, placementFact: $placementFact);
-        $this->signalDispatchWake?->markReady();
-    }
-
-    /**
-     * Uses the existing ask owner's original suppression deadline, without a second retry window.
-     *
-     * @param string $agentId Address whose wait or ask actually changed
-     * @throws EventLoopException When the original suppression deadline cannot be armed
-     */
-    private function rearmPlacementSignalTimer(string $agentId): void
-    {
-        if ($this->signalDispatchNotifier === null) {
-            return;
-        }
-        $deadline = ($this->agentSignalHolds?->awaitsPlacement($agentId) ?? false)
-            ? $this->signalHoldPlacement?->onDemandRetryAt($agentId) : null;
-        if ($deadline === null) {
-            if (isset($this->placementSignalTimers[$agentId])) {
-                $this->placementSignalTimers[$agentId]->close();
-                unset($this->placementSignalTimers[$agentId]);
-            }
-            return;
-        }
-        $timer = $this->placementSignalTimers[$agentId] ??= $this->eventLoop->createTimer(function () use ($agentId): void {
-            $this->queueAgentDiscovery($agentId);
-        });
-        $timer->armAt($deadline);
-    }
-
-    /**
-     * One candidate per guarded step. A pending hold alone never marks native readiness.
-     * All waits stay registered before an ask that can answer synchronously.
-     *
-     * @param WorkerServer $workerServer Existing start and protected-resume owner
-     * @param Generator<int, int> $candidates Exact finite fact or predecessor cohort
-     * @param ?SignalDispatch $preempted Active newer release, if a same-agent predecessor must go first
-     * @param bool $placementFact Whether a new basis invalidates suppression for the unresolved addresses visited
-     * @return Generator<int, void> Finite hold probes and their deduplicated placement asks
-     * @throws EnvException When placement configuration is invalid
-     * @throws LogicException When an existing obligation changes its addressee
-     */
-    private function probeAgentSignalHolds(WorkerServer $workerServer, Generator $candidates,
-        ?SignalDispatch $preempted = null, bool $placementFact = false): Generator
-    {
-        yield;
-        /** @var array<string, AgentId> One ask per unresolved agent after all waits are registered */
-        $placementAsks = [];
-        foreach ($candidates as $holdId) {
-            $hold = $this->agentSignalHolds()->get($holdId);
-            if ($hold !== null && $this->agentSignalHolds()->isCanceled($hold)) {
-                $this->agentSignalHolds()->settle($holdId);
-                unset($hold);
-                yield;
-                continue;
-            }
-            if ($hold === null || !$hold->isParked()) {
-                if ($preempted !== null && ($hold?->released || ($preempted->heldId === null && $hold?->dispatch !== null))) {
-                    $preempted->preemptHoldId = $holdId;
-                }
-                yield;
-                continue;
-            }
-            $parked = $hold->parked;
-            $agent = AgentId::fromId($parked->agentId);
-            $destination = Hilos::$sr->placeAgentDestination(new AgentDestination($agent->type, $agent->index));
-            if ($destination instanceof RemoteAgentDestination) {
-                if ($parked->localOnly) {
-                    // A frame that already crossed the mesh does not cross it again: the sender
-                    // named this node, and sending it on would put a third opinion about the host
-                    // on the wire - two nodes that disagree would pass it back and forth. Dropped
-                    // with a line, the way a forwarded frame whose start fails here is (HIL-1040).
-                    $signal = $parked->signal;
-                    Logger::warning("Peer signal dropped: {$signal->signalType->getType()}/{$signal->signalName->getName()}"
-                        . " -> agent {$parked->agentId} turned up on node {$destination->nodeId} while the frame waited");
-                    $this->agentSignalHolds()->settle($holdId);
-                    unset($signal, $parked, $hold);
-                    yield;
-                    continue;
-                }
-
-                $this->agentSignalHolds()->release($holdId);
-                if ($preempted !== null) {
-                    $preempted->preemptHoldId = $holdId;
-                }
-                unset($parked, $hold);
-                yield;
-                continue;
-            }
-
-            if ($parked->awaitingPlacementOrder) {
-                if ($this->agentManagerDaemon->isAgentStarted($parked->agentId)) {
-                    $this->agentSignalHolds()->release($holdId);
-                    if ($preempted !== null) {
-                        $preempted->preemptHoldId = $holdId;
-                    }
-                    unset($parked, $hold);
-                    yield;
-                    continue;
-                }
-
-                if ($this->isAgentStartUnderWay($workerServer, $parked->agentId)) {
-                    $parked = $parked->withoutPlacementOrderWait();
-                } elseif (!$destination instanceof AgentDestination) {
-                    $this->agentSignalHolds()->release($holdId);
-                    if ($preempted !== null) {
-                        $preempted->preemptHoldId = $holdId;
-                    }
-                    unset($parked, $hold);
-                    yield;
-                    continue;
-                }
-            }
-
-            if ($parked->awaitingResume && !$workerServer->awaitsProtectedModeResume($agent->type, $agent->index)) {
-                if ($this->agentManagerDaemon->isAgentStarted($parked->agentId)) {
-                    $this->agentSignalHolds()->release($holdId);
-                    if ($preempted !== null) {
-                        $preempted->preemptHoldId = $holdId;
-                    }
-                    unset($parked, $hold);
-                    yield;
-                    continue;
-                }
-
-                if ($this->isAgentStartUnderWay($workerServer, $parked->agentId)) {
-                    $parked = $parked->withoutResumeWait();
-                } else {
-                    $signal = $parked->signal;
-                    Logger::warning(
-                        "Signal {$signal->signalType->getType()}/{$signal->signalName->getName()}"
-                        . " held through the freeze for agent {$parked->agentId}"
-                        . ' dropped: the lift did not bring it back to this node',
-                    );
-                    $this->agentSignalHolds()->settle($holdId);
-                    unset($signal, $parked, $hold);
-                    yield;
-                    continue;
-                }
-            }
-
-            if ($parked->awaitingPlacement && $this->isAgentStartUnderWay($workerServer, $parked->agentId)) {
-                $parked = $parked->withoutPlacementWait();
-            }
-
-            if ($placementFact && $parked->awaitingPlacement && $destination instanceof AgentDestination) {
-                $this->agentSignalHolds()->release($holdId);
-                unset($parked, $hold);
-                yield;
-                continue;
-            }
-
-            if ($parked->awaitingPlacement) {
-                $placementAsks[$parked->agentId] = $agent;
-            }
-
-            $this->agentSignalHolds()->park($holdId, $parked);
-            unset($parked, $hold);
-            yield;
-        }
-
-        foreach ($placementAsks as $agent) {
-            $agentId = $this->agentManagerDaemon->buildAgentId($agent->type, $agent->index);
-            if (!$this->agentSignalHolds()->awaitsPlacement($agentId)) {
-                yield;
-                continue;
-            }
-            if ($placementFact) {
-                $this->signalHoldPlacement?->invalidateOnDemandAsk($agentId);
-            }
-            $this->requireOnDemandPlacement($agent->type, $agent->index);
-            yield;
-        }
-    }
-
-    /**
-     * @param AgentSignalHold $hold Exact released obligation
-     * @param WorkerServer $workerServer Worker transport
-     * @param ?AgentSignalMesh $mesh Existing peer port, or null off-cluster
-     * @return SignalDispatch One-agent continuation, never the original frame's other destinations
-     * @throws LogicException When the selected obligation is not a released pending envelope
-     */
-    private function createReleasedAgentDispatch(AgentSignalHold $hold, WorkerServer $workerServer, ?AgentSignalMesh $mesh): SignalDispatch
-    {
-        if (!$hold->released || $hold->parked === null) {
-            throw new LogicException('Agent signal hold has no released envelope');
-        }
-        return new SignalDispatch($hold->parked->signal,
-            fn(SignalDispatch $dispatch): Generator => $this->walkReleasedAgentSignal($dispatch, $workerServer, $mesh),
-            $hold->parked, $this->signalDispatchNotifier === null ? null : $this->deliveryCleanup());
-    }
-
-    /**
-     * @param SignalDispatch $dispatch Exact one-agent release lifetime
-     * @param WorkerServer $workerServer Worker transport
-     * @param ?AgentSignalMesh $mesh Existing peer port
-     * @return Generator<int, void> One addressed attempt with bounded physical peer lookup
-     * @throws EnvException When placement configuration is invalid
-     * @throws InvalidArgumentException When a refusal cannot be named
-     * @throws LogicException When an obligation cannot be parked again
-     */
-    private function walkReleasedAgentSignal(SignalDispatch $dispatch, WorkerServer $workerServer, ?AgentSignalMesh $mesh): Generator
-    {
-        yield;
-        $now = microtime(true);
-        $signal = $dispatch->getSignal();
-        $parked = $dispatch->release;
-        if ($signal === null || $parked === null) {
-            return;
-        }
-        yield from $this->resolveDispatchClient($dispatch, $this->findWebSocketServer());
-        if ($this->isAbandonedPageDelivery($signal, $parked->localOnly)) {
-            return;
-        }
-        $dispatch->phase = SignalDispatchPhase::Destinations;
-        $agent = AgentId::fromId($parked->agentId);
-        Logger::info(sprintf(
-            'Signal %s/%s held for agent %s let go after %.3fs',
-            $signal->signalType->getType(),
-            $signal->signalName->getName(),
-            $parked->agentId,
-            $now - $parked->parkedAt,
-        ));
-
-        // A forwarded frame goes back through the local door only, for the reason the drop
-        // above gives: the placing is the sender's, made once, and this node does not remake it.
-        yield;
-        if ($parked->localOnly) {
-            yield from $this->agentSignalPredecessors($workerServer, new AgentDestination($agent->type, $agent->index));
-            $this->guardGroupOperation($dispatch);
-            if (!$dispatch->hasWork()) {
-                return;
-            }
-            $outcome = $this->sendSignalToAgentDestination($workerServer,
-                new AgentDestination($agent->type, $agent->index), $signal, true);
-        } else {
-            $destination = Hilos::$sr->placeAgentDestination(new AgentDestination($agent->type, $agent->index));
-            if ($mesh === null || $mesh instanceof PeerServer) {
-                $outcome = yield from $this->agentDestinationDelivery($workerServer, $mesh, $destination, $signal);
-            } else {
-                // Existing project transport boundary; the framework's real peer walk is above.
-                $outcome = $this->deliverToAgentDestination($workerServer, $mesh, $destination, $signal);
-            }
-        }
-        if ($dispatch->getSignal() === null) {
-            return;
-        }
-        switch ($outcome) {
-            case AgentDeliveryOutcome::RemoteUnreachable:
-                $this->answerUnreachableSubscription($signal);
-                $this->refuseUndeliveredCommand($signal, self::COMMAND_NODE_UNREACHABLE_MESSAGE);
-                break;
-            case AgentDeliveryOutcome::AddressUnknown:
-                // A stop that took the agent off this node leaves no address yet, and that is
-                // not a refusal: the next placement names a host, or the verdict says nobody
-                // could. Answering here was the leftover of the six-second clock (HIL-1041).
-                // Held before the ask, as in the walk: the leader's verdict answers in place.
-                $this->parkUntilAgentUp($signal, $parked->agentId, true, $parked->localOnly);
-                $this->requireOnDemandPlacement($agent->type, $agent->index);
-                break;
-            case AgentDeliveryOutcome::StartRefused:
-                $this->answerStartRefusedSubscription($signal);
-                $this->refuseUndeliveredCommand($signal, self::COMMAND_START_REFUSED_MESSAGE);
-                break;
-            case AgentDeliveryOutcome::ShutdownSkipped:
-            case AgentDeliveryOutcome::Held:
-            case AgentDeliveryOutcome::Delivered:
-                break;
-        }
     }
 
     /**
@@ -13217,7 +12122,9 @@ abstract class DaemonManager extends BaseManager implements
                             || $destination instanceof UnknownAgentDestination) {
                             return;
                         }
-                        $this->deliverToAgentDestination($workers, $this->findPeerServer(), $destination, $signal);
+                        $this->deliverToAgentDestination(
+                            $this->directSignalDispatch($signal), $workers, $this->findPeerServer(), $destination, $signal,
+                        );
                     });
             }
 
@@ -13235,9 +12142,7 @@ abstract class DaemonManager extends BaseManager implements
      */
     private function guardGroupOperation(SignalDispatch $dispatch): void
     {
-        if ($dispatch->groupOperation !== null && !$dispatch->groupOperation->isCurrent()) {
-            $dispatch->cancel();
-        }
+        $this->signalDispatcher()->guardGroupOperation($dispatch);
     }
 
     /**
@@ -13268,6 +12173,7 @@ abstract class DaemonManager extends BaseManager implements
      * owed whoever asked - and it no longer escapes as an exception: one agent without a worker
      * is that agent's failure, not the loop's (HIL-999).
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WorkerServer $workerServer Worker server hosting the agents of this node
      * @param ?AgentSignalMesh $mesh Outbound peer port for the cross-node forward, or null when cluster mode is off
      * @param AgentAddressedDestination $destination Agent to reach, already placed
@@ -13276,13 +12182,13 @@ abstract class DaemonManager extends BaseManager implements
      * @throws Throwable When canceling stale group authority encounters a disposal failure
      */
     protected function deliverToAgentDestination(
+        SignalDispatch $dispatch,
         WorkerServer $workerServer,
         ?AgentSignalMesh $mesh,
         AgentAddressedDestination $destination,
         SignalDTO $signal,
     ): AgentDeliveryOutcome {
-        $dispatch = $this->currentSignalDispatch;
-        if ($dispatch?->groupOperation !== null && $dispatch->getSignal() === $signal) {
+        if ($dispatch->groupOperation !== null && $dispatch->getSignal() === $signal) {
             $this->guardGroupOperation($dispatch);
             if (!$dispatch->hasWork()) {
                 return AgentDeliveryOutcome::Delivered;
@@ -13292,7 +12198,7 @@ abstract class DaemonManager extends BaseManager implements
         $signalName = $signal->signalName->getName();
 
         if ($destination instanceof RemoteAgentDestination) {
-            $this->trackPageDelivery($signal, $destination);
+            $this->trackPageDelivery($dispatch, $signal, $destination);
             if ($mesh === null) {
                 Logger::error("Peer signal dropped: {$signalType}/{$signalName}"
                     . " -> node {$destination->nodeId} agent {$destination->agentType} - no peer server");
@@ -13327,7 +12233,7 @@ abstract class DaemonManager extends BaseManager implements
         // the case the walk had first, and the only one the two branches above do not take. The
         // callee's parameter type is what holds that reasoning to account, loudly, if a fourth
         // addressed destination is ever added without this method being told about it.
-        return $this->sendSignalToAgentDestination($workerServer, $destination, $signal);
+        return $this->sendSignalToAgentDestination($dispatch, $workerServer, $destination, $signal);
     }
 
     /**
@@ -13350,6 +12256,7 @@ abstract class DaemonManager extends BaseManager implements
      * the same event. An Error is not caught - that is the node's own defect, which the loop's
      * guard exists for.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WorkerServer $workerServer Worker server hosting the agents
      * @param AgentDestination $destination Agent instance to reach
      * @param SignalDTO $signal Signal to deliver
@@ -13359,6 +12266,7 @@ abstract class DaemonManager extends BaseManager implements
      * @throws InvalidArgumentException When a local report-now refusal cannot be named
      */
     private function sendSignalToAgentDestination(
+        SignalDispatch $dispatch,
         WorkerServer $workerServer,
         AgentDestination $destination,
         SignalDTO $signal,
@@ -13373,7 +12281,7 @@ abstract class DaemonManager extends BaseManager implements
         $signalType = $signal->signalType->getType();
         $signalName = $signal->signalName->getName();
 
-        $this->trackPageDelivery($signal, $destination);
+        $this->trackPageDelivery($dispatch, $signal, $destination);
         try {
             // An agent that has not reported its start is started here, as being addressed always
             // started it, and the frame waits in the master for the report instead of being written
@@ -13396,14 +12304,14 @@ abstract class DaemonManager extends BaseManager implements
                         "Signal {$signalType}/{$signalName} held for agent {$agentLabel}"
                         . ' until protected mode brings it back',
                     );
-                    $this->parkUntilAgentUp($signal, $agentId, false, $localOnly, true);
+                    $this->parkUntilAgentUp($dispatch, $signal, $agentId, false, $localOnly, true);
 
                     return AgentDeliveryOutcome::Held;
                 }
 
-                $workerServer->ensureAgentUp($agentType, $agentIndex);
+                $workerServer->ensureAgentUp($agentType, $agentIndex, $this->signalLifecycleSink($dispatch));
                 if ($this->isAgentStartUnderWay($workerServer, $agentId)) {
-                    $this->parkUntilAgentUp($signal, $agentId, false, $localOnly);
+                    $this->parkUntilAgentUp($dispatch, $signal, $agentId, false, $localOnly);
 
                     return AgentDeliveryOutcome::Held;
                 }
@@ -13413,7 +12321,7 @@ abstract class DaemonManager extends BaseManager implements
                     if ($placed instanceof AgentDestination) {
                         Logger::info("Signal {$signalType}/{$signalName} held for agent {$agentLabel}"
                             . " until the leader's order to start it here arrives");
-                        $this->parkUntilAgentUp($signal, $agentId, false, $localOnly, false, true);
+                        $this->parkUntilAgentUp($dispatch, $signal, $agentId, false, $localOnly, false, true);
 
                         return AgentDeliveryOutcome::Held;
                     }
@@ -13421,8 +12329,8 @@ abstract class DaemonManager extends BaseManager implements
                     if ($placed instanceof UnknownAgentDestination && $localOnly) {
                         Logger::info("Signal {$signalType}/{$signalName} held for agent {$agentLabel}"
                             . ' until the leader names its node');
-                        $this->parkUntilAgentUp($signal, $agentId, true, true);
-                        $this->requireOnDemandPlacement($agentType, $agentIndex);
+                        $this->parkUntilAgentUp($dispatch, $signal, $agentId, true, true);
+                        $this->requireSignalPlacement($dispatch, $agentType, $agentIndex);
 
                         return AgentDeliveryOutcome::Held;
                     }
@@ -13440,6 +12348,7 @@ abstract class DaemonManager extends BaseManager implements
                 $agentType,
                 $agentIndex,
                 new DaemonAgentMessageDTO(agentId: $agentId, signal: $signal),
+                $this->signalLifecycleSink($dispatch),
             );
         } catch (HilosException $failure) {
             $report = $signal->data;
@@ -14253,8 +13162,9 @@ abstract class DaemonManager extends BaseManager implements
      * owner the original subscribe frame. The browser's table windows stay intact.
      *
      * @param string $nodeId Node whose membership changed
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private function rerouteNodeAddressedPages(string $nodeId): void
+    private function rerouteNodeAddressedPages(string $nodeId, ?SignalDispatch $origin = null): void
     {
         $router = Hilos::$sr;
         if ($router === null) {
@@ -14262,40 +13172,37 @@ abstract class DaemonManager extends BaseManager implements
         }
 
         $candidates = $router->nodePageCandidates($nodeId);
-        $this->queueSignalEffect(fn(): Generator => $this->nodePageReroute($router, $nodeId, $candidates));
+        $this->queueSignalEffectInDispatch(
+            fn(SignalDispatch $dispatch): Generator => $this->nodePageReroute($dispatch, $router, $nodeId, $candidates),
+            $origin,
+        );
     }
 
     /**
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalRouter $router Exact routing incarnation at the membership fact
      * @param string $nodeId Original requested node
      * @param Generator<int, int> $candidates Finite indexed subscription cohort, excluding future navigation
      * @return Generator<int, void> Old-owner delivery, binding and fresh subscribe in that order
      */
-    private function nodePageReroute(SignalRouter $router, string $nodeId, Generator $candidates): Generator
+    private function nodePageReroute(SignalDispatch $dispatch, SignalRouter $router, string $nodeId, Generator $candidates): Generator
     {
         yield;
         try {
             foreach ($candidates as $slot) {
-                yield from $this->nodePageRerouteCandidate($router, $nodeId, $slot);
+                yield from $this->nodePageRerouteCandidate($dispatch, $router, $nodeId, $slot);
             }
         } catch (EnvException | InvalidArgumentException | InvalidFormatException $failure) {
             Logger::error("Could not reroute pages for node {$nodeId}: {$failure->getMessage()}");
-            $dispatch = $this->currentSignalDispatch;
-            if ($dispatch !== null) {
-                if ($this->signalDispatchState?->stop?->includesDispatch($dispatch)) {
-                    $this->signalDispatchState->stop->fail();
-                }
-                if ($this->signalDispatchState?->browsers?->includesDispatch($dispatch)) {
-                    $this->signalDispatchState->browsers->fail();
-                }
-                $dispatch->fail();
-            }
+            $this->signalDispatcher()->failPrefixes($dispatch);
+            $dispatch->fail();
         }
     }
 
     /**
      * Candidate locals end before the next candidate's yield, including every early abandonment.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param SignalRouter $router Original routing incarnation
      * @param string $nodeId Original requested node
      * @param int $slot Original subscription slot
@@ -14304,7 +13211,7 @@ abstract class DaemonManager extends BaseManager implements
      * @throws InvalidArgumentException When an old-owner unsubscribe cannot be named
      * @throws InvalidFormatException When the recovery address is malformed
      */
-    private function nodePageRerouteCandidate(SignalRouter $router, string $nodeId, int $slot): Generator
+    private function nodePageRerouteCandidate(SignalDispatch $dispatch, SignalRouter $router, string $nodeId, int $slot): Generator
     {
         yield;
         $acceptKey = $router->nodePageAcceptKey($slot, $nodeId);
@@ -14326,7 +13233,7 @@ abstract class DaemonManager extends BaseManager implements
         if (!$original->isCurrent()) {
             return;
         }
-        yield from $this->replacedPageDelivery($original, $page, $address);
+        yield from $this->replacedPageDelivery($dispatch, $original, $page, $address);
         if (!$original->isCurrent()) {
             return;
         }
@@ -14340,6 +13247,7 @@ abstract class DaemonManager extends BaseManager implements
         }
         $bound = new PageSubscriptionContext($router, $acceptKey, $router->pageSubscription($acceptKey));
         yield from $this->whileSubscriptionCurrent($bound, $this->agentDestinationDelivery(
+            $dispatch,
             $workerServer, $this->findPeerServer(), $router->placeAgentDestination($next),
             new SignalDTO(new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
                 new SignalName($page), new WebSocketPageSubscribeSignalDTO($acceptKey, $page, $subscription->params)),
@@ -14439,7 +13347,7 @@ abstract class DaemonManager extends BaseManager implements
     public function onQuorumGained(): void
     {
         $this->invalidateRoleTick();
-        $this->placementHoldWake?->__invoke(null);
+        $this->signalDispatcher?->notePlacementFact(null);
     }
 
     /**
@@ -15351,4 +14259,5 @@ abstract class DaemonManager extends BaseManager implements
     {
         // Daemon-specific restart logic (none needed)
     }
+
 }

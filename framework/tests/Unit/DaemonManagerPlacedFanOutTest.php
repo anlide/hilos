@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Placement\AgentLocation;
 use Hilos\Cluster\WorkerPlacement;
@@ -526,8 +527,14 @@ final class PlacedFanOutTestWorkerServer extends WorkerServer
      * @param string $agentType Agent type the signal was routed to
      * @param ?string $agentIndex Agent index for an indexed agent, or null
      * @param DaemonAgentMessageDTO $messageDto Signal wrapped for the worker
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $address = $agentIndex === null ? $agentType : "{$agentType}:{$agentIndex}";
         $this->deliveries[] = $messageDto->signal->signalType->getType() . '@' . $address;

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
+use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\ClusterContext;
@@ -265,6 +267,7 @@ final class DaemonManagerAgentSignalPeerTestManager extends DaemonManager
     /**
      * Records the outcome and sends the delivery on through the recording port.
      *
+     * @param SignalDispatch $dispatch Original delivery lifetime
      * @param WorkerServer $workerServer Worker server hosting the agents of this node
      * @param ?AgentSignalMesh $mesh Port the pass found, or null when no peer server is registered
      * @param AgentAddressedDestination $destination Agent to reach, already placed
@@ -274,12 +277,14 @@ final class DaemonManagerAgentSignalPeerTestManager extends DaemonManager
      * @throws HilosException Whatever the project's agent-daemon factory raises while the local agent starts
      */
     protected function deliverToAgentDestination(
+        SignalDispatch $dispatch,
         WorkerServer $workerServer,
         ?AgentSignalMesh $mesh,
         AgentAddressedDestination $destination,
         SignalDTO $signal,
     ): AgentDeliveryOutcome {
         $outcome = parent::deliverToAgentDestination(
+            $dispatch,
             $workerServer,
             $mesh === null ? null : $this->mesh,
             $destination,
@@ -351,8 +356,14 @@ final class DaemonManagerAgentSignalPeerTestWorkerServer extends WorkerServer
      * @param string $agentType Agent type the signal was routed to
      * @param ?string $agentIndex Agent index for an indexed agent, or null
      * @param DaemonAgentMessageDTO $messageDto Signal wrapped for the worker
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->deliveries[] = $agentIndex === null ? $agentType : "{$agentType}:{$agentIndex}";
     }

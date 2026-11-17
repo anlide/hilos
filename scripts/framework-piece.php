@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/framework-pieces.php';
+require_once __DIR__ . '/test-diagnostics.php';
 
 if (count($argv) !== 2 || !preg_match('/^[1-9][0-9]*$/', $argv[1])
     || (int) $argv[1] > FRAMEWORK_INTEGRATION_PIECES) {
@@ -22,5 +23,7 @@ fwrite(
 $command = 'DB_DATABASE=' . escapeshellarg($database)
     . ' php vendor/bin/phpunit -c framework/tests/phpunit.xml --testsuite integration'
     . ' --do-not-cache-result --filter ' . escapeshellarg(frameworkPieceFilter($classes));
+$phase = testPhase('phpunit', frameworkPieceStepId($piece), 'begin');
 passthru($command, $status);
+testPhase('phpunit', frameworkPieceStepId($piece), 'end', $phase, details: ['rc' => $status]);
 exit($status);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Runtime\Snapshot\RtSnapshotScope;
@@ -30,8 +31,9 @@ interface RtSyncMesh
      * @param string $signalType RT sync signal type being announced
      * @param SignalDTO $signal RT sync signal the other nodes apply
      * @param bool $partialOwner Whether this node holds only part of the right over the collection
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void;
+    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false, ?SignalDispatch $origin = null): void;
 
     /**
      * Names the nodes this one can hand something to right now.
@@ -57,10 +59,17 @@ interface RtSyncMesh
      * @param string $collectionKey RT collection this node owns all or part of
      * @param RtSnapshotScope $scope The area this node owns
      * @param bool $partialOwner Whether this node holds only part of the right over the collection
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidFormatException When a standalone row's set field is malformed
      * @throws LogicException When the source's version pages have closed
      */
-    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void;
+    public function streamRtSnapshotToNode(
+        string $nodeId,
+        string $collectionKey,
+        RtSnapshotScope $scope,
+        bool $partialOwner,
+        ?SignalDispatch $origin = null,
+    ): void;
 
     /**
      * Answers one node's announcement of what it reads, behind every write and snapshot this node

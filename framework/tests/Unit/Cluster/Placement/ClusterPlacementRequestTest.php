@@ -24,6 +24,7 @@ use Hilos\Cluster\PendingLeadership;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
+use WeakReference;
 
 /**
  * Placement driven by an agent being ADDRESSED, and the map kept honest when it stops (HIL-628).
@@ -55,6 +56,32 @@ final class ClusterPlacementRequestTest extends TestCase
         Hilos::$cluster = null;
 
         parent::tearDown();
+    }
+
+    public function testImmediateVerdictPortEndsWithTheAskAndLateReportsUseTheRegisteredSink(): void
+    {
+        $root = new FakePlacementVerdictSink();
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerPlacementVerdictSink($root);
+        $placement = $this->settledLeader(new FakePlacementMesh(capabilities: [], online: []));
+        $immediate = new FakePlacementVerdictSink();
+        $placement->requirePlacement('render', '9', $immediate);
+        self::assertSame([['render', '9', 'unplaced: no online node to place the agent on']], $immediate->notPlaced);
+        self::assertSame([], $root->notPlaced);
+        self::assertSame($root, Hilos::$cluster->placementVerdictSink());
+        $reference = WeakReference::create($immediate);
+        unset($immediate);
+        self::assertNull($reference->get());
+
+        $placement = $this->settledLeader($this->mesh());
+        $immediate = new FakePlacementVerdictSink();
+        $placement->requirePlacement('render', '9', $immediate);
+        self::assertSame([], $immediate->notPlaced);
+        $reference = WeakReference::create($immediate);
+        unset($immediate);
+        self::assertNull($reference->get(), 'A pending placement must not retain its asking operation');
+        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
+        self::assertSame([['render', '9', 'failed: no worker']], $root->notPlaced);
     }
 
     /**

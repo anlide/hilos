@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Generator;
 use Hilos\Cluster\AgentSignalSink;
 use Hilos\Cluster\ClusterContext;
@@ -20,6 +22,7 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\CommandSignalCancellation;
 use Hilos\Core\Daemon\ParkedAgentSignal;
 use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Daemon\SignalDispatcher;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -136,8 +139,8 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
         $worker->attachEventLoop($loop, static function () use (&$ready): void { $ready = true; });
         $holds = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($manager);
         $identities = new ReflectionMethod(DaemonManager::class, 'identitySignals')->invoke($manager);
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
-        $create = new ReflectionMethod(DaemonManager::class, 'createSignalDispatch');
+        $state = SignalDispatcherFixture::owner($manager)->signalDispatchState();
+        $create = new ReflectionMethod(SignalDispatcher::class, 'createSignalDispatch');
         $raw = [];
         $expected = [];
         $older = null;
@@ -158,7 +161,9 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
                     } elseif ($entrance === 'input' || $entrance === 'retired') {
                         Hilos::$sr->queueSignal($signal->signalSource, $signal->signalType, $signal->signalName, $signal->data);
                     } else {
-                        $dispatch = $create->invoke($manager, $signal, false, $workers, null, null, null, null);
+                        $dispatch = $create->invoke(
+                            new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($manager),
+                            $signal, false, $workers, null, null, null, null);
                         if ($entrance === 'active') {
                             $state->active = $dispatch;
                         } else {
@@ -171,19 +176,20 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
         }
         if ($entrance === 'retired') {
             Hilos::$sr = new DeliveryFairnessRouter();
-            new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
+            SignalDispatcherFixture::owner($manager)->signalDispatchState();
         }
         $holds->release($older);
         if ($entrance === 'active') {
             $hold = $holds->get($older);
-            $walk = new ReflectionMethod(DaemonManager::class, 'walkReleasedAgentSignal');
+            $walk = new ReflectionMethod(SignalDispatcher::class, 'walkReleasedAgentSignal');
             $state->released = new SignalDispatch($hold->parked->signal,
                 static function (SignalDispatch $dispatch) use ($walk, $manager, $workers): Generator {
                     yield;
                     for ($step = 0; $step < 130; $step++) {
                         yield;
                     }
-                    yield from $walk->invoke($manager, $dispatch, $workers, null);
+                    yield from $walk->invoke(
+                        new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($manager), $dispatch, $workers, null);
                 }, $hold->parked);
             $holds->begin($older, $state->released);
             unset($hold);
@@ -204,7 +210,7 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
             self::assertSame(1, $workers->pendingStopDispatch());
         }
         $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
-        $queue = new ReflectionMethod(DaemonManager::class, 'queueSignalEffect');
+        $queue = SignalDispatcherFixture::queue(...);
         $advanceStop = new ReflectionMethod(WorkerServer::class, 'advanceSecondStopWave');
         $wire = '';
         $late = new SignalDTO(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::SYSTEM),
@@ -212,7 +218,7 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
         try {
             for ($portion = 0; $portion < 128 && (!$state->browsers->complete || ($stop && !$state->stop->complete)); $portion++) {
                 $loop->tick();
-                $queue->invoke($manager, static function (): Generator {
+                $queue($manager, static function (): Generator {
                     yield;
                     for ($step = 0; $step < 130; $step++) {
                         yield;
@@ -458,9 +464,9 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
         };
         $raw = [];
         $expected = [];
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
+        $state = SignalDispatcherFixture::owner($manager)->signalDispatchState();
         $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
-        $queue = new ReflectionMethod(DaemonManager::class, 'queueSignalEffect');
+        $queue = SignalDispatcherFixture::queue(...);
         $identities = new ReflectionMethod(DaemonManager::class, 'identitySignals')->invoke($manager);
         $holds = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($manager);
         $late = new SignalDTO(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::SYSTEM),
@@ -516,7 +522,7 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
                     $physical = $servers['A']->addressedDelivery('B', static function () use (
                         $manager, $workers, $servers, $deliver, $signal,
                     ): void {
-                        $deliver->invoke($manager, $workers, $servers['A'],
+                        $deliver->invoke($manager, SignalDispatcherFixture::direct(), $workers, $servers['A'],
                             new RemoteAgentDestination('B', DeliveryFairnessAgentDaemon::AGENT_TYPE), $signal);
                     });
                     $captured++;
@@ -548,7 +554,7 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
             $advance = static function () use ($queue, $manager, $laterEffect, $state, $identities, $late, $holds, $dispatch,
                 &$changed, &$captured, $raw, $memory, $outcome, $servers, &$sockets, &$replacementLink, $links, $pump,
                 $receiverMemory, &$rebound, $exchange, &$ready, $loop, $worker, &$wire, $workerPair): void {
-                $queue->invoke($manager, $laterEffect);
+                $queue($manager, $laterEffect);
                 for ($later = 0; $later < 70; $later++) {
                     if ($later === 0 || count($state->commandCancellations) < 70) {
                         $id = ++$state->commandCancellationSequence;
@@ -579,7 +585,7 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
                 $holds->release($hold->id);
                 unset($cancellation, $peer, $hold);
                 $dispatch->invoke($manager);
-                $queue->invoke($manager, $laterEffect);
+                $queue($manager, $laterEffect);
                 if (!$changed && $captured > 0) {
                     self::assertFalse($state->browsers->complete, 'An original suspended physical attempt is still prefix debt');
                     self::assertNotNull($raw[0]->get());
@@ -770,11 +776,12 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
                         microtime(true), false, true))->id;
                 });
         }
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($manager);
+        $state = SignalDispatcherFixture::owner($manager)->signalDispatchState();
         $selected = $preempt ? $ids[1] : $ids[0];
         $holds->release($selected);
-        $state->released = new ReflectionMethod(DaemonManager::class, 'createReleasedAgentDispatch')
-            ->invoke($manager, $holds->get($selected), $workers, null);
+        $state->released = new ReflectionMethod(SignalDispatcher::class, 'createReleasedAgentDispatch')->invoke(
+            new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($manager),
+            $holds->get($selected), $workers, null);
         $holds->begin($selected, $state->released);
         $holds->release($preempt ? $ids[0] : $ids[1]);
         $state->browsers = new ReflectionMethod(DaemonManager::class, 'newSignalDispatchPrefix')->invoke($manager);
@@ -784,7 +791,7 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
             $workers->failureAcceptKey = $expected[0][WebSocketFrameBinarySignalDTO::ACCEPT_KEY];
         }
         $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
-        $queue = new ReflectionMethod(DaemonManager::class, 'queueSignalEffect');
+        $queue = SignalDispatcherFixture::queue(...);
         $failures = [];
         $canceled = false;
         $preempted = false;
@@ -799,7 +806,7 @@ final class DaemonManagerDeliveryFairnessTest extends TestCase
                         $canceled = true;
                     }
                 }
-                $queue->invoke($manager, static function (): Generator {
+                $queue($manager, static function (): Generator {
                     yield;
                     for ($step = 0; $step < 130; $step++) {
                         yield;
@@ -898,8 +905,14 @@ final class DeliveryFairnessWorkerServer extends WorkerServer
      * @param string $agentType Original addressed type
      * @param ?string $agentIndex Original instance key
      * @param DaemonAgentMessageDTO $messageDto Original delivery to serialize over the real worker socket
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         if ($messageDto->signal->data instanceof WebSocketFrameBinarySignalDTO) {
             if ($this->failure !== null && $messageDto->signal->data->acceptKey === $this->failureAcceptKey) {

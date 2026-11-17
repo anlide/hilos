@@ -139,6 +139,7 @@ require_once __DIR__ . '/step-artifacts.php';
 require_once __DIR__ . '/stand-registry.php';
 require_once __DIR__ . '/stand-teardown.php';
 require_once __DIR__ . '/evidence-sweep.php';
+require_once __DIR__ . '/test-diagnostics.php';
 
 if (isset($_SERVER['SCRIPT_FILENAME']) && realpath($_SERVER['SCRIPT_FILENAME']) === __FILE__) {
     try {
@@ -593,14 +594,28 @@ function runPlan(
 ): int {
     $logs = prepareLogDir($logDir, $plan);
     prepareArtifactDir($artifactDir, $plan);
+    $diagnostics = $logDir . '/runner-phases.jsonl';
+    try {
+        // warning-suppressed: a refused diagnostic reset falls back to captured STDERR
+        $reset = @file_put_contents($diagnostics, '');
+        if ($reset === false) {
+            $diagnostics = null;
+        }
+    } catch (Throwable) {
+        $diagnostics = null;
+    }
+    $runPhase = testPhase('run', 'suite', 'begin', path: $diagnostics);
     if ($fullRun) {
         // Nothing is written here unless something was swept, so a clean box keeps the
         // text it has always had and the section showing up is itself the news.
         fwrite(STDOUT, sweptEvidenceSection(sweepStaleEvidence($logDir, $artifactDir, array_keys($manifest))));
+        $sweepPhase = testPhase('sweep', 'stands', 'begin', path: $diagnostics);
         $survived = sweepStands($root);
+        testPhase('sweep', 'stands', 'end', $sweepPhase, $diagnostics);
         if ($survived !== []) {
             fwrite(STDERR, 'stands: run not started, these stands would not go down: '
                 . implode(', ', $survived) . "\n");
+            testPhase('run', 'suite', 'end', $runPhase, $diagnostics, ['rc' => 1]);
 
             return 1;
         }
@@ -613,7 +628,7 @@ function runPlan(
     /** @var array<int, string> $pending Ids not started yet, in {@see launchOrder()}. */
     $pending = launchOrder($manifest, $plan);
     /** @var array<string, array{handle: resource, since: float, at: string,
-     *     neighbors: array<int, string>, pulseAt: float, pulseSize: int}> $running */
+     *     neighbors: array<int, string>, pulseAt: float, pulseSize: int, commandPhase: int}> $running */
     $running = [];
     /** @var array<string, array{path: string, reason: string, standCommand: string|null,
      *     missing: array<int, string>}> $artifacts Snapshots taken, by step id. */
@@ -628,7 +643,11 @@ function runPlan(
     while ($pending !== [] || $running !== []) {
         foreach (launchable($manifest, $pending, $running, $done, $lanes) as $id) {
             $pending = array_values(array_diff($pending, [$id]));
+            $commandPhase = testPhase('command', $id, 'begin', path: $diagnostics);
+            $phase = testPhase('launch', $id, 'begin', path: $diagnostics);
             $running[$id] = launch($root, $manifest[$id], $logs[$id], array_keys($running));
+            testPhase('launch', $id, 'end', $phase, $diagnostics);
+            $running[$id]['commandPhase'] = $commandPhase;
             fwrite(STDOUT, launchedLine($id, $running[$id]['at'], count($running), $logs[$id]));
         }
         if ($running === []) {
@@ -641,7 +660,10 @@ function runPlan(
             break;
         }
         usleep(POLL_INTERVAL_MICROSECONDS);
-        foreach (reap($running, $logs) as $id => $finished) {
+        $phase = testPhase('reap', 'batch', 'begin', path: $diagnostics);
+        $reaped = reap($running, $logs, $diagnostics);
+        testPhase('reap', 'batch', 'end', $phase, $diagnostics);
+        foreach ($reaped as $id => $finished) {
             // Collected here rather than inside reap(), which knows neither the
             // step's working directory nor who it shared the box with.
             $context = [
@@ -651,10 +673,20 @@ function runPlan(
                 'neighborsAtFinish' => array_values(array_diff(array_keys($running), [$id])),
             ];
             unset($running[$id]);
+            testPhase('release-group', $id, 'observed', path: $diagnostics, details: ['group' => $manifest[$id]['group']]);
             $done[$id] = $finished;
+            $phase = testPhase('collect', $id, 'begin', path: $diagnostics);
             $artifacts[$id] = collectStepArtifacts($root, $id, $manifest[$id], $finished, $context, $artifactDir);
+            testPhase('collect', $id, 'end', $phase, $diagnostics);
+            $phase = testPhase('drop', $id, 'begin', path: $diagnostics);
             dropStandAfterStep($root, $manifest[$id]);
+            testPhase('drop', $id, 'end', $phase, $diagnostics);
+            $phase = testPhase('report', $id, 'begin', path: $diagnostics);
             reportFinish($id, $finished, $logs[$id], $rc, $artifacts[$id]);
+            testPhase('report', $id, 'end', $phase, $diagnostics);
+        }
+        if ($reaped !== []) {
+            testPhase('dispatch-ready', 'batch', 'observed', path: $diagnostics);
         }
         foreach (array_keys($running) as $id) {
             $running[$id] = reportPulse($id, $running[$id], $logs[$id], microtime(true));
@@ -664,7 +696,12 @@ function runPlan(
     fwrite($rc, 'ALL DONE ' . now() . "\n");
     fclose($rc);
 
-    return summarize($plan, $done, $artifacts, $lanes, microtime(true) - $startedAt, $logDir);
+    $phase = testPhase('summary', 'suite', 'begin', path: $diagnostics);
+    $result = summarize($plan, $done, $artifacts, $lanes, microtime(true) - $startedAt, $logDir);
+    testPhase('summary', 'suite', 'end', $phase, $diagnostics);
+    testPhase('run', 'suite', 'end', $runPhase, $diagnostics, ['rc' => $result]);
+
+    return $result;
 }
 
 /**
@@ -851,15 +888,16 @@ function launch(string $root, array $step, string $logPath, array $neighbors): a
  * the ledger and the summary consume the result.
  *
  * @param array<string, array{handle: resource, since: float, at: string,
- *     neighbors: array<int, string>, pulseAt: float, pulseSize: int}> $running Ids in flight.
+ *     neighbors: array<int, string>, pulseAt: float, pulseSize: int, commandPhase?: int}> $running Ids in flight.
  * @param array<string, string> $logs Log path by step id.
+ * @param string|null $diagnostics Live run observations; null uses captured STDERR.
  * @return array<string, array{outcome: StepOutcome, rc: int, at: string, seconds: float, note: string,
  *     unstable: array{count: int, tests: array<int, string>},
  *     quarantine: array{count: int, failed: int, notRun: int, tests: list<array{
  *         flake: string, status: string, file: string, line: int, project: string,
  *         titlePath: list<string>, reason: string}>}}> Completed verdicts and reports.
  */
-function reap(array $running, array $logs): array
+function reap(array $running, array $logs, ?string $diagnostics = null): array
 {
     $finished = [];
     foreach ($running as $id => $step) {
@@ -867,6 +905,13 @@ function reap(array $running, array $logs): array
         if ($status['running']) {
             continue;
         }
+        testPhase('child-exit', $id, 'observed', path: $diagnostics, details: [
+            'childPid' => $status['pid'],
+            'rc' => $status['exitcode'],
+            'signaled' => $status['signaled'],
+            'termSignal' => $status['termsig'],
+        ]);
+        testPhase('command', $id, 'end', $step['commandPhase'] ?? null, $diagnostics);
         proc_close($step['handle']);
         $finished[$id] = finishedStep(
             $status['exitcode'],

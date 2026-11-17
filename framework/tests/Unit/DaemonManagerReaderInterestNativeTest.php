@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Daemon\SignalDispatcher;
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 use Generator;
 use Hilos\Cluster\ClientMesh;
@@ -240,11 +243,13 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
 
     public function testSameSourceRebindPreservesCompletedPairAndMovedQueryWithoutTakingTheDeliverySlot(): void
     {
-        $delivery = $this->get('sourceInterestDeliveryBinding');
+        $delivery = $this->dispatchBinding('sourceInterestDeliveryBinding');
+        $reader = $this->dispatchBinding('readerInterestDeliveryBinding');
         $this->nativeReport(new WorkerSourceInterestDTO([ReaderNativeRuntime::EMPTY], ['db'], 1), 3);
         $this->drain();
         $this->invoke('attachReaderInterestEventLoop');
-        self::assertSame($delivery, $this->get('sourceInterestDeliveryBinding'));
+        self::assertSame($delivery, $this->dispatchBinding('sourceInterestDeliveryBinding'));
+        self::assertSame($reader, $this->dispatchBinding('readerInterestDeliveryBinding'));
         $this->invoke('attachSignalDispatchEventLoop');
         $this->invoke('dispatchReaderInterest');
         self::assertTrue($this->invoke('hasRunnableReaderInterest'), 'Announcement has left its original moved-query debt');
@@ -337,7 +342,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
     public function testTransportReplacementPreservesCurrentPendingPairAndRemovesOnlyItsOwnOldSlot(): void
     {
         $oldPeer = $this->get('servers')[0];
-        $foreign = static function (Generator $delivery): void {};
+        $foreign = static function (Closure $delivery): void {};
         $oldPeer->setSourceInterestDelivery($foreign);
         $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['db'], 1), 3);
         $replacement = new PeerServer('127.0.0.1', 0, NodeIdentity::of('local', 'Local', NodeRole::Master, []), [],
@@ -345,7 +350,7 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         $this->set('servers', [$replacement]);
         $this->invoke('reconcileReaderInterestSources');
         self::assertSame($foreign, new ReflectionProperty(PeerServer::class, 'sourceInterestDelivery')->getValue($oldPeer));
-        self::assertSame($this->get('sourceInterestDeliveryBinding'),
+        self::assertSame($this->dispatchBinding('sourceInterestDeliveryBinding'),
             new ReflectionProperty(PeerServer::class, 'sourceInterestDelivery')->getValue($replacement));
         $this->settle();
         $this->invoke('attachReaderInterestEventLoop');
@@ -361,15 +366,19 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
 
     public function testEscapedOldDeliveryAndExactRemovalCannotAffectTheReplacementBinding(): void
     {
-        $escaped = $this->get('sourceInterestDeliveryBinding');
+        $escaped = $this->dispatchBinding('sourceInterestDeliveryBinding');
+        $escapedReader = $this->dispatchBinding('readerInterestDeliveryBinding');
         $this->invoke('attachSignalDispatchEventLoop');
-        $current = $this->get('sourceInterestDeliveryBinding');
+        $current = $this->dispatchBinding('sourceInterestDeliveryBinding');
+        $currentReader = $this->dispatchBinding('readerInterestDeliveryBinding');
         $visits = 0;
-        $escaped((static function () use (&$visits): Generator { ++$visits; yield; })());
+        $escaped(static function () use (&$visits): Generator { ++$visits; yield; });
         $this->drain();
         self::assertSame(0, $visits, 'An old wake incarnation cannot enqueue work after replacement');
-        $this->manager->getAgentManagerDaemon()->removeReaderInterestDelivery($escaped);
-        self::assertSame($current, $this->get('sourceInterestDeliveryBinding'));
+        $this->manager->getAgentManagerDaemon()->removeReaderInterestDelivery($escapedReader);
+        self::assertSame($current, $this->dispatchBinding('sourceInterestDeliveryBinding'));
+        self::assertSame($currentReader,
+            new ReflectionProperty(AgentManagerDaemon::class, 'readerInterestDelivery')->getValue($this->manager->getAgentManagerDaemon()));
         $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, ReaderNativeRuntime::EMPTY), ['db'], 1), 3);
         self::assertFalse($this->manager->getAgentManagerDaemon()->hasChangedReaderInterest());
         $this->settle();
@@ -379,12 +388,47 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
         ], $this->manager->mesh->frames);
     }
 
+    public function testReturningSourcesRejectTheirEarlierObserverTokensUnderTheSameNativeAttachment(): void
+    {
+        $agents = $this->manager->getAgentManagerDaemon();
+        $peers = $this->get('servers')[0];
+        $reader = $this->dispatchBinding('readerInterestDeliveryBinding');
+        $peer = $this->dispatchBinding('sourceInterestDeliveryBinding');
+        $replacement = new PeerServer('127.0.0.1', 0, NodeIdentity::of('local', 'Local', NodeRole::Master, []), [],
+            PeerTestTls::unread(), PeerTestMarkers::shared());
+        $this->set('agentManagerDaemon', new ReaderNativeAgents());
+        $this->set('servers', [$replacement]);
+        $this->invoke('reconcileReaderInterestSources');
+        $this->set('agentManagerDaemon', $agents);
+        $this->set('servers', [$peers]);
+        $this->invoke('reconcileReaderInterestSources');
+        $visits = 0;
+        $reader(static function () use (&$visits): Generator { ++$visits; yield; });
+        $peer(static function () use (&$visits): Generator { ++$visits; yield; });
+        $this->drain();
+        self::assertSame(0, $visits, 'Returning to a source does not restore an escaped earlier observer');
+        $agents->removeReaderInterestDelivery($reader);
+        $peers->removeSourceInterestDelivery($peer);
+        self::assertSame($this->dispatchBinding('readerInterestDeliveryBinding'),
+            new ReflectionProperty(AgentManagerDaemon::class, 'readerInterestDelivery')->getValue($agents));
+        self::assertSame($this->dispatchBinding('sourceInterestDeliveryBinding'),
+            new ReflectionProperty(PeerServer::class, 'sourceInterestDelivery')->getValue($peers));
+        $this->dispatchBinding('readerInterestDeliveryBinding')(
+            static function () use (&$visits): Generator { ++$visits; yield; },
+        );
+        $this->dispatchBinding('sourceInterestDeliveryBinding')(
+            static function () use (&$visits): Generator { ++$visits; yield; },
+        );
+        $this->drain();
+        self::assertSame(2, $visits, 'Both replacement observers still reach the guarded effect queue');
+    }
+
     public function testTerminalDetachAndExitCannotReviveGuardedWorkThroughAnEscapedDelivery(): void
     {
-        $delivery = $this->get('sourceInterestDeliveryBinding');
+        $delivery = $this->dispatchBinding('sourceInterestDeliveryBinding');
         $this->invoke('detachReaderInterestEventLoop');
         $this->nativeReport(new WorkerSourceInterestDTO(array_fill(0, 512, 'late'), [], 1), 3);
-        $delivery((static function (): Generator { yield; })());
+        $delivery(static function (): Generator { yield; });
         $this->drain();
         $this->phases();
         self::assertFalse($this->invoke('hasRunnableReaderInterest'));
@@ -522,6 +566,15 @@ final class DaemonManagerReaderInterestNativeTest extends TestCase
     }
 
     /**
+     * @param string $field Exact dispatcher observer being examined
+     * @return Closure Current observer token
+     */
+    private function dispatchBinding(string $field): Closure
+    {
+        return new ReflectionProperty(SignalDispatcher::class, $field)->getValue(SignalDispatcherFixture::owner($this->manager));
+    }
+
+    /**
      * @param string $field Binding to inspect
      * @return mixed Current binding
      */
@@ -555,20 +608,26 @@ final class ReaderNativeManager extends DaemonManager
         $this->mesh = new ReaderNativeMesh();
     }
 
-    /** @param ?SourceInterestMesh $mesh Actual registered transport */
-    protected function announceReaderInterest(?SourceInterestMesh $mesh): void
+    /**
+     * @param ?SourceInterestMesh $mesh Actual registered transport
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
+    protected function announceReaderInterest(?SourceInterestMesh $mesh, ?SignalDispatch $origin = null): void
     {
         ++$this->announcements;
         $this->order[] = 'interest';
-        parent::announceReaderInterest($mesh === null ? null : $this->mesh);
+        parent::announceReaderInterest($mesh === null ? null : $this->mesh, $origin);
     }
 
-    /** @param ?RtSyncMesh $mesh Actual registered transport */
-    protected function askRtSnapshotsForMissingCollections(?RtSyncMesh $mesh): void
+    /**
+     * @param ?RtSyncMesh $mesh Actual registered transport
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     */
+    protected function askRtSnapshotsForMissingCollections(?RtSyncMesh $mesh, ?SignalDispatch $origin = null): void
     {
         ++$this->queries;
         $this->order[] = 'missing';
-        parent::askRtSnapshotsForMissingCollections($mesh === null ? null : $this->mesh);
+        parent::askRtSnapshotsForMissingCollections($mesh === null ? null : $this->mesh, $origin);
     }
 
     /** @param ?ClientMesh $mesh Actual connection phase, entered only through its source guard */
@@ -707,8 +766,9 @@ final class ReaderNativeMesh implements SourceInterestMesh, RtSyncMesh
      * @param string $signalType Actual sync kind
      * @param SignalDTO $signal Actual sync payload
      * @param bool $partialOwner Original ownership width
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void
+    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false, ?SignalDispatch $origin = null): void
     {
         $this->frames[] = $signal;
     }
@@ -718,8 +778,15 @@ final class ReaderNativeMesh implements SourceInterestMesh, RtSyncMesh
      * @param string $collectionKey Original collection
      * @param RtSnapshotScope $scope Original area
      * @param bool $partialOwner Original right
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void
+    public function streamRtSnapshotToNode(
+        string $nodeId,
+        string $collectionKey,
+        RtSnapshotScope $scope,
+        bool $partialOwner,
+        ?SignalDispatch $origin = null,
+    ): void
     {
         throw new RuntimeException('Unexpected snapshot');
     }

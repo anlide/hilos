@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\Clock\ClusterClock;
 use Hilos\Cluster\Clock\ClusterClockReading;
 use Hilos\Cluster\ClusterContext;
@@ -375,9 +376,15 @@ final class StandingTestCaptureServer extends WorkerServer
      * @param string $agentType Receiver type
      * @param ?string $agentIndex Receiver index
      * @param DaemonAgentMessageDTO $messageDto Addressed frame
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      * @throws LogicException When this test refuses delivery
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->attempts++;
         if ($this->refuse) {

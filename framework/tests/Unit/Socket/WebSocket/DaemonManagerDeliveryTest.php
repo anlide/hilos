@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Socket\WebSocket;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
+use Closure;
 use Generator;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerClientSignalDTO;
@@ -16,6 +18,7 @@ use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\CommandSignalCancellation;
 use Hilos\Core\Daemon\BrowserDeliveryTarget;
 use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Daemon\SignalDispatcher;
 use Hilos\Core\Daemon\SignalDispatchPhase;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Page\DTO\PageResubscribeSignalData;
@@ -368,11 +371,12 @@ final class DaemonManagerDeliveryTest extends TestCase
         $client->acceptJson(json_encode(['type' => 'page_subscribe', 'page' => 'p', 'params' => $current], JSON_THROW_ON_ERROR));
         $request = Hilos::$sr->getNextQueuedSignal();
         Hilos::$sr->subscribeToPage('p', $request->data);
-        new ReflectionMethod(DaemonManager::class, 'acceptPageDeliveryControl')->invoke($this->manager, new SignalDTO(
-            new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::WS_USER),
-            new SignalName(SignalConstants::PAGE_RESUBSCRIBE),
-            new WebSocketSignalData(new PageResubscribeSignalData('p', $recovery), targetAcceptKey: $client->acceptKey),
-        ));
+        new ReflectionMethod(DaemonManager::class, 'acceptPageDeliveryControl')->invoke(
+            $this->manager, SignalDispatcherFixture::direct(), new SignalDTO(
+                new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::WS_USER),
+                new SignalName(SignalConstants::PAGE_RESUBSCRIBE),
+                new WebSocketSignalData(new PageResubscribeSignalData('p', $recovery), targetAcceptKey: $client->acceptKey),
+            ));
         self::assertSame(!$matching, $client->isDeliveryPending('p', $request->data->deliveryId));
     }
 
@@ -453,10 +457,10 @@ final class DaemonManagerDeliveryTest extends TestCase
         $signal = new SignalDTO(new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::WS_SESSION),
             new SignalName('marker'), new WebSocketSignalData(new SignalData(), targetSessionTokenHash: 'target-session'));
         $frame = DeliveryFrame::fromJson('{"type":"marker","data":{}}');
-        $walk = new ReflectionMethod(DaemonManager::class, 'clientFrameDelivery')->invoke(
-            $this->manager, $this->server, $frame, null, 'target-session',
-        );
-        $dispatch = new SignalDispatch($signal, static fn() => $walk);
+        $dispatch = new SignalDispatch($signal, fn(SignalDispatch $dispatch): Generator =>
+            new ReflectionMethod(DaemonManager::class, 'clientFrameDelivery')->invoke(
+                $this->manager, $dispatch, $this->server, $frame, null, 'target-session',
+            ));
         $dispatch->runPortion(1);
         self::assertSame([$frame], $target->prepared);
         self::assertSame([], $last->prepared);
@@ -481,9 +485,8 @@ final class DaemonManagerDeliveryTest extends TestCase
         $signal = new SignalDTO(new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
             new SignalName('marker'), new WebSocketSignalData(new SignalData()));
         $frame = DeliveryFrame::fromJson('{"type":"marker","data":{}}');
-        $dispatch = new SignalDispatch($signal, fn() => new ReflectionMethod(DaemonManager::class, 'clientFrameDelivery')->invoke(
-            $this->manager, $this->server, $frame,
-        ));
+        $dispatch = new SignalDispatch($signal, fn(SignalDispatch $dispatch) =>
+            new ReflectionMethod(DaemonManager::class, 'clientFrameDelivery')->invoke($this->manager, $dispatch, $this->server, $frame));
         $dispatch->runPortion(1);
         self::assertSame([$frame], $first->prepared);
         $this->server->removeClient($departed);
@@ -508,7 +511,8 @@ final class DaemonManagerDeliveryTest extends TestCase
         $target = $this->connect('target', 'g');
         $signal = new SignalDTO(new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::WS_USER),
             new SignalName('marker'), new WebSocketSignalData(new SignalData(), targetAcceptKey: $target->acceptKey));
-        $lookup = new ReflectionMethod(DaemonManager::class, 'clientLookup')->invoke($this->manager, $this->server, $target->acceptKey);
+        $lookup = new ReflectionMethod(DaemonManager::class, 'clientLookup')->invoke(
+            $this->manager, SignalDispatcherFixture::direct(), $this->server, $target->acceptKey);
         $keys = new ReflectionMethod(DaemonManager::class, 'sessionAcceptKeyCandidates')->invoke($this->manager, $this->server, 'target');
         $lookupDispatch = new SignalDispatch($signal, static fn() => $lookup);
         $keysDispatch = new SignalDispatch($signal, static fn() => $keys);
@@ -610,7 +614,8 @@ final class DaemonManagerDeliveryTest extends TestCase
     public function testIndexedLookupCapturesBeforeYieldAndCannotFindALaterReplacement(): void
     {
         $client = $this->connect(null, 'g');
-        $lookup = new ReflectionMethod(DaemonManager::class, 'clientLookup')->invoke($this->manager, $this->server, $client->acceptKey);
+        $lookup = new ReflectionMethod(DaemonManager::class, 'clientLookup')->invoke(
+            $this->manager, SignalDispatcherFixture::direct(), $this->server, $client->acceptKey);
         $this->server->removeClient($client);
         $replacement = $this->connect(null, 'g');
         $replacement->acceptKey = $client->acceptKey;
@@ -633,7 +638,7 @@ final class DaemonManagerDeliveryTest extends TestCase
                 yield;
             }
         });
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $state->active = $dispatch;
         new ReflectionMethod(DaemonManager::class, 'dispatchSignals')->invoke($this->manager);
         self::assertSame(64, $steps);
@@ -721,7 +726,7 @@ final class DaemonManagerDeliveryTest extends TestCase
         $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
         $release = new ReflectionMethod(DaemonManager::class, 'releaseBrowsersOnceWorkersLeft');
         $dispatch->invoke($this->manager);
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $prefix = $state->browsers;
         self::assertFalse($prefix->complete);
         $failure = new RuntimeException('later local batch failed');
@@ -876,7 +881,7 @@ final class DaemonManagerDeliveryTest extends TestCase
 
             $round = false;
             $held = false;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->manager,
+            SignalDispatcherFixture::queue($this->manager,
                 static function () use (&$round, &$held): Generator {
                     while (!$round) {
                         yield;
@@ -931,7 +936,9 @@ final class DaemonManagerDeliveryTest extends TestCase
         $signal = new SignalDTO(new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
             new SignalName('delivery_marker'), new WebSocketSignalData($payload));
         $dispatch = $forwarded
-            ? new ReflectionMethod(DaemonManager::class, 'createClientFanoutDispatch')->invoke($this->manager, $signal, $this->server)
+            ? new ReflectionMethod(SignalDispatcher::class, 'createClientFanoutDispatch')->invoke(
+            new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this->manager),
+            $signal, $this->server)
             : $this->createDispatch($signal);
         $this->advanceDispatch($dispatch, 64);
         $delivered = count(array_filter($clients, static fn(DeliveryTestClient $client): bool => $client->prepared !== []));
@@ -977,6 +984,45 @@ final class DaemonManagerDeliveryTest extends TestCase
         }
         self::assertSame([], $target->prepared);
         self::assertEquals([new WebSocketDestination($target->acceptKey)], Hilos::$sr->localClientDestinations($signal));
+    }
+
+    public function testInterleavedAddressedOperationsKeepTheirOriginalSocketIncarnations(): void
+    {
+        $original = $this->connect(null, 'g');
+        $first = $this->createDispatch(new SignalDTO(
+            new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::WS_USER),
+            new SignalName('first'), new WebSocketSignalData(new SignalData(), targetAcceptKey: $original->acceptKey),
+        ));
+        for ($portion = 0; $portion < 64 && $first->phase !== SignalDispatchPhase::Destinations; $portion++) {
+            $this->advanceDispatch($first, 1);
+        }
+        self::assertSame(SignalDispatchPhase::Destinations, $first->phase);
+        self::assertSame([], $original->prepared);
+
+        $this->server->removeClient($original);
+        $replacement = $this->connect(null, 'g');
+        $replacement->acceptKey = $original->acceptKey;
+        $second = $this->createDispatch(new SignalDTO(
+            new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::WS_USER),
+            new SignalName('second'), new WebSocketSignalData(new SignalData(), targetAcceptKey: $replacement->acceptKey),
+        ));
+        // The encoder is an existing synchronous hook. Resume the original physical work
+        // inside the second operation without installing the first one's legacy scratch.
+        $this->manager->onEncode = static function () use ($first): void {
+            for ($portion = 0; $portion < 64 && $first->hasWork(); $portion++) {
+                $first->runPortion(1);
+            }
+        };
+        for ($portion = 0; $portion < 64 && $second->hasWork(); $portion++) {
+            $this->advanceDispatch($second, 1);
+        }
+
+        self::assertFalse($first->hasWork());
+        self::assertFalse($second->hasWork());
+        self::assertSame([], $original->prepared);
+        self::assertCount(1, $replacement->prepared);
+        self::assertSame('{"type":"second","data":[]}', $replacement->prepared[0]->json);
+        self::assertSame(2, $this->manager->encodes);
     }
 
     public function testConnectionCloseKeepsItsSubscriptionUntilTheTerminalPhaseFinishes(): void
@@ -1030,29 +1076,32 @@ final class DaemonManagerDeliveryTest extends TestCase
         }
         $this->trackPending('cancel-pending', 'q', 'other-page', ['id' => 2]);
         $this->trackPending('cancel-pending', 'p', 'last-p', ['id' => 3]);
-        $last = WeakReference::create(new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')
-            ->getValue($this->manager)['cancel-pending']['last-p']);
-        new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->manager, static function (): Generator {
+        $last = WeakReference::create(new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')
+            ->getValue(SignalDispatcherFixture::owner($this->manager))['cancel-pending']['last-p']);
+        SignalDispatcherFixture::queue($this->manager, static function (): Generator {
             yield;
             for ($step = 0; $step < 1024; $step++) {
                 yield;
             }
         });
-        new ReflectionMethod(DaemonManager::class, 'cancelPendingPageDeliveries')->invoke($this->manager, 'cancel-pending', 'p');
+        new ReflectionMethod(DaemonManager::class, 'cancelPendingPageDeliveries')->invoke(
+            $this->manager, SignalDispatcherFixture::direct(), 'cancel-pending', 'p');
         self::assertNotNull($last->get(), 'Pending payload release must wait for its bounded physical step');
         $abandoned = new SignalDTO(new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION),
             new SignalName('p'), new WebSocketPageUpdateSubscriptionSignalDTO('cancel-pending', 'p', deliveryId: 'last-p'));
-        self::assertTrue(new ReflectionMethod(DaemonManager::class, 'isAbandonedPageDelivery')->invoke($this->manager, $abandoned, true));
+        self::assertTrue(new ReflectionMethod(DaemonManager::class, 'isAbandonedPageDelivery')->invoke(
+            $this->manager, SignalDispatcherFixture::direct(), $abandoned, true));
         $current = new SignalDTO(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::WS_USER),
             new SignalName(SignalConstants::PAGE_RESUBSCRIBE),
             new WebSocketSignalData(new PageResubscribeSignalData('q', ['id' => 2]), targetAcceptKey: 'cancel-pending'));
-        self::assertFalse(new ReflectionMethod(DaemonManager::class, 'isStalePageRecovery')->invoke($this->manager, $current));
+        self::assertFalse(new ReflectionMethod(DaemonManager::class, 'isStalePageRecovery')->invoke(
+            $this->manager, SignalDispatcherFixture::direct(), $current));
         $this->trackPending('cancel-pending', 'p', 'future', ['id' => 4]);
         for ($portion = 0; $portion < 128; $portion++) {
             new ReflectionMethod(DaemonManager::class, 'dispatchSignals')->invoke($this->manager);
         }
         self::assertNull($last->get());
-        $ledger = new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')->getValue($this->manager);
+        $ledger = new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')->getValue(SignalDispatcherFixture::owner($this->manager));
         self::assertCount(131, $ledger);
         self::assertSame(['other-page', 'future'], array_keys($ledger['cancel-pending']));
         self::assertSame(['id' => 4], $ledger['cancel-pending']['future']->params);
@@ -1061,11 +1110,13 @@ final class DaemonManagerDeliveryTest extends TestCase
     public function testAnUnadvancedRecoveryCursorCannotPinAPhysicallyCanceledPendingPayload(): void
     {
         $this->trackPending('cancel-pending', 'p', 'old', ['id' => 1]);
-        $reference = WeakReference::create(new ReflectionProperty(DaemonManager::class, 'pendingPageDeliveries')
-            ->getValue($this->manager)['cancel-pending']['old']);
-        $recovery = new ReflectionMethod(DaemonManager::class, 'pendingPageRecovery')->invoke($this->manager, ['pending_owner']);
+        $reference = WeakReference::create(new ReflectionProperty(SignalDispatcher::class, 'pendingPageDeliveries')
+            ->getValue(SignalDispatcherFixture::owner($this->manager))['cancel-pending']['old']);
+        $recovery = new ReflectionMethod(DaemonManager::class, 'pendingPageRecovery')->invoke(
+            $this->manager, SignalDispatcherFixture::direct(), ['pending_owner']);
         $recovery->current();
-        new ReflectionMethod(DaemonManager::class, 'cancelPendingPageDeliveries')->invoke($this->manager, 'cancel-pending');
+        new ReflectionMethod(DaemonManager::class, 'cancelPendingPageDeliveries')->invoke(
+            $this->manager, SignalDispatcherFixture::direct(), 'cancel-pending');
         self::assertNull($reference->get(), 'A scalar recovery cohort must not retain a completed original record');
         self::assertTrue($recovery->valid());
         while ($recovery->valid()) {
@@ -1177,16 +1228,17 @@ final class DaemonManagerDeliveryTest extends TestCase
             $drain->invoke($this->manager);
             self::assertCount(1, $clients[0]->prepared);
             self::assertSame([], $clients[129]->prepared);
-            $retained = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($this->manager)->active;
+            $retained = SignalDispatcherFixture::owner($this->manager)->retainedState()->active;
             self::assertNotNull($retained);
             Hilos::$sr = new SignalRouter();
             $drain->invoke($this->manager);
-            self::assertSame(Hilos::$sr, new ReflectionProperty(DaemonManager::class, 'signalDispatchRouter')->getValue($this->manager));
+            self::assertSame(Hilos::$sr,
+                new ReflectionProperty(SignalDispatcher::class, 'signalDispatchRouter')->getValue(SignalDispatcherFixture::owner($this->manager)));
             $detach->invoke($this->manager);
             self::assertFalse($loop->hasReadyWork());
             $attach->invoke($this->manager);
             self::assertTrue($loop->hasReadyWork());
-            self::assertSame($retained, new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($this->manager)->active);
+            self::assertSame($retained, SignalDispatcherFixture::owner($this->manager)->retainedState()->active);
             Hilos::$sr->queueSignal(new SignalSource(SignalSource::AGENT), new SignalType(SignalTypeConstants::WS_ALL_CONNECTED),
                 new SignalName('third'), new WebSocketSignalData(new SignalData()));
             for ($portion = 0; $portion < 64; $portion++) {
@@ -1489,25 +1541,25 @@ final class DaemonManagerDeliveryTest extends TestCase
                     Hilos::$sr->queueSignal($outgoing->signalSource, $outgoing->signalType, $outgoing->signalName, $outgoing->data);
                 }
             });
-        $queue = new ReflectionMethod(DaemonManager::class, 'queueSignalEffect');
+        $queue = SignalDispatcherFixture::queue(...);
         $journal = [];
-        $queue->invoke($this->manager, function () use ($queue, &$journal): Generator {
+        $queue($this->manager, function (SignalDispatch $dispatch) use ($queue, &$journal): Generator {
             yield;
             for ($step = 0; $step < 100; $step++) {
                 yield;
             }
             $journal[] = 'parent';
-            $queue->invoke($this->manager, static function () use (&$journal): Generator {
+            $queue($this->manager, static function () use (&$journal): Generator {
                 yield;
                 for ($step = 0; $step < 130; $step++) {
                     yield;
                 }
                 $journal[] = 'child';
                 yield;
-            });
+            }, $dispatch);
             yield;
         });
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $state->browsers = new ReflectionMethod(DaemonManager::class, 'newSignalDispatchPrefix')->invoke($this->manager);
         $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignals');
         $due = 0;
@@ -1519,7 +1571,7 @@ final class DaemonManagerDeliveryTest extends TestCase
                 $native->markReady();
                 $loop->tick();
                 self::assertSame($portion + 1, $due);
-                $queue->invoke($this->manager, function () use ($queue, $portion, $failure, &$journal): Generator {
+                $queue($this->manager, function () use ($queue, $portion, $failure, &$journal): Generator {
                     yield;
                     for ($step = 0; $step < 130; $step++) {
                         yield;
@@ -1528,7 +1580,7 @@ final class DaemonManagerDeliveryTest extends TestCase
                     if ($portion === 0 && $failure !== null) {
                         throw $failure;
                     }
-                    $queue->invoke($this->manager, static function (): Generator {
+                    $queue($this->manager, static function (): Generator {
                         yield;
                         for ($step = 0; $step < 130; $step++) {
                             yield;
@@ -1627,7 +1679,7 @@ final class DaemonManagerDeliveryTest extends TestCase
      */
     private function trackPending(string $acceptKey, string $page, string $deliveryId, array $params): void
     {
-        new ReflectionMethod(DaemonManager::class, 'trackPageDelivery')->invoke($this->manager,
+        new ReflectionMethod(DaemonManager::class, 'trackPageDelivery')->invoke($this->manager, SignalDispatcherFixture::direct(),
             new SignalDTO(new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::PAGE_UPDATE_SUBSCRIPTION),
                 new SignalName($page), new WebSocketPageUpdateSubscriptionSignalDTO($acceptKey, $page, $params, deliveryId: $deliveryId)),
             new AgentDestination('pending_owner'));
@@ -1639,7 +1691,7 @@ final class DaemonManagerDeliveryTest extends TestCase
      */
     private function createDispatch(SignalDTO $signal): SignalDispatch
     {
-        return new ReflectionMethod(DaemonManager::class, 'createSignalDispatch')->invoke($this->manager, $signal, false,
+        return new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this->manager)->createSignalDispatch($signal, false,
             new ReflectionMethod(DaemonManager::class, 'findWorkerServer')->invoke($this->manager),
             $this->server, null, null, null);
     }
@@ -1650,7 +1702,7 @@ final class DaemonManagerDeliveryTest extends TestCase
      */
     private function advanceDispatch(SignalDispatch $dispatch, int $steps): void
     {
-        new ReflectionMethod(DaemonManager::class, 'runSignalPortion')->invoke($this->manager, $dispatch, $steps);
+        new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this->manager)->runSignalPortion($dispatch, $steps);
     }
 
     private function connect(?string $session, string $group): DeliveryTestClient
@@ -1728,9 +1780,19 @@ final class DeliveryTestManager extends DaemonManager
 {
     public int $encodes = 0;
 
+    /** @var ?Closure(): void One reentrant continuation at the existing encoder hook */
+    public ?Closure $onEncode = null;
+
+    /**
+     * @param SignalDTO $signal Original envelope
+     * @return ?string Encoded frame after the optional one-shot continuation
+     */
     protected function encodeSignalFrame(SignalDTO $signal): ?string
     {
         $this->encodes++;
+        $onEncode = $this->onEncode;
+        $this->onEncode = null;
+        $onEncode?->__invoke();
 
         return parent::encodeSignalFrame($signal);
     }

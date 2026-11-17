@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Cluster\ClusterContext;
@@ -786,8 +787,14 @@ final class RosterNativeWorkerServer extends WorkerServer
      * @param string $agentType Receiver
      * @param ?string $agentIndex Receiver index
      * @param DaemonAgentMessageDTO $messageDto Original message on the local worker link
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->delivered[] = $messageDto;
     }

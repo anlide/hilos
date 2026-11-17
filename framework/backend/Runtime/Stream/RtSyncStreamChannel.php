@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Runtime\Stream;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Generator;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -155,18 +156,18 @@ final class RtSyncStreamChannel
 
     /**
      * @param Closure(RtSyncStreamFrame): void $write Writes one frame to the channel
-     * @param Closure(RtSyncStreamOperation|RtSyncStreamSnapshot, Closure(bool): void, ?object): ?Generator $deliver Applies
-     *        a received operation and queues its further delivery, then settles it: true once applied, false when
+     * @param Closure(RtSyncStreamOperation|RtSyncStreamSnapshot, Closure(bool, ?SignalDispatch): void, ?object, ?SignalDispatch): ?Generator $deliver
+     *        Applies a received operation and queues its further delivery, then settles it: true once applied, false when
      *        refused; a host applying in portions returns that work, yielding RtWork, and settles at its end. The third
      *        argument is the host's receipt of the operation's final part, null without one. A snapshot comes at its
      *        head with no receipt yet ({@see RtSyncStreamSnapshot::receipt()}); its rows follow as they are read, so
      *        its host returns its staging as work, and one that returns none refuses a snapshot not read whole
-     * @param ?Closure(self): void $wake Schedules {@see self::pump()} on the host's RT pass; null pumps at once
+     * @param ?Closure(self, ?SignalDispatch): void $wake Schedules {@see self::pump()} on the host's RT pass; null pumps at once
      * @param ?Closure(): void $readAll Told when a pump has read every part received and handed on their operations,
      *        for a host that holds its other input behind them ({@see self::isReading()})
      * @param ?Closure(): ?object $receipt Takes the host's receipt of a final part when it is accepted, before it
      *        waits to be read: what the host must know as of the operation's arrival rather than of its apply
-     * @param ?Closure(string, list<string>, ?float): void $staleness Marks this end's copy of held rows of a
+     * @param ?Closure(string, list<string>, ?float, ?SignalDispatch): void $staleness Marks this end's copy of held rows of a
      *        collection frozen since the given moment, or current again with null; null marks them in this
      *        process alone ({@see RtStaleness})
      */
@@ -191,14 +192,20 @@ final class RtSyncStreamChannel
      * @param RtSyncSignalDataInterface $data RT sync carrier
      * @param ?string $originNodeId Peer node the write happened on, or null on worker IPC
      * @param bool $partialOwner Whether the origin holds only part of the right over the collection
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidFormatException When the carrier is no RT sync one, or its row holds a value a runtime row cannot carry
      * @throws LogicException When a segmented lease already closed
      * @throws InvalidArgumentException Never: a fresh allowance is valid
      */
-    public function send(RtSyncSignalDataInterface $data, ?string $originNodeId = null, bool $partialOwner = false): void
+    public function send(
+        RtSyncSignalDataInterface $data,
+        ?string $originNodeId = null,
+        bool $partialOwner = false,
+        ?SignalDispatch $origin = null,
+    ): void
     {
         $this->outbox->enqueue(RtSyncStreamOperation::fromSignalData($data, ++$this->revision, $originNodeId, $partialOwner));
-        $this->wakeUp();
+        $this->wakeUp($origin);
     }
 
     /**
@@ -214,6 +221,7 @@ final class RtSyncStreamChannel
      *     worker carries any
      * @param ?int $announcement Number of the worker's interest report the snapshot answers; only a master's stream
      *     to its worker carries one
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidFormatException When a standalone row's set field is malformed
      * @throws LogicException When the source's version pages have closed
      * @throws InvalidArgumentException Never: a fresh allowance is valid
@@ -225,11 +233,12 @@ final class RtSyncStreamChannel
         bool $partialOwner = false,
         array $staleRows = [],
         ?int $announcement = null,
+        ?SignalDispatch $origin = null,
     ): void {
         $this->outbox->enqueue(
             RtSyncStreamSnapshot::cut(++$this->revision, $collectionKey, $scope, $originNodeId, $partialOwner, $staleRows, $announcement),
         );
-        $this->wakeUp();
+        $this->wakeUp($origin);
     }
 
     /**
@@ -386,7 +395,7 @@ final class RtSyncStreamChannel
     {
         $this->closed = true;
         if ($this->readsSnapshot() && $this->wake !== null) {
-            ($this->wake)($this);
+            ($this->wake)($this, null);
         }
     }
 
@@ -453,14 +462,15 @@ final class RtSyncStreamChannel
      * Advances reading and sending as far as the budget and the credit allow.
      *
      * @param RtWorkBudget $budget Allowance of the current RT pass
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return bool Whether work is left that only a next allowance can advance
      * @throws InvalidFormatException Never: the answers this end writes are within their domain
      * @throws LogicException When a segmented lease closed or a work protocol broke
      * @throws InvalidArgumentException Never: a work request is never negative
      */
-    public function pump(RtWorkBudget $budget): bool
+    public function pump(RtWorkBudget $budget, ?SignalDispatch $origin = null): bool
     {
-        return $this->pumpIncoming($budget) || $this->pumpOutgoing($budget);
+        return $this->pumpIncoming($budget, $origin) || $this->pumpOutgoing($budget);
     }
 
     /**
@@ -469,12 +479,13 @@ final class RtSyncStreamChannel
      * no longer frozen by the hold.
      *
      * @param string $collectionKey Collection whose snapshot was published
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function recover(string $collectionKey): void
+    public function recover(string $collectionKey, ?SignalDispatch $origin = null): void
     {
         $held = $this->heldRows($collectionKey);
         unset($this->heldRows[$collectionKey]);
-        $this->markHeld($collectionKey, $held, null);
+        $this->markHeld($collectionKey, $held, null, $origin);
     }
 
     /**
@@ -603,12 +614,13 @@ final class RtSyncStreamChannel
 
     /**
      * @param RtWorkBudget $budget Allowance of the current RT pass
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return bool Whether the budget ran out with parts left to read
      * @throws InvalidFormatException Never: the answers this end writes are within their domain
      * @throws LogicException When a segmented lease closed or a work protocol broke
      * @throws InvalidArgumentException Never: a work request is never negative
      */
-    private function pumpIncoming(RtWorkBudget $budget): bool
+    private function pumpIncoming(RtWorkBudget $budget, ?SignalDispatch $origin = null): bool
     {
         if (!$this->isReading()) {
             return false;
@@ -649,7 +661,7 @@ final class RtSyncStreamChannel
             $this->incoming->dequeue();
             $this->step = null;
             if ($read instanceof RtSyncStreamSnapshot) {
-                $this->deliverSnapshot($read);
+                $this->deliverSnapshot($read, $origin);
             }
             if ($this->readsSnapshot()) {
                 $this->answerSnapshotPart($part);
@@ -660,7 +672,7 @@ final class RtSyncStreamChannel
                 continue;
             }
             $this->decoder = null;
-            $this->settle($part, $read);
+            $this->settle($part, $read, $origin);
         }
         if ($this->readAll !== null) {
             ($this->readAll)();
@@ -886,14 +898,15 @@ final class RtSyncStreamChannel
      *
      * @param RtSyncStreamFrame $final Final part of the operation
      * @param RtSyncStreamOperation $operation Operation read from its parts
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidFormatException Never: the answers this end writes are within their domain
      */
-    private function settle(RtSyncStreamFrame $final, RtSyncStreamOperation $operation): void
+    private function settle(RtSyncStreamFrame $final, RtSyncStreamOperation $operation, ?SignalDispatch $origin = null): void
     {
         $receipt = $this->receipts[$final->sequence] ?? null;
         unset($this->receipts[$final->sequence]);
         if ($operation->revision <= $this->lastRevision) {
-            $this->hold($operation);
+            $this->hold($operation, $origin);
             $this->refuse($final, RtSyncStreamStatus::Refused, 'its revision does not follow the last one');
 
             return;
@@ -905,13 +918,13 @@ final class RtSyncStreamChannel
             return;
         }
         $settled = false;
-        $answer = function (bool $applied) use (&$settled, $final, $operation): void {
+        $answer = function (bool $applied, ?SignalDispatch $origin = null) use (&$settled, $final, $operation): void {
             if ($settled) {
                 return;
             }
             $settled = true;
             if (!$applied) {
-                $this->hold($operation);
+                $this->hold($operation, $origin);
             }
             $this->emit(RtSyncStreamFrame::ack(
                 $final->streamId,
@@ -920,10 +933,10 @@ final class RtSyncStreamChannel
                 $applied ? RtSyncStreamStatus::Applied : RtSyncStreamStatus::Refused,
             ));
         };
-        $work = ($this->deliver)($operation, $answer, $receipt);
+        $work = ($this->deliver)($operation, $answer, $receipt, $origin);
         if ($work instanceof Generator) {
             $this->delivering = $work;
-            $this->deliveringAnswer = $answer;
+            $this->deliveringAnswer = static fn(bool $applied) => $answer($applied, $origin);
         }
     }
 
@@ -968,9 +981,10 @@ final class RtSyncStreamChannel
      * its collection does (a hold, a new interest).
      *
      * @param RtSyncStreamSnapshot $snapshot Snapshot whose head was read
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidFormatException Never: the answers this end writes are within their domain
      */
-    private function deliverSnapshot(RtSyncStreamSnapshot $snapshot): void
+    private function deliverSnapshot(RtSyncStreamSnapshot $snapshot, ?SignalDispatch $origin = null): void
     {
         $this->receiving = $snapshot;
         $this->receivingVerdict = null;
@@ -991,7 +1005,7 @@ final class RtSyncStreamChannel
             $this->receivingVerdict = $applied;
             $this->answerSnapshot();
         };
-        $work = ($this->deliver)($snapshot, $answer, null);
+        $work = ($this->deliver)($snapshot, $answer, null, $origin);
         if ($work instanceof Generator) {
             $this->delivering = $work;
             $this->deliveringAnswer = $answer;
@@ -1100,11 +1114,12 @@ final class RtSyncStreamChannel
      * held already keeps the moment it first froze ({@see RtStaleness::mark()}).
      *
      * @param RtSyncStreamOperation $operation Operation refused
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private function hold(RtSyncStreamOperation $operation): void
+    private function hold(RtSyncStreamOperation $operation, ?SignalDispatch $origin = null): void
     {
         $this->heldRows[$operation->collectionKey][$operation->stateId] = true;
-        $this->markHeld($operation->collectionKey, [$operation->stateId], microtime(true));
+        $this->markHeld($operation->collectionKey, [$operation->stateId], microtime(true), $origin);
     }
 
     /**
@@ -1113,11 +1128,12 @@ final class RtSyncStreamChannel
      * @param string $collectionKey Collection of the rows
      * @param list<string> $stateIds Rows the hold froze, or let go of
      * @param ?float $since Microtime the hold began, or null when the rows have a base again
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    private function markHeld(string $collectionKey, array $stateIds, ?float $since): void
+    private function markHeld(string $collectionKey, array $stateIds, ?float $since, ?SignalDispatch $origin = null): void
     {
         if ($this->staleness !== null) {
-            ($this->staleness)($collectionKey, $stateIds, $since);
+            ($this->staleness)($collectionKey, $stateIds, $since, $origin);
         } elseif ($since === null) {
             RtStaleness::clear($collectionKey, $stateIds);
         } else {
@@ -1170,14 +1186,15 @@ final class RtSyncStreamChannel
      * Runs the pump on the host's pass, or at once until it is out of work; a wake from inside a
      * running pump asks for one more round instead of nesting.
      *
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws LogicException When a segmented lease closed or a work protocol broke
      * @throws InvalidFormatException Never: the answers this end writes are within their domain
      * @throws InvalidArgumentException Never: a fresh allowance is valid
      */
-    private function wakeUp(): void
+    private function wakeUp(?SignalDispatch $origin = null): void
     {
         if ($this->wake !== null) {
-            ($this->wake)($this);
+            ($this->wake)($this, $origin);
 
             return;
         }
@@ -1190,7 +1207,7 @@ final class RtSyncStreamChannel
         try {
             do {
                 $this->pumpAgain = false;
-                while ($this->pump(new RtWorkBudget())) {
+                while ($this->pump(new RtWorkBudget(), $origin)) {
                 }
             } while ($this->pumpAgain);
         } finally {

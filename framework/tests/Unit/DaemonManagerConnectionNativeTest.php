@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 use Generator;
 use Hilos\Cluster\ClientMesh;
@@ -289,7 +290,7 @@ final class DaemonManagerConnectionNativeTest extends TestCase
     {
         $this->pass();
         $index = $this->index;
-        $this->invoke('queueSignalEffect', static function () use ($index): Generator {
+        SignalDispatcherFixture::queue($this->manager, static function () use ($index): Generator {
             for ($step = 0; $step < 128; ++$step) {
                 yield;
             }

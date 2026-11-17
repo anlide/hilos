@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Generator;
 use Hilos\Core\Exception\InvalidArgumentException;
@@ -43,6 +44,7 @@ interface RtSyncSink
      * @param bool $partialOwner Whether the origin holds only part of the right over the collection
      * @param ?RtReplicaConfirmation $receipt Taken when the fact arrived ({@see self::captureRtSyncReceipt()}),
      *        or null to take it now
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws HilosException When a collection refuses to be re-read from the replaced database
      */
     public function applyRemoteRtSync(
@@ -51,6 +53,7 @@ interface RtSyncSink
         SignalDTO $signal,
         bool $partialOwner = false,
         ?RtReplicaConfirmation $receipt = null,
+        ?SignalDispatch $origin = null,
     ): void;
 
     /**
@@ -77,6 +80,7 @@ interface RtSyncSink
      * @param Closure(): void $recover Lifts the holds the link's stream keeps on the rows of the collection
      * @param Closure(bool): bool $askAgain Asks the linked node for another snapshot of the collection, told
      *     whether a live change of its area here canceled this one; answers whether another is still to come
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return Generator<int, RtWork, int, void> The staging on the stream's share, answered at its end
      * @throws LogicException While advanced: when a portion arrives beyond the generation's reserve, or the
      *     generation is published inside a transaction
@@ -90,6 +94,7 @@ interface RtSyncSink
         Closure $settled,
         Closure $recover,
         Closure $askAgain,
+        ?SignalDispatch $origin = null,
     ): Generator;
 
     /**
@@ -111,8 +116,9 @@ interface RtSyncSink
      * @param string $nodeId Node that announced
      * @param list<string> $addedCollectionKeys RT collections the announcement added to what that node reads
      * @param int $announcement Number of the announcement
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function answerSourceInterest(string $nodeId, array $addedCollectionKeys, int $announcement): void;
+    public function answerSourceInterest(string $nodeId, array $addedCollectionKeys, int $announcement, ?SignalDispatch $origin = null): void;
 
     /**
      * Takes a linked node's answer to this node's announcement of what it reads: the copies that
@@ -121,8 +127,9 @@ interface RtSyncSink
      *
      * @param string $nodeId Node that answered
      * @param int $announcement Number of the announcement it answered
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function noteSourceInterestAnswered(string $nodeId, int $announcement): void;
+    public function noteSourceInterestAnswered(string $nodeId, int $announcement, ?SignalDispatch $origin = null): void;
 
     /**
      * Hands every RT collection this node owns to a node the mesh has just linked to.
@@ -180,9 +187,10 @@ interface RtSyncSink
      * @param string $originNodeId Id of the node that wrote these rows
      * @param string $collectionKey RT collection being topped up
      * @param array<string, array<string, mixed>> $rows Rows by state id, as the holder keeps them
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws HilosException Whatever the applied write of the missing rows raises
      */
-    public function applyRemoteRtReplicaOffer(string $originNodeId, string $collectionKey, array $rows): void;
+    public function applyRemoteRtReplicaOffer(string $originNodeId, string $collectionKey, array $rows, ?SignalDispatch $origin = null): void;
 
     /**
      * Tells the runtime that nothing more will arrive from a node until it links again.

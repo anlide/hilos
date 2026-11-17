@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -263,8 +264,20 @@ final class MeasurementsTestCaptureServer extends WorkerServer
     {
     }
 
-    /** @throws LogicException When this receiver refuses delivery */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    /**
+     * @throws LogicException When this receiver refuses delivery
+     *
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param DaemonAgentMessageDTO $messageDto Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->attempts++;
         if ($this->refuse) {

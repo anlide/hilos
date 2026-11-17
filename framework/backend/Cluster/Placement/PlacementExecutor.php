@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Placement;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
@@ -67,6 +68,7 @@ interface PlacementExecutor
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @return ?int Worker id the agent was placed on (negative = monopolistic, positive = regular), or
      *     null while the agent waits for a worker or an earlier stop report
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
@@ -74,7 +76,7 @@ interface PlacementExecutor
      * @throws AgentNotLinkedToWorkerException When the agent is neither linked nor waiting for a start
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function executePlacement(string $agentType, ?string $agentIndex): ?int;
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?int;
 
     /**
      * Returns the worker an agent accepted by {@see executePlacement()} was seated on.
@@ -97,8 +99,14 @@ interface PlacementExecutor
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param ?Closure(): void $stopped Told that the stopped instance is gone, or null when nobody waits for it
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void;
+    public function revokePlacement(
+        string $agentType,
+        ?string $agentIndex,
+        ?Closure $stopped = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void;
 }

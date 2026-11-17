@@ -119,6 +119,13 @@ final class SignalDispatch
         return $this->signal;
     }
 
+    /** @return bool Whether this is a synchronous lifetime with no scheduler-owned admission */
+    public function isDirect(): bool
+    {
+        return $this->intakeId === null && $this->heldId === null && $this->identityReleaseId === null
+            && $this->peerFanoutId === null && $this->effectId === null;
+    }
+
     /** @return bool Whether another portion can execute work */
     public function hasWork(): bool
     {

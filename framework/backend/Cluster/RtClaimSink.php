@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
@@ -31,8 +32,9 @@ interface RtClaimSink
      *
      * @param string $nodeId Node whose agents hold the claims
      * @param list<PeerRtClaimEntry> $claims What each agent of that node owns
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function applyRemoteRtClaims(string $nodeId, array $claims): void;
+    public function applyRemoteRtClaims(string $nodeId, array $claims, ?SignalDispatch $origin = null): void;
 
     /**
      * Node side: reports everything this node's agents own, to one node or to the whole mesh.

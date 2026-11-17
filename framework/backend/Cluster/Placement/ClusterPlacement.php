@@ -6,6 +6,7 @@ namespace Hilos\Cluster\Placement;
 
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Closure;
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use WeakReference;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\ReadyWork;
@@ -724,6 +725,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $nodeId Id of the node to place the agent on
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws PlacementCapabilityException When the node lacks a required tag, declares no capacity or has no room for the cost
      * @throws LogicException When the agent, or one already placed, declares a negative cost or the reserved slot
      * @throws AgentDaemonCreationFailedException When a local placement's daemon cannot be built
@@ -731,7 +733,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws AgentNotLinkedToWorkerException When a local placement did not link to a worker
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function placeAgentOnNode(string $agentType, ?string $agentIndex, string $nodeId): void
+    public function placeAgentOnNode(string $agentType, ?string $agentIndex, string $nodeId, ?AgentStartSink $immediateStartSink = null): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
         if ($this->rebuildPending) {
@@ -775,7 +777,7 @@ final class ClusterPlacement implements WorkerPlacement
         $this->cancelTimer(PlacementDuty::Acknowledgement, $agentId);
         $failover = $this->timers[PlacementDuty::Failover->value][$agentId] ?? null;
         if ($nodeId === $this->selfNodeId) {
-            $this->placeLocally($agentType, $agentIndex);
+            $this->placeLocally($agentType, $agentIndex, immediateStartSink: $immediateStartSink);
             if ($this->registry->get($agentId)?->nodeId === $nodeId) {
                 $this->callOffFailoverOf($agentId, $nodeId, $failover);
             }
@@ -844,6 +846,7 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @return ?string Chosen node id, or null when no node fits, rebuild holds it or stop-ack is pending
      * @throws PlacementCapabilityException When the chosen node no longer clears the hard gate
      * @throws LogicException When the agent, or one already placed, declares a negative cost or the reserved slot
@@ -852,7 +855,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws AgentNotLinkedToWorkerException When a local placement did not link to a worker
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function placeAgentOnBestNode(string $agentType, ?string $agentIndex): ?string
+    public function placeAgentOnBestNode(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?string
     {
         if ($this->rebuildHolds()) {
             return null;
@@ -870,7 +873,7 @@ final class ClusterPlacement implements WorkerPlacement
             return null;
         }
 
-        return $this->placeOnBestFitNode($agentType, $agentIndex);
+        return $this->placeOnBestFitNode($agentType, $agentIndex, immediateStartSink: $immediateStartSink);
     }
 
     /**
@@ -886,6 +889,7 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @return ?string Chosen node id the agent was placed on, or null when no node is a fit
      * @throws PlacementCapabilityException When the chosen node no longer clears the hard gate
      * @throws LogicException When the agent, or one already placed, declares a negative cost or the reserved slot
@@ -894,7 +898,7 @@ final class ClusterPlacement implements WorkerPlacement
      * @throws AgentNotLinkedToWorkerException When a local placement did not link to a worker
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    private function placeOnBestFitNode(string $agentType, ?string $agentIndex): ?string
+    private function placeOnBestFitNode(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?string
     {
         $agentId = $this->agentId($agentType, $agentIndex);
         $previous = $this->registry->get($agentId);
@@ -923,7 +927,7 @@ final class ClusterPlacement implements WorkerPlacement
                 return null;
             }
 
-            $this->placeAgentOnNode($agentType, $agentIndex, $target);
+            $this->placeAgentOnNode($agentType, $agentIndex, $target, immediateStartSink: $immediateStartSink);
 
             return $target;
         } catch (EventLoopException $e) {
@@ -986,16 +990,23 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentType Agent type that was addressed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?PlacementVerdictSink $immediateVerdict Self answer for this call only; deferred verdicts use the registered sink
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws EnvException When the cluster-enabled flag value is invalid
      * @throws EventLoopException When a native placement deadline cannot be armed
      */
-    public function requirePlacement(string $agentType, ?string $agentIndex): void
+    public function requirePlacement(
+        string $agentType,
+        ?string $agentIndex,
+        ?PlacementVerdictSink $immediateVerdict = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $now = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         $agentId = $this->agentId($agentType, $agentIndex);
         if ($this->isLeader) {
             $this->rememberPlacementAsker($agentId, $this->selfNodeId);
-            $this->placeOnDemand($agentType, $agentIndex);
+            $this->placeOnDemand($agentType, $agentIndex, $immediateVerdict, immediateStartSink: $immediateStartSink);
 
             return;
         }
@@ -1178,12 +1189,13 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type whose claim lost
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $nodeId Node the agent runs on
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function refusePlacement(string $agentType, ?string $agentIndex, string $nodeId): void
+    public function refusePlacement(string $agentType, ?string $agentIndex, string $nodeId, ?AgentStartSink $immediateStartSink = null): void
     {
-        $this->revokeOnNode($agentType, $agentIndex, $nodeId);
+        $this->revokeOnNode($agentType, $agentIndex, $nodeId, immediateStartSink: $immediateStartSink);
         $this->registry->put(new PlacementRecord($agentType, $agentIndex, $nodeId, PlacementState::Refused));
         $agentId = $this->agentId($agentType, $agentIndex);
         unset($this->retryAt[$agentId], $this->retryTriggers[$agentId]);
@@ -1197,9 +1209,16 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $nodeId Id of the node the agent is placed on
      * @param ?Closure(): void $stopped Told once the local stopped instance is gone, or null when nobody waits
      *     for it; a peer host answers for its own stop, so the stop frame carries no such wait
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @return bool Whether the local stop ran or a peer link carried it
      */
-    private function revokeOnNode(string $agentType, ?string $agentIndex, string $nodeId, ?Closure $stopped = null): bool
+    private function revokeOnNode(
+        string $agentType,
+        ?string $agentIndex,
+        string $nodeId,
+        ?Closure $stopped = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): bool
     {
         if ($nodeId === $this->selfNodeId) {
             $agentId = $this->agentId($agentType, $agentIndex);
@@ -1207,7 +1226,7 @@ final class ClusterPlacement implements WorkerPlacement
             // start failed on this same stack, and that callback must not rewrite this record.
             $hosted = $this->hosted[$agentId] ?? null;
             unset($this->deferredPlacementAnswers[$agentId]);
-            $this->executor->revokePlacement($agentType, $agentIndex, $stopped);
+            $this->executor->revokePlacement($agentType, $agentIndex, $stopped, immediateStartSink: $immediateStartSink);
             if (($this->hosted[$agentId] ?? null) === $hosted) {
                 unset($this->hosted[$agentId]);
             }
@@ -1315,15 +1334,16 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentType Agent type that started
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function noteAgentStarted(string $agentType, ?string $agentIndex): void
+    public function noteAgentStarted(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
         if ($this->isLeader && $this->registry->get($agentId)?->state === PlacementState::Stopped) {
-            $this->revokeOnNode($agentType, $agentIndex, $this->selfNodeId);
+            $this->revokeOnNode($agentType, $agentIndex, $this->selfNodeId, immediateStartSink: $immediateStartSink);
             return;
         }
         $restart = $this->restartsElsewhere[$agentId] ?? null;
@@ -1378,9 +1398,10 @@ final class ClusterPlacement implements WorkerPlacement
      * @param string $agentType Agent type whose start failed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $reason Why the start did not finish
+     * @param ?PlacementVerdictSink $immediateVerdict Negative answer for this call only
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function noteAgentStartFailed(string $agentType, ?string $agentIndex, string $reason): void
+    public function noteAgentStartFailed(string $agentType, ?string $agentIndex, string $reason, ?PlacementVerdictSink $immediateVerdict = null): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
         if ($this->isLeader && $this->registry->get($agentId)?->state === PlacementState::Stopped) {
@@ -1416,6 +1437,7 @@ final class ClusterPlacement implements WorkerPlacement
         $this->answerPlacementAskers(
             $agentId,
             PeerPlacementVerdictDTO::notPlaced($agentType, $agentIndex, PlacementState::Failed, $reason),
+            $immediateVerdict,
         );
     }
 
@@ -4173,8 +4195,15 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentType Agent type to place
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?PlacementVerdictSink $immediateVerdict Self answer for this call only; deferred verdicts use the registered sink
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      */
-    private function placeOnDemand(string $agentType, ?string $agentIndex): void
+    private function placeOnDemand(
+        string $agentType,
+        ?string $agentIndex,
+        ?PlacementVerdictSink $immediateVerdict = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         if (!$this->isLeader) {
             return;
@@ -4199,6 +4228,7 @@ final class ClusterPlacement implements WorkerPlacement
             $this->answerPlacementAskers(
                 $agentId,
                 PeerPlacementVerdictDTO::placed($agentType, $agentIndex, $record->nodeId),
+                $immediateVerdict,
             );
 
             return;
@@ -4212,6 +4242,7 @@ final class ClusterPlacement implements WorkerPlacement
                     PlacementState::Refused,
                     'the agent was refused an RT claim another node already holds',
                 ),
+                $immediateVerdict,
             );
 
             return;
@@ -4232,6 +4263,7 @@ final class ClusterPlacement implements WorkerPlacement
                         $record->reason ?? 'the last placement attempt did not succeed',
                         $record->refusals,
                     ),
+                    $immediateVerdict,
                 );
                 return;
             }
@@ -4239,7 +4271,7 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         try {
-            $target = $this->placeAgentOnBestNode($agentType, $agentIndex);
+            $target = $this->placeAgentOnBestNode($agentType, $agentIndex, immediateStartSink: $immediateStartSink);
         } catch (EventLoopException $e) {
             throw $e;
         } catch (Throwable $e) {
@@ -4254,6 +4286,7 @@ final class ClusterPlacement implements WorkerPlacement
                     $failure->reason,
                     $failure->refusals,
                 ),
+                $immediateVerdict,
             );
 
             return;
@@ -4278,6 +4311,7 @@ final class ClusterPlacement implements WorkerPlacement
                     $failure->reason,
                     $failure->refusals,
                 ),
+                $immediateVerdict,
             );
 
             return;
@@ -4294,6 +4328,7 @@ final class ClusterPlacement implements WorkerPlacement
                     $placed->reason ?? 'the last placement attempt did not succeed',
                     $placed->refusals,
                 ),
+                $immediateVerdict,
             );
             return;
         }
@@ -4301,6 +4336,7 @@ final class ClusterPlacement implements WorkerPlacement
             $this->answerPlacementAskers(
                 $agentId,
                 PeerPlacementVerdictDTO::placed($agentType, $agentIndex, $placed->nodeId),
+                $immediateVerdict,
             );
         }
     }
@@ -4370,8 +4406,9 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentId Agent id the verdict is for
      * @param PeerPlacementVerdictDTO $verdict Verdict to send
+     * @param ?PlacementVerdictSink $immediateVerdict Self answer for this call only; deferred verdicts use the registered sink
      */
-    private function answerPlacementAskers(string $agentId, PeerPlacementVerdictDTO $verdict): void
+    private function answerPlacementAskers(string $agentId, PeerPlacementVerdictDTO $verdict, ?PlacementVerdictSink $immediateVerdict = null): void
     {
         $waiters = $this->placementVerdictWaiters[$agentId] ?? [];
         unset($this->placementVerdictWaiters[$agentId]);
@@ -4388,7 +4425,7 @@ final class ClusterPlacement implements WorkerPlacement
                 if ($verdict->state === PlacementState::Started) {
                     $this->holdWake?->__invoke($agentId);
                 } elseif ($reason !== null) {
-                    Hilos::$cluster?->placementVerdictSink()?->onAgentNotPlaced(
+                    ($immediateVerdict ?? Hilos::$cluster?->placementVerdictSink())?->onAgentNotPlaced(
                         $verdict->agentType,
                         $verdict->agentIndex,
                         "{$verdict->state->value}: {$reason}",
@@ -4411,13 +4448,14 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws AgentDaemonCreationFailedException When the agent daemon cannot be built
      * @throws NoSuitableWorkerException When no worker is available to host it
      * @throws AgentNotLinkedToWorkerException When the agent did not link to a worker
      * @throws HilosException Whatever the project's agent-daemon factory raises
      * @throws InvalidFormatException When an abandoned start has an invalid stop completion address
      */
-    private function placeLocally(string $agentType, ?string $agentIndex): void
+    private function placeLocally(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): void
     {
         $record = new PlacementRecord($agentType, $agentIndex, $this->selfNodeId, PlacementState::Started);
 
@@ -4426,7 +4464,7 @@ final class ClusterPlacement implements WorkerPlacement
         $attempt = ++$this->placementAttemptSequence;
         $this->placementAttempts[$agentId] = $attempt;
         try {
-            $workerId = $this->executor->executePlacement($agentType, $agentIndex);
+            $workerId = $this->executor->executePlacement($agentType, $agentIndex, immediateStartSink: $immediateStartSink);
         } catch (EventLoopException $e) {
             throw $e;
         } catch (Throwable $e) {
@@ -4444,7 +4482,7 @@ final class ClusterPlacement implements WorkerPlacement
         }
 
         if ($generation !== $this->authorityGeneration || ($this->placementAttempts[$agentId] ?? null) !== $attempt) {
-            $this->revokeAbandonedStart($agentType, $agentIndex);
+            $this->revokeAbandonedStart($agentType, $agentIndex, immediateStartSink: $immediateStartSink);
             return;
         }
         unset($this->lastPlacementRefusals[$record->agentId()]);
@@ -4468,14 +4506,15 @@ final class ClusterPlacement implements WorkerPlacement
      *
      * @param string $agentType Agent accepted by the old executor call
      * @param ?string $agentIndex Agent index
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws InvalidFormatException When a tracked stop completion address is invalid
      * @throws EventLoopException When the existing executor cannot arm its stop deadline
      */
-    private function revokeAbandonedStart(string $agentType, ?string $agentIndex): void
+    private function revokeAbandonedStart(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): void
     {
         $agentId = $this->agentId($agentType, $agentIndex);
         if (!isset($this->hosted[$agentId]) && !isset($this->deferredPlacementAnswers[$agentId])) {
-            $this->executor->revokePlacement($agentType, $agentIndex);
+            $this->executor->revokePlacement($agentType, $agentIndex, immediateStartSink: $immediateStartSink);
         }
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\Exception\PlacementCapabilityException;
@@ -3374,7 +3375,13 @@ final class FakePlacementExecutor implements PlacementExecutor
         return $this->profile;
     }
 
-    public function executePlacement(string $agentType, ?string $agentIndex): ?int
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     * @return ?int Fixture placement result
+     */
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?int
     {
         if ($this->failWith !== null) {
             throw $this->failWith;
@@ -3390,7 +3397,18 @@ final class FakePlacementExecutor implements PlacementExecutor
         return $this->waitsForWorker ? $this->seatedWorkerId : $this->workerId;
     }
 
-    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?Closure $stopped Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    public function revokePlacement(
+        string $agentType,
+        ?string $agentIndex,
+        ?Closure $stopped = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->revoked[] = [$agentType, $agentIndex];
         if ($stopped === null) {

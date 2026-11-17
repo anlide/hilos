@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Generator;
 use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Daemon\DaemonNodeAgentDaemon;
 use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Daemon\SignalDispatcher;
 use Hilos\Core\Router\Destination\CommandReplyDestination;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalName;
@@ -864,8 +866,9 @@ final class NodeReportTestDaemonManager extends DaemonManager
         $signal = new SignalDTO(new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_DAEMON_NODE),
             new SignalType(SignalTypeConstants::COMMAND_REPLY), new SignalName(CliCommands::DAEMON_TEST_NODE_REPORT), $reply);
         $dispatch = new SignalDispatch($signal, static function (): Generator { yield; });
-        $walk = new ReflectionMethod(DaemonManager::class, 'walkSignalDestination')->invoke(
-            $this, $dispatch, new CommandReplyDestination($reply->correlationId),
+        $walk = new ReflectionMethod(SignalDispatcher::class, 'walkSignalDestination')->invoke(
+            new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this),
+            $dispatch, new CommandReplyDestination($reply->correlationId),
             new NodeReportWorkerServer(1), null, $commands, null, null,
         );
         foreach ($walk as $_) {
@@ -936,8 +939,14 @@ final class NodeReportWorkerServer extends WorkerServer
      * @param string $agentType Receiver type
      * @param ?string $agentIndex Receiver index
      * @param DaemonAgentMessageDTO $messageDto Addressed master frame
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->delivered[] = $messageDto;
         if ($messageDto->signal->signalName->getName() === HilosSignalConstants::DAEMON_MASTER_REPORT_NOW && $this->reportFailure !== null) {

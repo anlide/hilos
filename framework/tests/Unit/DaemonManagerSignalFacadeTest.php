@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
@@ -405,9 +406,15 @@ final class DaemonManagerSignalFacadeTestWorkerServer extends WorkerServer
      * @param string $agentType Agent type the signal was addressed to
      * @param ?string $agentIndex Agent index for a pooled agent, or null
      * @param DaemonAgentMessageDTO $messageDto Signal wrapped for the worker
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      * @throws AgentNotFoundException When the case arranged a refusal
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         if ($this->refusal !== null) {
             throw $this->refusal;

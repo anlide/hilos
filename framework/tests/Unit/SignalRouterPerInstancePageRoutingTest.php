@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
@@ -606,7 +607,7 @@ final class PerInstanceTestDaemonManager extends DaemonManager
      */
     public function applySubscriptionUpdate(SignalDTO $signal): void
     {
-        $this->updateSubscriptions($signal);
+        $this->updateSubscriptions(SignalDispatcherFixture::direct(), $signal);
     }
 
     /**
@@ -619,7 +620,7 @@ final class PerInstanceTestDaemonManager extends DaemonManager
      */
     public function subscribe(string $acceptKey, string $page, array $params): void
     {
-        $this->updateSubscriptions(new SignalDTO(
+        $this->updateSubscriptions(SignalDispatcherFixture::direct(), new SignalDTO(
             new SignalSource(SignalSource::WEBSOCKET),
             new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
             new SignalName($page),

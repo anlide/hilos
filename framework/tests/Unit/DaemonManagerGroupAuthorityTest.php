@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Generator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Connections\ClusterClientLocation;
@@ -25,6 +26,7 @@ use Hilos\Core\Agent\AgentInterface;
 use Hilos\Core\Agent\AgentManager;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\Daemon\SignalDispatcher;
 use Hilos\Core\Daemon\SignalDispatchPhase;
 use Hilos\Core\Daemon\SignalDispatchPrefix;
 use Hilos\Core\Daemon\WorkerManager;
@@ -472,8 +474,9 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         $roster->handleAgentStarted(new WorkerAgentStartedDTO(GroupAuthorityAgent::AGENT_TYPE, GroupAuthorityAgent::AGENT_TYPE));
         $id = $holds->candidates()->current();
         $holds->release($id);
-        $released = new ReflectionMethod(DaemonManager::class, 'createReleasedAgentDispatch')->invoke(
-            $this->manager, $holds->get($id), $this->workers, null,
+        $released = new ReflectionMethod(SignalDispatcher::class, 'createReleasedAgentDispatch')->invoke(
+            new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this->manager),
+            $holds->get($id), $this->workers, null,
         );
         self::assertSame($authority->get(), $released->groupOperation);
         $holds->begin($id, $released);
@@ -513,7 +516,7 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         self::assertSame('', $this->consumeWorker(), 'The first prepared removal is parked before any worker frame');
         $last = $this->operation(false, [], 'g:8');
         Hilos::$sr->queueSignal($last->signalSource, $last->signalType, $last->signalName, $last->data);
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $prefix = new ReflectionMethod(DaemonManager::class, 'newSignalDispatchPrefix')->invoke($this->manager);
         $state->browsers = $prefix;
         $this->drainScheduler();
@@ -550,7 +553,7 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
     {
         $this->join('g', ['seat' => 'old']);
         $dispatch = $this->prepared($this->operation($update, ['seat' => 'stale']));
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $state->stop = new SignalDispatchPrefix(1, $state->intake, [], 0, 0, 0);
         $state->browsers = new SignalDispatchPrefix(2, $state->intake, [], 0, 0, 0);
         $dispatch->stopPrefixId = 1;
@@ -592,7 +595,7 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         $this->manager->registerServer($browsers);
         $this->join('g', ['seat' => 'old']);
         $dispatch = $this->prepared($this->operation($update, ['seat' => 'stale']));
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $state->active = $dispatch;
         $neighbor = $this->queueSlowCapturedDispatch();
         new ReflectionProperty(DaemonManager::class, 'shutdownStartTime')->setValue($this->manager, microtime(true));
@@ -639,7 +642,7 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         new ReflectionProperty(AgentManagerDaemon::class, 'startedAgentIds')->setValue($roster, []);
         $dispatch = $this->prepared($this->operation($update, ['seat' => 'stale']));
         $authority = WeakReference::create($dispatch->groupOperation);
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $state->active = $dispatch;
         $this->drainScheduler();
         $holds = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($this->manager);
@@ -668,8 +671,9 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         self::assertSame(7, $this->workers->pendingStopDispatch(), 'Another generation cannot pay this barrier');
         $roster->handleAgentStarted(new WorkerAgentStartedDTO(GroupAuthorityAgent::AGENT_TYPE, GroupAuthorityAgent::AGENT_TYPE));
         $holds->release($id);
-        $state->released = new ReflectionMethod(DaemonManager::class, 'createReleasedAgentDispatch')->invoke(
-            $this->manager, $holds->get($id), $this->workers, null,
+        $state->released = new ReflectionMethod(SignalDispatcher::class, 'createReleasedAgentDispatch')->invoke(
+            new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this->manager),
+            $holds->get($id), $this->workers, null,
         );
         $holds->begin($id, $state->released);
         self::assertSame($authority->get(), $state->released->groupOperation);
@@ -719,7 +723,7 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
     {
         $this->join('g', ['seat' => 'old']);
         $dispatch = $this->prepared($this->operation(false, []));
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $state->stop = new SignalDispatchPrefix(1, $state->intake, [], 0, 0, 0);
         $state->browsers = new SignalDispatchPrefix(2, $state->intake, [], 0, 0, 0);
         if ($stopOwned) {
@@ -788,14 +792,10 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         new ReflectionProperty(AgentManagerDaemon::class, 'startedAgentIds')->setValue($roster, []);
         $independent = new SignalDTO(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::GROUP_UNSUBSCRIBE),
             new SignalName('other'), new WebSocketGroupUnsubscribeSignalDTO('D', 'other'));
-        new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($this->manager, $dispatch);
-        try {
-            new ReflectionMethod(DaemonManager::class, 'deliverToAgentDestination')->invoke(
-                $this->manager, $this->workers, null, new AgentDestination(GroupAuthorityAgent::AGENT_TYPE), $independent,
-            );
-        } finally {
-            new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($this->manager, null);
-        }
+        new ReflectionMethod(DaemonManager::class, 'deliverToAgentDestination')->invoke(
+            $this->manager, SignalDispatcherFixture::direct($independent), $this->workers, null,
+            new AgentDestination(GroupAuthorityAgent::AGENT_TYPE), $independent,
+        );
         $holds = new ReflectionMethod(DaemonManager::class, 'agentSignalHolds')->invoke($this->manager);
         self::assertSame(1, $holds->getParkedCount());
         $id = $holds->candidates()->current();
@@ -805,8 +805,9 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         self::assertSame(SignalDispatchPhase::Canceled, $dispatch->phase);
         $roster->handleAgentStarted(new WorkerAgentStartedDTO(GroupAuthorityAgent::AGENT_TYPE, GroupAuthorityAgent::AGENT_TYPE));
         $holds->release($id);
-        $released = new ReflectionMethod(DaemonManager::class, 'createReleasedAgentDispatch')->invoke(
-            $this->manager, $holds->get($id), $this->workers, null,
+        $released = new ReflectionMethod(SignalDispatcher::class, 'createReleasedAgentDispatch')->invoke(
+            new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this->manager),
+            $holds->get($id), $this->workers, null,
         );
         $holds->begin($id, $released);
         $this->drain($released);
@@ -838,12 +839,7 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
      */
     private function finishPhysicalPortion(SignalDispatch $dispatch): void
     {
-        new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($this->manager, $dispatch);
-        try {
-            $dispatch->runPortion(64);
-        } finally {
-            new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($this->manager, null);
-        }
+        $dispatch->runPortion(64);
         self::assertFalse($dispatch->hasWork());
     }
 
@@ -988,8 +984,9 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
         $candidate = $address ?? Hilos::$sr->destinationCandidates($signal)->current();
         self::assertInstanceOf(RemoteClientDestination::class, $candidate);
         $dispatch = new SignalDispatch($signal, static function (): Generator { yield; });
-        return new ReflectionMethod(DaemonManager::class, 'walkSignalDestination')->invoke(
-            $this->manager, $dispatch, $candidate, $this->workers, null, null, null, $this->peers,
+        return new ReflectionMethod(SignalDispatcher::class, 'walkSignalDestination')->invoke(
+            new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this->manager),
+            $dispatch, $candidate, $this->workers, null, null, null, $this->peers,
         );
     }
 
@@ -1015,8 +1012,9 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
     private function operationWork(SignalDTO $signal, ?PeerServer $peers = null): SignalDispatch
     {
         return new SignalDispatch($signal, fn(SignalDispatch $dispatch): Generator =>
-            new ReflectionMethod(DaemonManager::class, 'walkSignal')->invoke(
-                $this->manager, $dispatch, true, $this->workers, null, null, null, $peers,
+            new ReflectionMethod(SignalDispatcher::class, 'walkSignal')->invoke(
+                new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this->manager),
+                $dispatch, true, $this->workers, null, null, null, $peers,
             ));
     }
 
@@ -1026,12 +1024,7 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
      */
     private function portion(SignalDispatch $dispatch, int $steps): void
     {
-        new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($this->manager, $dispatch);
-        try {
-            new ReflectionMethod(DaemonManager::class, 'runSignalPortion')->invoke($this->manager, $dispatch, $steps);
-        } finally {
-            new ReflectionProperty(DaemonManager::class, 'currentSignalDispatch')->setValue($this->manager, null);
-        }
+        new ReflectionMethod(DaemonManager::class, 'signalDispatcher')->invoke($this->manager)->runSignalPortion($dispatch, $steps);
     }
 
     /** @param SignalDispatch $dispatch Original operation */
@@ -1046,7 +1039,7 @@ final class DaemonManagerGroupAuthorityTest extends TestCase
     /** @return SignalDispatch Another captured lifetime that needs several scheduler portions */
     private function queueSlowCapturedDispatch(): SignalDispatch
     {
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->manager);
+        $state = SignalDispatcherFixture::owner($this->manager)->signalDispatchState();
         $dispatch = new SignalDispatch(null, static function (): Generator {
             yield;
             for ($step = 0; $step < 130; $step++) {

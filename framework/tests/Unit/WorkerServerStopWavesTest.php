@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Socket\Server\AbstractServer;
 use ReflectionMethod;
 use Hilos\Constants\HilosAgentType;
@@ -361,7 +362,12 @@ final class StopWavesTestWorkerServer extends WorkerServer
         $this->advanceSecondStopWave();
     }
 
-    protected function stopAgent(string $agentType, ?string $agentIndex = null): void
+    /**
+     * @param string $agentType Fixture input
+     * @param ?string $agentIndex Fixture input
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
+     */
+    protected function stopAgent(string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null): void
     {
         StopWavesTestLog::$events[] = 'agent_stop:' . $agentType;
     }

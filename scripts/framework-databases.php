@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/framework-pieces.php';
+require_once __DIR__ . '/test-diagnostics.php';
 
 $databases = [];
 for ($piece = 1; $piece <= FRAMEWORK_INTEGRATION_PIECES; $piece++) {
@@ -22,7 +23,9 @@ chdir(dirname(__DIR__));
 foreach (['mysql-framework-test', 'mysql-framework-remote-test', 'mysql-framework-restore-test'] as $service) {
     $command = 'docker compose -f framework/docker/docker-compose.yml exec -T ' . escapeshellarg($service) . ' sh -c '
         . escapeshellarg($script) . ' sh ' . implode(' ', array_map('escapeshellarg', $databases));
+    $phase = testPhase('database-reset', $service, 'begin');
     passthru($command, $status);
+    testPhase('database-reset', $service, 'end', $phase, details: ['rc' => $status]);
     if ($status !== 0) {
         exit($status);
     }

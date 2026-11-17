@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Generator;
 use WeakReference;
 use Closure;
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Placement\PlacementExecutor;
@@ -184,10 +186,10 @@ abstract class WorkerServer extends AbstractServer implements
 
     /** Master-owned receiver for delivery window reports. */
     private ?DeliverySettingsSink $deliverySettingsSink = null;
-    /** @var ?Closure(RtSyncStreamChannel): void The master's pass a worker link's RT stream is pumped on; null pumps at once */
+    /** @var ?Closure(RtSyncStreamChannel, ?SignalDispatch): void The master's pass a worker link's RT stream is pumped on; null pumps at once */
     private ?Closure $rtSyncStreamWake = null;
     /**
-     * @var ?Closure(int, string, list<string>, ?float): void The master's mark of rows a worker link's RT stream holds,
+     * @var ?Closure(int, string, list<string>, ?float, ?SignalDispatch): void The master's mark of rows a worker link's RT stream holds,
      *      by the link's worker; null marks them in this process alone
      */
     private ?Closure $rtSyncStreamHold = null;
@@ -596,7 +598,7 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * @param ?Closure(RtSyncStreamChannel): void $wake The master's pass each worker link's RT stream is pumped on
+     * @param ?Closure(RtSyncStreamChannel, ?SignalDispatch): void $wake The master's pass each worker link's RT stream is pumped on
      */
     public function setRtSyncStreamWake(?Closure $wake): void
     {
@@ -609,7 +611,7 @@ abstract class WorkerServer extends AbstractServer implements
     }
 
     /**
-     * @param ?Closure(int, string, list<string>, ?float): void $hold The master's mark of rows each worker link's RT
+     * @param ?Closure(int, string, list<string>, ?float, ?SignalDispatch): void $hold The master's mark of rows each worker link's RT
      *        stream holds, given the link's worker
      */
     public function setRtSyncStreamHold(?Closure $hold): void
@@ -2346,13 +2348,14 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function ensureAgentUp(string $agentType, ?string $agentIndex): void
+    public function ensureAgentUp(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): void
     {
-        $this->startAgent($agentType, $agentIndex);
+        $this->startAgent($agentType, $agentIndex, $immediateStartSink);
     }
 
     /**
@@ -2368,13 +2371,14 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    protected function startAgent(string $agentType, ?string $agentIndex = null): void
+    protected function startAgent(string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null): void
     {
-        $this->startAgentInternal($agentType, $agentIndex, false);
+        $this->startAgentInternal($agentType, $agentIndex, false, immediateStartSink: $immediateStartSink);
     }
 
     /**
@@ -2386,6 +2390,7 @@ abstract class WorkerServer extends AbstractServer implements
      * @param ?int $preferredWorkerId Worker to hand it back to when that worker is still able to take it
      * @param bool $seatFromQueue True only for the queue's own seat, which takes any free worker
      * @param bool $protectedModeReplay True only when replaying the freeze's remembered set
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      * @throws HilosException Whatever the project's agent-daemon factory raises
@@ -2397,6 +2402,7 @@ abstract class WorkerServer extends AbstractServer implements
         ?int $preferredWorkerId = null,
         bool $seatFromQueue = false,
         bool $protectedModeReplay = false,
+        ?AgentStartSink $immediateStartSink = null,
     ): void {
         // Build agent ID
         $agentId = $this->buildAgentId($agentType, $agentIndex);
@@ -3003,12 +3009,13 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentId Agent whose wait ended without a start
      * @param string $reason Why it will not start, as the master reports it on
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    private function reportWaitEndedWithoutStart(string $agentId, string $reason): void
+    private function reportWaitEndedWithoutStart(string $agentId, string $reason, ?AgentStartSink $immediateStartSink = null): void
     {
         try {
-            $this->agentManager->reportAgentStartFailed($agentId, $reason);
+            $this->agentManager->reportAgentStartFailed($agentId, $reason, $immediateStartSink);
         } catch (InvalidArgumentException $failure) {
             Logger::error("Worker wait: the end of agent {$agentId}'s wait"
                 . " could not be answered: {$failure->getMessage()}");
@@ -3319,6 +3326,7 @@ abstract class WorkerServer extends AbstractServer implements
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @param DaemonAgentMessageDTO $messageDto Message DTO containing signal data
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
      * @throws AgentNotFoundException If agent does not exist after startAgent() call
@@ -3326,7 +3334,12 @@ abstract class WorkerServer extends AbstractServer implements
      * @throws WorkerClientNotFoundException If worker client is not found for agent
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         // Use agentId from messageDto (it already contains the correct agentId)
         $agentId = $messageDto->agentId;
@@ -3347,7 +3360,7 @@ abstract class WorkerServer extends AbstractServer implements
                 $this->reportSignalFrozenOut($agentId, $messageDto);
                 return;
             }
-            $this->startAgent($parsedAgentType, $parsedAgentIndex);
+            $this->startAgent($parsedAgentType, $parsedAgentIndex, $immediateStartSink);
         } else {
             $agentDaemon = $this->agentManager->getAgent($agentId);
             if ($agentDaemon === null || !$agentDaemon->hasWorkerClient()) {
@@ -3355,7 +3368,7 @@ abstract class WorkerServer extends AbstractServer implements
                     $this->reportSignalFrozenOut($agentId, $messageDto);
                     return;
                 }
-                $this->startAgent($parsedAgentType, $parsedAgentIndex);
+                $this->startAgent($parsedAgentType, $parsedAgentIndex, $immediateStartSink);
             }
         }
 
@@ -3434,23 +3447,24 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    protected function stopAgent(string $agentType, ?string $agentIndex = null): void
+    protected function stopAgent(string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
 
         if (isset($this->agentsAwaitingStopReport[$agentId])) {
             $this->removeStopReportWait($agentId);
-            $this->reportWaitEndedWithoutStart($agentId, 'it was stopped while waiting for its earlier stop report');
+            $this->reportWaitEndedWithoutStart($agentId, 'it was stopped while waiting for its earlier stop report', $immediateStartSink);
 
             return;
         }
 
         if (isset($this->agentsAwaitingWorker[$agentId])) {
             $this->removeWorkerWait($agentId);
-            $this->reportWaitEndedWithoutStart($agentId, 'it was stopped while waiting for its worker to connect');
+            $this->reportWaitEndedWithoutStart($agentId, 'it was stopped while waiting for its worker to connect', $immediateStartSink);
 
             return;
         }
@@ -3471,7 +3485,7 @@ abstract class WorkerServer extends AbstractServer implements
 
         $workerClient->sendAgentStop($agentType, $agentIndex);
         $this->agentManager->removeAgent($agentId);
-        $this->agentManager->reportAgentStopped($agentId);
+        $this->agentManager->reportAgentStopped($agentId, $immediateStartSink);
     }
 
     /**
@@ -4157,6 +4171,7 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @return ?int Worker id the agent was placed on (negative = monopolistic, positive = regular), or
      *     null while the agent waits for a worker or an earlier stop report
      * @throws AgentDaemonCreationFailedException If the agent daemon cannot be built
@@ -4164,9 +4179,9 @@ abstract class WorkerServer extends AbstractServer implements
      * @throws AgentNotLinkedToWorkerException If the agent is neither linked nor waiting for a start
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function executePlacement(string $agentType, ?string $agentIndex): ?int
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?int
     {
-        $this->startAgentInternal($agentType, $agentIndex, true);
+        $this->startAgentInternal($agentType, $agentIndex, true, immediateStartSink: $immediateStartSink);
 
         $agentId = $this->buildAgentId($agentType, $agentIndex);
         $workerId = $this->placedWorkerId($agentType, $agentIndex);
@@ -4203,21 +4218,22 @@ abstract class WorkerServer extends AbstractServer implements
      * @param string $agentType Agent type to restart
      * @param ?string $agentIndex Agent index, or null for a singleton
      * @param bool $placedByLeader Whether the leader sanctioned this placement
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws LogicException When the old instance could not be taken off the roster
      * @throws AgentDaemonCreationFailedException If the new agent daemon cannot be built
      * @throws NoSuitableWorkerException If no worker can host the new instance
      * @throws HilosException Whatever the project's agent-daemon factory raises
      */
-    public function restartAgentHere(string $agentType, ?string $agentIndex, bool $placedByLeader): void
+    public function restartAgentHere(string $agentType, ?string $agentIndex, bool $placedByLeader, ?AgentStartSink $immediateStartSink = null): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
         $oldWorkerId = $this->placedWorkerId($agentType, $agentIndex);
-        $this->stopAgent($agentType, $agentIndex);
+        $this->stopAgent($agentType, $agentIndex, $immediateStartSink);
         if ($this->agentManager->hasAgent($agentId)) {
             throw new LogicException("Agent {$agentId} could not be stopped");
         }
 
-        $this->startAgentInternal($agentType, $agentIndex, $placedByLeader, $oldWorkerId);
+        $this->startAgentInternal($agentType, $agentIndex, $placedByLeader, $oldWorkerId, immediateStartSink: $immediateStartSink);
     }
 
     /**
@@ -4244,12 +4260,18 @@ abstract class WorkerServer extends AbstractServer implements
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @param ?Closure(): void $stopped Told that the stopped instance is gone, or null when nobody waits for it
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function revokePlacement(string $agentType, ?string $agentIndex, ?Closure $stopped = null): void
+    public function revokePlacement(
+        string $agentType,
+        ?string $agentIndex,
+        ?Closure $stopped = null,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
-        $this->stopAgent($agentType, $agentIndex);
+        $this->stopAgent($agentType, $agentIndex, $immediateStartSink);
         if ($stopped === null) {
             return;
         }

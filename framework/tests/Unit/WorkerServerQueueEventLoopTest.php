@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 
 use Hilos\Cluster\ClusterContext;
@@ -1069,7 +1070,7 @@ final class WorkerServerQueueEventLoopTest extends TestCase
         $this->queueFinalSignal(Hilos::$sr, 'own-stop-frame');
         new ReflectionMethod(DaemonManager::class, 'captureSignalDispatchPrefixes')->invoke($this->daemon);
         $this->queueFinalSignal(Hilos::$sr, 'later-browser-frame');
-        $state = new ReflectionMethod(DaemonManager::class, 'signalDispatchState')->invoke($this->daemon);
+        $state = SignalDispatcherFixture::owner($this->daemon)->signalDispatchState();
         $state->browsers = new ReflectionMethod(DaemonManager::class, 'newSignalDispatchPrefix')->invoke($this->daemon);
         $failure = new RuntimeException('unrelated later route failed');
         Hilos::$sr->failure = $failure;

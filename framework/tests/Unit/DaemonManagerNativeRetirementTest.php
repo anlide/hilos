@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 use Error;
 use EventBufferEvent;
@@ -132,13 +133,13 @@ final class DaemonManagerNativeRetirementTest extends TestCase
         $closed = 0;
         $client = new NativeRetirementHttpClient($this->pair(), function () use (&$effect, &$closed, $failure): void {
             ++$closed;
-            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->manager,
+            SignalDispatcherFixture::queue($this->manager,
                 static function (): Generator {
                     for ($step = 0; $step < 1000; ++$step) {
                         yield;
                     }
                 });
-            $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($this->manager);
+            $state = SignalDispatcherFixture::owner($this->manager)->retainedState();
             $effect = $state->effects[key($state->effects)];
             try {
                 $this->manager->arm();
@@ -160,7 +161,7 @@ final class DaemonManagerNativeRetirementTest extends TestCase
         $this->assertSame(1, $closed);
         $this->assertNotNull($effect);
         $this->assertFalse($effect->hasWork(), 'the effect created after client close must be canceled too');
-        $this->assertNull(new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($this->manager));
+        $this->assertNull(SignalDispatcherFixture::owner($this->manager)->retainedState());
         $this->assertRetired();
         $this->manager->retire();
         $this->assertSame(1, $closed, 'a failed onClose is never replayed');

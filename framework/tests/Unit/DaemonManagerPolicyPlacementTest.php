@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Placement\ClusterPlacement;
@@ -314,9 +315,10 @@ final class PolicyPlacementRecordingWorkerServer extends WorkerServer
     /**
      * @param string $agentType Agent type placed on this node
      * @param ?string $agentIndex Agent index placed on this node
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      * @return int Worker id a successful placement lands on
      */
-    public function executePlacement(string $agentType, ?string $agentIndex): int
+    public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): int
     {
         $this->placed[] = [$agentType, $agentIndex];
         if ($this->refuse) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\API\Router\HttpRouter;
 use Hilos\Cluster\ClusterContext;
@@ -864,8 +865,14 @@ final class ReportFramesNativeWorkers extends WorkerServer
      * @param string $agentType Receiver type
      * @param ?string $agentIndex Receiver index
      * @param DaemonAgentMessageDTO $messageDto Exact addressed frame
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         ++$this->attempts;
         if ($this->problem !== null) {

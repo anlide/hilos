@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
@@ -648,8 +649,9 @@ final class UserAgentIntegrationWorkerServer extends WorkerServer
     /**
      * @param string $agentType Addressed agent type
      * @param ?string $agentIndex Addressed person id
+     * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      */
-    protected function startAgent(string $agentType, ?string $agentIndex = null): void
+    protected function startAgent(string $agentType, ?string $agentIndex = null, ?AgentStartSink $immediateStartSink = null): void
     {
         $agentId = $this->buildAgentId($agentType, $agentIndex);
         $this->startedAgentIds[] = $agentId;

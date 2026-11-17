@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
@@ -158,9 +159,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     private ?DeliverySettingsSink $deliverySettingsSink = null;
     /** The ordinary RT stream of this link instance */
     private ?RtSyncStreamChannel $rtSyncStream = null;
-    /** @var ?Closure(RtSyncStreamChannel): void The master's pass this link's stream is pumped on; null pumps at once */
+    /** @var ?Closure(RtSyncStreamChannel, ?SignalDispatch): void The master's pass this link's stream is pumped on; null pumps at once */
     private ?Closure $rtSyncStreamWake = null;
-    /** @var ?Closure(int, string, list<string>, ?float): void The master's mark of rows this link's stream holds */
+    /** @var ?Closure(int, string, list<string>, ?float, ?SignalDispatch): void The master's mark of rows this link's stream holds */
     private ?Closure $rtSyncStreamHold = null;
     /**
      * Frames waiting for the stream to read the parts it took, in arrival order, each with the newline that ends it:
@@ -863,14 +864,16 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
                 static function (RtSyncStreamFrame $frame) use ($link): void {
                     $link->get()?->send((new WorkerRtSyncStreamDTO($frame))->toJson());
                 },
-                static function (RtSyncStreamOperation $operation, Closure $settled) use ($link): void {
+                static function (
+                    RtSyncStreamOperation $operation, Closure $settled, ?object $receipt = null, ?SignalDispatch $origin = null,
+                ) use ($link): void {
                     $client = $link->get();
                     if ($client === null || $client->linkClosed) {
-                        $settled(false);
+                        $settled(false, $origin);
 
                         return;
                     }
-                    $client->agentManager->handleWorkerRtSyncStream($operation, $settled);
+                    $client->agentManager->handleWorkerRtSyncStream($operation, $settled, $origin);
                 },
                 $this->rtSyncStreamWake,
                 static function () use ($link): void {
@@ -888,10 +891,11 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
                     string $collectionKey,
                     array $stateIds,
                     ?float $since,
+                    ?SignalDispatch $origin = null,
                 ) use ($link, $hold): void {
                     $client = $link->get();
                     if ($client !== null) {
-                        $hold($client->workerIndex, $collectionKey, $stateIds, $since);
+                        $hold($client->workerIndex, $collectionKey, $stateIds, $since, $origin);
                     }
                 },
             );
@@ -901,7 +905,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * @param ?Closure(RtSyncStreamChannel): void $wake The master's pass this link's stream is pumped on
+     * @param ?Closure(RtSyncStreamChannel, ?SignalDispatch): void $wake The master's pass this link's stream is pumped on
      */
     public function setRtSyncStreamWake(?Closure $wake): void
     {
@@ -909,7 +913,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
     }
 
     /**
-     * @param ?Closure(int, string, list<string>, ?float): void $hold The master's mark of rows this link's stream holds,
+     * @param ?Closure(int, string, list<string>, ?float, ?SignalDispatch): void $hold The master's mark of rows this link's stream holds,
      *        given this link's worker
      */
     public function setRtSyncStreamHold(?Closure $hold): void
@@ -1015,18 +1019,19 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param string $collectionKey Collection whose copy was confirmed
      * @param int $announcement Number of the interest report the worker waited with ({@see RtCopyConfirmation::admits()})
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidFormatException When a standalone row's set field is malformed
      * @throws NativeLogicException When the collection's version pages have closed
      * @throws InvalidArgumentException Never: a fresh allowance is valid
      */
-    public function sendConfirmedRtSnapshot(string $collectionKey, int $announcement): void
+    public function sendConfirmedRtSnapshot(string $collectionKey, int $announcement, ?SignalDispatch $origin = null): void
     {
         if ($this->agentManager->workerReaderMap()->holds(
             AgentManagerDaemon::workerHolderId($this->workerIndex),
             SourceChange::KIND_RT,
             $collectionKey,
         )) {
-            $this->streamRtSnapshot($collectionKey, $announcement);
+            $this->streamRtSnapshot($collectionKey, $announcement, $origin);
         }
     }
 
@@ -1036,17 +1041,19 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param string $collectionKey Collection to cut
      * @param int $announcement Number of the worker's interest report the snapshot answers
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidFormatException When a standalone row's set field is malformed
      * @throws NativeLogicException When the collection's version pages have closed
      * @throws InvalidArgumentException Never: a fresh allowance is valid
      */
-    private function streamRtSnapshot(string $collectionKey, int $announcement): void
+    private function streamRtSnapshot(string $collectionKey, int $announcement, ?SignalDispatch $origin = null): void
     {
         $this->rtSyncStream()->sendSnapshot(
             $collectionKey,
             RtSnapshotScope::whole(),
             staleRows: RtStaleness::staleRows($collectionKey),
             announcement: $announcement,
+            origin: $origin,
         );
     }
 

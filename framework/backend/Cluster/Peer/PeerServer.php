@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster\Peer;
 
+use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Closure;
 use Generator;
@@ -252,12 +253,12 @@ final class PeerServer extends AbstractTlsServer implements
     /** @var ?SplQueue<Generator<int, void>> Broadcasts captured only during one synchronous announcement hook */
     private ?SplQueue $capturedBroadcasts = null;
 
-    /** @var ?Closure(Generator<int, void>): void Existing master FIFO, absent for standalone servers */
+    /** @var ?Closure(Closure(SignalDispatch): Generator<int, void>): void Existing master FIFO, absent for standalone servers */
     private ?Closure $sourceInterestDelivery = null;
-    /** @var ?Closure(RtSyncStreamChannel): void The master's pass each link's RT stream is pumped on; null pumps at once */
+    /** @var ?Closure(RtSyncStreamChannel, ?SignalDispatch): void The master's pass each link's RT stream is pumped on; null pumps at once */
     private ?Closure $rtSyncStreamWake = null;
     /**
-     * @var ?Closure(?int, string, list<string>, ?float): void The master's mark of rows a link's RT stream holds, given
+     * @var ?Closure(?int, string, list<string>, ?float, ?SignalDispatch): void The master's mark of rows a link's RT stream holds, given
      *      no writing worker - the writer is on the linked node; null marks them in this process alone
      */
     private ?Closure $rtSyncStreamHold = null;
@@ -3066,8 +3067,9 @@ final class PeerServer extends AbstractTlsServer implements
      * @param string $signalType RT sync signal type being announced
      * @param SignalDTO $signal RT sync signal the other nodes apply
      * @param bool $partialOwner Whether this node holds only part of the right over the collection
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false): void
+    public function broadcastRtSync(string $signalType, SignalDTO $signal, bool $partialOwner = false, ?SignalDispatch $origin = null): void
     {
         $data = $signal->data;
         if (!$data instanceof RtSyncSignalDataInterface || $signal->signalType->getType() !== $signalType) {
@@ -3083,6 +3085,7 @@ final class PeerServer extends AbstractTlsServer implements
             $partialOwner,
             fn (PeerLink $link): bool => $this->nodeReaderMap->holds($link->remoteIdentity()->nodeId, SourceChange::KIND_RT, $data->collectionKey),
             $nodeId,
+            $origin,
         );
         if ($this->capturedBroadcasts !== null) {
             $this->capturedBroadcasts->enqueue($delivery);
@@ -3101,6 +3104,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param bool $partialOwner Whether this node holds only part of the right over the collection
      * @param callable(PeerLink): bool $reaches Whether the operation reaches the given link
      * @param string $nodeId This node, the origin every receiver checks against its link
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return Generator<int, void> One link per step after the initial yield
      */
     private function walkRtSyncFanout(
@@ -3109,12 +3113,13 @@ final class PeerServer extends AbstractTlsServer implements
         bool $partialOwner,
         callable $reaches,
         string $nodeId,
+        ?SignalDispatch $origin = null,
     ): Generator {
         yield;
         foreach ($clients as $client) {
             $linkedNodeId = $client?->remoteIdentity()?->nodeId;
             if ($linkedNodeId !== null && ($this->activeLinks[$linkedNodeId] ?? null) === $client && $reaches($client)) {
-                $client->rtSyncStream()->send($data, $nodeId, $partialOwner);
+                $client->rtSyncStream()->send($data, $nodeId, $partialOwner, $origin);
             }
             yield;
         }
@@ -3278,13 +3283,13 @@ final class PeerServer extends AbstractTlsServer implements
         return $owed ? $frame->rtCollections : $added;
     }
 
-    /** @param Closure(Generator<int, void>): void $deliver Exact master's existing guarded source FIFO */
+    /** @param Closure(Closure(SignalDispatch): Generator<int, void>): void $deliver Exact master's existing guarded source FIFO */
     public function setSourceInterestDelivery(Closure $deliver): void
     {
         $this->sourceInterestDelivery = $deliver;
     }
 
-    /** @param Closure(Generator<int, void>): void $deliver Original binding; an old owner cannot remove its replacement */
+    /** @param Closure(Closure(SignalDispatch): Generator<int, void>): void $deliver Original binding; an old owner cannot remove its replacement */
     public function removeSourceInterestDelivery(Closure $deliver): void
     {
         if ($this->sourceInterestDelivery === $deliver) {
@@ -3320,8 +3325,9 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param ?PeerLink $link Link the operation arrived on, or null once it closed after the final part arrived
      * @param RtSyncStreamOperation|RtSyncStreamSnapshot $operation Operation read from its parts, or a snapshot at its head
-     * @param Closure(bool): void $settled The stream's answer
+     * @param Closure(bool, ?SignalDispatch): void $settled The stream's answer
      * @param ?RtReplicaConfirmation $receipt Taken when the final part arrived, or null to take it at the apply
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @return ?Generator<int, RtWork, int, void> The snapshot's staging, or null when answered here
      */
     public function onRtSyncStreamReceived(
@@ -3329,49 +3335,51 @@ final class PeerServer extends AbstractTlsServer implements
         RtSyncStreamOperation|RtSyncStreamSnapshot $operation,
         Closure $settled,
         ?RtReplicaConfirmation $receipt = null,
+        ?SignalDispatch $origin = null,
     ): ?Generator {
         $linkedNodeId = $link?->remoteIdentity()?->nodeId ?? $receipt?->nodeId;
         if ($linkedNodeId === null || $operation->originNodeId !== $linkedNodeId) {
             Logger::warning("Refusing a streamed RT write naming node '{$operation->originNodeId}' on the link of '{$linkedNodeId}'");
-            $settled(false);
+            $settled(false, $origin);
 
             return null;
         }
         $sink = Hilos::$cluster?->rtSyncSink();
         if ($sink === null) {
             Logger::warning("Dropping peer RT sync from node '{$linkedNodeId}': no local RT sync sink registered");
-            $settled(false);
+            $settled(false, $origin);
 
             return null;
         }
         if ($operation instanceof RtSyncStreamOperation && $this->announcedInterestNumber > 0
             && !in_array($operation->collectionKey, $this->announcedRtInterest, true)
             && DaemonManager::isHandedOverInSnapshot($operation->collectionKey)) {
-            $settled(true);
+            $settled(true, $origin);
 
             return null;
         }
         if ($operation instanceof RtSyncStreamSnapshot) {
             $collectionKey = $operation->collectionKey;
-            $origin = $link === null ? null : WeakReference::create($link);
+            $source = $link === null ? null : WeakReference::create($link);
 
             return $sink->stageRemoteRtSnapshot(
                 $linkedNodeId,
                 $operation,
                 $settled,
-                static function () use ($origin, $collectionKey): void {
-                    $origin?->get()?->recoverRtSyncStream($collectionKey);
+                static function () use ($source, $collectionKey, $origin): void {
+                    $source?->get()?->recoverRtSyncStream($collectionKey, $origin);
                 },
-                static function (bool $byLiveChange) use ($origin, $collectionKey): bool {
-                    return $origin?->get()?->requestRtSnapshotAgain($collectionKey, $byLiveChange) ?? false;
+                static function (bool $byLiveChange) use ($source, $collectionKey, $origin): bool {
+                    return $source?->get()?->requestRtSnapshotAgain($collectionKey, $byLiveChange) ?? false;
                 },
+                $origin,
             );
         }
 
         try {
             $data = $operation->signalData();
             RtSyncStreamSettle::await($data, $settled);
-            $sink->applyRemoteRtSync($linkedNodeId, $operation->signalType, $operation->signal($data), $operation->partialOwner, $receipt);
+            $sink->applyRemoteRtSync($linkedNodeId, $operation->signalType, $operation->signal($data), $operation->partialOwner, $receipt, $origin);
         } catch (Throwable $e) {
             Logger::warning("Failed to apply peer RT sync from node '{$linkedNodeId}': {$e->getMessage()}");
         }
@@ -3394,21 +3402,21 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * @param ?Closure(RtSyncStreamChannel): void $wake The master's pass each link's RT stream is pumped on
+     * @param ?Closure(RtSyncStreamChannel, ?SignalDispatch): void $wake The master's pass each link's RT stream is pumped on
      */
     public function setRtSyncStreamWake(?Closure $wake): void
     {
         $this->rtSyncStreamWake = $wake;
     }
 
-    /** @return ?Closure(RtSyncStreamChannel): void The master's pass a link's RT stream is pumped on; null pumps at once */
+    /** @return ?Closure(RtSyncStreamChannel, ?SignalDispatch): void The master's pass a link's RT stream is pumped on; null pumps at once */
     public function rtSyncStreamWake(): ?Closure
     {
         return $this->rtSyncStreamWake;
     }
 
     /**
-     * @param ?Closure(?int, string, list<string>, ?float): void $hold The master's mark of rows each link's RT stream
+     * @param ?Closure(?int, string, list<string>, ?float, ?SignalDispatch): void $hold The master's mark of rows each link's RT stream
      *        holds, given the writing worker - none on a peer link
      */
     public function setRtSyncStreamHold(?Closure $hold): void
@@ -3417,7 +3425,7 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * @return ?Closure(?int, string, list<string>, ?float): void The master's mark of rows a link's RT stream holds;
+     * @return ?Closure(?int, string, list<string>, ?float, ?SignalDispatch): void The master's mark of rows a link's RT stream holds;
      *         null marks them in the master's process alone
      */
     public function rtSyncStreamHold(): ?Closure
@@ -3505,17 +3513,24 @@ final class PeerServer extends AbstractTlsServer implements
      * @param string $collectionKey RT collection this node owns all or part of
      * @param RtSnapshotScope $scope The area this node owns
      * @param bool $partialOwner Whether this node holds only part of the right over the collection
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      * @throws InvalidFormatException When a standalone row's set field is malformed
      * @throws LogicException When the source's version pages have closed
      */
-    public function streamRtSnapshotToNode(string $nodeId, string $collectionKey, RtSnapshotScope $scope, bool $partialOwner): void
+    public function streamRtSnapshotToNode(
+        string $nodeId,
+        string $collectionKey,
+        RtSnapshotScope $scope,
+        bool $partialOwner,
+        ?SignalDispatch $origin = null,
+    ): void
     {
         $link = $this->activeLinks[$nodeId] ?? null;
         if ($link === null || !$this->nodeReaderMap->holds($nodeId, SourceChange::KIND_RT, $collectionKey)) {
             return;
         }
 
-        $link->rtSyncStream()->sendSnapshot($collectionKey, $scope, $this->localIdentity->nodeId, $partialOwner);
+        $link->rtSyncStream()->sendSnapshot($collectionKey, $scope, $this->localIdentity->nodeId, $partialOwner, origin: $origin);
     }
 
     /**
@@ -3620,10 +3635,11 @@ final class PeerServer extends AbstractTlsServer implements
      * stands - so the report never reaches the leader ahead of the last write the dropped claim made.
      *
      * @param list<PeerRtClaimEntry> $claims What each agent of this node owns
+     * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
      */
-    public function announceRtClaims(array $claims): void
+    public function announceRtClaims(array $claims, ?SignalDispatch $origin = null): void
     {
-        Hilos::$cluster?->rtClaimSink()?->applyRemoteRtClaims($this->localIdentity->nodeId, $claims);
+        Hilos::$cluster?->rtClaimSink()?->applyRemoteRtClaims($this->localIdentity->nodeId, $claims, $origin);
         $this->broadcastToNodes(new PeerRtClaimsDTO($this->localIdentity->nodeId, $claims));
     }
 
@@ -4322,9 +4338,9 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Original inbound transport
      * @param PeerSourceInterestDTO $frame Complete original interest report
-     * @return Generator<int, void> Private preparation by name, then one complete guarded report application
+     * @return Closure(SignalDispatch): Generator<int, void> Private preparation by name, then one complete guarded report application
      */
-    private function sourceInterestFrameDelivery(PeerLink $link, PeerSourceInterestDTO $frame): Generator
+    private function sourceInterestFrameDelivery(PeerLink $link, PeerSourceInterestDTO $frame): Closure
     {
         $server = WeakReference::create($this);
         $slot = $this->peerSlots[$link] ?? null;
@@ -4340,7 +4356,7 @@ final class PeerServer extends AbstractTlsServer implements
                 && ($owner->activeLinks[$nodeId] ?? null) === $original;
         };
         $map = WeakReference::create($this->nodeReaderMap);
-        return (static function () use ($map, $frame, $isCurrent, $server): Generator {
+        return static function (SignalDispatch $dispatch) use ($map, $frame, $isCurrent, $server): Generator {
             yield;
             if (!$isCurrent() || $map->get() === null) {
                 return;
@@ -4353,10 +4369,11 @@ final class PeerServer extends AbstractTlsServer implements
                     $frame->nodeId,
                     $owner->answeredCollections($frame, $added[SourceChange::KIND_RT]),
                     $frame->announcement,
+                    $dispatch,
                 );
             }
             yield;
-        })();
+        };
     }
 
     /**

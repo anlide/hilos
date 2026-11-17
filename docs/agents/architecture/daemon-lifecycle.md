@@ -313,6 +313,25 @@ The connection and entropy guards still surround client work, and an iteration
 failure reaches the manager's contained-failure hook. There is no second poll,
 blanket client scan or `pcntl_signal_dispatch()` phase on the master.
 
+`DaemonManager` lazily composes its signal owner through the protected
+`createSignalDispatcher()` factory. The default returns an inert
+[`SignalDispatcher`](../../../framework/backend/Core/Daemon/SignalDispatcher.php):
+construction does not bind sources or run work. The manager implements the typed
+[`SignalDispatchHost`](../../../framework/backend/Core/Daemon/SignalDispatchHost.php)
+port for preparation, receipt/page guards, completion and physical delivery.
+General lifecycle, RT/DB application, page recovery and transports stay with the
+master; the dispatcher owns retained scheduling state, effect FIFO, admission,
+prefixes and cohorts, traversal, exact native/source bindings, hold and identity
+discovery, timers, payload ledgers, scalar indexes and delivery cleanup.
+
+`dispatchSignalsWithinBudget()` remains the master's guarded phase after the
+source announcements. It calls `SignalDispatcher::dispatch()` through
+`dispatchSignals()`, with the existing 64-step portions, eight-step scheduling
+slots and four delivery services. The 2 ms monotonic budget is checked between
+portions. Every repetition begins a fresh `RtWorkScheduler` pass and spends its
+retirement share afterward; the separate retirement remainder still wakes the
+loop without making signal-only readiness true.
+
 ### Deciding whether to wait
 
 `hasRunnableMasterWork()` composes the existing owners' non-consuming predicates

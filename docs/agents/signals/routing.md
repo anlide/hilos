@@ -91,7 +91,8 @@ project Hilos facade.
 ## Signal flow
 
 1. Agent calls `Hilos::$sr->queueSignal(...)` — signal queued in router
-2. At end of daemon loop: `dispatchSignals()` drains the queue
+2. After source announcements in the guarded master phase,
+   `DaemonManager::dispatchSignals()` delegates bounded portions to `SignalDispatcher`
 3. Router resolves destinations (agent type + optional index)
 4. Daemon sends `DaemonAgentMessageDTO` to appropriate worker via `WorkerServer`
 5. Worker parses topology-declared inner payload DTOs when present, then
@@ -108,6 +109,26 @@ Topology parsing happens on the worker before handlers:
   → agent `onSignalAgent()`
 
 Routing-only entries skip parsing and pass the incoming payload through.
+
+On the master, `SignalDispatcher` owns admission, effect FIFO, prefixes/cohorts,
+retained traversal and cleanup. `DaemonManager` supplies the typed
+`SignalDispatchHost` operations for preparation, receipt/page checks, completion
+and physical delivery. Its protected `createSignalDispatcher()` factory returns
+an inert owner; native/source bindings are attached separately. The guarded
+[master phase](../architecture/daemon-lifecycle.md#main-loop-each-iteration)
+retains the existing scheduling order and budget.
+
+Internal delivery and source/stream continuations carry their original
+`SignalDispatch` explicitly (C); a nullable origin of `null` opens an independent
+root. `dispatchSourceWork()` and effect factories receive the created C and call
+the internal execution body with it, rather than reentering a public root.
+Nested effects join the FIFO with their original prefix and causal cohort;
+there is no ambient current dispatch to borrow after a yield. A staged snapshot
+retains its own C and receipt. A later external `readAll()` opens a new root,
+and destructor settlement uses `null`. Synchronous placement/start/stop/revoke
+callbacks receive a per-call lifecycle sink bound to C; deferred reports use
+their independent registered sink, and deferred streamed-write callbacks receive
+`null`. Waiting records do not retain the per-call sink or startup C.
 
 The third argument of `onSignalAgent()` names the SENDER in full, in the form
 `source[/type][#index]` - unlike the other `onSignal*()` handles, which receive

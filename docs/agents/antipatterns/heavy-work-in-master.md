@@ -75,15 +75,19 @@ that needs no I/O — a random token — and let the worker persist and verify i
 - **A frame going to several addressees is packed once per broadcast**, not once per
   link: the string is the same for all of them, and the second `json_encode` is work the
   master pays for nothing. `DaemonManager::writeFrameToWorkers()` is where this is done for
-  the worker links, `clientDestinationDelivery()` for the WebSocket ones, and
+  the worker links, `DaemonManager::deliverSignalClient()` and `prepareSignalFrame()`
+  for the WebSocket ones, and
   `PeerServer::fanOutFrame()` for the links to other nodes — the single loop every peer
   broadcast goes through, each of them supplying only its own question of whom to reach.
-- **Signal delivery retains its unfinished portion.** `DaemonManager::dispatchSignals()`
+- **Signal delivery retains its unfinished portion.** `SignalDispatcher::dispatch()`
   advances at most 64 steps of its original FIFO and physical continuations. Finite stop
-  and browser prefixes get validation slots, and blocked-wait discovery keeps its share;
-  an unused slot goes to delivery. The ordinary guarded master phase repeats portions
-  within a 2ms monotonic budget, checked between portions, before returning to the other
-  owners. The master waits on their actual readiness and deadlines; see the
+  and browser prefixes get validation slots in each eight-step group, and blocked-wait
+  discovery keeps its share; an unused slot goes to the four delivery services.
+  `DaemonManager::dispatchSignalsWithinBudget()` repeats portions in the ordinary guarded
+  phase within a 2 ms monotonic budget, checked between portions, before returning to the
+  other owners. The dispatcher owns the queue, traversal, exact bindings and cleanup;
+  its typed `SignalDispatchHost` keeps preparation and physical transports on the master.
+  The master waits on their actual readiness and deadlines; see the
   [event loop](../architecture/event-loop.md#timing). Native callbacks cue this
   phase without delivering ahead of ownership and reader-interest announcements.
   `WebSocketServer::clientTarget()` resolves an address through its accept-key index and
@@ -96,7 +100,7 @@ that needs no I/O — a random token — and let the worker persist and verify i
   the stream's parts. Packing remains one atomic operation; the browser's 8 MiB outbound
   cap does not bound worker or peer source payloads.
 - **Source hand-overs and replica answers retain their row construction.** The live
-  master uses its existing effect FIFO; incoming peer RT writes, DB facts,
+  master uses the dispatcher's effect FIFO; incoming peer RT writes, DB facts,
   agent signals, and page access re-decision announcements enter that
   same FIFO, so a query sees earlier applied writes and its completed frames precede
   later source writes. Claim reports, reader-interest announcements and queries use

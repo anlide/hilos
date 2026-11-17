@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Leadership;
 use Hilos\Constants\HilosAgentType;
@@ -259,9 +260,15 @@ final class CronFrameCaptureServer extends WorkerServer
      * @param string $agentType Receiver type
      * @param ?string $agentIndex Receiver index
      * @param DaemonAgentMessageDTO $messageDto Addressed frame
+     * @param ?AgentStartSink $immediateStartSink Synchronous notification port for this call
      * @throws LogicException When this test refuses delivery
      */
-    public function sendSignalToAgent(string $agentType, ?string $agentIndex, DaemonAgentMessageDTO $messageDto): void
+    public function sendSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        DaemonAgentMessageDTO $messageDto,
+        ?AgentStartSink $immediateStartSink = null,
+    ): void
     {
         $this->attempts++;
         if ($this->refuse) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
+use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 use Generator;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
@@ -449,7 +450,7 @@ final class PeerBroadcastEncodingTest extends TestCase
             self::assertSame('', $this->sentTo($target), 'No partial query leaves the original effect');
             new ReflectionProperty(DaemonManager::class, 'shutdownStartTime')->setValue($manager, microtime(true));
             $manager->dispatch();
-            $state = new ReflectionProperty(DaemonManager::class, 'signalDispatchState')->getValue($manager);
+            $state = SignalDispatcherFixture::owner($manager)->retainedState();
             $prefix = $state->browsers;
             self::assertNotNull($prefix);
             self::assertFalse($prefix->complete);
@@ -485,7 +486,7 @@ final class PeerBroadcastEncodingTest extends TestCase
         $server->onSourceInterestReceived($target[0], new PeerSourceInterestDTO('node-b', ['rows'], [], 1));
         $this->clearQueued($target);
         $pending = new SplQueue();
-        $binding = static function (Generator $delivery) use ($pending): void { $pending->enqueue($delivery); };
+        $binding = static function (Closure $delivery) use ($pending): void { $pending->enqueue($delivery(SignalDispatcherFixture::direct())); };
         $server->setSourceInterestDelivery($binding);
         $snapshot = new SignalDispatch(null, static function () use ($server): Generator {
             yield;
@@ -513,7 +514,7 @@ final class PeerBroadcastEncodingTest extends TestCase
         $server = $this->makeServer();
         $old = $this->linkTo($server, 'node-b', NodeRole::Master);
         $pending = new SplQueue();
-        $binding = static function (Generator $delivery) use ($pending): void { $pending->enqueue($delivery); };
+        $binding = static function (Closure $delivery) use ($pending): void { $pending->enqueue($delivery(SignalDispatcherFixture::direct())); };
         $server->setSourceInterestDelivery($binding);
         socket_write($old[1], new PeerSourceInterestDTO('node-b', ['rows'], [], 1)->toJson() . "\n");
         $old[0]->read();
@@ -606,7 +607,7 @@ final class PeerBroadcastEncodingTest extends TestCase
             $server = $this->makeServer();
             $old = $this->linkTo($server, 'node-b', NodeRole::Master);
             $pending = new SplQueue();
-            $binding = static function (Generator $delivery) use ($pending): void { $pending->enqueue($delivery); };
+            $binding = static function (Closure $delivery) use ($pending): void { $pending->enqueue($delivery(SignalDispatcherFixture::direct())); };
             $server->setSourceInterestDelivery($binding);
             $server->onSourceInterestReceived($old[0], new PeerSourceInterestDTO('node-b', ['r-0', 'r-1'], ['d-0', 'd-1'], 1));
             $delivery = $pending->dequeue();
@@ -615,7 +616,7 @@ final class PeerBroadcastEncodingTest extends TestCase
             self::assertTrue($dispatch->hasWork(), 'The pair must still be private after preparing its DB names');
             if ($replaceBinding) {
                 $replacement = $old;
-                $server->setSourceInterestDelivery(static function (Generator $unused): void {});
+                $server->setSourceInterestDelivery(static function (Closure $unused): void {});
             } else {
                 $replacement = $this->linkTo($server, 'node-b', NodeRole::Master);
             }
