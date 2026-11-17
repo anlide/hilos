@@ -44,14 +44,17 @@ use Hilos\Hilos;
 use Hilos\Runtime\RtSnapshot;
 use Hilos\Runtime\Snapshot\RtSnapshotScope;
 use Hilos\Runtime\Snapshot\RtWork;
+use Hilos\Runtime\Snapshot\RtWorkBudget;
 use Hilos\Runtime\Snapshot\RtWorkDriver;
 use Hilos\Runtime\Stream\RtSyncStreamChannel;
 use Hilos\Runtime\Stream\RtSyncStreamDecoder;
 use Hilos\Runtime\Stream\RtSyncStreamFrame;
 use Hilos\Runtime\Stream\RtSyncStreamOperation;
 use Hilos\Runtime\Stream\RtSyncStreamSnapshot;
+use Hilos\Runtime\Stream\RtSyncStreamStatus;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Socket\Worker\DTO\WorkerRtSourceRegisteredDTO;
+use Hilos\Socket\Worker\DTO\WorkerRtSourceReleasedDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Tests\Unit\DaemonManagerRtSyncPeerTestRtContext;
 use Hilos\Tests\Unit\ReaderNativeAgents;
@@ -197,7 +200,8 @@ final class PeerReaderRepairTest extends TestCase
             $queue->enqueue($delivery);
         };
         $a->setSourceInterestDelivery($binding);
-        $new = $this->connect($a, $b, true, [$collection], []);
+        $migrated = $waiting ? [new PeerRtClaimsDTO('node-a', [new PeerRtClaimEntry('owner', 'owner', null, [$collection])])] : [];
+        $new = $this->connect($a, $b, true, [$collection], [], $migrated);
         $drained = $this->take($oldA);
         self::assertCount(1, $queue, 'The repeat on the new link waits for its delivery');
         $delivery = $queue->dequeue();
@@ -225,6 +229,129 @@ final class PeerReaderRepairTest extends TestCase
             self::assertEquals([$answer], $answers($before));
             self::assertEquals([$answer], $after, 'An answer that was written leaves the repeat ordinary');
         }
+    }
+
+    /**
+     * The accepted delta crosses the replacement after its source relinquishes its area, whether
+     * alone or behind a canceled snapshot and dropped interest answer. The deferred repeat later
+     * recovers a fresh base through the existing debt.
+     *
+     * @param ?int $stage Null for no snapshot, zero for queued, one for a consumed cut, two for a first part
+     */
+    #[TestWith([null])]
+    #[TestWith([0])]
+    #[TestWith([1])]
+    #[TestWith([2])]
+    public function testTransferredDeltaSurvivesLostOwnershipAndPrecedesTheRepeatedHandOver(?int $stage): void
+    {
+        $collection = DaemonManagerRtSyncPeerTestRtContext::ROWS;
+        $a = $this->server('node-a');
+        $b = $this->server('node-b');
+        $a->setRtSyncStreamWake(static function (): void {
+        });
+        [$oldA, $oldB] = $this->connect($a, $b, false);
+        $a->announceSourceInterest([$collection], [], 2);
+        $b->announceSourceInterest([$collection], [], 2);
+        $this->relay($oldA, $oldB);
+        $this->relay($oldB, $oldA);
+        $owner = new ReaderRepairManager();
+        new ReflectionProperty(DaemonManager::class, 'servers')->setValue($owner, [$a]);
+        $agents = $owner->getAgentManagerDaemon();
+        $agents->handleRtSourceRegistered(new WorkerRtSourceRegisteredDTO('owner', [$collection]));
+        $runtime = new DaemonManagerRtSyncPeerTestRtContext();
+        $runtime->configure();
+        Hilos::$rt = $runtime;
+        $rows = [];
+        for ($index = 0; $index < 40; ++$index) {
+            $rows['s' . $index] = ['id' => 's' . $index, 'name' => str_repeat('x', 1000)];
+        }
+        RtSnapshot::replace($collection, $rows);
+        Hilos::$cluster->registerRtSyncSink($owner);
+        $this->take($oldA);
+        $donor = $oldA[0]->rtSyncStream();
+        if ($stage !== null) {
+            $donor->sendSnapshot($collection, RtSnapshotScope::whole(), 'node-a');
+            $a->sendSourceInterestAnswered('node-b', 2);
+        }
+        if ($stage === 1) {
+            self::assertTrue($donor->pump(new RtWorkBudget(128, 4096)));
+        } elseif ($stage === 2) {
+            while ($donor->pump(new RtWorkBudget())) {
+            }
+        }
+        $before = $this->take($oldA);
+        self::assertCount($stage === 2 ? 1 : 0, $before);
+        if ($stage === 2) {
+            self::assertFalse($before[0]->frame->final, 'Only the old snapshot head and first rows went out');
+        }
+        self::assertTrue($agents->rtNodeSourceMap()->owns($collection));
+        $a->broadcastRtSync(SignalTypeConstants::RT_SYNC_UPDATED, new SignalDTO(
+            new SignalSource(SignalSource::RT), new SignalType(SignalTypeConstants::RT_SYNC_UPDATED),
+            new SignalName(SignalConstants::RT_SYNC_UPDATED), new RtSyncUpdatedSignalData(
+                $collection, 's0', ['name' => 'accepted'], 'accept-1', 'request-1', ['name' => 'previous'], 'emitter-1',
+            ),
+        ), partialOwner: true);
+        $answered = false;
+        $oldA[0]->afterRtWritesAnswered(static function () use (&$answered): void {
+            $answered = true;
+        });
+        $agents->handleRtSourceReleased(new WorkerRtSourceReleasedDTO('owner'));
+        RtSnapshot::replace($collection, []);
+        self::assertFalse($agents->rtNodeSourceMap()->owns($collection), 'The accepted delta outlives this node\'s ownership');
+        $queue = new SplQueue();
+        $binding = static function (Generator $delivery) use ($queue): void {
+            $queue->enqueue($delivery);
+        };
+        $a->setSourceInterestDelivery($binding);
+        $new = $this->connect($a, $b, true, [$collection], []);
+        self::assertCount(1, $queue, 'The repeated interest has not yet recovered the base');
+        $closed = [$oldA[0]->getSocket(), $oldB[0]->getSocket()];
+        $oldA[0]->close();
+        $oldB[0]->close();
+        $this->sockets = array_values(array_filter($this->sockets, static fn (Socket $socket): bool => !in_array($socket, $closed, true)));
+        $successor = $new[0][0]->rtSyncStream();
+        while ($successor->pump(new RtWorkBudget())) {
+        }
+        $transferred = $this->take($new[0]);
+        self::assertCount(1, $transferred, 'The old interest answer and canceled snapshot cannot precede the delta');
+        self::assertInstanceOf(PeerRtSyncStreamDTO::class, $transferred[0]);
+        self::assertSame([1, 0, true],
+            [$transferred[0]->frame->sequence, $transferred[0]->frame->part, $transferred[0]->frame->final]);
+        $decoder = new RtSyncStreamDecoder();
+        RtWorkDriver::runSynchronously($decoder->feed($transferred[0]->frame->data));
+        $operation = RtWorkDriver::runSynchronously(RtSyncStreamOperation::read($decoder->finish()));
+        self::assertSame(
+            [$collection, 's0', 'node-a', SignalTypeConstants::RT_SYNC_UPDATED, true, 'accept-1', 'request-1', 'emitter-1',
+                ['name' => 'accepted'], ['name' => 'previous']],
+            [$operation->collectionKey, $operation->stateId, $operation->originNodeId, $operation->signalType, $operation->partialOwner,
+                $operation->origin, $operation->originRequestId, $operation->emitter, $operation->row->toNative(),
+                $operation->previous?->toNative()],
+        );
+        $donor->receive(RtSyncStreamFrame::ack($donor->streamId, 1, 0, RtSyncStreamStatus::Applied));
+        self::assertFalse($answered, 'Cancellation and old close or answer do not answer the transferred delta');
+
+        $agents->handleRtSourceRegistered(new WorkerRtSourceRegisteredDTO('owner', [$collection]));
+        RtSnapshot::replace($collection, ['s0' => ['id' => 's0', 'name' => 'fresh base']]);
+        $delivery = $queue->dequeue();
+        $cursor = new SignalDispatch(null, static fn(): Generator => $delivery);
+        $cursor->runPortion(256);
+        self::assertFalse($cursor->hasWork());
+        $a->removeSourceInterestDelivery($binding);
+        while ($successor->pump(new RtWorkBudget())) {
+        }
+        $recovered = $this->take($new[0]);
+        $snapshots = array_values(array_filter($recovered, static fn (PeerDTO $frame): bool => $frame instanceof PeerRtSyncStreamDTO));
+        self::assertCount(1, $snapshots, 'The unchanged interest recovers a snapshot even when only an ordinary write was transferred');
+        $snapshot = json_decode($snapshots[0]->frame->data, true);
+        self::assertSame(RtSyncStreamSnapshot::SIGNAL_TYPE, $snapshot[RtSyncStreamOperation::FIELD_SIGNAL_TYPE]);
+        self::assertSame(['s0' => ['id' => 's0', 'name' => 'fresh base']], $snapshot[RtSyncStreamSnapshot::FIELD_ROWS],
+            'Recovery takes a fresh cut rather than reusing the consumed old cursor');
+        self::assertEquals([new PeerSourceInterestAnsweredDTO('node-a', 2)], array_values(array_filter(
+            $recovered, static fn (PeerDTO $frame): bool => $frame instanceof PeerSourceInterestAnsweredDTO,
+        )));
+        self::assertFalse($answered, 'A repeated interest answer cannot answer an ordinary write');
+        $successor->receive(RtSyncStreamFrame::ack($successor->streamId, 1, 0, RtSyncStreamStatus::Applied));
+        self::assertTrue($answered, 'The later recovery snapshot does not extend the transferred delta\'s wait');
     }
 
     /**
@@ -572,9 +699,10 @@ final class PeerReaderRepairTest extends TestCase
      * @param bool $replacement Whether the preferred A-dialed duplicate replaces B's stream
      * @param list<string> $rt Last complete writer RT values
      * @param list<string> $db Last complete writer DB values
+     * @param list<PeerDTO> $migrated Exact frames transferred from the outgoing endpoint
      * @return array{array{PeerLink, Socket}, array{PeerLink, Socket}} Independent sockets, relayed byte for byte
      */
-    private function connect(PeerServer $a, PeerServer $b, bool $replacement, array $rt = [], array $db = []): array
+    private function connect(PeerServer $a, PeerServer $b, bool $replacement, array $rt = [], array $db = [], array $migrated = []): array
     {
         $first = $this->link($a, 'node-a', 'node-b', $replacement);
         $second = $this->link($b, 'node-b', 'node-a', !$replacement);
@@ -592,8 +720,8 @@ final class PeerReaderRepairTest extends TestCase
         if ($replacement) {
             self::assertEquals([new PeerReadyAckDTO(true), new PeerSourceInterestDTO('node-b', $rt, $db, 2)], $ack,
                 'Only the fresh complete repair may follow the ack, without roster or full hand-over');
-            self::assertEquals([new PeerSourceInterestDTO('node-a', $rt, $db, 2)], $this->relay($dialer, $acceptor),
-                'The outgoing endpoint repairs only after receiving the ack');
+            self::assertEquals([...$migrated, new PeerSourceInterestDTO('node-a', $rt, $db, 2)], $this->relay($dialer, $acceptor),
+                'The outgoing endpoint transfers its waiting frames and repairs only after receiving the ack');
         } else {
             $this->relay($dialer, $acceptor);
         }

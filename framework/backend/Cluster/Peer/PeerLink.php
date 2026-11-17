@@ -88,6 +88,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -105,6 +106,7 @@ use Hilos\Socket\SocketException;
 use Hilos\Socket\Transport\SocketTransportInterface;
 use Hilos\TruthSource\RtReplicaConfirmation;
 use Hilos\Utils\Logger;
+use LogicException;
 use SplQueue;
 use Throwable;
 use WeakReference;
@@ -152,9 +154,11 @@ final class PeerLink extends AbstractClient
     private array $rtSnapshotsContested = [];
     /**
      * @var array<string, int> Frames naming each agent that wait for their turn behind this link's RT stream, until
-     *      written ({@see self::queueFrame()}); the stream is this link instance's, so the count ends with it
+     *      written; transferred with their callbacks before the successor stream can wake
      */
     private array $waitingInTurn = [];
+    /** Weak endpoint route shared by waiting callbacks across successive replacements */
+    private readonly PeerFrameRoute $frameRoute;
 
     /** @var NodeIdentity Local node identity announced to the remote peer */
     private NodeIdentity $localIdentity;
@@ -179,15 +183,6 @@ final class PeerLink extends AbstractClient
 
     /** @var bool Whether this old link has queued its drain marker */
     private bool $draining = false;
-
-    /**
-     * Whether the answers to the linked node's announcements still waiting for their turn are dropped
-     * rather than written: the link is being drained, and the snapshots they answer for will never be
-     * written to it ({@see self::beginDrain()}). A dropped answer leaves this node owing the linked node
-     * a hand-over ({@see PeerServer::noteRtHandOverOwed()}). Framework-first: process-local state of this
-     * link instance; nothing else reads it, and it ends with the link.
-     */
-    private bool $dropsWaitingAnswers = false;
 
     /** @var bool Whether the peer's drain marker arrived on this old link */
     private bool $peerDrained = false;
@@ -262,6 +257,7 @@ final class PeerLink extends AbstractClient
         $this->server = $server;
         $this->localIdentity = $localIdentity;
         $this->dialer = $dialer;
+        $this->frameRoute = new PeerFrameRoute($this);
 
         $this->keepaliveIntervalSec = Hilos::$env[EnvConstants::CLUSTER_LINK_KEEPALIVE_INTERVAL_MS]->int() / TimeConstants::MS_PER_SECOND;
         $this->linkTimeoutSec = Hilos::$env[EnvConstants::CLUSTER_LINK_TIMEOUT_MS]->int() / TimeConstants::MS_PER_SECOND;
@@ -395,7 +391,7 @@ final class PeerLink extends AbstractClient
      * ({@see self::queueFrame()}). A frame packed once by its fan-out chooses the same way
      * ({@see self::sendPackedFrame()}). Every other frame - keepalive, consensus, the drain marker, the
      * budgeted portions of an upload, DB sync - is queued at once: none of them waits for a part's
-     * credit. A draining link writes what waits at once ({@see self::beginDrain()}).
+     * credit. Replacement transfers waiting frames; a final drain releases them.
      *
      * @param PeerDTO $frame Frame to send
      */
@@ -444,13 +440,18 @@ final class PeerLink extends AbstractClient
      * its read of that write ({@see DaemonManager::deliverPageAccessReassess()}). The claims of this
      * node's agents, which the leader folds behind its read the same way
      * ({@see DaemonManager::applyRemoteRtClaims()}), and the report of what this node hosts, broadcast
-     * once its placed work is fenced. A draining link writes no more parts, so there it is queued at once.
+     * once its placed work is fenced. Replacement follows the current route; a final drain queues it at once.
      *
      * @param PeerDTO $frame Frame the fan-out sends
      * @param string $frameJson The same frame packed, without the newline delimiter
      */
     public function sendPackedFrame(PeerDTO $frame, string $frameJson): void
     {
+        if ($this->frameRoute->successor !== null && !$frame instanceof PeerDrainDTO) {
+            $this->frameRoute->current()?->sendPackedFrame($frame, $frameJson);
+
+            return;
+        }
         if ($this->draining) {
             $this->queueOutbound($frameJson, false);
 
@@ -466,8 +467,8 @@ final class PeerLink extends AbstractClient
      * agent a frame still waiting for its turn names ({@see self::agentIdOf()}) - then it goes behind that
      * frame, as on a worker's link ({@see WorkerClient::sendInTurn()}). The agent counts as waited for
      * until the frame naming it is written; the stream writes every frame waiting in it in the end,
-     * behind an operation dropped or refused as well, and a draining link writes them at once - all but
-     * an answer to the linked node's announcement, which a draining link drops ({@see self::beginDrain()}).
+     * behind an operation dropped or refused as well. Replacement moves their endpoint and agent counts
+     * before the stream wakes; answers queued in the old generation are dropped on either kind of drain.
      *
      * @param PeerDTO $frame Frame to send
      * @param string $frameJson The same frame packed, without the newline delimiter
@@ -485,16 +486,16 @@ final class PeerLink extends AbstractClient
         if ($agentId !== null) {
             $this->waitingInTurn[$agentId] = ($this->waitingInTurn[$agentId] ?? 0) + 1;
         }
-        $link = WeakReference::create($this);
-        $this->rtSyncStream->writeInTurn(static function () use ($link, $frameJson, $agentId, $answers): void {
-            $owner = $link->get();
+        $route = $this->frameRoute;
+        $this->rtSyncStream->writeInTurn(static function () use ($route, $frameJson, $agentId, $answers): void {
+            $owner = $route->current();
             if ($owner === null) {
                 return;
             }
             if ($agentId !== null && --$owner->waitingInTurn[$agentId] === 0) {
                 unset($owner->waitingInTurn[$agentId]);
             }
-            if ($answers && $owner->dropsWaitingAnswers) {
+            if ($answers && $route->dropsAnswers) {
                 $owner->oweHandOver();
 
                 return;
@@ -634,36 +635,60 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Queues the old route's end marker after all application frames already queued there. The
-     * frames still waiting for their turn behind the RT stream's writes ({@see self::readsBehindRtWrites()})
-     * go out first: a draining link writes no more parts of its stream, so the writes they wait for would
-     * never go out here. For the same reason the waits for the stream's answers end
-     * ({@see self::afterRtWritesAnswered()}) - once the link drains, so a frame a wait sends takes the
-     * draining route. An answer to the linked node's announcement among the waiting frames is dropped
-     * instead, neither written here nor handed to the replacement: it would tell the node that snapshots
-     * this link will never write are ahead of it. What the link loses so leaves this node owing the node a
-     * hand-over: the dropped answer, and an operation of the stream not out to its final part - its rest
-     * is never written here ({@see self::rtSyncStream()}). The node repeats its announcement on the
-     * replacement link, and owed, the repeat is answered there behind a hand-over of everything it names
-     * ({@see PeerServer::answeredCollections()}); owing nothing, it is an ordinary one. The marker goes out
-     * and the deadline is armed even when a wait raised, and what the wait raised goes on to the caller.
+     * Transfers unfinished ordinary writes, frame routes and answer waits before the old transport's
+     * drain marker. Snapshots are canceled and old interest answers dropped; their repeat renews the
+     * base through the existing hand-over debt. Ordinary writes retain that debt as insurance.
+     * Without a successor, waiting frames are released and answer waits end. A ready callback's
+     * failure reaches the caller after the other ready callbacks, marker and liveness cleanup.
      *
+     * @param ?self $successor Replacement with an unused sending direction, or null for a final drain
      * @throws EventLoopException When the remaining silence deadline cannot be armed
+     * @throws LogicException When the successor is this link or its sending direction is already used
+     * @throws InvalidFormatException Never: the stream transfers valid parts and answers
+     * @throws InvalidArgumentException Never: the successor's stream allowance is valid
      */
-    public function beginDrain(): void
+    public function beginDrain(?self $successor = null): void
     {
+        if ($successor === $this) {
+            throw new LogicException('A peer link cannot replace itself');
+        }
+        if ($this->draining) {
+            return;
+        }
         if ($this->rtSyncStream?->isWriting() === true) {
             $this->oweHandOver();
         }
-        $this->dropsWaitingAnswers = true;
-        $this->rtSyncStream?->releaseWaiting();
+        $this->frameRoute->dropsAnswers = true;
         $this->peerDrainAllowed = true;
         $this->draining = true;
         $failure = null;
-        try {
-            $this->rtSyncStream?->endAnswerWaits();
-        } catch (Throwable $raised) {
-            $failure = $raised;
+        if ($successor !== null) {
+            $this->frameRoute->successor = $successor->frameRoute;
+            foreach ($this->waitingInTurn as $agentId => $count) {
+                $successor->waitingInTurn[$agentId] = ($successor->waitingInTurn[$agentId] ?? 0) + $count;
+            }
+            $this->waitingInTurn = [];
+        }
+        if ($successor !== null && $this->rtSyncStream?->isWriting() === true) {
+            try {
+                $this->rtSyncStream->moveUnsentTo($successor->rtSyncStream(), function (RtSyncStreamSnapshot $snapshot): void {
+                    $this->oweHandOver();
+                });
+            } catch (Throwable $raised) {
+                $failure = $raised;
+            }
+        } else {
+            // With no unfinished writes, old answer obligations end without opening a successor stream.
+            try {
+                $this->rtSyncStream?->releaseWaiting();
+            } catch (Throwable $raised) {
+                $failure = $raised;
+            }
+            try {
+                $this->rtSyncStream?->endAnswerWaits();
+            } catch (Throwable $raised) {
+                $failure ??= $raised;
+            }
         }
         $this->sendEncodedFrame((new PeerDrainDTO())->toJson());
         if ($this->peerDrained) {
@@ -821,8 +846,8 @@ final class PeerLink extends AbstractClient
      * staging of it here cancels what it staged ({@see RtSyncStreamChannel::close()}). Ends the
      * waits for the RT stream's answers - a closed link brings no more
      * ({@see self::afterRtWritesAnswered()}) - and notifies the server so it can mark the peer offline.
-     * The server is notified even when the stream's close or a wait raised, and what they raised goes on
-     * to the closer.
+     * The waits and server notification finish even when the stream's close or a ready callback raises;
+     * the first failure reaches the closer. A stale donor's close leaves its successor and transferred waits intact.
      *
      * @throws HilosException When unused upload peer capacity cannot be canceled
      */
@@ -831,11 +856,24 @@ final class PeerLink extends AbstractClient
         $this->shouldClose = true;
         $this->readBuffer = '';
         $this->discardOutbound();
+        $failure = null;
         try {
             $this->rtSyncStream?->close();
+        } catch (Throwable $raised) {
+            $failure = $raised;
+        }
+        try {
             $this->rtSyncStream?->endAnswerWaits();
-        } finally {
+        } catch (Throwable $raised) {
+            $failure ??= $raised;
+        }
+        try {
             $this->server->onLinkClosed($this);
+        } catch (Throwable $raised) {
+            $failure ??= $raised;
+        }
+        if ($failure !== null) {
+            throw $failure;
         }
     }
 
@@ -1556,18 +1594,27 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Tells the caller once this link's RT stream answered every operation it took before the call
-     * ({@see RtSyncStreamChannel::afterAnswered()}), or the link closed or began to drain and so brings
-     * no more answers. At once when the stream never opened - nothing was handed to it, and it is not
-     * opened here - or the link drains already. $then may raise: what it raises reaches whoever ended
-     * the wait - this call, the answer read, the link's close or drain - and a close or drain tells the
-     * link's other waits all the same.
+     * Waits for the operations accepted before this call, following replacements even through an old
+     * link reference. Transferred writes keep their answer boundary; fully sent old writes are not
+     * replayed and their old answer obligations end. A real close or drain without a successor ends
+     * the wait. An unopened stream answers at once without opening one. Ready callbacks all run
+     * before their first failure is rethrown.
      *
      * @param Closure(): void $then Told the writes are answered
      */
     public function afterRtWritesAnswered(Closure $then): void
     {
-        if ($this->rtSyncStream === null || $this->draining) {
+        if ($this->frameRoute->successor !== null) {
+            $owner = $this->frameRoute->current();
+            if ($owner !== null) {
+                $owner->afterRtWritesAnswered($then);
+            } else {
+                $then();
+            }
+
+            return;
+        }
+        if ($this->rtSyncStream === null || $this->draining || $this->shouldClose) {
             $then();
 
             return;

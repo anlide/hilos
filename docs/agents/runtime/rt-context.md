@@ -470,8 +470,17 @@ what the old link lost: an answer dropped there, an operation of its stream not 
 whole when it began to drain, or a hand-over that found its route taken by the new
 link. Owing nothing, the repeat is answered as an ordinary announcement: a
 replacement is a routine step of a cluster's start, and a second hand-over on each
-would only repeat what was delivered. The snapshot this node was still reading on
-the old link is given up when that link closes. A snapshot canceled here
+would only repeat what was delivered. Unfinished ordinary operations move to the
+successor independently of that repeat, even after this node loses ownership of
+their area; their hand-over debt remains insurance, not a condition of delivery.
+Queued and encoder-owned snapshots are canceled, including a cursor already
+advanced before its first emitted part. A new cut never replaces that canceled
+operation in its old position. The incomplete snapshot this node was reading on
+the old link is given up when that link closes, so its staging cancels without
+waiting for parts that will never arrive. A fully sent ordinary operation is not
+replayed; replacement ends its old answer obligation without asserting that it
+applied. The outgoing transfer does not fence application between the two incoming
+connections. A snapshot canceled here
 and asked for again - on the link that replaced the one it came on, when that one
 drains - keeps its node awaited once more: the same list is announced
 again under the next number, behind the request, and the wait ends with the

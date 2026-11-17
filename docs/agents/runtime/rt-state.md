@@ -432,10 +432,19 @@ and system signals; a row's freeze; and protected mode, which cuts by its own qu
 and sync. A reader that must see a write before it acts is told by a signal to its
 agent.
 
-Two frames the rule would hold go at once. A draining link writes no more parts of
-its stream, so it writes what waits at once, in its order, ahead of its end marker
-(`PeerLink::beginDrain()`). The budgeted portion of an upload keeps its own count of
-the link's bytes.
+A replacement transfers unfinished ordinary operations and their waiting frames to
+the new route before accepting later writes (`PeerLink::beginDrain()`). A partial
+ordinary operation restarts at its first part; a waiting frame keeps exactly the
+boundary it followed, including through another replacement. Snapshots are canceled
+and old interest answers dropped, so their repeat must renew the base. Without a
+successor, drain releases the waiting frames before its end marker. The budgeted
+portion of an upload keeps its own count of the link's bytes.
+
+This orders the outgoing work handed to the successor, not application across old
+and new incoming epochs. A fully sent old operation stays on its old transport:
+if its final part is unread or its decode unfinished, new operations can apply
+first. It is not replayed on the new route. Once an old operation has already
+queued its apply on the daemon's source FIFO, that FIFO keeps its existing place.
 
 What names an agent keeps its order too. A master writing to a worker puts what it
 writes for an agent a waiting frame names - its stop, the answer to its protected-mode
@@ -491,9 +500,15 @@ report of a node that fenced itself - leaves only once every active link to a pe
 has answered the RT operations the node handed it before
 (`PlacementMesh::afterRtWritesAnswered()`, `RtSyncStreamChannel::afterAnswered()`) - a
 snapshot the node handed a link's stream before counts among them: it is answered once
-the peer published or refused it - so the node the leader picks next has the old instance's last write before it starts the
-agent. Any answer, a close or a drain of the link ends the wait; no timer does. On the
-leader's order the answer first waits for the worker's report of the stop
+the peer published or refused it. Replacement carries unfinished ordinary writes
+and the exact answer boundary to the new route; a later write does not extend it.
+Fully sent old operations end their obligations without replay, and canceled
+snapshots end theirs without claiming publication. Neither late old answers nor
+the donor's close completes a transferred wait. A real close of the current route
+ends it, as does an answer to its last awaited operation; no timer does. This is
+an answer barrier for the transferred work, not a guarantee that a fully sent old
+operation has applied before work on the new connection. On the leader's order
+the answer first waits for the worker's report of the stop
 (`PlacementExecutor::revokePlacement()`).
 
 A row's freshness travels with the writes it depends on. The master lifts its own

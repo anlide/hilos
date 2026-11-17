@@ -43,8 +43,10 @@ use Throwable;
  * answered: `applied`, `refused` or `gap`, before its end or to its final part; one closed with an
  * empty final part counts once that part is answered, and one dropped before its first part counts
  * at once. Writing a part is no answer, and an operation taken after the wait holds nothing. A link
- * that brings no more answers ends every wait at once ({@see self::endAnswerWaits()}); the channel
- * keeps no timer of its own - the link's liveness bounds a wait.
+ * that closes or drains without a successor ends its waits ({@see self::endAnswerWaits()}). Peer
+ * replacement moves unfinished ordinary writes and their wait boundaries to the successor instead;
+ * fully sent old operations end their obligations without replay or proof of apply. The channel
+ * keeps no timer of its own - the current link's liveness bounds a wait.
  *
  * Receiving: only the expected part of the expected sequence moves the position. An old
  * generation (another stream id), a repeated or earlier part, a part from ahead and an answer
@@ -73,9 +75,10 @@ use Throwable;
  *
  * Framework-first: the positions, credit and queues - the frames of another kind waiting for their
  * turn and the waits for answers among them - are process-local state of this channel instance, as
- * a socket's write buffer is - not a Hilos::$rt collection. Nothing but the two ends of this one channel reads them, and
- * they end with it, as the write buffer of a dropped connection does; the stream id is minted per instance, so
- * a replaced channel is a new epoch. The id only has to not collide with the previous epoch of the
+ * a socket's write buffer is - not a Hilos::$rt collection. Only the local host reads this bookkeeping.
+ * Peer replacement transfers logical work and its frame/answer boundaries; wire positions and credit
+ * stay with the old channel. The stream id is minted per instance, so a replaced channel is a new
+ * epoch. The id only has to not collide with the previous epoch of the
  * same link - nobody gains anything by guessing it - so it is drawn from the tolerant random axis.
  */
 final class RtSyncStreamChannel
@@ -93,6 +96,8 @@ final class RtSyncStreamChannel
     private int $revision = 0;
     private int $nextSequence = 1;
     private ?RtSyncStreamEncoder $encoder = null;
+    /** Logical operation retained until its final part, so an ordinary write can restart in a new epoch */
+    private RtSyncStreamOperation|RtSyncStreamSnapshot|null $sending = null;
     /** Revision of the operation the encoder cuts */
     private int $sendingRevision = 0;
     /**
@@ -252,9 +257,89 @@ final class RtSyncStreamChannel
     }
 
     /**
+     * @internal Moves unfinished ordinary writes and their exact frame/answer boundaries to an unused sending
+     * direction. Fully sent operations are not replayed; their old answer obligations end. Snapshots are canceled,
+     * including queued cuts: the host must renew their interest/debt and close the old transport so remote staging
+     * cancels. Frame callbacks must already route through the successor; this door only preserves their boundaries.
+     * Original revisions and their high-water mark survive, so later writes do not extend transferred waits.
+     * A callback failure is rethrown after the other ready callbacks and the successor's wake.
+     *
+     * @param self $replacement Successor whose incoming direction may already be in use
+     * @param Closure(RtSyncStreamSnapshot): void $cancelSnapshot Reports each canceled cut, without claiming delivery
+     * @throws LogicException When the successor is this channel, closed, has used its sending direction, or a lease/work protocol broke
+     * @throws InvalidFormatException Never: the successor writes valid parts and answers
+     * @throws InvalidArgumentException Never: a fresh allowance is valid
+     */
+    public function moveUnsentTo(self $replacement, Closure $cancelSnapshot): void
+    {
+        if ($replacement === $this) {
+            throw new LogicException('An RT stream cannot transfer its sending direction to itself');
+        }
+        if (!$this->isWriting() && $this->awaiting === [] && $this->behind->isEmpty() && $this->answerWaits->isEmpty()) {
+            return;
+        }
+        if ($replacement->closed || $replacement->revision !== 0 || $replacement->nextSequence !== 1
+            || $replacement->isWriting() || $replacement->awaiting !== []
+            || !$replacement->behind->isEmpty() || !$replacement->answerWaits->isEmpty()) {
+            throw new LogicException('An RT stream successor must have an unused sending direction');
+        }
+
+        $canceled = new SplQueue();
+        $replacement->revision = $this->revision;
+        if ($this->sending instanceof RtSyncStreamOperation) {
+            $replacement->sending = $this->sending;
+            $replacement->sendingRevision = $this->sendingRevision;
+            $replacement->encoder = new RtSyncStreamEncoder($this->sending);
+        } elseif ($this->sending instanceof RtSyncStreamSnapshot) {
+            $canceled->enqueue($this->sending);
+        }
+        while (!$this->outbox->isEmpty()) {
+            $operation = $this->outbox->dequeue();
+            if ($operation instanceof RtSyncStreamSnapshot) {
+                $canceled->enqueue($operation);
+            } else {
+                $replacement->outbox->enqueue($operation);
+            }
+        }
+        $replacement->behind = $this->behind;
+        $replacement->answerWaits = $this->answerWaits;
+        $this->behind = new SplQueue();
+        $this->answerWaits = new SplQueue();
+        $this->encoder = null;
+        $this->sending = null;
+        $this->awaitingNext = false;
+        $this->awaiting = [];
+        $this->awaitingRevisions = [];
+
+        // Commit every ownership change before any callback can pump or transfer again.
+        $failure = null;
+        while (!$canceled->isEmpty()) {
+            try {
+                $cancelSnapshot($canceled->dequeue());
+            } catch (Throwable $raised) {
+                $failure ??= $raised;
+            }
+        }
+        try {
+            $replacement->writeBehind();
+        } catch (Throwable $raised) {
+            $failure ??= $raised;
+        }
+        try {
+            $replacement->endAnsweredAndWake();
+        } catch (Throwable $raised) {
+            $failure ??= $raised;
+        }
+        if ($failure !== null) {
+            throw $failure;
+        }
+    }
+
+    /**
      * Writes at once every frame of another kind still waiting for its turn, in the order the host
-     * wrote them: the host's link carries no more of this channel's parts - a draining peer link - so
-     * nothing they wait for would ever go out ahead of them on it.
+     * wrote them: the host's link carries no more of this channel's parts and has no successor to
+     * carry its unfinished work. Peer replacement transfers the waiting frames through moveUnsentTo()
+     * instead, preserving each frame's boundary on the new route.
      */
     public function releaseWaiting(): void
     {
@@ -284,7 +369,8 @@ final class RtSyncStreamChannel
     /**
      * Tells the host once every operation this channel took before the call is answered - `applied`,
      * `refused` or `gap` - or dropped before its first part, at once when none is left. Operations
-     * taken after the call hold nothing. Waits end in the order the host asked for them. $then may
+     * are bounded by the revision captured when this wait is enqueued; later operations hold nothing,
+     * including after transfer to a successor. Waits end in the order the host asked for them. $then may
      * raise: what it raises reaches whoever ended the wait - this call when nothing is left, the
      * answer read, or the end of every wait ({@see self::endAnswerWaits()}) - once the other waits ready
      * on that same answer or at that end are told all the same.
@@ -298,11 +384,12 @@ final class RtSyncStreamChannel
     }
 
     /**
-     * Ends every wait for answers now, in the order the host asked for them: the host's link brings
-     * no more answers or carries no more parts - a closed or draining peer link - so what they wait
-     * for would never come. Unlike {@see self::releaseWaiting()} it writes no frame. A wait that
-     * raises does not keep the others from being told, nor those asked from inside: the first
-     * failure is raised once the queue is empty, to whoever ended the waits.
+     * Ends every wait for answers still held here, in the order the host asked for them: the host's
+     * link closed, drains without a successor, or has only fully sent old work left on replacement.
+     * Unfinished ordinary writes and their waits move through moveUnsentTo() instead; ending the
+     * donor's remaining waits cannot end a transferred wait. Unlike {@see self::releaseWaiting()}
+     * it writes no frame. A wait that raises does not keep the others from being told, nor those
+     * asked from inside: the first failure is raised once the queue is empty, to whoever ended the waits.
      */
     public function endAnswerWaits(): void
     {
@@ -468,10 +555,12 @@ final class RtSyncStreamChannel
             $this->awaitingNext = false;
             if ($status !== RtSyncStreamStatus::Next) {
                 $this->encoder = null;
+                $this->sending = null;
                 Logger::warning("An RT stream operation was answered {$status->value} before its end [sequence={$answer->sequence}]");
-                $this->endAnswered();
+                $this->endAnsweredAndWake();
+            } else {
+                $this->wakeUp();
             }
-            $this->wakeUp();
 
             return;
         }
@@ -481,8 +570,7 @@ final class RtSyncStreamChannel
             if ($status !== RtSyncStreamStatus::Applied) {
                 Logger::warning("An RT stream operation was not applied: {$status->value} [sequence={$answer->sequence}]");
             }
-            $this->endAnswered();
-            $this->wakeUp();
+            $this->endAnsweredAndWake();
 
             return;
         }
@@ -579,6 +667,7 @@ final class RtSyncStreamChannel
                     return false;
                 }
                 $operation = $this->outbox->dequeue();
+                $this->sending = $operation;
                 $this->sendingRevision = $operation->revision;
                 $this->encoder = new RtSyncStreamEncoder($operation);
                 $this->sentPart = -1;
@@ -590,6 +679,7 @@ final class RtSyncStreamChannel
                 $bytes = $this->encoder->nextPart($budget);
             } catch (InvalidFormatException $unwritable) {
                 $this->encoder = null;
+                $this->sending = null;
                 if ($this->sentPart < 0) {
                     Logger::warning('An RT stream operation cannot be written and is dropped before its first part: '
                         . $unwritable->getMessage());
@@ -622,14 +712,16 @@ final class RtSyncStreamChannel
     private function writePart(bool $final, string $bytes): void
     {
         $part = ++$this->sentPart;
-        $this->emit(RtSyncStreamFrame::part($this->streamId, $this->sendingSequence, $part, $final, $bytes));
+        $frame = RtSyncStreamFrame::part($this->streamId, $this->sendingSequence, $part, $final, $bytes);
         if ($final) {
             $this->awaiting[$this->sendingSequence] = $part;
             $this->awaitingRevisions[$this->sendingSequence] = $this->sendingRevision;
             $this->encoder = null;
+            $this->sending = null;
         } else {
             $this->awaitingNext = true;
         }
+        $this->emit($frame);
     }
 
     /**
@@ -659,9 +751,17 @@ final class RtSyncStreamChannel
             !$this->outbox->isEmpty() => $this->outbox->bottom()->revision,
             default => $this->revision + 1,
         };
+        $failure = null;
         while (!$this->behind->isEmpty() && $this->behind->bottom()[0] < $unsent) {
             [, $write] = $this->behind->dequeue();
-            $write();
+            try {
+                $write();
+            } catch (Throwable $raised) {
+                $failure ??= $raised;
+            }
+        }
+        if ($failure !== null) {
+            throw $failure;
         }
     }
 
@@ -682,6 +782,32 @@ final class RtSyncStreamChannel
             } catch (Throwable $raised) {
                 $failure ??= $raised;
             }
+        }
+        if ($failure !== null) {
+            throw $failure;
+        }
+    }
+
+    /**
+     * A ready wait may raise after an answer freed credit. Wake the remaining work all the same,
+     * then return the first failure, so a full sending window cannot strand its queued tail.
+     *
+     * @throws LogicException When a segmented lease closed or a work protocol broke
+     * @throws InvalidFormatException Never: the parts and answers this end writes are valid
+     * @throws InvalidArgumentException Never: a fresh allowance is valid
+     */
+    private function endAnsweredAndWake(): void
+    {
+        $failure = null;
+        try {
+            $this->endAnswered();
+        } catch (Throwable $raised) {
+            $failure = $raised;
+        }
+        try {
+            $this->wakeUp();
+        } catch (Throwable $raised) {
+            $failure ??= $raised;
         }
         if ($failure !== null) {
             throw $failure;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Error;
 use Generator;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeIdentity;
@@ -15,16 +16,22 @@ use Hilos\Cluster\Peer\DTO\PeerCommandReplyDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerDrainDTO;
 use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
+use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerPingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
+use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
 use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
+use Hilos\Cluster\Peer\DTO\PeerSourceInterestDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
+use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
+use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -92,14 +99,17 @@ use Hilos\Socket\Worker\DTO\WorkerRtStalenessMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Socket\Worker\DTO\WorkerSourceInterestDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use Hilos\Tests\Unit\Cluster\Peer\NamedPeerTestTransport;
 use Hilos\Tests\Unit\Cluster\Peer\PeerTestMarkers;
 use Hilos\Tests\Unit\Cluster\Peer\PeerTestTls;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use ReflectionMethod;
 use ReflectionProperty;
 use Socket;
+use WeakReference;
 
 /**
  * The ordinary RT stream over real socket pairs into a real master: the worker frames are parsed
@@ -1847,21 +1857,546 @@ final class RtSyncStreamTransportTest extends TestCase
     }
 
     /**
-     * A draining link writes no more parts of its stream, so a signal or an agent's status waiting
-     * behind a write's parts would never go out there: the drain writes both at once, in their order,
-     * ahead of the route's end marker.
+     * The actual ready/ack switch restarts a queued or partially emitted write on the new socket;
+     * the receiving master and reading worker apply its original data once, before the next write.
+     *
+     * @param bool $partial Whether the old transport already emitted the first part
      */
-    public function testADrainingLinkWritesTheSignalWaitingForItsStreamAheadOfItsMarker(): void
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testReplacementDeliversQueuedAndPartialWritesOnTheNewSocket(bool $partial): void
+    {
+        [$a, $b, $old] = $this->replacementServers();
+        if (!$partial) {
+            $b->setRtSyncStreamWake(static function (): void {
+            });
+        }
+        $row = ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)];
+        $old[1][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', $row), 'node-b');
+        $old[1][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-2', ['owner' => null]), 'node-b');
+        $oldParts = $this->relayReplacement($old[1], $old[0]);
+        $this->assertCount($partial ? 1 : 0, $oldParts);
+        if ($partial) {
+            $this->assertFalse($oldParts[0]->frame->final);
+        }
+        $b->setRtSyncStreamWake(static function (): void {
+        });
+        $new = $this->replacementPair($a, $b, true);
+        $old[1][0]->close();
+        $old[0][0]->close();
+        $this->assertSame([], $this->reader->applied, 'The old partial write was never applied');
+        $history = [];
+        for ($pass = 0; $pass < 32 && count($this->reader->applied) < 2; ++$pass) {
+            $this->drain($new[1][0]->rtSyncStream());
+            array_push($history, ...$this->relayReplacement($new[1], $new[0]));
+            $this->drain($new[0][0]->rtSyncStream());
+            $this->master->drain();
+            $this->deliverToReader();
+            $this->relayReplacement($new[0], $new[1]);
+        }
+        $this->assertSame(['write row-1', 'write row-2'], $this->reader->applied);
+        $this->assertSame($row, RtRowValues::nativeMap($this->reader->delivered[0]->row));
+        $parts = array_values(array_filter($history, static fn (PeerDTO $frame): bool => $frame instanceof PeerRtSyncStreamDTO));
+        $this->assertCount(3, $parts);
+        $this->assertSame([1, 0, false], [$parts[0]->frame->sequence, $parts[0]->frame->part, $parts[0]->frame->final]);
+        if ($partial) {
+            $this->assertNotSame($oldParts[0]->frame->streamId, $parts[0]->frame->streamId);
+            $this->assertSame($oldParts[0]->frame->data, $parts[0]->frame->data);
+        }
+    }
+
+    /**
+     * Characterizes the unresolved cross-link order: an old final on its socket, or partway through
+     * decode, applies after the transferred and new updates. Only the outgoing W1/F1/W2 order holds.
+     *
+     * @param bool $accepted Whether the old final is accepted and partway through decode
+     */
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testReplacementLeavesAWhollySentOldFinalOutsideTheNewEpochOrder(bool $accepted): void
+    {
+        [$a, $b, $old] = $this->replacementServers();
+        $this->reader->received = [];
+        $a->setRtSyncStreamWake(static function (): void {
+        });
+        $b->setRtSyncStreamWake(static function (): void {
+        });
+        $donor = $old[1][0]->rtSyncStream();
+        $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['value' => 0]), 'node-b');
+        $this->drain($donor);
+        $old[1][0]->write();
+        $final = $this->wireDtos($old[1][1]);
+        $this->assertCount(1, $final);
+        $this->assertTrue($final[0]->frame->final);
+        $bytes = $final[0]->toJson() . "\n";
+        $this->assertSame(strlen($bytes), socket_write($old[0][1], $bytes));
+        if ($accepted) {
+            $old[0][0]->read();
+            $this->assertTrue($old[0][0]->rtSyncStream()->pump(new RtWorkBudget(4, 4096)));
+            $this->assertTrue($old[0][0]->rtSyncStream()->isReading(), 'The old decode still needs another portion');
+        }
+        $donor->send(new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 1], previous: ['value' => 0]), 'node-b');
+        $old[1][0]->sendFrame($this->signalToReader());
+        $a->setRtSyncStreamWake($this->master->wakeRtSyncStream(...));
+        $new = $this->replacementPair($a, $b, true);
+        $new[1][0]->rtSyncStream()->send(
+            new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 2], previous: ['value' => 1]), 'node-b');
+        $this->drain($new[1][0]->rtSyncStream());
+        $this->relayReplacement($new[1], $new[0]);
+        $this->drain($new[0][0]->rtSyncStream());
+        $this->master->drain();
+        $this->deliverToReader();
+        $this->assertSame([1, 2], array_map(
+            static fn (RtSyncStreamOperation $operation): int => RtRowValues::nativeMap($operation->row)['value'],
+            $this->reader->delivered,
+        ), 'The outgoing transfer does not fence the old incoming epoch');
+
+        $this->relayReplacement($old[1], $old[0]);
+        $this->drain($old[0][0]->rtSyncStream());
+        $this->drain($new[0][0]->rtSyncStream());
+        $this->master->drain();
+        $this->deliverToReader();
+        $this->assertSame([1, 2, 0], array_map(
+            static fn (RtSyncStreamOperation $operation): int => RtRowValues::nativeMap($operation->row)['value'],
+            $this->reader->delivered,
+        ));
+        $this->assertSame(['row-1', 'row-1', 'row-1'], array_column($this->reader->delivered, 'stateId'));
+        $this->assertSame([
+            WorkerRtSyncStreamDTO::class, DaemonAgentMessageDTO::class,
+            WorkerRtSyncStreamDTO::class, WorkerRtSyncStreamDTO::class,
+        ], $this->reader->received, 'W1/F1/W2 keep their order; the wholly sent W0 arrives afterward');
+    }
+
+    /** An old final already queued for daemon apply keeps its existing source FIFO position after replacement. */
+    public function testAnOldFinalAlreadyQueuedForDaemonApplyKeepsItsFifoAfterReplacement(): void
+    {
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            [$a, $b, $old] = $this->replacementServers();
+            $a->setRtSyncStreamWake($this->master->wakeRtSyncStream(...));
+            $b->setRtSyncStreamWake(static function (): void {
+            });
+            $busy = 0;
+            new ReflectionMethod(DaemonManager::class, 'queueSignalEffect')->invoke($this->master, static function () use (&$busy): Generator {
+                for (; $busy < 256; ++$busy) {
+                    yield;
+                }
+            });
+            $donor = $old[1][0]->rtSyncStream();
+            $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['value' => 0]), 'node-b');
+            $this->drain($donor);
+            $this->relayReplacement($old[1], $old[0]);
+            $oldIncoming = $old[0][0]->rtSyncStream();
+            $this->assertTrue($oldIncoming->isReading());
+            $this->assertTrue($oldIncoming->pump(new RtWorkBudget(4, 4096)), 'Decode consumes portions before apply');
+            $this->assertTrue($oldIncoming->isReading());
+            $this->drain($oldIncoming);
+            $this->assertFalse($oldIncoming->isReading(), 'The host returned null, with its apply still queued');
+            $this->assertLessThan(256, $busy);
+            $this->assertSame([], $this->reader->delivered);
+
+            $donor->send(new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 1], previous: ['value' => 0]), 'node-b');
+            $new = $this->replacementPair($a, $b, true);
+            $new[1][0]->rtSyncStream()->send(
+                new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 2], previous: ['value' => 1]), 'node-b');
+            $this->drain($new[1][0]->rtSyncStream());
+            $this->relayReplacement($new[1], $new[0]);
+            $this->relayReplacement($old[1], $old[0]);
+            $this->drain($new[0][0]->rtSyncStream());
+            $this->assertSame([], $this->reader->delivered);
+            $oldReference = WeakReference::create($old[0][0]);
+            new ReflectionMethod(AbstractServer::class, 'dropClient')->invoke($a, $old[0][0]);
+            unset($old[0], $oldIncoming);
+            gc_collect_cycles();
+            $this->assertNull($oldReference->get(), 'Only incoming channel work survives the donor socket');
+
+            for ($pass = 0; $pass < 128 && count($this->reader->delivered) < 3; ++$pass) {
+                new ReflectionMethod(DaemonManager::class, 'dispatchSignalsWithinBudget')->invoke($this->master);
+                $this->deliverToReader();
+            }
+            $this->assertSame([0, 1, 2], array_map(
+                static fn (RtSyncStreamOperation $operation): int => RtRowValues::nativeMap($operation->row)['value'],
+                $this->reader->delivered,
+            ));
+            $this->relayReplacement($new[0], $new[1]);
+            $this->assertTrue($new[1][0]->rtSyncStream()->isIdle(), 'Transferred waits receive their new-epoch answers');
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
+    }
+
+    /** A wholly sent write is not replayed, and only the transferred write holds the mixed answer wait. */
+    public function testReplacementEndsFullySentObligationsButKeepsTheMixedWaitUntilTheNewAnswer(): void
+    {
+        [$a, $b, $old] = $this->replacementServers();
+        $donor = $old[1][0]->rtSyncStream();
+        $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'sent', ['value' => 0]), 'node-b');
+        $this->relayReplacement($old[1], $old[0]);
+        $this->master->drain();
+        $this->deliverToReader();
+        $old[0][0]->write();
+        $oldAnswers = $this->wireDtos($old[0][1]);
+        $this->assertCount(1, $oldAnswers);
+        $this->assertSame(RtSyncStreamStatus::Applied, $oldAnswers[0]->frame->status);
+        $told = [];
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'sent only';
+        });
+        $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'transferred',
+            ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]), 'node-b');
+        $oldParts = $this->relayReplacement($old[1], $old[0]);
+        $this->assertCount(1, $oldParts);
+        $this->assertFalse($oldParts[0]->frame->final);
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'mixed';
+        });
+        $b->setRtSyncStreamWake(static function (): void {
+        });
+        $new = $this->replacementPair($a, $b, true);
+        $this->assertSame(['sent only'], $told, 'Transfer ends only the wholly sent old obligation');
+        $old[1][0]->close();
+        $old[0][0]->close();
+        $donor->receive($oldAnswers[0]->frame);
+        $bytes = $oldAnswers[0]->toJson() . "\n";
+        $this->assertSame(strlen($bytes), socket_write($new[1][1], $bytes));
+        $new[1][0]->read();
+        $this->assertSame(['sent only'], $told, 'Neither old close nor an old-epoch answer ends the mixed wait');
+        $successor = $new[1][0]->rtSyncStream();
+        $successor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'later', ['value' => 3]), 'node-b');
+        $this->drain($successor);
+        $first = $this->relayReplacement($new[1], $new[0]);
+        $this->assertCount(1, $first);
+        $this->assertSame([1, 0, false], [$first[0]->frame->sequence, $first[0]->frame->part, $first[0]->frame->final]);
+        $this->drain($new[0][0]->rtSyncStream());
+        $this->relayReplacement($new[0], $new[1]);
+        $this->drain($successor);
+        $tail = $this->relayReplacement($new[1], $new[0]);
+        $this->assertCount(2, $tail, 'The successor sends the restarted final part and the later write');
+        $this->drain($new[0][0]->rtSyncStream());
+        $this->master->drain();
+        $this->deliverToReader();
+        $this->assertSame(['write sent', 'write transferred', 'write later'], $this->reader->applied,
+            'The wholly sent write is applied once, without a replay in the successor epoch');
+        $new[0][0]->write();
+        $answers = $this->wireDtos($new[0][1]);
+        $this->assertCount(2, $answers);
+        $this->assertSame([1, 2], [$answers[0]->frame->sequence, $answers[1]->frame->sequence]);
+        $this->assertSame(['sent only'], $told, 'Sending and applying still leave the transferred answer outstanding');
+        $bytes = $answers[0]->toJson() . "\n";
+        $this->assertSame(strlen($bytes), socket_write($new[1][1], $bytes));
+        $new[1][0]->read();
+        $this->assertSame(['sent only', 'mixed'], $told);
+        $this->assertFalse($successor->isIdle(), 'The later write has its own unanswered obligation');
+        $bytes = $answers[1]->toJson() . "\n";
+        $this->assertSame(strlen($bytes), socket_write($new[1][1], $bytes));
+        $new[1][0]->read();
+        $this->assertTrue($successor->isIdle());
+    }
+
+    /**
+     * F1 keeps its W1 boundary rather than waiting for W2/W3. Agent counts and callbacks survive
+     * the donor's collection; later stop/restart frames follow the signal on the successor.
+     *
+     * @param bool $packed Whether fan-out supplies the packed frame
+     */
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testReplacementRoutesWaitingFramesAndAgentFifoWithoutRetainingTheDonor(bool $packed): void
+    {
+        [$a, $b, $old] = $this->replacementServers();
+        $b->setRtSyncStreamWake(static function (): void {
+        });
+        $donor = $old[1][0];
+        $donor->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]), 'node-b');
+        $signal = $this->signalToReader();
+        if ($packed) {
+            $donor->sendPackedFrame($signal, $signal->toJson());
+        } else {
+            $donor->sendFrame($signal);
+        }
+        $donor->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-2',
+            ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]), 'node-b');
+        $donor->sendFrame(PeerAgentStatusDTO::stopped(RtSyncStreamTransportTestAgent::AGENT_TYPE, null));
+        $secondSignal = new PeerSignalDTO('node-b', 'node-a', RtSyncStreamTransportTestAgent::AGENT_TYPE, 'other', $signal->signal);
+        $donor->sendFrame($secondSignal);
+        $new = $this->replacementPair($a, $b, true);
+        $new[1][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-3', ['owner' => null]), 'node-b');
+        $stop = new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, null);
+        $restart = new PeerAgentRestartDTO('cid-1', 'node-b', RtSyncStreamTransportTestAgent::AGENT_TYPE, null, null, false);
+        $secondStop = new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, 'other');
+        $donor->sendPackedFrame($stop, $stop->toJson());
+        $donor->sendFrame($restart);
+        $donor->sendFrame($secondStop);
+        $new[1][0]->sendFrame(new PeerPingDTO());
+        $new[1][0]->sendFrame(new PeerHeartbeatDTO(1, 'node-b', true));
+        $new[1][0]->write();
+        $this->assertSame([PeerPingDTO::class, PeerHeartbeatDTO::class], $this->wireFrames($new[1][1]),
+            'Control frames bypass the transferred RT barrier');
+        $old[1][0]->write();
+        $this->assertSame([PeerDrainDTO::class], $this->wireFrames($old[1][1]));
+        $weak = WeakReference::create($donor);
+        $b->dropClient($donor);
+        unset($donor, $old[1]);
+        gc_collect_cycles();
+        $this->assertNull($weak->get(), 'Waiting callbacks retain their route, never the closed donor');
+
+        $this->drain($new[1][0]->rtSyncStream());
+        $first = $this->relayReplacement($new[1], $new[0]);
+        $this->assertSame([PeerRtSyncStreamDTO::class, PeerSignalDTO::class, PeerRtSyncStreamDTO::class],
+            array_map(static fn (PeerDTO $frame): string => $frame::class, $first));
+        $this->assertFalse($first[2]->frame->final, 'F1 is already out while W2 still awaits credit');
+        $this->assertSame($signal->toJson(), $first[1]->toJson());
+        $this->drain($new[0][0]->rtSyncStream());
+        $this->master->drain();
+        $this->deliverToReader();
+        $this->relayReplacement($new[0], $new[1]);
+        $this->drain($new[1][0]->rtSyncStream());
+        $new[1][0]->write();
+        $last = $this->wireDtos($new[1][1]);
+        $this->assertSame(
+            [PeerRtSyncStreamDTO::class, PeerAgentStatusDTO::class, PeerSignalDTO::class, PeerRtSyncStreamDTO::class,
+                PeerStopAgentDTO::class, PeerAgentRestartDTO::class, PeerStopAgentDTO::class],
+            array_map(static fn (PeerDTO $frame): string => $frame::class, $last),
+        );
+        $this->assertSame($secondSignal->toJson(), $last[2]->toJson());
+        $this->assertSame($secondStop->toJson(), $last[6]->toJson(), 'Each agent keeps its own waiting count after the switch');
+        $this->assertSame([2, 3], [$last[0]->frame->sequence, $last[3]->frame->sequence]);
+    }
+
+    /** Two ready/ack replacements restart a partial write, preserving its frame and waits past both collected donors. */
+    public function testRepeatedReplacementCarriesTheCurrentRoutePastCollectedDonors(): void
+    {
+        [$a, $b, $old] = $this->replacementServers();
+        $b->setRtSyncStreamWake(static function (): void {
+        });
+        $row = ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)];
+        $old[1][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', $row), 'node-b');
+        $old[1][0]->sendFrame($this->signalToReader());
+        $told = 0;
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$told): void {
+            ++$told;
+        });
+        $this->drain($old[1][0]->rtSyncStream());
+        $old[1][0]->write();
+        $firstPart = $this->wireDtos($old[1][1])[0]->frame;
+        $middle = $this->replacementPair($a, $b, true);
+        $this->drain($middle[1][0]->rtSyncStream());
+        $middle[1][0]->write();
+        $secondPart = $this->wireDtos($middle[1][1])[0]->frame;
+        $this->assertSame([false, false], [$firstPart->final, $secondPart->final]);
+        $this->assertSame($firstPart->data, $secondPart->data);
+        $this->assertNotSame($firstPart->streamId, $secondPart->streamId);
+        $latest = $this->replacementPair($a, $b, true);
+        $late = 0;
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$late): void {
+            ++$late;
+        });
+        foreach ([[$old[1][0], $firstPart], [$middle[1][0], $secondPart]] as [$link, $part]) {
+            $answer = RtSyncStreamFrame::ack($part->streamId, $part->sequence, $part->part, RtSyncStreamStatus::Next);
+            $link->rtSyncStream()->receive($answer);
+            $latest[1][0]->rtSyncStream()->receive($answer);
+        }
+        unset($link, $part);
+        $this->assertSame([0, 0], [$told, $late]);
+        $firstWeak = WeakReference::create($old[1][0]);
+        $secondWeak = WeakReference::create($middle[1][0]);
+        $b->dropClient($old[1][0]);
+        $b->dropClient($middle[1][0]);
+        $this->assertNotContains($old[1][0], $b->getClients());
+        $this->assertNotContains($middle[1][0], $b->getClients());
+        $this->assertSame([0, 0], [$told, $late], 'Closing both donors cannot complete the current obligation');
+        unset($old[1], $middle[1]);
+        gc_collect_cycles();
+        $this->assertNull($firstWeak->get());
+        $this->assertNull($secondWeak->get());
+        $this->drain($latest[1][0]->rtSyncStream());
+        $head = $this->relayReplacement($latest[1], $latest[0]);
+        $this->assertCount(1, $head);
+        $this->assertFalse($head[0]->frame->final);
+        $this->assertSame($firstPart->data, $head[0]->frame->data);
+        $this->drain($latest[0][0]->rtSyncStream());
+        $this->relayReplacement($latest[0], $latest[1]);
+        $this->drain($latest[1][0]->rtSyncStream());
+        $sent = $this->relayReplacement($latest[1], $latest[0]);
+        $this->assertSame([PeerRtSyncStreamDTO::class, PeerSignalDTO::class],
+            array_map(static fn (PeerDTO $frame): string => $frame::class, $sent));
+        $this->drain($latest[0][0]->rtSyncStream());
+        $this->master->drain();
+        $this->deliverToReader();
+        $this->relayReplacement($latest[0], $latest[1]);
+        $this->assertSame(['write row-1'], $this->reader->applied);
+        $this->assertSame($row, RtRowValues::nativeMap($this->reader->delivered[0]->row));
+        $this->assertSame([1, 1], [$told, $late]);
+    }
+
+    /**
+     * The current endpoint's real removal ends transferred obligations once, even after the donors were collected.
+     *
+     * @param bool $raises Whether the first completion raises a non-exception Throwable
+     */
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testDroppingTheCurrentReplacementEndsAndReleasesItsStronglyHeldCallbacks(bool $raises): void
+    {
+        [$a, $b, $old] = $this->replacementServers();
+        $b->setRtSyncStreamWake(static function (): void {
+        });
+        $old[1][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1',
+            ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]), 'node-b');
+        $old[1][0]->sendFrame($this->signalToReader());
+        $told = [];
+        $failure = new Error('The closing callback failed');
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$told, $raises, $failure): void {
+            $told[] = 'first';
+            if ($raises) {
+                throw $failure;
+            }
+        });
+        $obligation = static function () use (&$told): void {
+            $told[] = 'owned';
+        };
+        $held = WeakReference::create($obligation);
+        $old[1][0]->afterRtWritesAnswered(static function () use ($obligation): void {
+            $obligation();
+        });
+        unset($obligation);
+        $middle = $this->replacementPair($a, $b, true);
+        $latest = $this->replacementPair($a, $b, true);
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'late';
+        });
+        $firstWeak = WeakReference::create($old[1][0]);
+        $secondWeak = WeakReference::create($middle[1][0]);
+        $b->dropClient($old[1][0]);
+        $b->dropClient($middle[1][0]);
+        $this->assertNotContains($old[1][0], $b->getClients());
+        $this->assertNotContains($middle[1][0], $b->getClients());
+        unset($old[1], $middle[1]);
+        gc_collect_cycles();
+        $this->assertNull($firstWeak->get());
+        $this->assertNull($secondWeak->get());
+        $this->assertNotNull($held->get(), 'The successor holds the callback obligation independently of both donors');
+        $this->assertSame([], $told);
+
+        try {
+            $b->dropClient($latest[1][0]);
+            $this->assertFalse($raises, 'A callback failure must reach the closer');
+        } catch (Error $raised) {
+            $this->assertTrue($raises);
+            $this->assertSame($failure, $raised);
+        }
+        $this->assertNotContains($latest[1][0], $b->getClients(), 'Removal finishes even when completion raises');
+        $this->assertSame(['first', 'owned', 'late'], $told);
+        $this->assertNull($held->get(), 'Completing the obligation releases its strong capture');
+        $b->dropClient($latest[1][0]);
+        $latest[1][0]->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'closed';
+        });
+        $b->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'server';
+        });
+        $this->assertSame(['first', 'owned', 'late', 'closed', 'server'], $told);
+        $currentWeak = WeakReference::create($latest[1][0]);
+        unset($latest[1]);
+        gc_collect_cycles();
+        $this->assertNull($currentWeak->get(), 'Pending frame routing cannot retain the closed current socket');
+        $this->assertSame([], $this->reader->applied, 'A real close cannot turn an unfinished write into delivery');
+    }
+
+    /** A ready wait raises during activation; every ready wait, the drain marker and the transferred tail survive. */
+    public function testAReadyCallbackFailureDuringReplacementStillFinishesTheDrainAndActivation(): void
+    {
+        [$a, $b, $old] = $this->replacementServers();
+        $b->setRtSyncStreamWake(static function (): void {
+        });
+        $old[1][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]), 'node-b');
+        $this->drain($old[1][0]->rtSyncStream());
+        $failure = new EventLoopException('The ready fact failed');
+        $told = [];
+        $old[1][0]->afterRtWritesAnswered(static function () use ($failure, &$told): void {
+            $told[] = 'raises';
+            throw $failure;
+        });
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'ready';
+        });
+        $old[1][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-2', ['owner' => null]), 'node-b');
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'transferred';
+        });
+        $first = $this->replacementEndpoint($a, 'node-a', 'node-b', true);
+        $second = $this->replacementEndpoint($b, 'node-b', 'node-a', false);
+        $first[0]->startHandshake();
+        $this->relayReplacement($first, $second);
+        $this->relayReplacement($second, $first);
+        try {
+            $this->relayReplacement($first, $second);
+            $this->fail('The ready callback failure reaches activation');
+        } catch (EventLoopException $raised) {
+            $this->assertSame($failure, $raised);
+        }
+        $this->assertSame(['raises', 'ready'], $told);
+        $ack = $this->relayReplacement($second, $first);
+        $this->assertEquals([new PeerReadyAckDTO(true), new PeerSourceInterestDTO('node-b', [], [], 0)], $ack);
+        $this->relayReplacement($first, $second);
+        $old[1][0]->write();
+        $this->assertSame([PeerRtSyncStreamDTO::class, PeerDrainDTO::class], $this->wireFrames($old[1][1]));
+        $b->dropClient($old[1][0]);
+        $this->assertSame(['raises', 'ready'], $told, 'Old close does not end the transferred tail');
+        $this->drain($second[0]->rtSyncStream());
+        $this->relayReplacement($second, $first);
+        $this->drain($first[0]->rtSyncStream());
+        $this->master->drain();
+        $this->deliverToReader();
+        $this->relayReplacement($first, $second);
+        $this->assertSame(['raises', 'ready', 'transferred'], $told);
+        $this->assertSame(['write row-2'], $this->reader->applied, 'The fully sent old row was not replayed');
+        $second[0]->close();
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$told): void {
+            $told[] = 'closed';
+        });
+        $this->assertSame(['raises', 'ready', 'transferred', 'closed'], $told);
+    }
+
+    /** No sending direction is opened just to replace an idle link or answer an empty barrier. */
+    public function testAnEmptyReplacementDoesNotOpenAnRtStream(): void
+    {
+        [$a, $b, $old] = $this->replacementServers();
+        $new = $this->replacementPair($a, $b, true);
+        $told = 0;
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$told): void {
+            ++$told;
+        });
+        $stream = new ReflectionProperty(PeerLink::class, 'rtSyncStream');
+        $this->assertSame(1, $told);
+        $this->assertNull($stream->getValue($old[1][0]));
+        $this->assertNull($stream->getValue($new[1][0]));
+        $new[0][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]), 'node-a');
+        $this->relayReplacement($new[0], $new[1]);
+        $this->assertNotNull($stream->getValue($new[1][0]), 'Receiving a write opened only the incoming direction');
+        $third = $this->replacementPair($a, $b, true);
+        $this->assertNull($stream->getValue($third[0][0]), 'A fully sent operation does not need a new outgoing epoch');
+        $this->assertNull($stream->getValue($third[1][0]), 'An incoming-only channel does not open its successor');
+    }
+
+    /** A final drain without a successor still releases waiting frames before its marker and ends answer waits. */
+    public function testAFinalDrainReleasesWaitingFramesAndEndsItsAnswers(): void
     {
         [, $there, $socket] = $this->peerLinks();
-
         $there->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1',
             ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]), 'node-b');
         $there->sendFrame($this->signalToReader());
         $there->sendFrame(PeerAgentStatusDTO::stopped(RtSyncStreamTransportTestAgent::AGENT_TYPE, null));
+        $told = 0;
+        $there->afterRtWritesAnswered(static function () use (&$told): void {
+            ++$told;
+        });
         $there->beginDrain();
         $there->write();
-
+        $this->assertSame(1, $told);
         $this->assertSame([PeerRtSyncStreamDTO::class, PeerSignalDTO::class, PeerAgentStatusDTO::class, PeerDrainDTO::class],
             $this->wireFrames($socket));
     }
@@ -1936,19 +2471,57 @@ final class RtSyncStreamTransportTest extends TestCase
             'The closed link is gone from the active links, so a later wait does not hold on its write never answered');
     }
 
-    /** A draining link writes no more parts of its stream, so the wait for its writes ends as it begins to drain. */
-    public function testADrainingLinkEndsTheWaitForItsRtAnswers(): void
+    /** The aggregate and the real placement stopped consumer wait through replacement, but not for W2. */
+    public function testReplacementKeepsTheAggregateAndStoppedReportBehindTheTransferredAnswer(): void
     {
-        [$remote, $links] = $this->threePeerLinks();
+        [$b, $links] = $this->threePeerLinks();
+        $active = new ReflectionProperty(PeerServer::class, 'activeLinks');
+        $active->setValue($b, array_diff_key($links, ['node-a' => true]));
+        $a = $this->replacementServer('node-a');
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerRtSyncSink($this->master);
+        $b->setRtSyncStreamWake(static function (): void {
+        });
+        $old = $this->replacementPair($a, $b, false);
+        $donor = $old[1][0]->rtSyncStream();
+        $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]), 'node-b');
         $answered = 0;
-        $remote->afterRtWritesAnswered(static function () use (&$answered): void {
+        $b->afterRtWritesAnswered(static function () use (&$answered): void {
             ++$answered;
         });
-        $this->answerRtWrite($links['node-a']);
+        $placement = new ClusterPlacement('node-b', $b, $this->master->worker);
+        new ReflectionProperty(ClusterPlacement::class, 'hosted')->setValue($placement, [RtSyncStreamTransportTestAgent::AGENT_TYPE => 2]);
+        new ReflectionProperty(ClusterPlacement::class, 'placingLeaderId')->setValue($placement, 'node-a');
+        $placement->noteAgentStopped(RtSyncStreamTransportTestAgent::AGENT_TYPE, null);
         $this->answerRtWrite($links['node-c']);
-
-        $links['node-d']->beginDrain();
-        $this->assertSame(1, $answered, 'The draining link no longer holds the wait');
+        $this->answerRtWrite($links['node-d']);
+        $new = $this->replacementPair($a, $b, true);
+        $late = 0;
+        $old[1][0]->afterRtWritesAnswered(static function () use (&$late): void {
+            ++$late;
+        });
+        $old[1][0]->close();
+        $donor->receive(RtSyncStreamFrame::ack($donor->streamId, 1, 0, RtSyncStreamStatus::Applied));
+        $this->assertSame([0, 0], [$answered, $late], 'Neither old close nor late old ack ends the transferred wait');
+        $this->assertSame($new[1][0], $active->getValue($b)['node-a']);
+        $new[1][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-2', ['owner' => null]), 'node-b');
+        $this->drain($new[1][0]->rtSyncStream());
+        $sent = $this->relayReplacement($new[1], $new[0]);
+        $this->assertSame([PeerRtSyncStreamDTO::class, PeerRtSyncStreamDTO::class],
+            array_map(static fn (PeerDTO $frame): string => $frame::class, $sent), 'Stopped is still held');
+        $this->drain($new[0][0]->rtSyncStream());
+        $this->master->drain();
+        $new[0][0]->write();
+        $answers = $this->wireDtos($new[0][1]);
+        $this->assertCount(2, $answers);
+        $this->assertSame([1, 2], [$answers[0]->frame->sequence, $answers[1]->frame->sequence]);
+        $bytes = $answers[0]->toJson() . "\n";
+        $this->assertSame(strlen($bytes), socket_write($new[1][1], $bytes));
+        $new[1][0]->read();
+        $this->assertSame([1, 1], [$answered, $late], 'The later unacknowledged write does not extend the old waits');
+        $reports = $this->relayReplacement($new[1], $new[0]);
+        $this->assertEquals([PeerAgentStatusDTO::stopped(RtSyncStreamTransportTestAgent::AGENT_TYPE, null)], $reports,
+            'The actual placement stop consumer reports only after every transferred answer');
     }
 
     /**
@@ -1983,6 +2556,99 @@ final class RtSyncStreamTransportTest extends TestCase
         $links['node-d']->write();
         $this->assertSame([PeerRtSyncStreamDTO::class, PeerDrainDTO::class], $this->wireFrames($linkedNodeEnd),
             'The linked node is told the route ends all the same, behind the write already out');
+    }
+
+    /** @return array{PeerServer, PeerServer, array{array{PeerLink, Socket}, array{PeerLink, Socket}}} Real initial handshake */
+    private function replacementServers(): array
+    {
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerRtSyncSink($this->master);
+        Hilos::$cluster->registerAgentSignalSink($this->master);
+        $a = $this->replacementServer('node-a');
+        $b = $this->replacementServer('node-b');
+        $this->hostOnReader();
+
+        return [$a, $b, $this->replacementPair($a, $b, false)];
+    }
+
+    /**
+     * @param string $nodeId Certified identity
+     * @return PeerServer Real owner, without timers or another process
+     */
+    private function replacementServer(string $nodeId): PeerServer
+    {
+        return new PeerServer('127.0.0.1', 0, NodeIdentity::of($nodeId, $nodeId, NodeRole::Master, []),
+            [], PeerTestTls::unread(), PeerTestMarkers::shared());
+    }
+
+    /**
+     * @param PeerServer $a First owner
+     * @param PeerServer $b Second owner
+     * @param bool $replacement Whether A dials the preferred replacement
+     * @return array{array{PeerLink, Socket}, array{PeerLink, Socket}} Endpoints with relay sockets
+     */
+    private function replacementPair(PeerServer $a, PeerServer $b, bool $replacement): array
+    {
+        $first = $this->replacementEndpoint($a, 'node-a', 'node-b', $replacement);
+        $second = $this->replacementEndpoint($b, 'node-b', 'node-a', !$replacement);
+        [$dialer, $acceptor] = $replacement ? [$first, $second] : [$second, $first];
+        $dialer[0]->startHandshake();
+        $this->assertInstanceOf(PeerHelloDTO::class, $this->relayReplacement($dialer, $acceptor)[0]);
+        $this->assertInstanceOf(PeerWelcomeDTO::class, $this->relayReplacement($acceptor, $dialer)[0]);
+        $this->assertEquals([new PeerReadyDTO($replacement)], $this->relayReplacement($dialer, $acceptor));
+        $ack = $this->relayReplacement($acceptor, $dialer);
+        $this->assertEquals(new PeerReadyAckDTO(true), $ack[0]);
+        if ($replacement) {
+            $this->assertEquals([new PeerReadyAckDTO(true), new PeerSourceInterestDTO('node-b', [], [], 0)], $ack);
+            $this->assertEquals([new PeerSourceInterestDTO('node-a', [], [], 0)], $this->relayReplacement($dialer, $acceptor));
+        } else {
+            $this->relayReplacement($dialer, $acceptor);
+        }
+
+        return [$first, $second];
+    }
+
+    /**
+     * @param PeerServer $server Real owner
+     * @param string $local Local identity
+     * @param string $remote Certified peer
+     * @param bool $dialer Direction of the handshake
+     * @return array{PeerLink, Socket} Endpoint and byte relay
+     */
+    private function replacementEndpoint(PeerServer $server, string $local, string $remote, bool $dialer): array
+    {
+        $this->assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
+        foreach ($pair as $socket) {
+            $this->assertTrue(socket_set_nonblock($socket));
+        }
+        $this->sockets[] = $pair[1];
+        $link = new PeerLink($pair[0], $server, NodeIdentity::of($local, $local, NodeRole::Master, []), $dialer,
+            new NamedPeerTestTransport($pair[0], $remote));
+        new ReflectionMethod(PeerServer::class, 'addClient')->invoke($server, $link);
+        new ReflectionMethod(PeerServer::class, 'attachClient')->invoke($server, $link);
+
+        return [$link, $pair[1]];
+    }
+
+    /**
+     * @param array{PeerLink, Socket} $from Sending endpoint
+     * @param array{PeerLink, Socket} $to Actual receiving parser
+     * @return list<PeerDTO> Frames delivered byte for byte
+     */
+    private function relayReplacement(array $from, array $to): array
+    {
+        $from[0]->write();
+        $bytes = '';
+        while (($chunk = socket_read($from[1], 65536)) !== false && $chunk !== '') {
+            $bytes .= $chunk;
+        }
+        if ($bytes !== '') {
+            $this->assertSame(strlen($bytes), socket_write($to[1], $bytes));
+        }
+        $to[0]->read();
+
+        return array_map(PeerDTO::fromWire(...),
+            array_values(array_filter(explode("\n", $bytes), static fn (string $line): bool => $line !== '')));
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Runtime;
 
 use Closure;
 use Generator;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
 use Hilos\Hilos;
 use Hilos\Runtime\RtSnapshot;
@@ -239,6 +240,165 @@ final class RtSyncStreamSnapshotTest extends TestCase
         $this->assertFalse($sender->isIdle(), 'The lost write is never answered on this channel');
     }
 
+    public function testTransferCancelsQueuedSnapshotsWithoutInsertingAFreshCutAheadOfLaterWrites(): void
+    {
+        $this->source();
+        $donor = $this->sender();
+        $donor->send(new RtSyncCreatedSignalData(self::WRITES, 'before', ['value' => 1]));
+        $scope = RtSnapshotScope::sets(['node-b']);
+        $donor->sendSnapshot(SnapshotStreamRtContext::NOTES, $scope, 'node-b', true, announcement: 7);
+        $donor->writeInTurn(function (): void {
+            $this->applied[] = 'frame';
+        });
+        $donor->send(new RtSyncCreatedSignalData(self::WRITES, 'after', ['value' => 2]));
+        $donor->afterAnswered(function (): void {
+            $this->applied[] = 'answered';
+        });
+        $successor = $this->sender();
+        $canceled = [];
+        $donor->moveUnsentTo($successor, static function (RtSyncStreamSnapshot $snapshot) use (&$canceled): void {
+            $canceled[] = $snapshot;
+        });
+        $this->assertCount(1, $canceled);
+        $this->assertSame([SnapshotStreamRtContext::NOTES, $scope, 'node-b', true, 7], [$canceled[0]->collectionKey,
+            $canceled[0]->scope, $canceled[0]->originNodeId, $canceled[0]->partialOwner, $canceled[0]->announcement]);
+        $this->assertSame([], $this->applied);
+        $this->mounted();
+        $this->exchange($successor, $this->receiver());
+        $this->assertSame(['frame', 'write before', 'write after', 'answered'], $this->applied,
+            'The canceled snapshot is not delivered or replaced; the later delta keeps its place');
+        $this->assertSame([1, 2], array_keys($this->sent), 'Only the ordinary writes occupy the new epoch');
+        $this->assertTrue($donor->isIdle());
+    }
+
+    public function testTransferCancelsASnapshotWhoseEncoderConsumedCutBeforeItsFirstPart(): void
+    {
+        $this->source();
+        $donor = $this->sender();
+        $donor->sendSnapshot(SnapshotStreamRtContext::NOTES, RtSnapshotScope::whole());
+        $this->assertTrue($donor->pump(new RtWorkBudget(128, 4096)));
+        $this->assertSame([], $this->toReceiver, 'The encoder spent its allowance before its first part');
+        $donor->send(new RtSyncCreatedSignalData(self::WRITES, 'after', ['value' => 1]));
+        $successor = $this->sender();
+        $canceled = [];
+        $donor->moveUnsentTo($successor, static function (RtSyncStreamSnapshot $snapshot) use (&$canceled): void {
+            $canceled[] = $snapshot;
+        });
+        $this->assertCount(1, $canceled, 'An encoder-owned cut is canceled even though no part went out');
+        $rest = $canceled[0]->nextRows(new RtWorkBudget());
+        $this->assertNotNull($rest);
+        $this->assertNotContains('n0', $rest->ids, 'The sending cut really advanced before any part went out');
+        $this->mounted();
+        $this->exchange($successor, $this->receiver());
+        $this->assertSame(['write after'], $this->applied, 'The consumed cursor is never replayed as a snapshot');
+        $this->assertTrue($donor->isIdle());
+    }
+
+    /** Old EOF discards the staging; cancellation releases the snapshot's boundary while the transferred write keeps its own wait. */
+    public function testTransferCancelsAPartialSnapshotAndOldEofCancelsRemoteStaging(): void
+    {
+        $this->source();
+        $donor = $this->sender();
+        $donor->sendSnapshot(SnapshotStreamRtContext::NOTES, RtSnapshotScope::whole());
+        while ($donor->pump(new RtWorkBudget())) {
+        }
+        $this->assertCount(1, $this->toReceiver);
+        $first = array_shift($this->toReceiver);
+        $this->assertFalse($first->final);
+        $runtime = $this->mounted();
+        $runtime->notes->add(HilosProbeNote::create('old', 'node-b', 'the current base'));
+        $before = $this->texts($runtime);
+        $oldReceiver = $this->receiver();
+        $oldReceiver->receive($first);
+        while ($oldReceiver->pump(new RtWorkBudget())) {
+        }
+        $this->assertSame(['staging'], $this->applied);
+        $told = [];
+        $donor->writeInTurn(static function () use (&$told): void {
+            $told[] = 'snapshot frame';
+        });
+        $donor->afterAnswered(static function () use (&$told): void {
+            $told[] = 'snapshot ended';
+        });
+        $donor->send(new RtSyncCreatedSignalData(self::WRITES, 'after', ['value' => 1]));
+        $donor->writeInTurn(static function () use (&$told): void {
+            $told[] = 'write frame';
+        });
+        $donor->afterAnswered(static function () use (&$told): void {
+            $told[] = 'write answered';
+        });
+        $canceled = [];
+        $successor = $this->sender();
+        $donor->moveUnsentTo($successor, static function (RtSyncStreamSnapshot $snapshot) use (&$canceled): void {
+            $canceled[] = $snapshot->collectionKey;
+        });
+        $this->assertSame(['snapshot frame', 'snapshot ended'], $told,
+            'Only the canceled snapshot boundary is ready; the later ordinary write still holds its frame and wait');
+        foreach (array_splice($this->toSender, 0) as $credit) {
+            $donor->receive($credit);
+        }
+        $donor->pump(new RtWorkBudget());
+        $this->assertSame([], $this->toReceiver, 'Late old credit cannot resume the canceled snapshot');
+        $oldReceiver->close();
+        while ($oldReceiver->pump(new RtWorkBudget())) {
+        }
+        $this->assertSame([SnapshotStreamRtContext::NOTES], $canceled);
+        $this->assertSame(['staging', 'lost'], $this->applied);
+        $this->assertSame($before, $this->texts($runtime), 'The partial snapshot was never published');
+        $this->assertTrue($oldReceiver->isIdle(), 'EOF runs the old staging through its cancellation');
+        $this->assertSame(['snapshot frame', 'snapshot ended'], $told, 'Old EOF cannot end the transferred ordinary wait');
+        $this->exchange($successor, $this->receiver());
+        $this->assertSame(['staging', 'lost', 'write after'], $this->applied);
+        $this->assertSame(['snapshot frame', 'snapshot ended', 'write frame', 'write answered'], $told);
+        $this->assertTrue($donor->isIdle());
+    }
+
+    public function testACancellationFailureDoesNotHideOtherCutsReadyFramesWaitsOrTheSuccessorWake(): void
+    {
+        $this->source();
+        $donor = $this->sender();
+        $donor->sendSnapshot(SnapshotStreamRtContext::NOTES, RtSnapshotScope::whole());
+        $donor->sendSnapshot(SnapshotStreamRtContext::NOTES, RtSnapshotScope::sets(['node-b']));
+        $donor->writeInTurn(function (): void {
+            $this->applied[] = 'frame-1';
+            throw new EventLoopException('The first frame failed');
+        });
+        $donor->writeInTurn(function (): void {
+            $this->applied[] = 'frame-2';
+        });
+        $donor->afterAnswered(function (): void {
+            $this->applied[] = 'wait';
+        });
+        $donor->send(new RtSyncCreatedSignalData(self::WRITES, 'after', ['value' => 1]));
+        $successor = new RtSyncStreamChannel(
+            function (RtSyncStreamFrame $frame): void {
+                $this->toReceiver[] = $frame;
+            },
+            static fn (): null => null,
+        );
+        $failure = new EventLoopException('The first canceled snapshot failed');
+        $cuts = [];
+        try {
+            $donor->moveUnsentTo($successor, static function (RtSyncStreamSnapshot $snapshot) use (&$cuts, $failure): void {
+                $cuts[] = $snapshot->revision;
+                throw $failure;
+            });
+            $this->fail('Transfer must return the first failure after completing the transfer');
+        } catch (EventLoopException $raised) {
+            $this->assertSame($failure, $raised);
+        }
+        $this->assertSame([1, 2], $cuts, 'Every canceled cut is reported despite the failure');
+        $this->assertSame(['frame-1', 'frame-2', 'wait'], $this->applied);
+        $this->assertCount(1, $this->toReceiver, 'The successor was woken despite callback failures');
+        $this->assertTrue($this->toReceiver[0]->final);
+        $successor->receive(RtSyncStreamFrame::ack($successor->streamId, 1, 0, RtSyncStreamStatus::Applied));
+        $donor->releaseWaiting();
+        $donor->endAnswerWaits();
+        $this->assertTrue($successor->isIdle());
+        $this->assertTrue($donor->isIdle());
+        $this->assertSame(['frame-1', 'frame-2', 'wait'], $this->applied, 'No callback runs twice');
+    }
+
     /**
      * @return SnapshotStreamRtContext Fresh runtime of this process, with names bound
      */
@@ -339,6 +499,13 @@ final class RtSyncStreamSnapshotTest extends TestCase
             liveChangeCancels: $beforePublish !== null,
         );
         while (!$snapshot->isWhole() || $snapshot->hasRows()) {
+            if ($snapshot->isLost()) {
+                $import->cancel();
+                $this->applied[] = 'lost';
+                $settled(false);
+
+                return;
+            }
             $this->assertFalse($snapshot->isLost());
             $rows = $snapshot->takeRows(RtSnapshotImport::DEFAULT_RESERVE_BYTES);
             if ($rows === null) {

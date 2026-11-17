@@ -66,11 +66,13 @@ interface PlacementMesh
     public function onlineNodeIds(): array;
 
     /**
-     * $then once every active link to a peer answered every RT operation this node handed its
-     * stream before the call, or closed or began draining; at once when nobody is awaited. No
-     * timer: link liveness bounds the wait. $then may raise: what it raises reaches whoever ended the
-     * wait - this call, an answer, a link's close or drain - and a closing or draining link tells its
-     * other waits all the same.
+     * $then once every active peer route answers the RT operations taken before its wait was registered,
+     * or really closes; at once when nobody is awaited. Replacement transfers unfinished ordinary writes and
+     * their wait boundaries. Fully sent old operations end their answer obligations without replay,
+     * and canceled snapshots end theirs without claiming delivery. Each stream captures its operation
+     * revision when its wait is registered; later writes do not extend that boundary.
+     * Link liveness bounds it; no timer does. A ready callback's failure follows the other ready waits
+     * and cleanup. This sending barrier does not order application across the two incoming epochs.
      *
      * @param Closure(): void $then Told the RT writes are answered
      */

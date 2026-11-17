@@ -168,7 +168,8 @@ use WeakMap;
  * default — every peer learned through gossip, so two nodes that only know each
  * other transitively still raise a direct link. Both directions become framed
  * {@see PeerLink} connections that exchange hello/welcome, then ready/ack before
- * gossip membership. A replaced link drains its queued frames before closing.
+ * gossip membership. Replacement transfers unfinished ordinary RT writes and waiting frames to
+ * the successor; bytes already queued on the old socket drain there before it closes.
  * Every socket operation here is non-blocking, so the master
  * loop is never stalled. The server owns the membership side effects: it merges
  * peers into the master registry and fans out roster/announce gossip so every
@@ -1458,7 +1459,8 @@ final class PeerServer extends AbstractTlsServer implements
     }
 
     /**
-     * Switches the route after the ack is queued or received, then drains the old stream.
+     * Switches the route after ready/ack and transfers unfinished writes before any new fan-out or
+     * notification. Ready callback failures follow the old drain marker and the activation cleanup.
      *
      * @param PeerLink $link Candidate link
      * @param NodeIdentity $remote Certified remote identity
@@ -1476,42 +1478,53 @@ final class PeerServer extends AbstractTlsServer implements
         unset($this->candidateLinks[$remote->nodeId]);
         $link->activate($remote);
         $this->activeLinks[$remote->nodeId] = $link;
-        $this->wakeNodeDials($remote->nodeId);
-        if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
-            $this->protectedMode->noteSlaveSyncChanged();
+        $failure = null;
+        try {
+            $old?->beginDrain($link);
+        } catch (Throwable $raised) {
+            $failure = $raised;
         }
-        unset($this->protectedModeNodeReports[$remote->nodeId]);
-        if ($old === null) {
-            $this->onHandshakeComplete($link, $remote);
-            return;
-        }
+        try {
+            $this->wakeNodeDials($remote->nodeId);
+            if ($this->protectedMode instanceof ProtectedModeSyncScheduler) {
+                $this->protectedMode->noteSlaveSyncChanged();
+            }
+            unset($this->protectedModeNodeReports[$remote->nodeId]);
+            if ($old === null) {
+                $this->onHandshakeComplete($link, $remote);
+                return;
+            }
 
-        $old->beginDrain();
-        $this->reconcilePeerDial(ClusterNode::fromIdentity($remote, true, microtime(true)));
-        $this->uploadMemory?->onPeerChanged();
-        Logger::info("Replaced duplicate peer link to {$remote->nodeId}");
-        $registry = $this->registry();
-        if ($registry !== null && $this->onlineNodeById($registry, $remote->nodeId) === null) {
-            $this->onHandshakeComplete($link, $remote);
-            return;
-        }
-        // The old transport's pending inbound report is canceled by its exact source guard.
-        // Both writers therefore announce their last complete pair afresh after ready/ack,
-        // including an empty pair. The node's repeat arriving here is answered behind a hand-over
-        // of everything it names when this node owes it one - the old link lost on its drain what
-        // the node was to read ({@see PeerLink::beginDrain()}), or a hand-over found its route gone
-        // ({@see self::noteRtHandOverOwed()}) - and as an ordinary announcement otherwise
-        // ({@see self::answeredCollections()}): a replacement is a routine step of a cluster's
-        // start, and nothing else moves to this link.
-        $this->interestRepeatsDue[$remote->nodeId] = true;
-        $link->sendFrame(new PeerSourceInterestDTO(
-            $this->localIdentity->nodeId,
-            $this->announcedRtInterest,
-            $this->announcedDbInterest,
-            $this->announcedInterestNumber,
-        ));
-        if ($remote->role === NodeRole::Slave) {
-            $this->protectedMode?->onSlaveConnected($remote->nodeId);
+            $this->reconcilePeerDial(ClusterNode::fromIdentity($remote, true, microtime(true)));
+            $this->uploadMemory?->onPeerChanged();
+            Logger::info("Replaced duplicate peer link to {$remote->nodeId}");
+            $registry = $this->registry();
+            if ($registry !== null && $this->onlineNodeById($registry, $remote->nodeId) === null) {
+                $this->onHandshakeComplete($link, $remote);
+                return;
+            }
+            // The old transport's pending inbound report is canceled by its exact source guard.
+            // Both writers therefore announce their last complete pair afresh after ready/ack,
+            // including an empty pair. The node's repeat arriving here is answered behind a hand-over
+            // of everything it names when this node owes it one - the old link lost on its drain what
+            // the node was to read ({@see PeerLink::beginDrain()}), or a hand-over found its route gone
+            // ({@see self::noteRtHandOverOwed()}) - and as an ordinary announcement otherwise
+            // ({@see self::answeredCollections()}). Unfinished ordinary writes and their continuations
+            // already moved; encoded bytes and the old stream's wire positions stay on its transport.
+            $this->interestRepeatsDue[$remote->nodeId] = true;
+            $link->sendFrame(new PeerSourceInterestDTO(
+                $this->localIdentity->nodeId,
+                $this->announcedRtInterest,
+                $this->announcedDbInterest,
+                $this->announcedInterestNumber,
+            ));
+            if ($remote->role === NodeRole::Slave) {
+                $this->protectedMode?->onSlaveConnected($remote->nodeId);
+            }
+        } finally {
+            if ($failure !== null) {
+                throw $failure;
+            }
         }
     }
 
@@ -4475,10 +4488,12 @@ final class PeerServer extends AbstractTlsServer implements
 
     /**
      * Tells $then once every active link - the route {@see self::walkRtSyncFanout()} hands each
-     * linked node its operations on - answered every RT operation its stream took before the call,
-     * or closed or began draining; at once without a link. No timer: each link's liveness bounds
-     * its wait. $then may raise: what it raises reaches whoever ended the last link's wait - this
-     * call, an answer, a close or drain - and a closing or draining link tells its other waits all the same.
+     * linked node its operations on - answered the RT operations up to the revision captured when
+     * its wait is registered. Later operations do not extend that boundary, including through
+     * replacements. Fully sent old writes are not replayed and their old obligations end; a real
+     * close or final drain ends the remaining wait.
+     * At once without a link. No timer: each link's liveness bounds its wait. Ready callbacks all run
+     * before their first failure reaches the caller of this door, an answer, close or drain.
      *
      * @param Closure(): void $then Told the RT writes are answered
      */
