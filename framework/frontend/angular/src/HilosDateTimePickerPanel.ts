@@ -115,7 +115,7 @@ interface PanelFocus {
                 [attr.aria-pressed]="calendar().activeEdge === endpoint.edge"
                 (click)="setActiveEdge($event, endpoint.edge)"
               >
-                <span class="d-block small opacity-75">{{
+                <span class="d-block small">{{
                   picker().labels[endpoint.edge === 'start' ? 'from' : 'to']
                 }}</span>
                 <span class="small">{{ endpointText(endpoint.snapshot) }}</span>

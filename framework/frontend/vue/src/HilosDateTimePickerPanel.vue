@@ -243,7 +243,7 @@ onMounted(() => {
               onGesture($event, () => picker.calendar.setActiveEdge(edge))
             "
           >
-            <span class="d-block small opacity-75">{{
+            <span class="d-block small">{{
               picker.labels[edge === 'start' ? 'from' : 'to']
             }}</span>
             <span class="small">{{ endpointText(snapshot) }}</span>

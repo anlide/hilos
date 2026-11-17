@@ -287,7 +287,7 @@ export function HilosDateTimePickerPanel({
                       picker.calendar.setActiveEdge(edge)
                     }}
                   >
-                    <span className="d-block small opacity-75">
+                    <span className="d-block small">
                       {picker.labels[edge === 'start' ? 'from' : 'to']}
                     </span>
                     <span className="small">{endpointText(snapshot)}</span>
