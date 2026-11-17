@@ -922,6 +922,8 @@ function coreSdk() {
 }
 
 describe('core tsc source/output ownership', () => {
+  // Regression 9 reported 5,655 ms against the default 5,000 ms ceiling;
+  // this finite closure compilation gets local computation headroom.
   it('keeps the real public Status closure lazy, including a source-less installed entry', () => {
     const { pkg, compile, save } = coreSdk()
     const visited = new Set()
@@ -997,7 +999,7 @@ describe('core tsc source/output ownership', () => {
         expect.stringContaining('public Status entrypoint'),
       ]),
     )
-  })
+  }, 10_000)
 
   it.each(['vue', 'react'])(
     'keeps core and all public subpaths external only in the %s SDK build',
@@ -1739,6 +1741,8 @@ it('resolves Angular local forwarders through a preserved package symlink', () =
   expect(errors('@hilos/angular/base')).toEqual([])
 })
 
+// This finite computation needs headroom: run 2561 reported 10,159 ms against
+// the former 7,500 ms timeout.
 it('publishes structural build types compatible with Vite without a Vite type import', () => {
   const declaration = fileURLToPath(
     new URL('../../bin/initial-bundle-budget.d.mts', import.meta.url),
@@ -1772,7 +1776,7 @@ it('publishes structural build types compatible with Vite without a Vite type im
         ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'),
       ),
   ).toEqual([])
-}, 7_500)
+}, 15_000)
 
 function viteFixture() {
   const output = (

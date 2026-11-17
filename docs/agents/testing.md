@@ -876,17 +876,22 @@ or a container memory limit.
 | concert-tickets | Hilos | 3:2 partition, with the old leader and its working agents in the minority | The majority continues; the minority leader stops its work; one executor after recovery. | 24 cut-off leader stops its work on online-testing (parked, F-013); 51 working master cut off stops its work on roblox-game-server |
 | concert-tickets | DB | One of three data nodes is lost and returned | Writes continue through the survivors without restarting Hilos; the returned member catches up and takes new connections only when Synced. | scenario 27 |
 
-Acceptance proves Hilos and database failures separately, keeping the other
-layer healthy (not in the code yet — HIL-2043). New fleets enter after phase-one
+The matrices above prove Hilos and database failures separately, keeping the other
+layer healthy. New fleets enter after phase-one
 acceptance HIL-2023 (the ordinary activations HIL-2017, HIL-2019 and HIL-2021 have
 landed), with isolation in every instance extending HIL-2015: their octets are the third block of
 `scripts/stand-instance.php`, the variables `HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER`,
 `HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER` and
 `HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER` with default octets 225, 227 and 229, and the
 cluster runner forwards them.
-Do not add lanes or instances: the full run accepts all six carriers and
-measures their resource budget on the existing lanes
-(not in the code yet — HIL-2043).
+Full run 2550 on the test box (2026-11-16, seven lanes, n=1) ran all six carriers:
+the eleven cluster steps had green main verdicts, with existing scenario skips
+and browser quarantine reported separately. Its snapshot durations supply the
+cluster scheduling hints; they do not measure container resource peaks or prove
+the subsequent scenario-51 oracle fix. Do not add lanes or instances: HIL-2043
+records the final full-run acceptance and sampled resource budget under the
+existing comparison conditions. That resource acceptance remains pending until
+its run, observations and explicit cleanup have finished.
 
 Every carrier owes [the database guarantees](app-topology.md#database-guarantees-hil-1206)
 `ONE_LOGICAL_DATABASE` and `READ_AFTER_WRITE` for both primary and

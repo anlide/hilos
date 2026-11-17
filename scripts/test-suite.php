@@ -36,8 +36,10 @@ require_once __DIR__ . '/framework-pieces.php';
  *            the one the stand's database container names as MYSQL_DATABASE;
  *            the step's snapshot reads this one.
  *   seconds  a rough duration. HIL-2023 refreshed every number here from the median
- *            of green full runs 2345…2377 on the test box, 2026-11-12, and none is
- *            kept current since: specs land every day and move it. A scheduling
+ *            of green full runs 2345…2377 on the test box, 2026-11-12. HIL-2043
+ *            refreshed the eleven fleet steps from snapshot seconds in full run
+ *            2550, 2026-11-16, n=1, rounded to 5 s. These are not kept current:
+ *            specs land every day and move them. A scheduling
  *            HINT only, and a narrow one (`scripts/launch-order.php`): of the steps
  *            ready to go, the group whose longest member is longest goes first, its
  *            shortest step ahead of the rest, and nothing here looks at the work
@@ -101,9 +103,12 @@ require_once __DIR__ . '/framework-pieces.php';
  * (2026-10-02, HIL-1216),
  * `binance-btc-tracker-cluster`, `ecommerce-shop-cluster` and
  * `online-testing-cluster` started in the same second, ran all three together
- * for 1m21s, and all were green. `file-gallery-manager-cluster` (HIL-2032),
- * `roblox-game-server-cluster` (HIL-2029) and `concert-tickets-cluster` (HIL-2033)
- * have not been measured beside the others yet. Log-streams may run beside any fleet too: in
+ * for 1m21s, and all were green. Full run 2550 on the test box (2026-11-16,
+ * seven lanes, n=1) also ran Gallery, Roblox and Tickets beside the original
+ * carriers; all eleven fleet steps had green main verdicts, with existing skips
+ * and quarantine kept separate. This measures step durations, not simultaneous
+ * container resource peaks; the sampled resource acceptance belongs to HIL-2043.
+ * Log-streams may run beside any fleet too: in
  * 23 full runs on the test box (2026-10-02/03, runs 0748–0773) it overlapped
  * ecommerce-shop-cluster, which carries scenario 9, for 113–136s, and every run
  * was green (HIL-1218). Two steps of the same cluster stand share a group: each
@@ -295,7 +300,8 @@ $steps = array_merge($steps, [
     // runner holds the outcome. The demo's unit suite runs in binance-btc-tracker-php.
     // Scenarios 23 and 25 freeze the masters last (HIL-1125, HIL-1128). Scenarios 29 and 30
     // recreate and kill a slave (HIL-1243); scenario 32 recreates one twice (HIL-1274).
-    // Seconds: the median of green full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
+    // Seconds: snapshot duration in full run 2550 on the test box, 2026-11-16, n=1,
+    // rounded to 5 s (HIL-2043).
     [
         'id' => 'binance-btc-tracker-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -331,16 +337,16 @@ $steps = array_merge($steps, [
         'deps' => ['binance-btc-tracker-build', 'binance-btc-tracker-check'],
         'group' => 'binance-btc-tracker-cluster',
         'tags' => ['cluster', 'e2e'],
-        // The median of green full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
-        'seconds' => 360,
+        // Snapshot seconds, full run 2550 on the test box, 2026-11-16, n=1; rounded to 5 s (HIL-2043).
+        'seconds' => 315,
         'downsStand' => true,
     ],
     // The fleet of ecommerce-shop (HIL-1216): one master and two slaves of unequal room, the
     // whole demo on one MariaDB server with primary and derived journal (HIL-1453). Beside the
     // other fleets and any e2e step, no group and no edge (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
-    // demo's unit suite runs in ecommerce-shop-php. Seconds: the median of green full runs
-    // 2345…2377 on the test box, 2026-11-12 (HIL-2023).
+    // demo's unit suite runs in ecommerce-shop-php. Seconds: snapshot duration in full run 2550
+    // on the test box, 2026-11-16, n=1, rounded to 5 s (HIL-2043).
     [
         'id' => 'ecommerce-shop-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -349,15 +355,15 @@ $steps = array_merge($steps, [
         'deps' => ['ecommerce-shop-deps'],
         'group' => null,
         'tags' => ['cluster', 'backend'],
-        'seconds' => 300,
+        'seconds' => 455,
         'downsStand' => true,
     ],
     // The fleet of online-testing (HIL-1217): three equal masters that carry the work themselves,
     // the whole demo on one MariaDB server with primary and derived journal (HIL-1453). Beside
     // the other fleets and unrelated e2e steps, sharing a group with its browser step; takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does.
-    // The demo's unit suite runs in online-testing-php. Seconds: the median of green full runs
-    // 2345…2377 on the test box, 2026-11-12 (HIL-2023).
+    // The demo's unit suite runs in online-testing-php. Seconds: snapshot duration in full run 2550
+    // on the test box, 2026-11-16, n=1, rounded to 5 s (HIL-2043).
     [
         'id' => 'online-testing-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -366,7 +372,7 @@ $steps = array_merge($steps, [
         'deps' => ['online-testing-deps'],
         'group' => 'online-testing-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 90,
+        'seconds' => 135,
         'downsStand' => true,
     ],
     // Analytics in three source/viewer rotations, live only. The single-node e2e
@@ -380,10 +386,8 @@ $steps = array_merge($steps, [
         'deps' => ['online-testing-e2e'],
         'group' => 'online-testing-cluster',
         'tags' => ['cluster', 'e2e'],
-        // An estimate after the green full run 2380 less the three Moderation rotations of about
-        // 14 s each that moved to concert-tickets-cluster-e2e, not a measurement (HIL-2043
-        // measures it).
-        'seconds' => 60,
+        // Snapshot seconds, full run 2550 on the test box, 2026-11-16, n=1; rounded to 5 s (HIL-2043).
+        'seconds' => 190,
         'downsStand' => true,
     ],
     // The file-gallery-manager fleet: two masters without capacity and three slave workers,
@@ -392,10 +396,8 @@ $steps = array_merge($steps, [
     // 50 holds the primary and the replica to one journal, and 31 checks the replica.
     // The stand group keeps a browser step from running beneath the scenario matrix; takes
     // its stand down at any outcome, for the reason binance-btc-tracker-cluster does.
-    // Seconds: a rough estimate after online-testing, allowing for five nodes and a replica,
-    // one leader loss, and the primary's and the replica's loss and return on top of the former
-    // estimate, the write made while the primary is down waits out the CLI's 15 s window;
-    // not a measurement (HIL-2043 measures it).
+    // Seconds: snapshot duration in full run 2550 on the test box, 2026-11-16, n=1,
+    // rounded to 5 s (HIL-2043), including the primary's and replica's loss and return.
     [
         'id' => 'file-gallery-manager-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -404,14 +406,14 @@ $steps = array_merge($steps, [
         'deps' => ['file-gallery-manager-deps'],
         'group' => 'file-gallery-manager-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 110,
+        'seconds' => 90,
         'downsStand' => true,
     ],
     // React sign-in and admin access through the non-leader master. The single-node e2e
     // finishes using the shared dist, node_modules and reports before this starts;
     // the cluster group keeps the scenario matrix from resetting the browser stand.
-    // Seconds: a rough estimate after online-testing, allowing for five nodes and a replica;
-    // not a measurement (HIL-2043 measures it).
+    // Seconds: snapshot duration in full run 2550 on the test box, 2026-11-16, n=1,
+    // rounded to 5 s (HIL-2043).
     [
         'id' => 'file-gallery-manager-cluster-e2e',
         'command' => 'composer run test:cluster:e2e',
@@ -420,7 +422,7 @@ $steps = array_merge($steps, [
         'deps' => ['file-gallery-manager-e2e'],
         'group' => 'file-gallery-manager-cluster',
         'tags' => ['cluster', 'e2e'],
-        'seconds' => 70,
+        'seconds' => 135,
         'downsStand' => true,
     ],
     // The fleet of roblox-game-server (HIL-2029): three masters and one slave over a MariaDB
@@ -434,9 +436,9 @@ $steps = array_merge($steps, [
     // Beside the other fleets and any e2e step, in the group of its stand, so that a browser step
     // over the same compose project would not run beneath it (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
-    // demo's unit suite runs in roblox-game-server-php. Seconds: one measurement of this step on
-    // one stand (HIL-2040); HIL-2043 measures it in the full run. The measured step took 177.3 s,
-    // before artifact collection and final stand teardown.
+    // demo's unit suite runs in roblox-game-server-php. Seconds: snapshot duration in full run
+    // 2550 on the test box, 2026-11-16, n=1, rounded to 5 s (HIL-2043). That run predates the
+    // stricter scenario-51 oracle; its duration is a scheduling hint, not proof of that fix.
     [
         'id' => 'roblox-game-server-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -445,7 +447,7 @@ $steps = array_merge($steps, [
         'deps' => ['roblox-game-server-deps'],
         'group' => 'roblox-game-server-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 177,
+        'seconds' => 295,
         'downsStand' => true,
     ],
     // Daemon clock, environment mismatch and orphans, and section navigation; one
@@ -462,8 +464,8 @@ $steps = array_merge($steps, [
         'deps' => ['roblox-game-server-e2e'],
         'group' => 'roblox-game-server-cluster',
         'tags' => ['cluster', 'e2e'],
-        // An estimate; HIL-2043 measures it.
-        'seconds' => 250,
+        // Snapshot seconds, full run 2550 on the test box, 2026-11-16, n=1; rounded to 5 s (HIL-2043).
+        'seconds' => 315,
         'downsStand' => true,
     ],
     // The fleet of concert-tickets (HIL-2033): five equal masters that carry the work themselves,
@@ -475,8 +477,8 @@ $steps = array_merge($steps, [
     // Beside the other fleets and any e2e step, in the group of its stand, so that a browser step
     // over the same compose project would not run beneath it (the head of this file); takes its
     // stand down with it, at any outcome, for the reason binance-btc-tracker-cluster does. The
-    // demo's unit suite runs in concert-tickets-php. Seconds: measured wall-clock time of the
-    // fresh-stand composer scenario command (21, 26, 27) on 2026-11-16.
+    // demo's unit suite runs in concert-tickets-php. Seconds: snapshot duration in full run 2550
+    // on the test box, 2026-11-16, n=1, rounded to 5 s (HIL-2043), with scenarios 21, 26 and 27.
     [
         'id' => 'concert-tickets-cluster',
         'command' => 'composer run test:cluster:scenarios',
@@ -485,7 +487,7 @@ $steps = array_merge($steps, [
         'deps' => ['concert-tickets-deps'],
         'group' => 'concert-tickets-cluster',
         'tags' => ['cluster', 'backend'],
-        'seconds' => 185,
+        'seconds' => 170,
         'downsStand' => true,
     ],
     // Moderation in five author/observer rotations over the five masters, live only. The
@@ -500,9 +502,8 @@ $steps = array_merge($steps, [
         'deps' => ['concert-tickets-e2e'],
         'group' => 'concert-tickets-cluster',
         'tags' => ['cluster', 'e2e'],
-        // An estimate after the green full run 2380 and a raise of a Galera stand of about 85 s,
-        // not a measurement (HIL-2043 measures it).
-        'seconds' => 170,
+        // Snapshot seconds, full run 2550 on the test box, 2026-11-16, n=1; rounded to 5 s (HIL-2043).
+        'seconds' => 265,
         'downsStand' => true,
         'takesTests' => true,
     ],

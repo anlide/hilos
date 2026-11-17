@@ -5572,14 +5572,16 @@ def assert_one_executor(victim, stops, starts):
 
     `stops` holds, by member, the moments the victim's log stopped it; `starts` holds, by member,
     the node the leader's table runs it on and the moments that node's log started it since the
-    cut, both oldest first. A member the victim never stopped, or its new host has not started,
-    is a poll still waiting; a member that came up before, or at the very moment, the victim
-    stopped it ran on two executors at once. The order is checked for every member that has both
-    lines before a missing line of any member is waited for, so an overlap fails whatever order
-    the members come in.
+    cut, both oldest first. A missing start is a poll still waiting; a proven new start without
+    the victim's stop, or before or at that stop, is a failure without retries: two executors
+    at once. Hard violations are checked for every member before a missing line of any member
+    is waited for, so a violation fails whatever order the members come in.
     """
     for member, (host, started) in starts.items():
         stopped = stops.get(member, [])
+        if started and not stopped:
+            raise AssertionError(f"{member} came up on {host} at {started[0].isoformat(timespec='milliseconds')} "
+                                 f"while {victim} never reported it stopped: two executors at once")
         if stopped and started and started[0] <= stopped[0]:
             raise AssertionError(f"{member} came up on {host} at {started[0].isoformat(timespec='milliseconds')} "
                                  f"while {victim} stopped it only at {stopped[0].isoformat(timespec='milliseconds')}: "

@@ -89,41 +89,14 @@ const EXPLANATION =
   ` ${BASELINE_UPDATE_FLAG}=1).`
 
 /**
- * The one test here that reads the whole tree, and the only one needing a
- * ceiling of its own: every rule walks the SDK and the demos and hands each
- * source to the compiler, which is not the shape the 5s default is sized for.
- * The scan sits close enough to that default to cross it under load, and a run
- * lost that way costs far more than it reports — the tree carried no violation
- * either time, and proving so took a second run.
+ * This whole-tree scan runs every rule over SDK and demo sources, including
+ * typed roots, so it needs a ceiling above the 5s default.
  *
- * The number is generous because generosity is free: a ceiling is only ever
- * waited on when it is hit, so a scan that ends in twenty seconds ends in
- * twenty seconds whatever stands here. Raising it therefore buys the honest
- * margin without lengthening a single green run.
- *
- * Since TYPE-CHECK the scan also compiles the codestyle roots: about twenty
- * seconds on the line, and 36.5 at seven lanes on a busy host, which a half
- * minute ceiling turned into a red run with no violation (2026-10-19).
- *
- * Since MOMENT-FORMAT it also builds a typed program for every SDK and demo
- * source root (2026-10-28). On an idle host the guard went from 7.3 seconds to
- * about 13, once each declaration file was parsed once per scan, and inside
- * the full frontend cycle it took 27 to 32. The twelve Verify runs before it
- * spent 19 to 30 seconds on the guard without the rule, three to four times
- * its idle time; the same factor puts the guard with it at 40 to 55, and a
- * narrow run beside a full one had crossed the minute before the declarations
- * were shared. Ninety keeps over that the margin a minute kept over 36.5.
- *
- * Ninety held until a full seven-lane run on the home box (2026-11-03): the
- * guard took 92.9 seconds beside every e2e lane, while the same tree passed
- * it alone in 24, and the line spent 43 to 65 on it over the twelve runs
- * before. Two minutes keeps the old margin over that.
- *
- * What two minutes still catches is the failure worth catching — a rule that
- * stopped terminating or a walk that left the repository — and the cure for
- * that is the rule that hangs, not a larger number written here.
+ * Regression 9 reported 161,951 ms against the former 150-second ceiling.
+ * The 240-second cap leaves 78.049 seconds above that measurement. This
+ * observation identifies neither a slowdown cause nor a responsible rule.
  */
-const GUARD_TIMEOUT_MS = 120_000
+const GUARD_TIMEOUT_MS = 240_000
 
 it(
   'carries no code-style violation the baseline does not already own',

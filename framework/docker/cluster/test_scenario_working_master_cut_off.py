@@ -402,18 +402,39 @@ class ScenarioWorkingMasterCutOffTest(unittest.TestCase):
                                  str(caught.exception))
         with self.assertRaises(AssertionError) as caught:
             scenarios.assert_one_executor(VICTIM, {"hilos_probe_fleet:1": [at("11.000")]},
-                                          {"hilos_probe_fleet:0": ("m3", [at("12.000")]),
+                                          {"hilos_probe_fleet:0": ("m3", []),
                                            "hilos_probe_fleet:1": ("s1", [at("10.900")])})
         self.assertNotIsInstance(caught.exception, scenarios.ScenarioTimeout)
         self.assertEqual("hilos_probe_fleet:1 came up on s1 at 2026-10-24T16:10:10.900+00:00 while m2 stopped it "
                          "only at 2026-10-24T16:10:11.000+00:00: two executors at once", str(caught.exception))
-        with self.assertRaisesRegex(scenarios.ScenarioTimeout, "^m2 never reported hilos_probe_fleet:1 stopped$"):
+        with self.assertRaises(AssertionError) as caught:
             scenarios.assert_one_executor(VICTIM, {"hilos_probe_fleet:0": [at("11.000")]},
                                           {"hilos_probe_fleet:0": ("m3", [at("12.000")]),
                                            "hilos_probe_fleet:1": ("s1", [at("12.000")])})
+        self.assertNotIsInstance(caught.exception, scenarios.ScenarioTimeout)
+        self.assertEqual("hilos_probe_fleet:1 came up on s1 at 2026-10-24T16:10:12.000+00:00 while m2 never "
+                         "reported it stopped: two executors at once", str(caught.exception))
         with self.assertRaisesRegex(scenarios.ScenarioTimeout, "s1's log has not started it since the cut"):
             scenarios.assert_one_executor(VICTIM, {"hilos_probe_fleet:1": [at("11.000")]},
                                           {"hilos_probe_fleet:1": ("s1", [])})
+
+    def test_judge_checks_hard_violations_before_missing_starts_in_either_order(self):
+        cases = [
+            ([], "12.000", "hilos_probe_fleet:1 came up on s1 at 2026-10-24T16:10:12.000+00:00 while m2 never "
+             "reported it stopped: two executors at once"),
+            ([at("11.000")], "10.900", "hilos_probe_fleet:1 came up on s1 at 2026-10-24T16:10:10.900+00:00 "
+             "while m2 stopped it only at 2026-10-24T16:10:11.000+00:00: two executors at once"),
+        ]
+        for stopped, started, expected in cases:
+            for reverse in (False, True):
+                with self.subTest(started=started, reverse=reverse):
+                    stops = {"hilos_probe_fleet:0": [at("11.000")], "hilos_probe_fleet:1": stopped}
+                    starts = [("hilos_probe_fleet:0", ("m3", [])),
+                              ("hilos_probe_fleet:1", ("s1", [at(started)]))]
+                    with self.assertRaises(AssertionError) as caught:
+                        scenarios.assert_one_executor(VICTIM, stops, dict(reversed(starts) if reverse else starts))
+                    self.assertNotIsInstance(caught.exception, scenarios.ScenarioTimeout)
+                    self.assertEqual(expected, str(caught.exception))
 
 
 if __name__ == "__main__":
