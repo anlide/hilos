@@ -8,9 +8,7 @@ import {
   type TestCleanup,
   deleteModerationOwnRules,
   dismissToasts,
-  enterIdentifierAndPassword,
   login,
-  logout,
   openSignIn,
   PASSWORD,
   createTestUser,
@@ -43,7 +41,6 @@ import {
   expectModerationPagesAccessibility,
   expectModerationRowDialogsAccessibility,
   expectModerationViewerAccessibility,
-  expectPasswordVisibility,
   ROWS,
   shownByTestId,
   watchClientDocument,
@@ -53,8 +50,6 @@ import {
   gotoPage,
   readI18nRowId,
   grantAdminToSelf,
-  expectProfileHeadAccessibility,
-  watchProfileRenameStatus,
   expectProfileTimeZone,
   expectTimeZoneEnvironment,
   expectStatusWorksAccessibility,
@@ -343,88 +338,6 @@ test('each page titles the tab and announces the page on navigation', async ({
   await expect(page.getByTestId('page-title')).toHaveText('Polls · Hilos Polls')
 })
 
-test('public pages have one heading and legal history readers support keyboard focus', async ({
-  page,
-}) => {
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Polls')
-
-  for (const history of [
-    { document: 'terms', title: 'Terms', clauses: 6 },
-    { document: 'privacy', title: 'Privacy', clauses: 7 },
-  ]) {
-    await test.step(`${history.title} history has one named table and a keyboard reader`, async () => {
-      await gotoPage(expect, page, `/${history.document}/history`)
-      const heading = page.getByRole('heading', { level: 1 })
-      await expect(heading).toHaveCount(1)
-      await expect(heading).toHaveText(history.title)
-      await expect(page).toHaveTitle(
-        `${history.title} · Revision history · Hilos Polls`,
-      )
-      const table = page.getByRole('table', {
-        name: history.title,
-        exact: true,
-      })
-      await expect(table).toHaveCount(1)
-      await expect(table).toBeVisible()
-      const open = shownByTestId(page, 'public-legal-history-open').and(
-        page.locator('[data-revision="2026-09-17"]'),
-      )
-      await expect(open).toHaveAccessibleName('Open')
-      await open.focus()
-      await expect(open).toBeFocused()
-      await open.press('Enter')
-      const dialog = page.getByTestId('modal')
-      const text = page.getByTestId('public-legal-history-modal')
-      await expect(dialog).toHaveRole('dialog')
-      await expect(dialog).toHaveAttribute('aria-modal', 'true')
-      await expect(dialog).toHaveAccessibleName(
-        `${history.title} — revision of 17 September 2026`,
-      )
-      await expect(dialog).toBeFocused()
-      await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
-      await expect(text).toHaveAttribute('data-document', history.document)
-      await expect(text.getByTestId('legal-revision-clause')).toHaveCount(
-        history.clauses,
-      )
-      await dialog.press('Escape')
-      await expect(dialog).toBeHidden()
-      await expect(open).toBeFocused()
-
-      await open.press('Enter')
-      await expect(dialog).toBeVisible()
-      await expect(dialog).toBeFocused()
-      await expect(page.getByTestId('legal-dialog-loading')).toBeHidden()
-      const close = page.getByTestId('public-legal-history-close')
-      await expect(close).toHaveAccessibleName('Close')
-      await close.focus()
-      await close.press('Enter')
-      await expect(dialog).toBeHidden()
-      await expect(open).toBeFocused()
-    })
-  }
-})
-
-test('the sign-in card holds room for a refusal before there is one', async ({
-  page,
-}) => {
-  // The room is taken by an invisible twin of the row, so the refusal has
-  // somewhere to land without moving the form (HIL-647). Angular has no
-  // component world of its own yet (HIL-848), so this is where its copy of the
-  // component is proved.
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await openSignIn(expect, page)
-
-  await expect(page.getByTestId('auth-error-slot')).toBeAttached()
-  await expect(page.getByTestId('auth-error-idle')).toHaveAttribute(
-    'aria-hidden',
-    'true',
-  )
-  await expect(page.getByTestId('auth-error')).toHaveCount(0)
-})
-
 test('an admin screen holds the refusal region before there is a refusal', async ({
   page,
 }) => {
@@ -451,24 +364,6 @@ test('an admin screen holds the refusal region before there is a refusal', async
     'true',
   )
   await expect(page.getByTestId('hilos-action-error')).toHaveCount(0)
-})
-
-test('password visibility toggle operates from keyboard on sign-in', async ({
-  page,
-}) => {
-  const user = await createTestUser(expect, page)
-  await logout(expect, page)
-  await openSignIn(expect, page)
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await enterIdentifierAndPassword(expect, page, user.email, PASSWORD)
-  await expectPasswordVisibility(
-    expect,
-    page,
-    'auth-password',
-    'auth-password-toggle',
-  )
-  // Ensure the surface remains open: toggling password visibility does not submit the form.
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
 })
 
 test('Privacy comparison and erase expose names, keyboard focus and live regions', async ({
@@ -616,83 +511,6 @@ test('the default language deletion explanation is named, keyboard readable and 
   await expect(why).toBeFocused()
   await expect(trash).toBeDisabled()
   await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
-})
-
-test('the profile name dialog exposes accessible focus and dirty-close behavior', async ({
-  page,
-}) => {
-  const user = await createTestUser(expect, page)
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('profile-name')).toHaveText(user.name)
-
-  await expectProfileHeadAccessibility(expect, page, user.name)
-  const opener = page.getByTestId('profile-edit')
-  await clickSubmit(expect, opener)
-  await expect(page.getByTestId('modal')).toHaveAccessibleName(
-    "Confirm it's you",
-  )
-  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(expect, page.getByTestId('profile-name-step-up-confirm'))
-
-  const dialog = page.getByTestId('modal')
-  const field = page.getByTestId('profile-name-input')
-  await expect(dialog).toHaveRole('dialog')
-  await expect(dialog).toHaveAttribute('aria-modal', 'true')
-  await expect(dialog).toHaveAccessibleName('Change name')
-  await expect(field).toHaveAccessibleName('Display name')
-  await expect(field).toBeFocused()
-  const status = await watchProfileRenameStatus(expect, page)
-  await status.unchanged(false)
-
-  const draft = 'Accessible draft'
-  await typeInto(field, draft)
-  const save = page.getByTestId('profile-rename-save')
-  const cancel = page.getByTestId('profile-rename-cancel')
-  const close = dialog.getByTestId('modal-close')
-  const confirmation = page.getByTestId('modal-confirm')
-  const keepEditing = page.getByTestId('modal-confirm-cancel')
-  const discard = page.getByTestId('modal-confirm-discard')
-  await expect(cancel).toHaveAccessibleName('Cancel')
-  await expect(close).toHaveAccessibleName('Close')
-  await expect(save).toHaveAccessibleName('Save')
-  await expect(save).toBeEnabled()
-  await status.unchanged(false)
-
-  // The last enabled control wraps back to the close button in either direction.
-  await close.focus()
-  await close.press('Shift+Tab')
-  await expect(save).toBeFocused()
-  await save.press('Tab')
-  await expect(close).toBeFocused()
-
-  // Escape and every explicit close route raise the same discard confirmation.
-  await page.keyboard.press('Escape')
-  await expect(confirmation).toHaveRole('alertdialog')
-  await expect(confirmation).toHaveAccessibleName('Discard changes?')
-  await expect(confirmation).toBeFocused()
-  await clickSubmit(expect, keepEditing)
-  await expect(confirmation).toHaveCount(0)
-  await expect(field).toHaveValue(draft)
-
-  await clickSubmit(expect, cancel)
-  await expect(confirmation).toBeVisible()
-  await clickSubmit(expect, keepEditing)
-  await expect(confirmation).toHaveCount(0)
-  await expect(field).toHaveValue(draft)
-
-  await clickSubmit(expect, close)
-  await expect(confirmation).toBeVisible()
-  await clickSubmit(expect, keepEditing)
-  await expect(confirmation).toHaveCount(0)
-  await expect(field).toHaveValue(draft)
-  await status.unchanged(false)
-
-  await dialog.click({ position: { x: 2, y: 2 } })
-  await expect(confirmation).toBeVisible()
-  await clickSubmit(expect, discard)
-  await expect(dialog).toHaveCount(0)
-  await expect(opener).toBeFocused()
 })
 
 test.describe('Profile time zone accessibility', () => {

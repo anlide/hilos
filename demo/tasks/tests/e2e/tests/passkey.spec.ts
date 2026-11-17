@@ -87,7 +87,7 @@ import { readRegisterCode } from '../../../../../framework/frontend/scripts/mail
 // attached over CDP and scoped to this stand's RP id (HILOS_WEBAUTHN_RP_ID in
 // demo/tasks/docker/docker-compose.test.yml).
 
-test('signs in usernameless with a discoverable passkey — no email', async ({
+test('adds a compatible key once, reopens the chooser and signs in without an address', async ({
   page,
 }) => {
   // A resident credential must exist for a discoverable login; the register
@@ -95,82 +95,97 @@ test('signs in usernameless with a discoverable passkey — no email', async ({
   await addVirtualAuthenticator(page)
   await watchPasskeyCreation(page)
   const user = await createTestUser(expect, page)
-  await gotoPage(expect, page, '/profile/sign-in')
-  await clickSubmit(expect, page.getByTestId('profile-sign-in-add'))
-  // Adding a way in asks the password first (HIL-1138).
-  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(
-    expect,
-    page.getByTestId('profile-sign-in-add-step-up-confirm'),
-  )
-  await clickSubmit(expect, page.getByTestId('profile-passkey-add'))
-  await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
-  await expect(
-    page.getByTestId('hilos-toasts').getByText('Passkey added.'),
-  ).toBeVisible()
-  const creations = await readPasskeyCreations(page)
-  expect(creations).toHaveLength(1)
-  expect(platformsLeftOut(creations[0])).toEqual([])
 
-  // The key reads by DEVICE (HIL-418): the row the enrollment adds carries a
-  // "Passkey · added <date>" line, and the credential-id line the list used to
-  // print for every identity is GONE from it — that string names nothing a person
-  // could recognize. The name itself comes from this browser's User-Agent, so it
-  // is asserted by shape, not by literal.
-  const passkeyRow = page
-    .getByTestId('profile-identity-item')
-    .filter({ has: page.getByTestId('identity-passkey-added') })
-  await expect(passkeyRow).toHaveCount(1)
-  await expect(passkeyRow.getByTestId('identity-passkey-added')).toContainText(
-    'Passkey · added',
-  )
-  await expect(passkeyRow.getByTestId('identity-identifier')).toHaveCount(0)
+  await test.step('confirms adding a way in once and lets the next add through without a step', async () => {
+    await gotoPage(expect, page, '/profile/sign-in')
+    await clickSubmit(expect, page.getByTestId('profile-sign-in-add'))
+    await expect(page.getByTestId('profile-passkey-add')).toHaveCount(0)
+    // Adding a way in asks the password first (HIL-1138).
+    await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+    await clickSubmit(
+      expect,
+      page.getByTestId('profile-sign-in-add-step-up-confirm'),
+    )
+    await clickSubmit(expect, page.getByTestId('profile-passkey-add'))
+    await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
+    await expect(
+      page.getByTestId('hilos-toasts').getByText('Passkey added.'),
+    ).toBeVisible()
+    const creations = await readPasskeyCreations(page)
+    expect(creations).toHaveLength(1)
+    expect(platformsLeftOut(creations[0])).toEqual([])
 
-  await logout(expect, page)
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
+    // The key reads by DEVICE (HIL-418): the row the enrollment adds carries a
+    // "Passkey · added <date>" line, and the credential-id line the list used to
+    // print for every identity is GONE from it — that string names nothing a person
+    // could recognize. The name itself comes from this browser's User-Agent, so it
+    // is asserted by shape, not by literal.
+    const passkeyRow = page
+      .getByTestId('profile-identity-item')
+      .filter({ has: page.getByTestId('identity-passkey-added') })
+    await expect(passkeyRow).toHaveCount(1)
+    await expect(
+      passkeyRow.getByTestId('identity-passkey-added'),
+    ).toContainText('Passkey · added')
+    await expect(passkeyRow.getByTestId('identity-identifier')).toHaveCount(0)
 
-  // The row of the EMPTY field (HIL-423) carries what names no account — the
-  // key and both providers — and a typed address takes all three away. The
-  // rule is the core's and unit-tested there; this is a real browser typing it
-  // (HIL-426). The address typed is this account's own: a free one would carry
-  // the flow into a registration, and clearing the field does not bring it
-  // back, so the key below would start the ceremony of a NEW account instead.
-  const field = page.getByTestId('auth-identifier')
-  const emptyFieldRow = [
-    'auth-icon-passkey',
-    'auth-icon-oauth-github',
-    'auth-icon-oauth-google',
-  ]
-  for (const id of emptyFieldRow) {
-    await expect(page.getByTestId(id)).toBeVisible()
-  }
-  await typeInto(field, user.email)
-  for (const id of emptyFieldRow) {
-    await expect(page.getByTestId(id)).toHaveCount(0)
-  }
-  await field.fill('')
-  for (const id of emptyFieldRow) {
-    await expect(page.getByTestId(id)).toBeVisible()
-  }
+    // The confirmation lives on the operation for its lifetime: the next add in
+    // this browser opens straight at the chooser.
+    await clickSubmit(expect, page.getByTestId('profile-sign-in-add'))
+    await expect(page.getByTestId('profile-sign-in-choose-phone')).toBeVisible()
+    await expect(page.getByTestId('step-up')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
+  })
 
-  // DISCOVERABLE LOGIN (HIL-400): click the usernameless "Sign in with a passkey"
-  // icon — no email is entered, which is exactly why it lives in the row that only
-  // shows while the identifier field is EMPTY (HIL-423). The server returns empty
-  // allowCredentials, the authenticator returns its resident credential, and
-  // confirm resolves the account (user handle + credential id) and upgrades the
-  // session in place.
-  const discoverable = page.getByTestId('auth-icon-passkey')
-  await discoverable.scrollIntoViewIfNeeded()
-  await expect(discoverable).toBeEnabled()
-  await discoverable.click()
+  await test.step('signs in usernameless with a discoverable passkey — no email', async () => {
+    await logout(expect, page)
+    await gotoPage(expect, page, '/profile')
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
 
-  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+    // The row of the EMPTY field (HIL-423) carries what names no account — the
+    // key and both providers — and a typed address takes all three away. The
+    // rule is the core's and unit-tested there; this is a real browser typing it
+    // (HIL-426). The address typed is this account's own: a free one would carry
+    // the flow into a registration, and clearing the field does not bring it
+    // back, so the key below would start the ceremony of a NEW account instead.
+    const field = page.getByTestId('auth-identifier')
+    const emptyFieldRow = [
+      'auth-icon-passkey',
+      'auth-icon-oauth-github',
+      'auth-icon-oauth-google',
+    ]
+    for (const id of emptyFieldRow) {
+      await expect(page.getByTestId(id)).toBeVisible()
+    }
+    await typeInto(field, user.email)
+    for (const id of emptyFieldRow) {
+      await expect(page.getByTestId(id)).toHaveCount(0)
+    }
+    await field.fill('')
+    for (const id of emptyFieldRow) {
+      await expect(page.getByTestId(id)).toBeVisible()
+    }
 
-  // The preserved profile subscription resumes off the session upgrade — the
-  // user's name renders with no navigation.
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe('/profile')
+    // DISCOVERABLE LOGIN (HIL-400): click the usernameless "Sign in with a passkey"
+    // icon — no email is entered, which is exactly why it lives in the row that only
+    // shows while the identifier field is EMPTY (HIL-423). The server returns empty
+    // allowCredentials, the authenticator returns its resident credential, and
+    // confirm resolves the account (user handle + credential id) and upgrades the
+    // session in place.
+    const discoverable = page.getByTestId('auth-icon-passkey')
+    await discoverable.scrollIntoViewIfNeeded()
+    await expect(discoverable).toBeEnabled()
+    await discoverable.click()
+
+    await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+
+    // The preserved profile subscription resumes off the session upgrade — the
+    // user's name renders with no navigation.
+    await expect(page.getByTestId('profile-name')).toBeVisible()
+    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+    expect(new URL(page.url()).pathname).toBe('/profile')
+  })
 })
 
 test('creates an account on a passkey from the password screen and signs back in with it', async ({
@@ -218,102 +233,101 @@ test('creates an account on a passkey from the password screen and signs back in
   await expect(page.getByTestId('profile-name')).toBeVisible()
 })
 
-test('creates a passkey account without an address from the empty field and signs back in', async ({
-  page,
-}) => {
-  await addVirtualAuthenticator(page)
-  await watchPasskeyCreation(page)
-  await gotoPage(expect, page, '/profile')
-  // Chromium reports this CDP internal/UV authenticator as a platform key;
-  // this exercises the real browser half of the entry gate without a stub.
-  expect(
-    await page.evaluate(() =>
-      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
-    ),
-  ).toBe(true)
-  await expect(page.getByTestId('auth-create-passkey')).toBeVisible()
-  await createAccountWithPasskey(expect, page)
-  await expect(page.getByTestId('auth-error')).toHaveCount(0)
-  await continueFromDone(expect, page)
-  await expect(page.getByTestId('profile-name')).toHaveText(/^User[1-9]\d{5}$/)
-  const name = await page.getByTestId('profile-name').innerText()
-  const creations = await readPasskeyCreations(page)
-  expect(creations).toHaveLength(1)
-  expect(platformsLeftOut(creations[0])).toEqual([])
-
-  await gotoPage(expect, page, '/profile/sign-in')
-  await expect(page.getByTestId('profile-identity-item')).toHaveCount(1)
-  await expect(page.getByTestId('identity-passkey-added')).toHaveCount(1)
-  await expect(page.getByTestId('identity-identifier')).toHaveCount(0)
-
-  await logout(expect, page)
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await clickSubmit(expect, page.getByTestId('auth-icon-passkey'))
-  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
-  await expect(page.getByTestId('profile-name')).toHaveText(name)
-})
-
-test('warns a passkey-only account on the profile and adds a password from the warning', async ({
+test('creates an addressless key account, signs back in and adds an email password', async ({
   page,
   context,
 }) => {
-  await addVirtualAuthenticator(page)
-  await gotoPage(expect, page, '/profile')
-  await createAccountWithPasskey(expect, page)
-  await continueFromDone(expect, page)
+  await test.step('creates a passkey account without an address from the empty field and signs back in', async () => {
+    await addVirtualAuthenticator(page)
+    await watchPasskeyCreation(page)
+    await gotoPage(expect, page, '/profile')
+    // Chromium reports this CDP internal/UV authenticator as a platform key;
+    // this exercises the real browser half of the entry gate without a stub.
+    expect(
+      await page.evaluate(() =>
+        PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
+      ),
+    ).toBe(true)
+    await expect(page.getByTestId('auth-create-passkey')).toBeVisible()
+    await createAccountWithPasskey(expect, page)
+    await expect(page.getByTestId('auth-error')).toHaveCount(0)
+    await continueFromDone(expect, page)
+    await expect(page.getByTestId('profile-name')).toHaveText(
+      /^User[1-9]\d{5}$/,
+    )
+    const name = await page.getByTestId('profile-name').innerText()
+    const creations = await readPasskeyCreations(page)
+    expect(creations).toHaveLength(1)
+    expect(platformsLeftOut(creations[0])).toEqual([])
 
-  // The shared head warns before the sign-in section is opened.
-  await expect(
-    page.getByTestId('profile-sign-in-passkey-only-line'),
-  ).toBeVisible()
-
-  const receiving = await context.newPage()
-  try {
-    await gotoPage(expect, receiving, '/profile/data')
-    await expect(
-      receiving.getByTestId('profile-sign-in-passkey-only-line'),
-    ).toBeVisible()
-    let reloads = 0
-    receiving.on('load', () => {
-      reloads += 1
-    })
     await gotoPage(expect, page, '/profile/sign-in')
-    const warning = page.getByTestId('profile-sign-in-passkey-only')
-    await expect(warning).toBeVisible()
+    await expect(page.getByTestId('profile-identity-item')).toHaveCount(1)
+    await expect(page.getByTestId('identity-passkey-added')).toHaveCount(1)
+    await expect(page.getByTestId('identity-identifier')).toHaveCount(0)
+
+    await logout(expect, page)
+    await gotoPage(expect, page, '/profile')
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+    await clickSubmit(expect, page.getByTestId('auth-icon-passkey'))
+    await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+    await expect(page.getByTestId('profile-name')).toHaveText(name)
+  })
+
+  await test.step('warns a passkey-only account on the profile and adds a password from the warning', async () => {
+    // The shared head warns before the sign-in section is opened.
     await expect(
-      warning.getByTestId('profile-sign-in-passkey-only-password'),
+      page.getByTestId('profile-sign-in-passkey-only-line'),
     ).toBeVisible()
-    await expect(
-      warning.getByRole('button', { name: 'Passkey', exact: true }),
-    ).toHaveCount(0)
 
-    // The button opens the window on the password itself; the confirmation first
-    // is answered by the same device key the account lives on.
-    await clickSubmit(
-      expect,
-      warning.getByTestId('profile-sign-in-passkey-only-password'),
-    )
-    await clickSubmit(
-      expect,
-      page.getByTestId('profile-sign-in-add-step-up-confirm'),
-    )
-    await expect(
-      page.getByTestId('profile-sign-in-choose-password'),
-    ).toHaveCount(0)
-    await addPasswordFromAddressStep(expect, page, uniqueEmail())
+    const receiving = await context.newPage()
+    try {
+      await gotoPage(expect, receiving, '/profile/data')
+      await expect(
+        receiving.getByTestId('profile-sign-in-passkey-only-line'),
+      ).toBeVisible()
+      let reloads = 0
+      receiving.on('load', () => {
+        reloads += 1
+      })
+      await gotoPage(expect, page, '/profile/sign-in')
+      const warning = page.getByTestId('profile-sign-in-passkey-only')
+      await expect(warning).toBeVisible()
+      await expect(
+        warning.getByTestId('profile-sign-in-passkey-only-password'),
+      ).toBeVisible()
+      await expect(
+        warning.getByRole('button', { name: 'Passkey', exact: true }),
+      ).toHaveCount(0)
 
-    // The new way arrives in the live list and takes the warning with it.
-    await expect(page.getByTestId('profile-password-change')).toBeVisible()
-    await expect(warning).toHaveCount(0)
-    await expect(
-      receiving.getByTestId('profile-sign-in-passkey-only-line'),
-    ).toHaveCount(0)
-    await expect(receiving.getByTestId('profile-identity-email')).toBeVisible()
-    expect(reloads).toBe(0)
-  } finally {
-    await receiving.close()
-  }
+      // The button opens the window on the password itself; the confirmation first
+      // is answered by the same device key the account lives on.
+      await clickSubmit(
+        expect,
+        warning.getByTestId('profile-sign-in-passkey-only-password'),
+      )
+      await clickSubmit(
+        expect,
+        page.getByTestId('profile-sign-in-add-step-up-confirm'),
+      )
+      await expect(
+        page.getByTestId('profile-sign-in-choose-password'),
+      ).toHaveCount(0)
+      await addPasswordFromAddressStep(expect, page, uniqueEmail())
+
+      // The new way arrives in the live list and takes the warning with it.
+      await expect(page.getByTestId('profile-password-change')).toBeVisible()
+      await expect(warning).toHaveCount(0)
+      await expect(
+        receiving.getByTestId('profile-sign-in-passkey-only-line'),
+      ).toHaveCount(0)
+      await expect(
+        receiving.getByTestId('profile-identity-email'),
+      ).toBeVisible()
+      expect(reloads).toBe(0)
+    } finally {
+      await receiving.close()
+    }
+  })
 })
 
 test('unlinks a passkey and leaves it unable to sign in', async ({ page }) => {

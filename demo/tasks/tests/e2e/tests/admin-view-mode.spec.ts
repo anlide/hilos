@@ -1,6 +1,8 @@
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 
 import {
+  cleanupFixtures,
+  type TestCleanup,
   createTestUser,
   shownByTestId,
   clickSubmit,
@@ -40,112 +42,119 @@ const ACCOUNT_SCREENS = [
   '/hilos/legal/settings',
 ]
 
-test.afterEach(() => setAdminViewMode(false))
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
-test('a guest without an account sees the admin gear and opens the admin section in the view mode', async ({
+test('walks the account administration as a guest with read-only access', async ({
   page,
-}) => {
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('nav-admin')).toHaveCount(0)
-
-  await setAdminViewMode(true)
-  // The flip is not sent to the open tab; the next handshake carries it.
-  await gotoPage(expect, page, '/')
-  const gear = page.getByTestId('nav-admin')
-  await expect(gear).toBeVisible()
-  await expect(gear).toHaveAttribute('data-access', 'view')
-
-  await gear.click()
-  await expectPageReady(expect, page)
-  await expect(page.getByTestId('dashboard-view')).toBeVisible()
-  expect(new URL(page.url()).pathname).toBe('/hilos')
-  await expect(page.getByTestId('page-error')).toHaveCount(0)
-})
-
-test('a guest reads the view-mode strip on the account screens and the acceptances as hidden', async ({
   browser,
-  page,
+  cleanup,
 }) => {
-  // An account of this test's own: the acceptances then hold at least one person
-  // whose name is kept from the guest.
-  // A context made off the browser fixture inherits none of the project's `use`
-  // options, so the address and the tolerance for the test nginx's self-signed
-  // certificate are passed on by hand.
-  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-  const someone = await browser.newContext({ baseURL, ignoreHTTPSErrors })
-  const registrant = await someone.newPage()
-  await createTestUser(expect, registrant)
-  await someone.close()
+  await test.step('a guest without an account sees the admin gear and opens the admin section in the view mode', async () => {
+    await gotoPage(expect, page, '/')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await expect(page.getByTestId('nav-admin')).toHaveCount(0)
 
-  await setAdminViewMode(true)
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('nav-admin')).toHaveAttribute(
-    'data-access',
-    'view',
-  )
-  await expect(page.getByTestId('view-mode-banner')).toHaveCount(0)
+    cleanup.defer(() => setAdminViewMode(false))
+    await setAdminViewMode(true)
+    // The flip is not sent to the open tab; the next handshake carries it.
+    await gotoPage(expect, page, '/')
+    const gear = page.getByTestId('nav-admin')
+    await expect(gear).toBeVisible()
+    await expect(gear).toHaveAttribute('data-access', 'view')
 
-  for (const path of ACCOUNT_SCREENS) {
-    await gotoPage(expect, page, path, PAGE_READY)
-    const strip = page.getByTestId('view-mode-banner')
-    await expect(strip).toBeVisible()
-    await expect(strip).toHaveText(VIEW_MODE_STRIP_TEXT)
+    await gear.click()
+    await expectPageReady(expect, page)
+    await expect(page.getByTestId('dashboard-view')).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/hilos')
     await expect(page.getByTestId('page-error')).toHaveCount(0)
-    if (path === '/hilos/legal/acceptances') {
-      await expect(
-        shownByTestId(
-          page.getByTestId('legal-acceptances-table'),
-          'hilos-hidden',
-        ).first(),
-      ).toHaveText('Hidden')
+  })
+
+  await test.step('a guest reads the view-mode strip on the account screens and the acceptances as hidden', async () => {
+    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+    const someone = await browser.newContext({ baseURL, ignoreHTTPSErrors })
+    cleanup.defer(() => someone.close())
+    const registrant = await someone.newPage()
+    await createTestUser(expect, registrant)
+
+    await gotoPage(expect, page, '/')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+      'data-access',
+      'view',
+    )
+    await expect(page.getByTestId('view-mode-banner')).toHaveCount(0)
+
+    for (const path of ACCOUNT_SCREENS) {
+      await gotoPage(expect, page, path, PAGE_READY)
+      const strip = page.getByTestId('view-mode-banner')
+      await expect(strip).toBeVisible()
+      await expect(strip).toHaveText(VIEW_MODE_STRIP_TEXT)
+      await expect(page.getByTestId('page-error')).toHaveCount(0)
+      if (path === '/hilos/legal/acceptances') {
+        await expect(
+          shownByTestId(
+            page.getByTestId('legal-acceptances-table'),
+            'hilos-hidden',
+          ).first(),
+        ).toHaveText('Hidden')
+      }
     }
-  }
-})
+  })
 
-// The fixed legal key is open to a viewer (HIL-1298); editing remains locked.
-test('a guest opens a legal setting, reads its value and cannot save it', async ({
-  page,
-}) => {
-  await setAdminViewMode(true)
-  await gotoPage(expect, page, '/hilos/legal/settings', PAGE_READY)
-  await expect(
-    shownByTestId(page, 'legal-setting-value-legal.consent_form'),
-  ).toContainText('Checkbox')
-  await expect(
-    shownByTestId(page, 'legal-setting-value-legal.consent_form').getByTestId(
-      'hilos-hidden',
-    ),
-  ).toHaveCount(0)
-  await clickSubmit(
-    expect,
-    shownByTestId(page, 'legal-setting-edit-legal.consent_form'),
-  )
-  const dialog = page.getByTestId('modal')
-  await expect(dialog.getByTestId('hilos-hidden')).toHaveCount(0)
-  await expect(page.getByTestId('legal-setting-input')).toBeVisible()
-  const save = page.getByTestId('legal-setting-save')
-  await expect(save).toBeDisabled()
-  await expect(save).toHaveAttribute(
-    'aria-describedby',
-    /(^| )hilos-view-mode-strip-text( |$)/,
-  )
-  await clickSubmit(expect, page.getByTestId('legal-setting-cancel'))
-  await expect(dialog).toBeHidden()
-})
+  await test.step('a guest opens a legal setting, reads its value and cannot save it', async () => {
+    await gotoPage(expect, page, '/hilos/legal/settings', PAGE_READY)
+    await expect(
+      shownByTestId(page, 'legal-setting-value-legal.consent_form'),
+    ).toContainText('Checkbox')
+    await expect(
+      shownByTestId(page, 'legal-setting-value-legal.consent_form').getByTestId(
+        'hilos-hidden',
+      ),
+    ).toHaveCount(0)
+    await clickSubmit(
+      expect,
+      shownByTestId(page, 'legal-setting-edit-legal.consent_form'),
+    )
+    const dialog = page.getByTestId('modal')
+    await expect(dialog.getByTestId('hilos-hidden')).toHaveCount(0)
+    await expect(page.getByTestId('legal-setting-input')).toBeVisible()
+    const save = page.getByTestId('legal-setting-save')
+    await expect(save).toBeDisabled()
+    await expect(save).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+    await clickSubmit(expect, page.getByTestId('legal-setting-cancel'))
+    await expect(dialog).toBeHidden()
+  })
 
-test('a guest sees the open sign-in switch but cannot change it', async ({
-  page,
-}) => {
-  await setAdminViewMode(true)
-  await gotoPage(expect, page, '/hilos/security/sign-in-methods', PAGE_READY)
-  const enabled = shownByTestId(page, 'hilos-sign-in-method-enabled-magic_link')
-  await expect(enabled).toBeVisible()
-  await expect(enabled).toBeDisabled()
-  await expect(
-    shownByTestId(page, 'hilos-table-row-magic_link').getByTestId(
-      'hilos-hidden',
-    ),
-  ).toHaveCount(0)
+  await test.step('a guest sees the open sign-in switch but cannot change it', async () => {
+    await gotoPage(expect, page, '/hilos/security/sign-in-methods', PAGE_READY)
+    const enabled = shownByTestId(
+      page,
+      'hilos-sign-in-method-enabled-magic_link',
+    )
+    await expect(enabled).toBeVisible()
+    await expect(enabled).toBeDisabled()
+    await expect(
+      shownByTestId(page, 'hilos-table-row-magic_link').getByTestId(
+        'hilos-hidden',
+      ),
+    ).toHaveCount(0)
+  })
+
+  await test.step('a guest sees the open step-up switch but cannot change it', async () => {
+    await gotoPage(expect, page, '/hilos/security/step-up', PAGE_READY)
+    const enabled = shownByTestId(
+      page,
+      'hilos-step-up-switch-add_sign_in_method',
+    )
+    await expect(enabled).toBeVisible()
+    await expect(enabled).toBeDisabled()
+    await expect(
+      shownByTestId(page, 'hilos-table-row-add_sign_in_method').getByTestId(
+        'hilos-hidden',
+      ),
+    ).toHaveCount(0)
+  })
 })

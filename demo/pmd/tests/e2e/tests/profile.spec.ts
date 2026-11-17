@@ -35,72 +35,86 @@ async function confirmStepUp(page: Page, confirmId: string): Promise<void> {
 // (framework/frontend/scripts/standModel.mjs). A refused name and an
 // unanswering model are proved by rename-moderation.spec.ts.
 
-test('the navbar links the current user to the profile page', async ({
+test('navigates the named profile and its native sections without reloading', async ({
   page,
 }) => {
-  let fullLoads = 0
-  page.on('load', () => {
-    fullLoads += 1
-  })
+  await test.step('the navbar links the current user to the profile page', async () => {
+    let fullLoads = 0
+    page.on('load', () => {
+      fullLoads += 1
+    })
 
-  const { name, email } = await createTestUser(expect, page)
-  const loadsAfterColdLoad = fullLoads
+    const { name, email } = await createTestUser(expect, page)
+    const loadsAfterColdLoad = fullLoads
 
-  await expect(page.getByTestId('nav-profile')).toBeVisible()
-  await expect(
-    page.getByTestId('nav-profile').getByTestId('hilos-avatar'),
-  ).toHaveText(name.charAt(0).toUpperCase())
-  await expect(page.getByTestId('nav-profile')).toHaveAccessibleName(name)
-  await expect(page.getByTestId('nav-profile')).toHaveAttribute('title', name)
-  await page.getByTestId('nav-profile').click()
+    await expect(page.getByTestId('nav-profile')).toBeVisible()
+    await expect(
+      page.getByTestId('nav-profile').getByTestId('hilos-avatar'),
+    ).toHaveText(name.charAt(0).toUpperCase())
+    await expect(page.getByTestId('nav-profile')).toHaveAccessibleName(name)
+    await expect(page.getByTestId('nav-profile')).toHaveAttribute('title', name)
+    await page.getByTestId('nav-profile').click()
 
-  // Reached over the live socket with no document reload.
-  expect(new URL(page.url()).pathname).toBe('/profile')
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  await expect(
-    page.getByTestId('profile-identity').getByTestId('hilos-avatar'),
-  ).toHaveText(name.charAt(0).toUpperCase())
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
-  const sections = [
-    'sign-in',
-    'notifications',
-    'sessions',
-    'devices',
-    'security',
-    'agreements',
-    'data',
-  ]
-  for (const section of sections) {
-    await clickSubmit(
-      expect,
-      page.getByTestId(
-        `hilos-page-tab-hilos_profile_${section.replaceAll('-', '_')}`,
-      ),
-    )
-    expect(new URL(page.url()).pathname).toBe(`/profile/${section}`)
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
-    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-    if (section === 'devices')
-      await expect(page.getByTestId('profile-devices')).toBeVisible()
-    await clickSubmit(expect, page.getByTestId('hilos-page-tab-hilos_profile'))
+    // Reached over the live socket with no document reload.
+    expect(new URL(page.url()).pathname).toBe('/profile')
     await expect(page.getByTestId('profile-name')).toBeVisible()
-  }
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  expect(fullLoads).toBe(loadsAfterColdLoad)
-  await gotoPage(expect, page, '/profile/data')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
-  await expect(page.getByTestId('data-export-prepare')).toBeVisible()
-  await page.reload()
-  await expectPageReady(expect, page)
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
-  await expect(page.getByTestId('profile-identity-email')).toHaveText(email)
-  await clickSubmit(expect, page.getByTestId('hilos-page-tab-hilos_profile'))
-  await expect(page.getByTestId('profile-name')).toHaveText(name)
-  await page.goBack()
-  await expectPageReady(expect, page)
-  await expect(page).toHaveURL(/\/profile\/data$/)
-  await expect(page.getByTestId('data-export-prepare')).toBeVisible()
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+    await expect(
+      page.getByTestId('profile-identity').getByTestId('hilos-avatar'),
+    ).toHaveText(name.charAt(0).toUpperCase())
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+    const sections = [
+      'sign-in',
+      'notifications',
+      'sessions',
+      'devices',
+      'security',
+      'agreements',
+      'data',
+    ]
+    for (const section of sections) {
+      await clickSubmit(
+        expect,
+        page.getByTestId(
+          `hilos-page-tab-hilos_profile_${section.replaceAll('-', '_')}`,
+        ),
+      )
+      expect(new URL(page.url()).pathname).toBe(`/profile/${section}`)
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+      await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+      if (section === 'sessions' || section === 'devices') {
+        await test.step('the profile session and device pages expose one named surface', async () => {
+          await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+          await expect(page.getByTestId(`profile-${section}`)).toHaveAttribute(
+            'aria-label',
+            section === 'sessions' ? 'Sessions' : 'Devices',
+          )
+          if (section === 'devices')
+            await expect(page.getByTestId('profile-devices')).toBeVisible()
+        })
+      }
+      await clickSubmit(
+        expect,
+        page.getByTestId('hilos-page-tab-hilos_profile'),
+      )
+      await expect(page.getByTestId('profile-name')).toBeVisible()
+    }
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    expect(fullLoads).toBe(loadsAfterColdLoad)
+    await gotoPage(expect, page, '/profile/data')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+    await expect(page.getByTestId('data-export-prepare')).toBeVisible()
+    await page.reload()
+    await expectPageReady(expect, page)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+    await expect(page.getByTestId('profile-identity-email')).toHaveText(email)
+    await clickSubmit(expect, page.getByTestId('hilos-page-tab-hilos_profile'))
+    await expect(page.getByTestId('profile-name')).toHaveText(name)
+    await page.goBack()
+    await expectPageReady(expect, page)
+    await expect(page).toHaveURL(/\/profile\/data$/)
+    await expect(page.getByTestId('data-export-prepare')).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(name)
+  })
 })
 
 test('renames the current user through the edit modal', async ({ page }) => {
@@ -127,62 +141,65 @@ test('renames the current user through the edit modal', async ({ page }) => {
   await expect(page.getByTestId('profile-name')).toHaveText(newName)
 })
 
-for (const draft of ['Unsent name', 'X']) {
-  test(`F5 restores the unsent ${draft.length === 1 ? 'invalid' : 'valid'} name draft without a name action`, async ({
-    page,
-  }) => {
-    const wire = watchProfileRenameFrames(page)
-    const sends = countSentFrames(page, 'hilos_profile_name_set')
-    try {
-      const user = await createTestUser(expect, page)
-      await gotoPage(expect, page, '/profile')
-      await clickSubmit(expect, page.getByTestId('profile-edit'))
-      await confirmStepUp(page, 'profile-name-step-up-confirm')
-      await typeInto(page.getByTestId('profile-name-input'), draft)
-      const before = await expectProfileNameSnapshot(
-        expect,
-        wire,
-        user.userId,
-        null,
-      )
-      await page.reload()
-      await expectProfileNameSnapshot(
-        expect,
-        wire,
-        user.userId,
-        null,
-        before.socket,
-      )
-      await expectPageReady(expect, page)
-      await expect(page.getByTestId('profile-name-input')).toHaveValue(draft)
-      await expect(page.getByTestId('profile-name')).toHaveText(user.name)
-      await expect(page.getByTestId('conflict-badge')).toBeHidden()
-      if (draft.length === 1)
-        await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
-      else await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
-      await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
-      await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
-      const closed = wire.snapshots.at(-1)!
-      await page.reload()
-      await expectProfileNameSnapshot(
-        expect,
-        wire,
-        user.userId,
-        null,
-        closed.socket,
-      )
-      await expectPageReady(expect, page)
-      await expect(page.getByTestId('modal')).toBeHidden()
-      expect(sends()).toBe(0)
-    } finally {
-      await test.info().attach('unsent-name-wire', {
-        body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
-        contentType: 'application/json',
+test('restores and discards valid and invalid unsent name drafts', async ({
+  page,
+}) => {
+  const wire = watchProfileRenameFrames(page)
+  const sends = countSentFrames(page, 'hilos_profile_name_set')
+  try {
+    const user = await createTestUser(expect, page)
+    await gotoPage(expect, page, '/profile')
+    for (const draft of ['Unsent name', 'X']) {
+      await test.step(`F5 restores the unsent ${draft.length === 1 ? 'invalid' : 'valid'} name draft without a name action`, async () => {
+        await clickSubmit(expect, page.getByTestId('profile-edit'))
+        if (draft === 'Unsent name')
+          await confirmStepUp(page, 'profile-name-step-up-confirm')
+        await typeInto(page.getByTestId('profile-name-input'), draft)
+        const before = await expectProfileNameSnapshot(
+          expect,
+          wire,
+          user.userId,
+          null,
+        )
+        await page.reload()
+        await expectProfileNameSnapshot(
+          expect,
+          wire,
+          user.userId,
+          null,
+          before.socket,
+        )
+        await expectPageReady(expect, page)
+        await expect(page.getByTestId('profile-name-input')).toHaveValue(draft)
+        await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+        await expect(page.getByTestId('conflict-badge')).toBeHidden()
+        if (draft.length === 1)
+          await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+        else await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
+        await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
+        await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
+        const closed = wire.snapshots.at(-1)!
+        await page.reload()
+        await expectProfileNameSnapshot(
+          expect,
+          wire,
+          user.userId,
+          null,
+          closed.socket,
+        )
+        await expectPageReady(expect, page)
+        await expect(page.getByTestId('modal')).toBeHidden()
+        expect(sends()).toBe(0)
       })
-      wire.stop()
     }
-  })
-}
+  } finally {
+    await test.info().attach('unsent-name-wire', {
+      body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
+      contentType: 'application/json',
+    })
+    wire.stop()
+  }
+})
 
 test('surfaces a conflict when the name changes in another tab', async ({
   context,

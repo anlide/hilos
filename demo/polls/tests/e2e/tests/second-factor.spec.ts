@@ -19,7 +19,6 @@ import {
   typeInto,
   expectPageReady,
   gotoPage,
-  PAGE_READY,
   createTestAdmin,
   watchSocketFrames,
   countSentFrames,
@@ -31,7 +30,6 @@ import {
   nextTotpCode,
   totpStep,
 } from '../../../../../framework/frontend/scripts/totp.mjs'
-import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 /**
  * Sign in with a password and stop where the surface asks for the second factor.
@@ -345,32 +343,5 @@ test.describe('turned off for everyone', () => {
         await turnSecondFactorOn(page)
       }
     }
-  })
-})
-
-test.describe('in the admin view mode', () => {
-  test.afterEach(() => setAdminViewMode(false))
-
-  test('a guest opens a two-factor setting modal and finds save disabled by the view mode', async ({
-    page,
-  }) => {
-    await setAdminViewMode(true)
-    await gotoPage(expect, page, '/hilos/security/2fa', PAGE_READY)
-    await clickSubmit(
-      expect,
-      shownByTestId(page, 'hilos-2fa-edit-auth.second_factor.required'),
-    )
-    await expect(page.getByTestId('hilos-2fa-input')).toBeVisible()
-    await expect(
-      page.getByTestId('modal').getByTestId('hilos-hidden'),
-    ).toHaveCount(0)
-    const save = page.getByTestId('hilos-2fa-save')
-    await expect(save).toBeDisabled()
-    await expect(save).toHaveAttribute(
-      'aria-describedby',
-      /(^| )hilos-view-mode-strip-text( |$)/,
-    )
-    await page.keyboard.press('Escape')
-    await expect(page.getByTestId('modal')).toBeHidden()
   })
 })

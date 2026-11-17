@@ -1,7 +1,9 @@
 import type { BrowserContext } from '@playwright/test'
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 
 import {
+  cleanupFixtures,
+  type TestCleanup,
   logout,
   nameFromEmail,
   openSignIn,
@@ -44,107 +46,76 @@ async function cookieValue(
   return cookies.find((cookie) => predicate(cookie.name))?.value ?? ''
 }
 
-test('a login moves the live session onto a new cookie value', async ({
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
+
+test('rotates the browser cookie through login and logout across two tabs', async ({
   page,
   context,
+  cleanup,
 }) => {
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-
-  // The anonymous session the visitor already has: this is the value an attacker
-  // would have planted, and the one that must stop naming the session.
-  const planted = await cookieValue(context, isSessionCookie)
-  expect(planted).not.toBe('')
-
-  const email = uniqueEmail()
-  await seedTestUser({ email })
-  await openSignIn(expect, page)
-  await login(expect, page, email)
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-
-  // The new value arrives on the 101 of the reconnect the ticket triggers, which is a
-  // round trip after the sign-in the assertion above already saw.
-  await expect(async () => {
-    expect(await cookieValue(context, isSessionCookie)).not.toBe(planted)
-  }).toPass()
-
-  // And the ticket does not linger: the master erases the auxiliary cookie on the same
-  // handshake it spends it on, so a replay has nothing to present.
-  await expect(async () => {
-    expect(await cookieValue(context, isRotateCookie)).toBe('')
-  }).toPass()
-
-  // The rotation is invisible to the person: still signed in, still on the same page.
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-  expect(new URL(page.url()).pathname).toBe('/')
-})
-
-test('a second tab of the same browser comes back into the rotated session', async ({
-  context,
-}) => {
-  const tabA = await context.newPage()
+  const tabA = page
   const tabB = await context.newPage()
+  cleanup.defer(() => tabB.close())
   await gotoPage(expect, tabA, '/')
   await gotoPage(expect, tabB, '/')
   await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
   await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
-
   const email = uniqueEmail()
   await seedTestUser({ email })
-  await openSignIn(expect, tabA)
-  await login(expect, tabA, email)
-  await expect(tabA.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-  // Tab B's connection was deliberately left anonymous by the login — promoting it is
-  // the second half of the fixation attack — and is dropped once the browser holds the
-  // new cookie. It reconnects carrying that cookie, lands in the same session, and only
-  // then learns who it is. Nothing is clicked here: this is the whole point.
-  await expect(tabB.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  await test.step('a login moves the live session onto a new cookie value', async () => {
+    // The anonymous session the visitor already has: this is the value an attacker
+    // would have planted, and the one that must stop naming the session.
+    const planted = await cookieValue(context, isSessionCookie)
+    expect(planted).not.toBe('')
 
-  await tabB.close()
-  await tabA.close()
-})
+    await openSignIn(expect, tabA)
+    await login(expect, tabA, email)
+    await expect(tabA.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-test('a sign-out moves the browser onto a new cookie, and a second tab comes back a guest on it', async ({
-  context,
-}) => {
-  const tabA = await context.newPage()
-  const tabB = await context.newPage()
-  await gotoPage(expect, tabA, '/')
-  await gotoPage(expect, tabB, '/')
-  await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
-  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+    // The new value arrives on the 101 of the reconnect the ticket triggers, which is a
+    // round trip after the sign-in the assertion above already saw.
+    await expect(async () => {
+      expect(await cookieValue(context, isSessionCookie)).not.toBe(planted)
+    }).toPass()
 
-  const anonymousToken = await cookieValue(context, isSessionCookie)
-  expect(anonymousToken).not.toBe('')
-  const email = uniqueEmail()
-  await seedTestUser({ email })
-  await openSignIn(expect, tabA)
-  await login(expect, tabA, email)
-  await expect(async () => {
-    expect(await cookieValue(context, isSessionCookie)).not.toBe(anonymousToken)
-    expect(await cookieValue(context, isRotateCookie)).toBe('')
-  }).toPass()
-  await expect(tabB.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
-  const signedInToken = await cookieValue(context, isSessionCookie)
-  expect(signedInToken).not.toBe('')
+    // And the ticket does not linger: the master erases the auxiliary cookie on the same
+    // handshake it spends it on, so a replay has nothing to present.
+    await expect(async () => {
+      expect(await cookieValue(context, isRotateCookie)).toBe('')
+    }).toPass()
 
-  const siblingReconnect = tabB.waitForEvent('websocket')
-  await logout(expect, tabA)
+    // The rotation is invisible to the person: still signed in, still on the same page.
+    await expect(tabA.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    expect(new URL(tabA.url()).pathname).toBe('/')
+  })
 
-  await expect(async () => {
-    const signedOutToken = await cookieValue(context, isSessionCookie)
-    expect(signedOutToken).not.toBe('')
-    expect(signedOutToken).not.toBe(signedInToken)
-    expect(await cookieValue(context, isRotateCookie)).toBe('')
-  }).toPass()
-  await siblingReconnect
-  await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
-  await expect(tabB.getByTestId('nav-profile-name')).toHaveCount(0)
-  await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  await test.step('a second tab of the same browser comes back into the rotated session', async () => {
+    // Tab B's connection was deliberately left anonymous by the login — promoting it is
+    // the second half of the fixation attack — and is dropped once the browser holds the
+    // new cookie. It reconnects carrying that cookie, lands in the same session, and only
+    // then learns who it is. Nothing is clicked here: this is the whole point.
+    await expect(tabB.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+  })
 
-  await tabB.close()
-  await tabA.close()
+  await test.step('a sign-out moves the browser onto a new cookie, and a second tab comes back a guest on it', async () => {
+    const signedInToken = await cookieValue(context, isSessionCookie)
+    expect(signedInToken).not.toBe('')
+
+    const siblingReconnect = tabB.waitForEvent('websocket')
+    await logout(expect, tabA)
+
+    await expect(async () => {
+      const signedOutToken = await cookieValue(context, isSessionCookie)
+      expect(signedOutToken).not.toBe('')
+      expect(signedOutToken).not.toBe(signedInToken)
+      expect(await cookieValue(context, isRotateCookie)).toBe('')
+    }).toPass()
+    await siblingReconnect
+    await expect(tabA.getByTestId('conn-state')).toHaveText('connected')
+    await expect(tabB.getByTestId('nav-profile-name')).toHaveCount(0)
+    await expect(tabB.getByTestId('conn-state')).toHaveText('connected')
+    await expect(tabA.getByTestId('nav-profile-name')).toHaveCount(0)
+  })
 })

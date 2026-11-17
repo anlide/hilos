@@ -11,6 +11,8 @@ import {
   deliveryObject,
   expectProfileNameSnapshot,
   watchProfileRenameFrames,
+  watchProfileRenameStatus,
+  expectProfileHeadAccessibility,
   expectPageReady,
   createTestUser,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -219,7 +221,7 @@ test('publishes a profile name only after the model approves it and keeps the pr
   }
 })
 
-test('F5 restores an open unsent name draft and a closed modal', async ({
+test('keeps an accessible name draft through close routes and reloads without sending it', async ({
   page,
 }) => {
   const wire = watchProfileRenameFrames(page)
@@ -229,49 +231,123 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
     await gotoPage(expect, page, '/profile')
     await expect(page.getByTestId('profile-name')).toHaveText(user.name)
 
-    await clickSubmit(expect, page.getByTestId('profile-edit'))
-    await confirmStepUp(page, 'profile-name-step-up-confirm')
-    await typeInto(page.getByTestId('profile-name-input'), 'X')
-    const beforeReload = await expectProfileNameSnapshot(
-      expect,
-      wire,
-      user.userId,
-      null,
-    )
+    await test.step('the profile name dialog exposes accessible focus and dirty-close behavior', async () => {
+      await expectProfileHeadAccessibility(expect, page, user.name)
+      const opener = page.getByTestId('profile-edit')
+      await clickSubmit(expect, opener)
+      await expect(page.getByTestId('modal')).toHaveAccessibleName(
+        "Confirm it's you",
+      )
+      await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+      await clickSubmit(
+        expect,
+        page.getByTestId('profile-name-step-up-confirm'),
+      )
 
-    await page.reload()
-    await expectProfileNameSnapshot(
-      expect,
-      wire,
-      user.userId,
-      null,
-      beforeReload.socket,
-    )
-    await expectPageReady(expect, page)
-    await expect(page.getByTestId('conn-state')).toHaveText('connected')
-    await expect(page.getByTestId('modal')).toBeVisible()
-    await expect(page.getByTestId('profile-name-input')).toHaveValue('X')
-    await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
-    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+      const dialog = page.getByTestId('modal')
+      const field = page.getByTestId('profile-name-input')
+      await expect(dialog).toHaveRole('dialog')
+      await expect(dialog).toHaveAttribute('aria-modal', 'true')
+      await expect(dialog).toHaveAccessibleName('Change name')
+      await expect(field).toHaveAccessibleName('Display name')
+      await expect(field).toBeFocused()
+      const status = await watchProfileRenameStatus(expect, page)
+      await status.unchanged(false)
 
-    await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
-    await expect(page.getByTestId('modal-confirm')).toHaveRole('alertdialog')
-    await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
-    await expect(page.getByTestId('modal')).toHaveCount(0)
-    const closed = wire.snapshots.at(-1)!
+      const draft = 'Accessible draft'
+      await typeInto(field, draft)
+      const save = page.getByTestId('profile-rename-save')
+      const cancel = page.getByTestId('profile-rename-cancel')
+      const close = dialog.getByTestId('modal-close')
+      const confirmation = page.getByTestId('modal-confirm')
+      const keepEditing = page.getByTestId('modal-confirm-cancel')
+      const discard = page.getByTestId('modal-confirm-discard')
+      await expect(cancel).toHaveAccessibleName('Cancel')
+      await expect(close).toHaveAccessibleName('Close')
+      await expect(save).toHaveAccessibleName('Save')
+      await expect(save).toBeEnabled()
+      await status.unchanged(false)
 
-    await page.reload()
-    await expectProfileNameSnapshot(
-      expect,
-      wire,
-      user.userId,
-      null,
-      closed.socket,
-    )
-    await expectPageReady(expect, page)
-    await expect(page.getByTestId('modal')).toHaveCount(0)
-    await expect(page.getByTestId('profile-name')).toHaveText(user.name)
-    expect(sends()).toBe(0)
+      // The last enabled control wraps back to the close button in either direction.
+      await close.focus()
+      await close.press('Shift+Tab')
+      await expect(save).toBeFocused()
+      await save.press('Tab')
+      await expect(close).toBeFocused()
+
+      // Escape and every explicit close route raise the same discard confirmation.
+      await page.keyboard.press('Escape')
+      await expect(confirmation).toHaveRole('alertdialog')
+      await expect(confirmation).toHaveAccessibleName('Discard changes?')
+      await expect(confirmation).toBeFocused()
+      await clickSubmit(expect, keepEditing)
+      await expect(confirmation).toHaveCount(0)
+      await expect(field).toHaveValue(draft)
+
+      await clickSubmit(expect, cancel)
+      await expect(confirmation).toBeVisible()
+      await clickSubmit(expect, keepEditing)
+      await expect(confirmation).toHaveCount(0)
+      await expect(field).toHaveValue(draft)
+
+      await clickSubmit(expect, close)
+      await expect(confirmation).toBeVisible()
+      await clickSubmit(expect, keepEditing)
+      await expect(confirmation).toHaveCount(0)
+      await expect(field).toHaveValue(draft)
+      await status.unchanged(false)
+
+      await dialog.click({ position: { x: 2, y: 2 } })
+      await expect(confirmation).toBeVisible()
+      await clickSubmit(expect, discard)
+      await expect(dialog).toHaveCount(0)
+      await expect(opener).toBeFocused()
+    })
+
+    await test.step('F5 restores an open unsent name draft and a closed modal', async () => {
+      await clickSubmit(expect, page.getByTestId('profile-edit'))
+      await typeInto(page.getByTestId('profile-name-input'), 'X')
+      const beforeReload = await expectProfileNameSnapshot(
+        expect,
+        wire,
+        user.userId,
+        null,
+      )
+
+      await page.reload()
+      await expectProfileNameSnapshot(
+        expect,
+        wire,
+        user.userId,
+        null,
+        beforeReload.socket,
+      )
+      await expectPageReady(expect, page)
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
+      await expect(page.getByTestId('modal')).toBeVisible()
+      await expect(page.getByTestId('profile-name-input')).toHaveValue('X')
+      await expect(page.getByTestId('profile-rename-save')).toBeDisabled()
+      await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+
+      await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
+      await expect(page.getByTestId('modal-confirm')).toHaveRole('alertdialog')
+      await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
+      await expect(page.getByTestId('modal')).toHaveCount(0)
+      const closed = wire.snapshots.at(-1)!
+
+      await page.reload()
+      await expectProfileNameSnapshot(
+        expect,
+        wire,
+        user.userId,
+        null,
+        closed.socket,
+      )
+      await expectPageReady(expect, page)
+      await expect(page.getByTestId('modal')).toHaveCount(0)
+      await expect(page.getByTestId('profile-name')).toHaveText(user.name)
+      expect(sends()).toBe(0)
+    })
   } finally {
     await test.info().attach('unsent-profile-name-wire', {
       body: JSON.stringify({ nameActions: sends(), ...wire }, null, 2),
@@ -281,7 +357,9 @@ test('F5 restores an open unsent name draft and a closed modal', async ({
   }
 })
 
-test('changes the account email in five steps (HIL-1277)', async ({ page }) => {
+test('refuses a wrong password then changes the email through both address codes', async ({
+  page,
+}) => {
   let fullLoads = 0
   page.on('load', () => {
     fullLoads += 1
@@ -293,31 +371,45 @@ test('changes the account email in five steps (HIL-1277)', async ({ page }) => {
   await expect(page.getByTestId('profile-email')).toContainText(was)
   const loadsBeforeChange = fullLoads
 
-  await page.getByTestId('profile-email-change').click()
-  await confirmStepUp(page, 'profile-email-step-up-confirm')
-  await clickSubmit(expect, page.getByTestId('profile-email-send-current'))
-  const currentCode = await waitForMailCode(
-    was,
-    'Confirm it is you to change your email address',
-  )
-  await typeInto(page.getByTestId('profile-email-code-current'), currentCode)
-  await clickSubmit(expect, page.getByTestId('profile-email-confirm-current'))
+  await test.step('confirms an email change with the account password', async () => {
+    await clickSubmit(expect, page.getByTestId('profile-email-change'))
 
-  const now = uniqueEmail()
-  await typeInto(page.getByTestId('profile-email-new'), now)
-  await clickSubmit(expect, page.getByTestId('profile-email-send-new'))
-  const newCode = await waitForMailCode(now, 'Confirm your new email address')
-  await typeInto(page.getByTestId('profile-email-code-new'), newCode)
-  await clickSubmit(expect, page.getByTestId('profile-email-confirm-new'))
+    await typeInto(page.getByTestId('step-up-password'), 'wrong password')
+    await clickSubmit(expect, page.getByTestId('profile-email-step-up-confirm'))
+    await expect(page.getByTestId('step-up-error')).toHaveText(
+      'Incorrect password',
+    )
 
-  await expect(page.getByTestId('profile-email-was')).toHaveText(was)
-  await expect(page.getByTestId('profile-email-now')).toHaveText(now)
-  await page.getByTestId('profile-email-done').click()
-  await expect(page.getByTestId('modal')).toBeHidden()
-  await expect(page.getByTestId('profile-email')).toContainText(now)
-  await expect(page.getByTestId('profile-identity-email')).toHaveText(now)
-  expect(fullLoads).toBe(loadsBeforeChange)
+    await typeInto(page.getByTestId('step-up-password'), PASSWORD)
+    await clickSubmit(expect, page.getByTestId('profile-email-step-up-confirm'))
+    await expect(page.getByTestId('profile-email-send-current')).toBeVisible()
+  })
 
-  await waitForMailTo(was, 'Your email address was changed')
-  await waitForMailTo(now, 'Your email address was changed')
+  await test.step('changes the account email in five steps (HIL-1277)', async () => {
+    await clickSubmit(expect, page.getByTestId('profile-email-send-current'))
+    const currentCode = await waitForMailCode(
+      was,
+      'Confirm it is you to change your email address',
+    )
+    await typeInto(page.getByTestId('profile-email-code-current'), currentCode)
+    await clickSubmit(expect, page.getByTestId('profile-email-confirm-current'))
+
+    const now = uniqueEmail()
+    await typeInto(page.getByTestId('profile-email-new'), now)
+    await clickSubmit(expect, page.getByTestId('profile-email-send-new'))
+    const newCode = await waitForMailCode(now, 'Confirm your new email address')
+    await typeInto(page.getByTestId('profile-email-code-new'), newCode)
+    await clickSubmit(expect, page.getByTestId('profile-email-confirm-new'))
+
+    await expect(page.getByTestId('profile-email-was')).toHaveText(was)
+    await expect(page.getByTestId('profile-email-now')).toHaveText(now)
+    await page.getByTestId('profile-email-done').click()
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(page.getByTestId('profile-email')).toContainText(now)
+    await expect(page.getByTestId('profile-identity-email')).toHaveText(now)
+    expect(fullLoads).toBe(loadsBeforeChange)
+
+    await waitForMailTo(was, 'Your email address was changed')
+    await waitForMailTo(now, 'Your email address was changed')
+  })
 })

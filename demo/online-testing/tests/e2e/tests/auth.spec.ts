@@ -29,7 +29,7 @@ import {
 // surface reaches this project's seams and comes back with an account in the
 // framework's people table, named on this demo's home.
 //
-// Four cases carry that: registering by the mailed code — which also pins the
+// The journeys carry that: registering by the mailed code — which also pins the
 // frame the surface arrives in over the page, as a modal, because that frame is
 // this demo's App and not the framework's — signing back in with the password
 // after a wrong one, recovering a forgotten one, and the surface standing in
@@ -97,70 +97,68 @@ test('holds the address in a modal over the page, and signs the session in on th
   await expect(page.getByTestId('nav-signin')).toHaveCount(0)
 })
 
-test('answers a wrong password inline, then signs the account back in', async ({
+test('corrects a refused password, recovers it and signs in with the new one', async ({
   page,
 }) => {
   const email = uniqueEmail()
-
   await createTestUser(expect, page, { email })
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-  await logout(expect, page)
-  // Signing out puts the visitor back on the anonymous branch, which is the
-  // state the header's Sign in button belongs to.
-  await expect(page.getByTestId('nav-signin')).toBeVisible()
-  await expect(page.getByTestId('self-anonymous')).toBeVisible()
+  await test.step('answers a wrong password inline, then signs the account back in', async () => {
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
 
-  await openSignIn(expect, page)
-  await enterIdentifierAndPassword(expect, page, email, 'not the password')
-  await clickSubmit(expect, page.getByTestId('auth-submit'))
-  await waitAuthSettled(expect, page)
+    await logout(expect, page)
+    // Signing out puts the visitor back on the anonymous branch, which is the
+    // state the header's Sign in button belongs to.
+    await expect(page.getByTestId('nav-signin')).toBeVisible()
+    await expect(page.getByTestId('self-anonymous')).toBeVisible()
 
-  await expect(page.getByTestId('auth-error')).toBeVisible()
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await expect(page.getByTestId('self-anonymous')).toBeVisible()
+    await openSignIn(expect, page)
+    await enterIdentifierAndPassword(expect, page, email, 'not the password')
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
+    await waitAuthSettled(expect, page)
 
-  // The surface is still standing, so the right password goes into the same
-  // form the wrong one was refused on.
-  await login(expect, page, email)
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
-})
+    await expect(page.getByTestId('auth-error')).toBeVisible()
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+    await expect(page.getByTestId('self-anonymous')).toBeVisible()
 
-test('recovers a forgotten password and signs in with the new one', async ({
-  page,
-}) => {
-  const email = uniqueEmail()
-  const newPassword = 'a whole other passphrase'
+    // The surface is still standing, so the right password goes into the same
+    // form the wrong one was refused on.
+    await login(expect, page, email)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  })
 
-  await createTestUser(expect, page, { email })
-  await logout(expect, page)
+  await test.step('recovers a forgotten password and signs in with the new one', async () => {
+    const newPassword = 'a whole other passphrase'
 
-  // Recovery starts from the same one field: the lookup finds the account,
-  // reveals the password, and the key beside it asks for a code instead.
-  await openSignIn(expect, page)
-  await enterIdentifierAndPassword(expect, page, email, PASSWORD)
-  await page.getByTestId('auth-recovery').click()
-  await expect(page.getByTestId('auth-code')).toBeVisible()
+    await logout(expect, page)
 
-  await typeInto(
-    page.getByTestId('auth-code'),
-    await readPasswordResetCode(email),
-  )
-  await clickSubmit(expect, page.getByTestId('auth-submit'))
+    // Recovery starts from the same one field: the lookup finds the account,
+    // reveals the password, and the key beside it asks for a code instead.
+    await openSignIn(expect, page)
+    await enterIdentifierAndPassword(expect, page, email, PASSWORD)
+    await page.getByTestId('auth-recovery').click()
+    await expect(page.getByTestId('auth-code')).toBeVisible()
 
-  // An accepted recovery code does not sign anybody in: it opens the step that
-  // chooses the new password, and only that ends the ceremony.
-  const newPasswordField = page.getByTestId('auth-new-password')
-  await expect(newPasswordField).toBeVisible()
-  await typeInto(newPasswordField, newPassword)
-  await clickSubmit(expect, page.getByTestId('auth-submit'))
-  await continueFromDone(expect, page)
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    await typeInto(
+      page.getByTestId('auth-code'),
+      await readPasswordResetCode(email),
+    )
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
 
-  await logout(expect, page)
-  await openSignIn(expect, page)
-  await login(expect, page, email, newPassword)
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+    // An accepted recovery code does not sign anybody in: it opens the step that
+    // chooses the new password, and only that ends the ceremony.
+    const newPasswordField = page.getByTestId('auth-new-password')
+    await expect(newPasswordField).toBeVisible()
+    await typeInto(newPasswordField, newPassword)
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
+    await continueFromDone(expect, page)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+
+    await logout(expect, page)
+    await openSignIn(expect, page)
+    await login(expect, page, email, newPassword)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  })
 })
 
 test('shows the surface in place of an admin page a guest is refused', async ({

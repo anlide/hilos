@@ -1,9 +1,11 @@
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 import {
+  cleanupFixtures,
+  type TestCleanup,
   clickSubmit,
   openAndSelectPhoto,
+  selectPhoto,
   gotoPage,
-  createTestUser,
   preparePhotoSubject,
 } from '../../../../../framework/frontend/e2e/index.js'
 
@@ -11,10 +13,13 @@ import { rotatedJpeg } from '../../../../../framework/frontend/scripts/profilePh
 import {
   dictateModerationVerdict,
   modelKey,
+  forgetModelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { picture } from '../helpers/profilePhoto.js'
 
 const PHOTO_LIMIT_BYTES = 40 * 1024 * 1024
+
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
 test('an EXIF-rotated photo reaches both tabs and guests, then can be removed', async ({
   page,
@@ -83,61 +88,59 @@ test('an EXIF-rotated photo reaches both tabs and guests, then can be removed', 
   }
 })
 
-test('a photo rejected for nudity stays in the crop window and initials remain', async ({
+test('corrects an oversized and refused photo with an accepted transparent PNG', async ({
   page,
+  cleanup,
 }) => {
   const key = modelKey()
+  cleanup.defer(() => forgetModelKey(key))
   await preparePhotoSubject(expect, page, key)
-  await dictateModerationVerdict(key, false, 'nudity')
-  await openAndSelectPhoto(
-    expect,
-    page,
-    await picture(page, 'image/jpeg'),
-    'image/jpeg',
-  )
-  await clickSubmit(expect, page.getByTestId('profile-photo-save'))
-  await expect(page.getByTestId('profile-photo-error')).toHaveText(
-    'This photo was not accepted: it looks like nudity or sexual content.',
-  )
-  await expect(page.getByTestId('profile-photo-preview')).toBeVisible()
-  await expect(
-    page.getByTestId('nav-profile').getByTestId('hilos-avatar-photo'),
-  ).toHaveCount(0)
-})
-
-test('a transparent PNG is accepted as a cropped photo', async ({ page }) => {
-  const key = modelKey()
-  await preparePhotoSubject(expect, page, key)
-  await dictateModerationVerdict(key, true, 'ok')
-  await openAndSelectPhoto(
-    expect,
-    page,
-    await picture(page, 'image/png'),
-    'image/png',
-  )
-  await clickSubmit(expect, page.getByTestId('profile-photo-save'))
-  await expect(page.getByTestId('modal')).toBeHidden()
-  await expect(
-    page.getByTestId('profile-identity').getByTestId('hilos-avatar-photo'),
-  ).toBeVisible()
-})
-
-test('a picture over 40 MB is refused before an upload begins', async ({
-  page,
-}) => {
-  await createTestUser(expect, page)
-  await gotoPage(expect, page, '/profile')
-  await clickSubmit(expect, page.getByTestId('profile-photo-open'))
-  await page.getByTestId('profile-photo-input').setInputFiles({
-    name: 'too-large.png',
-    mimeType: 'image/png',
-    buffer: Buffer.alloc(PHOTO_LIMIT_BYTES + 1),
+  await test.step('a picture over 40 MB is refused before an upload begins', async () => {
+    await clickSubmit(expect, page.getByTestId('profile-photo-open'))
+    await page.getByTestId('profile-photo-input').setInputFiles({
+      name: 'too-large.png',
+      mimeType: 'image/png',
+      buffer: Buffer.alloc(PHOTO_LIMIT_BYTES + 1),
+    })
+    await expect(page.getByTestId('profile-photo-error')).toHaveText(
+      'This picture is larger than 40 MB.',
+    )
+    await expect(page.getByTestId('profile-photo-preview')).toHaveCount(0)
+    await expect(
+      page.getByTestId('nav-profile').getByTestId('hilos-avatar-photo'),
+    ).toHaveCount(0)
   })
-  await expect(page.getByTestId('profile-photo-error')).toHaveText(
-    'This picture is larger than 40 MB.',
-  )
-  await expect(page.getByTestId('profile-photo-preview')).toHaveCount(0)
-  await expect(
-    page.getByTestId('nav-profile').getByTestId('hilos-avatar-photo'),
-  ).toHaveCount(0)
+
+  await test.step('a photo rejected for nudity stays in the crop window and initials remain', async () => {
+    await dictateModerationVerdict(key, false, 'nudity')
+    await selectPhoto(
+      expect,
+      page,
+      await picture(page, 'image/jpeg'),
+      'image/jpeg',
+    )
+    await clickSubmit(expect, page.getByTestId('profile-photo-save'))
+    await expect(page.getByTestId('profile-photo-error')).toHaveText(
+      'This photo was not accepted: it looks like nudity or sexual content.',
+    )
+    await expect(page.getByTestId('profile-photo-preview')).toBeVisible()
+    await expect(
+      page.getByTestId('nav-profile').getByTestId('hilos-avatar-photo'),
+    ).toHaveCount(0)
+  })
+
+  await test.step('a transparent PNG is accepted as a cropped photo', async () => {
+    await dictateModerationVerdict(key, true, 'ok')
+    await selectPhoto(
+      expect,
+      page,
+      await picture(page, 'image/png'),
+      'image/png',
+    )
+    await clickSubmit(expect, page.getByTestId('profile-photo-save'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await expect(
+      page.getByTestId('profile-identity').getByTestId('hilos-avatar-photo'),
+    ).toBeVisible()
+  })
 })

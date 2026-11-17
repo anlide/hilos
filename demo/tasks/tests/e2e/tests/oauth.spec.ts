@@ -199,42 +199,41 @@ test('refuses the sign-in when the provider says the code has expired', async ({
   await expectProviderRefusal(page, 'github')
 })
 
-test('returns quietly to the field when the person refuses at the provider', async ({
+test('returns quietly from a denied provider and a closed provider chooser', async ({
   page,
 }) => {
-  await declareOAuthAccount('github', { email: uniqueEmail() })
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await test.step('returns quietly to the field when the person refuses at the provider', async () => {
+    await declareOAuthAccount('github', { email: uniqueEmail() })
+    await gotoPage(expect, page, '/profile')
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
 
-  const providerWindow = waitForProviderWindow(page)
-  await page.getByTestId('auth-icon-oauth-github').click()
-  await denyConsent(await providerWindow)
+    const providerWindow = waitForProviderWindow(page)
+    await page.getByTestId('auth-icon-oauth-github').click()
+    await denyConsent(await providerWindow)
 
-  // A decision, not a failure: back to the field with nothing to say.
-  await expect(page.getByTestId('auth-identifier')).toBeVisible()
-  await expect(page.getByTestId('auth-error')).toHaveCount(0)
-  await expect(page.getByTestId('auth-notice')).toHaveCount(0)
-  await expect(page.getByTestId('profile-name')).toHaveCount(0)
-})
+    // A decision, not a failure: back to the field with nothing to say.
+    await expect(page.getByTestId('auth-identifier')).toBeVisible()
+    await expect(page.getByTestId('auth-error')).toHaveCount(0)
+    await expect(page.getByTestId('auth-notice')).toHaveCount(0)
+    await expect(page.getByTestId('profile-name')).toHaveCount(0)
+  })
 
-test('returns quietly to the field when the person closes the provider window', async ({
-  page,
-}) => {
-  await declareOAuthAccount('google', { email: uniqueEmail() })
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await test.step('returns quietly to the field when the person closes the provider window', async () => {
+    await declareOAuthAccount('google', { email: uniqueEmail() })
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
 
-  const providerWindow = waitForProviderWindow(page)
-  await page.getByTestId('auth-icon-oauth-google').click()
-  await abandonConsent(await providerWindow)
+    const providerWindow = waitForProviderWindow(page)
+    await page.getByTestId('auth-icon-oauth-google').click()
+    await abandonConsent(await providerWindow)
 
-  // Nothing is sent when a window is closed; the trip notices by asking whether the
-  // window is still there (OAUTH_WINDOW_POLL_MS, every 500 ms), which the wait for the
-  // field covers.
-  await expect(page.getByTestId('auth-identifier')).toBeVisible()
-  await expect(page.getByTestId('auth-error')).toHaveCount(0)
-  await expect(page.getByTestId('auth-notice')).toHaveCount(0)
-  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+    // Nothing is sent when a window is closed; the trip notices by asking whether the
+    // window is still there (OAUTH_WINDOW_POLL_MS, every 500 ms), which the wait for the
+    // field covers.
+    await expect(page.getByTestId('auth-identifier')).toBeVisible()
+    await expect(page.getByTestId('auth-error')).toHaveCount(0)
+    await expect(page.getByTestId('auth-notice')).toHaveCount(0)
+    await expect(page.getByTestId('profile-name')).toHaveCount(0)
+  })
 })
 
 // The regression of HIL-732, and the reason it lives on the stand. On TLS a socket is

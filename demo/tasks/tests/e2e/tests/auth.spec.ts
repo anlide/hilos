@@ -9,6 +9,7 @@ import {
 } from '../../../../../framework/frontend/core/src/base/index.js'
 
 import {
+  expectPasswordVisibility,
   PASSWORD,
   createTestUser,
   continueFromDone,
@@ -138,7 +139,7 @@ test('holds the address in a modal over the page, and signs the session in on th
   await expect(page.getByTestId('nav-signin')).toHaveCount(0)
 })
 
-test('answers a wrong password inline, then signs the account back in', async ({
+test('uses the password keyboard toggle, corrects a refusal and signs in', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -153,18 +154,34 @@ test('answers a wrong password inline, then signs the account back in', async ({
   await expect(page.getByTestId('self-user-id')).toBeEmpty()
 
   await openSignIn(expect, page)
-  await enterIdentifierAndPassword(expect, page, email, 'not the password')
-  await clickSubmit(expect, page.getByTestId('auth-submit'))
-  await waitAuthSettled(expect, page)
 
-  await expect(page.getByTestId('auth-error')).toBeVisible()
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await expect(page.getByTestId('self-user-id')).toBeEmpty()
+  await test.step('password visibility toggle operates from keyboard on sign-in', async () => {
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+    await enterIdentifierAndPassword(expect, page, email, PASSWORD)
+    await expectPasswordVisibility(
+      expect,
+      page,
+      'auth-password',
+      'auth-password-toggle',
+    )
+    // Ensure the surface remains open: toggling password visibility does not submit the form.
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+  })
 
-  // The surface is still standing, so the right password goes into the same
-  // form the wrong one was refused on.
-  await login(expect, page, email)
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  await test.step('answers a wrong password inline, then signs the account back in', async () => {
+    await typeInto(page.getByTestId('auth-password'), 'not the password')
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
+    await waitAuthSettled(expect, page)
+
+    await expect(page.getByTestId('auth-error')).toBeVisible()
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+    await expect(page.getByTestId('self-user-id')).toBeEmpty()
+
+    // The surface is still standing, so the right password goes into the same
+    // form the wrong one was refused on.
+    await login(expect, page, email)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  })
 })
 
 test('recovers a forgotten password and signs in with the new one', async ({
@@ -709,32 +726,7 @@ test(
   },
 )
 
-test('puts a held address back on its code step after a silent walk-away', async ({
-  page,
-}) => {
-  const email = uniqueEmail()
-
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await submitRegistration(expect, page, email)
-  await readRegisterCode(email)
-
-  // Leaving in SILENCE — closing the tab, coming back later — says nothing and
-  // sends nothing, so the hold this browser took stands (HIL-608). This is the
-  // half of the old "not that address?" that survived HIL-829: the other half,
-  // pressing the way out, now frees the address instead (the case below).
-  await gotoPage(expect, page, '/profile')
-
-  // And the return is answered with the code step of the letter already sent:
-  // nothing was submitted and no second letter was mailed. Only THIS browser's
-  // hold answers that way — another browser is offered the ways to register it.
-  await expect(page.getByTestId('auth-code')).toBeVisible()
-  await expect(page.getByTestId('auth-surface')).toContainText(email)
-  await expect(page.getByTestId('auth-error')).toHaveCount(0)
-  expect(await mailsTo(email)).toHaveLength(1)
-})
-
-test('gives the held address its own code back, instead of a second registration', async ({
+test('resumes a held registration and completes it with the first mailed code', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -744,22 +736,44 @@ test('gives the held address its own code back, instead of a second registration
   await submitRegistration(expect, page, email)
   const code = await readRegisterCode(email)
 
-  // The same silent return as the case above, carried through to the end: what
-  // the returning browser is handed is its own unfinished registration, not the
-  // offer to start one on an address it has already reserved (HIL-651). So the
-  // code from the FIRST letter is the one this screen accepts, and no second
-  // letter was ever mailed.
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-code')).toBeVisible()
-  await expect(page.getByTestId('auth-password')).toHaveCount(0)
+  await test.step('offers a countdown instead of a resend while the cooldown holds', async () => {
+    // The gate is the backend's and it is armed by the send itself (HIL-421/486), so
+    // the screen cannot even offer a second letter yet: where the button would be,
+    // it counts down to when one becomes possible.
+    await expect(page.getByTestId('auth-resend-in')).toContainText(/\d+:\d{2}/)
+    await expect(page.getByTestId('auth-resend')).toHaveCount(0)
+    expect(await mailsTo(email)).toHaveLength(1)
+  })
 
-  await submitRegistrationCode(expect, page, code)
-  await submitFirstPassword(expect, page, PASSWORD)
-  await continueFromDone(expect, page)
-  await expect(page.getByTestId('profile-name')).toHaveText(
-    nameFromEmail(email),
-  )
-  expect(await mailsTo(email)).toHaveLength(1)
+  await test.step('puts a held address back on its code step after a silent walk-away', async () => {
+    // Leaving in SILENCE — closing the tab, coming back later — says nothing and
+    // sends nothing, so the hold this browser took stands (HIL-608). This is the
+    // half of the old "not that address?" that survived HIL-829: the other half,
+    // pressing the way out, now frees the address instead (the case below).
+    await gotoPage(expect, page, '/profile')
+
+    // And the return is answered with the code step of the letter already sent:
+    // nothing was submitted and no second letter was mailed. Only THIS browser's
+    // hold answers that way — another browser is offered the ways to register it.
+    await expect(page.getByTestId('auth-code')).toBeVisible()
+    await expect(page.getByTestId('auth-surface')).toContainText(email)
+    await expect(page.getByTestId('auth-error')).toHaveCount(0)
+    expect(await mailsTo(email)).toHaveLength(1)
+  })
+
+  await test.step('gives the held address its own code back, instead of a second registration', async () => {
+    await expect(page.getByTestId('auth-code')).toBeVisible()
+    await expect(page.getByTestId('auth-password')).toHaveCount(0)
+
+    await submitRegistrationCode(expect, page, code)
+    await submitFirstPassword(expect, page, PASSWORD)
+    await continueFromDone(expect, page)
+    await expect(page.getByTestId('profile-name')).toBeVisible()
+    await expect(page.getByTestId('profile-name')).toHaveText(
+      nameFromEmail(email),
+    )
+    expect(await mailsTo(email)).toHaveLength(1)
+  })
 })
 
 test('frees the address when the way out is pressed, and starts over on it', async ({
@@ -1141,29 +1155,4 @@ test('lowers the standing panel in the other tab when the session logs out', asy
   }).toPass()
   await expect(second.getByTestId('modal')).toBeHidden()
   await expect(second.getByTestId('nav-profile-name')).toHaveCount(0)
-})
-
-test('offers a countdown instead of a resend while the cooldown holds', async ({
-  page,
-}) => {
-  const email = uniqueEmail()
-
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await submitRegistration(expect, page, email)
-  const code = await readRegisterCode(email)
-
-  // The gate is the backend's and it is armed by the send itself (HIL-421/486), so
-  // the screen cannot even offer a second letter yet: where the button would be,
-  // it counts down to when one becomes possible.
-  await expect(page.getByTestId('auth-resend-in')).toContainText(/\d+:\d{2}/)
-  await expect(page.getByTestId('auth-resend')).toHaveCount(0)
-
-  // And the first code is still the live one — nothing was minted behind the
-  // countdown, so it still opens the account.
-  await submitRegistrationCode(expect, page, code)
-  await submitFirstPassword(expect, page, PASSWORD)
-  await continueFromDone(expect, page)
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  expect(await mailsTo(email)).toHaveLength(1)
 })

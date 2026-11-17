@@ -11,6 +11,7 @@ import {
   readRegisterCode,
 } from '../../../../../framework/frontend/scripts/mail.mjs'
 import {
+  expectPasswordVisibility,
   PASSWORD,
   createTestUser,
   continueFromDone,
@@ -129,7 +130,7 @@ test('holds the address in a modal over the page, and signs the session in on th
   await expect(page.getByTestId('nav-signin')).toHaveCount(0)
 })
 
-test('answers a wrong password inline, then signs the account back in', async ({
+test('uses the password keyboard toggle, corrects a refusal and signs in', async ({
   page,
 }) => {
   const email = uniqueEmail()
@@ -144,18 +145,43 @@ test('answers a wrong password inline, then signs the account back in', async ({
   await expect(page.getByTestId('self-user-id')).toBeEmpty()
 
   await openSignIn(expect, page)
-  await enterIdentifierAndPassword(expect, page, email, 'not the password')
-  await clickSubmit(expect, page.getByTestId('auth-submit'))
-  await waitAuthSettled(expect, page)
 
-  await expect(page.getByTestId('auth-error')).toBeVisible()
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await expect(page.getByTestId('self-user-id')).toBeEmpty()
+  await test.step('the sign-in card holds room for a refusal before there is one', async () => {
+    await expect(page.getByTestId('auth-error-slot')).toBeAttached()
+    await expect(page.getByTestId('auth-error-idle')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    )
+    await expect(page.getByTestId('auth-error')).toHaveCount(0)
+  })
 
-  // The surface is still standing, so the right password goes into the same
-  // form the wrong one was refused on.
-  await login(expect, page, email)
-  await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  await test.step('password visibility toggle operates from keyboard on sign-in', async () => {
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+    await enterIdentifierAndPassword(expect, page, email, PASSWORD)
+    await expectPasswordVisibility(
+      expect,
+      page,
+      'auth-password',
+      'auth-password-toggle',
+    )
+    // Ensure the surface remains open: toggling password visibility does not submit the form.
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+  })
+
+  await test.step('answers a wrong password inline, then signs the account back in', async () => {
+    await typeInto(page.getByTestId('auth-password'), 'not the password')
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
+    await waitAuthSettled(expect, page)
+
+    await expect(page.getByTestId('auth-error')).toBeVisible()
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+    await expect(page.getByTestId('self-user-id')).toBeEmpty()
+
+    // The surface is still standing, so the right password goes into the same
+    // form the wrong one was refused on.
+    await login(expect, page, email)
+    await expect(page.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  })
 })
 
 test('recovers a forgotten password and signs in with the new one', async ({

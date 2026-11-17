@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test'
 import { test, expect } from '../test.js'
 
 import {
+  continueFromDone,
   enterIdentifierAndPassword,
   login,
   openSignIn,
@@ -49,53 +50,58 @@ import { logout } from '../helpers/session.js'
 //   - the browser's own time zone named on every socket, a guest's and a
 //     signed-in person's alike (HIL-1582).
 
-test('registers and signs back in through the gated profile surface, resuming it in place', async ({
+test('registers with stable steps and resumes the gated profile on registration and login', async ({
   page,
 }) => {
-  const email = uniqueEmail()
+  await test.step('registers and signs back in through the gated profile surface, resuming it in place', async () => {
+    const email = uniqueEmail()
 
-  await gotoPage(expect, page, '/')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  // Anonymous: no session user yet, so the chat composer prompts to sign in.
-  await expect(page.getByTestId('message-signin')).toBeVisible()
+    await gotoPage(expect, page, '/')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    // Anonymous: no session user yet, so the chat composer prompts to sign in.
+    await expect(page.getByTestId('message-signin')).toBeVisible()
 
-  // The framework profile page is AUTHENTICATED-guarded: an anonymous subscribe
-  // 401s and the gate mounts the sign-in surface in place of the profile view.
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await expect(page.getByTestId('profile-name')).toHaveCount(0)
+    // The framework profile page is AUTHENTICATED-guarded: an anonymous subscribe
+    // 401s and the gate mounts the sign-in surface in place of the profile view.
+    await gotoPage(expect, page, '/profile')
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+    await expect(page.getByTestId('profile-name')).toHaveCount(0)
 
-  // Register: autoLoginAfterRegister (default) upgrades the live session, the
-  // gate clears the 401, and the preserved profile subscription resumes with no
-  // document reload and no route change.
-  let fullLoads = 0
-  page.on('load', () => {
-    fullLoads += 1
+    // Register: autoLoginAfterRegister (default) upgrades the live session, the
+    // gate clears the 401, and the preserved profile subscription resumes with no
+    // document reload and no route change.
+    let fullLoads = 0
+    page.on('load', () => {
+      fullLoads += 1
+    })
+    await test.step('keeps the main button at one height on ordinary registration steps', async () => {
+      await registerWithTheMainButtonStill(page, email)
+    })
+    await continueFromDone(expect, page)
+    await expect(page.getByTestId('profile-name')).toBeVisible()
+    await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+    expect(new URL(page.url()).pathname).toBe('/profile')
+    expect(fullLoads).toBe(0)
+
+    // Logout reverts to anonymous; re-reaching the gated profile 401s again and the
+    // surface mounts anew.
+    await logout(expect, page)
+    await gotoPage(expect, page, '/profile')
+    await expect(page.getByTestId('auth-surface')).toBeVisible()
+    await expect(page.getByTestId('profile-name')).toHaveCount(0)
+
+    // Anonymous again: the gated profile re-mounts the surface (login mode by
+    // default). Signing in with the credentials just registered resumes the same
+    // preserved subscription in place — no navigation. Reaching the gated page
+    // again was a full load on purpose (gotoPage), so the counter starts over
+    // here and vouches for the sign-in the way it vouched for the registration.
+    fullLoads = 0
+    await login(expect, page, email, PASSWORD)
+    await expect(page.getByTestId('profile-name')).toBeVisible()
+    await expect(page.getByTestId('auth-surface')).toHaveCount(0)
+    expect(new URL(page.url()).pathname).toBe('/profile')
+    expect(fullLoads).toBe(0)
   })
-  await register(expect, page, email)
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
-  expect(new URL(page.url()).pathname).toBe('/profile')
-  expect(fullLoads).toBe(0)
-
-  // Logout reverts to anonymous; re-reaching the gated profile 401s again and the
-  // surface mounts anew.
-  await logout(expect, page)
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await expect(page.getByTestId('profile-name')).toHaveCount(0)
-
-  // Anonymous again: the gated profile re-mounts the surface (login mode by
-  // default). Signing in with the credentials just registered resumes the same
-  // preserved subscription in place — no navigation. Reaching the gated page
-  // again was a full load on purpose (gotoPage), so the counter starts over
-  // here and vouches for the sign-in the way it vouched for the registration.
-  fullLoads = 0
-  await login(expect, page, email, PASSWORD)
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  await expect(page.getByTestId('auth-surface')).toHaveCount(0)
-  expect(new URL(page.url()).pathname).toBe('/profile')
-  expect(fullLoads).toBe(0)
 })
 
 /** The socket query parameter the core names the browser's own zone in. */
@@ -178,52 +184,7 @@ test.describe('in a browser that runs in its own time zone', () => {
   })
 })
 
-test('answers a wrong password inline, and an unknown address with the registration path', async ({
-  page,
-}) => {
-  const email = uniqueEmail()
-
-  // Seed a known account, then log out so the sign-in path is exercised.
-  await createTestUser(expect, page, { email })
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('profile-name')).toBeVisible()
-  await logout(expect, page)
-
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-
-  // A known address reveals its password field and the wrong one is refused with
-  // the backend's own sentence, still gated. The room the sentence lands in was
-  // taken before it existed (HIL-647), so nothing on the card moves: the slot
-  // keeps its height, the field the person is about to correct keeps its place,
-  // and so does the button they just pressed - the node the old block used to
-  // shove down, because it stood between the two.
-  await enterIdentifierAndPassword(expect, page, email, 'a different password')
-  const slotRoom = await watchHeight(page.getByTestId('auth-error-slot'))
-  const passwordTop = await watchTop(page.getByTestId('auth-password'))
-  const submitTop = await watchTop(page.getByTestId('auth-submit'))
-  await clickSubmit(expect, page.getByTestId('auth-submit'))
-  await expect(page.getByTestId('auth-error')).toHaveText('Incorrect password')
-  await slotRoom.unchanged()
-  await passwordTop.unchanged()
-  await submitTop.unchanged()
-  await expect(page.getByTestId('profile-name')).toHaveCount(0)
-
-  // An address with no account is never given a sign-in to fail: the lookup in
-  // FRONT of the form answers first, so the same screen becomes the registration
-  // (HIL-414) — which is why there is no "no account found" sentence any more. It
-  // shows no password field either (HIL-825): a registration is asked for one
-  // after the code, on the screen that creates the account.
-  await typeInto(page.getByTestId('auth-identifier'), uniqueEmail())
-  await expect(page.getByTestId('auth-heading')).toHaveText(
-    'Create your account',
-  )
-  await expect(page.getByTestId('auth-password')).toHaveCount(0)
-  await expect(page.getByTestId('auth-error')).toHaveCount(0)
-  await expect(page.getByTestId('profile-name')).toHaveCount(0)
-})
-
-test('keeps the main button still while the field answers', async ({
+test('keeps the identifier response stable and refuses only a known password', async ({
   page,
 }) => {
   const member = uniqueEmail()
@@ -238,26 +199,67 @@ test('keeps the main button still while the field answers', async ({
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
-  // A free address: the grey line under the field and nothing else.
-  await typeInto(page.getByTestId('auth-identifier'), free)
-  await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
-    'No account yet — this creates one.',
-  )
-  const submitTop = await watchTop(page.getByTestId('auth-submit'))
+  await test.step('keeps the main button still while the field answers', async () => {
+    // A free address: the grey line under the field and nothing else.
+    await typeInto(page.getByTestId('auth-identifier'), free)
+    await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
+      'No account yet — this creates one.',
+    )
+    const submitTop = await watchTop(page.getByTestId('auth-submit'))
 
-  // An account that signs in with a password: the reveal, which is the tallest
-  // thing this slot ever holds and therefore what its room was measured on.
-  await typeInto(page.getByTestId('auth-identifier'), member)
-  await expect(page.getByTestId('auth-password')).toBeVisible()
-  await submitTop.unchanged()
+    // An account that signs in with a password: the reveal, which is the tallest
+    // thing this slot ever holds and therefore what its room was measured on.
+    await typeInto(page.getByTestId('auth-identifier'), member)
+    await expect(page.getByTestId('auth-password')).toBeVisible()
+    await submitTop.unchanged()
 
-  // And back. The room was taken with the first character and never given up,
-  // so no reply the lookup brings moves what sits under it (HIL-1008).
-  await typeInto(page.getByTestId('auth-identifier'), free)
-  await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
-    'No account yet — this creates one.',
-  )
-  await submitTop.unchanged()
+    // And back. The room was taken with the first character and never given up,
+    // so no reply the lookup brings moves what sits under it (HIL-1008).
+    await typeInto(page.getByTestId('auth-identifier'), free)
+    await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
+      'No account yet — this creates one.',
+    )
+    await submitTop.unchanged()
+  })
+
+  await test.step('answers a wrong password inline, and an unknown address with the registration path', async () => {
+    // A known address reveals its password field and the wrong one is refused with
+    // the backend's own sentence, still gated. The room the sentence lands in was
+    // taken before it existed (HIL-647), so nothing on the card moves: the slot
+    // keeps its height, the field the person is about to correct keeps its place,
+    // and so does the button they just pressed - the node the old block used to
+    // shove down, because it stood between the two.
+    await enterIdentifierAndPassword(
+      expect,
+      page,
+      member,
+      'a different password',
+    )
+    const slotRoom = await watchHeight(page.getByTestId('auth-error-slot'))
+    const passwordTop = await watchTop(page.getByTestId('auth-password'))
+    const submitTop = await watchTop(page.getByTestId('auth-submit'))
+    await clickSubmit(expect, page.getByTestId('auth-submit'))
+    await expect(page.getByTestId('auth-error')).toHaveText(
+      'Incorrect password',
+    )
+    await slotRoom.unchanged()
+    await passwordTop.unchanged()
+    await submitTop.unchanged()
+    await expect(page.getByTestId('profile-name')).toHaveCount(0)
+
+    // An address with no account is never given a sign-in to fail: the lookup in
+    // FRONT of the form answers first, so the same screen becomes the registration
+    // (HIL-414) — which is why there is no "no account found" sentence any more. It
+    // shows no password field either (HIL-825): a registration is asked for one
+    // after the code, on the screen that creates the account.
+    await typeInto(page.getByTestId('auth-identifier'), uniqueEmail())
+    await expect(page.getByTestId('auth-heading')).toHaveText(
+      'Create your account',
+    )
+    await expect(page.getByTestId('auth-password')).toHaveCount(0)
+    await expect(page.getByTestId('auth-error')).toHaveCount(0)
+    await expect(page.getByTestId('profile-name')).toHaveCount(0)
+  })
 })
 
 test('keeps the password screen still while the way past the password comes and goes', async ({
@@ -343,12 +345,13 @@ test('keeps the password screen still while the way past the password comes and 
  * session in, and the shell around the card changes with it — the button inside
  * the card does not move.
  *
- * @param page The page to register on.
+ * @param page The gated profile already showing the sign-in surface.
+ * @param email The address this journey will register and later sign in with.
  */
-async function registerWithTheMainButtonStill(page: Page): Promise<void> {
-  const email = uniqueEmail()
-
-  await gotoPage(expect, page, '/profile')
+async function registerWithTheMainButtonStill(
+  page: Page,
+  email: string,
+): Promise<void> {
   await expect(page.getByTestId('auth-surface')).toBeVisible()
   await typeInto(page.getByTestId('auth-identifier'), email)
   await expect(page.getByTestId('auth-heading')).toHaveText(
@@ -393,12 +396,6 @@ async function registerWithTheMainButtonStill(page: Page): Promise<void> {
   await expect(page.getByTestId('auth-continue')).toBeVisible()
   await main.unchanged()
 }
-
-test('keeps the main button at one height on ordinary registration steps', async ({
-  page,
-}) => {
-  await registerWithTheMainButtonStill(page)
-})
 
 test('receives an admin grant while sign-in replaces the socket, without reload', async ({
   page,

@@ -4,16 +4,12 @@ import { test, expect } from '../test.js'
 
 import {
   expectBreadcrumbLabels,
-  clickSubmit,
   cleanupFixtures,
   type TestCleanup,
   deleteModerationOwnRules,
   dismissToasts,
-  enterIdentifierAndPassword,
-  logout,
   openSignIn,
   PASSWORD,
-  createTestUser,
   analyticsBrowserSessionPath,
   analyticsPersonLink,
   analyticsSessionLink,
@@ -38,8 +34,6 @@ import {
   expectModerationPagesAccessibility,
   expectModerationRowDialogsAccessibility,
   expectModerationViewerAccessibility,
-  expectPasswordVisibility,
-  openProfileTimeZone,
   ROWS,
   shownByTestId,
   watchClientDocument,
@@ -48,12 +42,10 @@ import {
   readI18nRowId,
   PAGE_READY,
   grantAdminToSelf,
-  expectProfileHeadAccessibility,
   login,
   uniqueEmail,
   waitAnalyticsBrowserSession,
   watchDeliveryFrames,
-  watchProfileRenameStatus,
   typeInto,
   STATUS_COMPONENTS_PATH,
   STATUS_PATH,
@@ -255,24 +247,6 @@ test('each page titles the tab and announces the page on navigation', async ({
   await expect(page.getByTestId('page-title')).toHaveText('Tasks · Hilos Tasks')
 })
 
-test('password visibility toggle operates from keyboard on sign-in', async ({
-  page,
-}) => {
-  const user = await createTestUser(expect, page)
-  await logout(expect, page)
-  await openSignIn(expect, page)
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-  await enterIdentifierAndPassword(expect, page, user.email, PASSWORD)
-  await expectPasswordVisibility(
-    expect,
-    page,
-    'auth-password',
-    'auth-password-toggle',
-  )
-  // Ensure the surface remains open: toggling password visibility does not submit the form.
-  await expect(page.getByTestId('auth-surface')).toBeVisible()
-})
-
 test('language pages expose one named head and name their tables through it', async ({
   page,
 }) => {
@@ -358,124 +332,6 @@ test('the default language deletion explanation is named, keyboard readable and 
   await expect(why).toBeFocused()
   await expect(trash).toBeDisabled()
   await expect(page.getByTestId('i18n-language-delete-window')).toHaveCount(0)
-})
-
-test('the Time zone dialog is named, keyboard operable and returns focus on Escape and Close', async ({
-  page,
-}) => {
-  await createTestUser(expect, page)
-  await gotoPage(expect, page, '/profile')
-  const change = page.getByTestId('profile-time-zone-change')
-  await expect(change).toHaveAccessibleName('Change')
-  await change.focus()
-  await change.press('Enter')
-
-  const dialog = page.getByTestId('modal')
-  const search = page.getByTestId('profile-time-zone-search')
-  await expect(dialog).toHaveRole('dialog')
-  await expect(dialog).toHaveAttribute('aria-modal', 'true')
-  await expect(dialog).toHaveAccessibleName('Time zone')
-  await expect(search).toHaveAccessibleName('Search time zones')
-  await expect(search).toBeFocused()
-  await typeInto(search, 'new york')
-  const option = page.getByTestId('profile-time-zone-option-America/New_York')
-  await expect(option).toBeVisible()
-  await search.press('Tab')
-  await expect(option).toBeFocused()
-  await option.press('Tab')
-  const close = page.getByTestId('profile-time-zone-close')
-  await expect(close).toHaveAccessibleName('Close')
-  await expect(close).toBeFocused()
-  await close.press('Tab')
-  await expect(page.getByTestId('modal-close')).toBeFocused()
-  await page.getByTestId('modal-close').press('Tab')
-  await expect(search).toBeFocused()
-  await search.press('Escape')
-  await expect(dialog).toBeHidden()
-  await expect(change).toBeFocused()
-
-  await openProfileTimeZone(expect, page)
-  await close.focus()
-  await close.press('Enter')
-  await expect(dialog).toBeHidden()
-  await expect(change).toBeFocused()
-})
-
-test('the profile name dialog exposes accessible focus and dirty-close behavior', async ({
-  page,
-}) => {
-  const user = await createTestUser(expect, page)
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByTestId('profile-name')).toHaveText(user.name)
-
-  await expectProfileHeadAccessibility(expect, page, user.name)
-  const opener = page.getByTestId('profile-edit')
-  await clickSubmit(expect, opener)
-  await expect(page.getByTestId('modal')).toHaveAccessibleName(
-    "Confirm it's you",
-  )
-  await typeInto(page.getByTestId('step-up-password'), PASSWORD)
-  await clickSubmit(expect, page.getByTestId('profile-name-step-up-confirm'))
-
-  const dialog = page.getByTestId('modal')
-  const field = page.getByTestId('profile-name-input')
-  await expect(dialog).toHaveRole('dialog')
-  await expect(dialog).toHaveAttribute('aria-modal', 'true')
-  await expect(dialog).toHaveAccessibleName('Change name')
-  await expect(field).toHaveAccessibleName('Display name')
-  await expect(field).toBeFocused()
-  const status = await watchProfileRenameStatus(expect, page)
-  await status.unchanged(false)
-
-  const draft = 'Accessible draft'
-  await typeInto(field, draft)
-  const save = page.getByTestId('profile-rename-save')
-  const cancel = page.getByTestId('profile-rename-cancel')
-  const close = dialog.getByTestId('modal-close')
-  const confirmation = page.getByTestId('modal-confirm')
-  const keepEditing = page.getByTestId('modal-confirm-cancel')
-  const discard = page.getByTestId('modal-confirm-discard')
-  await expect(cancel).toHaveAccessibleName('Cancel')
-  await expect(close).toHaveAccessibleName('Close')
-  await expect(save).toHaveAccessibleName('Save')
-  await expect(save).toBeEnabled()
-  await status.unchanged(false)
-
-  // The last enabled control wraps back to the close button in either direction.
-  await close.focus()
-  await close.press('Shift+Tab')
-  await expect(save).toBeFocused()
-  await save.press('Tab')
-  await expect(close).toBeFocused()
-
-  // Escape and every explicit close route raise the same discard confirmation.
-  await page.keyboard.press('Escape')
-  await expect(confirmation).toHaveRole('alertdialog')
-  await expect(confirmation).toHaveAccessibleName('Discard changes?')
-  await expect(confirmation).toBeFocused()
-  await clickSubmit(expect, keepEditing)
-  await expect(confirmation).toHaveCount(0)
-  await expect(field).toHaveValue(draft)
-
-  await clickSubmit(expect, cancel)
-  await expect(confirmation).toBeVisible()
-  await clickSubmit(expect, keepEditing)
-  await expect(confirmation).toHaveCount(0)
-  await expect(field).toHaveValue(draft)
-
-  await clickSubmit(expect, close)
-  await expect(confirmation).toBeVisible()
-  await clickSubmit(expect, keepEditing)
-  await expect(confirmation).toHaveCount(0)
-  await expect(field).toHaveValue(draft)
-  await status.unchanged(false)
-
-  await dialog.click({ position: { x: 2, y: 2 } })
-  await expect(confirmation).toBeVisible()
-  await clickSubmit(expect, discard)
-  await expect(dialog).toHaveCount(0)
-  await expect(opener).toBeFocused()
 })
 
 test.describe('Analytics accessibility', () => {

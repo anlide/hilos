@@ -1,8 +1,6 @@
 import type { Page } from '@playwright/test'
 import { expect, test } from '../test.js'
 
-import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
-
 import {
   PASSWORD,
   createTestUser,
@@ -477,48 +475,64 @@ test('offers complete acceptance filters and merges legal setting changes across
   }
 })
 
-test("previews the re-consent screen through the previous revision's holder", async ({
+test('previews consent and both document changes without accepting', async ({
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  await gotoPage(expect, page, '/hilos/legal/document/terms')
-  await clickSubmit(expect, page.getByTestId('legal-preview-reconsent'))
-  const preview = page.getByTestId('legal-reconsent-preview')
-  await expect(preview).toBeVisible()
-  await expect(preview.getByTestId('legal-reconsent-badge')).toHaveText(
-    'Editorial · nobody is asked to accept it',
-  )
-  const change = preview.getByTestId('legal-reconsent-change')
-  await expect(change).toHaveCount(1)
-  await expect(change).toHaveAttribute('data-clause', 'standard.availability')
-  await expect(change.getByTestId('legal-reconsent-change-kind')).toHaveText(
-    'Changed',
-  )
-  await expect(change).toContainText(
-    'This is a demo: its data may be wiped at any time',
-  )
-  await expect(preview.getByTestId('legal-reconsent-accept')).toBeDisabled()
-  await expect(preview.getByTestId('legal-reconsent-later')).toBeDisabled()
-  await clickSubmit(expect, page.getByTestId('legal-reconsent-preview-close'))
-  await expect(preview).toBeHidden()
 
-  await gotoPage(expect, page, '/hilos/legal/document/privacy')
-  await clickSubmit(expect, page.getByTestId('legal-preview-reconsent'))
-  const privacyPreview = page.getByTestId('legal-reconsent-preview')
-  await expect(privacyPreview.getByTestId('legal-reconsent-badge')).toHaveText(
-    'No window · in force since 9 October 2026',
-  )
-  await expect(
-    privacyPreview.getByTestId('legal-reconsent-change'),
-  ).toHaveCount(1)
-  await expect(
-    privacyPreview.locator(
-      '[data-id="legal-reconsent-change"][data-clause="standard.deletion"]',
-    ),
-  ).toContainText(
-    'Account deletion leaves numbered analytics events and network addresses',
-  )
-  await clickSubmit(expect, page.getByTestId('legal-reconsent-preview-close'))
+  await test.step('previews the same complete consent body from a legal document', async () => {
+    await gotoPage(expect, page, '/hilos/legal/document/terms')
+    await clickSubmit(expect, page.getByTestId('legal-preview-consent'))
+    const preview = page.getByTestId('legal-consent-preview')
+    await expect(preview).toBeVisible()
+    await expect(preview.getByTestId('legal-consent-deviation')).toHaveCount(2)
+    await expect(preview.getByTestId('auth-consent-accept')).not.toBeChecked()
+    await preview.getByTestId('auth-consent-accept').check()
+    await expect(preview.getByTestId('auth-submit')).toHaveCount(0)
+    await clickSubmit(expect, page.getByTestId('legal-consent-preview-close'))
+    await expect(preview).toBeHidden()
+  })
+
+  await test.step("previews the re-consent screen through the previous revision's holder", async () => {
+    await clickSubmit(expect, page.getByTestId('legal-preview-reconsent'))
+    const preview = page.getByTestId('legal-reconsent-preview')
+    await expect(preview).toBeVisible()
+    await expect(preview.getByTestId('legal-reconsent-badge')).toHaveText(
+      'Editorial · nobody is asked to accept it',
+    )
+    const change = preview.getByTestId('legal-reconsent-change')
+    await expect(change).toHaveCount(1)
+    await expect(change).toHaveAttribute('data-clause', 'standard.availability')
+    await expect(change.getByTestId('legal-reconsent-change-kind')).toHaveText(
+      'Changed',
+    )
+    await expect(change).toContainText(
+      'This is a demo: its data may be wiped at any time',
+    )
+    await expect(preview.getByTestId('legal-reconsent-accept')).toBeDisabled()
+    await expect(preview.getByTestId('legal-reconsent-later')).toBeDisabled()
+    await clickSubmit(expect, page.getByTestId('legal-reconsent-preview-close'))
+    await expect(preview).toBeHidden()
+
+    await gotoPage(expect, page, '/hilos/legal/document/privacy')
+    await clickSubmit(expect, page.getByTestId('legal-preview-reconsent'))
+    const privacyPreview = page.getByTestId('legal-reconsent-preview')
+    await expect(
+      privacyPreview.getByTestId('legal-reconsent-badge'),
+    ).toHaveText('No window · in force since 9 October 2026')
+    await expect(
+      privacyPreview.getByTestId('legal-reconsent-change'),
+    ).toHaveCount(1)
+    await expect(
+      privacyPreview.locator(
+        '[data-id="legal-reconsent-change"][data-clause="standard.deletion"]',
+      ),
+    ).toContainText(
+      'Account deletion leaves numbered analytics events and network addresses',
+    )
+    await clickSubmit(expect, page.getByTestId('legal-reconsent-preview-close'))
+    await expect(privacyPreview).toBeHidden()
+  })
 })
 
 test('exports the acceptance records the table shows, confirming once', async ({
@@ -584,22 +598,4 @@ test('unknown legal documents and revisions are not-found subscription refusals'
       '404',
     )
   }
-})
-
-test.describe('in the admin view mode', () => {
-  test.afterEach(() => setAdminViewMode(false))
-
-  // A viewer has no export of their own, and the order is an action like any other (HIL-1234).
-  test('a guest sees the export of acceptances switched off', async ({
-    page,
-  }) => {
-    await setAdminViewMode(true)
-    await gotoPage(expect, page, '/hilos/legal/acceptances', PAGE_READY)
-    const exportButton = page.getByTestId('legal-acceptances-export')
-    await expect(exportButton).toBeDisabled()
-    await expect(exportButton).toHaveAttribute(
-      'aria-describedby',
-      /(^| )hilos-view-mode-strip-text( |$)/,
-    )
-  })
 })

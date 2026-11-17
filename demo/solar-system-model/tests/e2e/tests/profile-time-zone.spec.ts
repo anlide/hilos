@@ -27,7 +27,7 @@ import {
 
 test.use({ timezoneId: 'America/Paramaribo', colorScheme: 'light' })
 
-test('fans real Tokyo and Automatic choices out to independent sessions, keeps the receiving search and persists each choice', async ({
+test('checks accessible time-zone choices and persists them across independent sessions', async ({
   browser,
   context,
   page,
@@ -41,186 +41,232 @@ test('fans real Tokyo and Automatic choices out to independent sessions, keeps t
   const sockets = [socket]
   const firstOpened = watchOpenedSockets(page)
   try {
-    const person = await createTestUser(expect, page)
-    await gotoPage(expect, page, '/profile', PAGE_READY)
-    await expectTimeZoneEnvironment(expect, page, frames, {
-      browserTimeZone: 'America/Paramaribo',
-      projectTimeZone: 'Europe/Warsaw',
-    })
-    await test.step('The real profile reply delivers the catalog and the automatic browser zone', async () => {
-      await expectProfileTimeZoneCatalog(expect, frames)
-      await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
-    })
+    await test.step('fans real Tokyo and Automatic choices out to independent sessions, keeps the receiving search and persists each choice', async () => {
+      const person = await createTestUser(expect, page)
+      await gotoPage(expect, page, '/profile', PAGE_READY)
+      await expectTimeZoneEnvironment(expect, page, frames, {
+        browserTimeZone: 'America/Paramaribo',
+        projectTimeZone: 'Europe/Warsaw',
+      })
+      await test.step('The real profile reply delivers the catalog and the automatic browser zone', async () => {
+        await expectProfileTimeZoneCatalog(expect, frames)
+        await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
+      })
 
-    const secondContext = await browser.newContext(
-      timeZoneContextOptions(test.info().project.use, 'America/New_York'),
-    )
-    contexts.push(secondContext)
-    const second = await secondContext.newPage()
-    const secondOpened = watchOpenedSockets(second)
-    const secondFrames: SocketFrame[] = []
-    const secondSocket = watchSocketFrames(second, (frame) =>
-      secondFrames.push(frame),
-    )
-    sockets.push(secondSocket)
-    await gotoPage(expect, second, '/profile')
-    await login(expect, second, person.email)
-    await expectPageReady(expect, second)
-    await expect(second.getByTestId('profile-name')).toHaveText(person.name)
-    const firstSession = (await context.cookies()).find((cookie) =>
-      isSessionCookie(cookie.name),
-    )
-    const secondSession = (await secondContext.cookies()).find((cookie) =>
-      isSessionCookie(cookie.name),
-    )
-    expect(firstSession).toBeDefined()
-    expect(secondSession).toBeDefined()
-    expect(secondSession?.value).not.toBe(firstSession?.value)
+      await test.step('the Time zone dialog is named, keyboard operable and returns focus on Escape and Close', async () => {
+        const change = page.getByTestId('profile-time-zone-change')
+        await expect(change).toHaveAccessibleName('Change')
+        await change.focus()
+        await change.press('Enter')
 
-    const strangerContext = await browser.newContext(
-      timeZoneContextOptions(test.info().project.use, 'Europe/London'),
-    )
-    contexts.push(strangerContext)
-    const stranger = await strangerContext.newPage()
-    const strangerOpened = watchOpenedSockets(stranger)
-    const otherPerson = await createTestUser(expect, stranger)
-    expect(otherPerson.userId).not.toBe(person.userId)
-    await gotoPage(expect, stranger, '/profile', PAGE_READY)
-    await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
-    await expectProfileTimeZone(expect, second, null, 'America/New_York')
-    await openProfileTimeZone(expect, stranger)
-    await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
-
-    await test.step('The picker searches the real catalog and keeps a filter open', async () => {
-      await openProfileTimeZone(expect, second)
-      await expectProfileTimeZoneSearch(expect, second)
-    })
-    const search = second.getByTestId('profile-time-zone-search')
-    await typeInto(search, 'new york')
-    await expect(search).toHaveValue('new york')
-
-    // The saved choice comes back on each signed-in session's own socket.
-    const echoed = async (
-      sessionFrames: readonly SocketFrame[],
-      timeZone: string | null,
-    ) =>
-      expect
-        .poll(
-          () =>
-            sessionFrames
-              .map(({ wire }) => deliveryObject(wire))
-              .filter(({ type }) => type === 'handshake_response')
-              .at(-1)?.data,
+        const dialog = page.getByTestId('modal')
+        const search = page.getByTestId('profile-time-zone-search')
+        await expect(dialog).toHaveRole('dialog')
+        await expect(dialog).toHaveAttribute('aria-modal', 'true')
+        await expect(dialog).toHaveAccessibleName('Time zone')
+        await expect(search).toHaveAccessibleName('Search time zones')
+        await expect(search).toBeFocused()
+        await typeInto(search, 'new york')
+        const option = page.getByTestId(
+          'profile-time-zone-option-America/New_York',
         )
-        .toMatchObject({
-          entities: { currentUser: { id: person.userId, timeZone } },
-        })
-    // Every window takes a delivery in place: no document is replaced and no
-    // socket is reopened for it.
-    const windows = [
-      { page, sockets: firstOpened },
-      { page: second, sockets: secondOpened },
-      { page: stranger, sockets: strangerOpened },
-    ]
-    const inPlace = async (deliveries: () => Promise<void>) => {
-      const socketCounts = windows.map(({ sockets }) => sockets.length)
-      const documents = await Promise.all(
-        windows.map((opened) => watchClientDocument(opened.page)),
-      )
-      try {
-        await deliveries()
-        for (const [index, document] of documents.entries()) {
-          await document.unchanged()
-          await expectWelcomedSockets(
-            expect,
-            windows[index]!.sockets,
-            socketCounts[index]!,
-          )
-        }
-      } finally {
-        await Promise.all(documents.map((document) => document.dispose()))
-      }
-    }
+        await expect(option).toBeVisible()
+        await search.press('Tab')
+        await expect(option).toBeFocused()
+        await option.press('Tab')
+        const close = page.getByTestId('profile-time-zone-close')
+        await expect(close).toHaveAccessibleName('Close')
+        await expect(close).toBeFocused()
+        await close.press('Tab')
+        await expect(page.getByTestId('modal-close')).toBeFocused()
+        await page.getByTestId('modal-close').press('Tab')
+        await expect(search).toBeFocused()
+        await search.press('Escape')
+        await expect(dialog).toBeHidden()
+        await expect(change).toBeFocused()
 
-    await inPlace(() =>
-      test.step('A chosen zone reaches the other signed-in window live and leaves another person alone', async () => {
-        await chooseProfileTimeZone(expect, page, 'Asia/Tokyo')
-        await echoed(frames, 'Asia/Tokyo')
-        await echoed(secondFrames, 'Asia/Tokyo')
+        await openProfileTimeZone(expect, page)
+        await close.focus()
+        await close.press('Enter')
+        await expect(dialog).toBeHidden()
+        await expect(change).toBeFocused()
+      })
+
+      const secondContext = await browser.newContext(
+        timeZoneContextOptions(test.info().project.use, 'America/New_York'),
+      )
+      contexts.push(secondContext)
+      const second = await secondContext.newPage()
+      const secondOpened = watchOpenedSockets(second)
+      const secondFrames: SocketFrame[] = []
+      const secondSocket = watchSocketFrames(second, (frame) =>
+        secondFrames.push(frame),
+      )
+      sockets.push(secondSocket)
+      await gotoPage(expect, second, '/profile')
+      await login(expect, second, person.email)
+      await expectPageReady(expect, second)
+      await expect(second.getByTestId('profile-name')).toHaveText(person.name)
+      const firstSession = (await context.cookies()).find((cookie) =>
+        isSessionCookie(cookie.name),
+      )
+      const secondSession = (await secondContext.cookies()).find((cookie) =>
+        isSessionCookie(cookie.name),
+      )
+      expect(firstSession).toBeDefined()
+      expect(secondSession).toBeDefined()
+      expect(secondSession?.value).not.toBe(firstSession?.value)
+
+      const strangerContext = await browser.newContext(
+        timeZoneContextOptions(test.info().project.use, 'Europe/London'),
+      )
+      contexts.push(strangerContext)
+      const stranger = await strangerContext.newPage()
+      const strangerOpened = watchOpenedSockets(stranger)
+      const otherPerson = await createTestUser(expect, stranger)
+      expect(otherPerson.userId).not.toBe(person.userId)
+      await gotoPage(expect, stranger, '/profile', PAGE_READY)
+      await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
+      await expectProfileTimeZone(expect, second, null, 'America/New_York')
+      await openProfileTimeZone(expect, stranger)
+      await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
+
+      await test.step('The picker searches the real catalog and keeps a filter open', async () => {
+        await openProfileTimeZone(expect, second)
+        await expectProfileTimeZoneSearch(expect, second)
+      })
+      const search = second.getByTestId('profile-time-zone-search')
+      await typeInto(search, 'new york')
+      await expect(search).toHaveValue('new york')
+
+      // The saved choice comes back on each signed-in session's own socket.
+      const echoed = async (
+        sessionFrames: readonly SocketFrame[],
+        timeZone: string | null,
+      ) =>
+        expect
+          .poll(
+            () =>
+              sessionFrames
+                .map(({ wire }) => deliveryObject(wire))
+                .filter(({ type }) => type === 'handshake_response')
+                .at(-1)?.data,
+          )
+          .toMatchObject({
+            entities: { currentUser: { id: person.userId, timeZone } },
+          })
+      // Every window takes a delivery in place: no document is replaced and no
+      // socket is reopened for it.
+      const windows = [
+        { page, sockets: firstOpened },
+        { page: second, sockets: secondOpened },
+        { page: stranger, sockets: strangerOpened },
+      ]
+      const inPlace = async (deliveries: () => Promise<void>) => {
+        const socketCounts = windows.map(({ sockets }) => sockets.length)
+        const documents = await Promise.all(
+          windows.map((opened) => watchClientDocument(opened.page)),
+        )
+        try {
+          await deliveries()
+          for (const [index, document] of documents.entries()) {
+            await document.unchanged()
+            await expectWelcomedSockets(
+              expect,
+              windows[index]!.sockets,
+              socketCounts[index]!,
+            )
+          }
+        } finally {
+          await Promise.all(documents.map((document) => document.dispose()))
+        }
+      }
+
+      await inPlace(() =>
+        test.step('A chosen zone reaches the other signed-in window live and leaves another person alone', async () => {
+          await chooseProfileTimeZone(expect, page, 'Asia/Tokyo')
+          await echoed(frames, 'Asia/Tokyo')
+          await echoed(secondFrames, 'Asia/Tokyo')
+          await expectProfileTimeZone(
+            expect,
+            page,
+            'Asia/Tokyo',
+            'America/Paramaribo',
+          )
+          await expectProfileTimeZone(
+            expect,
+            second,
+            'Asia/Tokyo',
+            'America/New_York',
+            false,
+          )
+          await expect(
+            second.getByTestId('profile-time-zone-modal'),
+          ).toBeVisible()
+          await expect(search).toHaveValue('new york')
+          await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
+        }),
+      )
+
+      await test.step('A fresh load renders the saved zone as its own', async () => {
+        // Persistence is read only after the live delivery was already observed.
+        await page.reload()
+        await expectPageReady(expect, page)
         await expectProfileTimeZone(
           expect,
           page,
           'Asia/Tokyo',
           'America/Paramaribo',
         )
-        await expectProfileTimeZone(
-          expect,
-          second,
-          'Asia/Tokyo',
-          'America/New_York',
-          false,
-        )
-        await expect(
-          second.getByTestId('profile-time-zone-modal'),
-        ).toBeVisible()
-        await expect(search).toHaveValue('new york')
-        await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
-      }),
-    )
+      })
 
-    await test.step('A fresh load renders the saved zone as its own', async () => {
-      // Persistence is read only after the live delivery was already observed.
-      await page.reload()
-      await expectPageReady(expect, page)
-      await expectProfileTimeZone(
-        expect,
-        page,
-        'Asia/Tokyo',
-        'America/Paramaribo',
+      await inPlace(() =>
+        test.step('Automatic returns every window to its own browser zone', async () => {
+          await chooseProfileTimeZone(expect, page, null)
+          await echoed(frames, null)
+          await echoed(secondFrames, null)
+          await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
+          await expectProfileTimeZone(
+            expect,
+            second,
+            null,
+            'America/New_York',
+            false,
+          )
+          await expect(
+            second.getByTestId('profile-time-zone-modal'),
+          ).toBeVisible()
+          await expect(search).toHaveValue('new york')
+          await search.fill('')
+          await expectProfileTimeZone(expect, second, null, 'America/New_York')
+          await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
+          await clickSubmit(
+            expect,
+            second.getByTestId('profile-time-zone-close'),
+          )
+          await expect(
+            second.getByTestId('profile-time-zone-modal'),
+          ).toBeHidden()
+          await expect(
+            second.getByTestId('profile-time-zone-change'),
+          ).toBeFocused()
+        }),
       )
-    })
+      for (const sessionFrames of [frames, secondFrames]) {
+        expect(
+          sessionFrames.filter((frame) => frame.failure !== undefined),
+        ).toEqual([])
+      }
 
-    await inPlace(() =>
-      test.step('Automatic returns every window to its own browser zone', async () => {
-        await chooseProfileTimeZone(expect, page, null)
-        await echoed(frames, null)
-        await echoed(secondFrames, null)
+      await test.step('Automatic persists through a reload of each window', async () => {
+        await page.reload()
+        await expectPageReady(expect, page)
         await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
-        await expectProfileTimeZone(
-          expect,
-          second,
-          null,
-          'America/New_York',
-          false,
-        )
-        await expect(
-          second.getByTestId('profile-time-zone-modal'),
-        ).toBeVisible()
-        await expect(search).toHaveValue('new york')
-        await search.fill('')
+        await second.reload()
+        await expectPageReady(expect, second)
         await expectProfileTimeZone(expect, second, null, 'America/New_York')
         await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
-        await clickSubmit(expect, second.getByTestId('profile-time-zone-close'))
-        await expect(second.getByTestId('profile-time-zone-modal')).toBeHidden()
-        await expect(
-          second.getByTestId('profile-time-zone-change'),
-        ).toBeFocused()
-      }),
-    )
-    for (const sessionFrames of [frames, secondFrames]) {
-      expect(
-        sessionFrames.filter((frame) => frame.failure !== undefined),
-      ).toEqual([])
-    }
-
-    await test.step('Automatic persists through a reload of each window', async () => {
-      await page.reload()
-      await expectPageReady(expect, page)
-      await expectProfileTimeZone(expect, page, null, 'America/Paramaribo')
-      await second.reload()
-      await expectPageReady(expect, second)
-      await expectProfileTimeZone(expect, second, null, 'America/New_York')
-      await expectProfileTimeZone(expect, stranger, null, 'Europe/London')
+      })
     })
   } finally {
     for (const watched of sockets) watched.stop()

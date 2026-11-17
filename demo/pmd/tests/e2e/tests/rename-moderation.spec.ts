@@ -1,10 +1,12 @@
 import type { Page } from '@playwright/test'
-import { test, expect } from '../test.js'
+import { test as base, expect } from '../test.js'
 
 import {
   PASSWORD,
   openBell,
   unreadBadge,
+  cleanupFixtures,
+  type TestCleanup,
   clickSubmit,
   typeInto,
   gotoPage,
@@ -22,6 +24,7 @@ import {
 import {
   dictateModerationVerdict,
   modelKey,
+  forgetModelKey,
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 
 // Framework profile-name moderation on a real call to the stand's model: a
@@ -45,6 +48,8 @@ async function openRename(page: Page): Promise<void> {
   await typeInto(page.getByTestId('step-up-password'), PASSWORD)
   await clickSubmit(expect, page.getByTestId('profile-name-step-up-confirm'))
 }
+
+const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
 test('a name the model refuses is not taken, and a retry it permits renames the author', async ({
   page,
@@ -94,40 +99,78 @@ test('a name the model refuses is not taken, and a retry it permits renames the 
   await expect(menu.getByTestId(/^hilos-notification-item-/)).toHaveCount(1)
 })
 
-test('a rename nobody dictated a verdict for comes back as moderation unavailable', async ({
+test('keeps the rename draft without notices when moderation is unavailable or invalid', async ({
   page,
+  cleanup,
 }) => {
   const { name: oldName } = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile')
   await expect(page.getByTestId('profile-name')).toHaveText(oldName)
 
-  // No verdict is dictated: the model refuses the call with a 503, which for the
-  // product is a model that is not answering.
-  const key = modelKey()
-  const newName = `Unmoderated ${key}`
+  await test.step('a rename nobody dictated a verdict for comes back as moderation unavailable', async () => {
+    // No verdict is dictated: the model refuses the call with a 503, which for the
+    // product is a model that is not answering.
+    const key = modelKey()
+    cleanup.defer(() => forgetModelKey(key))
+    const newName = `Unmoderated ${key}`
 
-  await openRename(page)
-  await typeInto(page.getByTestId('profile-name-input'), newName)
-  await clickSubmit(expect, page.getByTestId('profile-rename-save'))
+    await openRename(page)
+    await typeInto(page.getByTestId('profile-name-input'), newName)
+    await clickSubmit(expect, page.getByTestId('profile-rename-save'))
 
-  await expect(page.getByTestId('profile-rename-error')).toHaveText(
-    'Names cannot be checked right now.',
-  )
-  await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
-  await expect(page.getByTestId('modal')).toBeVisible()
-  await expect(page.getByTestId('profile-name-input')).toHaveValue(newName)
-  await expect(page.getByTestId('profile-name')).toHaveText(oldName)
+    await expect(page.getByTestId('profile-rename-error')).toHaveText(
+      'Names cannot be checked right now.',
+    )
+    await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(newName)
+    await expect(page.getByTestId('profile-name')).toHaveText(oldName)
 
-  // Check the draft before discarding it. The settled form can close through
-  // Cancel; a fresh subscription then reads the current notification snapshot.
-  await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
-  await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
-  await expect(page.getByTestId('modal')).toBeHidden()
-  await gotoPage(expect, page, '/profile')
-  await openBell(page)
-  await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
-  await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
-  await expect(unreadBadge(page)).toBeHidden()
+    // Check the draft before discarding it. The settled form can close through
+    // Cancel; a fresh subscription then reads the current notification snapshot.
+    await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
+    await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await gotoPage(expect, page, '/profile')
+    await openBell(page)
+    await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
+    await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
+    await expect(unreadBadge(page)).toBeHidden()
+  })
+
+  await test.step('a rename with an invalid model reason is unavailable and preserves the draft without a notification', async () => {
+    await gotoPage(expect, page, '/profile')
+    await expect(page.getByTestId('profile-name')).toHaveText(oldName)
+
+    const key = modelKey()
+    cleanup.defer(() => forgetModelKey(key))
+    const newName = `Blocked ${key}`
+    await dictateModerationVerdict(key, false, 'blocked')
+
+    await clickSubmit(expect, page.getByTestId('profile-edit'))
+    await typeInto(page.getByTestId('profile-name-input'), newName)
+    await clickSubmit(expect, page.getByTestId('profile-rename-save'))
+
+    await expect(page.getByTestId('profile-rename-error')).toHaveText(
+      'Names cannot be checked right now.',
+    )
+    await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
+    await expect(page.getByTestId('profile-rename-error')).not.toContainText(
+      'blocked',
+    )
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await expect(page.getByTestId('profile-name-input')).toHaveValue(newName)
+    await expect(page.getByTestId('profile-name')).toHaveText(oldName)
+
+    await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
+    await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await gotoPage(expect, page, '/profile')
+    await openBell(page)
+    await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
+    await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
+    await expect(unreadBadge(page)).toBeHidden()
+  })
 })
 
 test.describe('accepted name attempt lifetime', () => {
@@ -445,40 +488,4 @@ test.describe('accepted name attempt lifetime', () => {
     await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
     expect(sends()).toBe(1)
   })
-})
-
-test('a rename with an invalid model reason is unavailable and preserves the draft without a notification', async ({
-  page,
-}) => {
-  const { name: oldName } = await createTestUser(expect, page)
-  await gotoPage(expect, page, '/profile')
-  await expect(page.getByTestId('profile-name')).toHaveText(oldName)
-
-  const key = modelKey()
-  const newName = `Blocked ${key}`
-  await dictateModerationVerdict(key, false, 'blocked')
-
-  await openRename(page)
-  await typeInto(page.getByTestId('profile-name-input'), newName)
-  await clickSubmit(expect, page.getByTestId('profile-rename-save'))
-
-  await expect(page.getByTestId('profile-rename-error')).toHaveText(
-    'Names cannot be checked right now.',
-  )
-  await expect(page.getByTestId('profile-rename-save')).toBeEnabled()
-  await expect(page.getByTestId('profile-rename-error')).not.toContainText(
-    'blocked',
-  )
-  await expect(page.getByTestId('modal')).toBeVisible()
-  await expect(page.getByTestId('profile-name-input')).toHaveValue(newName)
-  await expect(page.getByTestId('profile-name')).toHaveText(oldName)
-
-  await clickSubmit(expect, page.getByTestId('profile-rename-cancel'))
-  await clickSubmit(expect, page.getByTestId('modal-confirm-discard'))
-  await expect(page.getByTestId('modal')).toBeHidden()
-  await gotoPage(expect, page, '/profile')
-  await openBell(page)
-  await expect(page.getByTestId('hilos-notification-empty')).toBeVisible()
-  await expect(page.getByTestId(/^hilos-notification-item-/)).toHaveCount(0)
-  await expect(unreadBadge(page)).toBeHidden()
 })

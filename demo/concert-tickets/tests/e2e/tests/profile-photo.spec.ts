@@ -3,6 +3,9 @@ import { test as base, expect } from '../test.js'
 
 import {
   createTestUser,
+  changeOwnName,
+  cleanupFixtures,
+  type TestCleanup,
   countSentFrames,
   watchClientDocument,
   watchSocketFrames,
@@ -30,8 +33,10 @@ import {
 import { decodePhoto, picture } from '../helpers/profilePhoto.js'
 
 const test = base.extend<{
+  cleanup: TestCleanup
   photoSubject: { key: string; person: SignedInUser }
 }>({
+  cleanup: cleanupFixtures,
   photoSubject: async ({ page }, use) => {
     const key = modelKey()
     try {
@@ -64,226 +69,259 @@ function expectPixel(actual: number[], expected: number[]): void {
   expect(actual[3]).toBe(255)
 }
 
-test('an EXIF crop is public, replaces the photo in both tabs and removes back to initials', async ({
+test('refuses an oversized photo before a protected rename and the public crop lifecycle', async ({
   page,
   request,
-  photoSubject,
+  cleanup,
 }) => {
   // Account preparation, two publications and removal across two live Angular pages.
   test.slow()
   const uploads = countSentFrames(page, 'hilos_upload_init')
-  const { key: photoKey, person } = photoSubject
+  const photoKey = modelKey()
+  cleanup.defer(() => forgetModelKey(photoKey))
+  const user = await createTestUser(expect, page)
   await gotoPage(expect, page, '/profile', PAGE_READY)
-  const second = await page.context().newPage()
-  try {
-    await gotoPage(expect, second, '/profile', PAGE_READY)
-    await expect(second.getByTestId('profile-name')).toHaveText(person.name)
-    const documents = await Promise.all(
-      [page, second].map((tab) => watchClientDocument(tab)),
+  await test.step('a picture over 40 MiB is refused locally before upload', async () => {
+    await clickSubmit(expect, page.getByTestId('profile-photo-open'))
+    await page.getByTestId('profile-photo-input').setInputFiles({
+      name: 'too-large.png',
+      mimeType: 'image/png',
+      buffer: Buffer.alloc(PHOTO_LIMIT_BYTES + 1),
+    })
+    await expect(page.getByTestId('profile-photo-error')).toHaveText(
+      'This picture is larger than 40 MB.',
     )
-    try {
-      await openAndSelectPhoto(
-        expect,
-        page,
-        rotatedJpeg(await picture(page, 'image/jpeg')),
-        'image/jpeg',
-      )
-      const zoom = page.getByTestId('profile-photo-zoom')
-      await expect(zoom).toHaveValue('1')
-      await zoom.focus()
-      await zoom.press('End')
-      await expect(zoom).toHaveValue('4')
-      const preview = page.getByTestId('profile-photo-preview')
-      await preview.focus()
-      for (let step = 0; step < 4; step++) await preview.press('ArrowDown')
-      expect(uploads()).toBe(0)
-      for (const tab of [page, second]) {
-        for (const avatar of avatarSurfaces(tab)) {
-          await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
-        }
-      }
-      await dictateModerationVerdict(photoKey, true, 'ok')
-      await clickSubmit(expect, page.getByTestId('profile-photo-save'))
-      await expect(page.getByTestId('modal')).toBeHidden()
-      await expect(
-        page.getByTestId('profile-identity').getByTestId('hilos-avatar-photo'),
-      ).toBeVisible()
-      const src = await page
-        .getByTestId('profile-identity')
-        .getByTestId('hilos-avatar-photo')
-        .getAttribute('src')
-      if (src === null) throw new Error('The published photo has no address')
-      expect(new URL(src, page.url()).pathname).toBe('/_hilos/file')
-      expect(new URL(src, page.url()).searchParams.get('variant')).toBe(
-        'hilos_avatar',
-      )
-      for (const tab of [page, second]) {
-        for (const avatar of avatarSurfaces(tab)) {
-          await expect(avatar.getByTestId('hilos-avatar-photo')).toBeVisible()
-          await expect(
-            avatar.getByTestId('hilos-avatar-photo'),
-          ).toHaveAttribute('src', src)
-        }
-      }
-
-      // Playwright's request fixture has its own cookie jar, separate from the
-      // signed-in browser context. Decode this anonymous HTTP response itself.
-      expect((await request.storageState()).cookies).toEqual([])
-      const publicPhoto = await request.get(src)
-      expect(publicPhoto.status()).toBe(200)
-      expect(publicPhoto.headers()['content-type']).toContain('image/webp')
-      const firstBytes = await publicPhoto.body()
-      expect(firstBytes.toString('ascii', 0, 4)).toBe('RIFF')
-      expect(firstBytes.toString('ascii', 8, 12)).toBe('WEBP')
-      const decoded = await decodePhoto(page, firstBytes)
-      expect([decoded.width, decoded.height]).toEqual([256, 256])
-      // EXIF makes the bands horizontal. Zoom 4 selects an 80px square;
-      // four downward keys move its source from y=200 to y=180. The yellow
-      // source stripe y=200..220 must land in the second output quarter.
-      const cropColors = [
-        [188, 48, 36],
-        [240, 208, 32],
-        [188, 48, 36],
-        [36, 106, 196],
-      ]
-      decoded.vertical.forEach((pixel, index) =>
-        expectPixel(pixel, cropColors[index]),
-      )
-      await test.info().attach('anonymous-exif-crop', {
-        body: firstBytes,
-        contentType: 'image/webp',
-      })
-
-      await openAndSelectPhoto(
-        expect,
-        page,
-        await picture(page, 'image/png'),
-        'image/png',
-      )
-      // Merely picking the replacement must preserve the published photo.
-      for (const tab of [page, second]) {
-        for (const avatar of avatarSurfaces(tab)) {
-          await expect(
-            avatar.getByTestId('hilos-avatar-photo'),
-          ).toHaveAttribute('src', src)
-        }
-      }
-      expect(uploads()).toBe(1)
-      await dictateModerationVerdict(photoKey, true, 'ok')
-      await dictateGatewayBehavior('/model/api/generate', photoKey, {
-        awaitRelease: true,
-      })
-      await clickSubmit(expect, page.getByTestId('profile-photo-save'))
-      // Name preparation and the first photo have already spent two answers.
-      await expect
-        .poll(async () => (await readModelRequests(photoKey)).length)
-        .toBe(3)
-      await expect(page.getByTestId('profile-photo-checking')).toBeVisible()
-      for (const tab of [page, second]) {
-        for (const avatar of avatarSurfaces(tab)) {
-          await expect(
-            avatar.getByTestId('hilos-avatar-photo'),
-          ).toHaveAttribute('src', src)
-        }
-      }
-      await releaseGatewayAnswer('/model/api/generate', photoKey)
-      await expect(page.getByTestId('modal')).toBeHidden()
-      const profilePhoto = page
-        .getByTestId('profile-identity')
-        .getByTestId('hilos-avatar-photo')
-      await expect(profilePhoto).not.toHaveAttribute('src', src)
-      const replacement = await profilePhoto.getAttribute('src')
-      if (replacement === null)
-        throw new Error('The replacement has no address')
-      for (const tab of [page, second]) {
-        for (const avatar of avatarSurfaces(tab)) {
-          await expect(avatar.getByTestId('hilos-avatar-photo')).toBeVisible()
-          await expect(
-            avatar.getByTestId('hilos-avatar-photo'),
-          ).toHaveAttribute('src', replacement)
-        }
-      }
-      expect((await request.storageState()).cookies).toEqual([])
-      const replacementPhoto = await request.get(replacement)
-      expect(replacementPhoto.status()).toBe(200)
-      expect(replacementPhoto.headers()['content-type']).toContain('image/webp')
-      const replacementBytes = await replacementPhoto.body()
-      expect(replacementBytes.equals(firstBytes)).toBe(false)
-      const replaced = await decodePhoto(page, replacementBytes)
-      expect([replaced.width, replaced.height]).toEqual([256, 256])
-      replaced.horizontal.forEach((pixel, index) =>
-        expectPixel(pixel, index < 2 ? [24, 160, 80] : [144, 40, 200]),
-      )
-      await test.info().attach('anonymous-replacement', {
-        body: replacementBytes,
-        contentType: 'image/webp',
-      })
-
-      await openAndSelectPhoto(
-        expect,
-        page,
-        await picture(page, 'image/jpeg'),
-        'image/jpeg',
-      )
-      await dictateModerationVerdict(photoKey, false, 'nudity')
-      await clickSubmit(expect, page.getByTestId('profile-photo-save'))
-      await expect(page.getByTestId('profile-photo-error')).toHaveText(
-        'This photo was not accepted: it looks like nudity or sexual content.',
-      )
-      await expect(page.getByTestId('profile-photo-preview')).toBeVisible()
-      for (const tab of [page, second]) {
-        for (const avatar of avatarSurfaces(tab)) {
-          await expect(
-            avatar.getByTestId('hilos-avatar-photo'),
-          ).toHaveAttribute('src', replacement)
-        }
-      }
-      await clickSubmit(expect, page.getByTestId('profile-photo-cancel'))
-      await expect(page.getByTestId('modal')).toBeHidden()
-      await clickSubmit(expect, page.getByTestId('profile-photo-open'))
-      await clickSubmit(expect, page.getByTestId('profile-photo-remove'))
-      await expect(page.getByTestId('modal')).toBeHidden()
-      for (const tab of [page, second]) {
-        for (const avatar of avatarSurfaces(tab)) {
-          await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
-          await expect(avatar).toHaveText('PM')
-        }
-        await expect(tab.getByTestId('profile-name')).toHaveText(person.name)
-      }
-      expect(uploads()).toBe(3)
-      for (const document of documents) await document.unchanged()
-    } finally {
-      for (const document of documents) await document.dispose()
+    await expect(page.getByTestId('profile-photo-preview')).toHaveCount(0)
+    await expect(page.getByTestId('profile-photo-save')).toHaveCount(0)
+    await clickSubmit(expect, page.getByTestId('profile-photo-cancel'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    expect(uploads()).toBe(0)
+    for (const avatar of avatarSurfaces(page)) {
+      await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
+      await expect(avatar).toHaveText('E')
     }
-  } finally {
-    await second.close()
-  }
-})
-
-test('a picture over 40 MiB is refused locally before upload', async ({
-  page,
-}) => {
-  const uploads = countSentFrames(page, 'hilos_upload_init')
-  await createTestUser(expect, page)
-  await gotoPage(expect, page, '/profile', PAGE_READY)
-  await clickSubmit(expect, page.getByTestId('profile-photo-open'))
-  await page.getByTestId('profile-photo-input').setInputFiles({
-    name: 'too-large.png',
-    mimeType: 'image/png',
-    buffer: Buffer.alloc(PHOTO_LIMIT_BYTES + 1),
   })
-  await expect(page.getByTestId('profile-photo-error')).toHaveText(
-    'This picture is larger than 40 MB.',
-  )
-  await expect(page.getByTestId('profile-photo-preview')).toHaveCount(0)
-  await expect(page.getByTestId('profile-photo-save')).toHaveCount(0)
-  await clickSubmit(expect, page.getByTestId('profile-photo-cancel'))
+
+  const person = { ...user, name: `Photo ${photoKey}` }
+  await dictateModerationVerdict(photoKey, true, 'ok')
+  await changeOwnName(expect, page, person.name)
   await expect(page.getByTestId('modal')).toBeHidden()
-  expect(uploads()).toBe(0)
-  for (const avatar of avatarSurfaces(page)) {
-    await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(0)
-    await expect(avatar).toHaveText('E')
-  }
+  await expect(page.getByTestId('profile-name')).toHaveText(person.name)
+  await test.step('an EXIF crop is public, replaces the photo in both tabs and removes back to initials', async () => {
+    const second = await page.context().newPage()
+    try {
+      await gotoPage(expect, second, '/profile', PAGE_READY)
+      await expect(second.getByTestId('profile-name')).toHaveText(person.name)
+      for (const tab of [page, second]) {
+        for (const avatar of avatarSurfaces(tab))
+          await expect(avatar).toHaveText('PM')
+      }
+      expect(await readModelRequests(photoKey)).toEqual([
+        { ordinal: 1, key: photoKey, imageHashes: [] },
+      ])
+      expect(uploads()).toBe(0)
+      const documents = await Promise.all(
+        [page, second].map((tab) => watchClientDocument(tab)),
+      )
+      let heldReplacement = false
+      try {
+        await openAndSelectPhoto(
+          expect,
+          page,
+          rotatedJpeg(await picture(page, 'image/jpeg')),
+          'image/jpeg',
+        )
+        const zoom = page.getByTestId('profile-photo-zoom')
+        await expect(zoom).toHaveValue('1')
+        await zoom.focus()
+        await zoom.press('End')
+        await expect(zoom).toHaveValue('4')
+        const preview = page.getByTestId('profile-photo-preview')
+        await preview.focus()
+        for (let step = 0; step < 4; step++) await preview.press('ArrowDown')
+        expect(uploads()).toBe(0)
+        for (const tab of [page, second]) {
+          for (const avatar of avatarSurfaces(tab)) {
+            await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(
+              0,
+            )
+          }
+        }
+        await dictateModerationVerdict(photoKey, true, 'ok')
+        await clickSubmit(expect, page.getByTestId('profile-photo-save'))
+        await expect(page.getByTestId('modal')).toBeHidden()
+        await expect(
+          page
+            .getByTestId('profile-identity')
+            .getByTestId('hilos-avatar-photo'),
+        ).toBeVisible()
+        const src = await page
+          .getByTestId('profile-identity')
+          .getByTestId('hilos-avatar-photo')
+          .getAttribute('src')
+        if (src === null) throw new Error('The published photo has no address')
+        expect(new URL(src, page.url()).pathname).toBe('/_hilos/file')
+        expect(new URL(src, page.url()).searchParams.get('variant')).toBe(
+          'hilos_avatar',
+        )
+        for (const tab of [page, second]) {
+          for (const avatar of avatarSurfaces(tab)) {
+            await expect(avatar.getByTestId('hilos-avatar-photo')).toBeVisible()
+            await expect(
+              avatar.getByTestId('hilos-avatar-photo'),
+            ).toHaveAttribute('src', src)
+          }
+        }
+
+        // Playwright's request fixture has its own cookie jar, separate from the
+        // signed-in browser context. Decode this anonymous HTTP response itself.
+        expect((await request.storageState()).cookies).toEqual([])
+        const publicPhoto = await request.get(src)
+        expect(publicPhoto.status()).toBe(200)
+        expect(publicPhoto.headers()['content-type']).toContain('image/webp')
+        const firstBytes = await publicPhoto.body()
+        expect(firstBytes.toString('ascii', 0, 4)).toBe('RIFF')
+        expect(firstBytes.toString('ascii', 8, 12)).toBe('WEBP')
+        const decoded = await decodePhoto(page, firstBytes)
+        expect([decoded.width, decoded.height]).toEqual([256, 256])
+        // EXIF makes the bands horizontal. Zoom 4 selects an 80px square;
+        // four downward keys move its source from y=200 to y=180. The yellow
+        // source stripe y=200..220 must land in the second output quarter.
+        const cropColors = [
+          [188, 48, 36],
+          [240, 208, 32],
+          [188, 48, 36],
+          [36, 106, 196],
+        ]
+        decoded.vertical.forEach((pixel, index) =>
+          expectPixel(pixel, cropColors[index]),
+        )
+        await test.info().attach('anonymous-exif-crop', {
+          body: firstBytes,
+          contentType: 'image/webp',
+        })
+
+        await openAndSelectPhoto(
+          expect,
+          page,
+          await picture(page, 'image/png'),
+          'image/png',
+        )
+        // Merely picking the replacement must preserve the published photo.
+        for (const tab of [page, second]) {
+          for (const avatar of avatarSurfaces(tab)) {
+            await expect(
+              avatar.getByTestId('hilos-avatar-photo'),
+            ).toHaveAttribute('src', src)
+          }
+        }
+        expect(uploads()).toBe(1)
+        await dictateModerationVerdict(photoKey, true, 'ok')
+        heldReplacement = true
+        await dictateGatewayBehavior('/model/api/generate', photoKey, {
+          awaitRelease: true,
+        })
+        await clickSubmit(expect, page.getByTestId('profile-photo-save'))
+        // Name preparation and the first photo have already spent two answers.
+        await expect
+          .poll(async () => (await readModelRequests(photoKey)).length)
+          .toBe(3)
+        await expect(page.getByTestId('profile-photo-checking')).toBeVisible()
+        for (const tab of [page, second]) {
+          for (const avatar of avatarSurfaces(tab)) {
+            await expect(
+              avatar.getByTestId('hilos-avatar-photo'),
+            ).toHaveAttribute('src', src)
+          }
+        }
+        await releaseGatewayAnswer('/model/api/generate', photoKey)
+        await expect(page.getByTestId('modal')).toBeHidden()
+        heldReplacement = false
+        const profilePhoto = page
+          .getByTestId('profile-identity')
+          .getByTestId('hilos-avatar-photo')
+        await expect(profilePhoto).not.toHaveAttribute('src', src)
+        const replacement = await profilePhoto.getAttribute('src')
+        if (replacement === null)
+          throw new Error('The replacement has no address')
+        for (const tab of [page, second]) {
+          for (const avatar of avatarSurfaces(tab)) {
+            await expect(avatar.getByTestId('hilos-avatar-photo')).toBeVisible()
+            await expect(
+              avatar.getByTestId('hilos-avatar-photo'),
+            ).toHaveAttribute('src', replacement)
+          }
+        }
+        expect((await request.storageState()).cookies).toEqual([])
+        const replacementPhoto = await request.get(replacement)
+        expect(replacementPhoto.status()).toBe(200)
+        expect(replacementPhoto.headers()['content-type']).toContain(
+          'image/webp',
+        )
+        const replacementBytes = await replacementPhoto.body()
+        expect(replacementBytes.equals(firstBytes)).toBe(false)
+        const replaced = await decodePhoto(page, replacementBytes)
+        expect([replaced.width, replaced.height]).toEqual([256, 256])
+        replaced.horizontal.forEach((pixel, index) =>
+          expectPixel(pixel, index < 2 ? [24, 160, 80] : [144, 40, 200]),
+        )
+        await test.info().attach('anonymous-replacement', {
+          body: replacementBytes,
+          contentType: 'image/webp',
+        })
+
+        await openAndSelectPhoto(
+          expect,
+          page,
+          await picture(page, 'image/jpeg'),
+          'image/jpeg',
+        )
+        await dictateModerationVerdict(photoKey, false, 'nudity')
+        await clickSubmit(expect, page.getByTestId('profile-photo-save'))
+        await expect(page.getByTestId('profile-photo-error')).toHaveText(
+          'This photo was not accepted: it looks like nudity or sexual content.',
+        )
+        await expect(page.getByTestId('profile-photo-preview')).toBeVisible()
+        for (const tab of [page, second]) {
+          for (const avatar of avatarSurfaces(tab)) {
+            await expect(
+              avatar.getByTestId('hilos-avatar-photo'),
+            ).toHaveAttribute('src', replacement)
+          }
+        }
+        await clickSubmit(expect, page.getByTestId('profile-photo-cancel'))
+        await expect(page.getByTestId('modal')).toBeHidden()
+        await clickSubmit(expect, page.getByTestId('profile-photo-open'))
+        await clickSubmit(expect, page.getByTestId('profile-photo-remove'))
+        await expect(page.getByTestId('modal')).toBeHidden()
+        for (const tab of [page, second]) {
+          for (const avatar of avatarSurfaces(tab)) {
+            await expect(avatar.getByTestId('hilos-avatar-photo')).toHaveCount(
+              0,
+            )
+            await expect(avatar).toHaveText('PM')
+          }
+          await expect(tab.getByTestId('profile-name')).toHaveText(person.name)
+        }
+        expect(uploads()).toBe(3)
+        for (const document of documents) await document.unchanged()
+      } finally {
+        try {
+          if (heldReplacement) {
+            await releaseGatewayAnswer('/model/api/generate', photoKey)
+            await expect(
+              page.getByTestId('profile-photo-checking'),
+            ).toBeHidden()
+            await expect(page.getByTestId('modal')).toBeHidden()
+          }
+        } finally {
+          for (const document of documents) await document.dispose()
+        }
+      }
+    } finally {
+      await second.close()
+    }
+  })
 })
 
 test('the admin card follows userPhoto while the viewer receives its personal photo hidden', async ({

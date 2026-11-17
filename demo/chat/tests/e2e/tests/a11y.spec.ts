@@ -788,26 +788,6 @@ test('the name checking voice keeps its room, editable field, focus trap and dir
   }
 })
 
-test('the profile session and device pages expose one named surface', async ({
-  page,
-}) => {
-  const user = await createTestUser(expect, page)
-
-  await gotoPage(expect, page, '/profile/sessions')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(user.name)
-  await expect(page.getByTestId('profile-sessions')).toHaveAttribute(
-    'aria-label',
-    'Sessions',
-  )
-
-  await gotoPage(expect, page, '/profile/devices')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(user.name)
-  await expect(page.getByTestId('profile-devices')).toHaveAttribute(
-    'aria-label',
-    'Devices',
-  )
-})
-
 test('password visibility toggle operates from keyboard on sign-in', async ({
   page,
 }) => {
