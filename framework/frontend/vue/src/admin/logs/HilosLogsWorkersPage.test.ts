@@ -1,21 +1,28 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   HilosPages,
   ScopeManager,
   createSignal,
   WORKERS_HEADER_SIGNAL,
+  parseSignalValue,
 } from '@hilos/core/base'
 import type {
   HilosConnection,
   HilosLogWorkersHeader,
   HilosRouter,
   PageRouteMatch,
+  ParsedSignal,
+  TableViewportDescriptor,
 } from '@hilos/core/base'
 
 import HilosLogsWorkersPage from './HilosLogsWorkersPage.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
+
+enableAutoUnmount(afterEach)
+
+type TableWindowSignal = Extract<ParsedSignal, { kind: 'tableWindow' }>
 
 /** A header as the page answers a subscription with it. */
 function header(
@@ -70,12 +77,18 @@ function makeConnection(): {
     type: string
     data: unknown
   }) => void)[] = []
-  const windowListeners: ((signal: { data: unknown }) => void)[] = []
+  const windowListeners: ((signal: TableWindowSignal) => void)[] = []
   const filters: Record<string, unknown>[] = []
+  let requestId: string | undefined
+  let limit = 25
   const connection = {
     on(event: string, listener: (signal: never) => void): () => void {
-      if (event === 'projectSignal')
-        listener({
+      if (event === 'projectSignal') {
+        const projectListener = listener as unknown as (signal: {
+          type: string
+          data: unknown
+        }) => void
+        projectListener({
           type: 'page_response',
           data: {
             page: HilosPages.LOGS_WORKERS,
@@ -94,19 +107,28 @@ function makeConnection(): {
               },
             },
           },
-        } as never)
-      if (event === 'projectSignal') {
-        projectListeners.push(
-          listener as unknown as (signal: {
-            type: string
-            data: unknown
-          }) => void,
-        )
+        })
+        projectListeners.push(projectListener)
+
+        return () => {
+          const index = projectListeners.indexOf(projectListener)
+          if (index !== -1) {
+            projectListeners.splice(index, 1)
+          }
+        }
       }
       if (event === 'tableWindow') {
-        windowListeners.push(
-          listener as unknown as (signal: { data: unknown }) => void,
-        )
+        const windowListener = listener as unknown as (
+          signal: TableWindowSignal,
+        ) => void
+        windowListeners.push(windowListener)
+
+        return () => {
+          const index = windowListeners.indexOf(windowListener)
+          if (index !== -1) {
+            windowListeners.splice(index, 1)
+          }
+        }
       }
 
       return () => {}
@@ -119,25 +141,46 @@ function makeConnection(): {
     sendTableViewport(
       page: string,
       tableKey: string,
-      descriptor: { filter?: Record<string, unknown> },
+      descriptor: TableViewportDescriptor,
     ): void {
-      filters.push(descriptor.filter ?? {})
+      filters.push(descriptor.filter)
+      requestId = descriptor.requestId
+      limit = descriptor.limit
     },
   } as unknown as HilosConnection
 
   const pushWindow = (rows: Record<string, unknown>[]): void => {
-    for (const listener of windowListeners) {
-      listener({
-        data: {
-          page: HilosPages.LOGS_WORKERS,
-          tableKey: 'hilosLogWorkers',
-          rows: rows.map((slot) => ({
-            rowKey: String(slot.rowKey),
-            slots: { stream: slot },
-          })),
-          totalCount: rows.length,
-        },
-      })
+    const result = parseSignalValue({
+      type: 'table_window',
+      data: {
+        page: HilosPages.LOGS_WORKERS,
+        tableKey: 'hilosLogWorkers',
+        rows: rows.map((slot) => ({
+          rowKey: String(slot.rowKey),
+          slots: { stream: slot },
+        })),
+        totalCount: rows.length,
+        totalExact: true,
+        limit,
+        firstAnchor: null,
+        lastAnchor: null,
+        ...(requestId === undefined ? {} : { requestId }),
+      },
+    })
+    if (!result.ok) {
+      const message =
+        'message' in result.failure
+          ? result.failure.message
+          : result.failure.kind
+      throw new Error(`table_window frame was not accepted: ${message}`)
+    }
+    if (result.signal.kind !== 'tableWindow') {
+      throw new Error(
+        `table_window frame was not accepted: ${result.signal.kind}`,
+      )
+    }
+    for (const windowListener of windowListeners) {
+      windowListener(result.signal)
     }
   }
 
@@ -234,6 +277,8 @@ describe('HilosLogsWorkersPage', () => {
     await nextTick()
 
     await wrapper.find('[data-id="hilos-table-search"]').setValue('nothing')
+    pushEmptyWindow()
+    await nextTick()
 
     // This frame opts into the page's own no-match wording and reset control.
     expect(
@@ -263,7 +308,8 @@ describe('HilosLogsWorkersPage', () => {
   })
 
   it('offers the node column and the node filter once the picture names nodes', async () => {
-    const { connection, pushHeader, filters } = makeConnection()
+    const { connection, pushHeader, pushEmptyWindow, filters } =
+      makeConnection()
     const wrapper = mountPage(connection)
 
     pushHeader(
@@ -282,6 +328,8 @@ describe('HilosLogsWorkersPage', () => {
     const nodeOption = select.get('[data-id="hilos-dropdown-option-1"]')
     expect(nodeOption.text()).toContain('worker-west (node-2)')
     await nodeOption.trigger('click')
+    pushEmptyWindow()
+    await nextTick()
     expect(filters.at(-1)).toEqual({ node: 'node-2' })
     expect(wrapper.find('[data-id="hilos-table-sort-node"]').exists()).toBe(
       true,
@@ -289,11 +337,13 @@ describe('HilosLogsWorkersPage', () => {
   })
 
   it('sends the type switch to the server as a filter, never narrowing locally', async () => {
-    const { connection, filters } = makeConnection()
+    const { connection, pushEmptyWindow, filters } = makeConnection()
     const wrapper = mountPage(connection)
     await nextTick()
 
     await wrapper.find('[data-id="hilos-table-filter-type"]').setValue(true)
+    pushEmptyWindow()
+    await nextTick()
 
     expect(filters.at(-1)).toEqual({ type: 'monopolistic' })
   })

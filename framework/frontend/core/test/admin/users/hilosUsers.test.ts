@@ -1930,7 +1930,7 @@ describe('hilosUserLifecycleSections with a standing (HIL-945)', () => {
       readStanding({
         shown: 'blocked',
         blocked: true,
-        deletionEffectiveAt: now + 3 * DAY_MS,
+        deletionEffectiveAt: now + 3 * DAY_MS - 60_000,
       }),
     )
     const access = sections.find((section) => section.key === 'access')
