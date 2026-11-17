@@ -7,12 +7,14 @@
 import {
   HilosAvatar,
   HilosLayout,
+  HilosLink,
   HilosNotificationBell,
   HilosView,
   useSignal,
 } from '@hilos/react/base'
 import { hilosAdminViews } from '@hilos/react/admin-views'
 import {
+  HILOS_PAGE_ROUTES,
   HilosPages,
   hilosSessionAvatarMark,
   lazyPage,
@@ -32,6 +34,8 @@ import Main from './views/Main/Main.js'
 import MainSkeleton from './views/Main/MainSkeleton.js'
 import Privacy from './views/Privacy/Privacy.js'
 import PrivacyHistory from './views/PrivacyHistory/PrivacyHistory.js'
+import Profile from './views/Profile/Profile.js'
+import ProfileData from './views/Profile/ProfileData.js'
 import Terms from './views/Terms/Terms.js'
 import TermsHistory from './views/TermsHistory/TermsHistory.js'
 
@@ -246,6 +250,12 @@ const pages: Record<string, PageView<ComponentType>> = {
   [HilosPages.COMMUNICATIONS_DELIVERIES]: lazyPage(() =>
     import('./views/Hilos/Communications/Deliveries.js').then((m) => m.default),
   ),
+  // The person's own profile pages: the framework owns every section, the project
+  // binds its connection, scope stores and action lifecycle (views/Profile,
+  // views/Hilos/ProfileNotifications). The sign-in, security, sessions, devices and
+  // agreements pages are not served here, so they are not mounted either.
+  [HilosPages.PROFILE]: Profile,
+  [HilosPages.PROFILE_DATA]: ProfileData,
   [HilosPages.PROFILE_NOTIFICATIONS]: lazyPage(() =>
     import('./views/Hilos/ProfileNotifications/ProfileNotifications.js').then(
       (m) => m.default,
@@ -275,6 +285,9 @@ export interface AppProps {
   authGate: AuthGate
 }
 
+/** The profile root the avatar leads to (HIL-1169). */
+const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
+
 export default function App({ authGate }: AppProps) {
   const userName = useSignal(currentUserName)
   // The standing mark by the avatar (HIL-945): a takeover, or the session's own
@@ -295,14 +308,17 @@ export default function App({ authGate }: AppProps) {
       }
       user={
         userName ? (
-          // The avatar is not a link: the demo has no profile yet — it arrives
-          // with the shop's "My orders". The bell sits in front of it.
           <>
             <HilosNotificationBell connection={connection} />
-            <span className="small" data-id="nav-profile-name" title={userName}>
+            <HilosLink
+              to={profileHref}
+              className="nav-link d-inline-flex align-items-center p-0"
+              data-id="nav-profile-name"
+              title={userName}
+            >
               <HilosAvatar name={userName} mark={avatarMark} />
               <span className="visually-hidden">{userName}</span>
-            </span>
+            </HilosLink>
           </>
         ) : (
           // A visitor gets one button that opens the surface over the page they are

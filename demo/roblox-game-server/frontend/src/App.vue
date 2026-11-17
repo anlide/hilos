@@ -37,6 +37,7 @@ import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
 import PrivacyHistory from './views/PrivacyHistory/PrivacyHistory.vue'
 import Profile from './views/Profile/Profile.vue'
+import ProfileData from './views/Profile/ProfileData.vue'
 import ProfileNotifications from './views/ProfileNotifications/ProfileNotifications.vue'
 import ProfileSessions from './views/ProfileSessions/ProfileSessions.vue'
 import Terms from './views/Terms/Terms.vue'
@@ -225,6 +226,7 @@ const pages: Record<string, PageView<Component>> = {
     import('./views/Hilos/Moderation/Rules/Rules.vue').then((m) => m.default),
   ),
   [HilosPages.PROFILE]: Profile,
+  [HilosPages.PROFILE_DATA]: ProfileData,
   [HilosPages.PROFILE_NOTIFICATIONS]: ProfileNotifications,
   [HilosPages.PROFILE_SESSIONS]: ProfileSessions,
   [HilosPages.ABOUT]: About,

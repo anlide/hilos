@@ -86,7 +86,9 @@ use Hilos\Tables\Status\HilosStatusWorksTable;
 use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyHistoryPage;
+use Demo\EcommerceShop\Pages\Hilos\ProfileDataPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
+use Demo\EcommerceShop\Pages\Hilos\ProfilePage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
 use Demo\EcommerceShop\Pages\Hilos\I18nPage;
 use Demo\EcommerceShop\Pages\Hilos\I18n\Lists\LanguagesListPage;
@@ -285,6 +287,8 @@ final class Hilos extends HilosFacade
         CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
+        ProfilePage::PAGE => ProfilePage::class,
+        ProfileDataPage::PAGE => ProfileDataPage::class,
         I18nPage::PAGE => I18nPage::class,
         LanguagesListPage::PAGE => LanguagesListPage::class,
         CountriesListPage::PAGE => CountriesListPage::class,
@@ -506,7 +510,13 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_LISTS = [
+        ProfilePage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
         ProfileNotificationsPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileDataPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
     ];

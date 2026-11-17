@@ -41,6 +41,7 @@ use Demo\Preferans\Pages\Hilos\LicensePage;
 use Demo\Preferans\Pages\Hilos\LicenseDependenciesPage;
 use Demo\Preferans\Pages\Hilos\PrivacyPage;
 use Demo\Preferans\Pages\Hilos\PrivacyHistoryPage;
+use Demo\Preferans\Pages\Hilos\ProfileDataPage;
 use Demo\Preferans\Pages\Hilos\ProfileNotificationsPage;
 use Demo\Preferans\Pages\Hilos\ProfilePage;
 use Demo\Preferans\Pages\Hilos\AppearancePage;
@@ -145,6 +146,7 @@ final class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         ProfilePage::PAGE => ProfilePage::class,
+        ProfileDataPage::PAGE => ProfileDataPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
         AboutPage::PAGE => AboutPage::class,
@@ -276,6 +278,9 @@ final class Hilos extends HilosFacade
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
         ProfileNotificationsPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileDataPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
     ];

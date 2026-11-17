@@ -84,6 +84,7 @@ use Hilos\Tables\Status\HilosStatusWorksTable;
 use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyPage;
 use Demo\OnlineTesting\Pages\Hilos\PrivacyHistoryPage;
+use Demo\OnlineTesting\Pages\Hilos\ProfileDataPage;
 use Demo\OnlineTesting\Pages\Hilos\ProfileNotificationsPage;
 use Demo\OnlineTesting\Pages\Hilos\ProfilePage;
 use Demo\OnlineTesting\Pages\Hilos\AppearancePage;
@@ -312,6 +313,7 @@ final class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         ProfilePage::PAGE => ProfilePage::class,
+        ProfileDataPage::PAGE => ProfileDataPage::class,
         MaintenancePage::PAGE => MaintenancePage::class,
         MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
         MaintenanceNodesPage::PAGE => MaintenanceNodesPage::class,
@@ -546,6 +548,9 @@ final class Hilos extends HilosFacade
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
         ProfileNotificationsPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileDataPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
     ];

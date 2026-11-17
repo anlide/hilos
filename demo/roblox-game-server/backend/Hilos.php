@@ -91,6 +91,7 @@ use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Demo\RobloxGameServer\Pages\Hilos\PrivacyPage;
 use Demo\RobloxGameServer\Pages\Hilos\PrivacyHistoryPage;
+use Demo\RobloxGameServer\Pages\Hilos\ProfileDataPage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfileNotificationsPage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfilePage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfileSessionsPage;
@@ -322,6 +323,7 @@ class Hilos extends HilosFacade
         ProfilePage::PAGE => ProfilePage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
         ProfileSessionsPage::PAGE => ProfileSessionsPage::class,
+        ProfileDataPage::PAGE => ProfileDataPage::class,
         ModerationPage::PAGE => ModerationPage::class,
         ModerationKindPage::PAGE => ModerationKindPage::class,
         ModerationKindRulesPage::PAGE => ModerationKindRulesPage::class,
@@ -569,6 +571,9 @@ class Hilos extends HilosFacade
         ProfileSessionsPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
             ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::BINDING,
+        ],
+        ProfileDataPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
         UserPage::PAGE => [
             HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,

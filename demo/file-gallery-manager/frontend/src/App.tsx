@@ -45,6 +45,7 @@ import MainSkeleton from './views/Main/MainSkeleton.js'
 import Privacy from './views/Privacy/Privacy.js'
 import PrivacyHistory from './views/PrivacyHistory/PrivacyHistory.js'
 import Profile from './views/Profile/Profile.js'
+import ProfileData from './views/Profile/ProfileData.js'
 import Terms from './views/Terms/Terms.js'
 import TermsHistory from './views/TermsHistory/TermsHistory.js'
 
@@ -243,9 +244,10 @@ const pages: Record<string, PageView<ComponentType>> = {
   ),
   // The person's own profile pages: the framework owns every section, the project
   // binds its connection, scope stores and action lifecycle (views/Profile,
-  // views/ProfileNotifications). The sign-in, security, data, sessions, devices
-  // and agreements pages are not served here, so they are not mounted either.
+  // views/ProfileNotifications). The sign-in, security, sessions, devices and
+  // agreements pages are not served here, so they are not mounted either.
   [HilosPages.PROFILE]: Profile,
+  [HilosPages.PROFILE_DATA]: ProfileData,
   [HilosPages.PROFILE_NOTIFICATIONS]: lazyPage(() =>
     import('./views/ProfileNotifications/ProfileNotifications.js').then(
       (m) => m.default,

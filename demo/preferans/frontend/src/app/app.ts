@@ -35,6 +35,7 @@ import { Main } from './views/main/main.js'
 import { Privacy } from './views/privacy/privacy.js'
 import { PrivacyHistory } from './views/privacy-history/privacy-history.js'
 import { Profile } from './views/profile/profile.js'
+import { ProfileData } from './views/profile/profile-data.js'
 import { Terms } from './views/terms/terms.js'
 import { TermsHistory } from './views/terms-history/terms-history.js'
 
@@ -220,6 +221,7 @@ export class App {
     ),
     [HilosPages.ABOUT]: About,
     [HilosPages.PROFILE]: Profile,
+    [HilosPages.PROFILE_DATA]: ProfileData,
     [HilosPages.TERMS]: Terms,
     [HilosPages.TERMS_HISTORY]: TermsHistory,
     [HilosPages.PRIVACY]: Privacy,

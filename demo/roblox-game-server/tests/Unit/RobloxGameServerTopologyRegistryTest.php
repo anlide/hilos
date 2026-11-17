@@ -56,6 +56,7 @@ use Demo\RobloxGameServer\Pages\Hilos\Maintenance\MaintenanceWordsPage;
 use Demo\RobloxGameServer\Pages\Hilos\Moderation\ModerationKindPage;
 use Demo\RobloxGameServer\Pages\Hilos\Moderation\ModerationKindRulesPage;
 use Demo\RobloxGameServer\Pages\Hilos\Moderation\ModerationPage;
+use Demo\RobloxGameServer\Pages\Hilos\ProfileDataPage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfileNotificationsPage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfilePage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfileSessionsPage;
@@ -101,6 +102,7 @@ use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Group\AbstractGroup;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Database;
@@ -296,7 +298,7 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
                 Hilos::PAGE_DATA[$page][SelfConnectionBrowserData::DATA],
             );
         }
-        foreach ([ProfilePage::class, ProfileNotificationsPage::class, ProfileSessionsPage::class] as $pageClass) {
+        foreach ([ProfilePage::class, ProfileNotificationsPage::class, ProfileSessionsPage::class, ProfileDataPage::class] as $pageClass) {
             self::assertSame($pageClass, Hilos::PAGES[$pageClass::PAGE]);
             self::assertSame(AgentType::ROBLOX_GAME_SERVER, Hilos::getPageRoutes()[$pageClass::PAGE]);
             self::assertSame(
@@ -311,6 +313,12 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
         self::assertSame([RobloxGameServerRtContext::connections], $browser->rtSourceKeysOfPage(ProfilePage::PAGE));
         self::assertContains(RobloxGameServerDbContext::sessions, $browser->dbSourceKeysOfPage(ProfileSessionsPage::PAGE));
         self::assertSame([RobloxGameServerRtContext::connections], $browser->rtSourceKeysOfPage(ProfileSessionsPage::PAGE));
+        self::assertContains(RobloxGameServerDbContext::identities, $browser->dbSourceKeysOfPage(ProfileDataPage::PAGE));
+        self::assertContains(RobloxGameServerDbContext::passkeyCredentials, $browser->dbSourceKeysOfPage(ProfileDataPage::PAGE));
+        self::assertSame([RobloxGameServerRtContext::connections], $browser->rtSourceKeysOfPage(ProfileDataPage::PAGE));
+        self::assertContains(HilosDbContext::dataExports, ProfileDataPage::READS_DB);
+        self::assertSame(PageAccessLevel::AUTHENTICATED, ProfileDataPage::ACCESS_LEVEL);
+        self::assertSame([HilosProfileIdentitiesBrowserList::class], ProfileDataPage::REQUIRED_LISTS);
         self::assertContains(RobloxGameServerDbContext::sessions, ProfileSessionsPage::READS_DB);
         self::assertSame([
             HilosProfileIdentitiesBrowserList::class,

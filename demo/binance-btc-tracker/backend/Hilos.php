@@ -93,7 +93,9 @@ use Hilos\Tables\Status\HilosStatusWorksTable;
 use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyHistoryPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ProfileDataPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ProfilePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\AppearancePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\I18nPage;
@@ -338,6 +340,8 @@ class Hilos extends HilosFacade
         CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
+        ProfilePage::PAGE => ProfilePage::class,
+        ProfileDataPage::PAGE => ProfileDataPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -564,7 +568,13 @@ class Hilos extends HilosFacade
     ];
 
     public const array PAGE_LISTS = [
+        ProfilePage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
         ProfileNotificationsPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileDataPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
         UserPage::PAGE => [

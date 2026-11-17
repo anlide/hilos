@@ -137,8 +137,11 @@ use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
+use Demo\BinanceBtcTracker\Browser\BinanceBtcTrackerBrowserContext;
 use Demo\BinanceBtcTracker\Pages\Hilos\PrivacyPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ProfileDataPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\ProfileNotificationsPage;
+use Demo\BinanceBtcTracker\Pages\Hilos\ProfilePage;
 use Demo\BinanceBtcTracker\Pages\Hilos\SettingsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\TermsPage;
 use Demo\BinanceBtcTracker\Pages\Hilos\Users\UserPage;
@@ -337,7 +340,9 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             Hilos::BROWSER_LISTS[HilosProfileIdentitiesBrowserList::LIST],
         );
         foreach ([
+            ProfilePage::class,
             ProfileNotificationsPage::class,
+            ProfileDataPage::class,
         ] as $page) {
             self::assertSame([HilosProfileIdentitiesBrowserList::class], $page::REQUIRED_LISTS);
             self::assertSame(
@@ -345,6 +350,43 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 Hilos::PAGE_LISTS[$page::PAGE][HilosProfileIdentitiesBrowserList::LIST],
             );
         }
+    }
+
+    public function testProfileAndProfileDataPagesAreServedByBinanceBtcTrackerAgentWithTheirSources(): void
+    {
+        self::assertSame(ProfilePage::class, Hilos::PAGES[ProfilePage::PAGE]);
+        self::assertSame(ProfileDataPage::class, Hilos::PAGES[ProfileDataPage::PAGE]);
+        self::assertSame(AgentType::BINANCE_BTC_TRACKER, ProfilePage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::BINANCE_BTC_TRACKER, ProfileDataPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::BINANCE_BTC_TRACKER, Hilos::getPageRoutes()[ProfilePage::PAGE]);
+        self::assertSame(AgentType::BINANCE_BTC_TRACKER, Hilos::getPageRoutes()[ProfileDataPage::PAGE]);
+        self::assertSame(PageAccessLevel::AUTHENTICATED, ProfilePage::ACCESS_LEVEL);
+        self::assertSame(PageAccessLevel::AUTHENTICATED, ProfileDataPage::ACCESS_LEVEL);
+        self::assertSame([HilosProfileIdentitiesBrowserList::class], ProfilePage::REQUIRED_LISTS);
+        self::assertSame([HilosProfileIdentitiesBrowserList::class], ProfileDataPage::REQUIRED_LISTS);
+        self::assertSame(
+            [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
+            Hilos::PAGE_LISTS[ProfilePage::PAGE],
+        );
+        self::assertSame(
+            [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
+            Hilos::PAGE_LISTS[ProfileDataPage::PAGE],
+        );
+        self::assertContains(HilosDbContext::accountDeletions, ProfilePage::READS_DB);
+        self::assertContains(HilosDbContext::dataExports, ProfileDataPage::READS_DB);
+
+        $browser = new BinanceBtcTrackerBrowserContext();
+        $browser->bindHilosFacade(Hilos::class);
+
+        $profileDbSources = $browser->dbSourceKeysOfPage(ProfilePage::PAGE);
+        self::assertContains(BinanceBtcTrackerDbContext::identities, $profileDbSources);
+        self::assertContains(BinanceBtcTrackerDbContext::passkeyCredentials, $profileDbSources);
+        self::assertSame([BinanceBtcTrackerRtContext::connections], $browser->rtSourceKeysOfPage(ProfilePage::PAGE));
+
+        $dataDbSources = $browser->dbSourceKeysOfPage(ProfileDataPage::PAGE);
+        self::assertContains(BinanceBtcTrackerDbContext::identities, $dataDbSources);
+        self::assertContains(BinanceBtcTrackerDbContext::passkeyCredentials, $dataDbSources);
+        self::assertSame([BinanceBtcTrackerRtContext::connections], $browser->rtSourceKeysOfPage(ProfileDataPage::PAGE));
     }
 
     public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
@@ -685,6 +727,8 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
+            ProfilePage::PAGE => ProfilePage::class,
+            ProfileDataPage::PAGE => ProfileDataPage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,

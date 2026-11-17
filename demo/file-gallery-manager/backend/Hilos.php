@@ -86,6 +86,7 @@ use Hilos\Tables\Legal\HilosTermsHistoryTable;
 use Hilos\Tables\Legal\HilosPrivacyHistoryTable;
 use Demo\FileGalleryManager\Pages\Hilos\PrivacyPage;
 use Demo\FileGalleryManager\Pages\Hilos\PrivacyHistoryPage;
+use Demo\FileGalleryManager\Pages\Hilos\ProfileDataPage;
 use Demo\FileGalleryManager\Pages\Hilos\ProfileNotificationsPage;
 use Demo\FileGalleryManager\Pages\Hilos\ProfilePage;
 use Demo\FileGalleryManager\Pages\Hilos\SettingsPage;
@@ -259,6 +260,7 @@ class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfilePage::PAGE => ProfilePage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
+        ProfileDataPage::PAGE => ProfileDataPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -454,6 +456,9 @@ class Hilos extends HilosFacade
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
         ProfileNotificationsPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+        ],
+        ProfileDataPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
     ];

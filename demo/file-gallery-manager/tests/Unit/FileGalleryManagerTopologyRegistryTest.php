@@ -55,10 +55,14 @@ use Demo\FileGalleryManager\Pages\Hilos\Logs\LogsRotationsPage;
 use Demo\FileGalleryManager\Pages\Hilos\Logs\LogsSettingsPage;
 use Demo\FileGalleryManager\Pages\Hilos\Logs\LogsViewPage;
 use Demo\FileGalleryManager\Pages\Hilos\Logs\LogsWorkersPage;
+use Demo\FileGalleryManager\Browser\FileGalleryManagerBrowserContext;
+use Demo\FileGalleryManager\Database\FileGalleryManagerDbContext;
 use Demo\FileGalleryManager\Pages\Hilos\PrivacyHistoryPage;
 use Demo\FileGalleryManager\Pages\Hilos\PrivacyPage;
+use Demo\FileGalleryManager\Pages\Hilos\ProfileDataPage;
 use Demo\FileGalleryManager\Pages\Hilos\ProfileNotificationsPage;
 use Demo\FileGalleryManager\Pages\Hilos\ProfilePage;
+use Hilos\Core\Page\PageAccessLevel;
 use Demo\FileGalleryManager\Pages\Hilos\SettingsPage;
 use Demo\FileGalleryManager\Pages\Hilos\TermsHistoryPage;
 use Demo\FileGalleryManager\Pages\Hilos\TermsPage;
@@ -234,6 +238,7 @@ final class FileGalleryManagerTopologyRegistryTest extends TestCase
                 MainPage::class,
                 ProfilePage::class,
                 ProfileNotificationsPage::class,
+                ProfileDataPage::class,
             ],
             AgentType::HILOS_INDEX => [
                 DashboardPage::class,
@@ -368,8 +373,30 @@ final class FileGalleryManagerTopologyRegistryTest extends TestCase
         $lists = [
             ProfilePage::PAGE => [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
             ProfileNotificationsPage::PAGE => [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
+            ProfileDataPage::PAGE => [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
         ];
         self::assertSame(self::byPage($lists), self::byPage(Hilos::PAGE_LISTS));
+    }
+
+    public function testProfileDataPageIsServedByFileGalleryManagerAgentWithItsSources(): void
+    {
+        self::assertSame(ProfileDataPage::class, Hilos::PAGES[ProfileDataPage::PAGE]);
+        self::assertSame(AgentType::FILE_GALLERY_MANAGER, ProfileDataPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::FILE_GALLERY_MANAGER, Hilos::getPageRoutes()[ProfileDataPage::PAGE]);
+        self::assertSame(PageAccessLevel::AUTHENTICATED, ProfileDataPage::ACCESS_LEVEL);
+        self::assertSame([HilosProfileIdentitiesBrowserList::class], ProfileDataPage::REQUIRED_LISTS);
+        self::assertSame(
+            [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
+            Hilos::PAGE_LISTS[ProfileDataPage::PAGE],
+        );
+        self::assertContains(HilosDbContext::dataExports, ProfileDataPage::READS_DB);
+
+        $browser = new FileGalleryManagerBrowserContext();
+        $browser->bindHilosFacade(Hilos::class);
+        $dbSources = $browser->dbSourceKeysOfPage(ProfileDataPage::PAGE);
+        self::assertContains(FileGalleryManagerDbContext::identities, $dbSources);
+        self::assertContains(FileGalleryManagerDbContext::passkeyCredentials, $dbSources);
+        self::assertSame([FileGalleryManagerRtContext::connections], $browser->rtSourceKeysOfPage(ProfileDataPage::PAGE));
     }
 
     /** Startup validates this project's real registry rather than a synthetic facade. */

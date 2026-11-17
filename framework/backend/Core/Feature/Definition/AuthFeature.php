@@ -34,6 +34,8 @@ use Hilos\Database\Entity\Item\StepUp;
 use Hilos\Database\Entity\Item\UserMerge;
 use Hilos\Database\Entity\Item\UserRename;
 use Hilos\Database\Entity\Item\UserVerification;
+use Hilos\Pages\AbstractHilosProfileDataPage;
+use Hilos\Pages\AbstractHilosProfilePage;
 use Hilos\Runtime\Exception\Rt\StateCollectionNotFoundException;
 use Hilos\Runtime\State\Collection\HilosCodeSendAttempts as StateHilosCodeSendAttempts;
 use Hilos\Runtime\State\Collection\HilosOAuthTrips as StateHilosOAuthTrips;
@@ -74,9 +76,9 @@ use Hilos\Runtime\View\Context\RtContext;
  * that mixed a trait in, and that was the last requirement in the framework answered by
  * inspecting classes rather than by reading a declaration.
  *
- * Nothing here is a page. The sign-in surface is drawn by the frontend over a protocol of
- * action names, and those names are the library's AGENT_ACTIONS: a project activates the
- * door by declaring the feature, not by registering a page of its own.
+ * The sign-in form itself remains a protocol surface drawn by the frontend over action names,
+ * but AUTH now requires the project to register both the profile root page and its
+ * data-export copy page.
  *
  * `requires` is deliberately EMPTY. Signing in with a password, with no SMS channel and no
  * anti-abuse layer, is a legitimate delivery; AUTH_THROTTLE and CODE_CHANNELS add to the
@@ -101,11 +103,12 @@ final class AuthFeature extends FeatureDefinition
     }
 
     /**
-     * @return FeatureRequirements The library and export agents and the tables they use
+     * @return FeatureRequirements The profile and data-export pages, library and export agents, and the tables they use
      */
     public function requirements(): FeatureRequirements
     {
         return new FeatureRequirements(
+            requiredPages: [AbstractHilosProfilePage::class, AbstractHilosProfileDataPage::class],
             requiredAgents: [HilosAgentType::HILOS_USERS_LIBRARY, HilosAgentType::HILOS_DATA_EXPORT],
             // Required as strictly, owned less so: a session is not a sign-in, and the two
             // demos with no login carry sessions without ever declaring this feature.

@@ -6,7 +6,10 @@ namespace Demo\Preferans\Tests\Unit;
 
 use Hilos\Users\DTO\UserIdentityAddDoneSignalData;
 use Hilos\Users\DTO\UserIdentityAddSignalData;
+use Demo\Preferans\Browser\PreferansBrowserContext;
+use Demo\Preferans\Pages\Hilos\ProfileDataPage;
 use Demo\Preferans\Pages\Hilos\ProfilePage;
+use Hilos\Database\Context\HilosDbContext;
 use Demo\Preferans\Pages\Hilos\LicenseDependenciesPage;
 use Demo\Preferans\Database\Pages\PageCatalog;
 use Hilos\Database\Pages\HilosPageCatalog;
@@ -203,6 +206,7 @@ final class PreferansTopologyRegistryTest extends TestCase
         foreach ([
             ProfilePage::class,
             ProfileNotificationsPage::class,
+            ProfileDataPage::class,
         ] as $page) {
             self::assertSame([HilosProfileIdentitiesBrowserList::class], $page::REQUIRED_LISTS);
             self::assertSame(
@@ -210,6 +214,27 @@ final class PreferansTopologyRegistryTest extends TestCase
                 Hilos::PAGE_LISTS[$page::PAGE][HilosProfileIdentitiesBrowserList::LIST],
             );
         }
+    }
+
+    public function testProfileDataPageIsServedByPreferansAgentWithItsSources(): void
+    {
+        self::assertSame(ProfileDataPage::class, Hilos::PAGES[ProfileDataPage::PAGE]);
+        self::assertSame(AgentType::PREFERANS, ProfileDataPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::PREFERANS, Hilos::getPageRoutes()[ProfileDataPage::PAGE]);
+        self::assertSame(PageAccessLevel::AUTHENTICATED, ProfileDataPage::ACCESS_LEVEL);
+        self::assertSame([HilosProfileIdentitiesBrowserList::class], ProfileDataPage::REQUIRED_LISTS);
+        self::assertSame(
+            [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
+            Hilos::PAGE_LISTS[ProfileDataPage::PAGE],
+        );
+        self::assertContains(HilosDbContext::dataExports, ProfileDataPage::READS_DB);
+
+        $browser = new PreferansBrowserContext();
+        $browser->bindHilosFacade(Hilos::class);
+        $dbSources = $browser->dbSourceKeysOfPage(ProfileDataPage::PAGE);
+        self::assertContains(PreferansDbContext::identities, $dbSources);
+        self::assertContains(PreferansDbContext::passkeyCredentials, $dbSources);
+        self::assertSame([PreferansRtContext::connections], $browser->rtSourceKeysOfPage(ProfileDataPage::PAGE));
     }
 
     public function testSessionNameChangesHaveOneAuthSessionOwner(): void
@@ -284,6 +309,7 @@ final class PreferansTopologyRegistryTest extends TestCase
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             ProfilePage::PAGE => ProfilePage::class,
+            ProfileDataPage::PAGE => ProfileDataPage::class,
             UsersPage::PAGE => UsersPage::class,
             UserPage::PAGE => UserPage::class,
             AboutPage::PAGE => AboutPage::class,

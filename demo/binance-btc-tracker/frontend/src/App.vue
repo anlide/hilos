@@ -1,21 +1,27 @@
 <!-- Root view. The application shell is the SDK's HilosLayout; the demo fills
 its brand and user slots and routes the content slot through HilosView, which
 renders the component mapped to the navigator's current page. The live connection
-state, the theme menu and the MCP mark are the shell's own. The demo
-has no navigation of its own yet and no profile root — its one profile page is
-the notification settings — so the signed-in region is the notification bell and
-the avatar, which is not a link, and a visitor gets one button that opens the
-sign-in surface over the page they are standing on (mockups/framework/layout). -->
+state, the theme menu and the MCP mark are the shell's own. The demo has no
+navigation of its own yet, so the signed-in region is the notification bell and
+the avatar — a link to the profile root — and a visitor gets one button that opens
+the sign-in surface over the page they are standing on
+(mockups/framework/layout). -->
 <script setup lang="ts">
 import {
   HilosAvatar,
   HilosLayout,
+  HilosLink,
   HilosNotificationBell,
   HilosView,
   useSignal,
 } from '@hilos/vue/base'
 import { hilosAdminViews } from '@hilos/vue/admin-views'
-import { HilosPages, hilosSessionAvatarMark, lazyPage } from '@hilos/core/base'
+import {
+  HILOS_PAGE_ROUTES,
+  HilosPages,
+  hilosSessionAvatarMark,
+  lazyPage,
+} from '@hilos/core/base'
 import type { AuthGate, PageView } from '@hilos/core/base'
 import type { Component } from 'vue'
 
@@ -30,6 +36,8 @@ import Main from './views/Main/Main.vue'
 import MainSkeleton from './views/Main/MainSkeleton.vue'
 import Privacy from './views/Privacy/Privacy.vue'
 import PrivacyHistory from './views/PrivacyHistory/PrivacyHistory.vue'
+import Profile from './views/Profile/Profile.vue'
+import ProfileData from './views/Profile/ProfileData.vue'
 import ProfileNotifications from './views/ProfileNotifications/ProfileNotifications.vue'
 import Terms from './views/Terms/Terms.vue'
 import TermsHistory from './views/TermsHistory/TermsHistory.vue'
@@ -44,8 +52,8 @@ const props = defineProps<{ authGate: AuthGate }>()
 // defaults (hilosAdminViews, of which only the dashboard is registered on the
 // backend today), the Backup, Maintenance, Settings, Users, Logs and
 // Communications sections — mapped by the demo itself, because those pages need
-// the project's context and hilosAdminViews leaves them out — the one profile
-// page, the person's notification settings, and the four footer pages whose text
+// the project's context and hilosAdminViews leaves them out — the profile
+// pages, the person's notification settings, and the four footer pages whose text
 // is this demo's.
 // Each descriptor is created once for this App instance; selecting a page
 // loads only its project wrapper and SDK section. The four prose pages stay
@@ -253,6 +261,8 @@ const pages: Record<string, PageView<Component>> = {
       (m) => m.default,
     ),
   ),
+  [HilosPages.PROFILE]: Profile,
+  [HilosPages.PROFILE_DATA]: ProfileData,
   [HilosPages.PROFILE_NOTIFICATIONS]: ProfileNotifications,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
@@ -273,6 +283,7 @@ const pageSkeletons: Record<string, Component> = {
 }
 
 const userName = useSignal(currentUserName)
+const profileHref = HILOS_PAGE_ROUTES[HilosPages.PROFILE]
 // The standing mark by the avatar (HIL-945): a takeover, or the session's own
 // scheduled deletion, in the color of the strip that says it in words.
 const avatarMark = useSignal(hilosSessionAvatarMark)
@@ -289,15 +300,16 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
     </template>
     <template #user>
       <HilosNotificationBell v-if="userName" :connection="connection" />
-      <span
+      <HilosLink
         v-if="userName"
-        class="d-inline-flex align-items-center"
+        :to="profileHref"
+        class="nav-link d-inline-flex align-items-center p-0"
         data-id="nav-profile-name"
         :title="userName"
       >
         <HilosAvatar :name="userName" :mark="avatarMark" />
         <span class="visually-hidden">{{ userName }}</span>
-      </span>
+      </HilosLink>
       <button
         v-else
         type="button"

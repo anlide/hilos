@@ -23,6 +23,8 @@ use Hilos\Pages\Moderation\DTO\HilosModerationRuleAddActionDTO;
 use Hilos\Pages\Moderation\DTO\HilosModerationRuleUpdateActionDTO;
 use Hilos\Pages\Moderation\DTO\HilosModerationRuleDeleteActionDTO;
 use Hilos\Runtime\View\Collection\HilosModerationChecks;
+use Demo\OnlineTesting\Browser\OnlineTestingBrowserContext;
+use Demo\OnlineTesting\Pages\Hilos\ProfileDataPage;
 use Demo\OnlineTesting\Pages\Hilos\ProfilePage;
 use Demo\OnlineTesting\Pages\Hilos\LicenseDependenciesPage;
 use Demo\OnlineTesting\Database\Pages\PageCatalog;
@@ -346,6 +348,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
         foreach ([
             ProfilePage::class,
             ProfileNotificationsPage::class,
+            ProfileDataPage::class,
         ] as $page) {
             self::assertSame([HilosProfileIdentitiesBrowserList::class], $page::REQUIRED_LISTS);
             self::assertSame(
@@ -353,6 +356,27 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
                 Hilos::PAGE_LISTS[$page::PAGE][HilosProfileIdentitiesBrowserList::LIST],
             );
         }
+    }
+
+    public function testProfileDataPageIsServedByOnlineTestingAgentWithItsSources(): void
+    {
+        self::assertSame(ProfileDataPage::class, Hilos::PAGES[ProfileDataPage::PAGE]);
+        self::assertSame(AgentType::ONLINE_TESTING, ProfileDataPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::ONLINE_TESTING, Hilos::getPageRoutes()[ProfileDataPage::PAGE]);
+        self::assertSame(PageAccessLevel::AUTHENTICATED, ProfileDataPage::ACCESS_LEVEL);
+        self::assertSame([HilosProfileIdentitiesBrowserList::class], ProfileDataPage::REQUIRED_LISTS);
+        self::assertSame(
+            [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
+            Hilos::PAGE_LISTS[ProfileDataPage::PAGE],
+        );
+        self::assertContains(HilosDbContext::dataExports, ProfileDataPage::READS_DB);
+
+        $browser = new OnlineTestingBrowserContext();
+        $browser->bindHilosFacade(Hilos::class);
+        $dbSources = $browser->dbSourceKeysOfPage(ProfileDataPage::PAGE);
+        self::assertContains(OnlineTestingDbContext::identities, $dbSources);
+        self::assertContains(OnlineTestingDbContext::passkeyCredentials, $dbSources);
+        self::assertSame([OnlineTestingRtContext::connections], $browser->rtSourceKeysOfPage(ProfileDataPage::PAGE));
     }
 
     public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
@@ -689,6 +713,7 @@ final class OnlineTestingTopologyRegistryTest extends TestCase
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
             ProfilePage::PAGE => ProfilePage::class,
+            ProfileDataPage::PAGE => ProfileDataPage::class,
             MaintenancePage::PAGE => MaintenancePage::class,
             MaintenanceCirclePage::PAGE => MaintenanceCirclePage::class,
             MaintenanceNodesPage::PAGE => MaintenanceNodesPage::class,

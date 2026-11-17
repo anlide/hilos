@@ -125,8 +125,11 @@ use Hilos\Pages\Maintenance\DTO\MaintenanceDisableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
+use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
+use Demo\EcommerceShop\Pages\Hilos\ProfileDataPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
+use Demo\EcommerceShop\Pages\Hilos\ProfilePage;
 use Demo\EcommerceShop\Pages\Hilos\SettingsPage;
 use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
@@ -316,7 +319,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             Hilos::BROWSER_LISTS[HilosProfileIdentitiesBrowserList::LIST],
         );
         foreach ([
+            ProfilePage::class,
             ProfileNotificationsPage::class,
+            ProfileDataPage::class,
         ] as $page) {
             self::assertSame([HilosProfileIdentitiesBrowserList::class], $page::REQUIRED_LISTS);
             self::assertSame(
@@ -324,6 +329,43 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 Hilos::PAGE_LISTS[$page::PAGE][HilosProfileIdentitiesBrowserList::LIST],
             );
         }
+    }
+
+    public function testProfileAndProfileDataPagesAreServedByEcommerceShopAgentWithTheirSources(): void
+    {
+        self::assertSame(ProfilePage::class, Hilos::PAGES[ProfilePage::PAGE]);
+        self::assertSame(ProfileDataPage::class, Hilos::PAGES[ProfileDataPage::PAGE]);
+        self::assertSame(AgentType::ECOMMERCE_SHOP, ProfilePage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::ECOMMERCE_SHOP, ProfileDataPage::SUBSCRIPTION_AGENT_TYPE);
+        self::assertSame(AgentType::ECOMMERCE_SHOP, Hilos::getPageRoutes()[ProfilePage::PAGE]);
+        self::assertSame(AgentType::ECOMMERCE_SHOP, Hilos::getPageRoutes()[ProfileDataPage::PAGE]);
+        self::assertSame(PageAccessLevel::AUTHENTICATED, ProfilePage::ACCESS_LEVEL);
+        self::assertSame(PageAccessLevel::AUTHENTICATED, ProfileDataPage::ACCESS_LEVEL);
+        self::assertSame([HilosProfileIdentitiesBrowserList::class], ProfilePage::REQUIRED_LISTS);
+        self::assertSame([HilosProfileIdentitiesBrowserList::class], ProfileDataPage::REQUIRED_LISTS);
+        self::assertSame(
+            [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
+            Hilos::PAGE_LISTS[ProfilePage::PAGE],
+        );
+        self::assertSame(
+            [HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING],
+            Hilos::PAGE_LISTS[ProfileDataPage::PAGE],
+        );
+        self::assertContains(HilosDbContext::accountDeletions, ProfilePage::READS_DB);
+        self::assertContains(HilosDbContext::dataExports, ProfileDataPage::READS_DB);
+
+        $browser = new EcommerceShopBrowserContext();
+        $browser->bindHilosFacade(Hilos::class);
+
+        $profileDbSources = $browser->dbSourceKeysOfPage(ProfilePage::PAGE);
+        self::assertContains(EcommerceShopDbContext::identities, $profileDbSources);
+        self::assertContains(EcommerceShopDbContext::passkeyCredentials, $profileDbSources);
+        self::assertSame([EcommerceShopRtContext::connections], $browser->rtSourceKeysOfPage(ProfilePage::PAGE));
+
+        $dataDbSources = $browser->dbSourceKeysOfPage(ProfileDataPage::PAGE);
+        self::assertContains(EcommerceShopDbContext::identities, $dataDbSources);
+        self::assertContains(EcommerceShopDbContext::passkeyCredentials, $dataDbSources);
+        self::assertSame([EcommerceShopRtContext::connections], $browser->rtSourceKeysOfPage(ProfileDataPage::PAGE));
     }
 
     public function testPublicLegalHistoryUsesIndexPagesAndSeparatePublicTables(): void
@@ -647,6 +689,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             CommunicationsChannelFramePage::PAGE => CommunicationsChannelFramePage::class,
             CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
             ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
+            ProfilePage::PAGE => ProfilePage::class,
+            ProfileDataPage::PAGE => ProfileDataPage::class,
             I18nPage::PAGE => I18nPage::class,
             LanguagesListPage::PAGE => LanguagesListPage::class,
             CountriesListPage::PAGE => CountriesListPage::class,
