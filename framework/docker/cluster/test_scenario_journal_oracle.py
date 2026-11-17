@@ -5,6 +5,7 @@ import hashlib
 import re
 import unittest
 from contextlib import ExitStack
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import call, patch
 
@@ -84,6 +85,9 @@ class FakeServer:
             rows = self.partitions
         elif statement == "SHOW GRANTS FOR CURRENT_USER()":
             rows = [(grant,) for grant in self.grants]
+        elif statement.startswith("SELECT `id` FROM `app-change-log`.`hilos_change_log_receipt` WHERE "):
+            rows = [(row["id"],) for row in self.journal["hilos_change_log_receipt"]
+                    if row["action"] == scenarios.SETTINGS_TEST_WRITE]
         elif statement.startswith("SELECT `id`, `key`, `value` FROM hilos_setting WHERE `key` IN "):
             rows = sorted((row_id, key, value) for key, (row_id, value) in self.settings.items())
         else:
@@ -243,6 +247,27 @@ class JournalOracleTest(unittest.TestCase):
         self.assertSays(summary, "batches 2: confirmed 2, refused 0, ambiguous 0", "receipts 2, writes 4",
                         "db1, replica1")
         self.assertEqual({"db1", "replica1"}, {sql.args[3] for sql in self.execute.call_args_list})
+
+    def test_standalone_server_starts_from_its_imported_baseline_and_judges_a_new_update(self):
+        self.stand = replace(self.stand, database_members=())
+        self.contexts.enter_context(patch.object(scenarios, "STAND", self.stand))
+        placement = {"agentId": scenarios.SETTINGS_LIBRARY_AGENT_TYPE, "nodeId": "m1", "state": "started"}
+        self.contexts.enter_context(patch.object(scenarios, "wait_until", return_value={}))
+        self.contexts.enter_context(patch.object(scenarios, "placement_row", return_value=placement))
+        # An earlier archive holds both example rows and a receipt outside the new call's window.
+        earlier = self.batch(0, scenarios.JOURNAL_CONFIRMED)
+        self.journaled(earlier, "update", "create")
+        self.oracle = scenarios.JournalOracle()
+        self.oracle.start()
+        self.assertEqual(frozenset({"1", "2"}), self.oracle.receipts_before)
+        self.assertEqual(set(scenarios.JOURNAL_EXAMPLE_KEYS), set(self.oracle.settings_before))
+        self.answer = control.Outcome(0, "".join(WROTE), "")
+        batch = self.oracle.write_batch(PAIRS)
+        self.journaled(batch, "update", "update", at=batch.started_ms)
+        self.oracle.settle()
+        summary = self.oracle.verify([batch])
+        self.assertSays(summary, "batches 1: confirmed 1, refused 0, ambiguous 0", "receipts 1, writes 2", "db1")
+        self.assertEqual({"db1"}, {sql.args[3] for sql in self.execute.call_args_list})
 
     def test_write_missing_on_the_replica_names_the_server_and_the_batch(self):
         batch = self.batch(1, scenarios.JOURNAL_CONFIRMED)

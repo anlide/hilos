@@ -1067,6 +1067,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_LOG_AGGREGATOR,
             HilosAgentType::HILOS_PROBE_FLEET,
             HilosAgentType::HILOS_PROBE_RT_SET,
+            HilosAgentType::HILOS_PROBE_DB,
         ], array_keys(Hilos::AGENTS));
     }
 
@@ -1074,7 +1075,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
     {
         // The rows are the framework's records, not this demo's copy of them: the flags every
         // cluster scenario stands on are pinned once, in the framework's own registry test.
-        foreach ([HilosAgentType::HILOS_PROBE_FLEET, HilosAgentType::HILOS_PROBE_RT_SET] as $agentType) {
+        foreach ([HilosAgentType::HILOS_PROBE_FLEET, HilosAgentType::HILOS_PROBE_RT_SET, HilosAgentType::HILOS_PROBE_DB] as $agentType) {
             $this->assertSame(ClusterProbe::AGENTS[$agentType], Hilos::AGENTS[$agentType], "{$agentType} is listed as the framework wrote it");
         }
     }

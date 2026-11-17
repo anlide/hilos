@@ -231,13 +231,23 @@ cut off with its leader stops its work (skipped as flaky since 2026-10-10;
 `docs/agents/testing.md`, "The cluster stands — six demos, six shapes"),
 38 manual maintenance from any node, 41 i18n catalog taken once, 42 another
 default language refused, 44 waiting work survives leadership changes, 45
-upload pool across nodes, and 47 another project time zone refused. The
+upload pool across nodes, 47 another project time zone refused, and 57
+millisecond moments survive a real hot FULL restore. The
 `entry-welcome <master> [<token>] [<pass>]` harness command reads the first
 WebSocket welcome through the stand entry and reports whether that browser is
 inside or on the maintenance stub.
-The framework's probe fleet and runtime-set probe are in this demo's `AGENTS`,
-and they start only here: on one node, on the Playwright stand and in
-production the rows are carried and nothing is run.
+The framework's probe fleet, runtime-set probe and database probe are in this
+demo's `AGENTS`, and they start only here: on one node, on the Playwright stand
+and in production the rows are carried and nothing is run. The database probe
+uses `hilos_probe_value`, installed by the generated `113` migration pair for
+the framework's `probe_value` unit. Generated-schema/origin checks and the
+framework-adoption and topology guards cover that activation. Scenario 57
+passed on a fresh stand with `composer run test:cluster:scenarios -- 57`:
+a slave-held hot FULL restore replaced the same warmed remote probe's
+`v2` with archived `v1`, preserved exact numeric DB moments, and produced a
+new UPDATE receipt/log/change chain with numeric moments in its command
+window after import. The ordinary invocation, including startup and owned
+cleanup, took about 2m42s. No isolated scenario duration or baseline delta was measured.
 
 | Command | What it does |
 |---|---|

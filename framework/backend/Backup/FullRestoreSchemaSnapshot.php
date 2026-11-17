@@ -6,10 +6,12 @@ namespace Hilos\Backup;
 
 use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\FullRestore\DumpServerVersion;
+use Hilos\Backup\FullRestore\DumpSqlLexer;
 use Hilos\Backup\FullRestore\LiveObject;
 use Hilos\Backup\FullRestore\PreparedTarget;
 use Hilos\Backup\FullRestore\SchemaMetadata;
 use Hilos\Backup\FullRestore\ServerMetadata;
+use Hilos\Backup\FullRestore\SqlToken;
 use Hilos\Backup\FullRestore\StructureDefaults;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -23,8 +25,11 @@ final readonly class FullRestoreSchemaSnapshot
 {
     private const int ADDRESS_PARTS = 4;
     private const int SERVER_PARTS = 3;
+    private const int TABLE_DEFINITION_TOKEN = 3;
+    private const int COUNTER_OPTION_TOKENS = 3;
     private const string BASE_TABLE = 'BASE TABLE';
     private const string VIEW = 'VIEW';
+    private const string OBJECTS_PROPERTY = 'objects';
     private const array VISIBILITY_PRIVILEGES = ['SELECT', 'SHOW VIEW', 'TRIGGER', 'EVENT'];
 
     /**
@@ -76,7 +81,8 @@ final readonly class FullRestoreSchemaSnapshot
      */
     public function assertUnchanged(array $targets): void
     {
-        if (self::read($targets) != $this) {
+        $current = self::read($targets);
+        if ($current != $this && $current->comparison() != $this->comparison()) {
             throw RestoreFailedException::beforeDestructive('The physical schema or its dependencies changed after full restore preparation');
         }
     }
@@ -138,6 +144,95 @@ final readonly class FullRestoreSchemaSnapshot
                 Database::useConnection($callerIndex);
             }
         }
+    }
+
+    /**
+     * Keep every raw catalog property, projecting only table declarations for comparison.
+     * The original objects remain untouched for the planner's provenance proof.
+     *
+     * @return array{array<int, array<string, mixed>>, array<string, ServerMetadata>} Invocation-local catalog projection
+     */
+    private function comparison(): array
+    {
+        $schemas = [];
+        foreach ($this->schemas as $index => $schema) {
+            $schemas[$index] = get_object_vars($schema);
+            foreach ($schema->objects as $name => $object) {
+                $schemas[$index][self::OBJECTS_PROPERTY][$name] = new LiveObject(
+                    $object->type,
+                    $object->type === self::BASE_TABLE ? self::comparisonSql($object->createSql) : $object->createSql,
+                    $object->rowFormat,
+                );
+            }
+        }
+        return [$schemas, $this->servers];
+    }
+
+    /**
+     * DML changes the next table counter without changing its schema. Only a certain,
+     * unquoted table option is removed; ambiguous SQL retains the original strict comparison.
+     *
+     * @param string $sql Complete raw SHOW CREATE TABLE declaration
+     * @return string Declaration with only the volatile counter option omitted, or the original bytes
+     */
+    private static function comparisonSql(string $sql): string
+    {
+        $lexer = DumpSqlLexer::fromSql($sql);
+        $tokens = [];
+        try {
+            while (($token = $lexer->next()) !== null) {
+                $tokens[] = $token;
+            }
+        } catch (RestoreFailedException) {
+            return $sql;
+        }
+        if ($lexer->hasExecutableComment() || $lexer->hasStringEscape()
+            || !isset($tokens[self::TABLE_DEFINITION_TOKEN]) || !$tokens[0]->is('CREATE') || !$tokens[1]->is('TABLE')
+            || !in_array($tokens[2]->kind, [SqlToken::WORD, SqlToken::IDENTIFIER], true)
+            || !$tokens[2]->complete || !$tokens[self::TABLE_DEFINITION_TOKEN]->is('(')) {
+            return $sql;
+        }
+        $depth = 0;
+        $definitionClosed = false;
+        $counter = null;
+        $counterEnd = null;
+        foreach ($tokens as $index => $token) {
+            if ($index < self::TABLE_DEFINITION_TOKEN) {
+                continue;
+            }
+            if ($token->is('(')) {
+                $depth++;
+            } elseif ($token->is(')')) {
+                if (--$depth < 0) {
+                    return $sql;
+                }
+                $definitionClosed = $depth === 0;
+            } elseif ($depth === 0 && $definitionClosed) {
+                if ($token->is('PARTITION')) {
+                    break;
+                }
+                if (!$token->is('AUTO_INCREMENT')) {
+                    continue;
+                }
+                $equals = $tokens[$index + 1] ?? null;
+                $value = $tokens[$index + 2] ?? null;
+                $following = $tokens[$index + self::COUNTER_OPTION_TOKENS] ?? null;
+                if ($counter !== null || $equals === null || !$equals->is('=') || $value === null
+                    || $value->kind !== SqlToken::WORD || !$value->complete || !ctype_digit($value->value)
+                    || $token->start === 0 || $sql[$token->start - 1] !== ' '
+                    || trim(substr($sql, $token->end, $equals->start - $token->end)) !== ''
+                    || trim(substr($sql, $equals->end, $value->start - $equals->end)) !== ''
+                    || ($following !== null && $following->kind !== SqlToken::WORD && !$following->is(';'))) {
+                    return $sql;
+                }
+                $counter = $token->start - 1;
+                $counterEnd = $value->end;
+            }
+        }
+        if (!$definitionClosed || $depth !== 0 || $counter === null) {
+            return $sql;
+        }
+        return substr($sql, 0, $counter) . substr($sql, $counterEnd);
     }
 
     /**

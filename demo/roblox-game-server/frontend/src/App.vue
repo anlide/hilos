@@ -38,6 +38,7 @@ import Privacy from './views/Privacy/Privacy.vue'
 import PrivacyHistory from './views/PrivacyHistory/PrivacyHistory.vue'
 import Profile from './views/Profile/Profile.vue'
 import ProfileNotifications from './views/ProfileNotifications/ProfileNotifications.vue'
+import ProfileSessions from './views/ProfileSessions/ProfileSessions.vue'
 import Terms from './views/Terms/Terms.vue'
 import TermsHistory from './views/TermsHistory/TermsHistory.vue'
 
@@ -52,8 +53,8 @@ const props = defineProps<{ authGate: AuthGate }>()
 // backend today), the Analytics, Backup, Change Log, Maintenance, Settings,
 // Appearance, Users, Logs, Daemon, Communications and Moderation sections —
 // mapped by the demo itself, because those pages need the project's context and
-// hilosAdminViews leaves them out — the two profile pages, the profile root and
-// the person's notification settings, and the footer pages whose text is this
+// hilosAdminViews leaves them out — the profile root, the person's notification
+// settings and sessions, and the footer pages whose text is this
 // demo's. Exactly what the backend registers, and nothing beside it.
 // Each descriptor is created once for this App instance; selecting a page
 // loads only its project wrapper and SDK section. The profile and footer pages
@@ -225,6 +226,7 @@ const pages: Record<string, PageView<Component>> = {
   ),
   [HilosPages.PROFILE]: Profile,
   [HilosPages.PROFILE_NOTIFICATIONS]: ProfileNotifications,
+  [HilosPages.PROFILE_SESSIONS]: ProfileSessions,
   [HilosPages.ABOUT]: About,
   [HilosPages.TERMS]: Terms,
   [HilosPages.TERMS_HISTORY]: TermsHistory,

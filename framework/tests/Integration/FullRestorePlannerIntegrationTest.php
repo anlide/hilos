@@ -589,6 +589,19 @@ final class FullRestorePlannerIntegrationTest extends FrameworkIntegrationTestCa
         yield ['routine'];
     }
 
+    /** DML advances a table counter without changing the physical schema or its provenance. */
+    public function testRecheckAllowsAutoIncrementCounterAdvancedByInsertThenDelete(): void
+    {
+        Database::sql('ALTER TABLE independent MODIFY id INT NOT NULL AUTO_INCREMENT, ADD PRIMARY KEY (id)');
+        $planner = FullRestorePlanner::prepare($this->inputs());
+        $before = Database::sql('SHOW CREATE TABLE independent')->field('Create Table');
+        Database::sql('INSERT INTO independent VALUES (NULL)');
+        Database::sql('DELETE FROM independent WHERE id <> 13');
+        $this->assertNotSame($before, Database::sql('SHOW CREATE TABLE independent')->field('Create Table'));
+        $planner->assertUnchanged();
+        $this->assertSame([['id' => '13']], Database::sql('SELECT id FROM independent')->rows());
+    }
+
     /** Each visible change of proof must invalidate the prepared result before import. */
     #[DataProvider('changedProofs')]
     public function testRecheckDetectsRelevantChanges(string $change): void

@@ -848,7 +848,7 @@ carried every scenario on a single shape is retired (HIL-1218).
 
 | Demo | View | Hilos cluster | MariaDB | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations, 46 browser liveness across masters, 47 a node with another project time zone refused on both ends |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations, 46 browser liveness across masters, 47 a node with another project time zone refused on both ends, 57 millisecond moments survive a real hot FULL restore |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet, 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes, 43 waiting ballast retries after a slave returns without another ask (cleanup checked with `composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18`) |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart, 48 daemon hang self-heal |
 | roblox-game-server | Vue | three masters and one slave: `m1` without capacity — it votes and hosts no placed work; `m2`, `m3` workers with `ram=10`, `slots=64`; slave `s1` worker with `ram=4`, `slots=64` | Galera of two data nodes and the `garbd` arbitrator, which votes and stores no data, behind HAProxy; the application uses both data nodes: HAProxy gives each node a data node of its own — `m1` and `m3` the first, `m2` and `s1` the second — so a row written by one node is always read by a node on the other data node, and a node whose data node is down is led to the living one. HAProxy closes the sessions of a data node it marks down: a data node cut off from the majority stays reachable and refuses every statement, and Hilos does not reconnect from a member outside the primary component, so a proxy in front of Galera must close them | 26 database is one cluster, 49 a row written by one node is read by another through another data node, past the process copy, and after that connection is lost, 50 journal is one logical set on every server; 51 a working master that does not lead is cut off and stops its work before it runs elsewhere; 27 the data node under the settings library dies under load: every node writes on through the survivor and the arbitrator, and it comes back, catches up from the survivor that donates while it serves, and takes connections only when Synced, with the journal oracle on both; 53 the arbitrator lost and back; 54 a data node cut off from the other and the arbitrator is fenced while the majority writes on |
@@ -900,6 +900,26 @@ application session, reconnects included, with `wsrep_dirty_reads` off.
 Concert-tickets uses that same session setup.
 Hilos does not read the replica; losing acknowledged writes by promoting a
 lagging replica is not an accepted outcome.
+
+Scenario **4** on ecommerce-shop moves the real fleet and one person's owner
+through the same slave kill. Independent database reads require exact numeric
+person and second-factor moments before and after failover. The ordinary
+`second-factor:unlock` command then clears the lock through the new owner,
+preserves the reset-wait sentinel and places `updated_at` within its observed
+command interval. Its owned rows are removed and the original stand restarted
+without deleting volumes in `finally`.
+
+Scenario **40** on online-testing keeps the complete database-marker row,
+including `written_at`, byte-for-byte across its existing non-leader restart.
+The same run checks the exact trigger catalog, unchanged global DDL counters,
+an empty rollout claim, and the restored mesh and fleet. It adds no second
+restart or schema rollout catalog.
+
+The ordinary fresh pointed runs observed for HIL-1934 took 82.416 seconds for
+scenario 4 (110.230 seconds for the whole invocation) and 7.212 seconds for
+scenario 40 (34.708 seconds for the invocation), including scenario cleanup.
+These are totals with no comparable baseline, not measured additions or full
+matrix costs.
 
 Scenario **45** on binance-btc-tracker proves the
 [upload raw-byte pool](architecture/uploads.md#the-raw-byte-pool) on real
@@ -1173,13 +1193,23 @@ HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_
 A probe starts only on a node that is in a cluster and whose `APP_ENV` is not
 production-like, so the same demo on one node, on its own Playwright stand and
 in production carries the rows and runs none of them. Which demo takes which:
-binance-btc-tracker the fleet and the runtime set probe; ecommerce-shop the
+binance-btc-tracker the fleet, runtime set and database probes; ecommerce-shop the
 fleet, the claimer and the ballast; file-gallery-manager the fleet;
 online-testing the fleet and the database probe; roblox-game-server the fleet
 and the database probe; concert-tickets the database probe for scenario 27. The
 database probe stores its values in the framework install unit `probe_value`,
 so a demo that takes it carries that unit's
 migration pair, pulled with `db:framework:pull` like any other framework unit.
+Binance's generated install is migration pair `112`, creating
+`hilos_probe_value`; its schema/origin, adoption and topology checks cover the
+activation. Scenario **57**, `composer -d demo/binance-btc-tracker run
+test:cluster:scenarios -- 57`, passed on a fresh stand: a slave-held archive
+went through hot FULL restore, the same warmed remote probe returned
+`v1 -> v2 -> restored v1`, exact numeric DB moments survived, and a new
+post-import UPDATE produced a nonempty receipt/log/change chain with numeric
+moments in its command window. The ordinary invocation, including startup and
+owned cleanup, took about 2m42s; no isolated scenario duration or baseline
+delta was measured.
 
 The stand's resolved Compose model is the one place its nodes are written, and
 there is no second copy: a node is a service with `CLUSTER_ENABLED=true` and a
@@ -1616,8 +1646,12 @@ journals. Save direct-run logs before another fresh stand empties them.
 
 The `roblox-game-server-cluster-e2e` step carries Daemon clock, environment
 mismatch and orphan cases plus section navigation, one person's tabs and rights,
-theme delivery and protected mode with manual maintenance across masters. The
-theme spec checks settings on all three masters, choices and reset between
+theme delivery and protected mode with manual maintenance across masters. Its
+existing sessions journey also checks raw numeric session/connection moments on
+two physical masters and a new session arriving on the subscribed socket without
+reload, followed by the original cross-master sign-out; point it with
+`-- sessions.spec.ts`.
+The theme spec checks settings on all three masters, choices and reset between
 independent account sessions, new tabs, and stale Dark reconnect without adoption;
 `-- --grep 'cluster theme'` runs its three tests. Its quarantine tail runs
 protected-mode (F-016) and theme (F-069, F-072) after the main verdict. The step

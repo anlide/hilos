@@ -51,6 +51,34 @@ function expectMillisecondMoment(expect: Expect, moment: unknown): number {
   return moment as number
 }
 
+/**
+ * Check raw session and connection moments without requiring one browser's layout.
+ *
+ * @param expect The spec's expect.
+ * @param snapshot A captured profile sessions delivery.
+ */
+export function expectProfileSessionNumericMoments(
+  expect: Expect,
+  snapshot: ProfileSessionSnapshot,
+): void {
+  expect(snapshot.frame.failure).toBeUndefined()
+  expect(snapshot.frame.raw).toEqual(expect.any(String))
+  expect(snapshot.sessions.length).toBeGreaterThan(0)
+  expect(snapshot.connections.length).toBeGreaterThan(0)
+  for (const session of snapshot.sessions) {
+    expect(session.id).toEqual(expect.any(Number))
+    expect(Number.isSafeInteger(session.id)).toBe(true)
+    expectMillisecondMoment(expect, session.createdAt)
+    expectMillisecondMoment(expect, session.lastSeenAt)
+    if (session.expiresAt !== null) {
+      expectMillisecondMoment(expect, session.expiresAt)
+    }
+  }
+  for (const connection of snapshot.connections) {
+    expectMillisecondMoment(expect, connection.connectedAt)
+  }
+}
+
 /** Numeric profile date options, independent of the production formatter. */
 const PROFILE_DATE_FORMAT: Intl.DateTimeFormatOptions = {
   year: 'numeric',

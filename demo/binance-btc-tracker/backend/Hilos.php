@@ -482,11 +482,12 @@ class Hilos extends HilosFacade
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         // The probes of this demo's cluster stand - scenarios 5 and 13 read the fleet, scenario
-        // 20 the set probe. A probe starts only on a clustered node of a non-production
+        // 20 the set probe, and 57 the DB probe. A probe starts only on a clustered node of a non-production
         // environment, so this demo on one node, on its Playwright stand and in production
         // carries the rows and runs none of them (docs/agents/testing.md, "The cluster stands").
         HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
         HilosAgentType::HILOS_PROBE_RT_SET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_RT_SET],
+        HilosAgentType::HILOS_PROBE_DB => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_DB],
     ];
 
     /** @var array<string, list<string>> Outstanding closed DB writer transitions. */

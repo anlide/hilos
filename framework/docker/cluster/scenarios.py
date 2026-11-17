@@ -139,6 +139,9 @@ Plus scenarios beyond that matrix:
     and restored with the      application connection reaches the replica; both return without
     journal                    a Hilos restart and hold one journal (HIL-2042)
 
+ 57 millisecond moments survive a real hot FULL import replaces a warmed remote cached copy,
+    FULL restore               restores exact numeric DB moments and journals a new UPDATE batch
+
 Scenario 48 is carried by online-testing's three-master stand and runs after
 scenarios 21, 24 and 40 there. It brings the watchdog's 60-second silence and
 five-second stop grace deadlines due through addressed test requests; the
@@ -1123,21 +1126,119 @@ def scenario_3_placement():
 
 
 def scenario_4_slave_kill_failover():
-    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before failover")
-    host = max(SLAVES, key=lambda s: len(hosted_by(views, s)))
-    other = next(s for s in SLAVES if s != host)
-    moving = len(hosted_by(views, host))
-    print(f"    killing worker host slave {host} carrying {moving} agent(s); "
-          f"expecting re-placement onto {other}")
-    ctl("kill", host)
+    """The real fleet and one person's numeric moments survive the same owner-host kill.
+
+    SQL is confined to this external harness: seed a unique fixture before its first lazy
+    read, then observe DB facts independently. Existing commands do every product edit.
+    Snapshots belong to this invocation; the final ordinary restart clears fixture caches.
+    """
+    wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet is placed before failover")
+    user_id = None
+    host = None
+    failed = False
+
+    def snapshot():
+        answer = db_sql("SELECT u.last_activity, s.pending_reset_wait_from, s.app_code_misses_from, "
+                        "s.app_code_locked_until, s.updated_at, s.app_code_misses, s.app_code_lock_step "
+                        "FROM hilos_user u JOIN hilos_second_factor_setting s ON s.user_id = u.id "
+                        f"WHERE u.id = {user_id}")
+        rows = [line.split("\t") for line in answer.splitlines()]
+        assert len(rows) == 1 and len(rows[0]) == 7, f"missing or malformed person moments: {answer!r}"
+        return [None if value == "NULL" else int(value) for value in rows[0]]
+
     try:
+        # Both collections use LAZY_STRATEGY_KEY; no frame has addressed this new person yet.
+        name = f"cluster-person-4-{uuid.uuid4().hex}"
+        answer = db_sql(f"INSERT INTO hilos_user (name, admin, last_activity) VALUES ('{name}', 0, -123); "
+                        "SELECT LAST_INSERT_ID()")
+        assert answer.isdigit() and int(answer) > 0, f"could not seed person: {answer!r}"
+        user_id = int(answer)
+        outcome = control.execute(STAND, "db-sql", "INSERT INTO hilos_second_factor_setting "
+                                  "(user_id, reset_wait_days, pending_reset_wait_days, pending_reset_wait_from, "
+                                  "app_code_misses, app_code_misses_from, app_code_lock_step, "
+                                  "app_code_locked_until, updated_at) "
+                                  f"VALUES ({user_id}, 7, 6, 2208988800123, 0, NULL, 2, 2208988800789, 0)")
+        assert outcome.code == 0, f"could not seed second-factor settings: {outcome.err or outcome.out}"
+        agent_id = f"hilos_user:{user_id}"
+        outcome = control.client(STAND, MASTERS[0], "admin:grant", str(user_id))
+        reply = f"Reply (ok): user #{user_id} is now admin, no open session to tell"
+        assert outcome.code == 0 and reply in outcome.out.splitlines(), \
+            f"admin:grant failed ({outcome.code}): {outcome.out}\n{outcome.err}"
+        views = wait_until(lambda current: placement_row(current, agent_id).get("state") == "started",
+                           CONVERGE_TIMEOUT, f"{agent_id} started before failover")
+        host = placement_row(views, agent_id).get("nodeId")
+        assert host in SLAVES, f"{agent_id} is not on a slave: {placement_row(views, agent_id)}"
+        other = next(s for s in SLAVES if s != host)
+        before = snapshot()
+        assert before[3] is not None and before[3] > time.time_ns() // 1_000_000, \
+            f"{agent_id} must have a future app-code lock: {before}"
+
+        views = inspect_all()
+        owner = placement_row(views, agent_id)
+        assert owner.get("state") == "started" and owner.get("nodeId") == host, \
+            f"the live owner disappeared before kill: {owner}"
+        moving = len(hosted_by(views, host))
+        assert moving > 0, f"{host} carries the person but no real probe fleet work"
+        print(f"    killing worker host slave {host} carrying {moving} agent(s) and {agent_id}; "
+              f"expecting re-placement onto {other}", flush=True)
+        outcome = control.execute(STAND, "kill", host)
+        assert outcome.code == 0, f"could not kill {host}: {outcome.err or outcome.out}"
         # The survivor is the only capable node left, so the whole fleet must land on it.
         wait_until(lambda v: len(hosted_by(v, other)) == WORKER_FLEET_SIZE,
                    FAILOVER_TIMEOUT, f"the whole fleet re-placed onto {other}")
-        return f"{moving} worker(s) failed over {host} -> {other}; all {WORKER_FLEET_SIZE} started there"
+        wait_until(lambda current: placement_row(current, agent_id).get("state") == "started"
+                   and placement_row(current, agent_id).get("nodeId") == other,
+                   FAILOVER_TIMEOUT, f"the same {agent_id} started on {other}")
+        after_failover = snapshot()
+        assert after_failover == before, f"failover changed the numeric moments: expected {before}, got {after_failover}"
+
+        command_start = time.time_ns() // 1_000_000
+        outcome = control.client(STAND, MASTERS[0], "second-factor:unlock", str(user_id))
+        command_end = time.time_ns() // 1_000_000
+        lock_end = datetime.fromtimestamp(before[3] // 1000, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        reply = (f"Reply (ok): user #{user_id} was locked until {lock_end} +00:00 (UTC); "
+                 "app codes are accepted again")
+        assert outcome.code == 0 and reply in outcome.out.splitlines(), \
+            f"second-factor:unlock failed ({outcome.code}): {outcome.out}\n{outcome.err}"
+        after = snapshot()
+        assert after[:4] == [before[0], before[1], None, None] and after[5:] == [0, 0], \
+            f"unlock changed unrelated moments or did not clear the lock and misses: {before} -> {after}"
+        assert command_start <= after[4] <= command_end, \
+            f"updated_at {after[4]} is outside the unlock command window {command_start}..{command_end}"
+        return (f"{moving} worker(s) and {agent_id} failed over {host} -> {other}; "
+                f"all {WORKER_FLEET_SIZE} started there; exact numeric moments survived, unlock persisted")
+    except BaseException:
+        failed = True
+        raise
     finally:
-        ctl("start", host)
-        wait_converge(ALL_NODES)
+        recovery_errors = []
+        if host is not None:
+            try:
+                outcome = control.execute(STAND, "start", host)
+                assert outcome.code == 0, f"could not return {host}: {outcome.err or outcome.out}"
+            except Exception as start_error:
+                recovery_errors.append(str(start_error))
+        if user_id is not None:
+            for table, key in (("hilos_second_factor_setting", "user_id"), ("hilos_user", "id")):
+                try:
+                    outcome = control.execute(STAND, "db-sql", f"DELETE FROM {table} WHERE {key} = {user_id}")
+                    assert outcome.code == 0, f"could not clean {table}: {outcome.err or outcome.out}"
+                    assert db_sql(f"SELECT COUNT(*) FROM {table} WHERE {key} = {user_id}") == "0", \
+                        f"fixture row remains in {table}"
+                except Exception as cleanup_error:
+                    recovery_errors.append(str(cleanup_error))
+            try:
+                code = control.restart(STAND, f"{sys.argv[0]} {STAND.compose}")
+                assert code == 0, f"the stand did not come back after scenario 4 (exit {code})"
+                wait_converge(ALL_NODES)
+                wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet started after person fixture cleanup")
+            except Exception as restart_error:
+                recovery_errors.append(str(restart_error))
+        if recovery_errors:
+            message = "scenario 4 recovery failed: " + "; ".join(recovery_errors)
+            print(f"    {message}", flush=True)
+            if not failed:
+                raise AssertionError(message)
 
 
 def scenario_5_leader_kill_reelection():
@@ -2340,7 +2441,7 @@ def scenario_39_person_agents_across_nodes():
         if unlocked:
             setting = expected["hilos_second_factor_setting"][user_x]
             updated_at = actual["hilos_second_factor_setting"][user_x]["updated_at"]
-            assert datetime.fromisoformat(updated_at) > datetime.fromisoformat(setting["updated_at"]), \
+            assert int(updated_at) > int(setting["updated_at"]), \
                 f"{phase}: unlock did not advance updated_at: {setting['updated_at']} -> {updated_at}"
             setting.update(app_code_misses="0", app_code_misses_from="NULL", app_code_lock_step="0",
                            app_code_locked_until="NULL", updated_at=updated_at)
@@ -2398,14 +2499,15 @@ def scenario_39_person_agents_across_nodes():
         user_x, user_y = fixture_ids
         ids_sql = ",".join(str(user_id) for user_id in fixture_ids)
         agent_id = f"hilos_user:{user_x}"
+        seed_now = time.time_ns() // 1_000_000
+        day_ms = 86_400_000
         for user_id, wait_days, misses, step in ((user_x, 7, 5, 2), (user_y, 14, 9, 3)):
             outcome = control.execute(STAND, "db-sql",
                 "INSERT INTO hilos_second_factor_setting "
                 "(user_id, reset_wait_days, pending_reset_wait_days, pending_reset_wait_from, "
                 "app_code_misses, app_code_misses_from, app_code_lock_step, app_code_locked_until, updated_at) "
-                f"VALUES ({user_id}, {wait_days}, {wait_days + 1}, UTC_TIMESTAMP() + INTERVAL 2 DAY, "
-                f"{misses}, UTC_TIMESTAMP(), {step}, UTC_TIMESTAMP() + INTERVAL 1 DAY, "
-                "UTC_TIMESTAMP() - INTERVAL 1 DAY)")
+                f"VALUES ({user_id}, {wait_days}, {wait_days + 1}, {seed_now + 2 * day_ms}, "
+                f"{misses}, {seed_now}, {step}, {seed_now + day_ms}, {seed_now - day_ms})")
             assert outcome.code == 0, f"could not seed second-factor settings: {outcome.err or outcome.out}"
         columns = {table: [line.split("\t")[0] for line in db_sql(f"SHOW COLUMNS FROM {table}").splitlines()]
                    for table in tables}
@@ -2420,8 +2522,9 @@ def scenario_39_person_agents_across_nodes():
         started_on(host_a, survivors)
         assert_facts(admin=1)
         locked_until = expected["hilos_second_factor_setting"][user_x]["app_code_locked_until"]
+        lock_end = datetime.fromtimestamp(int(locked_until) // 1000, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         command("second-factor:unlock",
-                f"Reply (ok): user #{user_x} was locked until {locked_until} +00:00 (UTC); app codes are accepted again")
+                f"Reply (ok): user #{user_x} was locked until {lock_end} +00:00 (UTC); app codes are accepted again")
         assert_facts(unlocked=True)
 
         begin_phase("ordinary idle with no frames addressed to X")
@@ -4024,7 +4127,7 @@ class JournalOracle:
                            CONVERGE_TIMEOUT, f"{SETTINGS_LIBRARY_AGENT_TYPE} started before the journal oracle writes")
         row = placement_row(views, SETTINGS_LIBRARY_AGENT_TYPE)
         self.agent_id, self.node_id = row["agentId"], row["nodeId"]
-        self.server = STAND.database_sql_backends[0]
+        self.server = next(server for server in STAND.database_servers if server.replica_of is None)
         receipts = self._rows(self.server, f"SELECT `id` FROM {self._journal(self.server)}.`hilos_change_log_receipt` "
                                            f"WHERE `action` = '{SETTINGS_TEST_WRITE}' ORDER BY `id`", 1)
         self.receipts_before = frozenset(row[0] for row in receipts)
@@ -4492,6 +4595,10 @@ def scenario_40_journal_triggers_are_installed_once():
     leader = leaders(views)[0]
     victim = next(node for node in ALL_NODES if node != leader)
     survivors = [node for node in ALL_NODES if node != victim]
+    marker_sql = "SELECT id, marker, written_by, written_at FROM hilos_database_marker ORDER BY id"
+    marker_before = db_sql(marker_sql).splitlines()
+    assert len(marker_before) == 1 and len(marker_before[0].split("\t")) == 4, \
+        f"expected exactly one complete database marker row: {marker_before!r}"
     failed = False
     try:
         print(f"    restarting non-leader {victim}; {len(expected)} triggers, DDL counters {counters}", flush=True)
@@ -4512,6 +4619,9 @@ def scenario_40_journal_triggers_are_installed_once():
         after_counters = journal_trigger_ddl_status()
         assert after_counters == counters, f"ordinary start ran trigger DDL: before {counters}, after {after_counters}"
         assert db_sql("SELECT COUNT(*) FROM hilos_migration_claim") == "0", "restart left a schema rollout claim"
+        marker_after = db_sql(marker_sql).splitlines()
+        assert marker_after == marker_before, \
+            f"ordinary start changed the sole database marker row: before {marker_before!r}, after {marker_after!r}"
     except BaseException:
         failed = True
         raise
@@ -5208,6 +5318,214 @@ def scenario_38_manual_maintenance_from_any_node():
             f"all {in_words(len(ALL_NODES))} nodes verified without stopped agents or a closed start gate, "
             f"held one pass and cleared it on lift; public Status from {status['nodeId']} showed Maintenance "
             "and restored its baseline over HTTP")
+
+
+def scenario_57_millisecond_moments_survive_full_restore():
+    """A hot FULL import replaces a warmed remote copy and preserves exact numeric moments.
+
+    The archive belongs to the real slave BackupAgent, including for CLI file preflight.
+    Fixture SQL stays in this external harness, before the person's first lazy read; product
+    writes use existing commands. The TEXT probe proves cache replacement, not numeric wire
+    types. A new post-import oracle judges one UPDATE batch and its nonempty journal chain.
+    """
+    views = wait_converge(ALL_NODES)
+    views = wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet started before FULL restore")
+    wait_protected_mode(lambda row: row.get("phase") == "inactive",
+                        "every node open before FULL restore", nodes=ALL_NODES)
+    backup = started_slave_placement(views, "hilos_backup")
+    holder = backup["nodeId"]
+    service = STAND.member(holder).service
+    sender = leaders(views)[0]
+    watcher = next(node for node in MASTERS if node != sender)
+    key = f"restore57_{uuid.uuid4().hex}"
+    user_id = None
+    archive_paths = ()
+    restore_requested = False
+    initiator = holder
+    failed = False
+
+    def holder_exec(*args):
+        return control.compose(STAND, "exec", "-T", service, *args)
+
+    def sql_integer(value):
+        assert re.fullmatch(r"-?[0-9]+", value), f"expected signed SQL decimal, got {value!r}"
+        return int(value)
+
+    def snapshot():
+        answer = db_sql("SELECT u.last_activity, s.pending_reset_wait_from, s.app_code_misses_from, "
+                        "s.app_code_locked_until, s.updated_at, s.app_code_misses, s.app_code_lock_step "
+                        "FROM hilos_user u JOIN hilos_second_factor_setting s ON s.user_id = u.id "
+                        f"WHERE u.id = {user_id}")
+        rows = [line.split("\t") for line in answer.splitlines()]
+        assert len(rows) == 1 and len(rows[0]) == 7, f"missing or malformed restore moments: {answer!r}"
+        return tuple(None if value == "NULL" else sql_integer(value) for value in rows[0])
+
+    def own_restore(row):
+        return (row is not None and row.get("operation") == "restore"
+                and row.get("initiatorAgentType") == "hilos_backup"
+                and row.get("initiatorAgentIndex") is None and row.get("initiatorNodeId") == holder)
+
+    try:
+        # LAZY_STRATEGY_KEY: neither collection has read this unique person yet.
+        name = f"cluster-person-57-{uuid.uuid4().hex}"
+        answer = db_sql(f"INSERT INTO hilos_user (name, admin, last_activity) VALUES ('{name}', 0, -123); "
+                        "SELECT LAST_INSERT_ID()")
+        user_id = sql_integer(answer)
+        assert user_id > 0, f"invalid fixture person: {answer!r}"
+        outcome = control.execute(STAND, "db-sql", "INSERT INTO hilos_second_factor_setting "
+                                  "(user_id, reset_wait_days, pending_reset_wait_days, pending_reset_wait_from, "
+                                  "app_code_misses, app_code_misses_from, app_code_lock_step, "
+                                  "app_code_locked_until, updated_at) "
+                                  f"VALUES ({user_id}, 7, 6, 2208988800123, 3, NULL, 2, 2208988800789, 0)")
+        assert outcome.code == 0, f"could not seed restore settings: {outcome.err or outcome.out}"
+        outcome = control.client(STAND, sender, "admin:grant", str(user_id))
+        assert outcome.code == 0 and f"Reply (ok): user #{user_id} is now admin, no open session to tell" in outcome.out.splitlines(), \
+            f"could not warm person before backup: {outcome.out}\n{outcome.err}"
+        archived = snapshot()
+        assert archived == (-123, 2208988800123, None, 2208988800789, 0, 3, 2), \
+            f"unexpected archive moments: {archived}"
+        # These rows must already exist in the archive: the post-restore batch must UPDATE.
+        pairs = ((JOURNAL_EXAMPLE_KEYS[0], key), (JOURNAL_EXAMPLE_KEYS[1], "57"))
+        outcome = control.client(STAND, sender, SETTINGS_TEST_WRITE, *[f"{k}={v}" for k, v in pairs])
+        assert JournalOracle._outcome(pairs, outcome) == JOURNAL_CONFIRMED, \
+            f"could not prepare archived example settings: {outcome.out}\n{outcome.err}"
+        assert client(sender, "test:cluster:db:write", key, "v1"), "could not write archive probe v1"
+        wait_db_value(watcher, key, "v1", CONVERGE_TIMEOUT, "the remote probe cached v1 before backup")
+
+        env = holder_exec("printenv", "BACKUP_DIR", "APP_ENV")
+        values = env.out.splitlines()
+        assert env.code == 0 and len(values) == 2 and values[0].startswith("/") \
+            and re.fullmatch(r"[A-Za-z0-9_-]+", values[1]), f"invalid backup holder environment: {env}"
+        root, app_env = values
+        outcome = control.client(STAND, sender, "test:backup:run-schedule")
+        match = re.fullmatch(r"Started scheduled backup ([A-Za-z0-9._-]+) \(scope=full\)\n?", outcome.out)
+        assert outcome.code == 0 and match, f"scheduled FULL backup did not start: {outcome.out}\n{outcome.err}"
+        archive_id = match.group(1)
+        base = f"{root}/full/{archive_id}-{app_env}-full"
+        archive_paths = (base + ".tar.gz", base + ".json")
+        print(f"    waiting for FULL archive {archive_id} on {holder} in {root}", flush=True)
+        deadline = time.time() + CONVERGE_TIMEOUT
+        while time.time() < deadline:
+            present = holder_exec("test", "-f", archive_paths[1])
+            assert present.code in (0, 1), f"could not inspect backup sidecar: {present}"
+            if present.code == 0:
+                break
+            time.sleep(POLL_INTERVAL)
+        else:
+            raise ScenarioTimeout(f"FULL archive {archive_id} did not finish on {holder}")
+        verified = holder_exec(*control.CLI_ENTRY, "backup:verify", archive_id, "--scope=full")
+        assert verified.code == 0 and "checked 1: ok 1, mismatch 0, skipped 0, unverified 0" in verified.out.splitlines(), \
+            f"FULL archive {archive_id} did not verify on {holder}: {verified.out}\n{verified.err}"
+
+        assert client(sender, "test:cluster:db:write", key, "v2"), "could not replace archive probe with v2"
+        wait_db_value(watcher, key, "v2", CONVERGE_TIMEOUT, "the same remote probe cached v2 before restore")
+        started_ms = time.time_ns() // 1_000_000
+        outcome = control.client(STAND, sender, "second-factor:unlock", str(user_id))
+        finished_ms = time.time_ns() // 1_000_000
+        assert outcome.code == 0 and "app codes are accepted again" in outcome.out, \
+            f"could not change the archived lock: {outcome.out}\n{outcome.err}"
+        changed = snapshot()
+        assert changed[:4] == (archived[0], archived[1], None, None) and changed[5:] == (0, 0) \
+            and started_ms <= changed[4] <= finished_ms, f"lock did not change before restore: {changed}"
+        current = started_slave_placement(inspect_all(), "hilos_backup")
+        assert current["nodeId"] == holder and current["agentId"] == backup["agentId"], \
+            f"archive holder moved before restore: {backup} -> {current}"
+
+        restore_requested = True
+        restored = holder_exec(*control.CLI_ENTRY, "backup:restore", archive_id, "--scope=full", "--yes")
+        print(f"    hot restore on {holder}:\n{restored.out}{restored.err}", flush=True)
+        assert restored.code == 0 and "Restore completed" in restored.out.splitlines(), \
+            f"hot FULL restore {archive_id} failed on {holder}: {restored.out}\n{restored.err}"
+        window = wait_protected_mode(lambda row: own_restore(row) and row.get("phase") == "verifying",
+                                     "the completed FULL restore verification window", nodes=ALL_NODES)
+        initiator = window[holder]["initiatorNodeId"]
+        assert client(initiator, "protected-mode:open"), f"restore initiator {initiator} did not open the system"
+        wait_protected_mode(lambda row: row.get("phase") == "inactive",
+                            "every node open after FULL restore", nodes=ALL_NODES)
+        wait_converge(ALL_NODES)
+        wait_until(fleet_started, CONVERGE_TIMEOUT, "the ordinary fleet resumed after FULL restore")
+        assert db_read(watcher, key) == "v1", "hot rehydrate did not replace the remote cached v2 with archived v1"
+        assert snapshot() == archived, f"FULL import changed exact numeric moments: {archived} -> {snapshot()}"
+
+        oracle = JournalOracle()
+        oracle.start()
+        assert set(oracle.settings_before) == set(JOURNAL_EXAMPLE_KEYS), "archive did not preserve existing example rows"
+        batch = oracle.write_batch(oracle.next_pairs())
+        assert batch.outcome == JOURNAL_CONFIRMED, f"post-restore UPDATE was not confirmed: {batch.detail}"
+        oracle.settle()
+        judged = oracle.verify([batch])
+        # Restrict the extra moment oracle to this batch's receipt -> log -> change chain.
+        # value is kind=fact; it legitimately creates no hilos_change_log_value row.
+        journal = oracle._journal(oracle.server)
+        before = ", ".join(oracle.receipts_before) or "0"
+        rows = oracle._rows(oracle.server,
+                            "SELECT r.id, l.id, c.id, r.created_at, l.created_at, c.created_at "
+                            f"FROM {journal}.hilos_change_log_receipt r "
+                            f"JOIN {journal}.hilos_change_log l ON l.receipt_id = r.id "
+                            f"JOIN {journal}.hilos_change_log_change c ON c.log_id = l.id "
+                            f"WHERE r.action = '{SETTINGS_TEST_WRITE}' AND r.id NOT IN ({before}) "
+                            "ORDER BY l.id, c.id", 6)
+        assert len(rows) == len(batch.pairs) and len({row[0] for row in rows}) == 1 \
+            and len({row[1] for row in rows}) == len(rows) and len({row[2] for row in rows}) == len(rows), \
+            f"post-restore batch has no complete, unique receipt/log/change chain: {rows}"
+        for row in rows:
+            for stamp in row[3:]:
+                at = sql_integer(stamp)
+                assert batch.started_ms <= at <= batch.finished_ms, \
+                    f"post-restore journal moment {at} outside {batch.started_ms}..{batch.finished_ms}: {row}"
+        return (f"FULL {archive_id} on {holder}: warmed {watcher} v1 -> v2 -> restored v1; "
+                f"exact DB moments {archived}; post-import {judged}; receipt/log/change moments in batch window")
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        recovery_errors = []
+        can_clean = True
+        if restore_requested:
+            try:
+                replies = {node: protected_mode(node) for node in ALL_NODES}
+                occupied = [row for row in replies.values() if row is not None and row.get("phase") != "inactive"]
+                assert all(row is not None for row in replies.values()), "restore cleanup could not inspect every node"
+                if occupied:
+                    assert all(own_restore(row) for row in occupied), f"refusing to open another operation: {occupied}"
+                    initiator = occupied[0]["initiatorNodeId"]
+                    assert client(initiator, "protected-mode:open"), "could not open this restore from its initiator"
+                    wait_protected_mode(lambda row: row.get("phase") == "inactive",
+                                        "own restore cleaned up on every node", nodes=ALL_NODES)
+            except Exception as error:
+                recovery_errors.append(str(error))
+                can_clean = False
+        if can_clean:
+            for statement in ([f"DELETE d FROM hilos_notification_delivery d JOIN hilos_notification n "
+                               f"ON n.id = d.notification_id WHERE n.user_id = {user_id}",
+                               f"DELETE FROM hilos_notification WHERE user_id = {user_id}",
+                               f"DELETE FROM hilos_second_factor_setting WHERE user_id = {user_id}",
+                               f"DELETE FROM hilos_user WHERE id = {user_id}"] if user_id is not None else []) + [
+                                   f"DELETE FROM hilos_probe_value WHERE `key` = '{key}'"]:
+                try:
+                    outcome = control.execute(STAND, "db-sql", statement)
+                    assert outcome.code == 0, f"could not remove own restore fixture: {outcome.err or outcome.out}"
+                except Exception as error:
+                    recovery_errors.append(str(error))
+            if archive_paths:
+                try:
+                    outcome = holder_exec("rm", "-f", "--", *archive_paths)
+                    assert outcome.code == 0, f"could not remove own FULL archive on {holder}: {outcome.err or outcome.out}"
+                except Exception as error:
+                    recovery_errors.append(str(error))
+            try:
+                # Only after the warmed-cache proof: discard claims/caches of SQL-deleted fixtures.
+                code = control.restart(STAND, f"{sys.argv[0]} {STAND.compose}")
+                assert code == 0, f"the stand did not return after restore fixture cleanup (exit {code})"
+                wait_converge(ALL_NODES)
+                wait_until(fleet_started, CONVERGE_TIMEOUT, "the fleet started after FULL restore fixture cleanup")
+            except Exception as error:
+                recovery_errors.append(str(error))
+        if recovery_errors:
+            message = "scenario 57 recovery failed: " + "; ".join(recovery_errors)
+            print(f"    {message}", flush=True)
+            if not failed:
+                raise AssertionError(message)
 
 
 def scenario_23_verifier_circle_on_every_master():
@@ -7650,6 +7968,8 @@ SCENARIOS = [
              Need(masters=3, slaves=1, entry=True)),
     Scenario("38 manual maintenance from any node", scenario_38_manual_maintenance_from_any_node,
              Need(masters=3, slaves=1, entry=True)),
+    Scenario("57 millisecond moments survive FULL restore", scenario_57_millisecond_moments_survive_full_restore,
+             Need(masters=2, slaves=1)),
     # Last of all: each replica took the writes of every preceding scenario. This only reads,
     # so a freeze 23 or 25 may leave behind does not touch it.
     Scenario("31 replica keeps up with the primary", scenario_31_replica_keeps_up_with_the_primary,

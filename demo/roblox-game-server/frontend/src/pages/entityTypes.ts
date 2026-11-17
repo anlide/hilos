@@ -4,10 +4,14 @@
 // is its backend collection name (`RobloxGameServerDbContext::*`); the canonical type
 // makes a row dedupe against the same entity wherever it appears. The binder
 // (`bindPageScope`, applied inside bootHilos) applies this to every page payload's
-// slots — here, the `users` slot of the Hilos users/user admin pages.
+// slots — here, the `users` slot of the Hilos users/user admin pages and the
+// `sessions` slot of the profile sessions list.
 import { USER_ENTITY_TYPE } from '@hilos/core/base'
+
+import { SESSION_TYPE } from '../types/Session.js'
 
 /** Per-slot canonical entity types for this demo's page payloads. */
 export const pageEntityTypes: Record<string, string> = {
   users: USER_ENTITY_TYPE,
+  sessions: SESSION_TYPE,
 }

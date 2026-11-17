@@ -51,6 +51,15 @@ class DatabaseVoterControlTest(unittest.TestCase):
                 self.run.assert_not_called()
                 self.compose.assert_not_called()
 
+    def test_sql_addresses_the_standalone_database_by_its_service(self):
+        self.stand.database_members = ()
+        self.stand.database_voters = ()
+        self.allow_run(control.Outcome(0, "1\n", ""))
+        self.assertEqual(control.Outcome(0, "1\n", ""), control.db_sql(self.stand, "SELECT 1", "db1"))
+        self.run.assert_called_once_with(["docker", "exec", "stand-db1", "mariadb", "-uapp", "-psecret",
+                                          "-N", "-B", "app", "-e", "SELECT 1"])
+        self.compose.assert_not_called()
+
     def test_voter_kill_keeps_the_container(self):
         self.allow_run()
         self.assertEqual(control.Outcome(0, "cluster: killed database voter stand-garbd\n", ""),

@@ -528,9 +528,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit($unit)->downPath)), $source->afterStubDownSha256);
                 $origins[] = $change;
             }
-            if ($index === 5) {
+            if ($index === 3 || $index === 5) {
                 $unit = $schema->unit('probe_value');
-                $base = $project->root . '/059_framework_install_probe_value';
+                $base = $project->root . ($index === 3 ? '/113' : '/059') . '_framework_install_probe_value';
                 $up = FsPath::read($base . '.sql');
                 $down = FsPath::read($base . '_down.sql');
                 $install = $catalog->verifyPair($up, $down);

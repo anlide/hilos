@@ -14,6 +14,11 @@ use Hilos\Core\Browser\Config\BrowserSourceType;
  */
 final class RobloxGameServerBrowserSource
 {
+    public const array DB_SESSIONS = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => RobloxGameServerDbContext::sessions,
+    ];
+
     public const array DB_USERS = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
         BrowserSourceKey::KEY => RobloxGameServerDbContext::users,

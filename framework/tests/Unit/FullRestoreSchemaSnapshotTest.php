@@ -8,6 +8,7 @@ use Hilos\Backup\Exception\RestoreFailedException;
 use Hilos\Backup\FullRestore\SchemaMetadata;
 use Hilos\Backup\FullRestore\StructureDefaults;
 use Hilos\Backup\FullRestoreSchemaSnapshot;
+use Hilos\Backup\FullRestore\LiveObject;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -174,26 +175,48 @@ final class FullRestoreSchemaSnapshotTest extends TestCase
         }
     }
 
-    private function metadata(
-        ?string $checks = 'ON',
-        string $sqlMode = 'STRICT_TRANS_TABLES',
-        string $engine = 'InnoDB',
-    ): SchemaMetadata {
-        return new SchemaMetadata(
-            server: '["host",3306,"app"]',
-            objects: [],
-            defaults: [],
-            columns: [],
-            indexes: [],
-            structureDefaults: new StructureDefaults(
-                engine: $engine,
-                charset: 'utf8mb4',
-                collation: 'utf8mb4_general_ci',
-                sqlMode: $sqlMode,
-            ),
-            checkConstraintChecks: $checks,
-        );
+    /**
+     * @param string $before Raw declaration prepared for restore
+     * @param string $after Declaration read at recheck
+     * @param bool $unchanged Whether only the volatile table counter changed
+     */
+    #[DataProvider('tableCounterChanges')]
+    public function testComparisonOmitsOnlyTheTableCounter(string $before, string $after, bool $unchanged): void
+    {
+        $snapshots = [];
+        foreach ([$before, $after] as $sql) {
+            $snapshots[] = new FullRestoreSchemaSnapshot([new SchemaMetadata(
+                'server', ['sample' => new LiveObject('BASE TABLE', $sql, 'Dynamic')], [], [], [],
+                new StructureDefaults('InnoDB', 'utf8mb4', 'utf8mb4_unicode_ci'),
+            )], []);
+        }
+        $comparison = new ReflectionMethod(FullRestoreSchemaSnapshot::class, 'comparison');
+        $this->assertSame($unchanged, $comparison->invoke($snapshots[0]) == $comparison->invoke($snapshots[1]));
+        $this->assertSame($before, $snapshots[0]->schemas[0]->objects['sample']->createSql);
+        $this->assertSame($after, $snapshots[1]->schemas[0]->objects['sample']->createSql);
     }
+
+    /** @return iterable<string, array{string, string, bool}> Counter drift and independent definition changes */
+    public static function tableCounterChanges(): iterable
+    {
+        $table = 'CREATE TABLE `sample` (`id` int NOT NULL AUTO_INCREMENT, PRIMARY KEY (`id`)) ENGINE=InnoDB';
+        yield 'counter only' => [$table . ' AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4',
+            $table . ' AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4', true];
+        yield 'counter appears' => [$table . ' DEFAULT CHARSET=utf8mb4',
+            $table . ' AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4', true];
+        yield 'column auto increment changes' => [$table . ' AUTO_INCREMENT=2',
+            str_replace(' NOT NULL AUTO_INCREMENT', ' NOT NULL', $table) . ' AUTO_INCREMENT=19', false];
+        yield 'default containing counter text changes' => [
+            "CREATE TABLE `sample` (`note` varchar(60) DEFAULT 'AUTO_INCREMENT=2') ENGINE=InnoDB AUTO_INCREMENT=2",
+            "CREATE TABLE `sample` (`note` varchar(60) DEFAULT 'AUTO_INCREMENT=19') ENGINE=InnoDB AUTO_INCREMENT=19", false];
+        yield 'comment containing counter text changes' => [
+            $table . " AUTO_INCREMENT=2 COMMENT='AUTO_INCREMENT=2'",
+            $table . " AUTO_INCREMENT=19 COMMENT='AUTO_INCREMENT=19'", false];
+        yield 'partition definition changes' => [
+            $table . ' AUTO_INCREMENT=2 PARTITION BY RANGE (`id`) (PARTITION p0 VALUES LESS THAN (100))',
+            $table . ' AUTO_INCREMENT=19 PARTITION BY RANGE (`id`) (PARTITION p0 VALUES LESS THAN (200))', false];
+    }
+
     /**
      * @param string $database Actual selected schema
      * @param string $grant Direct SHOW GRANTS row
@@ -225,5 +248,26 @@ final class FullRestoreSchemaSnapshotTest extends TestCase
         yield 'wildcard only' => ['target', 'GRANT TRIGGER ON `tar%`.* TO `app`@`%`', false];
         yield 'underscore pattern' => ['tar_get', 'GRANT TRIGGER ON `tar_get`.* TO `app`@`%`', false];
         yield 'unparsed syntax' => ['target', 'GRANT TRIGGER ON DATABASE `target` TO `app`@`%`', false];
+    }
+
+    private function metadata(
+        ?string $checks = 'ON',
+        string $sqlMode = 'STRICT_TRANS_TABLES',
+        string $engine = 'InnoDB',
+    ): SchemaMetadata {
+        return new SchemaMetadata(
+            server: '["host",3306,"app"]',
+            objects: [],
+            defaults: [],
+            columns: [],
+            indexes: [],
+            structureDefaults: new StructureDefaults(
+                engine: $engine,
+                charset: 'utf8mb4',
+                collation: 'utf8mb4_general_ci',
+                sqlMode: $sqlMode,
+            ),
+            checkConstraintChecks: $checks,
+        );
     }
 }

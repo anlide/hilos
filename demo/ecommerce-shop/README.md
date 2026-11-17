@@ -219,6 +219,13 @@ the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
 are in this demo's `AGENTS`, and they start only here: on one node, on the
 Playwright stand and in production the rows are carried and nothing is run.
 
+Scenario 4 kills the slave that holds both real fleet work and one person's
+owner. The whole fleet and that same owner move to the surviving slave; exact
+numeric person and second-factor moments survive. `second-factor:unlock` then
+clears the lock through the new owner, preserving the reset-wait sentinel and
+advancing `updated_at` within the command's observed interval. Cleanup removes
+the owned fixture and restarts the original stand without deleting volumes.
+
 | Command | What it does |
 |---|---|
 | `composer run test:cluster:up` | build/recreate the default database, three nodes and CLI, retaining data and protected mode |

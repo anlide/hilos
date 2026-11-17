@@ -60,14 +60,28 @@ final class PeerDbSyncFrameTest extends TestCase
 
     public function testReceiptMetadataSurvivesPeerAndWorkerWireRoundtrips(): void
     {
+        $row = [
+            'created_at' => -123,
+            'last_seen_at' => 1767225600123,
+            'expires_at' => 2208988800789,
+            'pending_registration_since' => 0,
+            'pending_second_factor_until' => null,
+        ];
+        $previous = [
+            'created_at' => -456,
+            'last_seen_at' => 1767225600001,
+            'expires_at' => 2208988800002,
+            'pending_registration_since' => 1,
+            'pending_second_factor_until' => 2208988800003,
+        ];
         foreach ([
             [
                 SignalTypeConstants::DB_SYNC_CREATED,
                 SignalConstants::DB_SYNC_CREATED,
                 new DbSyncCreatedSignalData(
-                    'settings',
+                    'sessions',
                     '7',
-                    ['title' => 'Ada'],
+                    $row,
                     receiptId: 41,
                     writerAgentId: 'settings:writer',
                 ),
@@ -77,10 +91,10 @@ final class PeerDbSyncFrameTest extends TestCase
                 SignalTypeConstants::DB_SYNC_UPDATED,
                 SignalConstants::DB_SYNC_UPDATED,
                 new DbSyncUpdatedSignalData(
-                    'settings',
+                    'sessions',
                     '7',
-                    ['title' => 'Grace'],
-                    previous: ['title' => 'Ada'],
+                    $row,
+                    previous: $previous,
                     receiptId: 42,
                     writerAgentId: 'settings:writer',
                 ),
@@ -90,9 +104,9 @@ final class PeerDbSyncFrameTest extends TestCase
                 SignalTypeConstants::DB_SYNC_DELETED,
                 SignalConstants::DB_SYNC_DELETED,
                 new DbSyncDeletedSignalData(
-                    'settings',
+                    'sessions',
                     '7',
-                    ['title' => 'Grace'],
+                    $row,
                     receiptId: 43,
                     writerAgentId: 'settings:writer',
                 ),
@@ -112,8 +126,14 @@ final class PeerDbSyncFrameTest extends TestCase
 
             $peerMessage = PeerDTO::fromWire($frame->toJson());
             $this->assertInstanceOf(PeerDbSyncDTO::class, $peerMessage);
+            $this->assertSame('node-A', $peerMessage->originNodeId);
             $replicatedSignalData = $peerMessage->signal->data;
             $this->assertInstanceOf(DbSyncSignalDataInterface::class, $replicatedSignalData);
+            $this->assertSame($row, $replicatedSignalData->row);
+            if ($signalData instanceof DbSyncUpdatedSignalData) {
+                $this->assertInstanceOf(DbSyncUpdatedSignalData::class, $replicatedSignalData);
+                $this->assertSame($previous, $replicatedSignalData->previous);
+            }
             $this->assertSame($signalData->receiptId, $replicatedSignalData->receiptId);
             $this->assertSame($signalData->writerAgentId, $replicatedSignalData->writerAgentId);
 
@@ -123,6 +143,11 @@ final class PeerDbSyncFrameTest extends TestCase
             $delivered = $workerMessageClass::fromArray($workerPayload);
 
             $this->assertSame('node-A', $delivered->originNodeId);
+            $this->assertSame($row, $delivered->signalData->row);
+            if ($signalData instanceof DbSyncUpdatedSignalData) {
+                $this->assertInstanceOf(DbSyncUpdatedSignalData::class, $delivered->signalData);
+                $this->assertSame($previous, $delivered->signalData->previous);
+            }
             $this->assertSame($signalData->receiptId, $delivered->signalData->receiptId);
             $this->assertSame($signalData->writerAgentId, $delivered->signalData->writerAgentId);
         }

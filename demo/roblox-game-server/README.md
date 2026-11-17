@@ -306,7 +306,19 @@ one stand entry; every context selects a master with `hilos_stand_master` before
 its first navigation. Browsers start on a follower master.
 In `tests/e2e/cluster/live`, protected-mode checks
 the stub, the verifier circle and admission across masters, and sessions checks
-sign-in, sign-out and access re-decisions across masters. Manual maintenance closes
+sign-in, sign-out and access re-decisions across masters. The original sign-in
+journey also opens `/profile/sessions` on two physical masters and captures raw
+numeric UTC millisecond `createdAt`, `lastSeenAt`, nullable `expiresAt` and
+`connectedAt`. Immutable values for the same session and connection agree across
+masters; `lastSeenAt` may advance. Binding another browser to the registered
+person on the other master adds its session and connection to the already
+subscribed socket, without navigation or reload, before the original cross-master
+sign-out. WebSocket upgrade replies prove the actual masters. The browser report
+keeps `profile-sessions-cross-master` and `profile-sessions-live` JSON attachments
+with the original frames. Point this journey with
+`composer run test:cluster:e2e -- sessions.spec.ts`.
+
+Manual maintenance closes
 through the UI on follower F; another administrator enters by code and opens it on
 master T. Visitors on every master see the closure, while the operator and circle
 member keep their documents. All six pages reload themselves on opening. Actual

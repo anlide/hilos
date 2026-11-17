@@ -1341,7 +1341,7 @@ def db_sql(stand, statement=None, member=None):
     if not statement:
         raise StandRefused("usage: cluster db-sql <statement> [<member>]")
     database = stand.database
-    if member is not None:
+    if member is not None and member != database.service:
         database = _database_member(stand, member)
     return _run(["docker", "exec", database.container, "mariadb", f"-u{database.user}",
                  f"-p{database.password}", "-N", "-B", database.name, "-e", statement])

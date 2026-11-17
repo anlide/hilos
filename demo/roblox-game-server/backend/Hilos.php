@@ -19,6 +19,7 @@ use Demo\RobloxGameServer\Agents\Hilos\UsersLibraryAgent;
 use Demo\RobloxGameServer\Auth\RobloxGameServerAuthMethodDirectory;
 use Demo\RobloxGameServer\Backup\BackupCatalog;
 use Demo\RobloxGameServer\Browser\Data\SelfConnectionBrowserData;
+use Demo\RobloxGameServer\Browser\List\ProfileSessionsBrowserList;
 use Demo\RobloxGameServer\Browser\RobloxGameServerBrowserContext;
 use Demo\RobloxGameServer\Core\Agent\Daemon\RobloxGameServerAgentDaemon;
 use Demo\RobloxGameServer\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
@@ -92,6 +93,7 @@ use Demo\RobloxGameServer\Pages\Hilos\PrivacyPage;
 use Demo\RobloxGameServer\Pages\Hilos\PrivacyHistoryPage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfileNotificationsPage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfilePage;
+use Demo\RobloxGameServer\Pages\Hilos\ProfileSessionsPage;
 use Demo\RobloxGameServer\Pages\Hilos\SettingsPage;
 use Demo\RobloxGameServer\Pages\Hilos\AppearancePage;
 use Demo\RobloxGameServer\Pages\Hilos\TermsPage;
@@ -319,6 +321,7 @@ class Hilos extends HilosFacade
         CommunicationsDeliveriesPage::PAGE => CommunicationsDeliveriesPage::class,
         ProfilePage::PAGE => ProfilePage::class,
         ProfileNotificationsPage::PAGE => ProfileNotificationsPage::class,
+        ProfileSessionsPage::PAGE => ProfileSessionsPage::class,
         ModerationPage::PAGE => ModerationPage::class,
         ModerationKindPage::PAGE => ModerationKindPage::class,
         ModerationKindRulesPage::PAGE => ModerationKindRulesPage::class,
@@ -542,6 +545,7 @@ class Hilos extends HilosFacade
 
     public const array BROWSER_LISTS = [
         HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
+        ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::class,
         HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::class,
         HilosUserActingSessionsBrowserList::LIST => HilosUserActingSessionsBrowserList::class,
     ];
@@ -562,6 +566,10 @@ class Hilos extends HilosFacade
         ProfileNotificationsPage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
+        ProfileSessionsPage::PAGE => [
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+            ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::BINDING,
+        ],
         UserPage::PAGE => [
             HilosUserSessionsBrowserList::LIST => HilosUserSessionsBrowserList::BINDING,
             HilosUserActingSessionsBrowserList::LIST => HilosUserActingSessionsBrowserList::BINDING,
@@ -574,6 +582,9 @@ class Hilos extends HilosFacade
 
     public const array PAGE_DATA = [
         ProfilePage::PAGE => [
+            SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::BINDING,
+        ],
+        ProfileSessionsPage::PAGE => [
             SelfConnectionBrowserData::DATA => SelfConnectionBrowserData::BINDING,
         ],
     ];

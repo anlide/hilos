@@ -677,6 +677,7 @@ export {
 } from './moments.js'
 export {
   expectProfileSessionMoments,
+  expectProfileSessionNumericMoments,
   profileSessionSnapshot,
   type ProfileSessionSnapshot,
 } from './profileSessions.js'

@@ -11,8 +11,10 @@ use Demo\RobloxGameServer\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\RobloxGameServer\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\RobloxGameServer\Agents\Hilos\DemoHilosLogsAgent;
 use Demo\RobloxGameServer\Browser\Data\SelfConnectionBrowserData;
+use Demo\RobloxGameServer\Browser\List\ProfileSessionsBrowserList;
 use Demo\RobloxGameServer\Browser\RobloxGameServerBrowserContext;
 use Demo\RobloxGameServer\Browser\RobloxGameServerBrowserRef;
+use Demo\RobloxGameServer\Browser\RobloxGameServerBrowserSource;
 use Demo\RobloxGameServer\Constants\AgentType;
 use Demo\RobloxGameServer\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\RobloxGameServer\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
@@ -56,6 +58,7 @@ use Demo\RobloxGameServer\Pages\Hilos\Moderation\ModerationKindRulesPage;
 use Demo\RobloxGameServer\Pages\Hilos\Moderation\ModerationPage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfileNotificationsPage;
 use Demo\RobloxGameServer\Pages\Hilos\ProfilePage;
+use Demo\RobloxGameServer\Pages\Hilos\ProfileSessionsPage;
 use Demo\RobloxGameServer\Pages\Hilos\Users\UserPage;
 use Demo\RobloxGameServer\Pages\Hilos\Users\UserSessionsPage;
 use Demo\RobloxGameServer\Pages\MainPage;
@@ -85,10 +88,15 @@ use Hilos\Core\Analytics\AnalyticsWriterAgentDaemon;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Browser\Config\BrowserDataConfigKey;
 use Hilos\Core\Browser\Config\BrowserDataFieldKey;
+use Hilos\Core\Browser\Config\BrowserListConfigKey;
+use Hilos\Core\Browser\Config\BrowserListFieldKey;
 use Hilos\Core\Browser\Config\BrowserParamKey;
+use Hilos\Core\Browser\Config\BrowserParamType;
 use Hilos\Core\Browser\Config\BrowserRefKey;
 use Hilos\Core\Browser\Config\BrowserRefType;
 use Hilos\Core\Browser\Config\BrowserRuntimeParam;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceType;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Group\AbstractGroup;
@@ -97,6 +105,7 @@ use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Database\ChangeLog\ChangeLogDatabase;
 use Hilos\Database\Database;
 use Hilos\Database\Migration\FrameworkMigrationStartupGuard;
+use Hilos\Database\Object\Item\Session;
 use Hilos\Database\Object\Item\User;
 use Hilos\Database\Schema\FrameworkExtensionGuard;
 use Hilos\HilosException;
@@ -276,16 +285,18 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
         self::assertSame(AgentType::ROBLOX_GAME_SERVER, Hilos::getPageRoutes()[MainPage::PAGE]);
     }
 
-    /** The profile root and its notifications page carry the identity list; the root carries its own connection too. */
+    /** Profile sections carry identities; the root and sessions page also carry their own connection. */
     public function testProfileCarriersAreRegisteredAndBoundToTheirConsumers(): void
     {
         self::assertSame(SelfConnectionBrowserData::class, Hilos::BROWSER_DATA[SelfConnectionBrowserData::DATA]);
-        self::assertSame([ProfilePage::PAGE], array_keys(Hilos::PAGE_DATA));
-        self::assertSame(
-            SelfConnectionBrowserData::BINDING,
-            Hilos::PAGE_DATA[ProfilePage::PAGE][SelfConnectionBrowserData::DATA],
-        );
-        foreach ([ProfilePage::class, ProfileNotificationsPage::class] as $pageClass) {
+        self::assertSame([ProfilePage::PAGE, ProfileSessionsPage::PAGE], array_keys(Hilos::PAGE_DATA));
+        foreach ([ProfilePage::PAGE, ProfileSessionsPage::PAGE] as $page) {
+            self::assertSame(
+                SelfConnectionBrowserData::BINDING,
+                Hilos::PAGE_DATA[$page][SelfConnectionBrowserData::DATA],
+            );
+        }
+        foreach ([ProfilePage::class, ProfileNotificationsPage::class, ProfileSessionsPage::class] as $pageClass) {
             self::assertSame($pageClass, Hilos::PAGES[$pageClass::PAGE]);
             self::assertSame(AgentType::ROBLOX_GAME_SERVER, Hilos::getPageRoutes()[$pageClass::PAGE]);
             self::assertSame(
@@ -298,6 +309,55 @@ final class RobloxGameServerTopologyRegistryTest extends TestCase
         $browser->bindHilosFacade(Hilos::class);
         self::assertContains(RobloxGameServerDbContext::users, $browser->dbSourceKeysOfPage(ProfilePage::PAGE));
         self::assertSame([RobloxGameServerRtContext::connections], $browser->rtSourceKeysOfPage(ProfilePage::PAGE));
+        self::assertContains(RobloxGameServerDbContext::sessions, $browser->dbSourceKeysOfPage(ProfileSessionsPage::PAGE));
+        self::assertSame([RobloxGameServerRtContext::connections], $browser->rtSourceKeysOfPage(ProfileSessionsPage::PAGE));
+        self::assertContains(RobloxGameServerDbContext::sessions, ProfileSessionsPage::READS_DB);
+        self::assertSame([
+            HilosProfileIdentitiesBrowserList::class,
+            ProfileSessionsBrowserList::class,
+        ], ProfileSessionsPage::REQUIRED_LISTS);
+        self::assertSame(ProfileSessionsBrowserList::class, Hilos::BROWSER_LISTS[ProfileSessionsBrowserList::LIST]);
+        self::assertSame([
+            HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
+            ProfileSessionsBrowserList::LIST => ProfileSessionsBrowserList::BINDING,
+        ], Hilos::PAGE_LISTS[ProfileSessionsPage::PAGE]);
+        self::assertSame([
+            BrowserSourceKey::TYPE => BrowserSourceType::DB,
+            BrowserSourceKey::KEY => RobloxGameServerDbContext::sessions,
+        ], RobloxGameServerBrowserSource::DB_SESSIONS);
+        self::assertSame([
+            RobloxGameServerBrowserSource::RT_CONNECTIONS,
+            RobloxGameServerBrowserSource::DB_SESSIONS,
+        ], ProfileSessionsBrowserList::BROWSER[BrowserListConfigKey::SOURCES]);
+        self::assertSame([
+            BrowserParamKey::PARAMS => [BrowserRuntimeParam::ACCEPT_KEY => RobloxGameServerBrowserRef::ACCEPT_KEY],
+        ], ProfileSessionsBrowserList::BINDING);
+        self::assertSame([
+            BrowserRuntimeParam::ACCEPT_KEY => [
+                BrowserParamKey::TYPE => BrowserParamType::STRING,
+                BrowserParamKey::REQUIRED => true,
+            ],
+        ], ProfileSessionsBrowserList::BROWSER[BrowserListConfigKey::PARAMS]);
+        $items = ProfileSessionsBrowserList::BROWSER[BrowserListConfigKey::ITEMS];
+        self::assertSame(
+            [Connection::acceptKey => RobloxGameServerBrowserRef::TABLE_ACCEPT_KEY],
+            $items[0][BrowserListFieldKey::WHERE],
+        );
+        self::assertSame([Session::userId => Connection::userId], $items[1][BrowserListFieldKey::VIA]);
+        self::assertSame([Connection::userId => Connection::userId], $items[2][BrowserListFieldKey::VIA]);
+        self::assertTrue($items[1][BrowserListFieldKey::MANY]);
+        self::assertTrue($items[2][BrowserListFieldKey::MANY]);
+        self::assertSame([
+            [Connection::userId],
+            [Session::id, Session::userId, Session::deviceName, Session::browserTimeZone,
+                Session::createdAt, Session::lastSeenAt, Session::expiresAt, Session::impersonatorUserId],
+            [Connection::acceptKey, Connection::sessionId, Connection::connectedAt],
+        ], array_column($items, BrowserListFieldKey::FIELDS));
+        self::assertSame([Connection::userId], $items[0][BrowserListFieldKey::TRIGGERS]);
+        self::assertSame(
+            [Connection::userId, Connection::sessionId, Connection::connectedAt],
+            $items[2][BrowserListFieldKey::TRIGGERS],
+        );
     }
 
     /** The current connection resolves the person from the server's accept key and selects only safe fields. */
