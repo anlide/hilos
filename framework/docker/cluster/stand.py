@@ -29,7 +29,7 @@ ecommerce-shop: the primary itself), never a replica. A member started as a repl
 database service (`MARIADB_MASTER_HOST`) carries no MYSQL_USER, MYSQL_PASSWORD or MYSQL_DATABASE:
 the harness signs in there as on the database service. Scenario 26 asks every member of a
 multi-primary; scenario 31 asks every replica.
-The proxy is labelled `hilos.database.proxy: "true"`; scenario 28 reads its server states.
+The proxy is labelled `hilos.database.proxy: "true"`; scenario 27 reads its server states.
 
 A Galera arbitrator is labelled `hilos.database.voter: "true"`. It adds a vote without storing
 data or answering SQL, and carries none of the member, database-role or proxy labels.

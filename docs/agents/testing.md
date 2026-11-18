@@ -1189,7 +1189,7 @@ one cycle covers loss and return, writes journal batches through the oracle and
 holds the three servers to one journal once a member is back. Its PASS records
 application connections before and after the fault and the nodes writing through
 each backend. The component model and preconditions count votes separately from
-data members. Scenario **28** remains in the catalog without a current carrier.
+data members. Scenario **28** was merged into **27** (HIL-2041); its number is retired and must not be reused.
 
 ```bash
 composer -d demo/roblox-game-server run test:cluster:scenarios -- 27 53 54
@@ -1458,7 +1458,7 @@ asks every member of a multi-primary; scenario 31 asks every replica. Scenario 3
 first waits for each replica to answer as the application user, which a fresh
 replica does only once replication has brought that user, and only then judges
 its replication threads. A proxy is labeled `hilos.database.proxy: "true"`;
-scenario 28 reads its server states.
+scenario 27 reads its server states.
 A Galera arbitrator (`garbd`) votes and stores no data: it is declared apart
 from the data members, labeled `hilos.database.voter: "true"`, never labeled
 `hilos.database.member` and never asked SQL. Scenario 26 asks for the READ bit of

@@ -54,7 +54,7 @@ Usage: framework/docker/cluster/run <compose-file> <command> [args]
                        reads and replaces the database marker, HIL-1206)
   db-log <member>      print one database member's container log so far; scenario 31 uses it
                        to name why a replica stopped (HIL-1229)
-  db-kill <member>     SIGKILL one member of a clustered database (scenarios 27 and 28, HIL-1231)
+  db-kill <member>     SIGKILL one member of a clustered database (scenario 27, HIL-1231)
   db-start <member>    start that member's existing container again
   db-voter-kill <voter>  SIGKILL one database voter, retaining its container
   db-voter-start <voter>  start that database voter's service again

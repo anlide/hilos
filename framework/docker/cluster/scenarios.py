@@ -85,8 +85,7 @@ Plus scenarios beyond that matrix:
                                connections only when Synced, while no write fails; the journal
                                oracle holds every data member (HIL-1231, HIL-2040); on
                                concert-tickets, three data members and no arbitrator (HIL-2041)
- 28 database member comes      the member comes back, catches up, and is handed connections again
-                               (HIL-1231); no current carrier
+ 28 merged into 27 (HIL-2041); retired number, do not reuse
  53 database arbitrator lost   the arbitrator is killed while every node writes: both data members
     and back                   keep a primary component of two votes and serve; it comes back to
                                three votes (HIL-2040)
@@ -7341,8 +7340,8 @@ def assert_member_synced(member, count):
 def scenario_27_database_member_dies_under_load():
     """Kill the data member under the settings library and bring it back under continuous load.
 
-    The kill and return that 27 and 28 used to split are one cycle here. The journal oracle
-    covers the fault and the return alongside every node's probe writes (HIL-2040).
+    The kill and return form one cycle here. The journal oracle covers the fault and the
+    return alongside every node's probe writes (HIL-2040).
     """
     wait_converge(ALL_NODES)
     wait_database_votes()
@@ -7447,55 +7446,6 @@ def scenario_27_database_member_dies_under_load():
             f"none of {len(after_start)} writes failed while it came back; journal: {judged}; "
             f"application connections before {format_member_observations(before)}, "
             f"after {format_member_observations(after)}; nodes write via {format_member_observations(writers)}")
-
-
-def scenario_28_database_member_comes_back_and_catches_up():
-    """The returned member catches every confirmed write and takes new links only when Synced."""
-    wait_converge(ALL_NODES)
-    wait_database_votes()
-    members = [member.service for member in STAND.database_members]
-    for member in members:
-        assert_member_synced(member, STAND.database_votes)
-    victim = next((member for member in sorted(members, reverse=True)
-                   if member != STAND.database.service), None)
-    assert victim is not None, "no non-primary database member to kill"
-
-    load = DbLoad()
-    killed = False
-    started = False
-    try:
-        load.start()
-        wait_db_steady(load, 0, DB_MEMBER_DEATH_TIMEOUT)
-        db_kill(victim)
-        killed = True
-        killed_at = time.monotonic()
-        wait_db_steady(load, killed_at, DB_MEMBER_DEATH_TIMEOUT, victim)
-        wait_db_steady(load, time.monotonic(), DB_MEMBER_DEATH_TIMEOUT, victim)
-        mark = time.monotonic()
-        db_start(victim)
-        started = True
-        since_start = time.monotonic()
-        synced, up = member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT, since_start)
-        load.stop()
-
-        for node in ALL_NODES:
-            last = load.last_acknowledged(node)
-            assert last is not None, f"{node} acknowledged no database write"
-            held = database_value(victim, node)
-            assert held == last.value, f"{victim} came back without {node}'s write: holds {held}, {node} last wrote {last.value}"
-        after_start = [attempt for node in ALL_NODES for attempt in load.attempts(node)
-                       if attempt.finished >= mark]
-        for attempt in after_start:
-            assert attempt.ok, f"{attempt.node}'s write failed while {victim} was coming back: {attempt.error}"
-    finally:
-        load.stop()
-        if killed and not started:
-            db_start(victim)
-            member_back(victim, STAND.database_votes, DB_MEMBER_RETURN_TIMEOUT)
-
-    return (f"{victim} killed and brought back: synced in a cluster of {database_shape_words()} "
-            f"after {synced:.0f}s and up behind the proxy after {up:.0f}s, holding every write "
-            f"acknowledged while it was away; none of {len(after_start)} writes failed while it came back")
 
 
 def scenario_53_database_arbitrator_lost_and_back():
@@ -7929,16 +7879,14 @@ SCENARIOS = [
     # and each returns it before the next scenario begins.
     Scenario("27 database member dies under load", scenario_27_database_member_dies_under_load,
              Need(database_members=2, database_votes=3)),
-    Scenario("28 database member comes back and catches up", scenario_28_database_member_comes_back_and_catches_up,
-             Need(database_members=2, database_votes=3)),
-    # Beside 27 and 28, and like them only once every shared-database scenario has read the intact
+    # Beside 27, and like them only once every shared-database scenario has read the intact
     # stand: 53 takes the arbitrator away and returns it, 54 cuts a data member off the others and
     # mends it, each before the next scenario begins.
     Scenario("53 database arbitrator lost and back", scenario_53_database_arbitrator_lost_and_back,
              Need(database_members=2, database_voters=1)),
     Scenario("54 database member cut off is fenced", scenario_54_database_member_cut_off_is_fenced,
              Need(database_members=2, database_votes=3)),
-    # After 27/28: the primary and then its read-only replica are lost and returned, one synchronous
+    # After 27: the primary and then its read-only replica are lost and returned, one synchronous
     # journal batch at a time; 31 then reads the replica both returns left behind.
     Scenario("55 primary and replica lost and restored with the journal", scenario_55_primary_and_replica_lost_and_restored,
              Need(database_replicas=1)),

@@ -45,7 +45,7 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
         return Stand(compose=Path("/example/docker/docker-compose.cluster.yml"), project="example",
                      network="example-nodes", cli_service="cli", cli_container="example-cli", cli_profiles=(),
                      entry=None, members={"m1": None, "m2": None}, masters=["m1", "m2"], slaves=[],
-                     stranger=None, cluster_directory=None, scenarios=[26, 27, 28], slave_work_grace_sec=0,
+                     stranger=None, cluster_directory=None, scenarios=[26, 27], slave_work_grace_sec=0,
                      database=data[0], database_members=data + replicas if clustered else (),
                      database_proxy="example-proxy", database_voters=voters)
 
@@ -120,17 +120,16 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
 
     def test_shape_guards_separate_data_members_from_votes(self):
         cases = [
-            ({"data_members": 3, "voters": 0}, [None, None, None]),
-            ({"data_members": 2, "voters": 1}, [None, None, None]),
+            ({"data_members": 3, "voters": 0}, [None, None]),
+            ({"data_members": 2, "voters": 1}, [None, None]),
             ({"data_members": 2, "voters": 0},
-             [None, "it needs 3 database votes, the stand has 2", "it needs 3 database votes, the stand has 2"]),
+             [None, "it needs 3 database votes, the stand has 2"]),
             ({"data_members": 1, "voters": 0, "replicas": 1},
-             ["it needs 2 database votes, the stand has 1", "it needs 3 database votes, the stand has 1",
-              "it needs 3 database votes, the stand has 1"]),
+             ["it needs 2 database votes, the stand has 1", "it needs 3 database votes, the stand has 1"]),
             ({"data_members": 1, "voters": 0, "clustered": False},
-             ["it needs 2 database members, the stand has 0"] * 3),
+             ["it needs 2 database members, the stand has 0"] * 2),
         ]
-        selected = [next(item for item in scenarios.SCENARIOS if item.number == number) for number in (26, 27, 28)]
+        selected = [next(item for item in scenarios.SCENARIOS if item.number == number) for number in (26, 27)]
         for shape, expected in cases:
             with self.subTest(shape=shape):
                 self.assertEqual(expected, [scenarios.unmet_need(self.make_stand(**shape), item) for item in selected])
@@ -473,58 +472,15 @@ class ScenarioDatabaseVotesTest(unittest.TestCase):
                     printed.assert_not_called()
         self.finish.assert_not_called()
 
-    def test_28_returns_to_the_full_component_and_checks_each_acknowledged_write(self):
-        self.prepare_load()
-        for shape, words in [({"data_members": 2, "voters": 1}, "two data members and one voter"),
-                             ({"data_members": 3, "voters": 0}, "three members")]:
-            with self.subTest(shape=shape):
-                self.use_stand(**shape)
-                self.value.reset_mock()
-                self.kill.reset_mock()
-                self.start.reset_mock()
-                victim = f"db{shape['data_members']}"
-                detail = scenarios.scenario_28_database_member_comes_back_and_catches_up()
-                self.assertIn(f"synced in a cluster of {words}", detail)
-                self.kill.assert_called_once_with(victim)
-                self.start.assert_called_once_with(victim)
-                self.assertEqual([call(victim, "m1"), call(victim, "m2")], self.value.call_args_list)
-
-    def test_28_proxy_cannot_admit_a_returned_member_before_the_voter_is_in_its_component(self):
-        self.prepare_load()
-
-        def start(member):
-            self.down.remove(member)
-            self.sizes[member] = 2
-
-        self.start.side_effect = start
+    def test_member_back_proxy_cannot_admit_a_returned_member_before_the_voter_is_in_its_component(self):
+        self.sizes["db2"] = 2
         with self.assertRaisesRegex(AssertionError, "db2 got new connections while it was Synced in a cluster of 2"):
-            scenarios.scenario_28_database_member_comes_back_and_catches_up()
+            scenarios.member_back("db2", 3, scenarios.DB_MEMBER_RETURN_TIMEOUT)
 
-    def test_28_proxy_cannot_admit_a_member_before_it_is_synced(self):
+    def test_member_back_proxy_cannot_admit_a_member_before_it_is_synced(self):
         with patch.object(scenarios, "db_sql", return_value=self.status_rows(3, "Joining")):
             with self.assertRaisesRegex(AssertionError, "db2 got new connections while it was Joining"):
                 scenarios.member_back("db2", 3, scenarios.DB_MEMBER_RETURN_TIMEOUT)
-
-    def test_28_still_rejects_a_write_failure_during_return(self):
-        self.prepare_load()
-        self.load.attempts.side_effect = lambda node: [scenarios.DbWriteAttempt(0, 10, node, "", False, None, "lost link")]
-        with self.assertRaisesRegex(AssertionError, "write failed while db2 was coming back: lost link"):
-            scenarios.scenario_28_database_member_comes_back_and_catches_up()
-
-    def test_28_still_rejects_a_returned_member_missing_an_acknowledged_write(self):
-        self.prepare_load()
-        self.value.side_effect = None
-        self.value.return_value = "stale"
-        with self.assertRaisesRegex(AssertionError, "db2 came back without m1's write"):
-            scenarios.scenario_28_database_member_comes_back_and_catches_up()
-
-    def test_28_failure_while_down_still_restores_the_full_component(self):
-        self.prepare_load()
-        self.steady.side_effect = [{"m1": 0, "m2": 0}, AssertionError("load stopped")]
-        with self.assertRaisesRegex(AssertionError, "load stopped"):
-            scenarios.scenario_28_database_member_comes_back_and_catches_up()
-        self.start.assert_called_once_with("db2")
-        self.proxy.assert_called_once_with()
 
 
 if __name__ == "__main__":

@@ -477,8 +477,9 @@ class ScenarioDatabaseFaultsTest(unittest.TestCase):
                 self.assertEqual(expected, [scenarios.unmet_need(stand, item) for item in selected])
         self.assertEqual("database_voters", scenarios.Need._fields[-1])
         self.assertEqual(0, scenarios.Need().database_voters)
-        self.assertEqual([27, 28, 53, 54], [item.number for item in scenarios.SCENARIOS
-                                         if item.number in (27, 28, 53, 54)])
+        self.assertEqual([27, 53, 54], [item.number for item in scenarios.SCENARIOS
+                                         if item.number in (27, 53, 54)])
+        self.assertNotIn(28, [item.number for item in scenarios.SCENARIOS])
 
     def test_control_wrappers_keep_the_command_targets_and_failure_stream(self):
         wrappers = ((scenarios.db_voter_kill, "db-voter-kill", ("vote1",)),
