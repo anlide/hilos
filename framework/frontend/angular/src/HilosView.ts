@@ -99,7 +99,7 @@ const ACCESS_LOST = computedSignal(() => hilosAccessLossReason.get() !== null)
       [attr.data-state]="pageState()"
       hidden
     ></div>
-    <div #pageSlot class="hilos-page-slot">
+    <div #pageSlot class="h-100" data-id="hilos-page-slot">
       <div #accessLossSurface tabindex="-1">
         <div role="status" aria-live="polite">
           @if (sessionEnded()) {
@@ -137,7 +137,7 @@ const ACCESS_LOST = computedSignal(() => hilosAccessLossReason.get() !== null)
     </div>
     <div
       #pageDeparture
-      class="fade show position-relative z-0 h-100 d-none"
+      class="fade show position-absolute top-0 start-0 w-100 h-100 z-0 pe-none d-none"
       data-id="hilos-page-departure"
       aria-hidden="true"
       inert

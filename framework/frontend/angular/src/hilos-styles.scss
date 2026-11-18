@@ -212,14 +212,6 @@
   animation-play-state: paused;
 }
 
-// WHY: Bootstrap has no display:contents utility. The slot needs a DOM
-// boundary for copying but no layout box, so page and skeleton h-100 still
-// measure their height from the shell's main region.
-// WHAT: the live page's copyable boundary.
-.hilos-page-slot {
-  display: contents;
-}
-
 // WHY: Bootstrap's white-space utilities stop at .text-wrap (normal) and
 // .text-nowrap (nowrap) — there is none for pre-wrap, and a <pre> without it
 // wraps a long line nowhere at all: pre breaks only where the text already

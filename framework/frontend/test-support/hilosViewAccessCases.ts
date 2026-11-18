@@ -316,7 +316,7 @@ export function registerHilosViewAccessCases<T>(
           'Your session was ended by an administrator. Any unsaved changes were lost.',
         )
         const container = view.root.querySelector<HTMLElement>(
-          '.hilos-page-slot > [tabindex="-1"]',
+          '[data-id="hilos-page-slot"] > [tabindex="-1"]',
         )
         expect(container).not.toBeNull()
         expect(document.activeElement).toBe(container)

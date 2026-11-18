@@ -35,8 +35,7 @@ pair and behavior is unchanged: a 401 renders ErrorPage like any status.
 A live session end (HIL-1572) takes precedence over every page outcome except
 the public status page, which keeps its reader. The core latch supplies the
 explanation and also prevents departure copies. Its permanent polite region
-and the in-place auth surface share a focusable container, independent of the
-copy slot's display:contents.
+and the in-place auth surface share a focusable container.
 
 A page shell may take over the refusal of its own deleted resource (HIL-1603):
 the outlet provides its retainForResourceDeletion to what it mounts
@@ -199,7 +198,7 @@ function onModalToggle(open: boolean): void {
 
 <template>
   <div data-id="hilos-page-state" :data-state="pageState" hidden />
-  <div ref="pageSlot" class="hilos-page-slot">
+  <div ref="pageSlot" class="h-100" data-id="hilos-page-slot">
     <div ref="accessLossSurface" tabindex="-1">
       <div role="status" aria-live="polite">
         <p
@@ -236,7 +235,7 @@ function onModalToggle(open: boolean): void {
   </div>
   <div
     ref="pageDeparture"
-    class="fade show position-relative z-0 h-100 d-none"
+    class="fade show position-absolute top-0 start-0 w-100 h-100 z-0 pe-none d-none"
     data-id="hilos-page-departure"
     aria-hidden="true"
     inert

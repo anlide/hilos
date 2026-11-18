@@ -908,7 +908,7 @@ export function HilosLayout({
             ) : (
               <fieldset
                 ref={pageFieldset}
-                className="border-0 m-0 p-0 h-100"
+                className="border-0 m-0 p-0 h-100 position-relative"
                 data-id="page-interaction-scope"
               >
                 {accountBlocked !== null && !publicStatus ? (

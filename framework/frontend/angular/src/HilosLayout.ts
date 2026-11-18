@@ -498,7 +498,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           } @else {
             <fieldset
               #pageFieldset
-              class="border-0 m-0 p-0 h-100"
+              class="border-0 m-0 p-0 h-100 position-relative"
               data-id="page-interaction-scope"
             >
               @if (!publicStatus() && accountBlocked(); as notice) {

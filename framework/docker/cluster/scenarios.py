@@ -7965,6 +7965,9 @@ SCENARIOS = [
 # every entry here carries. So an entry is a LOAN, not a cure: it names who owes and for
 # what, and it is paid off by the write it points at, not by time passing.
 FLAKY_SKIP = {
+    # FIXME(F-117, 2026-11-18): hilos_sessions_library on s1 never captured its frame · чужой · попытка 1 · HIL-2144.
+    "59 erasure waits and restrict":
+        "F-117: hilos_sessions_library on s1 never captured its frame",
     # FIXME(F-065, 2026-11-08): m2 не принимает ровно два probe-факта m1 · чужой · попытка 1 · HIL-2024.
     "11 cross-node db fact":
         "F-065: m2 did not accept exactly the two probe facts m1 wrote",

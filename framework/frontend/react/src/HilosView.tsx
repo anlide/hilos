@@ -237,7 +237,7 @@ export function HilosView({
   return (
     <>
       <div data-id="hilos-page-state" data-state={pageState} hidden />
-      <div ref={slotRef} className="hilos-page-slot">
+      <div ref={slotRef} className="h-100" data-id="hilos-page-slot">
         <HilosPageErrorBoundaryContext.Provider
           value={pageViewState?.retainForResourceDeletion}
         >
@@ -256,7 +256,7 @@ export function HilosView({
       </div>
       <div
         ref={departureRef}
-        className="fade show position-relative z-0 h-100 d-none"
+        className="fade show position-absolute top-0 start-0 w-100 h-100 z-0 pe-none d-none"
         data-id="hilos-page-departure"
         aria-hidden="true"
         inert

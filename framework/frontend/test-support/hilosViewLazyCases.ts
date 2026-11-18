@@ -510,7 +510,9 @@ export function registerHilosViewLazyCases<T>(
         expect(page.mounted).toHaveBeenCalledTimes(1)
         await view.flush(() => router.navigate('/lazy/2'))
         expect(
-          view.root.querySelector('.hilos-page-slot [data-id="lazy-page"]'),
+          view.root.querySelector(
+            '[data-id="hilos-page-slot"] [data-id="lazy-page"]',
+          ),
         ).toBeNull()
         expect(marker(view)).toBe('loading')
         await view.flush(answer)
