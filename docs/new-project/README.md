@@ -17,6 +17,7 @@ running in project-owned docker stacks. The demos, each with what it carries:
 | [demo/preferans](../../demo/preferans) | minimal | Angular | an active Angular carrier with password sign-in, an empty home, profile, settings, i18n, Appearance and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
 | [demo/concert-tickets](../../demo/concert-tickets) | minimal | Angular | an active Angular carrier with sign-in (password, passkey, SMS, GitHub), an empty home, profile, and admin Daemon, Logs, Change Log and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
+| [demo/hilos-website](../../demo/hilos-website) | not built yet | Vue | the official Hilos site at hilos-dev.org — not a shape to copy: kept thin on purpose and left out of every-demo feature rollouts |
 
 The frontend specifics are split per view framework:
 [frontend-vue.md](frontend-vue.md) · [frontend-react.md](frontend-react.md) ·

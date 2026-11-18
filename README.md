@@ -125,7 +125,7 @@ The list below describes what each project is for. Some of these catalogs are st
 - [dkp-system](demo/dkp-system/README.md) — guild DKP points and loot distribution for MMO players
 - [ecommerce-shop](demo/ecommerce-shop/README.md) — demo storefront, cart and orders
 - [file-gallery-manager](demo/file-gallery-manager/README.md) — photo galleries and authors
-- [hilos-website](demo/hilos-website/README.md) — the official Hilos site with documentation and examples
+- [hilos-website](demo/hilos-website/README.md) — the official Hilos site at hilos-dev.org: what Hilos is and a catalog of the demos
 - [mail-monitor](demo/mail-monitor/README.md) — mail server monitoring
 - [online-testing](demo/online-testing/README.md) — online tests and results
 - [personal-homepage](demo/personal-homepage/README.md) — a personal site with published content pages
