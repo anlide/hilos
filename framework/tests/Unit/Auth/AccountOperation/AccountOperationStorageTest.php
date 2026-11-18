@@ -439,6 +439,11 @@ final class AccountOperationStorageTest extends TestCase
         ], EntityAccountOperation::_indexes['uq_account_operation_open_loser']);
         self::assertSame(['kind', 'finished_at', 'id'],
             EntityAccountOperation::_indexes['idx_account_operation_open'][Entity::INDEX_COLUMNS]);
+        self::assertSame([Entity::INDEX_COLUMNS => ['loser_user_id', 'id']],
+            EntityAccountOperation::_indexes['idx_account_operation_loser']);
+        self::assertStringContainsString('KEY `idx_account_operation_loser` (`loser_user_id`, `id`)', file_get_contents(
+            dirname(__DIR__, 4) . '/backend/Database/Migration/Stub/create_hilos_account_operation.sql',
+        ));
         self::assertSame(['Erasure' => 'erasure', 'Merge' => 'merge'], array_column(AccountOperationKind::cases(), 'value', 'name'));
         self::assertSame(['Preparing' => 'preparing', 'Go' => 'go', 'Cancelling' => 'cancelling'],
             array_column(AccountMergeStage::cases(), 'value', 'name'));

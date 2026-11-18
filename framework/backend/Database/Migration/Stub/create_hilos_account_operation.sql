@@ -18,5 +18,6 @@ CREATE TABLE IF NOT EXISTS `hilos_account_operation` (
     UNIQUE KEY `uq_account_operation_request` (`request_id`),
     UNIQUE KEY `uq_account_operation_open_loser` (`open_loser_user_id`),
     KEY `idx_account_operation_open` (`kind`, `finished_at`, `id`),
-    KEY `idx_account_operation_root` (`root_user_id`, `id`)
+    KEY `idx_account_operation_root` (`root_user_id`, `id`),
+    KEY `idx_account_operation_loser` (`loser_user_id`, `id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_nopad_bin;

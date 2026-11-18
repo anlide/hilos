@@ -93,6 +93,16 @@ class AccountOperations extends DbCollection
     }
 
     /**
+     * @param int $userId Account named by a persisted side of the merge
+     * @return ?AccountOperation Merge with the greatest primary id, including closed operations
+     * @throws HilosException When the storage reader or item wrapper refuses the lookup
+     */
+    public function latestMergeNaming(int $userId): ?AccountOperation
+    {
+        return $this->itemFor($this->objectCollection->latestMergeNaming($userId));
+    }
+
+    /**
      * @param ?ObjectAccountOperation $object Persisted object, or domain absence
      * @return ?AccountOperation Its wrapper, retaining already issued object identity
      * @throws InvalidArgumentException When the object type does not match

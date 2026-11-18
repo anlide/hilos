@@ -394,6 +394,9 @@ export const HILOS_USER_STANDING_SECTION = 'accountStanding'
 /** Page data key of the erasure progress of the person the card shows. */
 export const HILOS_USER_ERASURE_SECTION = 'accountErasure'
 
+/** Page data key of the merge progress of the person the card shows. */
+export const HILOS_USER_MERGE_SECTION = 'accountMerge'
+
 /**
  * Key of the bar of work under a people-list row whose account's erasure has
  * begun (PHP `AbstractHilosUsersTable::PROGRESS_KEY_ERASURE`, HIL-1955). The
@@ -1213,7 +1216,187 @@ export function readHilosUsersErasureBar(
   return readHilosAccountErasure(progress.detail)
 }
 
-/** The standing and erasure of the person a card shows, and their mount lifecycle. */
+/** One participant's merge part and the owner responsible for it. */
+export interface HilosAccountMergePart {
+  /** The participant whose part this is. */
+  readonly participant: string
+  /** The owner responsible for this part. */
+  readonly owner: string
+  /** The person whose part this is, or null when hidden. */
+  readonly userId: number | null
+  /** Whether this part has finished. */
+  readonly done: boolean
+}
+
+/** One participant whose work the merge is waiting for. */
+export interface HilosAccountMergeWait {
+  /** The participant whose work is still awaited. */
+  readonly participant: string
+  /** The person whose work is awaited, or null when hidden. */
+  readonly userId: number | null
+}
+
+/** The recorded merge choice, without inspecting current sign-in methods. */
+export interface HilosAccountMergeChoice {
+  /** The recorded password choice, or null when absent or hidden. */
+  readonly passwordFate: HilosPasswordFate | null
+  /** The recorded protection choice, or null when absent or hidden. */
+  readonly secondFactorFate: HilosSecondFactorFate | null
+  /** The recorded survivor protection expectation, or null when absent or hidden. */
+  readonly expectedSurvivorHasSecondFactor: boolean | null
+  /** The recorded loser protection expectation, or null when absent or hidden. */
+  readonly expectedLoserHasSecondFactor: boolean | null
+}
+
+/** A merge refusal and the server's ready-to-display words. */
+export interface HilosAccountMergeRefusal {
+  /** The existing backend refusal code; it supplies no local refusal sentence. */
+  readonly code:
+    | 'missing'
+    | 'survivor_merged'
+    | 'loser_merged'
+    | 'being_deleted'
+    | 'occupied'
+    | 'password_fate_required'
+    | 'protection_changed'
+    | 'second_factor_fate_required'
+    | 'loser_without_second_factor'
+    | 'survivor_without_second_factor'
+    | 'loser_pending_removal'
+    | 'survivor_pending_removal'
+  /** The server reason, preserved verbatim. */
+  readonly reason: string
+}
+
+/** Safe merge progress shared by administrators and viewers of admin view mode. */
+export interface HilosAccountMergeProgress {
+  /** The operation identifier, or null when hidden. */
+  readonly operationId: number | null
+  /** The surviving person, or null when hidden. */
+  readonly survivorUserId: number | null
+  /** The folded person, or null when hidden. */
+  readonly loserUserId: number | null
+  /** The common progress state; end alone does not mean success. */
+  readonly state: 'preparing' | 'wait' | 'refusal' | 'end'
+  /** The operation stage, or null when hidden. */
+  readonly stage: 'preparing' | 'go' | 'cancelling' | null
+  /** The explicit outcome; only completed means success. Null reveals no outcome. */
+  readonly outcome: 'completed' | 'not_started' | null
+  /** Whether the merge has given its work. */
+  readonly given: boolean
+  /** Whether the merge has received its work. */
+  readonly received: boolean
+  /** The recorded choice, or null when hidden. */
+  readonly choice: HilosAccountMergeChoice | null
+  /** The server refusal, or null when absent or hidden. */
+  readonly refusal: HilosAccountMergeRefusal | null
+  /** The independently readable, distinct participant parts. */
+  readonly parts: readonly HilosAccountMergePart[]
+  /** The independently readable, distinct waits. */
+  readonly waits: readonly HilosAccountMergeWait[]
+}
+
+/** Read a private field strictly, normalizing only the wire's hidden mark to null. */
+function mergePrivateField<T extends z.ZodType>(schema: T) {
+  return z.preprocess(
+    (raw) => (isHiddenValue(raw) ? null : raw),
+    schema.nullable(),
+  )
+}
+
+const accountMergeIdSchema = mergePrivateField(z.number().int().positive())
+const accountMergeChoiceSchema = z.object({
+  passwordFate: mergePrivateField(z.enum(['survivor', 'loser', 'none'])),
+  secondFactorFate: mergePrivateField(z.enum(['survivor', 'both'])),
+  expectedSurvivorHasSecondFactor: mergePrivateField(z.boolean()),
+  expectedLoserHasSecondFactor: mergePrivateField(z.boolean()),
+})
+const accountMergeRefusalSchema = z.object({
+  code: z.enum([
+    'missing',
+    'survivor_merged',
+    'loser_merged',
+    'being_deleted',
+    'occupied',
+    'password_fate_required',
+    'protection_changed',
+    'second_factor_fate_required',
+    'loser_without_second_factor',
+    'survivor_without_second_factor',
+    'loser_pending_removal',
+    'survivor_pending_removal',
+  ]),
+  reason: z.string(),
+})
+const accountMergeProgressSchema = z.object({
+  operationId: accountMergeIdSchema,
+  survivorUserId: accountMergeIdSchema,
+  loserUserId: accountMergeIdSchema,
+  state: z.enum(['preparing', 'wait', 'refusal', 'end']),
+  stage: mergePrivateField(z.enum(['preparing', 'go', 'cancelling'])),
+  outcome: mergePrivateField(z.enum(['completed', 'not_started'])),
+  given: z.boolean(),
+  received: z.boolean(),
+  choice: mergePrivateField(accountMergeChoiceSchema),
+  refusal: mergePrivateField(accountMergeRefusalSchema),
+  parts: z.array(z.unknown()),
+  waits: z.array(z.unknown()),
+})
+const accountMergePartSchema = z.object({
+  participant: z.string(),
+  owner: z.string(),
+  userId: accountMergeIdSchema,
+  done: z.boolean(),
+})
+const accountMergeWaitSchema = z.object({
+  participant: z.string(),
+  userId: accountMergeIdSchema,
+})
+
+/**
+ * Read the safe merge projection. An invalid envelope reads as null; a malformed
+ * part or wait drops out alone. Hidden private fields become null, preserving
+ * common progress. Repeated part and wait tuples keep their first readable entry.
+ * Unknown fields never enter the returned model.
+ *
+ * @param raw The progress as the page data or live frame carried it.
+ */
+export function readHilosAccountMerge(
+  raw: unknown,
+): HilosAccountMergeProgress | null {
+  const parsed = accountMergeProgressSchema.safeParse(raw)
+  if (!parsed.success) return null
+
+  const parts: HilosAccountMergePart[] = []
+  const partKeys = new Set<string>()
+  for (const entry of parsed.data.parts) {
+    const part = accountMergePartSchema.safeParse(entry)
+    if (!part.success) continue
+    const key = JSON.stringify([
+      part.data.participant,
+      part.data.owner,
+      part.data.userId,
+    ])
+    if (partKeys.has(key)) continue
+    partKeys.add(key)
+    parts.push(part.data)
+  }
+
+  const waits: HilosAccountMergeWait[] = []
+  const waitKeys = new Set<string>()
+  for (const entry of parsed.data.waits) {
+    const wait = accountMergeWaitSchema.safeParse(entry)
+    if (!wait.success) continue
+    const key = JSON.stringify([wait.data.participant, wait.data.userId])
+    if (waitKeys.has(key)) continue
+    waitKeys.add(key)
+    waits.push(wait.data)
+  }
+
+  return { ...parsed.data, parts, waits }
+}
+
+/** The person's standing and operation progress, and their mount lifecycle. */
 export interface HilosUserStanding {
   /**
    * The standing, or `null` before the page answered and wherever it cannot be
@@ -1222,7 +1405,9 @@ export interface HilosUserStanding {
   readonly standing: ReadonlySignal<HilosAccountStanding | null>
   /** The begun erasure's progress, or null when absent or unreadable. */
   readonly erasure: ReadonlySignal<HilosAccountErasure | null>
-  /** Start taking standing and erasure from page data and live frames — call on mount. */
+  /** The begun merge's progress, or null when absent or unreadable. */
+  readonly merge: ReadonlySignal<HilosAccountMergeProgress | null>
+  /** Start taking standing and operation progress from page data and live frames. */
   start(): void
   /** Stop taking them and forget them — call on unmount. */
   dispose(): void
@@ -1230,7 +1415,7 @@ export interface HilosUserStanding {
 
 /**
  * The one verdict a user card reads its person's standing from (HIL-945): the
- * page's `accountStanding` and `accountErasure` data, then every
+ * page's `accountStanding`, `accountErasure` and `accountMerge` data, then every
  * `hilos_account_standing_state` frame after it — whichever arrived last.
  * A frame naming another person than the card's row is a late one from the
  * card left behind and is not taken.
@@ -1242,6 +1427,7 @@ export function createHilosUserStanding(
 ): HilosUserStanding {
   const standing = createSignal<HilosAccountStanding | null>(null)
   const erasure = createSignal<HilosAccountErasure | null>(null)
+  const merge = createSignal<HilosAccountMergeProgress | null>(null)
   const detailRows = context.scopes.pageTableSignal(USER_DETAIL_TABLE)
   let stop: (() => void) | null = null
 
@@ -1260,6 +1446,7 @@ export function createHilosUserStanding(
   return {
     standing,
     erasure,
+    merge,
     start() {
       stop?.()
       const section = context.scopes.pageDataSignal(HILOS_USER_STANDING_SECTION)
@@ -1274,6 +1461,13 @@ export function createHilosUserStanding(
       const offErasureSection = subscribeSignal(erasureSection, (raw) =>
         erasure.set(readHilosAccountErasure(raw)),
       )
+      const mergeSection = context.scopes.pageDataSignal(
+        HILOS_USER_MERGE_SECTION,
+      )
+      merge.set(readHilosAccountMerge(mergeSection.get()))
+      const offMergeSection = subscribeSignal(mergeSection, (raw) =>
+        merge.set(readHilosAccountMerge(raw)),
+      )
       const offFrames = context.connection.on(
         'projectSignal',
         (signal: ProjectSignal) => {
@@ -1287,11 +1481,16 @@ export function createHilosUserStanding(
             standing.set(readHilosAccountStanding(frame.accountStanding))
             erasure.set(readHilosAccountErasure(frame.accountErasure))
           }
+          const row = detailRows.get()[0]
+          if (row !== undefined && Number(row.rowKey) === frame.userId) {
+            merge.set(readHilosAccountMerge(frame.accountMerge))
+          }
         },
       )
       stop = () => {
         offSection()
         offErasureSection()
+        offMergeSection()
         offFrames()
       }
     },
@@ -1300,6 +1499,7 @@ export function createHilosUserStanding(
       stop = null
       standing.set(null)
       erasure.set(null)
+      merge.set(null)
     },
   }
 }

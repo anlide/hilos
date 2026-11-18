@@ -10,6 +10,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalType;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -20,6 +21,7 @@ use Hilos\Legal\LegalDocument;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
 use Hilos\Users\AccountErasureProgress;
 use Hilos\Users\AccountErasureProgressResolver;
+use Hilos\Users\AccountMergeProgressResolver;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
@@ -36,8 +38,8 @@ use Throwable;
  * resolver answers now ({@see AccountStandingResolver}). The resolver remembers, and drops what a
  * write changed, so an unchanged standing costs a comparison.
  *
- * A card keeps both the person's standing and erasure progress in step. When either moves it is
- * sent both whole, through the card's own road past the view mode's bridge
+ * A card keeps the person's standing, erasure and merge progress in step. When any moves it is
+ * sent all three whole, through the card's own road past the view mode's bridge
  * ({@see AbstractHilosUserPage::standingFrame()}). A list window
  * narrowed to one document is sent again when the people past that document's deadline are no
  * longer the ones it was served with.
@@ -64,6 +66,12 @@ final class AccountStandingAudience
     /** @var array<string, ?array<string, mixed>> Erasure block each card subscriber was last shown, keyed by accept key */
     private static array $shownErasure = [];
 
+    /** @var array<string, ?array<string, mixed>> Full merge block last shown to each card connection */
+    private static array $shownMerge = [];
+
+    /** @var array<string, true> Cards whose merge block is in a failure episode */
+    private static array $mergeFailures = [];
+
     /** @var array<string, true> Subscribers of the list of people, keyed by accept key */
     private static array $lists = [];
 
@@ -88,17 +96,24 @@ final class AccountStandingAudience
     private static bool $erasureBarsFailed = false;
 
     /**
-     * Holds a card subscriber and the standing and erasure progress its page answer showed.
+     * Holds a card subscriber and the standing, erasure and merge progress its page answer showed.
      *
      * @param string $acceptKey Subscribing connection
      * @param int $userId Person the card shows
      * @throws HilosException When the person's standing or erasure progress cannot be read
+     * @throws PageInternalErrorException When the saved merge sources are unavailable or malformed
      */
     public static function addSubscriber(string $acceptKey, int $userId): void
     {
         self::$cards[$acceptKey] = $userId;
         self::$shown[$acceptKey] = AccountStandingResolver::of($userId);
         self::$shownErasure[$acceptKey] = AccountErasureProgressResolver::of($userId)?->toArray();
+        try {
+            self::$shownMerge[$acceptKey] = AccountMergeProgressResolver::of($userId)?->toArray();
+        } catch (Throwable $failure) {
+            throw new PageInternalErrorException('Account merge progress is unavailable.', previous: $failure);
+        }
+        unset(self::$mergeFailures[$acceptKey]);
     }
 
     /**
@@ -118,6 +133,8 @@ final class AccountStandingAudience
             self::$cards[$acceptKey],
             self::$shown[$acceptKey],
             self::$shownErasure[$acceptKey],
+            self::$shownMerge[$acceptKey],
+            self::$mergeFailures[$acceptKey],
             self::$erasureFailures[$acceptKey],
             self::$lists[$acceptKey],
             self::$listDocuments[$acceptKey],
@@ -136,6 +153,8 @@ final class AccountStandingAudience
         self::$cards = [];
         self::$shown = [];
         self::$shownErasure = [];
+        self::$shownMerge = [];
+        self::$mergeFailures = [];
         self::$lists = [];
         self::$listDocuments = [];
         self::$listPeople = [];
@@ -189,17 +208,22 @@ final class AccountStandingAudience
             }
             $standing = AccountStandingResolver::of($userId);
             $erasure = self::cardErasure($acceptKey, $userId);
-            if ($standing->toArray() === self::$shown[$acceptKey]->toArray() && $erasure === self::$shownErasure[$acceptKey]) {
+            $merge = self::cardMerge($acceptKey, $userId);
+            if ($standing->toArray() === self::$shown[$acceptKey]->toArray()
+                && $erasure === self::$shownErasure[$acceptKey] && $merge === self::$shownMerge[$acceptKey]) {
                 continue;
             }
 
             self::$shown[$acceptKey] = $standing;
             self::$shownErasure[$acceptKey] = $erasure;
+            self::$shownMerge[$acceptKey] = $merge;
             $pageClass = Hilos::appClass()::PAGES[HilosPageConstants::HILOS_USER] ?? null;
             if ($pageClass === null || !is_subclass_of($pageClass, AbstractHilosUserPage::class)) {
                 continue;
             }
-            $frame = $pageClass::standingFrame($acceptKey, new AccountStandingStateSignalData($userId, $standing->toArray(), $erasure));
+            $frame = $pageClass::standingFrame(
+                $acceptKey, new AccountStandingStateSignalData($userId, $standing->toArray(), $erasure, $merge),
+            );
             if ($frame === null) {
                 continue;
             }
@@ -261,6 +285,30 @@ final class AccountStandingAudience
         }
 
         return $erasure;
+    }
+
+    /**
+     * Clears only an unreadable merge block, logging once per connection's failure episode.
+     *
+     * @param string $acceptKey Card connection whose failure episode is remembered
+     * @param int $userId Account the card shows
+     * @return ?array<string, mixed> Full merge block, or null while its source refuses
+     */
+    private static function cardMerge(string $acceptKey, int $userId): ?array
+    {
+        try {
+            $merge = AccountMergeProgressResolver::of($userId)?->toArray();
+        } catch (Throwable) {
+            if (!isset(self::$mergeFailures[$acceptKey])) {
+                Logger::error("Account card merge progress unavailable: user={$userId}");
+                self::$mergeFailures[$acceptKey] = true;
+            }
+
+            return null;
+        }
+        unset(self::$mergeFailures[$acceptKey]);
+
+        return $merge;
     }
 
     /**

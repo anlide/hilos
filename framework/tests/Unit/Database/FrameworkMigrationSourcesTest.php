@@ -199,7 +199,7 @@ final class FrameworkMigrationSourcesTest extends TestCase
      * The operation stub has moved on past the HIL-1987 parts (HIL-1942): they keep the snapshot they were
      * published with, and the chain goes on in the part that adds the safe reasons of refused finals.
      */
-    public function testRealAccountErasureFinalRefusalsContinueTheOperationChainWithCurrentStubHashes(): void
+    public function testRealAccountErasureFinalRefusalsKeepTheirPublishedStubSnapshot(): void
     {
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
@@ -208,13 +208,31 @@ final class FrameworkMigrationSourcesTest extends TestCase
         $this->assertSame(['20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_operation'], $part->requires);
         $this->assertFalse($part->introducesUnit);
         $unit = $schema->unit('account_erasure_operation');
-        $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+        $this->assertSame('1623d9d868531387f907bbf49391dfd96fcdbae6174b5b1c54092e570a82c6bc', $part->afterStubUpSha256);
         $this->assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
         $this->assertSame(
             'b45d411a90362b9cba870265e8071e4870dc3c69ff22ea7df450bedb44f1beba',
             $catalog->part('20261109072435317522_HIL-1987_drop_account_erasure_tables', 'account_erasure_operation')->afterStubUpSha256,
         );
         // The operation chain crosses the assignment and result units, so the stubs are checked together.
+        $catalog->verifyCurrentStubs(['account_erasure_operation', 'account_erasure_assignment', 'account_erasure_result']);
+    }
+
+    /** The loser lookup index continues the operation unit and owns its current stub snapshot. */
+    public function testRealMergeObservationIndexContinuesTheOperationChainWithCurrentStubHashes(): void
+    {
+        $schema = new FrameworkSchemaCatalog();
+        $catalog = new FrameworkMigrationCatalog($schema);
+        $part = $catalog->part('20261118115802572623_HIL-2003_merge_observation_index', 'account_erasure_operation');
+        self::assertSame(['20261113230943441275_HIL-1942_account_erasure_final_refusals/account_erasure_operation'], $part->requires);
+        self::assertFalse($part->introducesUnit);
+        $unit = $schema->unit('account_erasure_operation');
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->upPath)), $part->afterStubUpSha256);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(file_get_contents($unit->downPath)), $part->afterStubDownSha256);
+        self::assertSame('ALTER TABLE `hilos_account_operation` ADD INDEX `idx_account_operation_loser` (`loser_user_id`, `id`);' . "\n",
+            $part->upSql);
+        self::assertSame('ALTER TABLE `hilos_account_operation` DROP INDEX `idx_account_operation_loser`;' . "\n",
+            $part->downSql);
         $catalog->verifyCurrentStubs(['account_erasure_operation', 'account_erasure_assignment', 'account_erasure_result']);
     }
 
@@ -375,7 +393,7 @@ final class FrameworkMigrationSourcesTest extends TestCase
         self::assertSame([
             '20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_operation',
         ], $catalog->part('20261113230943441275_HIL-1942_account_erasure_final_refusals', 'account_erasure_operation')->requires);
-        self::assertCount(10, $parts);
+        self::assertCount(11, $parts);
         $catalog->verifyCurrentStubs($units);
     }
 

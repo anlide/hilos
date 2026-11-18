@@ -6,6 +6,7 @@ namespace Hilos\Tests\Integration;
 
 use Closure;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountOperationCircle;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
@@ -34,6 +35,12 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\Entity\Item\AccountOperation as EntityAccountOperation;
 use Hilos\Database\Entity\Item\AccountOperationAssignment as EntityAccountOperationAssignment;
+use Hilos\Database\Migration\FrameworkMigrationCatalog;
+use Hilos\Database\Migration\FrameworkMigrationOrigin;
+use Hilos\Database\Migration\FrameworkMigrationProjectRegistry;
+use Hilos\Database\Migration\FrameworkSchemaCatalog;
+use Hilos\Database\MigrationSqlReader;
+use Hilos\Database\Schema\EntitySchemaAudit;
 use Hilos\Hilos;
 use Hilos\HilosException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -65,6 +72,7 @@ final class AccountOperationStorageIntegrationTest extends FrameworkIntegrationT
         try {
             Database::handlerEnd();
             $this->stubs(down: true);
+            Database::sqlRun('DROP TABLE IF EXISTS `hilos_account_erasure_operation`');
         } finally {
             ExecutionContext::pop($this->frameToken);
             TruthSourceRegistry::unregisterAgent(self::COORDINATOR_ID);
@@ -741,6 +749,153 @@ final class AccountOperationStorageIntegrationTest extends FrameworkIntegrationT
         self::assertNull(Hilos::$db->accountOperationAssignments[$lastPart->id + 1] ?? null);
     }
 
+    /** Discovery uses real merge sides, includes closed rows and ignores circles and erasures. */
+    public function testLatestMergeNamingReadsBothPersistedSidesIncludingClosedOperations(): void
+    {
+        self::assertNull(Hilos::$db->accountOperations->latestMergeNaming(7));
+        $merge = Hilos::$db->accountOperations->actions->recordMerge(7, 9, new AccountMergeChoice(null, null, false, false));
+        self::assertSame($merge->getObject(), Hilos::$db->accountOperations->latestMergeNaming(7)?->getObject());
+        self::assertSame($merge->getObject(), Hilos::$db->accountOperations->latestMergeNaming(9)?->getObject());
+        self::assertTrue($merge->actions->finish($merge->stage, AccountOperationOutcome::NotStarted));
+        $foreign = Hilos::$db->accountOperations->actions->recordMerge(11, 13, new AccountMergeChoice(null, null, false, false));
+        Database::sql('UPDATE `hilos_account_operation` SET `circle_user_ids` = ? WHERE `id` = ?', ['[9,7]', $foreign->id]);
+        $erasure = Hilos::$db->accountOperations->actions->recordErasure(401, 7, AccountOperationCircle::fromArray([9, 7], 7));
+        Database::sql('UPDATE `hilos_account_operation` SET `loser_user_id` = ? WHERE `id` = ?', [9, $erasure->id]);
+        $stored = Database::sql('SELECT * FROM `hilos_account_operation` ORDER BY `id`')->rows();
+
+        self::assertSame($merge->getObject(), Hilos::$db->accountOperations->latestMergeNaming(7)?->getObject());
+        self::assertSame($merge->getObject(), Hilos::$db->accountOperations->latestMergeNaming(9)?->getObject());
+        self::assertNotNull($merge->finishedAt);
+        self::assertNull(Hilos::$db->accountOperations->latestMergeNaming(99));
+        self::assertSame($stored, Database::sql('SELECT * FROM `hilos_account_operation` ORDER BY `id`')->rows());
+    }
+
+    /** The primary id orders both indexed sides even when every persisted moment is equal. */
+    public function testLatestMergeNamingChoosesTheGreatestIdAcrossBothSidesAtEqualMoments(): void
+    {
+        $choice = new AccountMergeChoice(null, null, false, false);
+        $first = Hilos::$db->accountOperations->actions->recordMerge(7, 9, $choice);
+        $middle = Hilos::$db->accountOperations->actions->recordMerge(11, 7, $choice);
+        Database::sql('UPDATE `hilos_account_operation` SET `created_at` = 1234, `updated_at` = 1234');
+        self::assertSame($middle->getObject(), Hilos::$db->accountOperations->latestMergeNaming(7)?->getObject());
+        $last = Hilos::$db->accountOperations->actions->recordMerge(7, 13, $choice);
+        Database::sql('UPDATE `hilos_account_operation` SET `created_at` = 1234, `updated_at` = 1234');
+
+        self::assertGreaterThan($first->id, $middle->id);
+        self::assertGreaterThan($middle->id, $last->id);
+        self::assertSame($last->getObject(), Hilos::$db->accountOperations->latestMergeNaming(7)?->getObject());
+        self::assertSame($first->getObject(), Hilos::$db->accountOperations->latestMergeNaming(9)?->getObject());
+        self::assertSame($middle->getObject(), Hilos::$db->accountOperations->latestMergeNaming(11)?->getObject());
+        self::assertSame(1234, $last->createdAt);
+        self::assertSame(1234, $last->updatedAt);
+    }
+
+    /** Fresh discovery refreshes held identities after an unseen close and selects a new retry. */
+    public function testLatestMergeNamingRetainsObjectsAndWrappersAcrossCloseAndRetry(): void
+    {
+        $choice = new AccountMergeChoice(null, null, false, false);
+        $created = Hilos::$db->accountOperations->actions->recordMerge(7, 9, $choice);
+        $object = $created->getObject();
+        $first = Hilos::$db->accountOperations->latestMergeNaming(9);
+        self::assertSame($object, $first?->getObject());
+        self::assertSame($first, Hilos::$db->accountOperations->latestMergeNaming(7));
+        Database::sql('UPDATE `hilos_account_operation` SET `finished_at` = 2345, `updated_at` = 2345, '
+            . '`outcome` = ?, `open_loser_user_id` = NULL WHERE `id` = ?', [AccountOperationOutcome::NotStarted->value, $first->id]);
+        self::assertNull($first->finishedAt);
+        self::assertSame($first, Hilos::$db->accountOperations->latestMergeNaming(9));
+        self::assertSame($object, Hilos::$db->accountOperations->getObjectCollection()->latestMergeNaming(7));
+        self::assertSame(2345, $first->finishedAt);
+        self::assertSame(2345, $first->updatedAt);
+        self::assertCount(0, Hilos::$db->accountOperations->openMergesNaming(9));
+        $createdRetry = Hilos::$db->accountOperations->actions->recordMerge(11, 9, $choice);
+        $retry = Hilos::$db->accountOperations->latestMergeNaming(9);
+        self::assertSame($createdRetry->getObject(), $retry?->getObject());
+        self::assertGreaterThan($first->id, $retry->id);
+        self::assertSame($retry, Hilos::$db->accountOperations->latestMergeNaming(9));
+        self::assertSame($first, Hilos::$db->accountOperations->latestMergeNaming(7));
+        self::assertSame($object, $first->getObject());
+        self::assertSame($retry->getObject(), Hilos::$db->accountOperations->getObjectCollection()->latestMergeNaming(9));
+        self::assertTrue($retry->actions->finish($retry->stage, AccountOperationOutcome::NotStarted));
+        self::assertSame($retry, Hilos::$db->accountOperations->latestMergeNaming(9));
+        self::assertNotNull($retry->finishedAt);
+        $this->mountFreshContext();
+        self::assertSame($retry->id, Hilos::$db->accountOperations->latestMergeNaming(9)->id);
+        self::assertSame($first->id, Hilos::$db->accountOperations->latestMergeNaming(7)->id);
+    }
+
+    /** @return iterable<string, array{string}> Every source target declared by the repository */
+    public static function migrationProjects(): iterable
+    {
+        foreach (FrameworkMigrationProjectRegistry::load(dirname(__DIR__, 3) . '/framework-projects.json') as $project) {
+            yield $project->facade => [$project->root];
+        }
+    }
+
+    /** @param string $root Historical generated track whose operation unit is upgraded */
+    #[DataProvider('migrationProjects')]
+    public function testGeneratedUpgradeAddsOnlyTheLoserIndexAndDownPreservesRows(string $root): void
+    {
+        $this->stubs(down: true);
+        $catalog = new FrameworkMigrationCatalog(new FrameworkSchemaCatalog());
+        $catalog->verifyCurrentStubs(['account_erasure_operation', 'account_erasure_assignment', 'account_erasure_result']);
+        $matches = [];
+        foreach (glob($root . '/*_framework_*.sql') as $path) {
+            if (str_ends_with($path, '_down.sql')) {
+                continue;
+            }
+            $up = file_get_contents($path);
+            $down = file_get_contents(substr($path, 0, -4) . '_down.sql');
+            $origin = $catalog->verifyPair($up, $down);
+            if (!in_array('account_erasure_operation', $origin->units, true)) {
+                continue;
+            }
+            if ($origin->kind === FrameworkMigrationOrigin::CHANGE
+                && $origin->parts[0]->changeId === '20261118115802572623_HIL-2003_merge_observation_index') {
+                $matches[] = [$up, $down, $origin];
+                continue;
+            }
+            // A composite baseline also carries unrelated tables; this fixture installs only the operation unit.
+            foreach (MigrationSqlReader::statements($up) as $statement) {
+                if (preg_match('/^(?:CREATE TABLE(?: IF NOT EXISTS)?|ALTER TABLE|DROP TABLE(?: IF EXISTS)?) '
+                    . '`hilos_account_(?:erasure_)?operation`/', $statement) === 1) {
+                    Database::sqlRun($statement);
+                }
+            }
+        }
+        self::assertCount(1, $matches);
+        [$up, $down, $origin] = $matches[0];
+        self::assertSame(FrameworkMigrationOrigin::CHANGE, $origin->kind);
+        self::assertSame(['account_erasure_operation'], $origin->units);
+        self::assertCount(1, $origin->parts);
+        self::assertSame('20261118115802572623_HIL-2003_merge_observation_index', $origin->parts[0]->changeId);
+        $before = $this->operationIndexes();
+        self::assertNotContains('idx_account_operation_loser', array_column($before, 'INDEX_NAME'));
+        Database::sql('INSERT INTO `hilos_account_operation` '
+            . '(`kind`, `root_user_id`, `loser_user_id`, `circle_user_ids`, `stage`, `created_at`, `updated_at`, '
+            . '`finished_at`, `outcome`, `final_refusals`) VALUES (?, 7, 9, ?, ?, 1000, 2000, 2000, ?, ?)',
+            [AccountOperationKind::Merge->value, '[9,7]', AccountMergeStage::Preparing->value,
+                AccountOperationOutcome::NotStarted->value, '{}']);
+        Database::sql('INSERT INTO `hilos_account_operation` '
+            . '(`kind`, `root_user_id`, `loser_user_id`, `circle_user_ids`, `stage`, `created_at`, `updated_at`, `open_loser_user_id`) '
+            . 'VALUES (?, 11, 13, ?, ?, 1000, 1000, 13)',
+            [AccountOperationKind::Merge->value, '[13,11]', AccountMergeStage::Preparing->value]);
+        $saved = Database::sql('SELECT * FROM `hilos_account_operation` ORDER BY `id`')->rows();
+        Database::sqlRun($up);
+        self::assertSame([], EntitySchemaAudit::audit([EntityAccountOperation::class]));
+        $this->assertLoserIndex();
+        self::assertSame($saved, Database::sql('SELECT * FROM `hilos_account_operation` ORDER BY `id`')->rows());
+        Database::sqlRun($down);
+        self::assertSame($before, $this->operationIndexes());
+        self::assertSame($saved, Database::sql('SELECT * FROM `hilos_account_operation` ORDER BY `id`')->rows());
+    }
+
+    /** A fresh current stub has the same Entity schema and ascending loser index as the upgrade. */
+    public function testFreshStubMatchesTheEntityAndLoserIndex(): void
+    {
+        self::assertSame([], EntitySchemaAudit::audit([EntityAccountOperation::class]));
+        $this->assertLoserIndex();
+    }
+
     /** A warm mixed selection follows persisted completion and excludes unknown kinds before hydrating them. */
     public function testNullablePageUsesPersistedOpenMembershipForBothKnownKinds(): void
     {
@@ -971,6 +1126,23 @@ final class AccountOperationStorageIntegrationTest extends FrameworkIntegrationT
             }
         });
         self::assertSame('one', $assignment->assignmentKey);
+    }
+
+    /** @return list<array<string, mixed>> Index structure without mutable engine statistics */
+    private function operationIndexes(): array
+    {
+        return Database::sql('SELECT INDEX_NAME, COLUMN_NAME, COLLATION, NON_UNIQUE FROM information_schema.STATISTICS '
+            . "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'hilos_account_operation' ORDER BY INDEX_NAME, SEQ_IN_INDEX")->rows();
+    }
+
+    /** Both fresh and upgraded schemas expose the same ordered lookup. */
+    private function assertLoserIndex(): void
+    {
+        $loser = array_values(array_filter($this->operationIndexes(), static fn (array $row): bool =>
+            $row['INDEX_NAME'] === 'idx_account_operation_loser'));
+        self::assertSame(['loser_user_id', 'id'], array_column($loser, 'COLUMN_NAME'));
+        self::assertSame(['A', 'A'], array_column($loser, 'COLLATION'));
+        self::assertSame([1, 1], array_map('intval', array_column($loser, 'NON_UNIQUE')));
     }
 
     /** A second database session on the same schema, with no shared transaction or ORM row memory. */

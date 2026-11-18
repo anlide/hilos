@@ -18,6 +18,7 @@ use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
+use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\Session;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Hilos;
@@ -26,6 +27,10 @@ use Hilos\Pages\Users\AbstractHilosUserSessionsPage;
 use Hilos\Pages\Users\HilosUserActingSessionsBrowserList;
 use Hilos\Pages\Users\HilosUserSessionsBrowserList;
 use Hilos\Runtime\State\Item\HilosSessionConnection;
+use Hilos\Tests\Unit\Pages\Users\HilosUserPageTestDb;
+use Hilos\Users\AccountErasureProgressResolver;
+use Hilos\Users\AccountMergeProgressResolver;
+use Hilos\Users\AccountStandingResolver;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
@@ -45,19 +50,30 @@ final class HilosUserSessionsBrowserListTest extends TestCase
 {
     private string $previousApp;
 
+    private ?HilosDbContext $previousDb = null;
+
     private ?SettingsAccessor $previousSettings = null;
 
     protected function setUp(): void
     {
         parent::setUp();
         $this->previousApp = Hilos::appClass();
+        $this->previousDb = Hilos::$db;
         $this->previousSettings = Hilos::$setting;
+        Hilos::$db = new HilosUserPageTestDb([12]);
         Hilos::$setting = null;
+        AccountMergeProgressResolver::forgetAll();
+        AccountStandingResolver::forgetAll();
+        AccountErasureProgressResolver::forgetAll();
     }
 
     protected function tearDown(): void
     {
+        AccountMergeProgressResolver::forgetAll();
+        AccountStandingResolver::forgetAll();
+        AccountErasureProgressResolver::forgetAll();
         self::bindAppClass($this->previousApp);
+        Hilos::$db = $this->previousDb;
         Hilos::$setting = $this->previousSettings;
         parent::tearDown();
     }

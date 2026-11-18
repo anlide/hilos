@@ -82,11 +82,14 @@ final class AccountStandingResolverTest extends TestCase
             'userId' => 7,
             'accountStanding' => $standing,
             'accountErasure' => $progress,
+            'accountMerge' => null,
         ], $frame->toArray());
         self::assertEquals($frame, AccountStandingStateSignalData::fromArray($frame->toArray()));
         $legacy = AccountStandingStateSignalData::fromArray(['userId' => 7, 'accountStanding' => $standing]);
         self::assertNull($legacy->accountErasure);
+        self::assertNull($legacy->accountMerge);
         self::assertArrayHasKey('accountErasure', $legacy->toArray());
+        self::assertArrayHasKey('accountMerge', $legacy->toArray());
         self::assertEquals($legacy, AccountStandingStateSignalData::fromArray($legacy->toArray()));
     }
 

@@ -49,6 +49,9 @@ use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Users\AccountErasureProgressResolver;
+use Hilos\Users\AccountMergeProgressResolver;
+use Hilos\Users\AccountMergeProgressChangeSubscriber;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\WiringRefusal;
 use Random\RandomException;
 use Throwable;
@@ -417,6 +420,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     public function onStart(): void
     {
         AccountErasureProgressResolver::forgetAll();
+        AccountMergeProgressResolver::forgetAll();
         parent::onStart();
     }
 
@@ -428,6 +432,7 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     public function onStop(): void
     {
         AccountErasureProgressResolver::forgetAll();
+        AccountMergeProgressResolver::forgetAll();
         $this->clearManualMaintenance();
         parent::onStop();
         AccountStandingAudience::reset();
@@ -447,6 +452,9 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
         $this->forgetErasureProgressFor($data->collectionKey);
+        if (AccountMergeProgressChangeSubscriber::affectsProgress($data->collectionKey, TableMutationType::Create, $data->row)) {
+            AccountMergeProgressResolver::forgetAll();
+        }
         parent::onSignalDbSyncCreated($data, $source, $name);
     }
 
@@ -461,6 +469,9 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     public function onSignalDbSyncUpdated(DbSyncUpdatedSignalData $data, string $source, string $name): void
     {
         $this->forgetErasureProgressFor($data->collectionKey);
+        if (AccountMergeProgressChangeSubscriber::affectsProgress($data->collectionKey, TableMutationType::Update, $data->row)) {
+            AccountMergeProgressResolver::forgetAll();
+        }
         parent::onSignalDbSyncUpdated($data, $source, $name);
     }
 
@@ -475,6 +486,9 @@ abstract class AbstractHilosIndexAgent extends AbstractHilosAgent
     public function onSignalDbSyncDeleted(DbSyncDeletedSignalData $data, string $source, string $name): void
     {
         $this->forgetErasureProgressFor($data->collectionKey);
+        if (AccountMergeProgressChangeSubscriber::affectsProgress($data->collectionKey, TableMutationType::Delete)) {
+            AccountMergeProgressResolver::forgetAll();
+        }
         parent::onSignalDbSyncDeleted($data, $source, $name);
     }
 

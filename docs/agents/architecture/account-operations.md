@@ -2447,9 +2447,12 @@ path on its own:
   loop. A disconnected channel means neither cancellation nor success, and
   success is printed only at durable end. Its exact response belongs to its
   own contract (not in the code yet — HIL-2001).
-- The first `page_response` and live updates carry state, waiting and safe
-  refusal. Admin view mode reveals no withheld personal data and opens no
-  mutation (not in the code yet — HIL-2003).
+- The first `page_response` and existing live standing frame carry the
+  allowlisted merge observation, including its waits and safe refusal; the
+  viewer projection hides its withheld personal fields. This read-only card
+  path is ready (HIL-2003) but does not switch production merge callers or
+  retire legacy writers; that remains HIL-1999. See
+  [Account Standing](account-standing.md#the-wire).
 - The list, card and candidates read the durable reservation/operation facts
   without presenting an occupied or folded account as available
   (not in the code yet — HIL-2004).

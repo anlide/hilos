@@ -22,6 +22,7 @@ use Hilos\Hilos;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Pages\Users\AbstractHilosUserSessionsPage;
 use Hilos\Users\AccountErasureProgressResolver;
+use Hilos\Users\AccountMergeProgressResolver;
 use Hilos\Users\AccountStandingResolver;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -63,12 +64,14 @@ final class HilosUserPageResourceTest extends TestCase
         Hilos::$setting = null;
         AccountStandingResolver::forgetAll();
         AccountErasureProgressResolver::forgetAll();
+        AccountMergeProgressResolver::forgetAll();
     }
 
     protected function tearDown(): void
     {
         AccountStandingResolver::forgetAll();
         AccountErasureProgressResolver::forgetAll();
+        AccountMergeProgressResolver::forgetAll();
         Hilos::$db = $this->previousDb;
         Hilos::$sr = $this->previousRouter;
         Hilos::$browser = $this->previousBrowser;

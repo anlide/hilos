@@ -14,6 +14,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Users\AccountErasureProgress;
+use Hilos\Users\AccountMergeProgress;
 use Hilos\Users\AccountStanding;
 
 /**
@@ -24,13 +25,15 @@ use Hilos\Users\AccountStanding;
  * scheduled or canceled deletion, an acceptance, a deadline that passed. The standing travels
  * whole, in the one shape it has everywhere ({@see AccountStanding::toArray()}), so the card
  * reads one verdict rather than three flags. The same frame carries erasure progress, including
- * changes to expected owners or waits while the standing stays erasing (HIL-1954).
+ * changes to expected owners or waits while the standing stays erasing (HIL-1954), and the full
+ * merge observation even when only its saved progress changes (HIL-2003).
  */
 final class AccountStandingStateSignalData extends BaseDTO implements SignalDataInterface
 {
     public const string userId = 'userId';
     public const string accountStanding = 'accountStanding';
     public const string accountErasure = 'accountErasure';
+    public const string accountMerge = 'accountMerge';
 
     /**
      * @param int $userId Person the card shows
@@ -41,12 +44,14 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
      * @param ?array{startedAt: int, parts: list<array{participant: string, owner: string, userId: int, done: bool}>,
      *     waits: list<array{participant: string, userId: int}>, refusals: list<array{userId: int, table: ?string}>}
      *     $accountErasure Begun erasure progress, or null
+     * @param ?array<string, mixed> $accountMerge Full merge allowlist from AccountMergeProgress, or null
      * @throws InvalidFormatException When the id names no account (zero or negative)
      */
     public function __construct(
         public readonly int $userId,
         public readonly array $accountStanding,
         public readonly ?array $accountErasure = null,
+        public readonly ?array $accountMerge = null,
     ) {
         if ($userId <= 0) {
             throw new InvalidFormatException('Payload key ' . self::userId . ' holds a value that is not a positive integer');
@@ -54,7 +59,8 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
     }
 
     /**
-     * @return array{userId: int, accountStanding: array<string, mixed>, accountErasure: ?array<string, mixed>} DTO payload for transport
+     * @return array{userId: int, accountStanding: array<string, mixed>, accountErasure: ?array<string, mixed>,
+     *     accountMerge: ?array<string, mixed>} DTO payload for transport
      */
     public function toArray(): array
     {
@@ -62,6 +68,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
             self::userId => $this->userId,
             self::accountStanding => $this->accountStanding,
             self::accountErasure => $this->accountErasure,
+            self::accountMerge => $this->accountMerge,
         ];
     }
 
@@ -71,7 +78,8 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
      * The person is named by their id, a column the verdict of people shows, and the standing by the one
      * map the card's page data uses too ({@see AccountStanding::wireFields()}), so a viewer's live frame
      * hides exactly what the first render hid ({@see AbstractPage::frameForViewer()}). Erasure progress
-     * shares {@see AccountErasureProgress::wireFields()} with that first answer too.
+     * shares {@see AccountErasureProgress::wireFields()} with that first answer too; merge progress
+     * uses {@see AccountMergeProgress::wireFields()} in both carriers.
      *
      * @return array<string, WireField> Frame field name to where it comes from
      */
@@ -81,6 +89,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
             self::userId => WireField::column(HilosDbContext::users, ObjectUser::id),
             self::accountStanding => WireField::each(AccountStanding::wireFields()),
             self::accountErasure => WireField::each(AccountErasureProgress::wireFields()),
+            self::accountMerge => WireField::each(AccountMergeProgress::wireFields()),
         ];
     }
 
@@ -96,6 +105,11 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
             throw new InvalidFormatException('Payload key ' . self::accountStanding . ' is missing');
         }
 
-        return new static(self::requireInt($data, self::userId), $standing, self::optionalArray($data, self::accountErasure));
+        return new static(
+            self::requireInt($data, self::userId),
+            $standing,
+            self::optionalArray($data, self::accountErasure),
+            self::optionalArray($data, self::accountMerge),
+        );
     }
 }

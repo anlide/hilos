@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Pages\Users;
 
 use ArrayAccess;
+use ArrayIterator;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\View\Item\AccountOperation;
+use IteratorAggregate;
+use Traversable;
 
 /**
  * People for the person card, with no database behind them (HIL-1957).
  *
  * The card names the person's row before its first frame, then reads their standing and begun
- * erasure. Here the named people are present, nobody is folded, nothing is scheduled and no
+ * erasure. Here the named people are present, no merge is open or saved, nothing is scheduled and no
  * erasure has begun, so the card reads a plain standing.
  */
 final class HilosUserPageTestDb extends HilosDbContext
@@ -36,8 +40,12 @@ final class HilosUserPageTestDb extends HilosDbContext
     }
 }
 
-/** Rows keyed by primary id; every other read the standing makes finds nothing. */
-final class HilosUserPageTestRows implements ArrayAccess
+/**
+ * Rows keyed by primary id; every other read the standing makes finds nothing.
+ *
+ * @implements IteratorAggregate<mixed, mixed>
+ */
+final class HilosUserPageTestRows implements ArrayAccess, IteratorAggregate
 {
     /** @var list<mixed> Offsets read, in order */
     public array $lookups = [];
@@ -85,6 +93,32 @@ final class HilosUserPageTestRows implements ArrayAccess
     public function openErasureCovering(int $userId): mixed
     {
         return null;
+    }
+
+    /**
+     * @param int $userId Account whose open merges are asked for
+     * @return static Empty merge selection
+     */
+    public function openMergesNaming(int $userId): static
+    {
+        return $this;
+    }
+
+    /**
+     * @param int $userId Account whose latest merge is asked for
+     * @return ?AccountOperation No merge is saved
+     */
+    public function latestMergeNaming(int $userId): ?AccountOperation
+    {
+        return null;
+    }
+
+    /**
+     * @return Traversable<mixed, mixed> Empty merge selection
+     */
+    public function getIterator(): Traversable
+    {
+        return new ArrayIterator();
     }
 
     /**

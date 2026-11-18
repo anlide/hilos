@@ -932,17 +932,17 @@ abstract class IntegrationTestCase extends TestCase
                     }
                 }
             });
-            foreach ([$this->usersLibrary, $this->sessionsLibrary, $this->notificationsLibrary, ...$this->personAgents] as $agent) {
-                if ($agent === null) {
-                    continue;
-                }
-                try {
-                    $this->underAgent($agent, static fn () => $agent->onStop());
-                } finally {
-                    TruthSourceRegistry::unregisterAgent($agent->getId());
-                    RtTruthSourceRegistry::unregisterAgent($agent->getId());
-                    SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agent->getId()));
-                }
+        }
+        foreach ([$this->usersLibrary, $this->sessionsLibrary, $this->notificationsLibrary, ...$this->personAgents] as $agent) {
+            if ($agent === null) {
+                continue;
+            }
+            try {
+                $this->underAgent($agent, static fn () => $agent->onStop());
+            } finally {
+                TruthSourceRegistry::unregisterAgent($agent->getId());
+                RtTruthSourceRegistry::unregisterAgent($agent->getId());
+                SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agent->getId()));
             }
         }
         $owed = Database::handlerEnd();

@@ -299,6 +299,31 @@ class AccountOperations extends Objects
     }
 
     /**
+     * @param int $userId Account named by a persisted side of the merge
+     * @return ?ObjectAccountOperation Merge with the greatest primary id, including closed operations
+     * @throws DatabaseException When storage or its binding fails
+     * @throws InvalidArgumentException When the query or sync signal is invalid
+     * @throws SourceChangeSubscriberException When a source subscriber fails
+     * @throws ObjectGetIdStringNotImplementedException When a stored row has no id
+     */
+    public function latestMergeNaming(int $userId): ?ObjectAccountOperation
+    {
+        $root = static::entityClass()::get( // fresh-sql: discovery includes closed operations outside the loaded mirror.
+            [EntityAccountOperation::kind => AccountOperationKind::Merge->value, EntityAccountOperation::root_user_id => $userId],
+            orderBy: [EntityAccountOperation::id => SqlSortDirection::DESC],
+            limit: 1,
+        )->first();
+        $loser = static::entityClass()::get( // fresh-sql: each persisted side has its own bounded indexed lookup.
+            [EntityAccountOperation::kind => AccountOperationKind::Merge->value, EntityAccountOperation::loser_user_id => $userId],
+            orderBy: [EntityAccountOperation::id => SqlSortDirection::DESC],
+            limit: 1,
+        )->first();
+        $latest = $root === null || ($loser !== null && $loser->id > $root->id) ? $loser : $root;
+
+        return $latest === null ? null : $this->hold($latest);
+    }
+
+    /**
      * @param int $afterId Exclusive primary id cursor
      * @param int $limit Maximum rows in this page
      * @throws ValidationException When the cursor or page size is invalid

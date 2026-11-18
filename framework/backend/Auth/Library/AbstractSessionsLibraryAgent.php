@@ -252,6 +252,7 @@ use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeSummary;
+use Hilos\Users\AccountMergeRefusalText;
 use Hilos\Users\SecondFactorFate;
 use Hilos\Users\SecondFactorOutcome;
 use Hilos\Auth\SecondFactor\SecondFactorResetWait;
@@ -6973,8 +6974,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if (isset(Hilos::$db->userMerges[$survivorUserId])) {
             throw new ValidationException(sprintf(
                 self::ACCOUNT_MERGE_SURVIVOR_MERGED_MESSAGE,
-                $this->mergeRefusalAccountLabel($survivorUserId),
-                $this->mergeRefusalTargetLabel($survivorUserId),
+                AccountMergeRefusalText::accountLabel($survivorUserId),
+                AccountMergeRefusalText::targetLabel($survivorUserId),
             ));
         }
 
@@ -6984,8 +6985,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if (isset(Hilos::$db->userMerges[$loserUserId])) {
             throw new ValidationException(sprintf(
                 self::ACCOUNT_MERGE_ALREADY_MERGED_MESSAGE,
-                $this->mergeRefusalAccountLabel($loserUserId),
-                $this->mergeRefusalTargetLabel($loserUserId),
+                AccountMergeRefusalText::accountLabel($loserUserId),
+                AccountMergeRefusalText::targetLabel($loserUserId),
             ));
         }
 
@@ -6993,44 +6994,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             if (Hilos::$db->accountOperations->openErasureCovering($userId) !== null) {
                 throw new ValidationException(sprintf(
                     self::ACCOUNT_MERGE_BEING_DELETED_MESSAGE,
-                    $this->mergeRefusalAccountLabel($userId),
+                    AccountMergeRefusalText::accountLabel($userId),
                 ));
             }
         }
-    }
-
-    /**
-     * Names an account in a merge refusal: its name and number, or the number alone when the
-     * account has no name or no row (HIL-1294).
-     *
-     * @param int $userId Account the refusal is about
-     * @return string Name and number, or the number alone
-     */
-    private function mergeRefusalAccountLabel(int $userId): string
-    {
-        $name = isset(Hilos::$db->users[$userId]) ? Hilos::$db->users[$userId]->name : null;
-        $number = '#' . $userId;
-        if ($name === null || $name === '') {
-            return $number;
-        }
-
-        return $name . ' (' . $number . ')';
-    }
-
-    /**
-     * Names the live end of an account's merge chain, or says the chain has no live end (HIL-1294).
-     *
-     * @param int $userId Folded account whose chain is followed
-     * @return string The live account, or the words for a chain that ends nowhere
-     */
-    private function mergeRefusalTargetLabel(int $userId): string
-    {
-        $liveUserId = Hilos::$db->userMerges->liveSurvivorOf($userId);
-        if ($liveUserId === null) {
-            return self::ACCOUNT_MERGE_ANOTHER_ACCOUNT;
-        }
-
-        return $this->mergeRefusalAccountLabel($liveUserId);
     }
 
     /**
@@ -7395,7 +7362,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $existing = Hilos::$db->accountOperations->openMergeOfLoser($loserUserId);
         if ($existing !== null) {
             if ($existing->survivorUserId !== $survivorUserId || !$existing->mergeChoice->equals($choice)) {
-                throw new ValidationException(sprintf(self::ACCOUNT_MERGE_OCCUPIED_MESSAGE, $this->mergeRefusalAccountLabel($loserUserId)));
+                throw new ValidationException(sprintf(self::ACCOUNT_MERGE_OCCUPIED_MESSAGE, AccountMergeRefusalText::accountLabel($loserUserId)));
             }
             $this->driveAccountMerge($existing);
 
@@ -7407,7 +7374,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         $this->assertMergeable($survivorUserId, $loserUserId);
         foreach ([$survivorUserId, $loserUserId] as $userId) {
             if (count(Hilos::$db->accountOperations->openMergesNaming($userId)) !== 0) {
-                throw new ValidationException(sprintf(self::ACCOUNT_MERGE_OCCUPIED_MESSAGE, $this->mergeRefusalAccountLabel($userId)));
+                throw new ValidationException(sprintf(self::ACCOUNT_MERGE_OCCUPIED_MESSAGE, AccountMergeRefusalText::accountLabel($userId)));
             }
         }
         if ($choice->passwordFate === null && Hilos::$db->identities->passwordFateNeeded($loserUserId, $survivorUserId)) {

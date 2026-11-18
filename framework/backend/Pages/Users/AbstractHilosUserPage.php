@@ -48,6 +48,8 @@ use Hilos\HilosException;
 use Hilos\Pages\Users\DTO\HilosUserPageSubscribeParams;
 use Hilos\Users\AccountErasureProgress;
 use Hilos\Users\AccountErasureProgressResolver;
+use Hilos\Users\AccountMergeProgress;
+use Hilos\Users\AccountMergeProgressResolver;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
@@ -56,6 +58,7 @@ use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeActionDTO;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
+use Throwable;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\HilosUserAdminSetActionDTO;
 use Hilos\Users\DTO\HilosUserBlockSetActionDTO;
@@ -63,7 +66,6 @@ use Hilos\Users\DTO\HilosUserDeletionSetActionDTO;
 use Hilos\Users\DTO\HilosUserUpdateActionDTO;
 use Hilos\Users\DTO\HilosUserUpdateFailSignalData;
 use Hilos\Users\DTO\HilosUserUpdateSuccessSignalData;
-use Throwable;
 
 /**
  * Base class for the framework Hilos single-user page.
@@ -98,6 +100,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
 
     /** Page data key of the person's begun erasure progress, or null when none covers them (HIL-1954). */
     public const string ACCOUNT_ERASURE = 'accountErasure';
+    public const string ACCOUNT_MERGE = 'accountMerge';
 
     /** Page data key of the impersonation settings the card's takeover section is drawn from (HIL-1170). */
     public const string IMPERSONATION = 'impersonation';
@@ -344,7 +347,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * Carries the deletion confirmation's grace period, the person's standing and the impersonation settings in the subscription's first answer.
      *
      * The standing is the one verdict the card reads its block, freeze and scheduled deletion from
-     * (HIL-945). Begun erasure progress accompanies it (HIL-1954); later changes to either arrive as
+     * (HIL-945). Begun erasure and saved merge progress accompany it; later changes arrive as
      * {@see HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE}.
      * The impersonation settings decide whether the card has its takeover section and for whom its
      * button is switched off (HIL-1170); later changes arrive as
@@ -355,21 +358,28 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      *
      * @param string $acceptKey Subscribing connection (unused)
      * @param PageRouteParams $params Route params naming the person
-     * @return ?PagePayload Grace period, standing, erasure progress, settings and feature flags, supplemented by the page's identity
+     * @return ?PagePayload Grace period, standing, erasure and merge progress, settings, flags and page identity
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
      * @throws DatabaseException When the stored setting or the person's standing cannot be read
      * @throws SettingException When the setting catalog or value is invalid
      * @throws HilosException When the person's standing or erasure progress cannot be read
+     * @throws PageInternalErrorException When the saved merge sources are unavailable or malformed
      */
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         $userId = HilosUserPageSubscribeParams::fromPageRouteParams($params)->userId;
+        try {
+            $merge = AccountMergeProgressResolver::of($userId)?->toArray();
+        } catch (Throwable $failure) {
+            throw new PageInternalErrorException('Account merge progress is unavailable.', previous: $failure);
+        }
 
         return new PagePayload(data: [
             self::ACCOUNT_DELETION_GRACE_DAYS => AccountDeletionSettings::graceDays(),
             self::ACCOUNT_STANDING => AccountStandingResolver::of($userId)->toArray(),
             self::ACCOUNT_ERASURE => AccountErasureProgressResolver::of($userId)?->toArray(),
+            self::ACCOUNT_MERGE => $merge,
             self::IMPERSONATION => ImpersonationCardSettings::current()->toArray(),
             self::ANALYTICS_ENABLED => self::analyticsEnabled(),
             self::USER_SESSIONS_ENABLED => self::userSessionsEnabled(static::PAGE),
@@ -392,6 +402,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
             self::ACCOUNT_DELETION_GRACE_DAYS => WireField::setting(AccountDeletionSettings::GRACE_DAYS_KEY),
             self::ACCOUNT_STANDING => WireField::each(AccountStanding::wireFields()),
             self::ACCOUNT_ERASURE => WireField::each(AccountErasureProgress::wireFields()),
+            self::ACCOUNT_MERGE => WireField::each(AccountMergeProgress::wireFields()),
             self::IMPERSONATION => WireField::settings([
                 ImpersonationSettings::ALLOWED_KEY,
                 ImpersonationSettings::SCOPE_KEY,
@@ -417,6 +428,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
      * @throws MissingPageRouteParamException When `userId` is absent
      * @throws InvalidPageRouteParamException When `userId` is non-numeric or `<= 0`
      * @throws HilosException When progress cannot be read or the typed hook raises
+     * @throws PageInternalErrorException When the saved merge sources are unavailable or malformed
      */
     final protected function onSubscribeAfterResponse(string $acceptKey, PageRouteParams $params): void
     {

@@ -57,7 +57,14 @@ import {
   type HilosUsersContext,
   type HilosUsersTableOptions,
 } from '../../../src/admin/users/hilosUsers.js'
-import { USER_OPEN_SESSION_COUNT_FIELD } from '../../../src/admin/users/index.js'
+import {
+  HILOS_USER_MERGE_SECTION,
+  readHilosAccountMerge,
+  type HilosAccountMergeProgress,
+  type HilosAccountMergeRefusal,
+  USER_OPEN_SESSION_COUNT_FIELD,
+} from '../../../src/admin/users/index.js'
+import { accountStandingStateSchema } from '../../../src/protocol/accountStandingSignals.js'
 import { hilosLegalLapsedHref } from '../../../src/admin/legal/hilosLegal.js'
 import { type ProjectSignal } from '../../../src/protocol/parseSignal.js'
 import { type HilosPathResolver } from '../../../src/routing/hilosAdmin.js'
@@ -1898,6 +1905,429 @@ describe('account erasure on the user card (HIL-1954)', () => {
     card.dispose()
     offErasure()
     offStanding()
+  })
+})
+
+describe('account merge progress on the user card', () => {
+  const merge = {
+    operationId: 41,
+    survivorUserId: 7,
+    loserUserId: 8,
+    state: 'preparing',
+    stage: 'preparing',
+    outcome: null,
+    given: true,
+    received: false,
+    choice: {
+      passwordFate: 'loser',
+      secondFactorFate: 'both',
+      expectedSurvivorHasSecondFactor: true,
+      expectedLoserHasSecondFactor: true,
+    },
+    refusal: null,
+    parts: [{ participant: 'profile', owner: 'user', userId: 7, done: false }],
+    waits: [{ participant: 'sessions', userId: 8 }],
+  } satisfies HilosAccountMergeProgress
+
+  describe('administrator snapshot and live frames', () => {
+    it('carries optional unknown merge data through the eager protocol schema', () => {
+      const frame = { userId: 7, accountStanding: wireStanding() }
+      expect(accountStandingStateSchema.parse(frame)).toEqual(frame)
+      for (const accountMerge of [merge, null, HIDDEN_VALUE, 'unreadable']) {
+        expect(
+          accountStandingStateSchema.parse({ ...frame, accountMerge }),
+        ).toEqual({ ...frame, accountMerge })
+      }
+    })
+
+    it('reads the initial section, section changes and full live replacements', () => {
+      const { scopes } = userStore()
+      const page = scopes.page()!
+      page.tables.upsert('userDetail', 7, { users: { type: 'user', id: 7 } })
+      const { connection, emit } = frameConnection()
+      const card = createHilosUserStanding({ scopes, connection })
+      expect(HILOS_USER_MERGE_SECTION).toBe('accountMerge')
+      expect(card.merge.get()).toBeNull()
+      page.data.set(HILOS_USER_MERGE_SECTION, merge)
+      page.data.set(HILOS_USER_STANDING_SECTION, wireStanding())
+      card.start()
+      expect(card.merge.get()).toEqual(merge)
+
+      const waiting = { ...merge, state: 'wait', parts: [] }
+      page.data.set(HILOS_USER_MERGE_SECTION, waiting)
+      expect(card.merge.get()).toEqual(waiting)
+
+      const refused = {
+        ...merge,
+        state: 'refusal',
+        refusal: { code: 'occupied', reason: 'Wait for the other operation.' },
+      }
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 7,
+        accountStanding: wireStanding({ shown: 'blocked', blocked: true }),
+        accountMerge: refused,
+      })
+      expect(card.merge.get()).toEqual(refused)
+      expect(card.standing.get()?.shown).toBe('blocked')
+
+      const ended = {
+        ...merge,
+        state: 'end',
+        stage: 'go',
+        outcome: 'completed',
+        received: true,
+        parts: [],
+        waits: [],
+      }
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 7,
+        accountStanding: wireStanding(),
+        accountMerge: ended,
+      })
+      expect(card.merge.get()).toEqual(ended)
+      expect(card.standing.get()?.shown).toBe('none')
+      card.dispose()
+    })
+  })
+
+  describe('viewer privacy', () => {
+    const hidden = {
+      ...merge,
+      operationId: HIDDEN_VALUE,
+      survivorUserId: HIDDEN_VALUE,
+      loserUserId: HIDDEN_VALUE,
+      stage: HIDDEN_VALUE,
+      outcome: HIDDEN_VALUE,
+      choice: HIDDEN_VALUE,
+      refusal: HIDDEN_VALUE,
+      parts: [{ ...merge.parts[0], userId: HIDDEN_VALUE }],
+      waits: [{ ...merge.waits[0], userId: HIDDEN_VALUE }],
+    }
+    const visible = {
+      ...merge,
+      operationId: null,
+      survivorUserId: null,
+      loserUserId: null,
+      stage: null,
+      outcome: null,
+      choice: null,
+      refusal: null,
+      parts: [{ ...merge.parts[0], userId: null }],
+      waits: [{ ...merge.waits[0], userId: null }],
+    }
+
+    it('keeps common progress and parts in snapshots and live frames', () => {
+      const { scopes } = userStore()
+      scopes.page()!.tables.upsert('userDetail', 7, {
+        users: { type: 'user', id: 7 },
+      })
+      const { connection, emit } = frameConnection()
+      const card = createHilosUserStanding({ scopes, connection })
+      scopes.page()!.data.set(HILOS_USER_MERGE_SECTION, hidden)
+      card.start()
+      expect(card.merge.get()).toEqual(visible)
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 7,
+        accountStanding: HIDDEN_VALUE,
+        accountMerge: { ...hidden, state: 'end', received: true },
+      })
+      expect(card.merge.get()).toEqual({
+        ...visible,
+        state: 'end',
+        received: true,
+      })
+      expect(card.standing.get()).toBeNull()
+      card.dispose()
+    })
+
+    it('normalizes individually hidden choice fields without inferring choices', () => {
+      expect(
+        readHilosAccountMerge({
+          ...merge,
+          choice: {
+            ...merge.choice,
+            passwordFate: HIDDEN_VALUE,
+            expectedLoserHasSecondFactor: HIDDEN_VALUE,
+          },
+        })?.choice,
+      ).toEqual({
+        ...merge.choice,
+        passwordFate: null,
+        expectedLoserHasSecondFactor: null,
+      })
+      expect(readHilosAccountMerge(HIDDEN_VALUE)).toBeNull()
+    })
+  })
+
+  describe('strict parsing, independent entries and tuple deduplication', () => {
+    it('rejects malformed envelopes without coercing numbers or flags', () => {
+      const invalid: unknown[] = [null, undefined, [], HIDDEN_VALUE, {}]
+      for (const key of ['operationId', 'survivorUserId', 'loserUserId']) {
+        for (const value of ['7', 0, -1, 1.5, NaN, Infinity, 2 ** 53, true]) {
+          invalid.push({ ...merge, [key]: value })
+        }
+      }
+      for (const [key, value] of [
+        ['state', 'completed'],
+        ['state', HIDDEN_VALUE],
+        ['stage', 'finished'],
+        ['outcome', 'success'],
+        ['given', 1],
+        ['received', 'false'],
+        ['parts', null],
+        ['waits', {}],
+        ['choice', {}],
+        ['choice', { ...merge.choice, expectedSurvivorHasSecondFactor: 1 }],
+        ['choice', { ...merge.choice, passwordFate: 'both' }],
+        ['choice', { ...merge.choice, secondFactorFate: 'loser' }],
+        ['refusal', { code: 'future_code', reason: 'Future reason' }],
+        ['refusal', { code: 'occupied', reason: 5 }],
+      ]) {
+        invalid.push({ ...merge, [key as string]: value })
+      }
+      for (const key of Object.keys(merge)) {
+        const missing: Record<string, unknown> = { ...merge }
+        delete missing[key]
+        invalid.push(missing)
+      }
+      for (const raw of invalid) {
+        expect(readHilosAccountMerge(raw)).toBeNull()
+      }
+    })
+
+    it('drops only invalid entries and deduplicates the complete part and wait tuple', () => {
+      const part = merge.parts[0]!
+      const wait = merge.waits[0]!
+      const otherOwner = { ...part, owner: 'session' }
+      const otherPerson = { ...part, userId: 8 }
+      const otherWait = { ...wait, userId: 7 }
+      expect(
+        readHilosAccountMerge({
+          ...merge,
+          parts: [
+            null,
+            { ...part, done: 'false' },
+            { ...part, userId: '7' },
+            { ...part, userId: 0 },
+            { ...part, userId: -1 },
+            { ...part, userId: 1.5 },
+            { ...part, owner: HIDDEN_VALUE },
+            part,
+            { ...part, done: true },
+            otherOwner,
+            otherPerson,
+          ],
+          waits: [
+            HIDDEN_VALUE,
+            { ...wait, userId: '8' },
+            { ...wait, userId: 0 },
+            { ...wait, userId: 1.5 },
+            { ...wait, participant: null },
+            wait,
+            { ...wait },
+            otherWait,
+          ],
+        }),
+      ).toEqual({
+        ...merge,
+        parts: [part, otherOwner, otherPerson],
+        waits: [wait, otherWait],
+      })
+    })
+
+    it('returns only declared fields at every boundary', () => {
+      expect(
+        readHilosAccountMerge({
+          ...merge,
+          future: 'extra',
+          choice: { ...merge.choice, future: true },
+          parts: [{ ...merge.parts[0], future: true }],
+          waits: [{ ...merge.waits[0], future: true }],
+          refusal: { code: 'occupied', reason: 'Try later.', future: true },
+        }),
+      ).toEqual({
+        ...merge,
+        refusal: { code: 'occupied', reason: 'Try later.' },
+      })
+      expect(readHilosAccountMerge({ ...merge, parts: [], waits: [] })).toEqual(
+        { ...merge, parts: [], waits: [] },
+      )
+    })
+  })
+
+  describe('the shown person', () => {
+    it('ignores unrelated signals and late frames naming another card', () => {
+      const { scopes } = userStore()
+      const page = scopes.page()!
+      page.tables.upsert('userDetail', 7, { users: { type: 'user', id: 7 } })
+      page.data.set(HILOS_USER_MERGE_SECTION, merge)
+      page.data.set(HILOS_USER_STANDING_SECTION, wireStanding())
+      const { connection, emit } = frameConnection()
+      const card = createHilosUserStanding({ scopes, connection })
+      card.start()
+      for (const [type, userId] of [
+        [SIGNAL_ACCOUNT_STANDING_STATE, 8],
+        ['unrelated_signal', 7],
+        [SIGNAL_ACCOUNT_STANDING_STATE, '7'],
+      ] as const) {
+        emit(type, {
+          userId,
+          accountStanding: wireStanding({ shown: 'blocked', blocked: true }),
+          accountMerge: null,
+        })
+        expect(card.merge.get()).toEqual(merge)
+        expect(card.standing.get()?.shown).toBe('none')
+      }
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 7,
+        accountStanding: wireStanding(),
+        accountMerge: null,
+      })
+      expect(card.merge.get()).toBeNull()
+      card.dispose()
+    })
+  })
+
+  describe('subscription lifecycle and a fresh page', () => {
+    it('restarts without duplicate listeners and clears memory and subscriptions on dispose', () => {
+      const { scopes } = userStore()
+      const page = scopes.page()!
+      page.tables.upsert('userDetail', 7, { users: { type: 'user', id: 7 } })
+      const { connection, emit } = frameConnection()
+      const card = createHilosUserStanding({ scopes, connection })
+      const changed = vi.fn()
+      const off = subscribeSignal(card.merge, changed)
+      card.start()
+      card.start()
+      page.data.set(HILOS_USER_MERGE_SECTION, merge)
+      expect(changed).toHaveBeenCalledTimes(1)
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 7,
+        accountStanding: wireStanding(),
+        accountMerge: { ...merge, waits: [] },
+      })
+      expect(changed).toHaveBeenCalledTimes(2)
+      card.start()
+      expect(card.merge.get()).toEqual(merge)
+      card.dispose()
+      expect(card.merge.get()).toBeNull()
+      changed.mockClear()
+      page.data.set(HILOS_USER_MERGE_SECTION, { ...merge, parts: [] })
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 7,
+        accountStanding: wireStanding(),
+        accountMerge: merge,
+      })
+      expect(changed).not.toHaveBeenCalled()
+      expect(card.merge.get()).toBeNull()
+      card.start()
+      expect(card.merge.get()).toEqual({ ...merge, parts: [] })
+      card.dispose()
+      off()
+    })
+
+    it('reads a new page snapshot after re-subscribe and on a fresh mount', () => {
+      const { scopes } = userStore()
+      const { connection, emit } = frameConnection()
+      const card = createHilosUserStanding({ scopes, connection })
+      scopes.page()!.tables.upsert('userDetail', 7, {
+        users: { type: 'user', id: 7 },
+      })
+      scopes.page()!.data.set(HILOS_USER_MERGE_SECTION, merge)
+      card.start()
+      const page = scopes.openPage(HilosPages.USER)
+      expect(card.merge.get()).toBeNull()
+      for (const late of [
+        merge,
+        { ...merge, state: 'end', stage: 'go', outcome: 'completed' },
+      ]) {
+        emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+          userId: 7,
+          accountStanding: wireStanding(),
+          accountMerge: late,
+        })
+        expect(card.merge.get()).toBeNull()
+      }
+      page.tables.upsert('userDetail', 8, { users: { type: 'user', id: 8 } })
+      const resumed = { ...merge, operationId: 42, state: 'wait' }
+      page.data.set(HILOS_USER_MERGE_SECTION, resumed)
+      expect(card.merge.get()).toEqual(resumed)
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 7,
+        accountStanding: wireStanding(),
+        accountMerge: merge,
+      })
+      expect(card.merge.get()).toEqual(resumed)
+      const received = { ...resumed, received: true }
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 8,
+        accountStanding: wireStanding(),
+        accountMerge: received,
+      })
+      expect(card.merge.get()).toEqual(received)
+      card.dispose()
+
+      const fresh = createHilosUserStanding({ scopes, connection })
+      fresh.start()
+      expect(fresh.merge.get()).toEqual(resumed)
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        userId: 8,
+        accountStanding: wireStanding(),
+      })
+      expect(fresh.merge.get()).toBeNull()
+      for (const raw of [null, undefined, HIDDEN_VALUE, { parts: [] }]) {
+        page.data.set(HILOS_USER_MERGE_SECTION, merge)
+        page.data.set(HILOS_USER_MERGE_SECTION, raw)
+        expect(fresh.merge.get()).toBeNull()
+        page.data.set(HILOS_USER_MERGE_SECTION, merge)
+        emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+          userId: 8,
+          accountStanding: wireStanding(),
+          accountMerge: raw,
+        })
+        expect(fresh.merge.get()).toBeNull()
+      }
+      fresh.dispose()
+    })
+  })
+
+  describe('server reasons and explicit terminal outcomes', () => {
+    it.each<HilosAccountMergeRefusal['code']>([
+      'missing',
+      'survivor_merged',
+      'loser_merged',
+      'being_deleted',
+      'occupied',
+      'password_fate_required',
+      'protection_changed',
+      'second_factor_fate_required',
+      'loser_without_second_factor',
+      'survivor_without_second_factor',
+      'loser_pending_removal',
+      'survivor_pending_removal',
+    ])('preserves the received reason for %s verbatim', (code) => {
+      const refusal = {
+        code,
+        reason: '  Сервер: выберите защиту заново.\nKeep these words.  ',
+      }
+      expect(
+        readHilosAccountMerge({ ...merge, state: 'refusal', refusal })?.refusal,
+      ).toEqual(refusal)
+    })
+
+    it('never infers completion from end, flags, null or hidden outcome', () => {
+      for (const outcome of ['not_started', null, HIDDEN_VALUE, 'completed']) {
+        const read = readHilosAccountMerge({
+          ...merge,
+          state: 'end',
+          received: true,
+          outcome,
+        })
+        expect(read?.state).toBe('end')
+        expect(read?.outcome).toBe(outcome === HIDDEN_VALUE ? null : outcome)
+        expect(read?.outcome === 'completed').toBe(outcome === 'completed')
+      }
+    })
   })
 })
 

@@ -1,0 +1,19 @@
+{
+    "format": 1,
+    "id": "20261118115802572623_HIL-2003_merge_observation_index",
+    "parts": [
+        {
+            "unit": "account_erasure_operation",
+            "up": "account_erasure_operation.sql",
+            "down": "account_erasure_operation_down.sql",
+            "requires": [
+                {
+                    "changeId": "20261113230943441275_HIL-1942_account_erasure_final_refusals",
+                    "unit": "account_erasure_operation"
+                }
+            ],
+            "afterStubUpSha256": "1eba2674535a5f234d6c8e8fd40a3074af71cad5ff2bf3556f5c35bd600663fc",
+            "afterStubDownSha256": "76829ea1906bd7a43c979d586f230a1bdc15c7a6aa697a7c42dc1e659efb1a80"
+        }
+    ]
+}

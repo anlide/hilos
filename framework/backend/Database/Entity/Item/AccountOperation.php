@@ -75,6 +75,7 @@ class AccountOperation extends Entity
         'uq_account_operation_open_loser' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::open_loser_user_id]],
         'idx_account_operation_open' => [Entity::INDEX_COLUMNS => [self::kind, self::finished_at, self::id]],
         'idx_account_operation_root' => [Entity::INDEX_COLUMNS => [self::root_user_id, self::id]],
+        'idx_account_operation_loser' => [Entity::INDEX_COLUMNS => [self::loser_user_id, self::id]],
     ];
     public const string _setVia = Entity::SET_STANDALONE;
     public const bool _setRoot = true;

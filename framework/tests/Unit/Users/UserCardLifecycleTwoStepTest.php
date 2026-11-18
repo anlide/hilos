@@ -30,6 +30,7 @@ use Hilos\Hilos;
 use Hilos\Pages\Users\AbstractHilosUserPage;
 use Hilos\Tests\Unit\Pages\Users\HilosUserPageTestDb;
 use Hilos\Users\AccountErasureProgressResolver;
+use Hilos\Users\AccountMergeProgressResolver;
 use Hilos\Users\AccountStandingResolver;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
@@ -63,6 +64,7 @@ final class UserCardLifecycleTwoStepTest extends TestCase
         Hilos::$db = new HilosUserPageTestDb([12]);
         AccountStandingResolver::forgetAll();
         AccountErasureProgressResolver::forgetAll();
+        AccountMergeProgressResolver::forgetAll();
         Hilos::initBrowser();
         try {
             $page = new UserCardLifecycleTestPage(new UserCardLifecycleTestPageAgent());
@@ -80,6 +82,7 @@ final class UserCardLifecycleTwoStepTest extends TestCase
         } finally {
             AccountStandingResolver::forgetAll();
             AccountErasureProgressResolver::forgetAll();
+            AccountMergeProgressResolver::forgetAll();
             Hilos::$db = $db;
             Hilos::$setting = $settings;
         }

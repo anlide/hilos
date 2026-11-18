@@ -533,8 +533,10 @@ page answers each press.
 For the [split merge](account-operations.md#merge-cutover-and-observation), tracked
 success will mean durable end, not acceptance of a request
 (not in the code yet — HIL-2008); the first page reply and live updates carry its
-state, waiting and refusal (not in the code yet — HIL-2003). That path becomes
-live only at the common merge switch (not in the code yet — HIL-1999).
+saved observation, waits and safe refusal (HIL-2003; see
+[the card carriers](account-standing.md#the-wire)). This card read path stays
+read-only; legacy production callers remain until the common switch (not in the
+code yet — HIL-1999).
 
 **An operation with two entrances: the gatekeeper's lock closes the browser one
 only.** The writer keeps its own check for the entrance that has no page. The

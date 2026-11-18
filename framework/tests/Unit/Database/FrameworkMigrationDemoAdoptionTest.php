@@ -26,10 +26,12 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
 
     private const string ACCOUNT_DELETION_START_CHANGE = '20261112235132210121_HIL-1939_account_deletion_start';
 
-    /** Operation stub snapshot the HIL-1987 parts were published with; the HIL-1942 part declares the current one. */
+    /** Operation stub snapshot the HIL-1987 parts were published with; later operation parts declare the current one. */
     private const string ACCOUNT_OPERATION_TABLES_UP_SHA256 = 'b45d411a90362b9cba870265e8071e4870dc3c69ff22ea7df450bedb44f1beba';
 
     private const string ACCOUNT_ERASURE_FINAL_REFUSALS_CHANGE = '20261113230943441275_HIL-1942_account_erasure_final_refusals';
+
+    private const string MERGE_OBSERVATION_CHANGE = '20261118115802572623_HIL-2003_merge_observation_index';
 
     private const string EXPORT_LEGAL_MOMENTS_CHANGE = '20261114014747194725_HIL-1925_export_legal_moments';
 
@@ -336,6 +338,9 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
                 $fence = $this->fenceInstallPair($project->root, 27, $catalog, $schema);
                 $origins[] = $fence;
                 $coveredParts[] = $fence->parts[0];
+                $mergeObservation = $this->assertMergeObservationPair($project->root, 28, $catalog, $schema);
+                $origins[] = $mergeObservation;
+                $coveredParts[] = $mergeObservation->parts[0];
                 $selectedUnits = array_column($schema->selectedUnits($project->facade), 'key');
                 self::assertSame(
                     $this->partRecords($catalog->partsForUnits($selectedUnits)),
@@ -978,6 +983,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $copyBase = $project->root . '/' . sprintf('%03d', $copyIndices[$index]) . '_framework_install_account_merge_copy';
             $origins[] = $catalog->verifyPair(FsPath::read($copyBase . '.sql'), FsPath::read($copyBase . '_down.sql'));
             $origins[] = $this->fenceInstallPair($project->root, $copyIndices[$index] + 1, $catalog, $schema);
+            $mergeObservationIndices = [175, 132, 132, 114, 113, 115];
+            $origins[] = $this->assertMergeObservationPair($project->root, $mergeObservationIndices[$index], $catalog, $schema);
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);
@@ -1223,6 +1230,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $momentChanges[] = $this->copyInstallPair($root, 16, $catalog, $schema);
         $fenceBase = $root . '/017_framework_install_account_merge_fence';
         $momentChanges[] = $this->fenceInstallPair($root, 17, $catalog, $schema);
+        $momentChanges[] = $this->assertMergeObservationPair($root, 18, $catalog, $schema);
         $probeUnit = $schema->unit('probe_value');
         $probeBase = $root . '/015_framework_install_probe_value';
         $probeUp = FsPath::read($probeBase . '.sql');
@@ -1258,6 +1266,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $copyBase . '_down.sql',
             $fenceBase . '.sql',
             $fenceBase . '_down.sql',
+            ...$this->mergeObservationFiles($root, 18),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1326,6 +1335,8 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $seen[] = $this->assertExportLegalMomentPair(
                 $project->root, $acceptanceExportMomentStarts[$index], 'legal_acceptance_export', $catalog, $schema,
             );
+            $mergeObservationIndices = [7 => 30, 9 => 21, 10 => 18];
+            $seen[] = $this->assertMergeObservationPair($project->root, $mergeObservationIndices[$index], $catalog, $schema);
             $selected = array_column($schema->selectedUnits($project->facade), 'key');
             $onDisk = [];
             foreach (glob($project->root . '/*_down.sql') as $down) {
@@ -1497,6 +1508,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $momentChanges[] = $this->copyInstallPair($root, 14, $catalog, $schema);
         $fenceBase = $root . '/015_framework_install_account_merge_fence';
         $momentChanges[] = $this->fenceInstallPair($root, 15, $catalog, $schema);
+        $momentChanges[] = $this->assertMergeObservationPair($root, 16, $catalog, $schema);
         self::assertSame([
             $base . '.sql',
             $base . '_down.sql',
@@ -1511,6 +1523,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $copyBase . '_down.sql',
             $fenceBase . '.sql',
             $fenceBase . '_down.sql',
+            ...$this->mergeObservationFiles($root, 16),
         ], glob($root . '/*.sql'));
         $selectedUnits = array_column($schema->selectedUnits($facade), 'key');
         self::assertContains('change_log', $selectedUnits);
@@ -1671,7 +1684,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
 
     /**
      * The safe reasons of refused erasure finals arrive as a change continuing the operation chain past
-     * the HIL-1987 drop part, and declare the stubs current now (HIL-1942).
+     * the HIL-1987 drop part, retaining their published stub snapshot (HIL-1942).
      *
      * @param string $root Migration track of the project
      * @param int $number Number of the change pair
@@ -1695,12 +1708,54 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         self::assertSame([$source->toArray()], $this->partRecords($change->parts));
         self::assertFalse($source->introducesUnit);
         self::assertSame(['20261109072435317522_HIL-1987_drop_account_erasure_tables/account_erasure_operation'], $source->requires);
-        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('account_erasure_operation')->upPath)),
-            $source->afterStubUpSha256);
+        self::assertSame('1623d9d868531387f907bbf49391dfd96fcdbae6174b5b1c54092e570a82c6bc', $source->afterStubUpSha256);
         self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($schema->unit('account_erasure_operation')->downPath)),
             $source->afterStubDownSha256);
 
         return $change;
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $number Installer-assigned pair number
+     * @param FrameworkMigrationCatalog $catalog Immutable framework sources
+     * @param FrameworkSchemaCatalog $schema Current framework stubs
+     * @return FrameworkMigrationOrigin Exact loser index change continuing the operation chain
+     */
+    private function assertMergeObservationPair(
+        string $root,
+        int $number,
+        FrameworkMigrationCatalog $catalog,
+        FrameworkSchemaCatalog $schema,
+    ): FrameworkMigrationOrigin {
+        [$up, $down] = $this->mergeObservationFiles($root, $number);
+        $origin = $catalog->verifyPair(FsPath::read($up), FsPath::read($down));
+        self::assertSame(FrameworkMigrationOrigin::CHANGE, $origin->kind);
+        self::assertSame(['account_erasure_operation'], $origin->units);
+        self::assertCount(1, $origin->parts);
+        self::assertSame(self::MERGE_OBSERVATION_CHANGE . '/account_erasure_operation', $origin->parts[0]->key());
+        $source = $catalog->part(self::MERGE_OBSERVATION_CHANGE, 'account_erasure_operation');
+        self::assertSame([$source->toArray()], $this->partRecords($origin->parts));
+        self::assertFalse($source->introducesUnit);
+        self::assertSame([self::ACCOUNT_ERASURE_FINAL_REFUSALS_CHANGE . '/account_erasure_operation'], $source->requires);
+        $unit = $schema->unit('account_erasure_operation');
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($unit->upPath)), $source->afterStubUpSha256);
+        self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($unit->downPath)), $source->afterStubDownSha256);
+
+        return $origin;
+    }
+
+    /**
+     * @param string $root Migration track of the project
+     * @param int $number Installer-assigned pair number
+     * @return list<string> Its two files in glob order
+     */
+    private function mergeObservationFiles(string $root, int $number): array
+    {
+        $base = $root . '/' . sprintf('%03d', $number)
+            . '_framework_change_d83c78e7b0f1299c2b7d6eb88773ab72a7044c88a9b6a475e2dee74c5b7f8243';
+
+        return [$base . '.sql', $base . '_down.sql'];
     }
 
     /**

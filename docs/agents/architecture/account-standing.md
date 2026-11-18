@@ -232,8 +232,10 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   (`AbstractHilosUserPage::ACCOUNT_STANDING`) and `accountErasure`
   (`ACCOUNT_ERASURE`) of the person on the card; after that,
   `hilos_account_standing_state` (WS_USER,
-  `{userId, accountStanding, accountErasure}`, `AccountStandingStateSignalData`)
-  brings each change to either block (HIL-1954). `accountErasure` is `null`
+  `{userId, accountStanding, accountErasure, accountMerge?}`,
+  `AccountStandingStateSignalData`) brings each change to those blocks
+  (HIL-1954, HIL-2003). The trailing `accountMerge` block is optional at the
+  DTO boundary; a missing value reads as `null`. `accountErasure` is `null`
   without a begun, open erasure, otherwise
   `{startedAt, parts: [{participant, owner, userId, done}], waits: [{participant, userId}], refusals: [{userId, table}]}`.
   `startedAt` is the operation request's `started_at` in epoch milliseconds;
@@ -255,6 +257,65 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   `done` is true when the assignment has a persisted result. The coordinator
   records a safe reason when it answers a final refusal (HIL-1950); the live
   erasure state began with HIL-1952.
+
+  `AccountMergeProgressResolver::of($userId)` selects the highest-id open merge
+  naming either side, or, when none is open, the latest durable merge naming
+  either side, including a closed one. `forOperation($id)` reads only that
+  operation, and `forgetAll()` clears cached answers, absence and shape failures
+  for both lookup paths. A legacy merge tombstone is not a new operation. This
+  read model grants no merge mutation or account-discovery rights.
+  `AccountMergeProgress` is its allowlisted contract. Browser states are
+  `preparing`, `wait`, `refusal` and `end`. Saved stages are `preparing`, `go`
+  and `cancelling`; outcome is `completed`, `not_started` or `null`. Refusal has
+  display priority and may remain visible while release assignments are pending.
+  Only `end` with outcome `completed` is success; completed parts alone do not
+  finish the operation.
+
+  The resolver validates canonical duties and project expectations against
+  their operation, stage, key, owner, account and payload. A part is done only
+  when its exact assignment has a result bound to that assignment and owner and
+  accepted by the result contract. A carried preparing expectation keeps its
+  original assignment id and stage; an expected participant without an
+  assignment is a wait. The server formats refusal reasons from existing
+  templates and labels; the frontend reader preserves the reason verbatim. The
+  private handover copy, raw result payloads, admission details, owner indexes
+  and secrets never enter the projection.
+
+  `AccountMergeProgress::wireFields()` is the source map for both carriers.
+  Administrators receive the full allowlist; viewers have private column
+  origins and refusal reason hidden while common progress remains readable.
+  The TypeScript reader maps hidden private values to `null` without erasing
+  common progress, and neither hidden nor null means success.
+
+  The initial page response carries `data.accountMerge`; the existing frame
+  carries the same block. No additional request, frame, route, group or grant
+  is introduced. Per-process subscription memory keeps the last full card
+  blocks. Each tick compares standing, erasure and merge once per card and sends at most
+  one replacement frame when any changes; equal blocks are quiet. The current
+  page and view gate is checked for every live frame, and a deleted person gets
+  no card frame that could revive the page.
+
+  The resolver's process cache holds only derived projections, absence and
+  malformed-shape failures, not RT truth. Its sources are the mounted
+  `Hilos::$db` collections `accountOperations`, `accountOperationAssignments`,
+  `accountOperationResults`, `users` and `userMerges`.
+  Accepted source changes and rollback reversals invalidate it; user updates
+  invalidate only when the name changes, so activity-only updates are quiet.
+  Local source mirroring and accepted remote `DB_SYNC` ingress use the same
+  predicate, and index-agent start and stop clear the cache. Audience memory is
+  separately limited to its process-local subscriptions.
+
+  An initial read failure refuses the page with `PageInternalErrorException`
+  and no engine text. A live read failure produces a null merge block and one
+  safe log entry for that failure episode; a repaired source clears the episode and
+  progress can resume. Standing and erasure blocks continue to be delivered.
+  The shared signal schema keeps `accountMerge` optional and unknown without
+  importing the admin reader. `readHilosAccountMerge()` and its types are lazy
+  exports from `@hilos/core/admin/users`. It drops malformed parts or waits
+  alone, keeps the first readable duplicate, and strips unknown fields. The core card
+  reader takes the page snapshot and then frames for the current user row;
+  restart or re-subscribe reads the fresh page scope, and dispose clears its
+  values.
 - **Refusal.** `account_frozen` with status 403, as `errorCode` of
   `subscription_page_error` and of `action_error`. It is not a 401 and opens no
   sign-in.
