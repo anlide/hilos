@@ -115,6 +115,76 @@ only.
 Every list and every number on these pages changes by itself when another
 window changes it.
 
+### The shop front
+
+What a buyer sees, built on the catalog above. It is a plan, not the running
+demo: what already works is listed under "Today" above. The shop front is
+open to a guest and to a signed-in person alike.
+
+- **Home**, `/`: the categories as tiles in the administrators' order —
+  picture, name, description and "N products"; a tile opens its category.
+  With no category yet the page says "The shop is being set up".
+- **A category**, `/category/{slug}`: breadcrumbs, name, description and its
+  products in one live table shown two ways, "Table" and "Tiles" —
+  [the framework's table views](../../docs/agents/frontend/table-subscription.md#the-table-and-tiles-views):
+  a picture, "Product", "Kind", "Price" and "Availability"; a filter by name,
+  by kind and by availability, an order by price ("Order" in Tiles), and
+  pages. By default it shows every product whatever its availability: a stock
+  item at zero stays with "Out of stock", and the availability filter is how
+  a buyer hides what is not there.
+- **A product**, `/product/{slug}`: breadcrumbs through its category,
+  picture, name, kind, availability, price and description, and how many
+  others are looking at it now.
+
+Availability reads "One of a kind" for a unique piece, and "In stock: N",
+"Only N left" or "Out of stock" for a stock item. An unknown category or
+product is a 404.
+
+Every open page follows the catalog by itself, without a reload:
+
+- **Home**: a category added, renamed, moved or removed, and the number of
+  products in each;
+- **A category**: a row's price and availability; a new product of the
+  category comes in through the table's live row;
+- **A product**: its price, availability and total, description and picture,
+  and the number of people looking at it.
+
+A renamed category or product still opens at its old address: the page
+answers that its address has moved — a framework answer, like a 404 — and the
+browser shows it at the new address without a new entry in the history. A
+page that is open during the rename moves by itself.
+
+The page of a product is served by an agent of that one product, found by the
+page's address —
+[a page of one instance](../../docs/agents/signals/routing.md#per-instance-page-subscriptions).
+It comes up with the first visitor and goes to sleep a while after the last
+one leaves; it reads the product and its stock from their libraries and
+writes nothing to them. It also counts the people looking at the page —
+people, not tabs: two tabs of one person are one viewer, and a guest counts
+by their session, wherever in the cluster they are connected. The product
+page shows the count without the viewer — "N others are looking at it now"
+or "Nobody else is looking at it now"; the administrators' product page shows
+the whole count on its "On the shop front" line, and its "See in the shop"
+opens the product here. After a rename the old address's agent answers that
+the address has moved, and the count gathers again at the new address.
+
+What the shop front does not show:
+
+- **A unique piece that is "Not in a warehouse yet"**: it is not in its
+  category, not counted in "N products", its page is a 404, and its
+  administrators' page has no "See in the shop".
+- **A sold unique piece**: its row leaves the category on every open page
+  through the table's live row (selling itself arrives with payment).
+
+What later phases bring is not on the shop front until then — no stand-ins
+and no dimmed buttons:
+
+- **With the cart**: "Add" and "In cart" in a category, "Add to cart" and
+  "In your cart — go to cart" on a product, "In N carts" next to who is
+  looking, and the cart with its count in the header;
+- **With payment**: "Sold" for a unique piece;
+- **With search**: the search field in the header and the search page.
+
 ## Change Log
 
 The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
