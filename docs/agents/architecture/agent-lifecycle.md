@@ -196,6 +196,21 @@ public function hasWorkInFlight(): bool
 }
 ```
 
+`AbstractUserAgent` uses this hook for
+[prepared merge source finishing](account-operations.md#the-prepared-loser-cleanup-and-finishing).
+Its `onStart()` restores the source context from immutable DB proofs before
+ordinary trust materialization. Pending cleanup or an unresolved lookup pins
+the instance locally; `hasWorkInFlight()` reads that pin without querying DB.
+Committed cleanup or exact saved replay clears the pin and requests the ordinary
+stop. A cleaned source skips ordinary startup trust work and has no idle pin;
+legacy tombstones without a prepared give retain their immediate-stop path.
+Source stop is independent of operation end: the
+[prepared holder end](account-operations.md#the-prepared-merge-end) waits for the
+other owners' committed results and current copy absence. Completed replay
+preserves the terminal timestamps, and saved project results skip further work
+on the original expectation.
+Production coordination remains HIL-2000 and live cutover remains HIL-1999.
+
 The stop is the ordinary one — `onStop()`, truth sources handed back, the
 daemon told — and never a path of its own. Under protected mode nothing is
 stopped for idleness: the freeze has already refused starts, and stopping under

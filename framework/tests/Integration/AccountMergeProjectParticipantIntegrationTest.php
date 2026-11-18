@@ -11,6 +11,10 @@ use Hilos\Auth\AccountOperation\AccountErasurePart;
 use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
 use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergePreparationResult;
+use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Database\DatabaseException;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergeOpening;
 use Hilos\Auth\AccountOperation\AccountMergePart;
@@ -28,7 +32,6 @@ use Hilos\Auth\AccountOperation\AccountOperationExpectedSet;
 use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
-use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\AccountOperationStepRefusal;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountOperationStepRefusedException;
@@ -55,7 +58,6 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Entity;
-use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\PhpType;
@@ -65,7 +67,6 @@ use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Hilos;
 use Hilos\Users\AccountErasure;
-use Hilos\Users\SecondFactorFate;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Throwable;
 
@@ -75,10 +76,15 @@ use Throwable;
  */
 final class AccountMergeProjectParticipantIntegrationTest extends FrameworkIntegrationTestCase
 {
-    private const array TABLES = ['hilos_account_operation', 'hilos_account_operation_assignment', 'hilos_account_operation_result'];
+    use PersonAgentFrames;
+
+    private const array TABLES = [
+        'hilos_user', 'hilos_identity', 'hilos_passkey_credential', 'hilos_second_factor', 'hilos_second_factor_backup_code',
+        'hilos_second_factor_setting', 'hilos_second_factor_reset', 'hilos_second_factor_trust', 'hilos_second_factor_trust_restriction',
+        'hilos_user_merge', 'hilos_account_deletion', 'hilos_account_operation', 'hilos_account_operation_assignment',
+        'hilos_account_operation_result', 'hilos_account_merge_copy', 'hilos_account_merge_fence',
+    ];
     private const string COORDINATOR_ID = 'merge-project-coordinator';
-    /** Assignment key of the owner's part in these tests; HIL-2000 chooses the real key. */
-    private const string PART_KEY = 'merge_part:merge_notes';
     private const int PEER_INDEX = 2;
     private const int REQUEST_ID = 101;
     private const int SURVIVOR_ID = 7;
@@ -90,7 +96,6 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
     private int $frameToken;
     private AccountMergeProjectNoteKeeper $keeper;
     private AccountMergeProjectStrayOwner $stray;
-    private AccountMergeProjectLoser $loser;
 
     /** Raises the operation tables and the project's notes, mounts them and acts as the session holder. */
     protected function setUp(): void
@@ -111,14 +116,13 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
         Hilos::$db->configure();
         $this->keeper = new AccountMergeProjectNoteKeeper();
         $this->stray = new AccountMergeProjectStrayOwner();
-        $this->loser = new AccountMergeProjectLoser(self::LOSER_ID);
         OwnershipDeclaration::claimAll($this->keeper);
         OwnershipDeclaration::claimAll($this->stray);
-        OwnershipDeclaration::claimAll($this->loser);
         OwnershipDeclaration::claimDb(AccountMergeProjectCoordinator::class, self::COORDINATOR_ID);
         $this->frameToken = ExecutionContext::push(new ExecutionFrame(agentId: self::COORDINATOR_ID));
         AccountMergeProjectHilos::initBrowser();
         $this->connectPeer();
+        Database::sqlRun("INSERT INTO `hilos_user` (`id`, `name`) VALUES (7, 'Survivor'), (9, 'Loser'), (11, 'Other')");
     }
 
     /** Ends transactions before DDL, releases every claim and returns the previous context and application. */
@@ -133,7 +137,8 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
             $this->previousApp::initBrowser();
             Hilos::resetBrowser();
             ExecutionContext::pop($this->frameToken);
-            foreach ([$this->keeper->getId(), $this->stray->getId(), $this->loser->getId(), self::COORDINATOR_ID] as $agentId) {
+            $this->releasePersonAgents();
+            foreach ([$this->keeper->getId(), $this->stray->getId(), self::COORDINATOR_ID] as $agentId) {
                 TruthSourceRegistry::unregisterAgent($agentId);
                 SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agentId));
             }
@@ -320,8 +325,14 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
         $operation = $this->mergeAfterFact();
         $assignmentId = self::partAssignment($operation, self::LOSER_ID);
 
+        $original = Hilos::$db->accountOperationAssignments[$assignmentId];
+        self::assertSame(AccountMergeStage::Preparing->value, $original->stage);
+        self::assertTrue(AccountMergeProjectStep::isCarriedAssignment($original));
         $record = $this->asAgent($this->keeper, fn () => AccountMergeProjectStep::run($this->keeper, $assignmentId));
 
+        self::assertSame($assignmentId, $record->assignmentId);
+        self::assertSame(AccountMergeStage::Preparing->value, $original->stage);
+        self::assertSame($this->keeper->getId(), $original->owner->agentId());
         self::assertFalse(Database::hasOpenTransactions());
         self::assertSame([self::SURVIVOR_ID, self::SURVIVOR_ID, self::THIRD_ID, self::SURVIVOR_ID], self::storedNoteOwners());
         self::assertEquals([new AccountMergePart($operation->id, self::SURVIVOR_ID, self::LOSER_ID)], $this->keeper->parts);
@@ -369,6 +380,8 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
         $assignmentId = self::partAssignment($this->mergeAfterFact(), self::LOSER_ID);
         $record = $this->asAgent($this->keeper, fn () => AccountMergeProjectStep::run($this->keeper, $assignmentId));
         self::seedNote(self::LOSER_ID);
+        $operation = Hilos::$db->accountOperationAssignments[$assignmentId]->operation;
+        self::assertTrue($operation->actions->finish(AccountMergeStage::Go->value, AccountOperationOutcome::Completed));
 
         $repeat = $this->asAgent($this->keeper, fn () => AccountMergeProjectStep::run($this->keeper, $assignmentId));
 
@@ -377,6 +390,35 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
         self::assertCount(1, $this->keeper->parts);
         self::assertSame([self::SURVIVOR_ID, self::LOSER_ID], self::storedNoteOwners());
         self::assertCount(1, self::storedResultsOf($assignmentId));
+    }
+
+    /** A saved result still belongs only to its exact project owner and strict rows-moved payload. */
+    public function testSavedReplayRejectsForeignOwnerAndMalformedResultBindings(): void
+    {
+        $operation = $this->mergeAfterFact();
+        $assignmentId = self::partAssignment($operation, self::LOSER_ID);
+        $record = $this->asAgent($this->keeper, fn () => AccountMergeProjectStep::run($this->keeper, $assignmentId));
+        try {
+            $this->asAgent($this->stray, fn () => AccountMergeProjectStep::run($this->stray, $assignmentId));
+            self::fail('Another owner borrowed a saved project result');
+        } catch (AccountOperationStepRefusedException $failure) {
+            self::assertSame(AccountOperationStepRefusal::ForeignAssignment, $failure->reason);
+        }
+        foreach (['owner_agent_id' => $this->stray->getId(), 'payload_json' => '{}'] as $column => $value) {
+            Database::sqlRun('UPDATE `hilos_account_operation_result` SET `' . $column . '` = ? WHERE `assignment_id` = ?',
+                [$value, $assignmentId]);
+            Hilos::$db = new AccountMergeProjectContext();
+            Hilos::$db->configure();
+            try {
+                $this->asAgent($this->keeper, fn () => AccountMergeProjectStep::run($this->keeper, $assignmentId));
+                self::fail('Malformed saved project result replayed');
+            } catch (InvalidFormatException) {
+            }
+            Database::sqlRun('UPDATE `hilos_account_operation_result` SET `owner_agent_id` = ?, `payload_json` = ? WHERE `assignment_id` = ?',
+                [$this->keeper->getId(), $record->payloadJson, $assignmentId]);
+        }
+        self::assertCount(1, $this->keeper->parts);
+        self::assertSame([], $this->stray->parts);
     }
 
     /** Another owner taking the keeper's assignment is refused before any work, and the notes stay. */
@@ -428,11 +470,110 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
         self::seedNote(self::LOSER_ID);
         $operation = AccountMergeOpening::open(self::SURVIVOR_ID, self::LOSER_ID, self::choice());
         self::giveAssignment($operation);
+        $initial = AccountOperationExpectedSet::of($operation->id)->expected()[0];
+        self::assertFalse(AccountMergeProjectStep::isCarriedAssignment($initial));
 
         $this->assertRefusedBeforeWork(
             self::partAssignment($operation, self::LOSER_ID),
             'An account merge part waits for the loser to give its rows away.',
         );
+    }
+
+    /** A newly registered owner uses its canonical current-go expectation without a second preparing obligation. */
+    public function testCurrentGoExpectationAlsoRunsWithCanonicalGive(): void
+    {
+        AccountMergeProjectUnlistedHilos::initBrowser();
+        self::seedNote(self::LOSER_ID);
+        $operation = $this->mergeAfterFact();
+        AccountMergeProjectHilos::initBrowser();
+        $assignments = AccountMergeOpening::reconcile($operation);
+        self::assertCount(1, $assignments);
+        self::assertSame(AccountMergeStage::Go->value, $assignments[0]->stage);
+        self::assertFalse(AccountMergeProjectStep::isCarriedAssignment($assignments[0]));
+        $record = $this->asAgent($this->keeper, fn () => AccountMergeProjectStep::run($this->keeper, $assignments[0]->id));
+        self::assertSame($assignments[0]->id, $record->assignmentId);
+        self::assertSame([self::SURVIVOR_ID], self::storedNoteOwners());
+    }
+
+    /** @return iterable<string, array{string}> Invalid immutable coordinates and source proofs */
+    public static function carriedDefects(): iterable
+    {
+        foreach (['key', 'payload', 'pair', 'owner', 'wait', 'prepare', 'release', 'erasure', 'cancelling', 'terminal',
+            'missing-give', 'give-owner', 'give-payload', 'give-result-owner', 'give-result-payload', 'give-wait'] as $defect) {
+            yield $defect => [$defect];
+        }
+    }
+
+    /** @param string $defect One corrupted address, stage or source proof */
+    #[DataProvider('carriedDefects')]
+    public function testCarriedAdmissionNeverOpensOtherDutiesOrMalformedProofs(string $defect): void
+    {
+        self::seedNote(self::LOSER_ID);
+        $operation = $this->mergeAfterFact();
+        $assignmentId = self::partAssignment($operation, self::LOSER_ID);
+        $give = Hilos::$db->accountOperationAssignments->byIdentity($operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Give->value);
+        if ($defect === 'prepare') {
+            Database::sqlRun('DELETE FROM `hilos_account_operation_assignment` WHERE `operation_id` = ? AND `assignment_key` = ?',
+                [$operation->id, AccountMergeDuty::PrepareLoser->value]);
+        }
+        match ($defect) {
+            'key' => Database::sqlRun("UPDATE `hilos_account_operation_assignment` SET `assignment_key` = 'expect:other' WHERE `id` = ?",
+                [$assignmentId]),
+            'payload' => Database::sqlRun("UPDATE `hilos_account_operation_assignment` SET `payload_json` = '{}' WHERE `id` = ?", [$assignmentId]),
+            'pair' => Database::sqlRun('UPDATE `hilos_account_operation` SET `root_user_id` = `loser_user_id` WHERE `id` = ?', [$operation->id]),
+            'owner' => Database::sqlRun("UPDATE `hilos_account_operation_assignment` SET `owner_type` = 'stray' WHERE `id` = ?", [$assignmentId]),
+            'wait', 'prepare', 'release' => Database::sqlRun('UPDATE `hilos_account_operation_assignment` SET `assignment_key` = ? WHERE `id` = ?',
+                [match ($defect) { 'wait' => 'wait:merge_notes:9', 'prepare' => AccountMergeDuty::PrepareLoser->value,
+                    'release' => AccountMergeDuty::ReleaseLoser->value }, $assignmentId]),
+            'erasure' => Database::sqlRun("UPDATE `hilos_account_operation` SET `kind` = 'erasure' WHERE `id` = ?", [$operation->id]),
+            'cancelling' => $operation->actions->advance(AccountMergeStage::Go->value, AccountMergeStage::Cancelling->value),
+            'terminal' => $operation->actions->finish(AccountMergeStage::Go->value, AccountOperationOutcome::Completed),
+            'missing-give' => Database::sqlRun('DELETE FROM `hilos_account_operation_result` WHERE `assignment_id` = ?', [$give->id]),
+            'give-owner' => Database::sqlRun("UPDATE `hilos_account_operation_assignment` SET `owner_index` = '7' WHERE `id` = ?", [$give->id]),
+            'give-payload' => Database::sqlRun('UPDATE `hilos_account_operation_assignment` SET `payload_json` = ? WHERE `id` = ?',
+                ['{"extra":true}', $give->id]),
+            'give-result-owner' => Database::sqlRun(
+                "UPDATE `hilos_account_operation_result` SET `owner_agent_id` = 'other' WHERE `assignment_id` = ?",
+                [$give->id]),
+            'give-result-payload' => Database::sqlRun(
+                "UPDATE `hilos_account_operation_result` SET `payload_json` = '{}' WHERE `assignment_id` = ?", [$give->id]),
+            'give-wait' => Database::sqlRun('UPDATE `hilos_account_operation_result`'
+                . " SET `payload_json` = JSON_SET(`payload_json`, '$.effectiveWaitDays', 3) WHERE `assignment_id` = ?", [$give->id]),
+        };
+        Hilos::$db = new AccountMergeProjectContext();
+        Hilos::$db->configure();
+        $assignment = Hilos::$db->accountOperationAssignments[$assignmentId];
+        self::assertFalse(AccountMergeProjectStep::isCarriedAssignment($assignment));
+        $before = self::snapshot();
+        try {
+            $this->asAgent($this->keeper, fn () => AccountMergeProjectStep::run($this->keeper, $assignmentId));
+            self::fail('Malformed project assignment ran');
+        } catch (ValidationException|InvalidFormatException|AccountOperationStepRefusedException) {
+        }
+        if ($defect === 'erasure') {
+            try {
+                $this->asAgent($this->keeper, static fn () => AccountOperationParticipantStep::run(
+                    $assignmentId, static fn () => throw new LogicException('Old-stage erasure work ran'),
+                ));
+                self::fail('Old-stage erasure was admitted');
+            } catch (AccountOperationStepRefusedException $failure) {
+                self::assertSame(AccountOperationStepRefusal::ClosedStage, $failure->reason);
+            }
+        }
+        self::assertSame([], $this->keeper->parts);
+        self::assertSame($before, self::snapshot());
+    }
+
+    /** A storage failure propagates instead of admitting an old-stage assignment. */
+    public function testCarriedAdmissionDoesNotTurnStorageFailureIntoPermission(): void
+    {
+        $operation = $this->mergeAfterFact();
+        $assignment = Hilos::$db->accountOperationAssignments[self::partAssignment($operation, self::LOSER_ID)];
+        Database::sqlRun('DROP TABLE `hilos_account_operation_result`');
+        Hilos::$db = new AccountMergeProjectContext();
+        Hilos::$db->configure();
+        $this->expectException(DatabaseException::class);
+        AccountMergeProjectStep::isCarriedAssignment($assignment);
     }
 
     /**
@@ -458,11 +599,13 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
     private function mergeAfterFact(): AccountOperation
     {
         $operation = AccountMergeOpening::open(self::SURVIVOR_ID, self::LOSER_ID, self::choice());
+        foreach ([[self::SURVIVOR_ID, AccountMergeDuty::PrepareSurvivor], [self::LOSER_ID, AccountMergeDuty::PrepareLoser]] as [$user, $duty]) {
+            $assignment = Hilos::$db->accountOperationAssignments->byIdentity($operation->id, AccountMergeStage::Preparing->value, $duty->value);
+            $result = $this->asPerson($user, static fn (AbstractUserAgent $agent) => $agent->prepareForMerge($assignment->id));
+            self::assertTrue(AccountMergePreparationResult::of($result->payload)->isReserved());
+        }
         $giveId = self::giveAssignment($operation);
-        $this->asAgent($this->loser, static fn () => AccountOperationParticipantStep::run(
-            $giveId,
-            static fn () => AccountOperationResultPayload::fromJson('{"transferred":true}'),
-        ));
+        $this->asPerson(self::LOSER_ID, static fn (AbstractUserAgent $agent) => $agent->giveForMerge($giveId));
         self::assertNotNull($operation->mergeFact());
 
         return $operation;
@@ -493,20 +636,24 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
      */
     private static function partAssignment(AccountOperation $operation, int $userId): int
     {
+        $expectation = new AccountOperationExpectation(AccountMergeProjectDirectory::NOTES, $userId,
+            new AccountOperationOwnerAddress(AccountMergeProjectNoteKeeper::AGENT_TYPE));
+        foreach (AccountOperationExpectedSet::of($operation->id)->expected() as $assignment) {
+            if ($assignment->assignmentKey === $expectation->assignmentKey()) {
+                return $assignment->id;
+            }
+        }
+
         return Hilos::$db->accountOperationAssignments->actions->record(
-            $operation->id,
-            $operation->stage,
-            self::PART_KEY,
-            new AccountOperationOwnerAddress(AccountMergeProjectNoteKeeper::AGENT_TYPE),
-            $userId,
-            AccountOperationAssignmentPayload::fromJson('{}'),
+            $operation->id, $operation->stage, $expectation->assignmentKey(), $expectation->assignmentOwner(),
+            $userId, $expectation->payload(),
         )->id;
     }
 
     /** @return AccountMergeChoice Complete immutable merge choice */
     private static function choice(): AccountMergeChoice
     {
-        return new AccountMergeChoice(PasswordFate::SURVIVOR, SecondFactorFate::SURVIVOR, true, false);
+        return new AccountMergeChoice(null, null, null, null);
     }
 
     /**
@@ -579,7 +726,7 @@ final class AccountMergeProjectParticipantIntegrationTest extends FrameworkInteg
     {
         $snapshot = [];
         foreach ([...self::TABLES, AccountMergeProjectNote::_table] as $table) {
-            $snapshot[$table] = Database::sql('SELECT * FROM `' . $table . '` ORDER BY `id`', index: self::PEER_INDEX)->rows();
+            $snapshot[$table] = Database::sql('SELECT * FROM `' . $table . '` ORDER BY 1', index: self::PEER_INDEX)->rows();
         }
 
         return $snapshot;
@@ -635,34 +782,6 @@ final class AccountMergeProjectContext extends HilosDbContext
 /** The session holder, which opens the merge and writes its assignments. */
 final class AccountMergeProjectCoordinator extends AbstractSessionsLibraryAgent
 {
-}
-
-/** The merge loser, which records its give result as the merge fact. */
-final class AccountMergeProjectLoser extends AbstractAgent
-{
-    public const string AGENT_TYPE = HilosAgentType::HILOS_USER;
-    public const array OWNS_DB_SET = [HilosDbContext::accountOperationResults => [TruthSourceOperation::Add]];
-    public const array READS_DB = [HilosDbContext::accountOperations, HilosDbContext::accountOperationAssignments];
-
-    /** @param int $userId Account represented by this participant */
-    public function __construct(int $userId)
-    {
-        $this->agentIndex = (string)$userId;
-    }
-
-    /**
-     * @param string $collection Declared result collection
-     * @return string Participant's canonical durable address
-     */
-    public function ownedDbSetKey(string $collection): string
-    {
-        return $this->getId();
-    }
-
-    /** Nothing to release. */
-    public function onStop(): void
-    {
-    }
 }
 
 /** Project A: the notes keeper registered as one agent for everybody. */

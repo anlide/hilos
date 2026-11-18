@@ -13,6 +13,7 @@ use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Database\Actions\Item\AccountMergeCopyActions;
 use Hilos\Database\Object\Item\AccountMergeCopy as ObjectAccountMergeCopy;
 use Hilos\Hilos;
 use Hilos\HilosException;
@@ -23,6 +24,7 @@ use Hilos\Users\SecondFactorFate;
  *
  * @extends DbItem<ObjectAccountMergeCopy>
  * @method __construct(ObjectAccountMergeCopy $object)
+ * @property-read AccountMergeCopyActions $actions
  * @property-read int $assignmentId
  * @property-read string $ownerAgentId
  * @property-read int $createdAt

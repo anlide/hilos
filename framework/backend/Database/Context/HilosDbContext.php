@@ -40,6 +40,7 @@ use Hilos\Database\Actions\Collection\AccountOperationAssignmentsActions;
 use Hilos\Database\Actions\Collection\AccountOperationResultsActions;
 use Hilos\Database\Actions\Collection\AccountMergeCopiesActions;
 use Hilos\Database\Actions\Collection\AccountMergeFencesActions;
+use Hilos\Database\Actions\Item\AccountMergeCopyActions;
 use Hilos\Database\Actions\Item\AccountMergeFenceActions;
 use Hilos\Database\View\Collection\AccountMergeFences as DbCollectionAccountMergeFences;
 use Hilos\Database\Actions\Item\AccountOperationActions;
@@ -599,6 +600,7 @@ abstract class HilosDbContext extends DbContext
             Objects::LAZY_STRATEGY_KEY,
             DbCollectionAccountMergeCopies::class,
             AccountMergeCopiesActions::class,
+            AccountMergeCopyActions::class,
         );
         $this->mountFramework(
             self::accountMergeFences,

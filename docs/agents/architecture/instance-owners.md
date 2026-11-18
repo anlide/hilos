@@ -308,8 +308,10 @@ for any sweep, erasure or merge:
 - **Stops:** a deleted person row stops the affected personal agent; an agent
   not running does not rise, and the survivor is not stopped. Erasure stops
   the personal agent after its final write and confirmed part (HIL-1952).
-  Merge prepares a loser stop only
-  after its copy is cleaned following receipt (not in the code yet — HIL-1998).
+  The prepared merge commits source copy deletion and its strict cleanup result
+  together after receipt, then requests stop; exact saved replay can request the
+  same stop. A wait or transaction failure does not stop the source. Its context
+  is restored before ordinary startup work.
   The old immediate stop is removed only at the merge cutover
   (not in the code yet — HIL-1999).
 
@@ -345,12 +347,25 @@ the live due and force-purge paths open those operations in HIL-1952.
 
 The [prepared give](account-operations.md#the-prepared-loser-give) already
 replays its exact saved result and copy for a folded loser without reading
-business sets. It does not change today's immediate stop.
+business sets. The [prepared cleanup and finishing](account-operations.md#the-prepared-loser-cleanup-and-finishing)
+restore a source from its exact saved give and both immutable preparations,
+including after cleanup or operation completion; legacy tombstones without
+that give keep today's immediate stop.
 The detailed [merge canon](account-operations.md#merge) gives the folded loser
 a finishing mode: it accepts only continuation of its own operation, copy
-replay and cleanup, and stops after cleanup following receipt. Ordinary access
-stays closed and `AddressablePerson::require()` gains no general bypass
-(not in the code yet — HIL-1998). Recovery raises it only to complete those
+replay and cleanup, and stops after cleanup commits following receipt. Ordinary
+access and late service writes stay closed; `AddressablePerson::require()` gains
+no general bypass. Pending cleanup or an unresolved context lookup pins the
+instance locally against idle stop, without a DB read in `hasWorkInFlight()`.
+Cleanup releases the pin after commit or exact saved replay. A cleaned source
+skips ordinary startup trust materialization and keeps no idle pin; after merge
+completion it can serve its own erasure. Source stop does not finish the merge:
+the [prepared holder end](account-operations.md#the-prepared-merge-end) still
+requires both holder results, every original project result, the fixed personal
+proofs and current copy absence. The holder reads copy metadata and gains no
+right to delete it. Project stage carry preserves the original preparing
+expectation's owner, id and result binding.
+Recovery raises it only to complete those
 durable obligations, including after a lost frame or a move
 (not in the code yet — HIL-2002). This mode replaces the current immediate
 stop only at live merge cutover (not in the code yet — HIL-1999).

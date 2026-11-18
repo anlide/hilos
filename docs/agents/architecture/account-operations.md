@@ -778,13 +778,14 @@ HIL-1999. The coordinator gives a project owner its work only after the loser's
 fact, with `user_id` the loser and the owner address of the composition's
 `expect:` assignment, and the owner agent calls
 `AccountMergeProjectStep::run($this, $assignmentId)` in its own frame; the key
-and the stage of that assignment are chosen there
+and immutable stage remain those of the original expectation, including an
+initial `preparing` expectation. Delivery and answer correlation remain
 (not in the code yet — HIL-2000). Before it hands out that work the coordinator
 calls `AccountMergeOpening::reconcile()`, because during the preparation the
 loser may have written new rows to an owner that is not registered
 (not in the code yet — HIL-2000). The merge ends only with an empty `waiting()`
-and a result for every `expected()` (not in the code yet — HIL-1998), and it is
-reconciled at the start and in the passes (not in the code yet — HIL-2002).
+and a strict owner-bound result for every original `expected()` through the
+prepared `AccountMergeEnd`. It is reconciled at the start and in the passes (not in the code yet — HIL-2002).
 
 **The erasure start.** The first write of an erasure is a conditional write on
 the deletion request, and the person's agent is its writer (HIL-1939).
@@ -1863,9 +1864,8 @@ becomes the live administrator and `account:merge` path only at the
    own rows of the loser in `AccountMergeProjectStep`, and a missing required
    owner stays an open wait of the composition with no foreign fallback writer
    — nobody moves its rows for it. The seam is built, with no live caller until
-   HIL-2000 and HIL-1999, and the merge does not end over an open wait
-   (not in the code yet — HIL-1998). In chat, `ChatAgent` re-points authorship
-   of the loser's messages across every room in one transaction with its
+   HIL-2000 and HIL-1999. The prepared end refuses an open wait. In chat,
+   `ChatAgent` re-points authorship of the loser's messages across every room in one transaction with its
    result; other message and attachment fates stay as they are, and merge
    neither becomes erasure nor writes the rename journal. The prepared
    `ChatAgent::mergeAccountPart()` runs through the existing
@@ -1905,17 +1905,22 @@ becomes the live administrator and `account:merge` path only at the
    second-factor profile update only after commit (HIL-1995). The normal
    producer remains HIL-2000; the live switch remains HIL-1999.
 8. **Cleanup precedes stop and end.** After receipt, the loser alone deletes
-   its hand-over copy, records cleanup and only then stops. The coordinator
-   records end only after receipt, every required participant result and the
-   absence of the copy. Failure between copy deletion, answer and end is
-   finished forward. The folded loser accepts only continuation of its own
-   operation — copy replay and cleanup — with no ordinary access reopened;
-   `AddressablePerson::require()` gains no general bypass
-   (not in the code yet — HIL-1998). The copy's password hashes, factor
-   secrets, addresses and backup codes already have their carrier's `PURGE`
-   verdict and backup coverage, including its DB-only payload.
-   Cleanup leaves no permanent service copy of those secrets
-   (not in the code yet — HIL-1998). Coordinator start and subsequent passes,
+   its hand-over copy and records strict `{"cleanup":"cleaned"}` in one
+   participant transaction. The prepared source requests stop only after that
+   transaction commits or its exact saved cleanup replays; see
+   [The prepared loser cleanup and finishing](#the-prepared-loser-cleanup-and-finishing).
+   The coordinator records end only after receipt, every required participant
+   result and the absence of the copy. The prepared `AccountMergeEnd` /
+   `advanceMergeEnd()` and the holder's metadata-only copy-read interest implement
+   this gate; see [The prepared merge end](#the-prepared-merge-end). The folded
+   loser accepts only continuation of its own operation — copy replay and cleanup — with no ordinary access
+   reopened;
+   `AddressablePerson::require()` gains no general bypass. The prepared source
+   lifecycle and cleanup dispatch implement this boundary. The copy's password
+   hashes, factor secrets, addresses and backup codes already have their
+   carrier's `PURGE` verdict and backup coverage, including its DB-only payload.
+   Cleanup deletes that carrier without retaining a service copy of its secrets.
+   Coordinator start and subsequent passes,
    participant start and operation frames find unfinished obligations in DB:
    repeat copy/result, sleeping-survivor confirmation, cleanup and end. There
    is no DB poll on every tick or remembered cursor
@@ -1956,8 +1961,8 @@ never recalculates it from current settings or policy.
 It contains no secret copy. The complete typed `AccountMergeHandoverCopy` is
 stored separately in
 `accountMergeCopies`, keyed by the give assignment. The personal owner has
-only `Add` over that collection's set, keyed by its full agent id; it has no
-copy `Update` or `Remove`. `AccountMergeCopiesActions::record()` requires the
+`Add` and `Remove` over only its own set, keyed by its full agent id; it has no
+copy `Update`. `AccountMergeCopiesActions::record()` requires the
 participant transaction and canonical assignment, owner and copy anchors.
 
 `AccountMergeGiving::copy()` checks the saved fact before reading the private
@@ -1971,9 +1976,71 @@ confirms the committed result without carrying either result payload or copy.
 `AbstractUserAgent::giveForMerge()` and the existing assignment match can run
 this step, but no live coordinator sends it until HIL-2000 and the existing
 merge remains until HIL-1999. Admission and its fence are built below; survivor
-receipt is built in the prepared owner step below. Copy cleanup, finishing stop
-and general recovery retain their separate leaves in the merge steps.
-The current immediate `selfStop()` on a merge row is unchanged.
+receipt is built in the prepared owner step below. Prepared source cleanup and
+finishing are built as described next. Legacy tombstones without a saved
+prepared give keep the current immediate `selfStop()` until HIL-1999; general
+discovery and recovery remain HIL-2002.
+
+### The Prepared Loser Cleanup And Finishing
+
+`AccountMergeDuty::Cleanup` addresses the loser's immutable `go`/`cleanup`
+assignment with an empty payload. `AccountMergeCleanup::run()` checks its
+canonical person, pair and full executor address, then validates and returns
+the exact saved result through `AccountMergeCleanupResult` before current-stage,
+copy or business reads. Its payload is exactly `{"cleanup":"cleaned"}`. This repeat
+works in a cold context, after copy removal, stage closure or completion;
+a foreign assignment or malformed saved result refuses the call.
+
+New cleanup requires current open `go` metadata, the exact saved source give
+and the exact survivor receive receipt. Without receipt,
+`AccountMergeCleanupWaitsException` maps through `AccountOperationAsks` to the
+existing `Waits` answer and writes nothing. The source deletes its give copy
+through the mounted item's `AccountMergeCopyActions::deleteAfterReceipt()`.
+That action checks the canonical give, result, receipt and executor under the
+source's own-set `Remove`; it neither reads the private payload nor grants a
+write to another source's set. The existing `accountMergeCopies` mount binds
+these item actions. The source's own-set claim also supplies its copy read
+interest; this cleanup installs no holder copy reader.
+
+`accountMergeCopies->hasStored()` checks current locked metadata through the
+mounted carrier connection, independently of a held absence or an older
+snapshot. Cleanup requires physical absence before recording its result.
+Copy deletion and result recording share one participant transaction: a result
+insert or commit failure rolls back the copy, result and ORM memory together,
+without publishing their changes. Cleanup retains the give, preparations,
+receipt and durable fences; it leaves no separate service copy of the secrets.
+
+`AbstractUserAgent::cleanupForMerge()` and the existing assignment handler
+dispatch this work. The entry clears its local finishing pin and calls
+`selfStop()` only after committed cleanup or validated saved replay. A wait,
+refusal or failed transaction leaves it running. Stop uses the ordinary
+lifecycle, retaining truth-source rights through `onStop()` and releasing
+them afterward.
+
+`AccountMergeFinishing::forLoser()` restores the source context from its exact
+saved give, both reserved preparation results and their immutable manifest
+and protection choices. `accountOperationAssignments->mergeGiveOfLoser()`
+finds the latest saved source give in current mounted metadata, including
+finished operations, while retaining held Object identity. Context lookup is
+independent of copy retention and cleanup or end; a conflicting tombstone or
+proof refuses it. These DB records remain authoritative. The personal agent's
+local operation id and failed-lookup flag only pin the instance against idle
+stop while cleanup is pending or context lookup is unresolved.
+
+`onStart()` resolves that context before ordinary trust materialization and
+skips it even for a cleaned source. `hasWorkInFlight()` reads only the local
+pin and performs no DB poll; another addressed frame can retry a failed lookup.
+Prepared sources accept only their exact own-operation continuation:
+loser preparation replay, give replay and cleanup. Ordinary access remains
+closed, and late legal-hold, trust-restriction and push service writes refuse
+without writing. A cleaned source has no idle pin; after its merge completes,
+the continuation gate also permits its own erasure. Legacy sources without a
+saved prepared give retain their immediate-stop path until HIL-1999.
+There is no general `AddressablePerson` bypass or worker lifecycle rewrite.
+
+These entries remain prepared: normal producers and hand-over transport are
+HIL-2000, the admin/CLI live switch is HIL-1999, general discovery, resend and
+recovery are HIL-2002, and the complete cluster/backup journey is HIL-2013.
 
 ### The Prepared Survivor Receipt
 
@@ -2026,9 +2093,53 @@ The entries and local startup scan are prepared backend work. Normal hand-over
 transport and obligation production remain HIL-2000; production admin/CLI
 cutover and retirement of legacy writes/claims remain HIL-1999. The holder's
 two session duties are implemented as prepared work in HIL-1995; loser copy
-cleanup and finishing remain HIL-1998, general coordinator
+cleanup and source finishing are prepared in HIL-1998, general coordinator
 discovery/resend/recovery remains HIL-2002, and cluster or backup recovery
 evidence remains HIL-2013.
+
+### The Prepared Merge End
+
+`AccountMergeProjectStep::isCarriedAssignment()` admits only an original
+`preparing` project expectation into fresh unfinished `go`. It matches the full
+key, owner, loser and payload against the registered project directory, and
+requires the canonical source `go/give` with its exact owner-bound strict
+`AccountMergeGiveResult`, including the saved effective wait. A wait, personal
+duty, old erasure stage, terminal operation or malformed proof has no such
+admission. Storage failures do not grant it. `AccountOperationParticipantStep`
+uses this predicate only for its stage mismatch; ownership, saved-first replay,
+transactional work/result and collision rollback keep their existing order.
+The project entry validates before that preflight and again under the shared
+operation gate, and checks exact saved or recovered result bindings. A canonical
+current-go expectation uses the same checks. No second go expectation or mapping
+is created: id, owner, stage and result remain those of the opening's assignment.
+
+`AccountMergeEnd::advance()` is a prepared API for the canonical sessions holder,
+exposed by `advanceMergeEnd()`. It enters outside an application transaction,
+reads the fresh merge pair, and reconciles an open go composition in a separate
+transaction. Its end transaction then holds the fresh operation gate and requires
+both reserved canonical preparations, source give, survivor receive, both holder
+session duties and source cleanup, even when a duty's producer has not yet run.
+Every result must belong to that exact assignment and owner and pass its strict
+parser; `survivor_sessions.accessLog` is zero. The expected set must have no open
+wait and each original project expectation, including preparing expectations,
+must have its own strict rows-moved result. Zero rows is a recorded result;
+an absent owner or unanswered lifted wait is no substitute. Reconcile makes a
+newly registered owner obligatory before that judgment.
+
+After those facts, `accountMergeCopies->hasStored(giveId)` must report physical
+absence through its current locked metadata reader. The holder declares only
+`READS_DB` interest in copies: it neither reads their payload nor removes them.
+The end's proofs and conditional `finish(go, Completed)` share one transaction;
+a missing fact waits without finishing, and malformed or foreign contracts
+refuse. Rollback releases no terminal announcement. Confirmed Completed replay
+keeps timestamps and participant work unchanged and still requires copy absence.
+NotStarted, cancelling and erasure do not become Completed. End retains the
+preparations, give, receipt, cleanup, project results and admission fences.
+
+These entries send no frames and perform no other owner's work. The normal
+producer, delivery and holder answer correlation remain HIL-2000; admin/CLI live
+cutover remains HIL-1999, general recovery remains HIL-2002 and cluster/backup
+journeys remain HIL-2013. Existing legacy and erasure paths keep their boundaries.
 
 ### Durable Merge Admission
 
@@ -2114,8 +2225,9 @@ FULL backup includes them through its unrestricted primary dump. The mounted
 Entity declares whole-table PII PURGE, collected and checked by the normal
 coverage/compatibility gates for anonymized restore. A full database reset or
 restore follows the normal generation/rehydrate boundary; this does not promise
-compatibility for pre-restore frames. Secret-copy cleanup and complete backup
-merge recovery remain HIL-1998/HIL-2013.
+compatibility for pre-restore frames. Prepared source cleanup removes the secret
+copy while retaining the fences. Complete backup merge recovery remains
+HIL-2013.
 
 ### The Transfer Right
 
@@ -2293,9 +2405,9 @@ moves.
 | `sessions` | holder `Add`/`Update`/`Remove`: the anonymous row on the handshake, the bind at sign-in, the revert at sign-out, `killUserSessions()` in the merge and the erasure, the blocked notices released, the sweep `hilos_sessions_expire`; `SessionTestExpireCommand`, test-only | the holder, as today — a session has no instance owner ([Session Ownership](entity-libraries.md#session-ownership), HIL-1403). In the protocol the holder is a participant for its own rows: it releases every reference of a session to the person — the four `RESTRICT` columns, the waits, the cards — as its own step with a recorded result, before the person row can go | Created by the holder; `Add`/`Update`/`Remove` remain there. Release with an atomic participant result is live from HIL-1952: `eraseAccountSessionsPart()` records `{"sessions":<n>,"accessLog":<m>}` and tells the tabs after the commit (HIL-1943), on the live HIL-1952 path. For merge, prepared `go/sessions` (`mergeAccountSessionsPart()`) requires the exact give, transfers the loser's access log and ends its sessions; prepared `go/survivor_sessions` (`finishMergeSurvivorSessions()`) requires the exact receipt and ends survivor sessions only when the saved give kept the loser's factor. Each commits its own strict `AccountMergeSessionsResult` (`sessions`, `accessLog`) with its work, checks and replays saved results before current-stage or business reads, and publishes session/profile notifications only after commit (HIL-1995). These remain prepared duties: normal production is HIL-2000 and the live merge switch is HIL-1999. Its own release work is a live erasure participant from HIL-1952; merge release work remains at its separate switch (not in the code yet — HIL-1999). |
 | `accessLogEntries` | holder `Add`/`Update`/`Remove`: `record()`, the hourly sweep, `rePointToUser()` in the merge, `deleteForUser()` in the erasure | the same owner; it moves and deletes its own rows itself as a participant, on the signal | Created by the holder; `Add`/`Update`/`Remove` remain there. Erasure with an atomic participant result is live from HIL-1952: `deleteForUser()` runs in the holder's `eraseAccountSessionsPart()` and its count is the result's `accessLog` (HIL-1943), on the live HIL-1952 path. Prepared merge transfer uses `rePointToUser()` in `mergeAccountSessionsPart()` and commits with the holder's own result; a repeat returns its original counts without transferring again (HIL-1995). Its own delete is a live erasure participant from HIL-1952; merge delete and repoint remain for HIL-1999 (not in the code yet — HIL-1999). No foreign writer is added. |
 | `userMerges` | holder `Add`/`Update` for the retained live merge; personal agent `Add` for the prepared give and `Remove` for erasure | changes and deletion go with the personal life cycle to the personal owner: the loser's agent writes its own tombstone with its block in the transaction that gives its rows away, and the erasure of a folded account deletes its merge row with its own rows, leaves before survivors so the survivor's `SET NULL` does not run | Created by the holder today. Leaf-first personal erasure of the merge row is built: the folded account's final deletes it (`deleteForUser()`) before its own row, and the survivor's final waits while an account is folded into it, live in the HIL-1952 erasure path. Loser tombstone creation, merge row before its own block, commits with the prepared give result and private copy; no live coordinator sends it until HIL-2000. Erasure deletion follows the personal life cycle in HIL-1952; tombstone creation moves to the loser with live merge (not in the code yet — HIL-1999). Keep the old holder rights required by merge after erasure switches. |
-| the operation record | The legacy `AccountDeletion` and `UserMerge` rows still carry the live request and tombstone. The shared `AccountOperation*` carriers are live for erasure; the due and force-purge paths use them. The existing merge remains on its old path. | The sessions holder owns operation creation/change and initial assignment creation; assignments are immutable. Each participant owns its result in the live erasure path; merge preparation remains on the old live path. | `AbstractSessionsLibraryAgent::OWNS_DB` declares operations `[Add, Update]` and assignments `[Add]`. The record actions preserve exact repeats and reject conflicts; `AccountMergeOpening::open()` atomically stores a merge, its two initial assignments and the project's expected composition, and `AccountMergeOpening::reconcile()` appends what is missing, but neither has a live caller. Stage advance/finish are low-level persistence only; they do not establish start, participant results, business transitions or live recovery/failover. The common tables, whole-table `PURGE` verdicts and migration are documented above. Merge stage correlation (not in the code yet — HIL-2000), merge end after receipt, results and copy absence (not in the code yet — HIL-1998), and the live merge and erasure switches (not in the code yet — HIL-1999/HIL-1952) remain future work. |
-| the participants' preparations and results | The immutable result carrier and generic atomic step exist. The person's agent (HIL-1939), the sessions holder (HIL-1943), the data export agent (HIL-1946), the legal agent (HIL-1947), the users library (HIL-1944) and ChatAgent (HIL-1949) declare the result claim, and their steps are live in the HIL-1952 erasure path. | Each participant owns its preparation or result, written in the same transaction as its work; the coordinator may create the initial assignment and never edits a recorded result. These durable records use `Hilos::$db` collections and actions, not agent memory or a runtime overlay. The merge's give result is a nonsecret manifest and outcomes; its full secret-bearing hand-over copy is a separate `accountMergeCopies` row with a bounded life, kept until the survivor's confirmation and then deleted by its one writer (not in the code yet — HIL-1998). The personal capture of an erasure is a result with personal data too, the one place the person's addresses are kept; the final transaction of the person's agent deletes it, with the person's own `Remove` over its set of results (`deleteForAssignment()`). The final is live in the HIL-1952 erasure path and uses the personal agent's production `Remove` claims over its own rows; see *The erasure captures* and *The erasure final*. The final's own result, exactly `{"request":<id>|null}`, is recorded in the same transaction (`AccountErasureFinalResult`). | Participant results are stored in `hilos_account_operation_result`, at most one immutable JSON payload per assignment. `owner_agent_id` is the full participant agent id and the result set key; the assignment foreign key cascades. The table is `PURGE` under anonymization and is not journaled. `record()` requires the participant transaction and its `Add` set claim, returns an exact semantic repeat, and rejects a changed result. `AccountOperationParticipantStep::run()` checks the caller, assignment and owner, returns a saved result before new work, then runs work and records its result in one transaction; an equal-result refusal or duplicate insert may return the committed winner only after that transaction rolls back. `forOperationStage()` returns a typed `AccountOperationResults` collection in result-id order. The production participant claims are the person's agent's (HIL-1939), the sessions holder's (HIL-1943), the data export agent's (HIL-1946), the legal agent's (HIL-1947), the users library's (HIL-1944) and ChatAgent's (HIL-1949); the live erasure coordinator consumes their results from HIL-1952. Merge reservations are recorded by each personal owner and retained as immutable preparation results after release; `AccountMergeRelease::run()` records that owner's `{"release":"released"}` result without releasing the other side. Both release results are required before `AccountMergeCancellation::advance()` can finish `not_started`, including when an owner never reserved. The personal match recognizes both release duties, but no live caller sends them until HIL-2000. Loser work, strict `AccountMergeGiveResult` and separate private copy commit together in `AccountMergeGiving::run()`; its saved replay precedes addressability and business reads, and the owner entry/match has no live sender until HIL-2000. Survivor own writes and strict go/receive receipt commit together in AccountMergeReceiving, with saved-first replay, warm memory admission and current-own startup resume; no live producer until HIL-2000 and HIL-1999. The holder's prepared `go/sessions` and `go/survivor_sessions` entries commit their own strict `AccountMergeSessionsResult` with their work; the first requires the exact give, the second the exact receipt and the saved give's loser-factor outcome. They replay saved results before current-stage or business reads and publish session/profile notifications only after commit (HIL-1995); their normal producer remains HIL-2000; the live merge switch remains HIL-1999. Project participants are built — `AccountMergeProjectStep` with its `{"rows":{…}}` result — with no live sender until HIL-2000 and HIL-1999; chat's prepared `mergeAccountPart()` uses the existing assignment ask/answer entry and records exactly `{"rows":{"messages":<n>}}` in the same transaction. Only the loser cleans its copy after receipt and stops afterward (not in the code yet — HIL-1998). Live merge uses these records only at cutover (not in the code yet — HIL-1999). Live erasure uses these results from HIL-1952. |
-| `accountMergeCopies` | personal agent `Add` in its prepared give transaction; no `Update` or `Remove` | the loser alone owns the private copy, keyed by assignment and partitioned by its full agent id | `hilos_account_merge_copy` is a non-journaled `PURGE` carrier with a cascading assignment foreign key. Only metadata is mapped or synced; its DB-only payload is read through the canonical owner/assignment/manifest guard. Missing copy returns `null` without changing the fact; corrupt storage refuses and is never rebuilt from the survivor. Cleanup `Remove` and finishing stop (not in the code yet — HIL-1998); transport (not in the code yet — HIL-2000); live switch (not in the code yet — HIL-1999); recovery (not in the code yet — HIL-2002). |
+| the operation record | The legacy `AccountDeletion` and `UserMerge` rows still carry the live request and tombstone. The shared `AccountOperation*` carriers are live for erasure; the due and force-purge paths use them. The existing merge remains on its old path. | The sessions holder owns operation creation/change and initial assignment creation; assignments are immutable. Each participant owns its result in the live erasure path; merge preparation remains on the old live path. | `AbstractSessionsLibraryAgent::OWNS_DB` declares operations `[Add, Update]` and assignments `[Add]`. The record actions preserve exact repeats and reject conflicts; `AccountMergeOpening::open()` atomically stores a merge, its two initial assignments and the project's expected composition, and `AccountMergeOpening::reconcile()` appends what is missing, but neither has a live caller. Stage advance/finish are low-level persistence only; they do not establish start, participant results, business transitions or live recovery/failover. The common tables, whole-table `PURGE` verdicts and migration are documented above. Merge stage correlation (not in the code yet — HIL-2000), normal production of the prepared merge end after receipt, results and current copy absence (not in the code yet — HIL-2000), and the live merge and erasure switches (not in the code yet — HIL-1999/HIL-1952) remain future work. |
+| the participants' preparations and results | The immutable result carrier and generic atomic step exist. The person's agent (HIL-1939), the sessions holder (HIL-1943), the data export agent (HIL-1946), the legal agent (HIL-1947), the users library (HIL-1944) and ChatAgent (HIL-1949) declare the result claim, and their steps are live in the HIL-1952 erasure path. | Each participant owns its preparation or result, written in the same transaction as its work; the coordinator may create the initial assignment and never edits a recorded result. These durable records use `Hilos::$db` collections and actions, not agent memory or a runtime overlay. The merge's give result is a nonsecret manifest and outcomes; its full secret-bearing hand-over copy is a separate `accountMergeCopies` row with a bounded life, kept until the survivor's confirmation and then deleted by its one writer through the prepared cleanup entry (HIL-1998). The personal capture of an erasure is a result with personal data too, the one place the person's addresses are kept; the final transaction of the person's agent deletes it, with the person's own `Remove` over its set of results (`deleteForAssignment()`). The final is live in the HIL-1952 erasure path and uses the personal agent's production `Remove` claims over its own rows; see *The erasure captures* and *The erasure final*. The final's own result, exactly `{"request":<id>|null}`, is recorded in the same transaction (`AccountErasureFinalResult`). | Participant results are stored in `hilos_account_operation_result`, at most one immutable JSON payload per assignment. `owner_agent_id` is the full participant agent id and the result set key; the assignment foreign key cascades. The table is `PURGE` under anonymization and is not journaled. `record()` requires the participant transaction and its `Add` set claim, returns an exact semantic repeat, and rejects a changed result. `AccountOperationParticipantStep::run()` checks the caller, assignment and owner, returns a saved result before new work, then runs work and records its result in one transaction; an equal-result refusal or duplicate insert may return the committed winner only after that transaction rolls back. `forOperationStage()` returns a typed `AccountOperationResults` collection in result-id order. The production participant claims are the person's agent's (HIL-1939), the sessions holder's (HIL-1943), the data export agent's (HIL-1946), the legal agent's (HIL-1947), the users library's (HIL-1944) and ChatAgent's (HIL-1949); the live erasure coordinator consumes their results from HIL-1952. Merge reservations are recorded by each personal owner and retained as immutable preparation results after release; `AccountMergeRelease::run()` records that owner's `{"release":"released"}` result without releasing the other side. Both release results are required before `AccountMergeCancellation::advance()` can finish `not_started`, including when an owner never reserved. The personal match recognizes both release duties, but no live caller sends them until HIL-2000. Loser work, strict `AccountMergeGiveResult` and separate private copy commit together in `AccountMergeGiving::run()`; its saved replay precedes addressability and business reads, and the owner entry/match has no live sender until HIL-2000. Survivor own writes and strict go/receive receipt commit together in AccountMergeReceiving, with saved-first replay, warm memory admission and current-own startup resume; no live producer until HIL-2000 and HIL-1999. The holder's prepared `go/sessions` and `go/survivor_sessions` entries commit their own strict `AccountMergeSessionsResult` with their work; the first requires the exact give, the second the exact receipt and the saved give's loser-factor outcome. They replay saved results before current-stage or business reads and publish session/profile notifications only after commit (HIL-1995); their normal producer remains HIL-2000; the live merge switch remains HIL-1999. Project participants are built — `AccountMergeProjectStep` with its `{"rows":{…}}` result — with no live sender until HIL-2000 and HIL-1999; chat's prepared `mergeAccountPart()` uses the existing assignment ask/answer entry and records exactly `{"rows":{"messages":<n>}}` in the same transaction. The prepared `cleanupForMerge()` entry deletes only the loser's copy after the exact receipt and requests stop only after its cleanup result commits or replays (HIL-1998); the existing assignment handler dispatches cleanup, and the source restores its finishing context from saved give and preparation proofs (HIL-1998). Live merge uses these records only at cutover (not in the code yet — HIL-1999). Live erasure uses these results from HIL-1952. |
+| `accountMergeCopies` | personal agent `Add` in its prepared give transaction and own-set `Remove` after receipt; no `Update` | the loser alone owns the private copy, keyed by assignment and partitioned by its full agent id | `hilos_account_merge_copy` is a non-journaled `PURGE` carrier with a cascading assignment foreign key. Only metadata is mapped or synced; its DB-only payload is read through the canonical owner/assignment/manifest guard. Missing copy returns `null` without changing the fact; corrupt storage refuses and is never rebuilt from the survivor. `deleteAfterReceipt()` checks the exact source give/result and receipt during open go, then deletes through the owning item without reading its private payload. `AccountMergeCleanup::run()` records strict `{"cleanup":"cleaned"}` in that same participant transaction; `hasStored()` checks current locked metadata through the mounted row connection, independently of the local mirror or snapshot. Saved cleanup replays before current-stage or copy reads. `AccountMergeFinishing::forLoser()` resolves the latest canonical saved source give, including finished operations, through `accountOperationAssignments->mergeGiveOfLoser()`. The current metadata lookup uses mounted carrier bindings and retains held Object identity. The personal agent restores its idle pin before ordinary startup trust work, closes late service writes, accepts its own saved continuation and cleanup, and stops only after successful cleanup; an unresolved lookup closes ordinary work and retains the instance without polling from idle checks. Cleaned sources keep no idle pin and can serve a later own erasure after merge completion. Assignment dispatch is prepared (HIL-1998); transport (not in the code yet — HIL-2000); live switch (not in the code yet — HIL-1999); recovery (not in the code yet — HIL-2002). |
 
 **Deltas against the first census.** The census of the research base listed
 the four chat tables as "`ChatAgent` owns, the holder borrows"; the chat users
@@ -2443,9 +2555,12 @@ The prepared survivor owner step commits its own password, wait and trust
 writes with its exact receive receipt. Its finite own startup scan resumes an
 existing obligation from current mapped rows, including a new owner in the same
 worker, without a new handover. General coordinator discovery and resend remain
-HIL-2002. A failure between
-copy deletion, answer and end is completed forward, with no ordinary access
-reopened (not in the code yet — HIL-1998). Duplicate, old and foreign replies
+HIL-2002. Prepared source cleanup commits copy deletion and its result together;
+a failed transaction restores both, and a lost answer can replay the saved
+cleanup without reopening ordinary access. The source restores its finishing
+context from DB before ordinary startup work. Prepared holder end requires the
+canonical receipt, every required owner result and current copy absence.
+Duplicate, old and foreign replies
 are judged by operation and stage, never by whichever operation happens to
 be current (not in the code yet — HIL-2000). These paths become live only at
 the merge switch (not in the code yet — HIL-1999); cluster and backup evidence
@@ -2531,8 +2646,13 @@ They remain prepared until the normal producer and live switch land in HIL-2000
 and HIL-1999. Declared project owners
 (prepared in `AccountMergeProjectStep`, live at the merge switch), including chat's
 author transfer and exact message count through its existing assignment entry.
-Cleanup by the loser precedes its stop and the coordinator's end
-(not in the code yet — HIL-1998). Correlation prevents
+Prepared loser cleanup commits copy deletion with its strict result before
+requesting stop; exact saved replay needs no copy or business reads. Source
+startup restores finishing from immutable proofs, and pending cleanup or an
+unresolved lookup prevents idle stop. Prepared holder end requires canonical
+receipt, all fixed duties and original project results, and current copy absence;
+its conditional finish and proofs share one transaction.
+Correlation prevents
 an unrelated answer advancing the operation (not in the code yet — HIL-2000);
 recovery continues from DB obligations (not in the code yet — HIL-2002).
 These guarantees take effect at the one merge switch

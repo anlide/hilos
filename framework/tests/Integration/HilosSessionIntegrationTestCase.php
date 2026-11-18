@@ -68,6 +68,8 @@ abstract class HilosSessionIntegrationTestCase extends FrameworkIntegrationTestC
         'hilos_legal_acceptance',
         'hilos_account_deletion',
         'hilos_account_operation',
+        'hilos_account_operation_assignment',
+        'hilos_account_operation_result',
         'hilos_data_export',
         'hilos_access_log',
     ];

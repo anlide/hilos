@@ -7,6 +7,9 @@ namespace Hilos\Database\Object\Collection;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
+use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
+use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Core\Exception\ValidationException;
@@ -166,6 +169,29 @@ class AccountOperationAssignments extends Objects
             [$operationId, $stage, $assignmentKey],
             1,
         )->first();
+    }
+
+    /**
+     * @param int $userId Canonical source person
+     * @return ?ObjectAccountOperationAssignment Latest saved source give, retaining held object identity
+     * @throws HilosException When current metadata cannot be read or hydrated
+     */
+    public function mergeGiveOfLoser(int $userId): ?ObjectAccountOperationAssignment
+    {
+        $operations = Hilos::$db->accountOperations->getObjectCollection();
+        $results = Hilos::$db->accountOperationResults->getObjectCollection();
+        $rows = Database::sql(
+            'SELECT a.* FROM ' . static::entityClass()::getSqlTableName() . ' a'
+            . ' JOIN ' . $operations::entityClass()::getSqlTableName() . ' o ON o.`id` = a.`operation_id`'
+            . ' JOIN ' . $results::entityClass()::getSqlTableName() . ' r ON r.`assignment_id` = a.`id`'
+            . ' WHERE a.`owner_type` = ? AND a.`owner_index` = ? AND a.`stage` = ? AND a.`assignment_key` = ?'
+            . ' AND o.`kind` = ? AND o.`loser_user_id` = ? ORDER BY a.`id` DESC LIMIT 1 LOCK IN SHARE MODE',
+            [HilosAgentType::HILOS_USER, (string)$userId, AccountMergeStage::Go->value, AccountMergeDuty::Give->value,
+                AccountOperationKind::Merge->value, $userId],
+            index: static::entityClass()::getDatabase()->connectionIndex,
+        )->rows();
+
+        return $rows === [] ? null : $this->hold(static::entityClass()::fromRow($rows[0]));
     }
 
     /**

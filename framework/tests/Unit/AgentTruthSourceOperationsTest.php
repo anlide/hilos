@@ -255,14 +255,16 @@ final class AgentTruthSourceOperationsTest extends TestCase
         );
     }
 
-    public function testPersonalCopyClaimOnlyAddsAndUsesTheFullAgentAddress(): void
+    /** The private copy grants its source Add and Remove under the full agent address, never Update. */
+    public function testPersonalCopyClaimAddsAndRemovesUsingTheFullAgentAddress(): void
     {
         $claims = OwnershipDeclaration::dbSetCollectionsOf(CopyOperationsTestPerson::class);
         $person = new CopyOperationsTestPerson('7');
-        self::assertSame([TruthSourceOperation::Add], CopyOperationsTestPerson::OWNS_DB_SET[HilosDbContext::accountMergeCopies]);
+        self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            CopyOperationsTestPerson::OWNS_DB_SET[HilosDbContext::accountMergeCopies]);
         self::assertTrue($claims[HilosDbContext::accountMergeCopies]->allows(TruthSourceOperation::Add));
         self::assertFalse($claims[HilosDbContext::accountMergeCopies]->allows(TruthSourceOperation::Update));
-        self::assertFalse($claims[HilosDbContext::accountMergeCopies]->allows(TruthSourceOperation::Remove));
+        self::assertTrue($claims[HilosDbContext::accountMergeCopies]->allows(TruthSourceOperation::Remove));
         self::assertSame($person->getId(), $person->ownedDbSetKey(HilosDbContext::accountMergeCopies));
         self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Update],
             CopyOperationsTestPerson::OWNS_DB_SET[HilosDbContext::accountMergeFences]);
@@ -287,7 +289,8 @@ final class AgentTruthSourceOperationsTest extends TestCase
         self::assertSame('7', new CopyOperationsTestPerson('7')->ownedDbSetKey(HilosDbContext::userMerges));
     }
 
-    public function testCopySetGrantRefusesForeignSetsAndEveryChangingOperation(): void
+    /** The source may remove its own copy; own Update and all foreign mutations remain refused. */
+    public function testCopySetGrantRefusesForeignSetsAndOwnUpdates(): void
     {
         $previousDb = Hilos::$db;
         Hilos::$db = new CopyOperationsTestDbContext();
@@ -297,17 +300,28 @@ final class AgentTruthSourceOperationsTest extends TestCase
             OwnershipDeclaration::claimDbSet($person);
             ExecutionContext::setCurrentAgentId($person->getId());
             TruthSourceRegistry::checkCanCreate(HilosDbContext::accountMergeCopies, static fn (): array => [$person->getId()]);
-            foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
-                try {
-                    TruthSourceRegistry::checkCanWriteItem(
-                        HilosDbContext::accountMergeCopies, '19', static fn (): array => [$person->getId()], $operation,
-                    );
-                    self::fail('An Add-only copy claim changed an existing row');
-                } catch (WriteNotAllowedException) {
-                    self::assertTrue(true);
-                }
+            TruthSourceRegistry::checkCanWriteItem(
+                HilosDbContext::accountMergeCopies, '19', static fn (): array => [$person->getId()], TruthSourceOperation::Remove,
+            );
+            try {
+                TruthSourceRegistry::checkCanWriteItem(
+                    HilosDbContext::accountMergeCopies, '19', static fn (): array => [$person->getId()], TruthSourceOperation::Update,
+                );
+                self::fail('A personal copy claim updated an existing row');
+            } catch (WriteNotAllowedException) {
+                self::assertTrue(true);
             }
             foreach ([$person->getIndex(), new CopyOperationsTestPerson('8')->getId()] as $foreign) {
+                foreach ([TruthSourceOperation::Update, TruthSourceOperation::Remove] as $operation) {
+                    try {
+                        TruthSourceRegistry::checkCanWriteItem(
+                            HilosDbContext::accountMergeCopies, '19', static fn (): array => [$foreign], $operation,
+                        );
+                        self::fail('A copy claim changed a foreign or person-only set');
+                    } catch (WriteNotAllowedException) {
+                        self::assertTrue(true);
+                    }
+                }
                 try {
                     TruthSourceRegistry::checkCanCreate(HilosDbContext::accountMergeCopies, static fn (): array => [$foreign]);
                     self::fail('A foreign or person-only copy set was accepted');

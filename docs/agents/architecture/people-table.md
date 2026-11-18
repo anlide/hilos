@@ -307,9 +307,13 @@ commits its own captured password/protection writes and exact result together;
 local startup resumes an existing receive obligation from current own rows.
 Normal obligation production and hand-over transport remain HIL-2000, with
 production cutover in HIL-1999 and general recovery in HIL-2002.
-The loser stops only after deleting its copy following receipt
-(not in the code yet — HIL-1998). The keys, chain and readers below retain
-their meanings. Preparation remains inert and
+The [prepared loser cleanup and finishing](account-operations.md#the-prepared-loser-cleanup-and-finishing)
+commit copy deletion with strict `{"cleanup":"cleaned"}` after the exact
+receipt, then request stop; an exact saved replay can request the same stop.
+Startup restores the source from immutable DB proofs before ordinary trust
+work, retaining a local idle pin while cleanup is pending or lookup unresolved.
+Ordinary access and late service writes stay closed. The keys, chain and readers
+below retain their meanings. Preparation remains inert and
 `mergeAccounts()` remains the only normal producer until the live switch
 retires its foreign writes, grants, comments, debt, locks, rereads and the
 immediate stop on a merge row

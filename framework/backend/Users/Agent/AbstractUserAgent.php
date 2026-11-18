@@ -19,6 +19,9 @@ use Hilos\Auth\AccountOperation\AccountErasureProjectResult;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\AccountOperation\AccountMergeAccess;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeCleanup;
+use Hilos\Auth\AccountOperation\AccountMergeCleanupResult;
+use Hilos\Auth\AccountOperation\AccountMergeFinishing;
 use Hilos\Auth\AccountOperation\AccountMergeGiving;
 use Hilos\Auth\AccountOperation\AccountMergeHandover;
 use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
@@ -30,6 +33,7 @@ use Hilos\Auth\AccountOperation\AccountOperationActivation;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
@@ -93,6 +97,7 @@ use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Collection\Identities;
 use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Database\View\Item\UserRename;
 use Hilos\Files\HilosFiles;
@@ -231,8 +236,9 @@ use Throwable;
  * the erasure ({@see AccountErasureStart}): the ordinary frames are refused in the words of
  * {@see AddressablePerson::require()}, the service frames and the steps of the person's own
  * account operation are served, and the agent lives until its last write. Folded into someone
- * else: the service frames are served, and after each of them the agent stops. The person's own
- * row deleted: the agent stops. The service frames skip that check - the legal hold forgotten
+ * else: legacy service frames are served and stop the agent afterward. A prepared source serves only
+ * its own merge continuation until cleanup commits; its saved DB proofs restore that mode at start.
+ * The person's own row deleted: the agent stops. The service frames skip that check - the legal hold forgotten
  * ({@see HilosSignalConstants::HILOS_USER_LEGAL_HOLD_FORGET}), the trust restrictions applied
  * ({@see HilosSignalConstants::HILOS_USER_SECOND_FACTOR_TRUST_RESTRICT}), a dead push endpoint
  * marked gone ({@see HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE}) and a push endpoint
@@ -488,7 +494,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosDbContext::userRenames => [TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove],
         HilosDbContext::userMerges => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::accountOperationResults => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
-        HilosDbContext::accountMergeCopies => [TruthSourceOperation::Add],
+        HilosDbContext::accountMergeCopies => [TruthSourceOperation::Add, TruthSourceOperation::Remove],
         HilosDbContext::accountMergeFences => [TruthSourceOperation::Add, TruthSourceOperation::Update],
     ];
 
@@ -511,6 +517,12 @@ abstract class AbstractUserAgent extends AbstractAgent
     private const int MERGE_RECEIPT_PAGE_SIZE = 100;
 
     private int $userId;
+
+    /** Instance-local idle pin; immutable DB proofs remain the authority for every continuation. */
+    private ?int $finishingOperationId = null;
+
+    /** An unresolved source lookup closes ordinary work and prevents an idle stop until another frame retries. */
+    private bool $finishingLookupFailed = false;
 
     /** The writes of the person's second factor, built on first use. */
     private ?SecondFactorPersonEdits $secondFactorEdits = null;
@@ -715,6 +727,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      */
     public function prepareForMerge(int $assignmentId): AccountOperationResult
     {
+        $this->requireMergeContinuation(Hilos::$db->accountOperationAssignments[$assignmentId]);
+
         return AccountMergePreparation::run($assignmentId, $this->userId);
     }
 
@@ -725,7 +739,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      */
     public function giveForMerge(int $assignmentId): AccountOperationResult
     {
-        return AccountMergeGiving::run($assignmentId, $this->userId);
+        $this->requireMergeContinuation(Hilos::$db->accountOperationAssignments[$assignmentId]);
+        $result = AccountMergeGiving::run($assignmentId, $this->userId);
+        $this->refreshMergeFinishing();
+
+        return $result;
     }
 
     /**
@@ -737,6 +755,23 @@ abstract class AbstractUserAgent extends AbstractAgent
     public function receiveForMerge(int $assignmentId, ?AccountMergeHandover $handover = null): AccountOperationResult
     {
         return AccountMergeReceiving::run($assignmentId, $this->userId, $handover);
+    }
+
+    /**
+     * Deletes only this loser's private copy after the exact survivor receipt; stops only after commit or saved replay.
+     *
+     * @param int $assignmentId Immutable loser go/cleanup assignment
+     * @return AccountOperationResult Committed cleanup or its exact saved fact
+     * @throws Throwable When the receipt, assignment or transactional storage refuses cleanup
+     */
+    public function cleanupForMerge(int $assignmentId): AccountOperationResult
+    {
+        $result = AccountMergeCleanup::run($assignmentId, $this->userId);
+        $this->finishingOperationId = null;
+        $this->finishingLookupFailed = false;
+        $this->selfStop();
+
+        return $result;
     }
 
     /**
@@ -768,7 +803,8 @@ abstract class AbstractUserAgent extends AbstractAgent
      * than written: the claims of this agent cover its own person alone.
      *
      * Account operation steps answer after start, capture, personal erasure, final, merge preparation or release; begun and folded
-     * accounts still serve these frames. The folded account stops after queuing its answer.
+     * accounts still serve their own continuation. A prepared source stays until its cleanup commits;
+     * a legacy folded account stops after queuing its answer.
      * A frame of the second factor is answered by {@see SecondFactorPersonEdits}, whatever came of
      * it: the browser action, the sweep or the operator's command waits on the answer (HIL-1406).
      * A confirmation recorded and a trust taken away are answered as a flag is (HIL-1407): the
@@ -811,25 +847,34 @@ abstract class AbstractUserAgent extends AbstractAgent
                 $this->refuseAnotherPerson((int)$ask->ownerIndex, $name);
                 $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
                     $ask,
-                    fn (AccountOperationAssignment $assignment): AccountOperationResult => match ($assignment->assignmentKey) {
-                        AccountErasureStart::personalKey($this->userId) => AccountErasureStart::run($assignment->id),
-                        AccountErasureCapture::personalKey($this->userId) => $this->captureForErasure($assignment->id),
-                        AccountErasureFinal::personalKey($this->userId) => $this->finishAccountErasure($assignment->id),
-                        AccountMergeDuty::PrepareSurvivor->value,
-                        AccountMergeDuty::PrepareLoser->value => $this->prepareForMerge($assignment->id),
-                        AccountMergeDuty::ReleaseLoser->value,
-                        AccountMergeDuty::ReleaseSurvivor->value => $this->releaseMergePreparation($assignment->id),
-                        AccountMergeDuty::Give->value => $this->giveForMerge($assignment->id),
-                        AccountMergeDuty::Receive->value => $this->receiveForMerge($assignment->id),
-                        default => AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
-                            && AccountOperationExpectation::participantOf($assignment->payload) === AccountErasureParticipantCatalog::PERSONAL
-                                ? $this->eraseAccountPersonalPart($assignment->id)
-                                : throw new ValidationException('This assignment is not one of the person\'s account operation steps.'),
+                    function (AccountOperationAssignment $assignment): AccountOperationResult {
+                        if ($assignment->assignmentKey === AccountMergeDuty::Cleanup->value
+                            && Hilos::$db->accountOperationResults->byAssignment($assignment->id) !== null) {
+                            return $this->cleanupForMerge($assignment->id);
+                        }
+                        $this->requireMergeContinuation($assignment);
+
+                        return match ($assignment->assignmentKey) {
+                            AccountErasureStart::personalKey($this->userId) => AccountErasureStart::run($assignment->id),
+                            AccountErasureCapture::personalKey($this->userId) => $this->captureForErasure($assignment->id),
+                            AccountErasureFinal::personalKey($this->userId) => $this->finishAccountErasure($assignment->id),
+                            AccountMergeDuty::PrepareSurvivor->value,
+                            AccountMergeDuty::PrepareLoser->value => $this->prepareForMerge($assignment->id),
+                            AccountMergeDuty::ReleaseLoser->value,
+                            AccountMergeDuty::ReleaseSurvivor->value => $this->releaseMergePreparation($assignment->id),
+                            AccountMergeDuty::Give->value => $this->giveForMerge($assignment->id),
+                            AccountMergeDuty::Receive->value => $this->receiveForMerge($assignment->id),
+                            AccountMergeDuty::Cleanup->value => $this->cleanupForMerge($assignment->id),
+                            default => AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
+                                && AccountOperationExpectation::participantOf($assignment->payload) === AccountErasureParticipantCatalog::PERSONAL
+                                    ? $this->eraseAccountPersonalPart($assignment->id)
+                                    : throw new ValidationException('This assignment is not one of the person\'s account operation steps.'),
+                        };
                     },
                     $this->getId(),
                 ));
-                if (isset(Hilos::$db->userMerges[$this->userId])) {
-                    $this->selfStop();
+                if (!$this->shouldStop()) {
+                    $this->stopOrContinueMerge();
                 }
 
                 return;
@@ -1202,9 +1247,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($ask->userId, $name);
                 $this->sendToAgent($ask->replySignal, $this->legalHoldForgetAnswer($ask));
-                if (isset(Hilos::$db->userMerges[$this->userId])) {
-                    $this->selfStop();
-                }
+                $this->stopOrContinueMerge();
 
                 return;
 
@@ -1273,9 +1316,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($restrict->userId, $name);
                 $this->sendToAgent($restrict->replySignal, $this->restrictTrustsAnswer($restrict));
-                if (isset(Hilos::$db->userMerges[$this->userId])) {
-                    $this->selfStop();
-                }
+                $this->stopOrContinueMerge();
 
                 return;
 
@@ -1420,9 +1461,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($gone->userId, $name);
                 $this->applyPushEndpointGone($gone);
-                if (isset(Hilos::$db->userMerges[$this->userId])) {
-                    $this->selfStop();
-                }
+                $this->stopOrContinueMerge();
 
                 return;
 
@@ -1434,9 +1473,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($release->userId, $name);
                 $this->sendToAgent($release->replySignal, $this->releasePushAnswer($release));
-                if (isset(Hilos::$db->userMerges[$this->userId])) {
-                    $this->selfStop();
-                }
+                $this->stopOrContinueMerge();
 
                 return;
 
@@ -1477,12 +1514,13 @@ abstract class AbstractUserAgent extends AbstractAgent
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
         if ($data->collectionKey === HilosDbContext::userMerges && $this->isThisPerson($data->idString)) {
-            $this->selfStop();
+            $this->stopOrContinueMerge(true);
         }
     }
 
     /**
-     * Resumes existing own merge receipts before applying stored trust restrictions (HIL-1901).
+     * Restores source finishing or resumes own merge receipts before applying stored trust restrictions (HIL-1901).
+     * Prepared sources, including cleaned ones, skip ordinary trust materialization.
      *
      * An owner that starts finishes what is owed to it from the facts, not from the next frame
      * (Recovery, docs/agents/architecture/account-operations.md): a restriction saved while this
@@ -1495,6 +1533,15 @@ abstract class AbstractUserAgent extends AbstractAgent
      */
     public function onStart(): void
     {
+        try {
+            if ($this->refreshMergeFinishing() !== null) {
+                return;
+            }
+        } catch (Throwable) {
+            $this->logAgentError("Merge finishing of #{$this->userId} could not be restored at start");
+
+            return;
+        }
         try {
             $owner = new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$this->userId);
             $afterId = 0;
@@ -1540,9 +1587,102 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
     }
 
-    /** WorkerManager releases the claims after this hook returns; the agent holds no other state. */
+    /** @return bool Whether this instance still owes source cleanup or cannot yet resolve its source context */
+    public function hasWorkInFlight(): bool
+    {
+        return $this->finishingOperationId !== null || $this->finishingLookupFailed;
+    }
+
+    /** WorkerManager releases the claims after this hook returns. */
     public function onStop(): void
     {
+    }
+
+    /**
+     * @return ?AccountOperation Durable source context, including already cleaned or finished merges
+     * @throws HilosException When source metadata or cleanup facts cannot be resolved
+     * @throws JsonException When immutable preparation proofs cannot be decoded
+     */
+    private function refreshMergeFinishing(): ?AccountOperation
+    {
+        $this->finishingLookupFailed = true;
+        $operation = AccountMergeFinishing::forLoser($this->userId);
+        $this->finishingOperationId = $operation !== null && AccountMergeCleanupResult::forOperation($operation) === null
+            ? $operation->id : null;
+        $this->finishingLookupFailed = false;
+
+        return $operation;
+    }
+
+    /**
+     * @param bool $mergeRowCreated Whether the delivered fact itself names this person's tombstone
+     */
+    private function stopOrContinueMerge(bool $mergeRowCreated = false): void
+    {
+        try {
+            if ($this->refreshMergeFinishing() !== null) {
+                return;
+            }
+            if ($mergeRowCreated || isset(Hilos::$db->userMerges[$this->userId])) {
+                $this->selfStop();
+            }
+        } catch (WiringRefusal) {
+            $this->logAgentError("Merge finishing of #{$this->userId} could not be resolved");
+        } catch (Throwable) {
+            $this->logAgentError("Merge finishing of #{$this->userId} could not be resolved");
+        }
+    }
+
+    /**
+     * @param AccountOperationAssignment $assignment Addressed immutable duty
+     * @throws HilosException When source proofs are unavailable or the duty is outside its own continuation
+     * @throws JsonException When immutable preparation proofs cannot be decoded
+     */
+    private function requireMergeContinuation(AccountOperationAssignment $assignment): void
+    {
+        $operation = $this->refreshMergeFinishing();
+        if ($operation === null) {
+            return;
+        }
+        if ($assignment->operationId === $operation->id && $assignment->userId === $this->userId
+            && $assignment->owner->equals(new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$this->userId))
+            && in_array($assignment->assignmentKey, [AccountMergeDuty::PrepareLoser->value,
+                AccountMergeDuty::Give->value, AccountMergeDuty::Cleanup->value], true)) {
+            return;
+        }
+        if ($this->finishingOperationId === null && $operation->finishedAt !== null
+            && $operation->outcome === AccountOperationOutcome::Completed->value
+            && $assignment->operation->kind === AccountOperationKind::Erasure) {
+            return;
+        }
+
+        throw new ValidationException(AccountMergeAccess::REFUSED_MESSAGE);
+    }
+
+    /**
+     * @throws HilosException When unresolved source metadata or ordinary person admission refuses the write
+     * @throws JsonException When immutable preparation proofs cannot be decoded
+     */
+    private function requireAddressablePerson(): void
+    {
+        if ($this->finishingLookupFailed) {
+            $this->refreshMergeFinishing();
+        }
+        AddressablePerson::require($this->userId);
+        if ($this->finishingOperationId !== null) {
+            throw new ValidationException(AccountMergeAccess::REFUSED_MESSAGE);
+        }
+    }
+
+    /**
+     * @throws HilosException When the person has a prepared source context or its lookup fails
+     * @throws JsonException When immutable preparation proofs cannot be decoded
+     */
+    private function requireLegacyServiceWork(): void
+    {
+        if ($this->refreshMergeFinishing() !== null) {
+            throw new ValidationException(AccountMergeAccess::REFUSED_MESSAGE);
+        }
     }
 
     /**
@@ -1976,7 +2116,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     protected function renewBrowserTrust(UserBrowserTrustRenewSignalData $ask): bool
     {
         AccountMergeAccess::requireProtectionChange($this->userId);
-        AddressablePerson::require($this->userId);
+        $this->requireAddressablePerson();
         $session = Hilos::$db->sessions[$ask->sessionId] ?? null;
         if ($session === null || $session->userId !== $this->userId
             || ($session->expiresAt !== null && $session->expiresAt <= TimeHelper::nowMs())) {
@@ -2319,7 +2459,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         $rename = null;
         $refusal = null;
         try {
-            AddressablePerson::require($this->userId);
+            $this->requireAddressablePerson();
             $rename = $this->renamePerson($ask->name, $ask->renamedByUserId);
         } catch (ValidationException $e) {
             $refusal = ActionRefusal::said(self::renameRefusalWords($this->userId, $e));
@@ -2330,7 +2470,7 @@ abstract class AbstractUserAgent extends AbstractAgent
             // rename, so they ride only as the detail an admin may quote.
             $this->logAgentError("Rename refused for userId={$this->userId}: {$wiring->getMessage()}");
             $refusal = ActionRefusal::fromThrowable($wiring);
-        } catch (HilosException $e) {
+        } catch (HilosException|JsonException $e) {
             $this->logAgentError("Rename failed for userId={$this->userId}: {$e->getMessage()}");
             $refusal = ActionRefusal::fromThrowable($e);
         }
@@ -2405,6 +2545,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function applyPushEndpointGone(UserPushEndpointGoneSignalData $report): void
     {
         try {
+            $this->requireLegacyServiceWork();
             Hilos::$db->pushSubscriptions->actions->markGoneOwned($this->userId, $report->subscriptionId, $report->revision);
         } catch (WiringRefusal $wiring) {
             $this->logAgentError("Push device #{$report->subscriptionId} for #{$this->userId} refused by wiring: {$wiring->getMessage()}");
@@ -2430,7 +2571,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     {
         $this->refuseAnotherPerson($report->userId, $name);
         try {
-            AddressablePerson::require($this->userId);
+            $this->requireAddressablePerson();
             if (Hilos::$db->users[$this->userId]->lastBrowserTimeZone === $report->lastBrowserTimeZone) {
                 return;
             }
@@ -2465,7 +2606,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     {
         $this->refuseAnotherPerson($report->userId, $name);
         try {
-            AddressablePerson::require($this->userId);
+            $this->requireAddressablePerson();
             if (!isset(Hilos::$db->identities[$report->identityId])
                 || Hilos::$db->identities[$report->identityId]->userId !== $this->userId
                 || Hilos::$db->identities[$report->identityId]->type !== IdentityType::OAUTH) {
@@ -2502,7 +2643,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function passkeyUseAnswer(UserPasskeyUseSignalData $ask): UserPasskeyUseDoneSignalData
     {
         try {
-            AddressablePerson::require($this->userId);
+            $this->requireAddressablePerson();
             $this->recordPasskeyUse($ask->passkeyId, $ask->signCount);
             if ($ask->operation !== null && $ask->sessionTokenHash !== null) {
                 $this->recordStepUp($ask->sessionTokenHash, $ask->operation);
@@ -2537,7 +2678,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function flagRefusal(callable $write, string $what): ?ActionRefusal
     {
         try {
-            AddressablePerson::require($this->userId);
+            $this->requireAddressablePerson();
             $write();
         } catch (Throwable $e) {
             $refusal = ActionRefusal::fromThrowable($e);
@@ -2579,7 +2720,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     {
         try {
             $this->refuseAnotherPerson($ask->userId, HilosSignalConstants::HILOS_USER_IDENTITY_ADD);
-            AddressablePerson::require($this->userId);
+            $this->requireAddressablePerson();
             if (!isset(Hilos::$db->sessions[$ask->sessionId]) || Hilos::$db->sessions[$ask->sessionId]->userId !== $this->userId) {
                 throw new ValidationException('User session not found');
             }
@@ -2621,7 +2762,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function personAnswer(Closure $edit, Closure $refused, string $what): SignalDataInterface
     {
         try {
-            AddressablePerson::require($this->userId);
+            $this->requireAddressablePerson();
 
             return $edit();
         } catch (ValidationException $e) {
@@ -2645,6 +2786,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function legalHoldForgetAnswer(UserLegalHoldForgetSignalData $ask): UserLegalHoldForgetDoneSignalData
     {
         try {
+            $this->requireLegacyServiceWork();
             if (!isset(Hilos::$db->users[$this->userId])) {
                 throw new ItemNotFoundForUpdateException("No such user: {$this->userId}");
             }
@@ -2698,6 +2840,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function releasePushAnswer(UserPushReleaseSignalData $ask): UserPushReleaseDoneSignalData
     {
         try {
+            $this->requireLegacyServiceWork();
             Hilos::$db->pushSubscriptions->actions->releaseOwned($this->userId, $ask->subscriptionId, $ask->endpoint);
 
             return UserPushReleaseDoneSignalData::ok($ask);
@@ -2734,6 +2877,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     private function restrictTrustsAnswer(UserSecondFactorTrustRestrictSignalData $ask): UserSecondFactorTrustRestrictDoneSignalData
     {
         try {
+            $this->requireLegacyServiceWork();
             AccountMergeAccess::requireProtectionChange($this->userId);
             Hilos::$db->secondFactorTrusts->actions->applyRestrictions($this->userId, $ask->restrictionId);
 

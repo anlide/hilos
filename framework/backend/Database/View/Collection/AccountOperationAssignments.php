@@ -40,6 +40,16 @@ class AccountOperationAssignments extends DbCollection
     }
 
     /**
+     * @param int $userId Canonical source person
+     * @return ?AccountOperationAssignment Latest saved source give, including a finished operation
+     * @throws HilosException When current metadata or its item wrapper cannot be read
+     */
+    public function mergeGiveOfLoser(int $userId): ?AccountOperationAssignment
+    {
+        return $this->itemFor($this->objectCollection->mergeGiveOfLoser($userId));
+    }
+
+    /**
      * @param int $operationId Parent operation id
      * @param string $stage Literal stage key
      * @return static Assignments in ascending primary id order

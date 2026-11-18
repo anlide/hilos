@@ -6,6 +6,22 @@ namespace Hilos\Tests\Unit\Users;
 
 use Hilos\Users\DTO\UserIdentityAddSignalData;
 use ArrayObject;
+use Hilos\Auth\AccountOperation\AccountMergeAdmissionManifest;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeCleanupResult;
+use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
+use Hilos\Auth\AccountOperation\AccountMergePreparationResult;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
+use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
+use Hilos\Database\Identity\PasswordFate;
+use Hilos\Database\View\Collection\AccountOperations;
+use Hilos\Database\View\Collection\AccountOperationResults;
+use Hilos\Database\View\Item\AccountOperation as ViewAccountOperation;
+use Hilos\Database\View\Item\AccountOperationAssignment;
+use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
@@ -43,6 +59,7 @@ use Hilos\Database\Entity\Item\AccountOperation;
 use Hilos\Database\Entity\Item\UserMerge;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\View\Collection\AccountDeletions;
+use Hilos\Database\View\Collection\AccountOperationAssignments;
 use Hilos\Database\View\Collection\Identities;
 use Hilos\Database\View\Item\Identity;
 use Hilos\Hilos;
@@ -216,7 +233,8 @@ final class AbstractUserAgentTest extends TestCase
             [TruthSourceOperation::Add, TruthSourceOperation::Remove],
             TestUserAgent::OWNS_DB_SET[HilosDbContext::accountOperationResults],
         );
-        self::assertSame([TruthSourceOperation::Add], TestUserAgent::OWNS_DB_SET[HilosDbContext::accountMergeCopies]);
+        self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Remove],
+            TestUserAgent::OWNS_DB_SET[HilosDbContext::accountMergeCopies]);
         self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Update],
             TestUserAgent::OWNS_DB_SET[HilosDbContext::accountMergeFences]);
         self::assertSame([], TestUserAgent::OWNS_DB);
@@ -256,6 +274,9 @@ final class AbstractUserAgentTest extends TestCase
         TruthSourceRegistry::checkCanCreate(HilosDbContext::notificationPreferences, static fn (): array => ['42']);
         TruthSourceRegistry::checkCanCreate(HilosDbContext::accountOperationResults, static fn (): array => ['hilos_user:42']);
         TruthSourceRegistry::checkCanCreate(HilosDbContext::accountMergeCopies, static fn (): array => ['hilos_user:42']);
+        TruthSourceRegistry::checkCanWriteItem(
+            HilosDbContext::accountMergeCopies, '1', static fn (): array => ['hilos_user:42'], TruthSourceOperation::Remove,
+        );
         TruthSourceRegistry::checkCanWriteItem(
             HilosDbContext::accountOperationResults,
             '1',
@@ -607,18 +628,102 @@ final class AbstractUserAgentTest extends TestCase
 
     public function testAMergeRowForThePersonAsksTheAgentToStop(): void
     {
-        $agent = new TestUserAgent('42');
+        $previousDb = Hilos::$db;
+        $assignments = $this->createStub(AccountOperationAssignments::class);
+        $assignments->method('mergeGiveOfLoser')->willReturn(null);
+        $db = $this->getMockBuilder(HilosDbContext::class)->onlyMethods(['__get'])->getMock();
+        $db->method('__get')->with(HilosDbContext::accountOperationAssignments)->willReturn($assignments);
+        Hilos::$db = $db;
+        try {
+            $agent = new TestUserAgent('42');
+            $agent->onSignalDbSyncCreated(
+                new DbSyncCreatedSignalData(HilosDbContext::userMerges, '42', [
+                    UserMerge::user_id => 42,
+                    UserMerge::survivor_user_id => 7,
+                ]),
+                'db',
+                SignalConstants::DB_SYNC_CREATED,
+            );
+            self::assertTrue($agent->shouldStop());
+            self::assertFalse($agent->hasWorkInFlight());
+        } finally {
+            Hilos::$db = $previousDb;
+        }
+    }
 
-        $agent->onSignalDbSyncCreated(
-            new DbSyncCreatedSignalData(HilosDbContext::userMerges, '42', [
-                UserMerge::user_id => 42,
-                UserMerge::survivor_user_id => 7,
-            ]),
-            'db',
-            SignalConstants::DB_SYNC_CREATED,
-        );
+    /** @param bool $cleaned Whether the exact cleanup fact already exists */
+    #[DataProvider('sourceFinishingStates')]
+    public function testPreparedSourceMergeFactKeepsTheAgentAndOnlyPendingCleanupPinsIdle(bool $cleaned): void
+    {
+        $previousDb = Hilos::$db;
+        $operation = $this->createMock(ViewAccountOperation::class);
+        $operationFields = ['id' => 19, 'kind' => AccountOperationKind::Merge, 'survivorUserId' => 7, 'loserUserId' => 42,
+            'mergeChoice' => new AccountMergeChoice(null, null, null, null)];
+        $operation->method('__get')->willReturnCallback(static fn (string $key): mixed => $operationFields[$key]);
+        $operations = $this->createMock(AccountOperations::class);
+        $operations->method('fresh')->with(19)->willReturn($operation);
+        $assignmentsByDuty = [];
+        $resultsById = [];
+        $givePayload = new AccountMergeGiveResult([], [], [], [], PasswordFate::NONE, AccountMergeGiveResult::SECOND_FACTOR_NONE,
+            new AccountMergeAdmissionManifest([], [], [], []), null)->toPayload();
+        foreach ([AccountMergeDuty::PrepareLoser, AccountMergeDuty::PrepareSurvivor, AccountMergeDuty::Give,
+            AccountMergeDuty::Cleanup] as $index => $duty) {
+            $id = $index + 1;
+            $userId = $duty === AccountMergeDuty::PrepareSurvivor ? 7 : 42;
+            $owner = new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$userId);
+            $fields = ['id' => $id, 'operationId' => 19, 'userId' => $userId, 'owner' => $owner,
+                'stage' => in_array($duty, [AccountMergeDuty::PrepareLoser, AccountMergeDuty::PrepareSurvivor], true)
+                    ? AccountMergeStage::Preparing->value : AccountMergeStage::Go->value,
+                'assignmentKey' => $duty->value, 'payload' => AccountOperationAssignmentPayload::fromJson('{}')];
+            $assignment = $this->createMock(AccountOperationAssignment::class);
+            $assignment->method('__get')->willReturnCallback(static fn (string $key): mixed => $fields[$key]);
+            $assignmentsByDuty[$duty->value] = $assignment;
+            $resultFields = ['assignmentId' => $id, 'ownerAgentId' => $owner->agentId(), 'payload' => match ($duty) {
+                AccountMergeDuty::Give => $givePayload,
+                AccountMergeDuty::Cleanup => AccountMergeCleanupResult::cleaned()->toPayload(),
+                default => AccountMergePreparationResult::reserved(null, []),
+            }];
+            $result = $this->createMock(AccountOperationResult::class);
+            $result->method('__get')->willReturnCallback(static fn (string $key): mixed => $resultFields[$key]);
+            $resultsById[$id] = $duty === AccountMergeDuty::Cleanup && !$cleaned ? null : $result;
+        }
+        $assignments = $this->createMock(AccountOperationAssignments::class);
+        $assignments->method('mergeGiveOfLoser')->with(42)->willReturn($assignmentsByDuty[AccountMergeDuty::Give->value]);
+        $assignments->method('byIdentity')->willReturnCallback(static fn (int $id, string $stage, string $duty): mixed =>
+            $assignmentsByDuty[$duty]);
+        $results = $this->createMock(AccountOperationResults::class);
+        $results->method('byAssignment')->willReturnCallback(static fn (int $id): mixed => $resultsById[$id]);
+        $collections = [HilosDbContext::accountOperations => $operations, HilosDbContext::accountOperationAssignments => $assignments,
+            HilosDbContext::accountOperationResults => $results,
+            HilosDbContext::userMerges => new ArrayObject([42 => (object)['survivorUserId' => 7]])];
+        $reads = 0;
+        $db = $this->getMockBuilder(HilosDbContext::class)->onlyMethods(['__get'])->getMock();
+        $db->method('__get')->willReturnCallback(static function (string $key) use ($collections, &$reads): mixed {
+            $reads++;
 
-        self::assertTrue($agent->shouldStop());
+            return $collections[$key];
+        });
+        Hilos::$db = $db;
+        try {
+            $agent = new TestUserAgent('42');
+            $agent->onStart();
+            $agent->onSignalDbSyncCreated(new DbSyncCreatedSignalData(HilosDbContext::userMerges, '42', []),
+                'db', SignalConstants::DB_SYNC_CREATED);
+            self::assertFalse($agent->shouldStop());
+            $beforeIdle = $reads;
+            self::assertSame(!$cleaned, $agent->hasWorkInFlight());
+            self::assertSame(!$cleaned, $agent->hasWorkInFlight());
+            self::assertSame($beforeIdle, $reads);
+        } finally {
+            Hilos::$db = $previousDb;
+        }
+    }
+
+    /** @return iterable<string, array{bool}> Pending and saved cleanup contexts */
+    public static function sourceFinishingStates(): iterable
+    {
+        yield 'pending' => [false];
+        yield 'cleaned' => [true];
     }
 
     public function testAnotherPersonsDeletionDoesNotStopTheAgent(): void

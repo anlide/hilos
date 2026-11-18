@@ -38,7 +38,12 @@ final class AccountMergeFenceStorageIntegrationTest extends HilosSessionIntegrat
 {
     use PersonAgentFrames;
 
-    private const array TABLES = ['hilos_account_operation_assignment', 'hilos_account_merge_copy', 'hilos_account_merge_fence'];
+    private const array TABLES = [
+        'hilos_account_operation_assignment',
+        'hilos_account_operation_result',
+        'hilos_account_merge_copy',
+        'hilos_account_merge_fence',
+    ];
 
     private ?SignalRouter $previousRouter;
 

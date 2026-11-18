@@ -45,7 +45,8 @@ final class AccountOperationParticipantStep
         if ($existing !== null) {
             return $existing;
         }
-        if ($assignment->operation->finishedAt !== null || $assignment->operation->stage !== $assignment->stage) {
+        if ($assignment->operation->finishedAt !== null
+            || ($assignment->operation->stage !== $assignment->stage && !AccountMergeProjectStep::isCarriedAssignment($assignment))) {
             throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::ClosedStage);
         }
 

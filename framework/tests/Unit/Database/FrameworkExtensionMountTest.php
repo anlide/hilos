@@ -6,6 +6,7 @@ namespace Hilos\Tests\Unit\Database;
 
 use Hilos\Database\Actions\Collection\SettingsActions;
 use Hilos\Database\Actions\Collection\AccountMergeCopiesActions;
+use Hilos\Database\Actions\Item\AccountMergeCopyActions;
 use Hilos\Database\Actions\Collection\AccountMergeFencesActions;
 use Hilos\Database\Actions\Item\AccountMergeFenceActions;
 use Hilos\Database\Entity\Collection\AccountMergeFences as EntityAccountMergeFences;
@@ -191,10 +192,13 @@ final class FrameworkExtensionMountTest extends TestCase
         }
     }
 
+    /** A complete copy extension binds both action layers while its serializers expose only metadata. */
     public function testCopyExtensionKeepsAssignmentOffsetsAndExcludesItsPayload(): void
     {
         $context = new DeclaringDbContext([
-            HilosDbContext::accountMergeCopies => new FrameworkExtension(ExtendedCopyViews::class, ExtendedCopyActions::class),
+            HilosDbContext::accountMergeCopies => new FrameworkExtension(
+                ExtendedCopyViews::class, ExtendedCopyActions::class, ExtendedCopyItemActions::class,
+            ),
         ]);
         $context->configure();
         $objects = $context->mountedObjectCollection(HilosDbContext::accountMergeCopies);
@@ -206,6 +210,7 @@ final class FrameworkExtensionMountTest extends TestCase
         ]);
         $objects->fixture(ExtendedCopyObject::fromEntity($entity));
         self::assertInstanceOf(ExtendedCopyView::class, $context->accountMergeCopies[19]);
+        self::assertInstanceOf(ExtendedCopyItemActions::class, $context->accountMergeCopies[19]->actions);
         self::assertSame(19, $context->accountMergeCopies[19]->assignmentId);
         self::assertSame(['assignmentId' => 19, 'ownerAgentId' => 'hilos_user:7', 'createdAt' => 0], $context->accountMergeCopies[19]->toArray());
         $previousDb = Hilos::$db;
@@ -606,6 +611,9 @@ class ExtendedCopyViews extends DbCollectionAccountMergeCopies
     public const string OBJECT_COLLECTION_CLASS = ExtendedCopyObjects::class;
 }
 class ExtendedCopyActions extends AccountMergeCopiesActions
+{
+}
+class ExtendedCopyItemActions extends AccountMergeCopyActions
 {
 }
 

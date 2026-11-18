@@ -24,6 +24,7 @@ use Hilos\Auth\AccountOperation\AccountMergeProjectStep;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
+use Hilos\Auth\AccountOperation\AccountOperationExpectedSet;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationStepRefusal;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
@@ -259,8 +260,7 @@ final class ChatMergePartTest extends IntegrationTestCase
     {
         [$survivorId, $loserId] = $this->people();
         $messageId = (int)Hilos::$db->events->actions->addMessage('not given yet', userId: $loserId)->id;
-        $operation = $this->openMerge($survivorId, $loserId);
-        $assignment = $this->chatAssignment($operation, $loserId);
+        [$operation, $assignment] = $this->ready($survivorId, $loserId, giveLoserRows: false);
         $before = $this->unchangedRows();
         $this->drainSignals();
         try {
@@ -342,9 +342,10 @@ final class ChatMergePartTest extends IntegrationTestCase
     /**
      * @param int $survivorId Recipient
      * @param int $loserId Source
-     * @return array{AccountOperation, AccountOperationAssignment} Real prepared give fact and test-local chat assignment
+     * @param bool $giveLoserRows Whether to record and run the loser's real give assignment
+     * @return array{AccountOperation, AccountOperationAssignment} Go operation and its canonical chat expectation
      */
-    private function ready(int $survivorId, int $loserId): array
+    private function ready(int $survivorId, int $loserId, bool $giveLoserRows = true): array
     {
         $operation = $this->openMerge($survivorId, $loserId);
         foreach ([[$survivorId, AccountMergeDuty::PrepareSurvivor], [$loserId, AccountMergeDuty::PrepareLoser]] as [$userId, $duty]) {
@@ -357,32 +358,38 @@ final class ChatMergePartTest extends IntegrationTestCase
         self::assertTrue($this->underAgent($this->sessionsLibrary(), static fn (): bool => $operation->actions->advance(
             AccountMergeStage::Preparing->value, AccountMergeStage::Go->value,
         )));
-        $give = $this->underAgent($this->sessionsLibrary(), static fn (): AccountOperationAssignment =>
-            Hilos::$db->accountOperationAssignments->actions->record(
-                $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Give->value,
-                new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$loserId),
-                $loserId, AccountOperationAssignmentPayload::fromJson('{}'),
-            ));
-        $loser = $this->personAgent($loserId);
-        $this->underAgent($loser, static fn (): AccountOperationResult => $loser->giveForMerge($give->id));
-        self::assertNotNull($operation->mergeFact());
+        if ($giveLoserRows) {
+            $give = $this->underAgent($this->sessionsLibrary(), static fn (): AccountOperationAssignment =>
+                Hilos::$db->accountOperationAssignments->actions->record(
+                    $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Give->value,
+                    new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$loserId),
+                    $loserId, AccountOperationAssignmentPayload::fromJson('{}'),
+                ));
+            $loser = $this->personAgent($loserId);
+            $this->underAgent($loser, static fn (): AccountOperationResult => $loser->giveForMerge($give->id));
+            self::assertNotNull($operation->mergeFact());
+        } else {
+            self::assertNull($operation->mergeFact());
+        }
 
         return [$operation, $this->chatAssignment($operation, $loserId)];
     }
 
     /**
-     * @param AccountOperation $operation Operation whose current stage is used only by this fixture
+     * @param AccountOperation $operation Open merge with its original expectations
      * @param int $loserId Source author
-     * @return AccountOperationAssignment Test-local duty, without declaring a production coordinator key
+     * @return AccountOperationAssignment Original canonical Chat expectation from the opening
      */
     private function chatAssignment(AccountOperation $operation, int $loserId): AccountOperationAssignment
     {
-        return $this->underAgent($this->sessionsLibrary(), static fn (): AccountOperationAssignment =>
-            Hilos::$db->accountOperationAssignments->actions->record(
-                $operation->id, $operation->stage, 'test:chat-merge-part',
-                new AccountOperationOwnerAddress(AgentType::CHAT), $loserId,
-                AccountOperationAssignmentPayload::fromJson('{}'),
-            ));
+        $assignments = array_values(array_filter(
+            AccountOperationExpectedSet::of($operation->id)->expected(),
+            static fn (AccountOperationAssignment $assignment): bool => $assignment->userId === $loserId
+                && $assignment->owner->agentId() === AgentType::CHAT,
+        ));
+        self::assertCount(1, $assignments);
+
+        return $assignments[0];
     }
 
     /**

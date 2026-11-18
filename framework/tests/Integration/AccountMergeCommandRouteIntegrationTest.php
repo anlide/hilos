@@ -163,6 +163,8 @@ final class AccountMergeCommandRouteIntegrationTest extends FrameworkIntegration
         'hilos_user_merge',
         'hilos_account_deletion',
         'hilos_account_operation',
+        'hilos_account_operation_assignment',
+        'hilos_account_operation_result',
         'hilos_account_merge_fence',
         'hilos_identity',
         'hilos_passkey_credential',

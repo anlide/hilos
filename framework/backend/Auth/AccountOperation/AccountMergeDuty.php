@@ -13,6 +13,7 @@ enum AccountMergeDuty: string
     case Receive = 'receive';
     case Sessions = 'sessions';
     case SurvivorSessions = 'survivor_sessions';
+    case Cleanup = 'cleanup';
     case ReleaseLoser = 'release_loser';
     case ReleaseSurvivor = 'release_survivor';
 }

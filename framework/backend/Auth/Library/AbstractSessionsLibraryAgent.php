@@ -11,6 +11,7 @@ use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureSessionsResult;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
+use Hilos\Auth\AccountOperation\AccountMergeEnd;
 use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
 use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
 use Hilos\Auth\AccountOperation\AccountMergeSessionsResult;
@@ -399,6 +400,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::verifications,
         HilosDbContext::dataExports,
         HilosDbContext::legalAcceptanceExports,
+        HilosDbContext::accountMergeCopies,
     ];
 
     /**
@@ -7528,6 +7530,18 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     protected function finishMergeSurvivorSessions(int $assignmentId): AccountOperationResult
     {
         return $this->runMergeSessionsPart($assignmentId, AccountMergeDuty::SurvivorSessions);
+    }
+
+    /**
+     * SCAFFOLD: HIL-2000 drives this prepared end; HIL-1999 switches the live merge.
+     *
+     * @param AccountOperation $operation Merge considered outside an application transaction
+     * @return bool Whether the merge has its confirmed Completed outcome
+     * @throws Throwable When the canonical holder, proofs or transactional storage refuse the end
+     */
+    protected function advanceMergeEnd(AccountOperation $operation): bool
+    {
+        return AccountMergeEnd::advance($operation);
     }
 
     /**
