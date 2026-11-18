@@ -51,6 +51,70 @@ framework's.
   vouchers and orders.
 - **Your AI**: the shop's read-only tools over MCP — search, products, stock.
 
+### The catalog
+
+The model that shop administration is being built on. It is a plan, not the
+running demo: what already works is listed under "Today" above.
+
+- **Category**: name, description, picture and a place in the order of the
+  home page; a new category goes last, and an administrator moves one up. Its
+  address on the shop front, `/category/{slug}`, is made from the name. Every
+  product is in exactly one category.
+- **Product**: name, category, price, description, picture and an address
+  `/product/{slug}`; of one of two kinds, chosen when the product is created
+  and never changed. A "Unique piece" is one of a kind, sold once, no
+  quantity: at most one unit, kept in one warehouse. A new one is not in a
+  warehouse yet; an administrator puts it in one and can move it to another,
+  and the shop front cannot sell it until it is in one. A "Stock item" has
+  stock in warehouses, any number of units in each.
+- **Warehouse**: name and address. Buyers never see it; administrators pick it
+  when they set stock.
+- **Stock**: the units of a product in a warehouse. A stock item has a count
+  per warehouse, never below zero; a unique piece has one unit in one
+  warehouse, or none yet. A product's total is the sum over its warehouses,
+  and that is the number buyers see; a stock item with 5 units or fewer in
+  total shows "Only N left" — one threshold for the admin and the shop front.
+
+The rules:
+
+- **The kind is chosen once.**
+- **Only the empty is deleted**: a warehouse with no unit of any product in
+  it, a category with no product in it. A write that lands in the same moment
+  as the delete does not slip past the check — one of the two is refused.
+  There is no deleting a product.
+- **An address follows the name**: renaming a category or a product moves its
+  address. Its library keeps the former addresses of that record and never
+  gives them to another one, so an old link never leads to something else —
+  the shop front sends it on to the current address.
+
+One entity, one library — the framework's rule,
+[docs/agents/architecture/entity-libraries.md](../../docs/agents/architecture/entity-libraries.md).
+Each library is one per cluster, and the cluster picks its node.
+
+| Library | Owns | Asks before deleting |
+|---|---|---|
+| warehouses | warehouses | the stock library: is anything kept in this warehouse? |
+| categories | categories, their order and their former addresses | the products library: is any product in this category? |
+| products | products, their kind and their former addresses | — (products are not deleted) |
+| stock | the units per product and warehouse; product totals and each warehouse's counts of products and units come from here | — |
+
+Stock is a library of its own because it is the number that changes most —
+orders will take from it in later phases — and the products library does not
+become the writer of those changes.
+
+The shop's own admin pages live under `/hilos/app/` and are entered from the
+"Shop administration" section of the dashboard at `/hilos`; administrators
+only.
+
+- `/hilos/app/warehouses` — Warehouses;
+- `/hilos/app/categories` — Categories, in the order of the home page;
+- `/hilos/app/products` — Products, recently changed first;
+- `/hilos/app/product/{id}` — a product's page; a stock item also has its
+  Stock tab at `/hilos/app/product/{id}/stock`, and a unique piece has no tabs.
+
+Every list and every number on these pages changes by itself when another
+window changes it.
+
 ## Change Log
 
 The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
