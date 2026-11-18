@@ -33,6 +33,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
@@ -350,7 +351,7 @@ final class AccountMergeSessionsParticipantIntegrationTest extends HilosSessionI
         self::assertSame([], $this->drainQueue());
     }
 
-    public function testExistingAskCorrelationAndInlineDispatchLeaveMergeCoordinationDormant(): void
+    public function testExistingAskCorrelationAndInlineDispatchKeepMergeWaitingForReceipt(): void
     {
         $this->signIn(self::SIGNED_IN_TOKEN, self::USER_ID);
         $survivorSession = $this->signIn(self::SURVIVOR_TOKEN, self::SURVIVOR);
@@ -398,7 +399,8 @@ final class AccountMergeSessionsParticipantIntegrationTest extends HilosSessionI
         self::assertSame($ask->stage, $done->stage);
         self::assertSame($ask->assignmentId, $done->assignmentId);
         $this->asHolder(fn () => $this->holder->onSignalAgent(
-            new AgentSignalData($done), $this->holder->getId(), HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER,
+            new AgentSignalData($done), SignalSource::describe(new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_SESSIONS_LIBRARY)),
+            HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER,
         ));
         $this->inlineAsk([$source, $survivor]);
         self::assertSame($result->id, Hilos::$db->accountOperationResults->byAssignment($source->id)->id);

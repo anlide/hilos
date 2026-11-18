@@ -17,6 +17,7 @@ use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkSignalData;
 use Demo\Chat\Core\Router\DTO\UserRenameFeedUnlinkedSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
 use Hilos\Moderation\ModerationCommandConstants;
 use Hilos\Moderation\DTO\ModerationObserveCommandData;
 
@@ -2163,6 +2164,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ATTACHMENTS_PUBLISHED => AgentType::CHAT,
             ChatSignalConstants::USER_RENAME_FEED_UNLINKED => AgentType::CHAT,
             HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_RENAME => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => HilosAgentType::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => HilosAgentType::HILOS_USER,
@@ -2489,6 +2491,7 @@ final class ChatTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::ownerIndex,
+            HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER => AccountMergeHandoverSignalData::ownerIndex,
             HilosSignalConstants::HILOS_USER_RENAME => 'userId',
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => 'userId',
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => 'userId',
@@ -2595,6 +2598,7 @@ final class ChatTopologyRegistryTest extends TestCase
             ChatSignalConstants::ATTACHMENTS_PUBLISHED => FilesPublishedSignalData::class,
             ChatSignalConstants::USER_RENAME_FEED_UNLINKED => UserRenameFeedUnlinkedSignalData::class,
             HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
+            HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER => AccountMergeHandoverSignalData::class,
             HilosSignalConstants::HILOS_USER_RENAME => UserRenameSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => UserAdminWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,

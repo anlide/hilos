@@ -1368,6 +1368,7 @@ final class PollsTopologyRegistryTest extends TestCase
                 // verdict and for the provider exchange it handed off; the four delivery
                 // agents and the two node-scoped auth agents answer on their own names.
                 HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_RENAME => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_ADMIN_WRITE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => HilosAgentType::HILOS_USER,

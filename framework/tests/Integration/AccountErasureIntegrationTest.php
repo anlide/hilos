@@ -1028,7 +1028,7 @@ final class AccountErasureIntegrationTest extends HilosSessionIntegrationTestCas
             }
             self::assertLessThan(200, ++$delivered, 'Every exchange must settle without an automatic retry loop.');
             ExecutionContext::run(new ExecutionFrame(agentId: $owner->getId()), static fn () => $owner->onSignalAgent(
-                $signal->data, '', $signal->signalName->getName(),
+                $signal->data, SignalSource::describe($signal->signalSource), $signal->signalName->getName(),
             ));
         }
     }

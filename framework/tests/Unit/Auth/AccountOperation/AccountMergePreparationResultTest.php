@@ -164,6 +164,7 @@ final class AccountMergePreparationResultTest extends TestCase
             ['loser_merged', '%s was already merged into %s'],
             ['being_deleted', '%s is being deleted'],
             ['occupied', '%s is already being merged'],
+            ['password_fate_required', 'Both accounts have a password: pass --password=survivor|loser|none'],
             ['protection_changed', 'Second-factor protection changed. Review the accounts and choose again.'],
             ['second_factor_fate_required', 'Choose second-factor protection: survivor or both (--second-factor on the console).'],
             ['loser_without_second_factor', 'The loser has no confirmed authenticator. Remove the second-factor choice.'],

@@ -1774,6 +1774,7 @@ final class BinanceBtcTrackerTopologyRegistryTest extends TestCase
                 // verdict, and the mail agent and the node-scoped throttle answer on their own
                 // names.
                 HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_USER,
+                HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_RENAME => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_ADMIN_WRITE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => HilosAgentType::HILOS_USER,

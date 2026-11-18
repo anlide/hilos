@@ -42,6 +42,7 @@ use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChangeBus;
@@ -474,6 +475,56 @@ final class AccountErasureCoordinatorIntegrationTest extends HilosSessionIntegra
         self::assertSame([], Database::sql('SELECT `user_id` FROM `hilos_fw_test_coordinator_note`')->rows());
     }
 
+    /** The shared holder still rejects old erasure stages and executes its erasure part inline. */
+    public function testErasureTransportAndInlineDispatchRemainIsolatedFromMergeAndOldStageAnswers(): void
+    {
+        $this->activateExchange();
+        $root = self::seedPerson();
+        self::seedAccessLog($root);
+        $operation = $this->openErasure($root);
+        $survivor = self::seedPerson();
+        $loser = self::seedPerson();
+        $merge = $this->asHolder(static fn () => Hilos::$db->accountOperations->actions->recordMerge(
+            $survivor, $loser, new AccountMergeChoice(null, null, null, null),
+        ));
+        $mergeRow = self::operationRow($merge);
+        $this->drive($operation);
+        [$start] = $this->operationFrames();
+        $this->deliverOperationFrame($start);
+        [$answer] = $this->operationFrames();
+        self::assertSame(AccountOperationAnswerKind::Done, $answer->data->data->answer);
+        self::assertNotNull(Hilos::$db->accountOperationResults->byAssignment($answer->data->data->assignmentId));
+        $this->asHolder(static fn () => $operation->actions->advance($operation->stage, 'later-erasure-stage'));
+        $duties = Database::sql('SELECT * FROM `hilos_account_operation_assignment` ORDER BY `id`')->rows();
+        $results = Database::sql('SELECT * FROM `hilos_account_operation_result` ORDER BY `id`')->rows();
+        $this->deliverOperationFrame($answer);
+        self::assertSame([], $this->operationFrames());
+        self::assertSame($duties, Database::sql('SELECT * FROM `hilos_account_operation_assignment` ORDER BY `id`')->rows());
+        self::assertSame($results, Database::sql('SELECT * FROM `hilos_account_operation_result` ORDER BY `id`')->rows());
+        self::assertCount(1, Database::sql('SELECT `id` FROM `hilos_access_log` WHERE `user_id` = ?', [$root])->rows());
+        self::assertNull(self::operationRow($operation)['finished_at']);
+        self::assertSame($mergeRow, self::operationRow($merge));
+
+        $this->asHolder(static fn () => $operation->actions->advance('later-erasure-stage', 'preparing'));
+        $this->deliverOperationFrame($answer);
+        $sessions = $this->part($operation, AccountErasureParticipantCatalog::SESSIONS_HOLDER, $root);
+        $saved = Hilos::$db->accountOperationResults->byAssignment($sessions->id);
+        self::assertNotNull($saved);
+        self::assertSame(HilosAgentType::HILOS_SESSIONS_LIBRARY, $saved->ownerAgentId);
+        self::assertSame([], Database::sql('SELECT `id` FROM `hilos_access_log` WHERE `user_id` = ?', [$root])->rows());
+        $finals = $this->exchangeUntilFinals();
+        self::assertCount(1, $finals);
+        $this->deliverOperationFrame($finals[0]);
+        self::assertNull(self::operationRow($operation)['finished_at']);
+        $this->deliverOperationFrame($this->operationFrames()[0]);
+        self::assertSame('completed', self::operationRow($operation)['outcome']);
+        self::assertSame($mergeRow, self::operationRow($merge));
+        self::assertSame([], $this->operationFrames());
+        self::assertFalse(isset(Hilos::$db->users[$root]));
+        self::assertTrue(isset(Hilos::$db->users[$survivor]));
+        self::assertTrue(isset(Hilos::$db->users[$loser]));
+    }
+
     /** The real start handler loses to cancellation and leaves the person's data untouched. */
     public function testTheHolderStopsWhenKeepMyAccountWon(): void
     {
@@ -790,11 +841,16 @@ final class AccountErasureCoordinatorIntegrationTest extends HilosSessionIntegra
         $this->deliverOperationFrame($this->operationFrames()[0]);
     }
 
-    /** @param AccountOperationAnswerSignalData $answer Frame under the real holder's address judge */
-    private function receiveAnswer(AccountOperationAnswerSignalData $answer): void
+    /**
+     * @param AccountOperationAnswerSignalData $answer Frame under the real holder's address judge
+     * @param ?string $sender Transport source, or the canonical source of a deliberately constructed answer
+     */
+    private function receiveAnswer(AccountOperationAnswerSignalData $answer, ?string $sender = null): void
     {
+        $assignment = Hilos::$db->accountOperationAssignments[$answer->assignmentId] ?? null;
+        $sender ??= SignalSource::describe(new SignalSource(SignalSource::AGENT, $assignment?->ownerType, $assignment?->ownerIndex));
         $this->asHolder(fn () => $this->holder()->onSignalAgent(
-            new AgentSignalData($answer), '', HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER,
+            new AgentSignalData($answer), $sender, HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER,
         ));
     }
 
@@ -824,11 +880,14 @@ final class AccountErasureCoordinatorIntegrationTest extends HilosSessionIntegra
     /** @param SignalDTO $frame Queued ask or answer delivered in its real owner's execution frame */
     private function deliverOperationFrame(SignalDTO $frame): void
     {
+        $frame = SignalDTO::fromArray(json_decode(json_encode($frame->toArray(), JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR));
         self::assertInstanceOf(AgentSignalData::class, $frame->data);
+        $data = Hilos::$sr->createAgentSignalPayloadDTO($frame->signalName->getName(), $frame->data);
+        $frame = new SignalDTO($frame->signalSource, $frame->signalType, $frame->signalName, $data, $frame->meta);
         $payload = $frame->data->data;
         if ($payload instanceof AccountOperationAnswerSignalData) {
             self::assertSame(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, $frame->signalName->getName());
-            $this->receiveAnswer($payload);
+            $this->receiveAnswer($payload, SignalSource::describe($frame->signalSource));
 
             return;
         }
@@ -844,7 +903,7 @@ final class AccountErasureCoordinatorIntegrationTest extends HilosSessionIntegra
             ))[0];
         self::assertSame($agent::ACCOUNT_OPERATION_SIGNAL, $frame->signalName->getName());
         ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static fn () => $agent->onSignalAgent(
-            $frame->data, '', $frame->signalName->getName(),
+            $frame->data, SignalSource::describe($frame->signalSource), $frame->signalName->getName(),
         ));
     }
 

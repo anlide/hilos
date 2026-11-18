@@ -41,6 +41,7 @@ use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Source\SourceChange;
@@ -777,13 +778,16 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
         self::fail('The project owner is not raised');
     }
 
-    /** @param AccountOperationAnswerSignalData $answer Frame under the current holder's address judge */
-    private function receiveAnswer(AccountOperationAnswerSignalData $answer): void
+    /**
+     * @param AccountOperationAnswerSignalData $answer Frame under the current holder's address judge
+     * @param string $sender Canonical source preserved by the queued frame
+     */
+    private function receiveAnswer(AccountOperationAnswerSignalData $answer, string $sender): void
     {
         $holder = $this->holder;
         self::assertNotNull($holder);
         $this->asHolder(static fn () => $holder->onSignalAgent(
-            new AgentSignalData($answer), '', HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER,
+            new AgentSignalData($answer), $sender, HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER,
         ));
     }
 
@@ -854,7 +858,7 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
         $payload = $frame->data->data;
         if ($payload instanceof AccountOperationAnswerSignalData) {
             self::assertSame(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, $frame->signalName->getName());
-            $this->receiveAnswer($payload);
+            $this->receiveAnswer($payload, SignalSource::describe($frame->signalSource));
 
             return;
         }
@@ -870,7 +874,7 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
             ))[0];
         self::assertSame($agent::ACCOUNT_OPERATION_SIGNAL, $frame->signalName->getName());
         ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), static fn () => $agent->onSignalAgent(
-            $frame->data, '', $frame->signalName->getName(),
+            $frame->data, SignalSource::describe($frame->signalSource), $frame->signalName->getName(),
         ));
     }
 

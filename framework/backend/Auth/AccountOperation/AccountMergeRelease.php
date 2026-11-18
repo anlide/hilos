@@ -15,7 +15,8 @@ use Throwable;
 
 /**
  * Each personal owner releases only its own reservation through an immutable result.
- * SCAFFOLD: the merge coordinator sends the release in HIL-2000.
+ * The prepared coordinator sends these duties through the personal handler.
+ * SCAFFOLD: production merge switches in HIL-1999.
  */
 final class AccountMergeRelease
 {

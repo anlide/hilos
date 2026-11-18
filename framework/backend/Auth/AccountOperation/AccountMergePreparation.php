@@ -18,7 +18,8 @@ use Throwable;
 
 /**
  * The person's agent checks its own account and records a reservation or a refusal without changing its rows.
- * SCAFFOLD: the merge coordinator sends the preparation in HIL-2000; mergeAccounts() remains live until HIL-1999.
+ * The prepared coordinator sends these duties through the personal handler.
+ * SCAFFOLD: mergeAccounts() remains live until HIL-1999.
  */
 final class AccountMergePreparation
 {

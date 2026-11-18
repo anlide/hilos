@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Users\Agent;
 
 use Hilos\Utils\Helpers\TimeHelper;
+use Hilos\Utils\Logger;
 use Hilos\Constants\TimeConstants;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Closure;
@@ -23,6 +24,8 @@ use Hilos\Auth\AccountOperation\AccountMergeCleanup;
 use Hilos\Auth\AccountOperation\AccountMergeCleanupResult;
 use Hilos\Auth\AccountOperation\AccountMergeFinishing;
 use Hilos\Auth\AccountOperation\AccountMergeGiving;
+use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
+use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountMergeHandover;
 use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
@@ -38,6 +41,7 @@ use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
@@ -267,6 +271,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => [
             AgentSignalConfigKey::INDEX_FIELD => AccountOperationAskSignalData::ownerIndex,
             AgentSignalConfigKey::DTO => AccountOperationAskSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER => [
+            AgentSignalConfigKey::INDEX_FIELD => AccountMergeHandoverSignalData::ownerIndex,
+            AgentSignalConfigKey::DTO => AccountMergeHandoverSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_RENAME => [
             AgentSignalConfigKey::INDEX_FIELD => UserRenameSignalData::userId,
@@ -742,6 +750,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         $this->requireMergeContinuation(Hilos::$db->accountOperationAssignments[$assignmentId]);
         $result = AccountMergeGiving::run($assignmentId, $this->userId);
         $this->refreshMergeFinishing();
+        $this->sendMergeHandover($assignmentId);
 
         return $result;
     }
@@ -825,7 +834,7 @@ abstract class AbstractUserAgent extends AbstractAgent
      * transport's dead-endpoint report are not answered; their refusals go to this agent's log.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one of this agent's frames
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
@@ -838,6 +847,16 @@ abstract class AbstractUserAgent extends AbstractAgent
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
         switch ($name) {
+            case HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER:
+                $handover = $data->data;
+                if (!$handover instanceof AccountMergeHandoverSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountMergeHandoverSignalData::class, $handover);
+                }
+
+                $this->handleMergeHandover($handover, $sender);
+
+                return;
+
             case HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP:
                 $ask = $data->data;
                 if (!$ask instanceof AccountOperationAskSignalData) {
@@ -1596,6 +1615,90 @@ abstract class AbstractUserAgent extends AbstractAgent
     /** WorkerManager releases the claims after this hook returns. */
     public function onStop(): void
     {
+    }
+
+    /**
+     * Reads private snapshots only as their source, after give has committed. A failed send leaves
+     * the saved give available for explicit drive; it must not turn the generic give answer into a failure.
+     *
+     * @param int $assignmentId Committed source assignment
+     * @throws Throwable When immutable metadata or the source copy refuses reading
+     */
+    private function sendMergeHandover(int $assignmentId): void
+    {
+        $assignment = Hilos::$db->accountOperationAssignments[$assignmentId];
+        $operation = Hilos::$db->accountOperations->fresh($assignment->operationId);
+        if ($operation === null || $operation->finishedAt !== null || $operation->stage !== AccountMergeStage::Go->value
+            || AccountMergeReceiveResult::forOperation($operation) !== null) {
+            return;
+        }
+        $receive = Hilos::$db->accountOperationAssignments->byIdentity(
+            $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Receive->value,
+        );
+        if ($receive === null) {
+            return;
+        }
+        $handover = AccountMergeGiving::handover($assignmentId, $this->userId);
+        if ($handover === null) {
+            return;
+        }
+        $frame = new AccountMergeHandoverSignalData(
+            $operation->id, AccountMergeStage::Go->value, $receive->id, $receive->owner->ownerIndex, $handover,
+        );
+        try {
+            $this->sendToAgent(HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER, $frame);
+        } catch (Throwable) {
+            Logger::logAgentError($this->getId(), "Account merge {$operation->id}, give {$assignmentId}: handover send failed.");
+        }
+    }
+
+    /**
+     * Validates transport coordinates before entering the saved-first receipt path; neither the
+     * holder nor this guard reads the source's private copy from storage.
+     *
+     * @param AccountMergeHandoverSignalData $frame Typed source handover
+     * @param string $sender Original transport source
+     * @throws AgentException When the transport addresses a different person or source
+     * @throws InvalidArgumentException When the generic answer cannot be queued
+     * @throws InvalidFormatException When the answer cannot be constructed
+     */
+    private function handleMergeHandover(AccountMergeHandoverSignalData $frame, string $sender): void
+    {
+        $this->refuseAnotherPerson((int)$frame->ownerIndex, HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER);
+        if ($sender !== SignalSource::describe(new SignalSource(
+            SignalSource::AGENT, HilosAgentType::HILOS_USER, (string)$frame->handover->copy->loserUserId,
+        ))) {
+            throw new AgentException('The merge handover requires its canonical source sender.');
+        }
+        $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+            new AccountOperationAskSignalData($frame->operationId, $frame->stage, $frame->assignmentId, $frame->ownerIndex),
+            function (AccountOperationAssignment $assignment) use ($frame): AccountOperationResult {
+                $operation = $assignment->operation;
+                if ($operation->kind !== AccountOperationKind::Merge || $operation->survivorUserId !== $this->userId
+                    || $operation->loserUserId !== $frame->handover->copy->loserUserId
+                    || $assignment->assignmentKey !== AccountMergeDuty::Receive->value
+                    || $assignment->userId !== $this->userId
+                    || !$assignment->owner->equals(new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, $frame->ownerIndex))
+                    || !$assignment->payload->equals(AccountOperationAssignmentPayload::fromJson('{}'))) {
+                    throw new ValidationException('The merge handover requires its canonical pair and receive assignment.');
+                }
+                $give = Hilos::$db->accountOperationAssignments->byIdentity(
+                    $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Give->value,
+                );
+                $saved = $give === null ? null : Hilos::$db->accountOperationResults->byAssignment($give->id);
+                if ($give === null || $give->id !== $frame->handover->copy->assignmentId
+                    || $give->userId !== $operation->loserUserId
+                    || !$give->owner->equals(new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$operation->loserUserId))
+                    || !$give->payload->equals(AccountOperationAssignmentPayload::fromJson('{}'))
+                    || $saved === null || $saved->assignmentId !== $give->id || $saved->ownerAgentId !== $give->owner->agentId()
+                    || AccountMergeGiveResult::of($saved->payload)->admission->toArray() !== $frame->handover->admission->toArray()) {
+                    throw new ValidationException('The merge handover requires its exact saved give and original admission.');
+                }
+
+                return $this->receiveForMerge($assignment->id, $frame->handover);
+            },
+            $this->getId(),
+        ));
     }
 
     /**

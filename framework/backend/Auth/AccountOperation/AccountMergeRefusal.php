@@ -14,6 +14,7 @@ enum AccountMergeRefusal: string
     case LoserMerged = 'loser_merged';
     case BeingDeleted = 'being_deleted';
     case Occupied = 'occupied';
+    case PasswordFateRequired = 'password_fate_required';
     case ProtectionChanged = 'protection_changed';
     case SecondFactorFateRequired = 'second_factor_fate_required';
     case LoserWithoutSecondFactor = 'loser_without_second_factor';
@@ -30,6 +31,7 @@ enum AccountMergeRefusal: string
             self::LoserMerged => AbstractSessionsLibraryAgent::ACCOUNT_MERGE_ALREADY_MERGED_MESSAGE,
             self::BeingDeleted => AbstractSessionsLibraryAgent::ACCOUNT_MERGE_BEING_DELETED_MESSAGE,
             self::Occupied => AbstractSessionsLibraryAgent::ACCOUNT_MERGE_OCCUPIED_MESSAGE,
+            self::PasswordFateRequired => 'Both accounts have a password: pass --password=survivor|loser|none',
             self::ProtectionChanged => 'Second-factor protection changed. Review the accounts and choose again.',
             self::SecondFactorFateRequired => 'Choose second-factor protection: survivor or both (--second-factor on the console).',
             self::LoserWithoutSecondFactor => 'The loser has no confirmed authenticator. Remove the second-factor choice.',

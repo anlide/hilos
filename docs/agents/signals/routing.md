@@ -229,8 +229,45 @@ sessions holder owns in `AGENT_SIGNALS` with
 correlated notice; the participant's durable result remains the evidence of
 completion.
 
-A participant's start runs the ready assignments addressed to it through the
-same handler, in the worker, with the frame the coordinator would have sent and
+A prepared merge uses the same step and answer DTOs. The holder checks the
+original operation, assignment, immutable stage, canonical transport sender and
+exact saved owner-bound proof. The sender is `SignalSource::describe()` of the
+agent source (`agent/type#index`, or the unindexed form); the result owner uses
+`AccountOperationOwnerAddress::agentId()` (`type:index`), a different encoding of
+the same identity. Inline holder work passes that same sender judgment.
+Only an original preparing project expectation may answer during current go,
+through HIL-1998's `AccountMergeProjectStep::isCarriedAssignment()` gate. Delivery
+keeps its original assignment id, stage, owner and payload and starts only after
+the saved give. Old personal prepare/release frames gain no stage exception;
+foreign, unproved or closed-operation answers advance nothing.
+
+The private source-to-survivor copy has its own inherited personal-agent route:
+`HILOS_USER_ACCOUNT_MERGE_HANDOVER`, declared by `AbstractUserAgent` with exact
+`AccountMergeHandoverSignalData` and
+`AgentSignalConfigKey::INDEX_FIELD => 'ownerIndex'`. It carries exactly
+`{operationId, stage, assignmentId, ownerIndex, handover}`, where `handover` is
+`{copy, admission}`. The outer assignment is the survivor's receive; the typed
+copy names the distinct source give and the admission retains its original birth
+revisions. After give commits or replays, only its canonical source sends the
+saved copy directly to the canonical survivor. The recipient checks that sender
+and the immutable give/receive coordinates before entering saved-first receipt.
+The holder neither reads nor stores hand-over secrets; generic ask/answer and
+declarative router logic are unchanged. Saved receipt replay after cleanup or
+end does not hydrate old memory. Receipt proves the survivor's Receiving step,
+not delivery of a frame or completion of the operation.
+
+The protected holder merge entries drive this prepared exchange; administrator
+and `account:merge` production callers remain legacy until HIL-1999. A missing
+owner or step signal leaves its durable duty open. The queue lasts one handler;
+explicit drive of the same id can recover ready work after a lost frame, with
+at most one saved give replay before receipt. Answers do not start a resend
+loop. General discovery/recovery remains HIL-2002 and real cluster/backup
+evidence remains HIL-2013; see
+[The Prepared Merge Coordinator](../architecture/account-operations.md#the-prepared-merge-coordinator)
+and [The Prepared Source-To-Survivor Handover](../architecture/account-operations.md#the-prepared-source-to-survivor-handover).
+
+An erasure participant's start runs the ready assignments addressed to it through
+the same handler, in the worker, with the frame the coordinator would have sent and
 without a frame to itself; the answer goes to the holder as for any ask
 ([The erasure recovery](../architecture/account-operations.md#current-implementation)).
 

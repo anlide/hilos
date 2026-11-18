@@ -25,6 +25,7 @@ use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\Identity as EntityIdentity;
@@ -242,7 +243,7 @@ final class AccountErasureTest extends IntegrationTestCase
                 }
                 self::assertLessThan(200, ++$delivered, 'The real exchange must settle without a retry loop.');
                 ExecutionContext::run(new ExecutionFrame(agentId: $owner->getId()), static fn () => $owner->onSignalAgent(
-                    $signal->data, '', $signal->signalName->getName(),
+                    $signal->data, SignalSource::describe($signal->signalSource), $signal->signalName->getName(),
                 ));
             }
         } finally {

@@ -10,10 +10,16 @@ use Hilos\Auth\AccountOperation\AccountErasureCoordinator;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureSessionsResult;
+use Hilos\Auth\AccountOperation\AccountMergeCancellationState;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeCoordinator;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergeEnd;
 use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
+use Hilos\Auth\AccountOperation\AccountMergeOpening;
+use Hilos\Auth\AccountOperation\AccountMergeProjectStep;
 use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
+use Hilos\Auth\AccountOperation\AccountMergeRefusal;
 use Hilos\Auth\AccountOperation\AccountMergeSessionsResult;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
@@ -4302,8 +4308,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * too, so a person whose agent fell is not waited for (HIL-1901). The last of that agent
      * answers a trust renewal: a refusal is logged, and a pair the agent no longer found is
      * written again while the confirmation still holds (HIL-1907).
-     * Account-operation answers advance only a correlated open erasure; participant results
-     * remain the durable evidence of completion (HIL-1950).
+     * Account-operation answers advance correlated open erasures and prepared merges; participant
+     * results remain the durable evidence of completion.
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -4312,7 +4318,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * re-implement it differently.
      *
      * @param AgentSignalData $data Wrapped agent-signal payload
-     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it (unused)
+     * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one of this library's frames
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
@@ -4485,8 +4491,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 if (!$answer instanceof AccountOperationAnswerSignalData) {
                     throw new InvalidAgentSignalPayloadException($name, AccountOperationAnswerSignalData::class, $answer);
                 }
-                $this->askAccountOperation($this->afterAccountOperationAnswer($answer));
-                $this->settleForcePurges($answer->operationId);
+                $this->askAccountOperation($this->afterAccountOperationAnswer($answer, $sender));
+                if ((Hilos::$db->accountOperations[$answer->operationId] ?? null)?->kind === AccountOperationKind::Erasure) {
+                    $this->settleForcePurges($answer->operationId);
+                }
 
                 return;
 
@@ -7360,43 +7368,115 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * SCAFFOLD: prepared merge entry; production callers switch in HIL-1999.
+     * Exact repeats precede preflight so a committed give continues under the same operation id.
+     *
+     * @param int $survivorUserId Immutable survivor
+     * @param int $loserUserId Immutable loser and open-operation identity
+     * @param AccountMergeChoice $choice Immutable fates and protection snapshot
+     * @return AccountOperation The new merge or its exact open predecessor
+     * @throws Throwable When authority, preflight, overlap or transactional work refuses opening
+     */
+    protected function openAccountMerge(int $survivorUserId, int $loserUserId, AccountMergeChoice $choice): AccountOperation
+    {
+        if (ExecutionContext::currentAgentId() !== HilosAgentType::HILOS_SESSIONS_LIBRARY) {
+            throw new InvalidFormatException('Only the canonical session holder can open a prepared merge.');
+        }
+        if (Database::hasOpenTransactions()) {
+            throw new LogicException('Merge opening must enter outside an application transaction.');
+        }
+        $existing = Hilos::$db->accountOperations->openMergeOfLoser($loserUserId);
+        if ($existing !== null) {
+            if ($existing->survivorUserId !== $survivorUserId || !$existing->mergeChoice->equals($choice)) {
+                throw new ValidationException(sprintf(self::ACCOUNT_MERGE_OCCUPIED_MESSAGE, $this->mergeRefusalAccountLabel($loserUserId)));
+            }
+            $this->driveAccountMerge($existing);
+
+            return $existing;
+        }
+        if ($survivorUserId === $loserUserId) {
+            throw new ValidationException('The merge requires two different positive account ids.');
+        }
+        $this->assertMergeable($survivorUserId, $loserUserId);
+        foreach ([$survivorUserId, $loserUserId] as $userId) {
+            if (count(Hilos::$db->accountOperations->openMergesNaming($userId)) !== 0) {
+                throw new ValidationException(sprintf(self::ACCOUNT_MERGE_OCCUPIED_MESSAGE, $this->mergeRefusalAccountLabel($userId)));
+            }
+        }
+        if ($choice->passwordFate === null && Hilos::$db->identities->passwordFateNeeded($loserUserId, $survivorUserId)) {
+            throw new ValidationException(AccountMergeRefusal::PasswordFateRequired->template());
+        }
+        $operation = AccountMergeOpening::open($survivorUserId, $loserUserId, $choice);
+        $this->driveAccountMerge($operation);
+
+        return $operation;
+    }
+
+    /**
+     * @param AccountOperation $operation Prepared merge to enter or resume
+     * @throws Throwable When authority, proofs or transactional work refuses progress
+     */
+    protected function driveAccountMerge(AccountOperation $operation): void
+    {
+        $this->askAccountOperation(AccountMergeCoordinator::begin($operation));
+    }
+
+    /**
+     * @param AccountOperation $operation Prepared merge whose no-give gate decides cancellation
+     * @return AccountMergeCancellationState Durable cancellation verdict, followed by release or forward duties
+     * @throws Throwable When authority, proofs or transactional work refuses progress
+     */
+    protected function cancelAccountMerge(AccountOperation $operation): AccountMergeCancellationState
+    {
+        $state = AccountMergeCoordinator::cancel($operation);
+        $this->driveAccountMerge($operation);
+
+        return $state;
+    }
+
+    /**
      * Rejects stale or foreign frames before considering their outcome. A done frame is only
      * a notification: the participant must already have committed its result.
      *
      * @param AccountOperationAnswerSignalData $answer Participant's correlated address and outcome
+     * @param string $sender Canonical transport source, including the agent type and optional index
      * @return list<AccountOperationAssignment> Ready direct successors, or none for an unusable answer
      * @throws HilosException When the transition cannot read or commit its facts, preserving framework refusals
      */
-    private function afterAccountOperationAnswer(AccountOperationAnswerSignalData $answer): array
+    private function afterAccountOperationAnswer(AccountOperationAnswerSignalData $answer, string $sender): array
     {
-        $assignment = Hilos::$db->accountOperationAssignments[$answer->assignmentId] ?? null;
-        $operation = Hilos::$db->accountOperations[$answer->operationId] ?? null;
-        if ($operation?->kind === AccountOperationKind::Merge) {
-            $this->logAgentWarning('Account merge answers await HIL-2000.');
-
-            return [];
-        }
-        if ($assignment === null || $operation === null || $assignment->operationId !== $operation->id
-            || $operation->kind !== AccountOperationKind::Erasure || $operation->finishedAt !== null
-            || $answer->stage !== $assignment->stage || $answer->stage !== $operation->stage) {
-            $this->logAgentWarning("Ignored account operation answer {$answer->operationId}/{$answer->stage}/{$answer->assignmentId}.");
-
-            return [];
-        }
-        if (in_array($answer->answer, [AccountOperationAnswerKind::Refused, AccountOperationAnswerKind::Failed], true)
-            || ($answer->answer === AccountOperationAnswerKind::Done
-                && Hilos::$db->accountOperationResults->byAssignment($assignment->id) === null)) {
-            $this->logAgentWarning("Unfinished account operation assignment {$assignment->id}: {$answer->answer->value}.");
-
-            return [];
-        }
-
         try {
+            $assignment = Hilos::$db->accountOperationAssignments[$answer->assignmentId] ?? null;
+            $operation = Hilos::$db->accountOperations->fresh($answer->operationId);
+            if ($assignment === null || $operation === null || $assignment->operationId !== $operation->id
+                || !in_array($operation->kind, [AccountOperationKind::Erasure, AccountOperationKind::Merge], true)
+                || $operation->finishedAt !== null || $answer->stage !== $assignment->stage
+                || $sender !== SignalSource::describe(new SignalSource(SignalSource::AGENT, $assignment->ownerType, $assignment->ownerIndex))
+                || ($answer->stage !== $operation->stage && ($operation->kind !== AccountOperationKind::Merge
+                    || !AccountMergeProjectStep::isCarriedAssignment($assignment)))) {
+                $this->logAgentWarning("Ignored account operation answer {$answer->operationId}/{$answer->stage}/{$answer->assignmentId}.");
+
+                return [];
+            }
+            $result = $answer->answer === AccountOperationAnswerKind::Done
+                ? Hilos::$db->accountOperationResults->byAssignment($assignment->id) : null;
+            if (in_array($answer->answer, [AccountOperationAnswerKind::Refused, AccountOperationAnswerKind::Failed], true)
+                || ($answer->answer === AccountOperationAnswerKind::Done && ($result === null
+                    || $result->assignmentId !== $assignment->id || $result->ownerAgentId !== $assignment->owner->agentId()))) {
+                $this->logAgentWarning("Unfinished account operation assignment {$assignment->id}: {$answer->answer->value}.");
+
+                return [];
+            }
+
+            if ($operation->kind === AccountOperationKind::Merge) {
+                return AccountMergeCoordinator::afterAnswer($operation, $assignment, $answer);
+            }
+
             return AccountErasureCoordinator::afterAnswer($operation, $assignment, $answer, AccountErasureParticipantCatalog::installation());
         } catch (HilosException $failure) {
             throw $failure;
         } catch (Throwable $failure) {
-            throw new AgentException('The account erasure transition failed.', previous: $failure);
+            throw new AgentException('The account operation transition failed.', previous: $failure);
         }
     }
 
@@ -7422,7 +7502,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     fn (AccountOperationAssignment $a): AccountOperationResult => $this->applyAccountSessionsPart($a->id),
                     $this->getId(),
                 );
-                array_push($assignments, ...$this->afterAccountOperationAnswer($answer));
+                array_push($assignments, ...$this->afterAccountOperationAnswer($answer, SignalSource::describe(
+                    new SignalSource(SignalSource::AGENT, HilosAgentType::HILOS_SESSIONS_LIBRARY),
+                )));
 
                 continue;
             }
@@ -7439,7 +7521,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Selects the prepared holder entry without advancing the merge coordinator.
+     * Selects the participant by operation kind; the common answer judge advances its coordinator.
      *
      * @param int $assignmentId Immutable erasure part or canonical merge duty
      * @return AccountOperationResult Committed counts or the exact saved result
@@ -7508,7 +7590,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * Transfers the loser's access log and ends touching sessions after its committed give.
-     * SCAFFOLD: HIL-2000 calls this prepared entry; HIL-1999 switches the live merge.
+     * The prepared coordinator dispatches this entry inline; production merge switches in HIL-1999.
      *
      * @param int $assignmentId Canonical go/sessions assignment
      * @return AccountOperationResult Committed counts or the exact saved result
@@ -7521,7 +7603,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * Ends survivor sessions only when the committed give kept the loser's factor, after receipt.
-     * SCAFFOLD: HIL-2000 calls this prepared entry; HIL-1999 switches the live merge.
+     * The prepared coordinator dispatches this entry inline; production merge switches in HIL-1999.
      *
      * @param int $assignmentId Canonical go/survivor_sessions assignment
      * @return AccountOperationResult Committed counts or the exact saved result
@@ -7533,7 +7615,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * SCAFFOLD: HIL-2000 drives this prepared end; HIL-1999 switches the live merge.
+     * SCAFFOLD: protected access to the prepared end; production merge switches in HIL-1999.
      *
      * @param AccountOperation $operation Merge considered outside an application transaction
      * @return bool Whether the merge has its confirmed Completed outcome
