@@ -3,14 +3,102 @@
 import io
 import json
 import subprocess
+import tempfile
 import unittest
 from contextlib import ExitStack, redirect_stdout
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import call, patch
 
 import control
 import scenarios
 from stand import Stand, StandRefused
+
+
+class SharedOutputStartupTest(unittest.TestCase):
+    def setUp(self):
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        demo = Path(stack.enter_context(tempfile.TemporaryDirectory())) / "demo"
+        self.stand = SimpleNamespace(project="example", demo_dir=demo, cli_service="example-cli",
+                                     cli_profiles=(),
+                                     members={"m1": SimpleNamespace(id="m1", service="example-m1",
+                                                                   log_dir=demo / "data/logs-cluster/m1")},
+                                     stranger=SimpleNamespace(id="x1", service="example-x1",
+                                                              log_dir=demo / "data/logs-cluster/x1"))
+        stack.enter_context(redirect_stdout(io.StringIO()))
+
+    def test_live_up_stops_members_and_stranger_before_preparation_and_restores_only_the_active_stranger(self):
+        with patch.object(control, "compose", side_effect=[control.Outcome(0, "example-m1\nexample-x1\n", ""),
+                                                           0, control.Outcome(0, "example-cli\n", ""),
+                                                           0, 0, 0]) as compose:
+            self.assertEqual(0, control.up(self.stand, "cluster"))
+        requests = compose.call_args_list
+        self.assertEqual(call(self.stand, "--profile", "*", "ps", "--status", "running", "--services"), requests[0])
+        self.assertEqual(call(self.stand, "--profile", "*", "stop", "example-m1", "example-x1", capture=False),
+                         requests[1])
+        self.assertEqual(requests[0], requests[2])
+        self.assertEqual((self.stand, "run", "--build", "--rm", "--no-deps", "--entrypoint", "sh", "example-cli"),
+                         requests[3].args[:8])
+        self.assertIn("test-writer-entrypoint.sh true", requests[3].args[-1])
+        self.assertEqual(call(self.stand, "up", "-d", "--build", "--force-recreate", capture=False), requests[4])
+        self.assertEqual(call(self.stand, "up", "-d", "--build", "--no-deps", "example-x1", capture=False), requests[5])
+
+    def test_cold_up_prepares_before_default_start_without_enabling_a_profile_or_cleaning_logs(self):
+        for stranger in (self.stand.stranger, None):
+            self.stand.stranger = stranger
+            with self.subTest(stranger=stranger):
+                with patch.object(control, "compose", side_effect=[control.Outcome(0, "", ""),
+                                                                   control.Outcome(0, "", ""), 0, 0]) as compose:
+                    with patch.object(control, "clear_test_logs", side_effect=AssertionError("ordinary up clears logs")):
+                        self.assertEqual(0, control.up(self.stand, "cluster"))
+                self.assertEqual(4, compose.call_count)
+                self.assertEqual(call(self.stand, "up", "-d", "--build", "--force-recreate", capture=False),
+                                 compose.call_args_list[-1])
+
+    def test_failed_inspection_stop_preparation_or_startup_never_proceeds_to_the_next_stage(self):
+        live = control.Outcome(0, "example-m1\nexample-x1\n", "")
+        stopped = control.Outcome(0, "", "")
+        for replies, code in [([control.Outcome(11, "", "ps refused")], 11),
+                              ([live, 12], 12),
+                              ([stopped, control.Outcome(13, "", "ps refused")], 13),
+                              ([live, 0, stopped, 14], 14),
+                              ([live, 0, stopped, 0, 15], 15),
+                              ([live, 0, stopped, 0, 0, 16], 16)]:
+            with self.subTest(replies=replies):
+                with patch.object(control, "compose", side_effect=replies) as compose:
+                    self.assertEqual(code, control.up(self.stand, "cluster"))
+                self.assertEqual(len(replies), compose.call_count)
+
+    def test_a_node_still_running_after_stop_refuses_preparation_and_startup(self):
+        for service in ("example-m1", "example-x1"):
+            with self.subTest(service=service):
+                with patch.object(control, "compose", side_effect=[control.Outcome(0, service + "\n", ""),
+                                                                   0, control.Outcome(0, service + "\n", "")]) as compose:
+                    with self.assertRaisesRegex(StandRefused, "needs stopped nodes"):
+                        control.up(self.stand, "cluster")
+                self.assertEqual(3, compose.call_count)
+
+    def test_restart_keeps_ordinary_down_then_prepared_up_without_wiping_stores(self):
+        with patch.object(control, "compose", side_effect=[0, control.Outcome(0, "", ""),
+                                                           control.Outcome(0, "", ""), 0, 0]) as compose:
+            self.assertEqual(0, control.restart(self.stand, "cluster"))
+        self.assertEqual(call(self.stand, "--profile", "*", "down", capture=False), compose.call_args_list[0])
+        self.assertEqual(5, compose.call_count)
+        with patch.object(control, "compose", return_value=19) as compose:
+            self.assertEqual(19, control.restart(self.stand, "cluster"))
+        compose.assert_called_once_with(self.stand, "--profile", "*", "down", capture=False)
+
+    def test_long_lived_cli_has_only_nonrecursive_access_to_the_shared_log_parent(self):
+        repo = Path(__file__).resolve().parents[3]
+        for demo in ("binance-btc-tracker", "concert-tickets", "ecommerce-shop", "file-gallery-manager",
+                     "online-testing", "roblox-game-server"):
+            with self.subTest(demo=demo):
+                tooling = (repo / "demo" / demo / "docker/cluster/tooling.yml").read_text()
+                self.assertIn("      HILOS_TEST_WRITE_DIRS: /app/data /app/vendor\n", tooling)
+                self.assertIn("      HILOS_TEST_OWN_DIRS: /hilos-test-logs\n", tooling)
+                self.assertNotIn("HILOS_TEST_WRITE_DIRS: /app/data /app/vendor /hilos-test-logs", tooling)
+                self.assertIn('    command: ["sleep", "infinity"]', tooling)
 
 
 class SavedFreezeStartupTest(unittest.TestCase):

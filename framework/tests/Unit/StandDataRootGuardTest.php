@@ -9,32 +9,22 @@ use PHPUnit\Framework\TestCase;
 require_once __DIR__ . '/../../../scripts/stand-registry.php';
 
 /**
- * Holds every service of a demo stand that mounts the project at /app to a data root of the
- * stand's own.
+ * Holds demo stands to their own data roots, and every registry stand to clone ownership declarations.
  *
- * A stand mounts its demo whole at /app, so whatever it does not cover writes into the data/ of
- * the local installation beside it. The export agents delete, at start and every hour, each file
- * of their directory that has no ready row in their own database (`expireCopies()` of
- * framework/backend/DataExport/AbstractDataExportAgent.php, `expire()` of
- * framework/backend/Legal/Export/LegalAcceptancesExports.php): after a test's db-reset that is
- * every archive of the local installation. So a service that mounts the project mounts
- * its stand's root at /app/data as well - `../data/test` on an ordinary stack, a named volume on
- * a cluster stand - and keeps every other mount under /app/data inside the stand's storage, which
- * on a cluster stand is its named volumes alone.
+ * A demo mounted at /app needs an isolated /app/data: after db-reset its export agents may delete
+ * every archive without a ready row. Ordinary stands bind data/test; cluster stands use named
+ * volumes. The existing isolation pass covers every demo registry row and cluster aggregate.
  *
- * The walk starts from the registry because a stand is born as a row of it, so a new demo meets
- * this rule the moment it gets one. The rows outside `demo/` run no demo's daemon. A cluster
- * stand is judged by its compose root and every `docker/cluster/*.yml` no `extends` of the stand
- * names; the named ones are parts, which a standalone deployment runs as they are.
+ * The ownership pass also covers framework/frontend tools, restricted to the effective test profile
+ * in a shared compose file. Every demo needs its data/.gitignore parent. A writable clone bind needs
+ * the common writer entrypoint, a writable /app or /hilos owner root and explicit output directories.
+ * Read-only clone readers, including root PHPUnit with container-local storage, need no writer.
+ * Runtime tests, rather than this text guard, prove the process identity and repair of old outputs.
  *
- * This is a check of the text of the files, not of the model compose resolves out of them. They
- * are read line by line because the repository has no YAML parser, the same way the other stand
- * guards read them. Into an `extends` the guard goes one level, and it merges the part's mounts
- * under the service's own by their target, as compose does. What it cannot read - an `extends` it
- * cannot follow, a volume line that is not `<source>:<target>`, a service whose value stands on
- * its own declaration line - is a refusal, not a pass: a service the guard cannot see may be the
- * one that leaks. An nginx of a stand reads the stand's files and does not mount the project, so
- * it is not judged.
+ * The small reader follows one level of extends, including same-file references, and declared
+ * same-file service anchors. Extends merges mounts by target and environment by name; YAML merge
+ * replaces whole fields locally. Cluster parts are judged through their effective test services,
+ * not as standalone deployments. Unknown service or mount forms refuse with their file and service.
  */
 final class StandDataRootGuardTest extends TestCase
 {
@@ -67,7 +57,7 @@ final class StandDataRootGuardTest extends TestCase
 
     /** A short-syntax volume line; a colon inside `${...}`, nested or not, does not separate. */
     private const string MOUNT = '~^\s*-\s+(?<q>["\']?)(?<source>(?:(?&var)|[^:$\s"\']|\$(?!\{))++)'
-        . ':(?<target>(?:(?&var)|[^:$\s"\']|\$(?!\{))++)(?::[A-Za-z,]+)?\k<q>\s*(?:#.*)?$'
+        . ':(?<target>(?:(?&var)|[^:$\s"\']|\$(?!\{))++)(?::(?<mode>[A-Za-z,]+))?\k<q>\s*(?:#.*)?$'
         . '(?(DEFINE)(?<var>\$\{(?:[^{}]|(?&var))*\}))~';
 
     /** A variable compose substitutes, `$NAME` or `${...}`: an odd run of `$`, since `$$` writes one `$` as it is. */
@@ -81,6 +71,15 @@ final class StandDataRootGuardTest extends TestCase
 
     /** The tags after `volumes:` that keep the part's mounts out. */
     private const array VOLUMES_RESETS = ['!override', '!reset', '!reset []'];
+
+    /** The shared test writer, reached through the framework's read-only mount too. */
+    private const string WRITER = '/hilos/framework/docker/test-writer-entrypoint.sh';
+
+    /** The bind root whose stat supplies the test process identity. */
+    private const string OWNER_ROOT = 'HILOS_TEST_OWNER_ROOT';
+
+    /** The explicit directories the test writer prepares before dropping root. */
+    private const string WRITE_DIRS = 'HILOS_TEST_WRITE_DIRS';
 
     /** A stand whose writer lost its root writes into the local installation's data. */
     public function testEveryDemoStandMountsItsOwnDataRoot(): void
@@ -266,7 +265,7 @@ final class StandDataRootGuardTest extends TestCase
         ];
         $unread = [
             '    extends: node' => 'its `extends: node` names no file',
-            '    extends: {service: node}' => 'its `extends: {service: node}` names no file',
+            '    extends: {service: node}' => "its part {$local} has no service node",
             '    extends: {file: ./node.yml, service: node, profile: x}' => 'is not of the form `{file: …, service: …}`',
             '    extends:' => 'its `extends` spans several lines',
             '    extends: {file: ./gone.yml, service: node}' => 'its part demo/shop/docker/cluster/gone.yml is not found',
@@ -305,22 +304,207 @@ final class StandDataRootGuardTest extends TestCase
         $this->assertGreaterThan(0, count($this->standVerdicts()), 'no service mounting the project was found - the reader stopped seeing them');
     }
 
+    /** All registry rows enter ownership coverage, including the two shared tool stands and twelve demo projects. */
+    public function testOwnershipCoversTheRegistryAndDemoDataMarkers(): void
+    {
+        $problems = array_values(array_filter($this->standVerdicts(true)));
+        $this->assertSame([], $problems, implode(PHP_EOL, $problems));
+        $this->assertCount(12, array_unique(array_column($this->demoStands(), 'cwd')));
+
+        foreach (['framework' => 'hilos-deps-test', 'frontend' => 'hilos-frontend-cli'] as $id => $writer) {
+            $stand = standById($this->repositoryRoot(), $id);
+            $this->assertNotNull($stand);
+            $path = $stand['composeFile'];
+            $verdicts = $this->verdictsOf($path, $this->linesOf($path), [], false, true, $stand['profiles']);
+            $this->assertArrayHasKey($writer, $verdicts);
+            $this->assertNull($verdicts[$writer]);
+            if ($id === 'framework') {
+                foreach (['hilos-cli-test', 'mysql-framework-remote-test', 'mysql-framework-catalog-test',
+                    'mysql-framework-restore-test'] as $reader) {
+                    $this->assertArrayHasKey($reader, $verdicts);
+                    $this->assertNull($verdicts[$reader]);
+                }
+                $this->assertArrayNotHasKey('ollama-local', $verdicts);
+                $this->assertArrayNotHasKey('hilos-preview-caddy', $verdicts);
+            }
+        }
+    }
+
+    /** Missing parents name the demo's marker, rather than relying on Docker to create a root-owned data directory. */
+    public function testAMissingDataMarkerNamesItsDemo(): void
+    {
+        $this->assertNull($this->markerVerdictOf('demo/shop', true));
+        $this->assertSame(
+            'demo/shop/data/.gitignore: a demo with a test stand needs its data/ parent in Git; see docs/agents/testing.md',
+            $this->markerVerdictOf('demo/shop', false),
+        );
+    }
+
+    /** Every writable clone bind needs all three declarations; empty, variable and unsafe outputs are refusals too. */
+    public function testAnUndeclaredCloneWriterIsNamed(): void
+    {
+        $path = 'framework/docker/writer.test.yml';
+        $lines = $this->writerFixture();
+        foreach ([
+            '    entrypoint:' => 'entrypoint',
+            '      HILOS_TEST_OWNER_ROOT:' => self::OWNER_ROOT,
+            '      HILOS_TEST_WRITE_DIRS:' => self::WRITE_DIRS,
+        ] as $prefix => $reason) {
+            $changed = array_values(array_filter($lines, static fn(string $line): bool => !str_starts_with($line, $prefix)));
+            $message = $this->verdictsOf($path, $changed, [], false, true)['writer'];
+            $this->assertIsString($message);
+            $this->assertStringStartsWith("{$path}:2: the service writer:", $message);
+            $this->assertStringContainsString($reason, $message);
+            $this->assertStringContainsString(self::RULES, $message);
+        }
+        foreach (['', '""', '${OUTPUT}', '/hilos', '/hilos/data', '/hilos/../outside', 'vendor'] as $dirs) {
+            $changed = array_map(
+                static fn(string $line): string => str_starts_with($line, '      HILOS_TEST_WRITE_DIRS:')
+                    ? '      HILOS_TEST_WRITE_DIRS: ' . $dirs : $line,
+                $lines,
+            );
+            $message = $this->verdictsOf($path, $changed, [], false, true)['writer'];
+            $this->assertIsString($message, "accepted outputs `{$dirs}`");
+            $this->assertStringContainsString(self::WRITE_DIRS, $message);
+        }
+    }
+
+    /** Read-only configuration readers and the root PHPUnit runner need no identity switch or writable clone outputs. */
+    public function testReadersAndRootReadOnlyPhpunitAreAllowed(): void
+    {
+        $verdicts = $this->verdictsOf('framework/docker/readers.test.yml', [
+            'services:',
+            '  phpunit:',
+            '    user: root',
+            '    volumes:',
+            '      - ../..:/hilos:ro',
+            '      - cache:/tmp/phpunit',
+            '      - ${TEST_DB_DIR:-/dev/shm/test-database}:/var/lib/mysql',
+            '  nginx:',
+            '    volumes:',
+            '      - ./nginx.conf:/etc/nginx/nginx.conf:ro',
+        ], [], false, true);
+        $this->assertSame(['phpunit' => null, 'nginx' => null], $verdicts);
+    }
+
+    /** A writable child is still a clone writer, even when the root bind is read-only and writer fields are present. */
+    public function testAReadOnlyRootDoesNotLicenseAWritableChild(): void
+    {
+        $lines = array_map(static fn(string $line): string => str_replace('../..:/hilos:rw', '../..:/hilos:ro', $line),
+            $this->writerFixture());
+        $lines[] = '      - ../../vendor:/hilos/vendor:rw';
+        $message = $this->verdictsOf('framework/docker/child.test.yml', $lines, [], false, true)['writer'];
+        $this->assertIsString($message);
+        $this->assertStringContainsString(self::OWNER_ROOT, $message);
+        $this->assertStringContainsString('read-only root does not cover child rw binds', $message);
+    }
+
+    /** Effective inheritance supplies writers, local fields override them, and only declared, one-level anchors are read. */
+    public function testInheritedWritersLocalOverridesAndDatabaseAnchorsAreRead(): void
+    {
+        $path = 'framework/docker/inherited.test.yml';
+        $part = 'framework/docker/part.yml';
+        $files = [$part => $this->writerFixture()];
+        $local = ['services:', '  local:', '    extends: {file: ./part.yml, service: writer}'];
+        $this->assertSame(['local' => null], $this->verdictsOf($path, $local, $files, false, true));
+        foreach ([
+            ['    entrypoint: []'],
+            ['    environment:', '      HILOS_TEST_OWNER_ROOT: /app'],
+            ['    environment:', '      HILOS_TEST_WRITE_DIRS: ""'],
+            ['    environment: {HILOS_TEST_OWNER_ROOT: /hilos}'],
+        ] as $override) {
+            $message = $this->verdictsOf($path, array_merge($local, $override), $files, false, true)['local'];
+            $this->assertIsString($message);
+            $this->assertStringContainsString("{$path}:2: the service local:", $message);
+            $this->assertStringContainsString(self::RULES, $message);
+        }
+        $folded = array_merge($local, [
+            '    environment:',
+            '      HILOS_TEST_WRITE_DIRS: >-',
+            '        /hilos/vendor',
+            '        /tmp/cache',
+        ]);
+        $this->assertSame(['local' => null], $this->verdictsOf($path, $folded, $files, false, true));
+        $listed = array_merge($local, ['    environment:', '      - HILOS_TEST_WRITE_DIRS=/hilos/vendor']);
+        $this->assertSame(['local' => null], $this->verdictsOf($path, $listed, $files, false, true));
+        $reader = array_merge($local, ['    entrypoint: []', '    volumes:', '      - ../..:/hilos:ro']);
+        $this->assertSame(['local' => null], $this->verdictsOf($path, $reader, $files, false, true));
+        $sameFile = array_merge($this->writerFixture(), ['  local:', '    extends: {service: writer}']);
+        $this->assertSame(['writer' => null, 'local' => null], $this->verdictsOf($path, $sameFile, [], false, true));
+
+        $database = [
+            'services:',
+            '  database: &declared-database',
+            '    profiles: [test]',
+            '    volumes:',
+            '      - ./config.cnf:/etc/mysql/conf.d/test.cnf:ro',
+            '  inherited:',
+            '    <<: *declared-database',
+            '  outside:',
+            '    profiles: [local]',
+            '    volumes:',
+            '      - ../..:/hilos:rw',
+        ];
+        $this->assertSame(['database' => null, 'inherited' => null],
+            $this->verdictsOf($path, $database, [], false, true, ['test']));
+        foreach (['*missing', '[*declared-database]'] as $alias) {
+            $unknown = array_map(static fn(string $line): string => str_replace('*declared-database', $alias, $line), $database);
+            $message = $this->verdictsOf($path, $unknown, [], false, true, ['test'])['inherited'];
+            $this->assertIsString($message);
+            $this->assertStringContainsString("{$path}:6: the guard cannot read the service inherited:", $message);
+            $this->assertStringContainsString(self::RULES, $message);
+        }
+        $writable = array_map(static fn(string $line): string => str_replace('test.cnf:ro', 'test.cnf:rw', $line), $database);
+        $message = $this->verdictsOf($path, $writable, [], false, true, ['test'])['inherited'];
+        $this->assertIsString($message);
+        $this->assertStringContainsString('entrypoint', $message);
+    }
+
+    /** @return list<string> A complete writer used by ownership refusal and inheritance fixtures */
+    private function writerFixture(): array
+    {
+        return [
+            'services:',
+            '  writer:',
+            '    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]',
+            '    environment:',
+            '      HILOS_TEST_OWNER_ROOT: /hilos',
+            '      HILOS_TEST_WRITE_DIRS: /hilos/vendor /tmp/cache',
+            '    volumes:',
+            '      - ../..:/hilos:rw',
+        ];
+    }
+
+    /**
+     * @param string $cwd Registry demo directory
+     * @param bool $present Whether the data marker exists
+     * @return ?string The missing marker's address, or null
+     */
+    private function markerVerdictOf(string $cwd, bool $present): ?string
+    {
+        return $present ? null : "{$cwd}/data/.gitignore: a demo with a test stand needs its data/ parent in Git; see " . self::RULES;
+    }
+
     /**
      * The verdict on every service of the demo stands that mounts the project or that the guard
      * cannot read.
      *
-     * @return list<?string> One sentence per service that fails the rule, null per service that holds it
+     * @param bool $ownership Include framework/frontend writers and demo data-parent markers
+     * @return list<?string> One sentence per failure, null per service that holds the rule
      */
-    private function standVerdicts(): array
+    private function standVerdicts(bool $ownership = false): array
     {
         $verdicts = [];
-        foreach ($this->demoStands() as $stand) {
+        foreach ($ownership ? standRegistry($this->repositoryRoot()) : $this->demoStands() as $stand) {
+            if ($ownership && str_starts_with($stand['cwd'], self::DEMO_ROOT)) {
+                $verdicts[] = $this->markerVerdictOf($stand['cwd'], is_file($this->repositoryRoot() . '/' . $stand['cwd'] . '/data/.gitignore'));
+            }
             $files = $this->filesOf($stand);
             $parts = [];
             foreach ($files as $path => $lines) {
                 foreach ($this->servicesOf($lines) as $body) {
                     $part = $this->extendsOf($path, $this->entriesOf(array_slice($body, 1, null, true)));
-                    if (is_array($part)) {
+                    if (is_array($part) && $part['part'] !== $path) {
                         $parts[$part['part']] = true;
                     }
                 }
@@ -334,7 +518,14 @@ final class StandDataRootGuardTest extends TestCase
 
             $cluster = $stand['composeFile'] === self::CLUSTER_COMPOSE;
             foreach (array_diff_key($files, $parts) as $path => $lines) {
-                $verdicts = array_merge($verdicts, array_values($this->verdictsOf($path, $lines, $files, $cluster)));
+                $verdicts = array_merge($verdicts, array_values($this->verdictsOf(
+                    $path,
+                    $lines,
+                    $files,
+                    $cluster,
+                    $ownership,
+                    $stand['profiles'],
+                )));
             }
         }
 
@@ -342,47 +533,204 @@ final class StandDataRootGuardTest extends TestCase
     }
 
     /**
-     * What every service of one file that mounts the project, or that the guard cannot read, does
-     * with its data root.
-     *
-     * @param string $path Repository-relative path of the file
-     * @param array<int, string> $lines The lines of that file
-     * @param array<string, array<int, string>> $files Repository-relative path => lines, of every file an `extends` may name
-     * @param bool $cluster Whether the file belongs to a cluster stand, whose storage is its named volumes
-     * @return array<string, ?string> Service name => the sentence for whoever wrote it, or null when it holds the rule
+     * @param string $path Repository-relative file path
+     * @param array<int, string> $lines Compose text
+     * @param array<string, array<int, string>> $files Available parts
+     * @param bool $cluster Whether only named data volumes isolate this stand
+     * @param bool $ownership Whether to check clone writers as well as demo data isolation
+     * @param list<string> $profiles Only these profiles belong to a profile-scoped registry row
+     * @return array<string, ?string> Service => refusal, or null for a service that holds the rule
      */
-    private function verdictsOf(string $path, array $lines, array $files, bool $cluster): array
-    {
+    private function verdictsOf(
+        string $path,
+        array $lines,
+        array $files,
+        bool $cluster,
+        bool $ownership = false,
+        array $profiles = [],
+    ): array {
         $verdicts = [];
-        foreach ($this->servicesOf($lines) as $service => $body) {
+        $files[$path] = $lines;
+        foreach ($this->servicesOf($lines) as $name => $body) {
             $place = $path . ':' . array_key_first($body);
-            $value = $this->valueOf($body);
-            $mounts = $value === null
-                ? $this->mountsOfService($path, $this->entriesOf(array_slice($body, 1, null, true)), $files)
-                : "it writes its value `{$value}` on its declaration line";
-
+            $own = $this->entriesOf(array_slice($body, 1, null, true));
+            if ($profiles !== [] && isset($own['profiles'])) {
+                $active = $this->profilesOf($own);
+                if (is_array($active) && array_intersect($profiles, $active) === []) {
+                    continue;
+                }
+            }
+            $service = $this->serviceOf($path, $body, $files);
+            if (is_array($service) && $profiles !== []) {
+                $active = $this->profilesOf($service['own'] + $service['base']);
+                if (is_string($active)) {
+                    $service = $active;
+                } elseif (array_intersect($profiles, $active) === []) {
+                    continue;
+                }
+            }
+            $mounts = is_string($service) ? $service : $this->mountsOfService($path, $service);
             if (is_string($mounts)) {
-                $verdicts[$service] = "{$place}: the guard cannot read the service {$service}: {$mounts}; a service that may mount the "
-                    . 'project at ' . self::PROJECT_TARGET . ' writes its keys in a block below its name, keeps its `extends` on one '
-                    . 'line as `{file: …, service: …}`, one level deep, and its volumes as `- <source>:<target>` lines; see ' . self::RULES;
-            } elseif (isset($mounts[self::PROJECT_TARGET])) {
+                $verdicts[$name] = "{$place}: the guard cannot read the service {$name}: {$mounts}; use block service keys, "
+                    . 'short volume lines, one-level extends or a declared same-file service anchor; see ' . self::RULES;
+                continue;
+            }
+            if (isset($mounts[self::PROJECT_TARGET])) {
                 $wrong = $this->wrongMountsOf($mounts, $cluster);
-                $verdicts[$service] = $wrong === []
-                    ? null
-                    : "{$place}: the service {$service} mounts the project at " . self::PROJECT_TARGET . ' but '
+                if ($wrong !== []) {
+                    $verdicts[$name] = "{$place}: the service {$name} mounts the project at " . self::PROJECT_TARGET . ' but '
                         . implode(', and ', $wrong) . '; mount `' . self::TEST_ROOT . ':' . self::DATA_ROOT
                         . '` — a cluster stand: its own named data volume — and keep every other mount under ' . self::DATA_ROOT
                         . ' inside it; see ' . self::RULES;
+                    continue;
+                }
+                $verdicts[$name] = null;
+            }
+            if ($ownership) {
+                $reason = $this->ownershipProblemOf($path, $service, $mounts);
+                $verdicts[$name] = $reason === null ? null : "{$place}: the service {$name}: {$reason}; see " . self::RULES;
             }
         }
 
         return $verdicts;
+    }
+
+    /**
+     * @param array<string, array<int, string>> $keys Effective service fields
+     * @return list<string>|string Profiles, or an unreadable form
+     */
+    private function profilesOf(array $keys): array|string
+    {
+        if (!isset($keys['profiles'])) {
+            return [];
+        }
+        $value = $this->valueOf($keys['profiles']);
+        if ($value !== null && preg_match('/^\[([A-Za-z0-9_, "\'-]*)\]$/', $value, $match) === 1) {
+            return array_map(static fn(string $profile): string => trim($profile, " \"'"), explode(',', $match[1]));
+        }
+        if ($value !== null) {
+            return 'its profiles are not a literal list';
+        }
+        $profiles = [];
+        foreach (array_slice($keys['profiles'], 1) as $line) {
+            if (preg_match('/^\s*-\s+["\']?([A-Za-z0-9_-]+)["\']?\s*$/', $line, $match) !== 1) {
+                return 'its profiles are not a literal list';
+            }
+            $profiles[] = $match[1];
+        }
+
+        return $profiles;
+    }
+
+    /**
+     * Only the writer's two required environment values matter here; unrelated values are not interpreted.
+     *
+     * @param array<string, array<int, string>> $keys Service fields before inheritance
+     * @return array<string, ?string>|string Explicit writer values, or an unreadable environment form
+     */
+    private function writerEnvironmentOf(array $keys): array|string
+    {
+        if (!isset($keys['environment'])) {
+            return [];
+        }
+        if ($this->valueOf($keys['environment']) !== null) {
+            return 'its environment is not a block mapping or a list';
+        }
+        $lines = array_slice($keys['environment'], 1, null, true);
+        $values = [];
+        if ($lines !== [] && str_starts_with(ltrim(reset($lines)), '-')) {
+            foreach ($lines as $line) {
+                if (preg_match('/^\s*-\s+["\']?([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$/', $line, $match) !== 1) {
+                    return 'its environment list cannot be read';
+                }
+                if (in_array($match[1], [self::OWNER_ROOT, self::WRITE_DIRS], true)) {
+                    $values[$match[1]] = isset($match[2]) ? trim($match[2], " \"'") : null;
+                }
+            }
+
+            return $values;
+        }
+        $entries = $this->entriesOf($lines);
+        if (isset($entries[self::MERGE_KEY])) {
+            return 'its environment merges an unsupported YAML anchor';
+        }
+        foreach ([self::OWNER_ROOT, self::WRITE_DIRS] as $key) {
+            if (!isset($entries[$key])) {
+                continue;
+            }
+            $value = $this->valueOf($entries[$key]);
+            if ($value === '>' || $value === '>-') {
+                $value = implode(' ', array_map('trim', array_slice($entries[$key], 1)));
+            } elseif (count($entries[$key]) !== 1) {
+                return "its {$key} is not a scalar or folded scalar";
+            }
+            $values[$key] = $value === null ? null : trim($value, " \"'");
+        }
+
+        return $values;
+    }
+
+    /**
+     * @param string $path Repository-relative compose path
+     * @param array{own: array, base: array, part: ?string, merge: bool} $service Resolved inheritance inputs
+     * @param array<string, array{source: string, target: string, mode: string, part?: string}> $mounts Effective mounts
+     * @return ?string The ownership refusal, or null for a reader or a declared writer
+     */
+    private function ownershipProblemOf(string $path, array $service, array $mounts): ?string
+    {
+        $writers = array_filter($mounts, function (array $mount) use ($path): bool {
+            if (in_array('ro', explode(',', $mount['mode']), true)
+                || preg_match(self::VOLUME_NAME, $mount['source']) === 1 || str_starts_with($mount['source'], '/')
+                || preg_match('~^\$\{[A-Za-z_][A-Za-z0-9_]*:-/~', $mount['source']) === 1) {
+                return false;
+            }
+            $source = $this->normalized(dirname($mount['part'] ?? $path) . '/' . $mount['source']);
+
+            return $source !== '..' && !str_starts_with($source, '../');
+        });
+        if ($writers === []) {
+            return null;
+        }
+        $keys = $service['own'] + $service['base'];
+        $entrypoint = isset($keys['entrypoint']) ? $this->valueOf($keys['entrypoint']) : null;
+        if ($entrypoint === null || preg_match('~^\[\s*["\']?sh["\']?\s*,\s*["\']?'
+                . preg_quote(self::WRITER, '~') . '["\']?\s*\]$~', $entrypoint) !== 1) {
+            return 'a writable clone bind requires the shared test-writer entrypoint';
+        }
+        $environment = $this->writerEnvironmentOf($service['own']);
+        if (is_string($environment)) {
+            return $environment;
+        }
+        if (!$service['merge'] || !isset($service['own']['environment'])) {
+            $base = $this->writerEnvironmentOf($service['base']);
+            if (is_string($base)) {
+                return $base;
+            }
+            $environment += $base;
+        }
+        $owner = $environment[self::OWNER_ROOT] ?? null;
+        if (!in_array($owner, ['/app', '/hilos'], true) || !isset($writers[$owner])) {
+            return self::OWNER_ROOT . ' must name a writable clone bind root /app or /hilos; a read-only root does not cover child rw binds';
+        }
+        $dirs = $environment[self::WRITE_DIRS] ?? null;
+        if ($dirs === null || trim($dirs) === '' || preg_match(self::VARIABLE, $dirs) === 1) {
+            return self::WRITE_DIRS . ' must declare nonempty literal output directories';
+        }
+        foreach (preg_split('/\s+/', $dirs) as $dir) {
+            if (!str_starts_with($dir, '/') || in_array($dir, ['/', '/app', '/hilos'], true)
+                || preg_match('~(?:^|/)(?:\.\.?|\.git)(?:/|$)|//|/$~', $dir) === 1
+                || (str_ends_with($dir, '/data') && ($dir !== '/app/data' || $owner !== '/app'))) {
+                return self::WRITE_DIRS . " contains an unsafe output directory `{$dir}`";
+            }
+        }
+
+        return null;
     }
 
     /**
      * What one service's mounts break of the rule.
      *
-     * @param array<string, array{source: string, target: string, part?: string}> $mounts Target => mount, the project among them
+     * @param array<string, array{source: string, target: string, mode: string, part?: string}> $mounts Target => mount, the project among them
      * @param bool $cluster Whether the service belongs to a cluster stand
      * @return list<string> One clause per broken requirement, empty when the service holds the rule
      */
@@ -414,54 +762,90 @@ final class StandDataRootGuardTest extends TestCase
     }
 
     /**
-     * The mounts one service ends up with: its part's, then its own over them by target.
+     * Resolve only the single-level extends and same-file service anchor forms used by the stands.
+     * YAML merge replaces a whole field; extends merges environment names and volume targets.
      *
-     * @param string $path Repository-relative path of the file that declares the service
-     * @param array<string, array<int, string>> $keys The keys of the service, as {@see entriesOf()} gives them
-     * @param array<string, array<int, string>> $files Repository-relative path => lines, of every file an `extends` may name
-     * @return array<string, array{source: string, target: string, part?: string}>|string Target => mount, or why the guard cannot read them
+     * @param string $path Repository-relative compose path
+     * @param array<int, string> $body Service declaration and body
+     * @param array<string, array<int, string>> $files Available compose files
+     * @return array{own: array, base: array, part: ?string, merge: bool}|string Effective inputs, or an unreadable form
      */
-    private function mountsOfService(string $path, array $keys, array $files): array|string
+    private function serviceOf(string $path, array $body, array $files): array|string
     {
-        if (isset($keys[self::MERGE_KEY])) {
-            return 'it merges a YAML anchor, which the guard does not follow';
+        $value = $this->valueOf($body);
+        if ($value !== null && preg_match('/^&[A-Za-z0-9_.-]+$/', $value) !== 1) {
+            return "it writes its value `{$value}` on its declaration line";
         }
 
-        $part = $this->extendsOf($path, $keys);
+        $own = $this->entriesOf(array_slice($body, 1, null, true));
+        $part = $this->extendsOf($path, $own);
         if (is_string($part)) {
             return $part;
         }
 
-        $own = $this->mountsOf($path, $keys);
-        if (is_string($own) || $part === null || in_array($this->volumesValueOf($keys), self::VOLUMES_RESETS, true)) {
-            return $own;
+        $merge = isset($own[self::MERGE_KEY]);
+        if ($merge) {
+            $alias = $this->valueOf($own[self::MERGE_KEY]);
+            if ($part !== null || $alias === null || preg_match('/^\*([A-Za-z0-9_.-]+)$/', $alias, $match) !== 1) {
+                return 'it merges a YAML anchor in a form the guard does not follow';
+            }
+            foreach ($this->servicesOf($files[$path] ?? []) as $name => $candidate) {
+                if ($this->valueOf($candidate) === '&' . $match[1]
+                    && array_key_first($candidate) < array_key_first($body)) {
+                    if ($part !== null) {
+                        return "it merges a YAML anchor `{$alias}` declared more than once";
+                    }
+                    $part = ['part' => $path, 'service' => $name];
+                }
+            }
+            if ($part === null) {
+                return "it merges a YAML anchor `{$alias}` with no preceding service declaration";
+            }
         }
 
+        if ($part === null) {
+            return ['own' => $own, 'base' => [], 'part' => null, 'merge' => false];
+        }
         if (!isset($files[$part['part']])) {
             return "its part {$part['part']} is not found";
         }
-
         $services = $this->servicesOf($files[$part['part']]);
         if (!isset($services[$part['service']])) {
             return "its part {$part['part']} has no service {$part['service']}";
         }
-
-        $partValue = $this->valueOf($services[$part['service']]);
-        if ($partValue !== null) {
+        $parent = $services[$part['service']];
+        $partValue = $this->valueOf($parent);
+        if ($partValue !== null && preg_match('/^&[A-Za-z0-9_.-]+$/', $partValue) !== 1) {
             return "the service {$part['service']} of its part {$part['part']} writes its value `{$partValue}` on its declaration line";
         }
-
-        $partKeys = $this->entriesOf(array_slice($services[$part['service']], 1, null, true));
-        if (isset($partKeys['extends']) || isset($partKeys[self::MERGE_KEY])) {
+        $base = $this->entriesOf(array_slice($parent, 1, null, true));
+        if (isset($base['extends']) || isset($base[self::MERGE_KEY])) {
             return "the service {$part['service']} of its part {$part['part']} extends another in turn, past the one level the guard follows";
         }
 
-        $inherited = $this->mountsOf($part['part'], $partKeys);
-        if (is_string($inherited)) {
-            return $inherited;
+        return ['own' => $own, 'base' => $base, 'part' => $part['part'], 'merge' => $merge];
+    }
+
+    /**
+     * @param string $path Repository-relative service file
+     * @param array{own: array, base: array, part: ?string, merge: bool} $service Resolved inheritance inputs
+     * @return array<string, array{source: string, target: string, mode: string, part?: string}>|string Mounts by target, or refusal
+     */
+    private function mountsOfService(string $path, array $service): array|string
+    {
+        $own = $this->mountsOf($path, $service['own']);
+        if (is_string($own) || $service['part'] === null
+            || in_array($this->volumesValueOf($service['own']), self::VOLUMES_RESETS, true)
+            || ($service['merge'] && isset($service['own']['volumes']))) {
+            return $own;
         }
 
-        return $own + array_map(static fn(array $mount): array => $mount + ['part' => $part['part']], $inherited);
+        $base = $this->mountsOf($service['part'], $service['base']);
+        if (is_string($base)) {
+            return $base;
+        }
+
+        return $own + array_map(static fn(array $mount): array => $mount + ['part' => $service['part']], $base);
     }
 
     /**
@@ -495,15 +879,14 @@ final class StandDataRootGuardTest extends TestCase
             $fields[$field[1]] = $field[2];
         }
 
-        if (!isset($fields['file'])) {
-            return "its `extends: {$value}` names no file";
-        }
-
-        if (!isset($fields['service']) || count($fields) !== 2) {
+        if (!isset($fields['service']) || array_diff(array_keys($fields), ['file', 'service']) !== []) {
             return "its `extends: {$value}` is not of the form `{file: …, service: …}`";
         }
 
-        return ['part' => $this->normalized(dirname($path) . '/' . $fields['file']), 'service' => $fields['service']];
+        return [
+            'part' => isset($fields['file']) ? $this->normalized(dirname($path) . '/' . $fields['file']) : $path,
+            'service' => $fields['service'],
+        ];
     }
 
     /**
@@ -511,7 +894,7 @@ final class StandDataRootGuardTest extends TestCase
      *
      * @param string $path Repository-relative path of the file that declares the service
      * @param array<string, array<int, string>> $keys The keys of the service, as {@see entriesOf()} gives them
-     * @return array<string, array{source: string, target: string}>|string Target => mount, or why the guard cannot read them
+     * @return array<string, array{source: string, target: string, mode: string}>|string Target => mount, or why the guard cannot read them
      */
     private function mountsOf(string $path, array $keys): array|string
     {
@@ -530,8 +913,13 @@ final class StandDataRootGuardTest extends TestCase
                 return "the volume line {$path}:{$number} `" . trim($line) . '` is not `<source>:<target>`';
             }
 
+            $mode = $matches['mode'] ?? 'rw';
+            if (array_diff(explode(',', $mode), ['ro', 'rw', 'z', 'Z', 'cached', 'delegated', 'consistent']) !== []
+                || (in_array('ro', explode(',', $mode), true) && in_array('rw', explode(',', $mode), true))) {
+                return "the volume line {$path}:{$number} has an unreadable mode `{$mode}`";
+            }
             $target = rtrim($matches['target'], '/');
-            $mounts[$target] = ['source' => rtrim($matches['source'], '/'), 'target' => $target];
+            $mounts[$target] = ['source' => rtrim($matches['source'], '/'), 'target' => $target, 'mode' => $mode];
         }
 
         return $mounts;
@@ -668,7 +1056,7 @@ final class StandDataRootGuardTest extends TestCase
      */
     private function filesOf(array $stand): array
     {
-        $files = [$stand['cwd'] . '/' . $stand['composeFile'] => []];
+        $files = [$this->normalized($stand['cwd'] . '/' . $stand['composeFile']) => []];
         if ($stand['composeFile'] === self::CLUSTER_COMPOSE) {
             $root = $this->repositoryRoot();
             foreach (glob("{$root}/{$stand['cwd']}/" . self::CLUSTER_PARTS) ?: [] as $part) {

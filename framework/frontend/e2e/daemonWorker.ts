@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 import { reportDaemonNodeWhileFalse } from './daemonReport.js'
 import { watchSocketFrames } from './socket.js'
+import { HilosPages } from '../core/src/routing/hilosPages.js'
 
 export interface MonopolisticWorker {
   readonly index: number
@@ -25,6 +26,13 @@ function record(value: unknown): Record<string, unknown> {
  * for its rows, and Next may first echo the page it leaves, so only a window
  * with rows that starts no earlier than the last one counts.
  *
+ * Prepare the shared page agent's real process mirror in another tab before
+ * opening the window used for selection. A cold empty window can receive a
+ * later count without receiving rows, and has no previous address to return to.
+ * The preparation reads only processesReported; the selected worker still has
+ * to arrive in the reader's own table window. Keep the source tab subscribed
+ * until that read ends, and always close it.
+ *
  * The worker may have just been created or restarted, and the Workers window
  * carries what the node agent last reported. So while a wait finds nothing new,
  * a node report brought to now stays in flight, instead of the wait sitting out
@@ -44,6 +52,21 @@ export async function readMonopolisticWorker(
   waitFor: (predicate: () => boolean) => Promise<void>,
   { host }: { host?: string } = {},
 ): Promise<MonopolisticWorker> {
+  const source = await page.context().newPage()
+  let processesReported = false
+  const sourceObserver = watchSocketFrames(source, (frame) => {
+    if (frame.raw === undefined) return
+    if (frame.wire === undefined)
+      throw new Error('Invalid Workers socket evidence')
+    const envelope = record(frame.wire)
+    const data = record(envelope.data)
+    if (
+      envelope.type === 'page_response' &&
+      data.page === HilosPages.DAEMON_WORKERS &&
+      record(record(data.payload).data).processesReported === true
+    )
+      processesReported = true
+  })
   let worker: MonopolisticWorker | undefined
   // Rows of the set before the latest page shown, or -1 until one arrives.
   let pageStart = -1
@@ -54,7 +77,7 @@ export async function readMonopolisticWorker(
       throw new Error('Invalid Workers socket evidence')
     const envelope = record(frame.wire)
     const data = record(envelope.data)
-    if (data.page !== 'hilos_daemon_workers') return
+    if (data.page !== HilosPages.DAEMON_WORKERS) return
     const window =
       envelope.type === 'page_response'
         ? record(record(record(data.payload).windows).hilosDaemonWorkers)
@@ -102,6 +125,8 @@ export async function readMonopolisticWorker(
     }
   })
   try {
+    await gotoWorkers(source)
+    await waitFor(reportDaemonNodeWhileFalse(() => processesReported, { host }))
     await gotoWorkers(page)
     await waitFor(
       reportDaemonNodeWhileFalse(() => worker !== undefined || pageStart >= 0, {
@@ -122,6 +147,8 @@ export async function readMonopolisticWorker(
       throw new Error('The selected monopolistic worker never arrived')
     return worker
   } finally {
+    sourceObserver.stop()
     observer.stop()
+    await source.close()
   }
 }

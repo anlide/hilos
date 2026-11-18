@@ -99,6 +99,9 @@ const LOG_STREAMS_CONTAINER_LOG_DIR = '/var/log/hilos';
 /** The demo's CLI, run inside a container of the stand. */
 const LOG_STREAMS_CLI = 'php backend/Bootstrap/cli.php';
 
+/** The demo's CLI, run by docker exec through the application owner wrapper. */
+const LOG_STREAMS_CLI_OWNER = 'sh /hilos/framework/docker/test-writer-exec.sh /app -- ' . LOG_STREAMS_CLI;
+
 /**
  * The variable a stand may pin its monopolistic warm-up by; readiness means the warm-up is up.
  * Unpinned - the demos stopped pinning it when the pool began to grow on demand (HIL-998) - there
@@ -342,7 +345,7 @@ function runAliveScenario(array $box, array $records): array
     if ($ready !== null) {
         return ['failures' => [], 'harness' => $ready];
     }
-    $appended = containerExec(logStreamsDaemonContainer(), LOG_STREAMS_CLI . ' ' . escapeshellarg('test:log:append') . ' '
+    $appended = containerExec(logStreamsDaemonContainer(), LOG_STREAMS_CLI_OWNER . ' ' . escapeshellarg('test:log:append') . ' '
         . escapeshellarg(LOG_STREAMS_APPEND_MESSAGE) . ' ' . LOG_STREAMS_APPEND_COUNT);
     if (!$appended['ok']) {
         return ['failures' => [], 'harness' => 'test:log:append was refused: ' . $appended['note'] . "\n" . $appended['output']];
@@ -509,8 +512,8 @@ function runAgentInMasterScenario(array $box, array $records): array
     }
 
     $outcome = provokeIdleFreeze($box, $marks, $records);
-    containerExec(logStreamsOwnContainer(), LOG_STREAMS_CLI . ' ' . escapeshellarg('test:protected-mode:leave'));
-    containerExec(logStreamsOwnContainer(), LOG_STREAMS_CLI . ' ' . escapeshellarg('test:protected-mode:open'));
+    containerExec(logStreamsOwnContainer(), LOG_STREAMS_CLI_OWNER . ' ' . escapeshellarg('test:protected-mode:leave'));
+    containerExec(logStreamsOwnContainer(), LOG_STREAMS_CLI_OWNER . ' ' . escapeshellarg('test:protected-mode:open'));
     removeOwnContainer($box);
     deleteFreezeState($box);
 
@@ -531,7 +534,7 @@ function provokeIdleFreeze(array $box, array $marks, array $records): array
     if ($ready !== null) {
         return ['failures' => [], 'harness' => $ready];
     }
-    $entered = containerExec(logStreamsOwnContainer(), LOG_STREAMS_CLI . ' ' . escapeshellarg('test:protected-mode:enter') . ' '
+    $entered = containerExec(logStreamsOwnContainer(), LOG_STREAMS_CLI_OWNER . ' ' . escapeshellarg('test:protected-mode:enter') . ' '
         . escapeshellarg(LOG_STREAMS_FREEZE_OPERATION));
     if (!$entered['ok']) {
         return ['failures' => [], 'harness' => 'the freeze was not entered: ' . $entered['note'] . "\n" . $entered['output']];
@@ -940,7 +943,7 @@ function waitDaemonReady(string $container): ?string
     $deadline = microtime(true) + LOG_STREAMS_READY_DEADLINE_SECONDS;
     $last = '';
     while (microtime(true) < $deadline) {
-        $status = containerExec($container, LOG_STREAMS_CLI . ' daemon:status');
+        $status = containerExec($container, LOG_STREAMS_CLI_OWNER . ' daemon:status');
         $last = $status['output'];
         if (
             preg_match('/\|\s*Status\s*\|\s*ONLINE\b/', $last) === 1

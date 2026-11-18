@@ -1,4 +1,5 @@
 import childProcess, { ChildProcess } from 'node:child_process'
+import type { Stats } from 'node:fs'
 import fs from 'node:fs/promises'
 import { syncBuiltinESMExports } from 'node:module'
 import process from 'node:process'
@@ -32,7 +33,7 @@ afterEach(() => {
  * Replace only the Linux/process boundary: no host PID receives a signal and
  * no child is spawned. The real helper still decides admission and cleanup.
  */
-function stand() {
+function stand(owner = 1000) {
   const proc = { state: 'R', start: START, missing: false }
   const events: Record<string, unknown>[] = []
   const watchdog = new ChildProcess()
@@ -45,7 +46,8 @@ function stand() {
     queueMicrotask(() => watchdog.emit('spawn'))
     return watchdog
   })
-  vi.spyOn(process, 'getuid').mockReturnValue(0)
+  vi.spyOn(process, 'getuid').mockReturnValue(owner)
+  vi.spyOn(fs, 'stat').mockResolvedValue({ uid: owner } as Stats)
   const kill = vi.spyOn(process, 'kill').mockReturnValue(true)
   vi.spyOn(fs, 'readFile').mockImplementation(async (path) => {
     switch (String(path)) {
@@ -53,6 +55,8 @@ function stand() {
         return 'php\0backend/Bootstrap/worker.php\0--worker-id=3\0--monopolistic\0'
       case `/proc/${WORKER.pid}/environ`:
         return 'APP_ENV=test\0'
+      case `/proc/${WORKER.pid}/status`:
+        return `Uid:\t${owner}\t${owner}\t${owner}\t${owner}\n`
       case `/proc/${WORKER.pid}/stat`:
         if (proc.missing) throw new Error('ENOENT: worker vanished')
         return `${WORKER.pid} (upload worker) ${[proc.state, ...Array<string>(18).fill('0'), proc.start].join(' ')}`
@@ -79,6 +83,186 @@ function stand() {
 }
 
 describe('the stopped upload worker readiness boundary', () => {
+  for (const owner of [0, 1000]) {
+    it.each([false, true])(
+      `runs the bind-owner ${owner} protected flow with callback failure=%s`,
+      async (fails) => {
+        const s = stand(owner)
+        s.proc.state = 'T'
+        const failure = new Error('observation failed')
+        const run = vi.fn(async ({ assertStopped }: Held) => {
+          await assertStopped()
+          if (fails) throw failure
+        })
+        const result = withStoppedUploadWorker(WORKER, s.record, run)
+        if (fails) await expect(result).rejects.toBe(failure)
+        else await result
+        expect(fs.stat).toHaveBeenCalledWith('/hilos')
+        expect(run).toHaveBeenCalledOnce()
+        s.expectCleanup()
+      },
+    )
+  }
+
+  it.each([0, 1001, undefined])(
+    'refuses checker UID %s for a nonroot bind',
+    async (uid) => {
+      const s = stand()
+      vi.mocked(process.getuid).mockReturnValue(uid!)
+      const run = vi.fn()
+      await expect(
+        withStoppedUploadWorker(WORKER, s.record, run),
+      ).rejects.toThrow('Only the bind owner')
+      expect(run).not.toHaveBeenCalled()
+      expect(s.spawn).not.toHaveBeenCalled()
+      expect(s.kill).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    'Uid:\t1001\t1001\t1001\t1001\n',
+    'Uid:\t1000\t0\t1000\t1000\n',
+    'Uid:\t1000\t1000\t0\t1000\n',
+    'Uid:\t1000\t1000\t1000\t0\n',
+    'Uid:\t1000\t1000\t1000\n',
+    'Uid:\t1000\t1000\t1000\tbad\n',
+    'Uid:\t1000\t1000\t1000\t1000\textra\n',
+    'Uid:\t1000\t1000\t1000\t1000\nUid:\t1000\t1000\t1000\t1000\n',
+    'Name:\tphp\n',
+  ])('refuses a foreign or malformed target UID: %j', async (status) => {
+    const s = stand()
+    const read = vi.mocked(fs.readFile).getMockImplementation()!
+    vi.mocked(fs.readFile).mockImplementation(async (path, options) =>
+      String(path).endsWith('/status') ? status : read(path, options),
+    )
+    const run = vi.fn()
+    await expect(
+      withStoppedUploadWorker(WORKER, s.record, run),
+    ).rejects.toThrow('does not belong to the bind owner')
+    expect(run).not.toHaveBeenCalled()
+    expect(s.spawn).not.toHaveBeenCalled()
+    expect(s.kill).not.toHaveBeenCalled()
+  })
+
+  it.each(['bind', 'status', 'cmdline', 'environ', 'stat'])(
+    'fails closed on an unreadable %s',
+    async (source) => {
+      const s = stand()
+      const failure = new Error('EACCES')
+      if (source === 'bind') vi.mocked(fs.stat).mockRejectedValue(failure)
+      else {
+        const read = vi.mocked(fs.readFile).getMockImplementation()!
+        vi.mocked(fs.readFile).mockImplementation(async (path, options) => {
+          if (String(path).endsWith(`/${source}`)) throw failure
+          return read(path, options)
+        })
+      }
+      const run = vi.fn()
+      await expect(withStoppedUploadWorker(WORKER, s.record, run)).rejects.toBe(
+        failure,
+      )
+      expect(run).not.toHaveBeenCalled()
+      expect(s.spawn).not.toHaveBeenCalled()
+      expect(s.kill).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([NaN, -1, 1.5])('refuses malformed bind UID %s', async (uid) => {
+    const s = stand()
+    vi.mocked(fs.stat).mockResolvedValue({ uid } as Stats)
+    await expect(
+      withStoppedUploadWorker(WORKER, s.record, vi.fn()),
+    ).rejects.toThrow('Only the bind owner')
+    expect(s.spawn).not.toHaveBeenCalled()
+    expect(s.kill).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { kind: 'ordinary' },
+    { agentIds: [] },
+    { agentIds: ['hilos_uploads', 'other'] },
+    { agentIds: ['other'] },
+    { index: 0 },
+    { index: 1.5 },
+    { pid: 1 },
+    { pid: 1.5 },
+  ])('refuses a foreign roster entry %j', async (change) => {
+    const s = stand()
+    await expect(
+      withStoppedUploadWorker({ ...WORKER, ...change }, s.record, vi.fn()),
+    ).rejects.toThrow('Only the isolated test')
+    expect(s.spawn).not.toHaveBeenCalled()
+    expect(s.kill).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['/environ', 'APP_ENV=prod\0'],
+    ['/cmdline', 'php\0other.php\0--worker-id=3\0--monopolistic\0'],
+    [
+      '/cmdline',
+      'php\0backend/Bootstrap/worker.php\0--worker-id=4\0--monopolistic\0',
+    ],
+    ['/cmdline', 'php\0backend/Bootstrap/worker.php\0--worker-id=3\0'],
+    ['/stat', 'malformed'],
+  ])('refuses mismatched process identity in %s: %j', async (source, value) => {
+    const s = stand()
+    const read = vi.mocked(fs.readFile).getMockImplementation()!
+    vi.mocked(fs.readFile).mockImplementation(async (path, options) =>
+      String(path).endsWith(source) ? value : read(path, options),
+    )
+    const run = vi.fn()
+    await expect(
+      withStoppedUploadWorker(WORKER, s.record, run),
+    ).rejects.toBeInstanceOf(Error)
+    expect(run).not.toHaveBeenCalled()
+    expect(s.spawn).not.toHaveBeenCalled()
+    expect(s.kill).not.toHaveBeenCalled()
+  })
+
+  it('never signals a PID replaced before STOP', async () => {
+    const s = stand()
+    const run = vi.fn()
+    const record = (event: Record<string, unknown>) => {
+      s.record(event)
+      if (event.kind === 'worker-identity') s.proc.start = '279749999'
+    }
+    await expect(withStoppedUploadWorker(WORKER, record, run)).rejects.toThrow(
+      'vanished before CONT',
+    )
+    expect(run).not.toHaveBeenCalled()
+    expect(s.kill).not.toHaveBeenCalled()
+    expect(s.killWatchdog).not.toHaveBeenCalled()
+  })
+
+  it.each(['before STOP', 'before CONT'])(
+    'never signals a target whose UID changed %s',
+    async (when) => {
+      const s = stand()
+      s.proc.state = 'T'
+      const read = vi.mocked(fs.readFile).getMockImplementation()!
+      let changed = false
+      vi.mocked(fs.readFile).mockImplementation(async (path, options) =>
+        changed && String(path).endsWith('/status')
+          ? 'Uid:\t1001\t1001\t1001\t1001\n'
+          : read(path, options),
+      )
+      const record = (event: Record<string, unknown>) => {
+        s.record(event)
+        if (event.kind === 'worker-identity' && when === 'before STOP')
+          changed = true
+      }
+      await expect(
+        withStoppedUploadWorker(WORKER, record, async () => {
+          changed = true
+        }),
+      ).rejects.toThrow('does not belong to the bind owner')
+      expect(s.kill.mock.calls).toEqual(
+        when === 'before STOP' ? [] : [[WORKER.pid, 'SIGSTOP']],
+      )
+      expect(s.killWatchdog).not.toHaveBeenCalled()
+    },
+  )
+
   it('admits observations only after R then S becomes T on the same incarnation', async () => {
     const s = stand()
     const run = vi.fn(async ({ assertStopped }: Held) => {
@@ -129,10 +313,11 @@ describe('the stopped upload worker readiness boundary', () => {
       })),
     )
     expect(s.spawn).toHaveBeenCalledOnce()
-    expect(s.spawn.mock.calls[0]?.[1]?.slice(-3)).toEqual([
+    expect(s.spawn.mock.calls[0]?.[1]?.slice(-4)).toEqual([
       String(WORKER.pid),
       START,
       String(WINDOW_MS),
+      '1000',
     ])
     s.expectCleanup()
   })

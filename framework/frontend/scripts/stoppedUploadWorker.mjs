@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import process from 'node:process'
 
 /** Only the actual isolated uploads worker may be held by this proof. */
@@ -15,12 +15,28 @@ const STOP_POLL_MS = 10
  * @property {readonly string[]} agentIds Must name only hilos_uploads.
  */
 
-/** Read state and Linux birth ticks, excluding spaces inside the process name. */
-async function identity(pid) {
+/** Read state and birth ticks only while all Linux UIDs name the bind owner. */
+async function identity(pid, owner) {
+  const lines = (await readFile(`/proc/${pid}/status`, 'utf8')).match(
+    /^Uid:.*$/gm,
+  )
+  const uids =
+    lines?.length === 1
+      ? lines[0]
+          .trim()
+          .split(/[ \t]+/)
+          .slice(1)
+      : []
+  if (
+    uids.length !== 4 ||
+    uids.some((uid) => !/^[0-9]+$/.test(uid) || Number(uid) !== owner)
+  )
+    throw new Error('The upload worker does not belong to the bind owner')
   const fields = (await readFile(`/proc/${pid}/stat`, 'utf8'))
     .split(') ')[1]
     ?.split(' ')
-  if (!fields?.[19]) throw new Error('The upload worker has no birth identity')
+  if (!fields?.[19] || !/^[0-9]+$/.test(fields[19]))
+    throw new Error('The upload worker has no birth identity')
   return { state: fields[0], start: fields[19] }
 }
 
@@ -35,7 +51,6 @@ async function identity(pid) {
 export async function withStoppedUploadWorker(worker, record, run) {
   if (
     process.platform !== 'linux' ||
-    process.getuid?.() !== 0 ||
     worker.kind !== 'monopolistic' ||
     worker.agentIds.length !== 1 ||
     worker.agentIds[0] !== UPLOADS_WORKER_AGENT ||
@@ -45,6 +60,9 @@ export async function withStoppedUploadWorker(worker, record, run) {
     worker.pid <= 1
   )
     throw new Error('Only the isolated test uploads worker may be paused')
+  const owner = (await stat('/hilos')).uid
+  if (!Number.isSafeInteger(owner) || owner < 0 || process.getuid?.() !== owner)
+    throw new Error('Only the bind owner may pause the test uploads worker')
   const argv = (await readFile(`/proc/${worker.pid}/cmdline`, 'utf8')).split(
     '\0',
   )
@@ -62,7 +80,7 @@ export async function withStoppedUploadWorker(worker, record, run) {
     !argv.includes('--monopolistic')
   )
     throw new Error('The upload worker roster and /proc identity disagree')
-  const birth = await identity(worker.pid)
+  const birth = await identity(worker.pid, owner)
   record({
     ...worker,
     kind: 'worker-identity',
@@ -77,11 +95,14 @@ export async function withStoppedUploadWorker(worker, record, run) {
     process.execPath,
     [
       '-e',
-      `
+      String.raw`
     const fs = require('node:fs');
-    const [pid, start, wait] = process.argv.slice(1);
+    const [pid, start, wait, owner] = process.argv.slice(1);
     setTimeout(() => {
       try {
+        const lines = fs.readFileSync('/proc/' + pid + '/status', 'utf8').match(/^Uid:.*$/gm);
+        const uids = lines?.length === 1 ? lines[0].trim().split(/[ \t]+/).slice(1) : [];
+        if (uids.length !== 4 || uids.some(uid => !/^[0-9]+$/.test(uid) || Number(uid) !== Number(owner))) return;
         const fields = fs.readFileSync('/proc/' + pid + '/stat', 'utf8').split(') ')[1].split(' ');
         if (fields[19] === start) process.kill(Number(pid), 'SIGCONT');
       } catch { }
@@ -90,6 +111,7 @@ export async function withStoppedUploadWorker(worker, record, run) {
       String(worker.pid),
       birth.start,
       String(WATCHDOG_MS),
+      String(owner),
     ],
     {
       detached: true,
@@ -104,7 +126,7 @@ export async function withStoppedUploadWorker(worker, record, run) {
   const stoppedAt = Date.now()
   // Each refusal says which of the three guarantees broke, with its value.
   const assertStopped = async () => {
-    const current = await identity(worker.pid)
+    const current = await identity(worker.pid, owner)
     const elapsedMs = Date.now() - stoppedAt
     record({ kind: 'worker-held', ...current, elapsedMs })
     if (current.start !== birth.start)
@@ -121,7 +143,7 @@ export async function withStoppedUploadWorker(worker, record, run) {
       )
   }
   const resume = async () => {
-    const current = await identity(worker.pid)
+    const current = await identity(worker.pid, owner)
     if (current.start !== birth.start)
       throw new Error('The original upload worker vanished before CONT')
     process.kill(worker.pid, 'SIGCONT')
@@ -140,7 +162,7 @@ export async function withStoppedUploadWorker(worker, record, run) {
     }
   }
   try {
-    if ((await identity(worker.pid)).start !== birth.start)
+    if ((await identity(worker.pid, owner)).start !== birth.start)
       throw new Error('The upload worker changed before STOP')
     process.kill(worker.pid, 'SIGSTOP')
     record({
@@ -153,7 +175,7 @@ export async function withStoppedUploadWorker(worker, record, run) {
     // budget; only a real T on this incarnation admits the strict observations.
     // Every read is recorded, so a failure shows how the stop went.
     for (;;) {
-      const current = await identity(worker.pid)
+      const current = await identity(worker.pid, owner)
       const elapsedMs = Date.now() - stoppedAt
       record({ kind: 'worker-stopping', ...current, elapsedMs })
       if (

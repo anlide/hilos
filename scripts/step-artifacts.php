@@ -1116,7 +1116,7 @@ function collectDatabaseArtifacts(
         $root,
         $stand,
         $app,
-        'php backend/Bootstrap/cli.php db:migration:status',
+        'sh /hilos/framework/docker/test-writer-exec.sh /app -- php backend/Bootstrap/cli.php db:migration:status',
         $path . '/db/migration-status.txt',
         $deadline,
     )];

@@ -23,6 +23,7 @@ services:
   binance-btc-tracker-cluster-m1:
     extends: {file: ./node.yml, service: node}
     container_name: binance-btc-tracker-cluster-m1${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
@@ -32,7 +33,13 @@ services:
     # One collector address for the shared application schema.
     labels:
       hilos.role: app
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
@@ -47,13 +54,20 @@ services:
   binance-btc-tracker-cluster-m2:
     extends: {file: ./node.yml, service: node}
     container_name: binance-btc-tracker-cluster-m2${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
       - ../../.env.example
       - ./common.env
       - ./nodes/m2.env
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
@@ -68,13 +82,20 @@ services:
   binance-btc-tracker-cluster-m3:
     extends: {file: ./node.yml, service: node}
     container_name: binance-btc-tracker-cluster-m3${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
       - ../../.env.example
       - ./common.env
       - ./nodes/m3.env
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
@@ -89,13 +110,20 @@ services:
   binance-btc-tracker-cluster-s1:
     extends: {file: ./node.yml, service: node}
     container_name: binance-btc-tracker-cluster-s1${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
       - ../../.env.example
       - ./common.env
       - ./nodes/s1.env
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
@@ -110,13 +138,20 @@ services:
   binance-btc-tracker-cluster-s2:
     extends: {file: ./node.yml, service: node}
     container_name: binance-btc-tracker-cluster-s2${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
       - ../../.env.example
       - ./common.env
       - ./nodes/s2.env
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status
@@ -131,6 +166,7 @@ services:
   binance-btc-tracker-cluster-x1:
     extends: {file: ./node.yml, service: node}
     container_name: binance-btc-tracker-cluster-x1${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
@@ -139,7 +175,13 @@ services:
       - ./nodes/x1.env
     # Foreign-authority node, raised only by the stranger scenarios.
     profiles: [stranger]
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - status:/app/data/status

@@ -20,8 +20,9 @@ and what it would complain - and prints nothing itself: the matrix reads the ans
 cluster.py prints it for a person. The commands only a person runs (up, down, status, logs)
 print as they go.
 
-Ordinary up builds and recreates the default services in one Compose call; up, down and restart
-preserve saved protected mode, and only down with volumes wipes the database. Test startup opens
+Ordinary up prepares shared outputs with logged nodes stopped, then builds and recreates the
+default services; up, down and restart preserve saved protected mode, and only down with volumes
+wipes the database. Test startup opens
 recognized freezes through existing owner commands before fleet readiness. Browser-test log
 cleanup runs separately with nodes stopped, preserving every freeze store and .gitkeep.
 """
@@ -42,8 +43,9 @@ from stand import StandRefused, resolved_config
 
 Outcome = namedtuple("Outcome", "code out err")
 
-# Where the application sits inside a node's container and the cli container.
-CLI_ENTRY = ["php", "backend/Bootstrap/cli.php"]
+# Run application writers as the owner of the node or CLI application bind.
+WRITER_EXEC = ["sh", "/hilos/framework/docker/test-writer-exec.sh", "/app", "--"]
+CLI_ENTRY = [*WRITER_EXEC, "php", "backend/Bootstrap/cli.php"]
 # The helper that steps into a node's network namespace to lay or lift a blackhole route - busybox
 # `ip` does it, and the node images carry no ip tool (HIL-1287).
 NETNS_IMAGE = "alpine:3.24.2"
@@ -84,38 +86,59 @@ def _logged_nodes(stand):
 
 
 def _test_log_directories(stand):
-    """Node log directories as the CLI container sees them, validated before any cleanup.
+    """Map node log sources to the explicit CLI log-root bind before any cleanup.
 
-    The cli container mounts the demo at /app and nothing else of the host, so a node whose log
-    directory is not strictly inside the demo is refused before anything is built or removed.
+    Only strict descendants of the demo's data/logs-cluster root are reachable.
+    Refuse traversal and symlink ancestors instead of normalizing an unsafe source.
     """
-    demo = stand.demo_dir.resolve()
+    root = stand.demo_dir.resolve() / "data/logs-cluster"
     paths = []
     for node in _logged_nodes(stand):
+        source = node.log_dir.absolute()
+        if ".." in source.parts or any(parent.is_symlink() for parent in (source, *source.parents)):
+            raise StandRefused(f"{stand.project}: node {node.id} has an unsafe log source: {node.log_dir}")
         try:
-            inside = node.log_dir.resolve().relative_to(demo)
+            inside = source.relative_to(root)
         except ValueError:
             raise StandRefused(f"{stand.project}: node {node.id} logs to {node.log_dir}, outside "
-                               f"{stand.demo_dir}, which the cli container cannot reach") from None
+                               f"{root}, which the cli log-root bind cannot reach") from None
         if not inside.parts:
-            raise StandRefused(f"{stand.project}: node {node.id} logs to the demo root")
-        paths.append(f"/app/{inside.as_posix()}")
+            raise StandRefused(f"{stand.project}: node {node.id} logs to the shared log root")
+        paths.append(f"/hilos-test-logs/{inside.as_posix()}")
     return paths
 
 
+def _running_logged_nodes(stand):
+    """Read every profile so a running optional stranger cannot escape the stopped barrier."""
+    running = compose(stand, "--profile", "*", "ps", "--status", "running", "--services")
+    return running, set(running.out.splitlines()) & {node.service for node in _logged_nodes(stand)}
+
+
+def _prepare_test_outputs(stand):
+    """Heal the CLI's declared roots and the common log tree before any node writer starts."""
+    _test_log_directories(stand)
+    running, live = _running_logged_nodes(stand)
+    if running.code != 0:
+        return running.code
+    if live:
+        raise StandRefused(f"test output preparation needs stopped nodes: {', '.join(sorted(live))}")
+    script = '''export HILOS_TEST_WRITE_DIRS="$HILOS_TEST_WRITE_DIRS /hilos-test-logs"
+exec sh /hilos/framework/docker/test-writer-entrypoint.sh true
+'''
+    return compose(stand, *_cli_profiles(stand), "run", "--build", "--rm", "--no-deps",
+                   "--entrypoint", "sh", stand.cli_service, "-eu", "-c", script, capture=False)
+
+
 def clear_test_logs(stand):
-    """Clear old browser-test logs inside a fresh CLI image, with every node stopped.
+    """Prepare and clear old browser-test logs with every node stopped.
 
     Keep .gitkeep and every protected-mode.state.json* file, including unfinished stores.
     Validate all paths before deleting any file; find never follows symlinks out of a log tree.
     """
     directories = _test_log_directories(stand)
-    running = compose(stand, "--profile", "*", "ps", "--status", "running", "--services")
-    if running.code != 0:
-        return running.code
-    live = set(running.out.splitlines()) & {node.service for node in _logged_nodes(stand)}
-    if live:
-        raise StandRefused(f"test log cleanup needs stopped nodes: {', '.join(sorted(live))}")
+    code = _prepare_test_outputs(stand)
+    if code != 0:
+        return code
     script = '''set -eu
 for directory do
     if [ -e "$directory" ] && [ ! -d "$directory" ]; then
@@ -140,10 +163,26 @@ find "$@" -depth -mindepth 1 -type d ! -name .gitkeep ! -name 'protected-mode.st
 
 def up(stand, prog):
     """Build and recreate the default Compose services, retaining database and freeze stores."""
+    _test_log_directories(stand)
+    running, live = _running_logged_nodes(stand)
+    if running.code != 0:
+        return running.code
+    if live:
+        code = compose(stand, "--profile", "*", "stop", *sorted(live), capture=False)
+        if code != 0:
+            return code
+    print("cluster: preparing shared outputs with nodes stopped...", flush=True)
+    code = _prepare_test_outputs(stand)
+    if code != 0:
+        return code
     print(f"cluster: starting {len(stand.members)} nodes and the cli container...", flush=True)
     code = compose(stand, "up", "-d", "--build", "--force-recreate", capture=False)
     if code != 0:
         return code
+    if stand.stranger is not None and stand.stranger.service in live:
+        code = compose(stand, "up", "-d", "--build", "--no-deps", stand.stranger.service, capture=False)
+        if code != 0:
+            return code
     print("cluster: up. Give the mesh a few seconds to elect a leader, then:")
     print(f"  {prog} status      # see roster + leader per node")
     print(f"  {prog} scenarios   # run the assertion matrix")
@@ -1243,7 +1282,8 @@ def cluster_directory_exec(stand, node_id, *argv):
     if stand.cluster_directory is None:
         raise StandRefused(f"{stand.project} names no cluster directory (x-hilos-cluster.cluster-directory)")
     node = stand.member(node_id)
-    return _run(["docker", "exec", "-w", stand.cluster_directory.path, node.container, *argv])
+    return _run(["docker", "exec", "-w", stand.cluster_directory.path, node.container,
+                 *WRITER_EXEC, *argv])
 
 
 def _database_member(stand, member):

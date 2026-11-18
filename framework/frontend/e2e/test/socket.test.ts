@@ -17,6 +17,7 @@ import {
 } from '../analytics.js'
 import { watchDaemonCronFrames } from '../daemon.js'
 import { readMonopolisticWorker } from '../daemonWorker.js'
+import { HilosPages } from '../../core/src/routing/hilosPages.js'
 import { holdPageReply, watchPageReplies } from '../lazyBundles.js'
 import { watchUploadFrames } from '../uploadFrames.js'
 
@@ -596,6 +597,10 @@ describe('shared incoming socket observations', () => {
 
   it('finds the monopolistic worker in a batch and stops observing afterward', async () => {
     const { page, connect } = browser()
+    const source = browser()
+    source.page.close = vi.fn().mockResolvedValue(undefined)
+    page.context = () =>
+      ({ newPage: async () => source.page }) as ReturnType<Page['context']>
     const worker = {
       index: 2,
       pid: 123,
@@ -605,7 +610,19 @@ describe('shared incoming socket observations', () => {
     const result = await readMonopolisticWorker(
       page,
       'agent',
-      async () => {
+      async (target) => {
+        if (target === source.page) {
+          source.connect()(
+            JSON.stringify({
+              type: 'page_response',
+              data: {
+                page: HilosPages.DAEMON_WORKERS,
+                payload: { data: { processesReported: true } },
+              },
+            }),
+          )
+          return
+        }
         connect()(
           batch(welcome, {
             type: 'table_window',

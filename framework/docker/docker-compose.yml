@@ -243,10 +243,10 @@ services:
         hilos-event: ./native/event
     container_name: hilos-cli-framework-test${HILOS_STAND_SUFFIX:-}
     volumes:
-      - ../..:/hilos
-      - composer-cache:/root/.composer/cache
-      - ship-keys:/ship-keys
+      - ../..:/hilos:ro
+      - ship-keys:/ship-keys:ro
     working_dir: /hilos
+    command: [php, -a]
     environment:
       APP_ENV: test
       DB_HOST: mysql-framework-test
@@ -262,6 +262,30 @@ services:
       HILOS_TEST_REMOTE_DB_PASSWORD: hilos_remote_pass
       HILOS_TEST_CATALOG_DB_HOST: mysql-framework-catalog-test
       HILOS_TEST_RESTORE_DB_HOST: mysql-framework-restore-test
+    networks:
+      - hilos-framework-test-network
+    profiles: [test]
+
+  hilos-deps-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: .
+      dockerfile: Dockerfile.test-cli
+      additional_contexts:
+        hilos-event: ./native/event
+    container_name: hilos-deps-framework-test${HILOS_STAND_SUFFIX:-}
+    volumes:
+      - ../..:/hilos:rw
+      - composer-cache:/tmp/hilos-composer-cache
+    working_dir: /hilos
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: [composer, install, --no-interaction]
+    environment:
+      HILOS_TEST_OWNER_ROOT: /hilos
+      HILOS_TEST_WRITE_DIRS: /hilos/vendor /hilos/framework/tests/.phpunit.cache /tmp/hilos-composer-cache
+      HOME: /tmp
+      COMPOSER_HOME: /tmp/hilos-composer-cache
+      COMPOSER_CACHE_DIR: /tmp/hilos-composer-cache
     networks:
       - hilos-framework-test-network
     profiles: [test]

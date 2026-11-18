@@ -2,7 +2,7 @@
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/11.0/phpunit.xsd"
          bootstrap="../backend/Bootstrap/phpunit.php"
-         cacheDirectory=".phpunit.cache"
+         cacheDirectory="/tmp/hilos-framework-phpunit-cache"
          colors="true"
          failOnDeprecation="true"
          failOnNotice="true"

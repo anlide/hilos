@@ -121,6 +121,7 @@ services:
   concert-tickets-cluster-m1:
     extends: {file: ./node.yml, service: node}
     container_name: concert-tickets-cluster-m1${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
@@ -128,6 +129,10 @@ services:
       - ./common.env
       - ./nodes/m1.env
     environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/files/published /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
       SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
       HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
       HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
@@ -137,6 +142,7 @@ services:
     labels:
       hilos.role: app
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - files-published:/app/data/files/published
@@ -151,6 +157,7 @@ services:
   concert-tickets-cluster-m2:
     extends: {file: ./node.yml, service: node}
     container_name: concert-tickets-cluster-m2${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
@@ -158,10 +165,15 @@ services:
       - ./common.env
       - ./nodes/m2.env
     environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/files/published /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
       SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
       HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
       HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - files-published:/app/data/files/published
@@ -176,6 +188,7 @@ services:
   concert-tickets-cluster-m3:
     extends: {file: ./node.yml, service: node}
     container_name: concert-tickets-cluster-m3${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
@@ -183,10 +196,15 @@ services:
       - ./common.env
       - ./nodes/m3.env
     environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/files/published /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
       SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
       HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
       HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - files-published:/app/data/files/published
@@ -201,6 +219,7 @@ services:
   concert-tickets-cluster-m4:
     extends: {file: ./node.yml, service: node}
     container_name: concert-tickets-cluster-m4${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
@@ -208,10 +227,15 @@ services:
       - ./common.env
       - ./nodes/m4.env
     environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/files/published /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
       SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
       HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
       HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - files-published:/app/data/files/published
@@ -226,6 +250,7 @@ services:
   concert-tickets-cluster-m5:
     extends: {file: ./node.yml, service: node}
     container_name: concert-tickets-cluster-m5${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     # Fixed local identity: HILOS_CLUSTER_NODE_ENV selects only a standalone node.
     env_file: !override
@@ -233,10 +258,15 @@ services:
       - ./common.env
       - ./nodes/m5.env
     environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/files/published /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
       SSL_CERT_FILE: /hilos/framework/docker/stand-gateway/tls/ca.pem
       HILOS_MODERATION_TEXT_URL: https://stand-gateway:18000/model
       HILOS_MODERATION_IMAGE_URL: https://stand-gateway:18000/model
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - files-published:/app/data/files/published

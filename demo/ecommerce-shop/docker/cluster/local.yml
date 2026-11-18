@@ -12,6 +12,7 @@ services:
   ecommerce-shop-cluster-m1:
     extends: {file: ./node.yml, service: node}
     container_name: ecommerce-shop-cluster-m1${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     env_file: !override
       - ../../.env.example
@@ -19,7 +20,13 @@ services:
       - ./nodes/m1.env
     labels:
       hilos.role: app
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - ../../data/logs-cluster/m1:/var/log/hilos
       - status:/app/data/status
@@ -33,12 +40,19 @@ services:
   ecommerce-shop-cluster-s1:
     extends: {file: ./node.yml, service: node}
     container_name: ecommerce-shop-cluster-s1${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     env_file: !override
       - ../../.env.example
       - ./common.env
       - ./nodes/s1.env
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - ../../data/logs-cluster/s1:/var/log/hilos
       - status:/app/data/status
@@ -52,12 +66,19 @@ services:
   ecommerce-shop-cluster-s2:
     extends: {file: ./node.yml, service: node}
     container_name: ecommerce-shop-cluster-s2${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     env_file: !override
       - ../../.env.example
       - ./common.env
       - ./nodes/s2.env
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - ../../data/logs-cluster/s2:/var/log/hilos
       - status:/app/data/status

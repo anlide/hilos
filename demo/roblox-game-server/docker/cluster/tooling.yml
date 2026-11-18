@@ -8,6 +8,7 @@ services:
       additional_contexts:
         hilos-event: ../../../../framework/docker/native/event
     container_name: roblox-game-server-cluster-cli${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     working_dir: /app
     command: ["sleep", "infinity"]
     # This carrier runs backend commands, not the test suite. Its runtime env
@@ -16,6 +17,10 @@ services:
     tmpfs:
       - /app/tests
     environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
       APP_ENV: test
       # The database's one address, as the nodes know it.
       DB_HOST: roblox-game-server-cluster-proxy
@@ -27,6 +32,7 @@ services:
       DB_PASSWORD: hilos_pass
       COMMAND_PORT: "8094"
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - ../..:/app
       - data:/app/data
       # Tracked default; runtime DB env above takes precedence over its test DB.
@@ -63,6 +69,7 @@ services:
     cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
     image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:2f05f8a734509a7b3f26a912639488ee08f58a7b292d14d62271bcff9038768f
     container_name: roblox-game-server-cluster-e2e-runner${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     # The browser's scratch lives in memory: chromium runs with
     # --disable-dev-shm-usage, so its shared memory and profile churn land in
     # /tmp - gigabytes per suite written through the container layer to disk.
@@ -72,6 +79,11 @@ services:
       - ../../../..:/hilos
     working_dir: /hilos/demo/roblox-game-server/tests/e2e
     environment:
+      HILOS_TEST_OWNER_ROOT: /hilos
+      HILOS_TEST_WRITE_DIRS: >-
+        /hilos/demo/roblox-game-server/tests/e2e/node_modules /hilos/demo/roblox-game-server/tests/e2e/test-results
+        /hilos/demo/roblox-game-server/tests/e2e/playwright-report /hilos/demo/roblox-game-server/tests/.hilos-cluster-e2e
+      HOME: /tmp
       CI: "1"
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       COMMAND_PORT: "8094"

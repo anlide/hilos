@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import type { Expect, Page } from '@playwright/test'
 import {
   readMonopolisticWorker,
@@ -42,6 +42,31 @@ export async function readRestartWorker(
   )
 }
 
+/** Read the birth identity only while all Linux UIDs still name the bind owner. */
+async function restartIdentity(pid: number, owner: number): Promise<string> {
+  const lines = (await readFile(`/proc/${pid}/status`, 'utf8')).match(
+    /^Uid:.*$/gm,
+  )
+  const uids =
+    lines?.length === 1
+      ? lines[0]!
+          .trim()
+          .split(/[ \t]+/)
+          .slice(1)
+      : []
+  if (
+    uids.length !== 4 ||
+    uids.some((uid) => !/^[0-9]+$/.test(uid) || Number(uid) !== owner)
+  )
+    throw new Error('The restart worker does not belong to the bind owner')
+  const start = (await readFile(`/proc/${pid}/stat`, 'utf8'))
+    .split(') ')[1]
+    ?.split(' ')[19]
+  if (!start || !/^[0-9]+$/.test(start))
+    throw new Error('The worker start identity is missing')
+  return start
+}
+
 /**
  * Hold that test worker, always resume it, and arm an independent ten-second backstop.
  * No PID arrives from user input; the worker roster, /proc identity and test env must agree.
@@ -55,10 +80,11 @@ export async function withStoppedRestartWorker(
 ): Promise<void> {
   if (
     process.platform !== 'linux' ||
-    process.getuid?.() !== 0 ||
     worker.kind !== 'monopolistic' ||
     worker.agentIds.length !== 1 ||
     worker.agentIds[0] !== RESTART_AGENT ||
+    !Number.isInteger(worker.index) ||
+    worker.index <= 0 ||
     !Number.isInteger(worker.pid) ||
     worker.pid <= 1
   ) {
@@ -66,6 +92,9 @@ export async function withStoppedRestartWorker(
       'Only the isolated test settings-library worker may be paused',
     )
   }
+  const owner = (await stat('/hilos')).uid
+  if (!Number.isSafeInteger(owner) || owner < 0 || process.getuid?.() !== owner)
+    throw new Error('Only the bind owner may pause the test restart worker')
   const argv = (await readFile(`/proc/${worker.pid}/cmdline`, 'utf8')).split(
     '\0',
   )
@@ -86,22 +115,21 @@ export async function withStoppedRestartWorker(
       "The Workers PID does not identify this stand's monopolistic worker",
     )
   }
-  const start = (await readFile(`/proc/${worker.pid}/stat`, 'utf8'))
-    .split(') ')[1]
-    ?.split(' ')[19]
-  if (start === undefined)
-    throw new Error('The worker start identity is missing')
+  const start = await restartIdentity(worker.pid, owner)
   // The backstop survives a Playwright timeout or runner loss; it only signals the same
   // process lifetime, so PID reuse cannot send SIGCONT to an unrelated process.
   const watchdog = spawn(
     process.execPath,
     [
       '-e',
-      `
+      String.raw`
     const fs = require('node:fs');
-    const [pid, start, wait] = process.argv.slice(1);
+    const [pid, start, wait, owner] = process.argv.slice(1);
     setTimeout(() => {
       try {
+        const lines = fs.readFileSync('/proc/' + pid + '/status', 'utf8').match(/^Uid:.*$/gm);
+        const uids = lines?.length === 1 ? lines[0].trim().split(/[ \t]+/).slice(1) : [];
+        if (uids.length !== 4 || uids.some(uid => !/^[0-9]+$/.test(uid) || Number(uid) !== Number(owner))) return;
         const now = fs.readFileSync('/proc/' + pid + '/stat', 'utf8').split(') ')[1].split(' ')[19];
         if (now === start) process.kill(Number(pid), 'SIGCONT');
       } catch { }
@@ -110,6 +138,7 @@ export async function withStoppedRestartWorker(
       String(worker.pid),
       start,
       String(WATCHDOG_MS),
+      String(owner),
     ],
     { detached: true, stdio: 'ignore' },
   )
@@ -118,14 +147,9 @@ export async function withStoppedRestartWorker(
     watchdog.once('error', reject)
   })
   watchdog.unref()
-  const stoppedAt = Date.now()
-  process.kill(worker.pid, 'SIGSTOP')
-  try {
-    await run()
-    if (Date.now() - stoppedAt >= WATCHDOG_MS) {
-      throw new Error('The restart observation exceeded its safe pause window')
-    }
-  } finally {
+  const resume = async () => {
+    if ((await restartIdentity(worker.pid, owner)) !== start)
+      throw new Error('The original restart worker vanished before CONT')
     process.kill(worker.pid, 'SIGCONT')
     // A later pause may target the same process lifetime. Retire and join this
     // backstop after CONT succeeds, so it cannot resume that later pause early.
@@ -137,5 +161,17 @@ export async function withStoppedRestartWorker(
       watchdog.kill('SIGTERM')
       await exited
     }
+  }
+  const stoppedAt = Date.now()
+  if ((await restartIdentity(worker.pid, owner)) !== start)
+    throw new Error('The restart worker changed before STOP')
+  process.kill(worker.pid, 'SIGSTOP')
+  try {
+    await run()
+    if (Date.now() - stoppedAt >= WATCHDOG_MS) {
+      throw new Error('The restart observation exceeded its safe pause window')
+    }
+  } finally {
+    await resume()
   }
 }

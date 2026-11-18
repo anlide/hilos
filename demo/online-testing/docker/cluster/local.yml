@@ -12,6 +12,7 @@ services:
   online-testing-cluster-m1:
     extends: {file: ./node.yml, service: node}
     container_name: online-testing-cluster-m1${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     env_file: !override
       - ../../.env.example
@@ -19,7 +20,13 @@ services:
       - ./nodes/m1.env
     labels:
       hilos.role: app
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - ../../data/logs-cluster/m1:/var/log/hilos
@@ -34,12 +41,19 @@ services:
   online-testing-cluster-m2:
     extends: {file: ./node.yml, service: node}
     container_name: online-testing-cluster-m2${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     env_file: !override
       - ../../.env.example
       - ./common.env
       - ./nodes/m2.env
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - ../../data/logs-cluster/m2:/var/log/hilos
@@ -54,12 +68,19 @@ services:
   online-testing-cluster-m3:
     extends: {file: ./node.yml, service: node}
     container_name: online-testing-cluster-m3${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     ports: !reset []
     env_file: !override
       - ../../.env.example
       - ./common.env
       - ./nodes/m3.env
+    environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/data/data_export /app/data/status /var/log/hilos /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - data:/app/data
       - data-export:/app/data/data_export
       - ../../data/logs-cluster/m3:/var/log/hilos

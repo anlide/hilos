@@ -141,7 +141,11 @@ services:
       - ../../../framework:/hilos/framework:ro
       - ../data/logs-test:/var/log/hilos
     working_dir: /app
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     environment:
+      - HILOS_TEST_OWNER_ROOT=/app
+      - HILOS_TEST_WRITE_DIRS=/app/data /var/log/hilos /app/vendor /app/tests/.phpunit.cache /app/data/data_export /app/data/files/published
+      - HOME=/tmp
       - APP_ENV=test
       # The nightly rotation carries daemon.log away under a run; a test that needs a rotation calls it itself.
       - LOG_ROTATION_CRON=0 3 29 2 *
@@ -250,6 +254,8 @@ services:
     container_name: concert-tickets-frontend-cli-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ../../..:/hilos
+      # Reach the host mountpoint hidden by the Angular cache volume.
+      - ../frontend:/hilos-test-frontend
       # A private Angular disk cache, separate from both the repo copy (owned by
       # the local dev server) and the local cli container's own volume: lmdb
       # opened from two containers at once corrupts its reader lock table (PID
@@ -257,7 +263,29 @@ services:
       # stays ENABLED here too, which is worth ~35% of the e2e build.
       - ng-cache-cli-test:/hilos/demo/concert-tickets/frontend/.angular
     working_dir: /hilos/demo/concert-tickets/frontend
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: ["node"]
     environment:
+      HILOS_TEST_OWNER_ROOT: /hilos
+      HILOS_TEST_WRITE_DIRS: >-
+        /hilos/demo/concert-tickets/frontend/node_modules /hilos/demo/concert-tickets/frontend/dist
+        /hilos/demo/concert-tickets/frontend/dist-prerender /hilos/demo/concert-tickets/frontend/.vite
+        /hilos/demo/concert-tickets/frontend/src/generated /hilos/demo/concert-tickets/frontend/out-tsc
+        /hilos/demo/concert-tickets/frontend/.angular /hilos/framework/frontend/node_modules
+        /hilos/framework/frontend/.vite /hilos/framework/frontend/.angular
+        /hilos/framework/frontend/dist-pack /hilos/framework/frontend/core/node_modules
+        /hilos/framework/frontend/core/dist /hilos/framework/frontend/core/.vite
+        /hilos/framework/frontend/core/.angular /hilos/framework/frontend/vue/node_modules
+        /hilos/framework/frontend/vue/dist /hilos/framework/frontend/vue/.vite
+        /hilos/framework/frontend/vue/.angular /hilos/framework/frontend/react/node_modules
+        /hilos/framework/frontend/react/dist /hilos/framework/frontend/react/.vite
+        /hilos/framework/frontend/react/.angular /hilos/framework/frontend/angular/node_modules
+        /hilos/framework/frontend/angular/dist /hilos/framework/frontend/angular/.vite
+        /hilos/framework/frontend/angular/.angular /hilos/framework/frontend/prerender/node_modules
+        /hilos/framework/frontend/prerender/dist /hilos/framework/frontend/prerender/.vite
+        /hilos/framework/frontend/prerender/.angular
+      HOME: /tmp
+      HILOS_TEST_OWN_DIRS: /hilos-test-frontend/.angular
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       # Browser storage belongs to DOM tests and the browser, not Node SSR.
       NODE_OPTIONS: "--no-experimental-webstorage"
@@ -317,7 +345,12 @@ services:
       - ../../../framework:/hilos/framework:ro
       - ../data/logs-test:/var/log/hilos
     working_dir: /app
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: ["php", "backend/Bootstrap/docker.php"]
     environment:
+      - HILOS_TEST_OWNER_ROOT=/app
+      - HILOS_TEST_WRITE_DIRS=/app/data /var/log/hilos /app/vendor /app/tests/.phpunit.cache /app/data/data_export /app/data/files/published
+      - HOME=/tmp
       - APP_ENV=test
       # The same project zone as the daemon beside it, whatever a stale tests/.env carries.
       - HILOS_PROJECT_TIME_ZONE=Europe/Warsaw
@@ -329,6 +362,7 @@ services:
       # this pair the CLI refuses such a command rather than risk a second writer, so
       # test:db-prepare needs it even though it runs before the daemon exists.
       - HILOS_DAEMON_HOST=concert-tickets-daemon-test
+      - COMMAND_HOST=127.0.0.1
       - COMMAND_PORT=8094
       - DB_HOST=concert-tickets-mysql-test
       - DB_PORT=3306
@@ -362,7 +396,14 @@ services:
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/concert-tickets/tests/e2e
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: ["node"]
     environment:
+      HILOS_TEST_OWNER_ROOT: /hilos
+      HILOS_TEST_WRITE_DIRS: >-
+        /hilos/demo/concert-tickets/tests/e2e/node_modules /hilos/demo/concert-tickets/tests/e2e/test-results
+        /hilos/demo/concert-tickets/tests/e2e/playwright-report
+      HOME: /tmp
       BASE_URL: https://concert-tickets-nginx-test
       # Admin grants, notification emits and the protected-mode spec call the
       # daemon's command channel through this in-network address.

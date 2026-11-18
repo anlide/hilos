@@ -20,11 +20,29 @@ services:
     volumes:
       - ../..:/hilos
     working_dir: /hilos/framework/frontend
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: [node]
     # The runner needs only the way out to the npm registry. Docker's built-in
     # bridge already exists; a project network of its own would come from the
     # default address pools on every run and stay behind until a down.
     network_mode: bridge
     environment:
+      HILOS_TEST_OWNER_ROOT: /hilos
+      HILOS_TEST_WRITE_DIRS: >-
+        /hilos/framework/frontend/node_modules /hilos/framework/frontend/.vite
+        /hilos/framework/frontend/.angular /hilos/framework/frontend/dist-pack
+        /hilos/framework/frontend/core/node_modules /hilos/framework/frontend/core/dist
+        /hilos/framework/frontend/core/.vite /hilos/framework/frontend/core/.angular
+        /hilos/framework/frontend/vue/node_modules /hilos/framework/frontend/vue/dist
+        /hilos/framework/frontend/vue/.vite /hilos/framework/frontend/vue/.angular
+        /hilos/framework/frontend/react/node_modules /hilos/framework/frontend/react/dist
+        /hilos/framework/frontend/react/.vite /hilos/framework/frontend/react/.angular
+        /hilos/framework/frontend/angular/node_modules /hilos/framework/frontend/angular/dist
+        /hilos/framework/frontend/angular/.vite /hilos/framework/frontend/angular/.angular
+        /hilos/framework/frontend/prerender/node_modules /hilos/framework/frontend/prerender/dist
+        /hilos/framework/frontend/prerender/.vite /hilos/framework/frontend/prerender/.angular
+        /hilos/framework/frontend/scripts/node_modules /hilos/framework/frontend/codestyle/node_modules
+      HOME: /tmp
       # Silence npm's update-notifier; the version is pinned by the image.
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       # Browser storage belongs to DOM tests and the browser, not Node SSR.

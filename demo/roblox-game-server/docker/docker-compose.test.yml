@@ -135,7 +135,11 @@ services:
       - ../../../framework:/hilos/framework:ro
       - ../data/logs-test:/var/log/hilos
     working_dir: /app
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     environment:
+      - HILOS_TEST_OWNER_ROOT=/app
+      - HILOS_TEST_WRITE_DIRS=/app/data /var/log/hilos /app/vendor /app/tests/.phpunit.cache /app/data/data_export /app/data/files/published
+      - HOME=/tmp
       - APP_ENV=test
       # The nightly rotation carries daemon.log away under a run; a test that needs a rotation calls it itself.
       - LOG_ROTATION_CRON=0 3 29 2 *
@@ -218,7 +222,27 @@ services:
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/roblox-game-server/frontend
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: ["node"]
     environment:
+      HILOS_TEST_OWNER_ROOT: /hilos
+      HILOS_TEST_WRITE_DIRS: >-
+        /hilos/demo/roblox-game-server/frontend/node_modules /hilos/demo/roblox-game-server/frontend/dist
+        /hilos/demo/roblox-game-server/frontend/dist-prerender /hilos/demo/roblox-game-server/frontend/.vite
+        /hilos/demo/roblox-game-server/frontend/src/generated /hilos/framework/frontend/node_modules
+        /hilos/framework/frontend/.vite /hilos/framework/frontend/.angular
+        /hilos/framework/frontend/dist-pack /hilos/framework/frontend/core/node_modules
+        /hilos/framework/frontend/core/dist /hilos/framework/frontend/core/.vite
+        /hilos/framework/frontend/core/.angular /hilos/framework/frontend/vue/node_modules
+        /hilos/framework/frontend/vue/dist /hilos/framework/frontend/vue/.vite
+        /hilos/framework/frontend/vue/.angular /hilos/framework/frontend/react/node_modules
+        /hilos/framework/frontend/react/dist /hilos/framework/frontend/react/.vite
+        /hilos/framework/frontend/react/.angular /hilos/framework/frontend/angular/node_modules
+        /hilos/framework/frontend/angular/dist /hilos/framework/frontend/angular/.vite
+        /hilos/framework/frontend/angular/.angular /hilos/framework/frontend/prerender/node_modules
+        /hilos/framework/frontend/prerender/dist /hilos/framework/frontend/prerender/.vite
+        /hilos/framework/frontend/prerender/.angular
+      HOME: /tmp
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       NODE_OPTIONS: "--no-experimental-webstorage"
     profiles:
@@ -275,7 +299,12 @@ services:
       - ../../../framework:/hilos/framework:ro
       - ../data/logs-test:/var/log/hilos
     working_dir: /app
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: ["php", "backend/Bootstrap/docker.php"]
     environment:
+      - HILOS_TEST_OWNER_ROOT=/app
+      - HILOS_TEST_WRITE_DIRS=/app/data /var/log/hilos /app/vendor /app/tests/.phpunit.cache /app/data/data_export /app/data/files/published
+      - HOME=/tmp
       - APP_ENV=test
       # The daemon's trust in the stand gateway's certificate (HIL-921), so a command
       # that reaches the gateway from here verifies it the same way.
@@ -285,6 +314,7 @@ services:
       # this pair the CLI refuses such a command rather than risk a second writer, so
       # test:db-prepare needs it even though it runs before the daemon exists.
       - HILOS_DAEMON_HOST=roblox-game-server-daemon-test
+      - COMMAND_HOST=127.0.0.1
       - COMMAND_PORT=8094
       - DB_HOST=roblox-game-server-mysql-test
       - DB_PORT=3306
@@ -318,7 +348,14 @@ services:
     volumes:
       - ../../..:/hilos
     working_dir: /hilos/demo/roblox-game-server/tests/e2e
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: ["node"]
     environment:
+      HILOS_TEST_OWNER_ROOT: /hilos
+      HILOS_TEST_WRITE_DIRS: >-
+        /hilos/demo/roblox-game-server/tests/e2e/node_modules /hilos/demo/roblox-game-server/tests/e2e/test-results
+        /hilos/demo/roblox-game-server/tests/e2e/playwright-report
+      HOME: /tmp
       BASE_URL: https://roblox-game-server-nginx-test
       # The admin-gated /hilos specs take the grant over the daemon command
       # channel before they navigate (helpers/adminGrant.ts).

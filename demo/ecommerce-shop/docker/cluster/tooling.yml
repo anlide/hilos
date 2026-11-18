@@ -7,6 +7,7 @@ services:
       additional_contexts:
         hilos-event: ../../../../framework/docker/native/event
     container_name: ecommerce-shop-cluster-cli${HILOS_STAND_SUFFIX:-}
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
     working_dir: /app
     command: ["sleep", "infinity"]
     # This carrier runs backend commands, not tests. Keep the runtime target off the
@@ -14,6 +15,10 @@ services:
     tmpfs:
       - /app/tests
     environment:
+      HILOS_TEST_OWNER_ROOT: /app
+      HILOS_TEST_WRITE_DIRS: /app/data /app/vendor
+      HILOS_TEST_OWN_DIRS: /hilos-test-logs
+      HOME: /tmp
       APP_ENV: test
       DB_HOST: ecommerce-shop-cluster-mysql
       DB_PORT: "3306"
@@ -22,6 +27,7 @@ services:
       DB_PASSWORD: hilos_pass
       COMMAND_PORT: "8094"
     volumes:
+      - ../../data/logs-cluster:/hilos-test-logs
       - ../..:/app
       - data:/app/data
       - ${HILOS_CLUSTER_TEST_ENV_FILE:-../../tests/.env}:/app/tests/.env:ro
