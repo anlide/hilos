@@ -93,6 +93,7 @@ use Hilos\Socket\WebSocket\Delivery\DeliverySettingsSink;
 use Hilos\Utils\LogLevel;
 use Hilos\Utils\Logger;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbedDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 use LogicException as NativeLogicException;
@@ -420,6 +421,8 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
                 => $this->workerServer->testOrmForgetDoor()?->acceptOrmForgotten($this, $workerDTO),
             $workerDTO instanceof WorkerTestCronFiredDTO && $this->isRegistered
                 => $this->workerServer->cronFireTestDoor()?->acceptCronFired($this, $workerDTO),
+            $workerDTO instanceof WorkerTestAccountErasureProbedDTO && $this->isRegistered
+                => $this->workerServer->accountErasureProbeTestDoor()?->acceptAccountErasureProbed($this, $workerDTO),
             $workerDTO instanceof WorkerTestCronScheduleResultDTO && $this->isRegistered
                 => $this->workerServer->cronFireTestDoor()?->acceptCronScheduleResult($this, $workerDTO),
             $workerDTO instanceof WorkerDbReHydratedDTO => $this->handleWorkerDbReHydratedMessage($workerDTO),
@@ -1531,6 +1534,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
         $this->linkClosed = true;
         $this->workerServer->testOrmForgetDoor()?->ormForgetWorkerGone($this);
         $this->workerServer->cronFireTestDoor()?->cronFireWorkerGone($this);
+        $this->workerServer->accountErasureProbeTestDoor()?->accountErasureProbeWorkerGone($this);
         $this->workerServer->daemonNodeReportTestDoor()?->nodeReportWorkerGone($this);
 
         // No upload receipt is released here: EOF does not prove the process has exited.

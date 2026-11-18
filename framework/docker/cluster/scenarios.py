@@ -161,6 +161,7 @@ from collections import Counter, defaultdict, namedtuple
 from datetime import datetime, timezone
 
 import control
+import erasure
 
 # The stand the matrix drives, bound once by bind() before it runs: one process, one stand. The
 # names below are read off it there - its nodes by role, its stranger, the room its slaves
@@ -2619,6 +2620,21 @@ def scenario_39_person_agents_across_nodes():
     return (f"{agent_id}: cold on {host_a}, ordinary {idle_seconds}s idle, woke on {host_b} beside libraries "
             f"on {host_a}, failed over to {host_a}; row/set writes and updated_at proved by DB, "
             f"Y={user_y} unchanged; fixtures removed, full mesh and fleet restored")
+
+
+def scenario_58_erasure_frames_and_owner_recovery():
+    """The live erasure circle crosses lost frames and one personal host fault."""
+    return erasure.scenario_58_erasure_frames_and_owner_recovery(sys.modules[__name__])
+
+
+def scenario_59_erasure_waits_and_restrict():
+    """Ownerless deliveries and a late identity leave honest unfinished erasures."""
+    return erasure.scenario_59_erasure_waits_and_restrict(sys.modules[__name__])
+
+
+def scenario_60_partial_erasure_survives_full_restore():
+    """A partial FULL archive survives real idle, holder restart and hot import/resume."""
+    return erasure.scenario_60_partial_erasure_survives_full_restore(sys.modules[__name__])
 
 
 def scenario_10_cross_node_browser():
@@ -7915,6 +7931,13 @@ SCENARIOS = [
     # waits for the leader to start the owner again.
     Scenario("46 browser liveness across masters", scenario_46_browser_liveness_across_masters,
              Need(masters=3, entry=True)),
+    # Real account owners recover before the freeze pair; each journey restores the stand.
+    Scenario("58 erasure frames and owner recovery", scenario_58_erasure_frames_and_owner_recovery,
+             Need(masters=3, slaves=2)),
+    Scenario("59 erasure waits and restrict", scenario_59_erasure_waits_and_restrict,
+             Need(masters=3, slaves=2)),
+    Scenario("60 partial erasure survives full restore", scenario_60_partial_erasure_survives_full_restore,
+             Need(masters=3, slaves=2)),
     # Last, both of them, because the freeze stops ordinary agents on every node: a lift that fails
     # here must not leave its neighbours in the matrix running against a frozen stand.
     Scenario("23 verifier circle on every node", scenario_23_verifier_circle_on_every_master, Need(masters=2)),

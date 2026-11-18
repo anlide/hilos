@@ -12,6 +12,7 @@ use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\ConnectionLivenessTestDoor;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\CronFireTestDoor;
+use Hilos\Core\Daemon\AccountErasureProbeTestDoor;
 use Hilos\Core\Daemon\DaemonNodeReportTestDoor;
 use Hilos\Core\Daemon\DaemonStatusSource;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
@@ -72,6 +73,9 @@ class CommandServer extends AbstractServer
 
     /** Master seam for the test-only command that fires one cron rule once now. */
     private ?CronFireTestDoor $cronFireTestDoor = null;
+
+    /** Local master entrance for the erasure probe. */
+    private ?AccountErasureProbeTestDoor $accountErasureProbeTestDoor = null;
 
     private ?UploadMemoryTestDoor $uploadMemoryTestDoor = null;
 
@@ -327,6 +331,18 @@ class CommandServer extends AbstractServer
     public function cronFireTestDoor(): ?CronFireTestDoor
     {
         return $this->cronFireTestDoor;
+    }
+
+    /** @param AccountErasureProbeTestDoor $door Master owning local probe waits */
+    public function setAccountErasureProbeTestDoor(AccountErasureProbeTestDoor $door): void
+    {
+        $this->accountErasureProbeTestDoor = $door;
+    }
+
+    /** @return ?AccountErasureProbeTestDoor Local master entrance, or null before wiring */
+    public function accountErasureProbeTestDoor(): ?AccountErasureProbeTestDoor
+    {
+        return $this->accountErasureProbeTestDoor;
     }
 
     /** @param AgentRestartDoor $door Master handling the restart request */

@@ -11,6 +11,8 @@ import sys
 import time
 import uuid
 
+from startup_observer import Startup
+
 SERVICE = "binance-btc-tracker-daemon-test"
 NGINX = "binance-btc-tracker-nginx-test"
 RUNNER = "binance-btc-tracker-e2e-runner"
@@ -23,7 +25,9 @@ STOP_LEASE = 90
 CYCLE_LEASE = 600
 
 
-def docker(*args):
+def docker(*args, observer=None):
+    if observer is not None:
+        return observer.execute(["docker", *args])
     return subprocess.check_output(["docker", *args], text=True, timeout=30).strip()
 
 
@@ -222,7 +226,8 @@ def cycle(state):
            "--mount", f"type=bind,source={socket},target={socket}",
            "--env", "DOCKER_HOST=" + os.environ["DOCKER_HOST"],
            os.environ["STATUS_HARNESS_IMAGE"], "python3", str(Path(__file__).resolve()),
-           "watchdog", str(state))
+           "watchdog", str(state),
+           observer=Startup(state, output, run_id, backstop_name, os.environ["STATUS_HARNESS_IMAGE"]))
     browser = None
     events = []
     try:

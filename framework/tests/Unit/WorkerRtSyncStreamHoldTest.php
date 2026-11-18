@@ -6,6 +6,15 @@ namespace Hilos\Tests\Unit;
 
 use Closure;
 use Hilos\Constants\AgentConstants;
+use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
+use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeAction;
+use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeFrameKind;
+use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbeDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbedDTO;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentInterface;
@@ -249,6 +258,83 @@ final class WorkerRtSyncStreamHoldTest extends TestCase
         $this->assertSame(['part 0', 'final part 1', WorkerAgentMessageDTO::class], $manager->client->written(),
             'The signal leaves behind the write\'s last part');
         $this->assertSame([], $manager->failures);
+    }
+
+    /**
+     * @param string $action Release or replay through the real worker control entrance
+     * @param string $kind Product account-operation payload family
+     * @param int $copies Number of complete envelopes to send
+     */
+    #[TestWith(['release', 'ask', 1])]
+    #[TestWith(['release', 'answer', 1])]
+    #[TestWith(['replay', 'ask', 1])]
+    #[TestWith(['replay', 'answer', 2])]
+    public function testErasureProbeReleaseAndReplayUseTheRealSenderBehindAPrecedingRtWrite(string $action, string $kind, int $copies): void
+    {
+        $previousEnv = Hilos::$env;
+        putenv('APP_ENV=test');
+        Hilos::$env = new EnvAccessor();
+        $agent = new WorkerRtSyncStreamHoldTestAgent();
+        $frame = new WorkerAgentMessageDTO($agent->getId(), new SignalDTO(
+            new SignalSource(SignalSource::AGENT, $agent->getType()), new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+            new SignalName('fixture-erasure'),
+            new AgentSignalData($kind === 'ask' ? new AccountOperationAskSignalData(7, 'parts', 11, '42')
+                : new AccountOperationAnswerSignalData(7, 'parts', 11, AccountOperationAnswerKind::Waits), 91),
+            ['trace' => 'erasure-stream', 'sequence' => 9],
+        ));
+        $manager = new WorkerRtSyncStreamHoldTestWriter(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1',
+            ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]), 5 + $copies, [
+            1 => static function (WorkerRtSyncStreamHoldTestWriter $writer) use ($agent, $kind, $frame): void {
+                $writer->client->answering = false;
+                $writer->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('arm',
+                    new AccountErasureProbeRequest($agent->getId(), AccountErasureProbeAction::Arm,
+                        AccountErasureProbeFrameKind::from($kind))));
+                // A complete committed envelope in the real drain, including metadata the queue normally stamps.
+                new ReflectionProperty(SignalRouter::class, 'queuedSignals')->getValue(Hilos::$sr)->enqueue($frame->signal);
+            },
+            2 => static function (WorkerRtSyncStreamHoldTestWriter $writer) use ($agent, $action, $copies, $frame): void {
+                $writer->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('inspect',
+                    new AccountErasureProbeRequest($agent->getId(), AccountErasureProbeAction::Inspect)));
+                $outcomes = array_values(array_filter($writer->client->sentFrames(),
+                    static fn ($message): bool => $message instanceof WorkerTestAccountErasureProbedDTO));
+                self::assertTrue($outcomes[0]->ok);
+                self::assertTrue($outcomes[1]->ok);
+                self::assertSame(['armed' => false, 'matched' => 1, 'held' => $frame->toArray()], $outcomes[1]->state->toArray());
+                self::assertSame([WorkerTestAccountErasureProbedDTO::class, 'part 0', WorkerTestAccountErasureProbedDTO::class],
+                    $writer->client->written(), 'The preceding RT write is still incomplete when the probe is released');
+                $payload = [AgentConstants::FIELD_AGENT_ID => $agent->getId(), AccountErasureProbeRequest::ACTION => $action];
+                if ($action === 'replay') {
+                    $payload += [AccountErasureProbeRequest::FRAME => $outcomes[1]->state->held->toArray(),
+                        AccountErasureProbeRequest::COPIES => $copies];
+                }
+                $writer->handleDaemonMessage(WorkerDTO::factoryWorkerDTO(new WorkerTestAccountErasureProbeDTO('send',
+                    AccountErasureProbeRequest::fromArray($payload))->toJson()));
+                self::assertSame([], array_values(array_filter($writer->client->sentFrames(),
+                    static fn ($message): bool => $message instanceof WorkerAgentMessageDTO)), 'The real sender still owes the RT barrier');
+                $writer->client->answer();
+            },
+        ], [$agent]);
+        try {
+            $manager->run();
+            self::assertSame(array_merge([
+                WorkerTestAccountErasureProbedDTO::class, 'part 0', WorkerTestAccountErasureProbedDTO::class,
+                WorkerTestAccountErasureProbedDTO::class, 'final part 1',
+            ], array_fill(0, $copies, WorkerAgentMessageDTO::class)), $manager->client->written());
+            $sent = array_values(array_filter($manager->client->sentFrames(),
+                static fn ($message): bool => $message instanceof WorkerAgentMessageDTO));
+            self::assertCount($copies, $sent);
+            foreach ($sent as $envelope) {
+                self::assertSame($frame->toArray(), $envelope->toArray(), 'Every signal, source, receipt and metadata field survives');
+            }
+            $outcomes = array_values(array_filter($manager->client->sentFrames(),
+                static fn ($message): bool => $message instanceof WorkerTestAccountErasureProbedDTO));
+            self::assertTrue($outcomes[2]->ok);
+            self::assertSame($action === 'release' ? null : $frame->toArray(), $outcomes[2]->state->held?->toArray());
+            self::assertSame([], $manager->failures);
+        } finally {
+            $manager->unbindRtPass();
+            Hilos::$env = $previousEnv;
+        }
     }
 
     /**
@@ -1574,6 +1660,12 @@ final class WorkerRtSyncStreamHoldTestClient extends WorkerDaemonClient
         }
 
         return $written;
+    }
+
+    /** @return list<WorkerDTO|array<string, mixed>> Complete frames written by the actual worker sender */
+    public function sentFrames(): array
+    {
+        return $this->sent;
     }
 
     /** @return list<string> Collections the worker asked its master one more snapshot of, in order */

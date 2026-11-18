@@ -56,6 +56,12 @@ final class WorkerConstants
     /** Test-only outcome of an armed cron rule, sent after the tick it fired in, on the same worker connection. */
     public const string MESSAGE_TEST_CRON_FIRED = 'test_cron_fired';
 
+    /** Test-only request for the local worker's bounded account erasure capture. */
+    public const string MESSAGE_TEST_ACCOUNT_ERASURE_PROBE = 'test_account_erasure_probe';
+
+    /** Test-only local capture state or refusal on the same worker connection. */
+    public const string MESSAGE_TEST_ACCOUNT_ERASURE_PROBED = 'test_account_erasure_probed';
+
     /** Test-only mutation of a current agent cron rule's pause set. */
     public const string MESSAGE_TEST_CRON_SCHEDULE = 'test_cron_schedule';
 

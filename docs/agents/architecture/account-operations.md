@@ -83,8 +83,8 @@ and clear only the markers whose behavior actually landed.
 
 | Phase | Boundary and remaining writers | Documentation and live switch |
 |---|---|---|
-| 3.1 — ordinary writes (HIL-1888) | One changing writer after creation for each DB row; ordinary overlaps are exhausted by the named moves below. Only the explicitly named old erasure and merge paths remain afterward. RT ownership, new DB widths and a re-cut of `_setVia` are outside the phase. | HIL-1891 records the norm; HIL-1892 defines the strict judge and executable closed debt list; HIL-1893–HIL-1910 land the ordinary moves. HIL-1911 aligns applicable e2e. Existing restriction integration covers the move; failover 4/19 is recorded, and cold person 39 remains quarantined as F-015. HIL-1964 still owns outstanding cluster and backup evidence. |
-| 3.2 — erasure (HIL-1889) | HIL-1952 switched the due sweep and force-purge to owner-local work, removed erasure debt and retired the old erasure writes, keeping rights still needed by merge. Participants commit their own work and results; unfinished operations resume from durable facts. | HIL-1935 records the detailed [erasure norms](#erasure); HIL-1936–HIL-1951 prepared the records and participants, and HIL-1952 connected them to the live path. HIL-1963 aligns the remaining e2e; HIL-1964 owns outstanding cluster and backup evidence. |
+| 3.1 — ordinary writes (HIL-1888) | One changing writer after creation for each DB row; ordinary overlaps are exhausted by the named moves below. Only the explicitly named old erasure and merge paths remain afterward. RT ownership, new DB widths and a re-cut of `_setVia` are outside the phase. | HIL-1891 records the norm; HIL-1892 defines the strict judge and executable closed debt list; HIL-1893–HIL-1910 land the ordinary moves. HIL-1911 aligns applicable e2e. Existing restriction integration covers the move; failover 4/19 is recorded, and cold person 39 remains quarantined as F-015. Binance scenarios 58–60 add the erasure cluster and backup evidence described in [Recovery](#recovery). |
+| 3.2 — erasure (HIL-1889) | HIL-1952 switched the due sweep and force-purge to owner-local work, removed erasure debt and retired the old erasure writes, keeping rights still needed by merge. Participants commit their own work and results; unfinished operations resume from durable facts. | HIL-1935 records the detailed [erasure norms](#erasure); HIL-1936–HIL-1951 prepared the records and participants, and HIL-1952 connected them to the live path. HIL-1963 aligns the remaining e2e; Binance scenarios 58–60 record the erasure recovery evidence in [Recovery](#recovery). |
 | 3.3 — merge (HIL-1890) | Preparation is inert. The old merge remains the only normal producer until its switch removes the remaining merge debt (not in the code yet — HIL-1999). | The detailed [merge norms](#merge) are recorded here; HIL-1987–HIL-1998 and HIL-2000–HIL-2011 prepare the mechanisms and surrounding behavior. HIL-1999 alone activates the path and retires the old merge writer under the [cutover requirements](#merge-cutover-and-observation). |
 
 Every implementing leaf removes its obsolete foreign grant, comment, debt
@@ -1691,10 +1691,13 @@ The following behavior is live on that path:
   unit/integration checks and clears only the markers its behavior makes true.
 The live path has restriction integration and failover evidence for 4/19; cold
 person 39 remains quarantined as F-015. HIL-1963 aligns the remaining applicable
-behavioral e2e. HIL-1964 still owns outstanding cluster and backup evidence for
-lost, duplicate and old frames, owner sleep, death and movement, missing owners
-and `RESTRICT` refusal. Neither evidence leaf inherits another leaf's business
-tests or marker removal.
+behavioral e2e. Binance scenarios 58–60 record lost, duplicate and stale frames,
+one personal host loss and move, real personal idle, holder restart, disabled
+email, two negative erasure journeys and partial FULL import/resume; the exact
+proof boundaries are in [Recovery](#recovery). The database-free
+`test:account:erasure-probe` supplies bounded capture and replay for existing
+account-operation frames on a local worker. Neither evidence leaf inherits
+another leaf's business tests or marker removal.
 
 ## Merge
 
@@ -2390,9 +2393,37 @@ a fallback. A final `RESTRICT` refusal rolls back only the personal owner's
 final transaction and leaves the operation unfinished, with the account's
 number and the referencing table's name kept on it (*The erasure final*). The
 card's first page reply and live updates carry the wait (HIL-1954) and safe
-refusal in `refusals`. HIL-1964 still owns the outstanding cluster and backup
-evidence for lost, duplicate and old frames, owner sleep, death and movement,
-missing owners and a forgotten restrictive child.
+refusal in `refusals`. The active Binance scenario 59 verifies that an
+unregistered delivery owner remains open after one recovery pass, with no
+finished result; it also adds a late identity and observes the safe
+`{userId: hilos_identity}` refusal, rollback of the personal final transaction,
+and no final result.
+
+Binance scenario 58 opens one erasure circle and suppresses its start ask.
+Ordinary recovery sends the debt again. Live duplicate ask/answer envelopes
+preserve the exact result id, owner, payload and creation moment. Before its
+single root-host kill, SQL proves personal commit and identity removal while
+mail result is absent, delivery is pending and the operation remains open;
+the folded account has already finalized. The root starts on the surviving
+slave, while the same holder stays alive on another node. Completion retains
+the personal result and neighbour facts; registered disabled email completes
+its own erasure duty. A stale saved ask from the live holder has an observed
+participant answer and leaves results and effects unchanged.
+
+Binance scenario 60 archives one partial circle with only the root's personal
+and final duties missing. The folded final is committed, its capture is gone,
+and the root capture remains. FULL capture and digest verification leave the
+complete ordered operation/assignment/result snapshot unchanged. The same
+root then really stops idle with personal/final still absent. One holder
+restart, proved by fresh stop/start lifecycle lines even in the same worker,
+finishes the original intent without releasing the old probe or adding a new
+purge. Hot FULL import removes a post-archive marker and ordinary startup/resume
+completes the archived intent. Archived NON-CAPTURE results, including the
+folded final, keep their exact id, owner, payload and creation moment; assignments
+are exact, personal/final results are rebuilt after restore, both finalized
+captures are absent, and the folded account and neighbour remain as expected.
+These are fresh pointed cluster proofs, not an exhaustive missing-owner or
+restrictive-child catalog; local participant integration retains that scope.
 
 For merge, repeating preparation returns the owner's saved reservation and
 captured identity. After a preparation refusal or authorized cancellation,
@@ -2472,9 +2503,10 @@ Each owner's transaction commits its work with its result; a later refusal does
 not undo earlier owners, and the durable operation remains unfinished for
 recovery. A start transaction rollback restores its date and result while the
 operation intent remains; a refusal after a committed start does not move the
-date back. HIL-1963 aligns the remaining applicable e2e, and HIL-1964 still owns
-outstanding cluster and backup evidence. No timing bound, common rollback after
-start, exactly-once claim or stronger file guarantee is added.
+date back. HIL-1963 aligns the remaining applicable e2e. Binance scenarios 58–60
+record the erasure cluster and backup evidence in [Recovery](#recovery).
+No timing bound, common rollback after start, exactly-once claim or stronger
+file guarantee is added.
 
 For merge, preparation and cancel-before-fact release are built without
 changing business rows. The cancellation request takes an exclusive operation
@@ -2606,6 +2638,6 @@ HIL-1892's strict DB judge and closed executable debt catalog are implemented.
 Its transition vertices cover changes to DB claims or partition proofs; each
 real consumer move removes its active key and passed states in the same commit.
 The existing restriction integration and failover 4/19 are recorded; cold
-person 39 remains quarantined as F-015. HIL-1963 owns remaining e2e alignment
-and HIL-1964 the outstanding cluster and backup evidence. Each leaf clears only
-markers its behavior makes true.
+person 39 remains quarantined as F-015. HIL-1963 owns remaining e2e alignment.
+Binance scenarios 58–60 record the erasure cluster and backup evidence in
+[Recovery](#recovery). Each leaf clears only markers its behavior makes true.

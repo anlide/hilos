@@ -6,6 +6,12 @@ namespace Hilos\Tests\Unit;
 
 use Closure;
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeAction;
+use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
+use Hilos\Environment\EnvAccessor;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbeDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbedDTO;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentIdleTracker;
@@ -67,6 +73,66 @@ final class WorkerManagerIdleStopTest extends TestCase
         Hilos::$sr = null;
 
         parent::tearDown();
+    }
+
+    /** The control ages one known personal source; only the normal tick may decide its exit. */
+    public function testExpireIdleAgesOnlyTheDeclaredLocalPersonalSourceAndUsesOrdinaryGuards(): void
+    {
+        $previousEnv = Hilos::$env;
+        putenv('APP_ENV=test');
+        Hilos::$env = new EnvAccessor();
+        try {
+            $this->bindAppClass(IdleStopProbeTestHilos::class);
+            $manager = new IdleStopTestManager();
+            $manager->clock = 1000.0;
+            $personalId = HilosAgentType::HILOS_USER . ':7';
+            $personal = $this->addAgent($manager, HilosAgentType::HILOS_USER);
+            $this->addAgent($manager, self::IDLE_TYPE);
+            $manager->agentManagerDouble->createAndAddAgent(HilosAgentType::HILOS_USER, '0');
+            $times = new ReflectionProperty(AgentIdleTracker::class, 'lastEventAt');
+            $before = $times->getValue($this->tracker($manager));
+            foreach ([HilosAgentType::HILOS_USER . ':99', HilosAgentType::HILOS_USER . ':0', self::IDLE_AGENT_ID] as $invalid) {
+                $manager->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('invalid',
+                    new AccountErasureProbeRequest($invalid, AccountErasureProbeAction::ExpireIdle)));
+                $ack = $manager->daemonClientDouble->sent[array_key_last($manager->daemonClientDouble->sent)];
+                self::assertInstanceOf(WorkerTestAccountErasureProbedDTO::class, $ack);
+                self::assertFalse($ack->ok);
+                self::assertSame($before, $times->getValue($this->tracker($manager)), 'A refusal cannot create or age a tracker key');
+            }
+            $this->bindAppClass(IdleStopProbeNoIdleHilos::class);
+            $manager->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('undeclared',
+                new AccountErasureProbeRequest($personalId, AccountErasureProbeAction::ExpireIdle)));
+            self::assertFalse($manager->daemonClientDouble->sent[array_key_last($manager->daemonClientDouble->sent)]->ok);
+            self::assertSame($before, $times->getValue($this->tracker($manager)));
+            $this->bindAppClass(IdleStopProbeTestHilos::class);
+            $this->tracker($manager)->noteSubscriber($personalId, 'probe-tab', 1000.0);
+            $manager->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('expire',
+                new AccountErasureProbeRequest($personalId, AccountErasureProbeAction::ExpireIdle)));
+            $ack = $manager->daemonClientDouble->sent[array_key_last($manager->daemonClientDouble->sent)];
+            self::assertTrue($ack->ok);
+            self::assertSame(['armed' => false, 'matched' => 0, 'held' => null], $ack->state->toArray());
+            self::assertSame(760.0, $times->getValue($this->tracker($manager))[$personalId], 'The control uses the ordinary waitTime clock');
+            self::assertFalse($personal->stopHookRan, 'The control itself stops nobody');
+            $this->tickAgents($manager);
+            self::assertTrue($manager->hasAgent($personalId), 'The subscriber still holds the source');
+            $this->tracker($manager)->dropSubscriber($personalId, 'probe-tab', 1000.0);
+            $manager->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('expire-again',
+                new AccountErasureProbeRequest($personalId, AccountErasureProbeAction::ExpireIdle)));
+            $personal->workInFlight = true;
+            $this->tickAgents($manager);
+            self::assertTrue($manager->hasAgent($personalId), 'In-flight work still holds the source');
+            $personal->workInFlight = false;
+            $this->freeze(StateProtectedModeRuntime::PHASE_ACTIVE);
+            $this->tickAgents($manager);
+            self::assertTrue($manager->hasAgent($personalId), 'A frozen node still holds the source');
+            Hilos::$rt = null;
+            $this->tickAgents($manager);
+            self::assertFalse($manager->hasAgent($personalId));
+            self::assertTrue($personal->stopHookRan);
+            self::assertSame([$personalId], $manager->daemonClientDouble->stoppedAgentIds());
+        } finally {
+            Hilos::$env = $previousEnv;
+        }
     }
 
     public function testAnAgentSilentPastItsWindowStopsByTheSelfStopPath(): void
@@ -303,6 +369,18 @@ abstract class IdleStopTestHilos extends HilosFacade
     ];
 }
 
+abstract class IdleStopProbeTestHilos extends IdleStopTestHilos
+{
+    public const array AGENTS = parent::AGENTS + [
+        HilosAgentType::HILOS_USER => [AgentRegistryKey::IDLE_TIMEOUT => 240],
+    ];
+}
+
+abstract class IdleStopProbeNoIdleHilos extends IdleStopTestHilos
+{
+    public const array AGENTS = parent::AGENTS + [HilosAgentType::HILOS_USER => []];
+}
+
 class IdleStopTestAgent extends AbstractAgent
 {
     public const string AGENT_TYPE = 'unit_idle_stop_agent';
@@ -340,6 +418,11 @@ class IdleStopTestAgent extends AbstractAgent
     }
 }
 
+final class IdleStopPersonalAgent extends IdleStopTestAgent
+{
+    public const string AGENT_TYPE = HilosAgentType::HILOS_USER;
+}
+
 final class IdleStopTestForeverAgent extends IdleStopTestAgent
 {
     public const string AGENT_TYPE = 'unit_lives_forever_agent';
@@ -371,6 +454,9 @@ final class IdleStopTestManager extends WorkerManager
 
     public IdleStopTestAgentManager $agentManagerDouble;
 
+    /** Optional clock of the focused expiry case, shared with the ordinary idle verdict. */
+    public ?float $clock = null;
+
     public function __construct()
     {
         parent::__construct(1);
@@ -385,6 +471,12 @@ final class IdleStopTestManager extends WorkerManager
     public function hasAgent(string $agentId): bool
     {
         return $this->agentManagerDouble->hasAgent($agentId);
+    }
+
+    /** @return float Focused case clock, or the ordinary worker clock */
+    protected function waitTime(): float
+    {
+        return $this->clock ?? parent::waitTime();
     }
 
     protected function createSignalRouter(): SignalRouter
@@ -404,9 +496,11 @@ final class IdleStopTestAgentManager extends AgentManager
 {
     protected function createAgent(string $agentType, ?string $agentIndex): AgentInterface
     {
-        return $agentType === IdleStopTestForeverAgent::AGENT_TYPE
-            ? new IdleStopTestForeverAgent((string)$agentIndex)
-            : new IdleStopTestAgent((string)$agentIndex);
+        return match ($agentType) {
+            IdleStopTestForeverAgent::AGENT_TYPE => new IdleStopTestForeverAgent((string)$agentIndex),
+            HilosAgentType::HILOS_USER => new IdleStopPersonalAgent((string)$agentIndex),
+            default => new IdleStopTestAgent((string)$agentIndex),
+        };
     }
 }
 

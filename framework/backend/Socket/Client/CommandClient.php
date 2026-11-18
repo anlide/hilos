@@ -14,6 +14,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\CronFireTestRequests;
+use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\EventLoopTimer;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
@@ -515,6 +516,26 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 }
                 $this->hold($request);
                 $door->requestCronFire($request);
+                return;
+            }
+
+            if ($request->command === CliCommands::ACCOUNT_TEST_ERASURE_PROBE) {
+                try {
+                    AccountErasureProbeRequest::fromArray($request->payload);
+                } catch (InvalidFormatException $failure) {
+                    $this->queueWrite(CommandReplyDTO::error($request->correlationId, $failure->getMessage())->toJson() . "\n");
+                    continue;
+                }
+                $door = $this->server->accountErasureProbeTestDoor();
+                if ($door === null) {
+                    $this->queueWrite(CommandReplyDTO::error(
+                        $request->correlationId,
+                        'This daemon has no account erasure probe door',
+                    )->toJson() . "\n");
+                    continue;
+                }
+                $this->hold($request);
+                $door->requestAccountErasureProbe($request);
                 return;
             }
 

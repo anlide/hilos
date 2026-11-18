@@ -1,5 +1,5 @@
 #!/bin/sh
-# Disposable test tooling; only this container receives the local Docker socket.
+# Disposable test tooling, with a read-only startup observer in the host shell.
 set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 repo=$(CDPATH= cd -- "$here/../../.." && pwd -P)
@@ -18,8 +18,39 @@ esac
 unset DOCKER_CONTEXT DOCKER_HOST DOCKER_TLS_VERIFY DOCKER_CERT_PATH
 state=$(mktemp -d /tmp/hilos-standalone-status.XXXXXXXX)
 chmod 777 "$state"
-# On abrupt controller loss the independent container still needs this mount.
-trap 'if [ ! -f "$state/manifest.json" ] || [ -f "$state/finished" ]; then rm -rf "$state"; fi' EXIT
+observer_pid=
+finish() {
+    rc=$?
+    trap - EXIT
+    if [ -n "$observer_pid" ]; then
+        touch "$state/startup-stop" || true
+        kill -TERM "$observer_pid" 2>/dev/null || true
+        # Every observer operation has a subsecond deadline; stop skips final sampling.
+        wait "$observer_pid" || true
+    fi
+    if [ -f "$state/startup-request.json" ]; then
+        python3 -B "$state/startup_observer.py" handoff "$state" \
+            "$repo/demo/binance-btc-tracker/tests/e2e/test-results/standalone-status" || \
+            echo "standalone-status startup artifact handoff failed: $state" >&2
+    fi
+    # Preserve the existing independent-recovery retain/remove decision.
+    if [ ! -f "$state/manifest.json" ] || [ -f "$state/finished" ]; then
+        rm -rf "$state"
+    fi
+    exit "$rc"
+}
+trap finish EXIT
+case "${1:-}" in
+    cycle|e2e)
+        cp "$here/startup_observer.py" "$state/startup_observer.py"
+        if command -v python3 >/dev/null 2>&1; then
+            python3 -B "$state/startup_observer.py" observe "$state" "$endpoint" &
+            observer_pid=$!
+        else
+            echo '{"status":"unavailable","reason":"Host python3 is unavailable"}' > "$state/startup-unavailable.json"
+        fi
+        ;;
+esac
 docker --host "$endpoint" build --iidfile "$state/image" \
     -f "$repo/framework/docker/Dockerfile.cluster-harness" "$repo/framework/docker" >&2
 image=$(cat "$state/image")

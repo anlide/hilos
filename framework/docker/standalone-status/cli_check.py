@@ -10,7 +10,9 @@ import json
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -122,7 +124,13 @@ class NativeLastRunTest(unittest.TestCase):
                 rc, events = invocation("quarantine")
                 self.assertEqual(0, rc, "\n".join(output))
                 self.assertEqual({"status": "passed", "failedTests": []}, last_run())
-                self.assertEqual({"ordinary", "status", "quarantine"}, next_selection())
+                # Native --last-failed selects nothing from a completed, empty failure list.
+                empty_plan = root / "empty-plan.json"
+                empty = native(["--config=playwright.config.ts", "--last-failed", "--list",
+                                "--reporter=" + str(reporter)], {"HILOS_E2E_PLAN_FILE": str(empty_plan)})
+                self.assertEqual(1, empty.returncode, output[-1])
+                self.assertIn("No tests found", empty.stderr)
+                self.assertFalse(empty_plan.exists())
                 self.assertTrue(any('"status":"failed"' in text for text in output if "hilos-quarantine:" in text))
                 for name in ("main", "quarantine/chromium"):
                     self.assertTrue((e2e / "playwright-report" / name / "index.html").exists())
@@ -148,6 +156,82 @@ class NativeLastRunTest(unittest.TestCase):
             except BaseException:
                 print("\n".join("fixture | " + line for text in output for line in text.splitlines()))
                 raise
+
+
+class HostExitHandoffTest(unittest.TestCase):
+    def test_shell_exit_preserves_native_rc_and_hands_off_before_state_cleanup(self):
+        """The shell EXIT boundary is invisible to browser assertions; Docker and
+        host readers are substituted because a stand gateway cannot run this shell.
+        A FIFO orders fake observer readiness without clock sleeps.
+        """
+        here = Path(__file__).resolve().parent
+        for rc, handoff_fails in ((0, False), (125, False), (124, True)):
+            with self.subTest(rc=rc, handoff_fails=handoff_fails), \
+                    tempfile.TemporaryDirectory(prefix="hilos-status-exit-") as temporary:
+                root = Path(temporary)
+                launcher = root / "framework/docker/standalone-status"
+                launcher.mkdir(parents=True)
+                shutil.copy(here / "run", launcher / "run")
+                handshake = root / "ready.fifo"
+                os.mkfifo(handshake)
+                location = root / "state-location"
+                source = repr(str(here / "startup_observer.py"))
+                (launcher / "startup_observer.py").write_text(
+                    "import importlib.util, os, sys\nfrom pathlib import Path\n"
+                    f"spec = importlib.util.spec_from_file_location('diagnostics', {source})\n"
+                    "module = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(module)\n"
+                    "state = Path(sys.argv[2])\n"
+                    "if sys.argv[1] == 'observe':\n"
+                    "    module.write_json(state / 'startup-host.json', {'closed': True})\n"
+                    "    with open(os.environ['EXIT_HANDSHAKE'], 'w') as ready:\n"
+                    "        ready.write('1')\n"
+                    "elif os.environ['EXIT_HANDOFF_FAIL'] == '1':\n"
+                    "    raise OSError('fixture handoff failure')\n"
+                    "else:\n"
+                    "    module.handoff(state, Path(sys.argv[3]))\n")
+                (root / "docker.py").write_text(
+                    f"#!{sys.executable}\n"
+                    "import json, os, sys\nfrom pathlib import Path\nargs = sys.argv[1:]\n"
+                    "if 'build' in args:\n"
+                    "    with open(os.environ['EXIT_HANDSHAKE']) as ready:\n"
+                    "        assert ready.read() == '1'\n"
+                    "    image = Path(args[args.index('--iidfile') + 1])\n"
+                    "    image.write_text('exact-image')\n"
+                    "    Path(os.environ['EXIT_STATE_LOCATION']).write_text(str(image.parent))\n"
+                    "else:\n"
+                    "    state = Path(next(arg.split('=', 1)[1] for arg in args if arg.startswith('STATUS_CONTROL_DIR=')))\n"
+                    "    for filename, value in (('manifest.json', {'runId': 'fixture-run'}),\n"
+                    "                            ('startup-request.json', {'runId': 'fixture-run'}),\n"
+                    "                            ('startup-outcome.json', {'rc': int(os.environ['EXIT_NATIVE_RC'])})):\n"
+                    "        (state / filename).write_text(json.dumps(value))\n"
+                    "    if os.environ['EXIT_NATIVE_RC'] == '0':\n"
+                    "        (state / 'finished').touch()\n"
+                    "    sys.exit(int(os.environ['EXIT_NATIVE_RC']))\n")
+                endpoint = root / "docker.sock"
+                with socket.socket(socket.AF_UNIX) as fake_socket:
+                    fake_socket.bind(str(endpoint))
+                    environment = {**os.environ, "EXIT_PYTHON": sys.executable,
+                                   "EXIT_DOCKER": str(root / "docker.py"), "DOCKER_HOST": "unix://" + str(endpoint), "DOCKER_CONTEXT": "",
+                                   "EXIT_HANDSHAKE": str(handshake), "EXIT_STATE_LOCATION": str(location),
+                                   "EXIT_NATIVE_RC": str(rc), "EXIT_HANDOFF_FAIL": "1" if handoff_fails else "0"}
+                    try:
+                        result = subprocess.run([
+                            "sh", "-c", 'docker() { "$EXIT_PYTHON" "$EXIT_DOCKER" "$@"; }; '
+                            'php() { :; }; . "$0"', str(launcher / "run"), "e2e"], env=environment,
+                            capture_output=True, text=True, timeout=30)
+                        self.assertEqual(rc, result.returncode, result.stdout + result.stderr)
+                        state = Path(location.read_text())
+                        self.assertEqual(rc != 0, state.exists())
+                        output = root / "demo/binance-btc-tracker/tests/e2e/test-results/standalone-status/startup/backstop-startup.json"
+                        if handoff_fails:
+                            self.assertIn("startup artifact handoff failed", result.stderr)
+                        else:
+                            artifact = json.loads(output.read_text())
+                            self.assertEqual(rc, artifact["outcome"]["rc"])
+                            self.assertTrue(artifact["host"]["closed"])
+                    finally:
+                        if location.exists():
+                            shutil.rmtree(location.read_text(), ignore_errors=True)
 
 
 if __name__ == "__main__":

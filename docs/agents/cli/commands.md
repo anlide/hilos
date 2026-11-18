@@ -240,6 +240,60 @@ Use this seam for a test-only command over a feature owned by one project. Comma
 framework-owned state stay in `framework/backend/Core/CLI/Commands/`, even when one
 project is their only current consumer.
 
+### Account erasure probe
+
+| Command | Site | Description |
+|---|---|---|
+| `test:account:erasure-probe <agentId> <action>` | `daemon` | Control a bounded, worker-local account-operation frame probe for an existing local agent |
+
+```text
+test:account:erasure-probe <agentId> arm --frame-kind=ask|answer [--operation-id=<positive id>] [--stage=<stage>] [--assignment-id=<positive id>]
+test:account:erasure-probe <agentId> inspect
+test:account:erasure-probe <agentId> release
+test:account:erasure-probe <agentId> discard
+test:account:erasure-probe <agentId> replay --frame-json=<captured full envelope> --copies=1|2
+test:account:erasure-probe <agentId> expire-idle
+test:account:erasure-probe <agentId> clear
+```
+
+`arm` requires `--frame-kind=ask|answer`; its optional selectors are a positive
+`--operation-id`, `--stage`, and a positive `--assignment-id`. The selectors
+are accepted only by `arm`. `replay` requires both `--frame-json` and
+`--copies=1|2`; all other actions accept no options. The JSON envelope must be
+a complete typed account-operation ask or answer from the addressed source.
+Hydration preserves its fields and nested metadata, and replay sends the
+envelope through the ordinary worker sender while bypassing capture.
+
+The command is database-free and test-only. The CLI sends it through the local
+master to the worker that currently runs `<agentId>`; it does not start or
+place an agent, and it cannot arm a future source or a later rebind. `arm`
+holds at most one matching ask or answer from that source incarnation. Each
+successful action prints one JSON state with `armed` (boolean), `matched`
+(captures since `clear`), and `held` (the complete envelope or `null`).
+`inspect` is non-consuming. `release` sends the held envelope once through the
+ordinary sender; `discard` drops it; `clear` also resets the capture count.
+`expire-idle` ages
+the declared idle window of an existing personal agent. Its next ordinary tick
+still applies the subscriber, work, and freeze guards.
+
+The production refusal is enforced by the test-only CLI command and checked
+again at the master and worker. The worker acknowledgement uses the existing
+`AGENT_WAIT_SECONDS` deadline (13 seconds); the command channel retains its
+15-second caller wait and 30-second held-command deadline. If the original
+worker goes away before acknowledging, the command is refused. The capture is
+worker-local and is lost when that worker process dies. A held envelope can be
+released only while the original source incarnation is still current; if it
+has stopped or been replaced, `release` discards the envelope and refuses.
+External `replay` instead requires a current live local source whose `agentId`
+matches both the outer envelope and its inner `SignalSource`. It accepts a
+complete valid envelope without proving that the external frame came from
+the same earlier source object. This address check promises no delivery
+across source death or replacement.
+`inspect` reports the worker-local snapshot and does not promise immediate
+cleanup on source stop or a lifecycle barrier. If the CLI caller disconnects,
+the master abandons its reply wait; the probe is not durable or automatically
+rebound.
+
 ### Fixture account and session commands
 
 | Command | Site | Description |
@@ -605,7 +659,9 @@ commands print JSON), `test:notification:emit`, `test:user:create` and `test:ses
 `test:status:silence:remove` and `test:settings:write` (the same shape: the Status owner or the
 settings library answers and writes, and the CLI process has nothing to read or write —
 HIL-1856 and HIL-1886),
-`test:account:force-purge`, `test:verification:sweep`,
+`test:account:force-purge`, `test:account:erasure-probe` (the master routes it
+to the worker running an existing local agent; the CLI does not read or write
+database state), `test:verification:sweep`,
 `test:legal:hold` (the users library creates the held acceptance if missing without publication,
 then the personal owner removes later rows; the library checks the result before publishing),
 `test:i18n:language:on <code>`, `test:i18n:language:off <code>`,

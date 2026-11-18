@@ -231,9 +231,27 @@ cut off with its leader stops its work (skipped as flaky since 2026-10-10;
 `docs/agents/testing.md`, "The cluster stands — six demos, six shapes"),
 38 manual maintenance from any node, 41 i18n catalog taken once, 42 another
 default language refused, 44 waiting work survives leadership changes, 45
-upload pool across nodes, 47 another project time zone refused, and 57
-millisecond moments survive a real hot FULL restore. The
-`entry-welcome <master> [<token>] [<pass>]` harness command reads the first
+upload pool across nodes, 47 another project time zone refused, 57
+millisecond moments survive a real hot FULL restore, 58 erasure frames and
+owner recovery, 59 erasure waits and restrict, and 60 partial erasure survives
+FULL restore. Scenario 58 recovers a lost ask, routes live duplicate frames,
+and loses the root's host after personal commit while mail debt remains open.
+The root starts on the surviving slave; the original holder stays alive.
+A stale ask from that holder produces an observed participant answer without
+changing results or effects, and disabled email still completes its erasure duty.
+Scenario 59 leaves an unregistered delivery-owner wait open after one recovery
+pass; a late identity produces a safe `RESTRICT` refusal and rolls back the
+personal final transaction, leaving the operation unfinished.
+Scenario 60 verifies a FULL archive with personal/final work still absent,
+then proves real root idle and one holder restart before original completion.
+Hot import removes a post-archive marker, preserves exact archived NON-CAPTURE
+results and assignments, rebuilds personal/final results through ordinary
+resume, disposes finalized captures and leaves the folded account absent and
+the neighbour unchanged. Fresh `test:cluster:scenarios -- 58 59` and the separate
+ordinary `test:cluster:scenarios -- 60` passed. Their scenario times, including
+owned cleanup, were 101.1 s, 65.4 s and 77.3 s respectively on the test box;
+stand startup is outside those times. No baseline delta was measured.
+The `entry-welcome <master> [<token>] [<pass>]` harness command reads the first
 WebSocket welcome through the stand entry and reports whether that browser is
 inside or on the maintenance stub.
 The framework's probe fleet, runtime-set probe and database probe are in this

@@ -55,6 +55,7 @@ use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\ConnectionTestDropCommand;
 use Hilos\Core\CLI\Commands\ConnectionTestLivenessCommand;
 use Hilos\Core\CLI\Commands\CronTestFireCommand;
+use Hilos\Core\CLI\Commands\AccountErasureProbeCommand;
 use Hilos\Core\CLI\Commands\CronTestPauseCommand;
 use Hilos\Core\CLI\Commands\CronTestCancelPauseCommand;
 use Hilos\Core\CLI\Commands\DaemonTestNodeReportCommand;
@@ -284,6 +285,7 @@ class CliManager
         $this->commands[CliCommands::SETTINGS_SET] = new SettingsSetCommand();
         $this->commands[CliCommands::SETTINGS_RESET] = new SettingsResetCommand();
         $this->commands[CliCommands::ACCOUNT_TEST_FORCE_PURGE] = new AccountTestForcePurgeCommand();
+        $this->commands[CliCommands::ACCOUNT_TEST_ERASURE_PROBE] = new AccountErasureProbeCommand();
         $this->commands[CliCommands::LEGAL_TEST_HOLD] = new LegalTestHoldCommand();
         $this->commands[CliCommands::I18N_TEST_LANGUAGE_CREATE] = new I18nTestLanguageCreateCommand();
         $this->commands[CliCommands::I18N_TEST_COUNTRY_CREATE] = new I18nTestCountryCreateCommand();
