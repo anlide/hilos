@@ -39,7 +39,7 @@ class _InlineThread:
         self.alive = True
         self.target()
 
-    def join(self):
+    def join(self, timeout=None):
         self.alive = False
 
     def is_alive(self):
@@ -60,7 +60,7 @@ class BrowserQuarantineTest(unittest.TestCase):
             compose=self.root / "docker-compose.cluster.yml",
             e2e=SimpleNamespace(capabilities=frozenset(("daemon", "delivery", "env-mismatch"))),
             masters=["m1", "m2", "m3"], slaves=["s1", "s2"],
-            entry=SimpleNamespace(container="entry"))
+            entry=SimpleNamespace(container="entry"), database_sql_backends=())
         self.stand.members = {node: SimpleNamespace(container=node, ip="127.0.0.1", name=f"Node {node}")
                               for node in self.stand.masters + self.stand.slaves}
         (self.stand.demo_dir / "tests").mkdir(parents=True)
@@ -96,6 +96,52 @@ class BrowserQuarantineTest(unittest.TestCase):
         self.delivery_factory = stack.enter_context(patch.object(browser.delivery, "DeliveryController",
                                                                 side_effect=self.delivery))
         stack.enter_context(patch.object(browser.threading, "Thread", _InlineThread))
+
+    def test_galera_observer_guards_zero_and_one_sql_backend(self):
+        for members in ((), ("db1",)):
+            self.stand.database_sql_backends = members
+            self.output.seek(0)
+            self.output.truncate()
+            with patch.object(browser.galera_waits, "GaleraWaits") as factory:
+                self.assertEqual(0, browser.run(self.stand, []))
+            factory.assert_not_called()
+
+    def test_galera_observer_spans_main_and_quarantine_then_stops_and_joins(self):
+        self.stand.database_sql_backends = ("db1", "db2")
+        observer = SimpleNamespace(stop=Mock(), run=lambda: self.events.append(("galera-start",)))
+        observer.stop.set.side_effect = lambda: self.events.append(("galera-stop",))
+        def joined(thread, timeout=None):
+            thread.alive = False
+            if timeout == browser.galera_waits.JOIN_SECONDS:
+                self.events.append(("galera-join",))
+        with patch.object(browser.galera_waits, "GaleraWaits", return_value=observer) as factory, \
+                patch.object(_InlineThread, "join", autospec=True, side_effect=joined):
+            self.assertEqual(0, browser.run(self.stand, []))
+        factory.assert_called_once_with(self.stand, self.stand.demo_dir / "data/logs-cluster/galera")
+        start = self.events.index(("galera-start",))
+        stop = self.events.index(("galera-stop",))
+        phases = [index for index, event in enumerate(self.events) if event[0] in ("main", "quarantine")]
+        self.assertTrue(all(start < index < stop for index in phases))
+        self.assertGreater(self.events.index(("galera-join",)), stop)
+        observer.stop.set.assert_called_once()
+
+    def test_galera_start_and_stop_errors_preserve_main_rc(self):
+        self.stand.database_sql_backends = ("db1", "db2")
+        for code in (0, 7):
+            for failing in ("start", "stop", "factory"):
+                with self.subTest(code=code, failing=failing):
+                    self.output.seek(0)
+                    self.output.truncate()
+                    self.codes[("main", "live")] = code
+                    observer = SimpleNamespace(stop=Mock(), run=Mock())
+                    if failing == "start":
+                        observer.run.side_effect = RuntimeError("observer start failed")
+                    if failing == "stop":
+                        observer.stop.set.side_effect = RuntimeError("observer stop failed")
+                    with patch.object(browser.galera_waits, "GaleraWaits", return_value=observer,
+                                      side_effect=RuntimeError("observer factory failed") if failing == "factory" else None):
+                        self.assertEqual(code, browser.run(self.stand, []))
+                    self.assertIn("cluster e2e: galera waits: observer", self.output.getvalue())
 
     def views(self, nodes):
         self.events.append(("converge", tuple(nodes)))

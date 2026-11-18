@@ -1830,10 +1830,10 @@ When and Source, for comparison across masters.
 `expectTrackedTableOverview(expect, page, table, since?)`,
 `expectTrackedTableRecord(expect, page, table, recordKey, since?)` and
 `expectTrackedTableWhole(expect, page, table, since?)` accept optional final
-`since?: number` values and forward them to the table-owner head check. Tasks
-passes fixture value `110` and Concert Tickets `1`, the migration each journals
-`hilos_user` from; the defaults remain `hilos_user: 153` and
-`bot: 153`. The table-head helper keeps its legacy heading fallback for consumers
+`since?: number` values and forward them to the table-owner head check. Concert
+Tickets and Roblox pass fixture value `17`, and File Gallery Manager `15`,
+the migration of their current trigger bodies; the defaults are `hilos_user: 174`
+and `bot: 174`. The table-head helper keeps its legacy heading fallback for consumers
 without the shared head and retains its existing legacy layout checks.
 The shared row reader is `tableRowKeyByText(expect, page, text)` in `table.ts`;
 chat keeps a wrapper. The shared receipt checks remain common across kits.

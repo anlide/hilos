@@ -43,7 +43,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   )
   await open.click()
   await expectPageReady(expect, page)
-  await expectTrackedTableOverview(expect, page, 'hilos_user', 1)
+  await expectTrackedTableOverview(expect, page, 'hilos_user', 15)
   const columnsLink = page.getByTestId('hilos-change-log-table-link-columns')
   await expect(columnsLink).toHaveAttribute(
     'href',
@@ -60,7 +60,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     shownByTestId(page, 'hilos-table-row-last_activity'),
   ).toContainText('Noisy — not written')
   await page.getByTestId('hilos-page-tab-hilos_change_log_table').click()
-  await expectTrackedTableOverview(expect, page, 'hilos_user', 1)
+  await expectTrackedTableOverview(expect, page, 'hilos_user', 15)
   await page.getByTestId('hilos-change-log-table-link-triggers').click()
   await expectPageReady(expect, page)
   await expect(heading).toHaveCount(1)
@@ -69,9 +69,9 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     page.getByTestId('hilos-change-log-table-triggers'),
   ).toContainText('hilos_cl_hilos_user_after_insert')
   await page.getByTestId('hilos-page-tab-hilos_change_log_table').click()
-  await expectTrackedTableOverview(expect, page, 'hilos_user', 1)
+  await expectTrackedTableOverview(expect, page, 'hilos_user', 15)
   await page.getByTestId('hilos-change-log-table-link-history').click()
-  await expectTrackedTableWhole(expect, page, 'hilos_user', 1)
+  await expectTrackedTableWhole(expect, page, 'hilos_user', 15)
 
   const tablePath = `/hilos/change-log/table/hilos_user`
   const tablePages = [
@@ -94,9 +94,9 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     await expect(page).toHaveURL(route.path)
     await expectPageReady(expect, page)
     if (route.kind === 'overview') {
-      await expectTrackedTableOverview(expect, page, 'hilos_user', 1)
+      await expectTrackedTableOverview(expect, page, 'hilos_user', 15)
     } else if (route.kind === 'history') {
-      await expectTrackedTableWhole(expect, page, 'hilos_user', 1)
+      await expectTrackedTableWhole(expect, page, 'hilos_user', 15)
       await expect(page.getByTestId('hilos-viewport-table')).toHaveCount(1)
     } else {
       await expect(heading).toHaveCount(1)

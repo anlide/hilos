@@ -1,4 +1,4 @@
--- valid from migration #1
+-- valid from migration #17
 CREATE TRIGGER `hilos_cl_hilos_moderation_rule_after_update` AFTER UPDATE ON `hilos_moderation_rule`
 FOR EACH ROW BEGIN
     DECLARE v_created_at BIGINT;
@@ -10,19 +10,19 @@ FOR EACH ROW BEGIN
     SET v_created_at = TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000;
     IF NOT (OLD.`id` <=> NEW.`id`) THEN
         INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_table` (`name`) VALUES ('hilos_moderation_rule');
-        SELECT `id` INTO v_table_id FROM {{change_log_database}}.`hilos_change_log_table` WHERE `name` = 'hilos_moderation_rule';
+        SET v_table_id = (SELECT dt_lookup.`id` FROM {{change_log_database}}.`hilos_change_log_table` AS dt_lookup WHERE dt_lookup.`name` = 'hilos_moderation_rule');
         SET v_record_key = JSON_ARRAY(OLD.`id`);
         INSERT INTO {{change_log_database}}.`hilos_change_log`
             (`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)
             VALUES (v_created_at, @hilos_receipt, v_table_id, v_record_key, UNHEX(SHA2(v_record_key, 256)), 'delete');
         SET v_log_id = LAST_INSERT_ID();
         INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'kind');
-        SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'kind';
+        SET v_field_id = (SELECT df_lookup.`id` FROM {{change_log_database}}.`hilos_change_log_field` AS df_lookup WHERE df_lookup.`table_id` = v_table_id AND df_lookup.`name` = 'kind');
         INSERT INTO {{change_log_database}}.`hilos_change_log_change`
             (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
             VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 0, CAST(OLD.`kind` AS CHAR), NULL);
         INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'rule');
-        SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'rule';
+        SET v_field_id = (SELECT df_lookup.`id` FROM {{change_log_database}}.`hilos_change_log_field` AS df_lookup WHERE df_lookup.`table_id` = v_table_id AND df_lookup.`name` = 'rule');
         INSERT INTO {{change_log_database}}.`hilos_change_log_change`
             (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
             VALUES (v_created_at, v_log_id, v_field_id, 'long', 1, 0, NULL, NULL);
@@ -30,7 +30,7 @@ FOR EACH ROW BEGIN
         INSERT INTO {{change_log_database}}.`hilos_change_log_value` (`created_at`, `change_id`, `old_value`, `new_value`)
             VALUES (v_created_at, v_change_id, CAST(OLD.`rule` AS CHAR), NULL);
         INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_table` (`name`) VALUES ('hilos_moderation_rule');
-        SELECT `id` INTO v_table_id FROM {{change_log_database}}.`hilos_change_log_table` WHERE `name` = 'hilos_moderation_rule';
+        SET v_table_id = (SELECT dt_lookup.`id` FROM {{change_log_database}}.`hilos_change_log_table` AS dt_lookup WHERE dt_lookup.`name` = 'hilos_moderation_rule');
         SET v_record_key = JSON_ARRAY(NEW.`id`);
         INSERT INTO {{change_log_database}}.`hilos_change_log`
             (`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)
@@ -38,7 +38,7 @@ FOR EACH ROW BEGIN
         SET v_log_id = LAST_INSERT_ID();
     ELSEIF NOT (BINARY OLD.`kind` <=> BINARY NEW.`kind`) OR NOT (BINARY OLD.`rule` <=> BINARY NEW.`rule`) THEN
         INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_table` (`name`) VALUES ('hilos_moderation_rule');
-        SELECT `id` INTO v_table_id FROM {{change_log_database}}.`hilos_change_log_table` WHERE `name` = 'hilos_moderation_rule';
+        SET v_table_id = (SELECT dt_lookup.`id` FROM {{change_log_database}}.`hilos_change_log_table` AS dt_lookup WHERE dt_lookup.`name` = 'hilos_moderation_rule');
         SET v_record_key = JSON_ARRAY(NEW.`id`);
         INSERT INTO {{change_log_database}}.`hilos_change_log`
             (`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)
@@ -46,14 +46,14 @@ FOR EACH ROW BEGIN
         SET v_log_id = LAST_INSERT_ID();
         IF NOT (BINARY OLD.`kind` <=> BINARY NEW.`kind`) THEN
             INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'kind');
-            SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'kind';
+            SET v_field_id = (SELECT df_lookup.`id` FROM {{change_log_database}}.`hilos_change_log_field` AS df_lookup WHERE df_lookup.`table_id` = v_table_id AND df_lookup.`name` = 'kind');
             INSERT INTO {{change_log_database}}.`hilos_change_log_change`
                 (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
                 VALUES (v_created_at, v_log_id, v_field_id, 'inline', 1, 1, CAST(OLD.`kind` AS CHAR), CAST(NEW.`kind` AS CHAR));
         END IF;
         IF NOT (BINARY OLD.`rule` <=> BINARY NEW.`rule`) THEN
             INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_field` (`table_id`, `name`) VALUES (v_table_id, 'rule');
-            SELECT `id` INTO v_field_id FROM {{change_log_database}}.`hilos_change_log_field` WHERE `table_id` = v_table_id AND `name` = 'rule';
+            SET v_field_id = (SELECT df_lookup.`id` FROM {{change_log_database}}.`hilos_change_log_field` AS df_lookup WHERE df_lookup.`table_id` = v_table_id AND df_lookup.`name` = 'rule');
             INSERT INTO {{change_log_database}}.`hilos_change_log_change`
                 (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)
                 VALUES (v_created_at, v_log_id, v_field_id, 'long', 1, 1, NULL, NULL);

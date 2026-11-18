@@ -84,7 +84,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   )
   await open.click()
   await expectPageReady(expect, page)
-  await expectTrackedTableOverview(expect, page, 'hilos_user', 1)
+  await expectTrackedTableOverview(expect, page, 'hilos_user', 17)
   const columnsLink = page.getByTestId('hilos-change-log-table-link-columns')
   await expect(columnsLink).toHaveAttribute(
     'href',
@@ -99,7 +99,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     page,
     'hilos_user',
     'hilos_change_log_table_columns',
-    { owner: 'Framework', since: 1 },
+    { owner: 'Framework', since: 17 },
   )
   await expect(
     page.getByTestId('hilos-change-log-table-columns'),
@@ -146,7 +146,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     shownByTestId(page, 'hilos-table-row-last_activity'),
   ).toContainText('Noisy — not written')
   await page.getByTestId('hilos-page-tab-hilos_change_log_table').click()
-  await expectTrackedTableOverview(expect, page, 'hilos_user', 1)
+  await expectTrackedTableOverview(expect, page, 'hilos_user', 17)
   const triggersPacketStart = frames.packets.length
   const triggersSentStart = frames.sent.length
   await page.getByTestId('hilos-change-log-table-link-triggers').click()
@@ -156,7 +156,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     page,
     'hilos_user',
     'hilos_change_log_table_triggers',
-    { owner: 'Framework', since: 1 },
+    { owner: 'Framework', since: 17 },
   )
   await expect(
     page.getByTestId('hilos-change-log-table-triggers'),
@@ -200,11 +200,11 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
   await expect(insertTrigger).toContainText('Service')
   await expect(insertTrigger).toContainText('AFTER INSERT on hilos_user')
   await expect(insertTrigger).toContainText('Journal')
-  await expect(insertTrigger).toContainText('from migration 001')
+  await expect(insertTrigger).toContainText('from migration 017')
   await page.getByTestId('hilos-page-tab-hilos_change_log_table').click()
-  await expectTrackedTableOverview(expect, page, 'hilos_user', 1)
+  await expectTrackedTableOverview(expect, page, 'hilos_user', 17)
   await page.getByTestId('hilos-change-log-table-link-history').click()
-  await expectTrackedTableWhole(expect, page, 'hilos_user', 1)
+  await expectTrackedTableWhole(expect, page, 'hilos_user', 17)
 
   const tablePath = `/hilos/change-log/table/hilos_user`
   const tablePages = [
@@ -235,11 +235,11 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     await expect(page).toHaveURL(route.path)
     await expectPageReady(expect, page)
     if (route.kind === 'overview') {
-      await expectTrackedTableOverview(expect, page, 'hilos_user', 1)
+      await expectTrackedTableOverview(expect, page, 'hilos_user', 17)
       return
     }
     if (route.kind === 'history') {
-      await expectTrackedTableWhole(expect, page, 'hilos_user', 1)
+      await expectTrackedTableWhole(expect, page, 'hilos_user', 17)
       await expect(
         page.getByRole('table', { name: 'hilos_user', exact: true }),
       ).toBeVisible()
@@ -247,7 +247,7 @@ test('opens Tracked tables from Change Log, filters journal labels and reads sch
     }
     await expectChangeLogTableHead(expect, page, 'hilos_user', route.page, {
       owner: 'Framework',
-      since: 1,
+      since: 17,
     })
     await expect(page.getByTestId(route.body)).toContainText(route.content)
     await expect(page.getByTestId(route.otherBody)).toHaveCount(0)

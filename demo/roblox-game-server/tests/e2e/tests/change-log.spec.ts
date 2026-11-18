@@ -283,7 +283,7 @@ test('its registration receipt shows person and identity creation as facts witho
     page,
     `/hilos/change-log/table/hilos_user/history/${userId}`,
   )
-  await expectTrackedTableRecord(expect, page, 'hilos_user', String(userId), 1)
+  await expectTrackedTableRecord(expect, page, 'hilos_user', String(userId), 17)
   const receiptId = await expectRegistrationHistory(expect, page)
   await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
   const rowKey = await expectRegistrationFeedRow(expect, page, receiptId)

@@ -10,6 +10,7 @@ from pathlib import PurePosixPath
 
 import control
 import delivery
+import galera_waits
 import scenarios
 from stand import StandRefused
 
@@ -585,6 +586,7 @@ def run(stand, extra_args):
     main_rc = 1
     reason = "Cluster setup did not finish"
     cleanup_error = ""
+    waits, waits_thread = None, None
     print(f"cluster e2e: stand {stand.project}, browser suite through {stand.entry.container}")
     try:
         env, _, _ = _roles(stand, "live")
@@ -630,6 +632,14 @@ def run(stand, extra_args):
         fault_file = _run_path(stand, "fault.json")
         fault_file.unlink(missing_ok=True)
         loss = _LossState()
+        if len(stand.database_sql_backends) > 1:
+            try:
+                waits = galera_waits.GaleraWaits(stand, stand.demo_dir / "data" / "logs-cluster" / "galera")
+                waits_thread = threading.Thread(target=waits.run, name="galera-waits")
+                waits_thread.daemon = True
+                waits_thread.start()
+            except Exception as error:
+                galera_waits.warn(error)
         try:
             main_rc = _main(stand, main, extra_args, run_env, fault_file, loss,
                             "diagnostic" if diagnostic else "main")
@@ -642,6 +652,15 @@ def run(stand, extra_args):
         reason = f"cluster e2e: failed: {error}"
         print(reason)
     finally:
+        if waits is not None:
+            try:
+                waits.stop.set()
+                if waits_thread is not None and waits_thread.ident is not None:
+                    waits_thread.join(timeout=galera_waits.JOIN_SECONDS)
+                    if waits_thread.is_alive():
+                        galera_waits.warn("observer did not stop before join deadline")
+            except Exception as error:
+                galera_waits.warn(error)
         if directory_created:
             try:
                 # Address only this UUID's own protocol files, never another run or the parent.

@@ -37,3 +37,5 @@ log_bin_trust_function_creators = 1
 binlog_format = ROW
 default_storage_engine = InnoDB
 innodb_autoinc_lock_mode = 2
+# INNODB STATUS includes held locks for the observer (HIL-2120); server behavior is unchanged.
+innodb_status_output_locks = ON

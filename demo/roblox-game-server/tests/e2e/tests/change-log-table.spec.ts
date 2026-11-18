@@ -64,7 +64,7 @@ test('follows a block receipt to the history of its record and back to the whole
       page,
       'hilos_user',
       String(person.userId),
-      1,
+      17,
     )
     const recordPath = `/hilos/change-log/table/hilos_user/history/${person.userId}`
     await expect(page).toHaveURL(recordPath)
@@ -105,7 +105,7 @@ test('follows a block receipt to the history of its record and back to the whole
     await expect(modal).toHaveCount(0)
 
     await page.getByTestId('hilos-change-log-record-filter-clear').click()
-    await expectTrackedTableWhole(expect, page, 'hilos_user', 1)
+    await expectTrackedTableWhole(expect, page, 'hilos_user', 17)
 
     await gotoPage(expect, page, recordPath)
     await expectTrackedTableRecord(
@@ -113,7 +113,7 @@ test('follows a block receipt to the history of its record and back to the whole
       page,
       'hilos_user',
       String(person.userId),
-      1,
+      17,
     )
     await expect(page).toHaveURL(recordPath)
     await expect(clearRecordFilter).toHaveAttribute(
@@ -138,7 +138,7 @@ test('follows a block receipt to the history of its record and back to the whole
       page,
       'hilos_user',
       String(person.userId),
-      1,
+      17,
     )
     await expectRegistrationHistory(expect, page)
     await expect(clearRecordFilter).toHaveAttribute(
@@ -146,7 +146,7 @@ test('follows a block receipt to the history of its record and back to the whole
       `/hilos/change-log/table/hilos_user/history`,
     )
     await page.goBack()
-    await expectTrackedTableWhole(expect, page, 'hilos_user', 1)
+    await expectTrackedTableWhole(expect, page, 'hilos_user', 17)
     await expect(page).toHaveURL(`/hilos/change-log/table/hilos_user/history`)
     await page.goForward()
     await expectTrackedTableRecord(
@@ -154,7 +154,7 @@ test('follows a block receipt to the history of its record and back to the whole
       page,
       'hilos_user',
       String(person.userId),
-      1,
+      17,
     )
     const oldRecordPath = `${CHANGE_LOG_TABLES_PATH}/hilos_user/${person.userId}`
     await gotoPage(expect, page, oldRecordPath, 'error')

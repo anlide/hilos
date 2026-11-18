@@ -8,6 +8,7 @@ import {
   leaveSecondAdmin,
   shownByTestId,
   watchTableModalFocus,
+  watchTableSearch,
   clickSubmit,
   typeInto,
   gotoPage,
@@ -17,6 +18,7 @@ import {
   type SignedInUser,
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { HilosPages } from '../../../../../framework/frontend/core/src/base/index.js'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 
 const usersTest = test.extend<{
@@ -201,14 +203,30 @@ usersTest(
     const newName = `${ownedUser.name} Pending Rename`
 
     // Both tabs watch the users list; tab A then renames a user from its detail page.
+    // Search observers live in their documents and leave with page cleanup.
+    usersCleanup.defer(() => page.close())
     const tabB = await page.context().newPage()
     usersCleanup.defer(() => tabB.close())
+    const sourceWindows = await watchTableSearch(page, {
+      page: HilosPages.USERS,
+      tableKey: 'hilosUsers',
+    })
+    const targetWindows = await watchTableSearch(tabB, {
+      page: HilosPages.USERS,
+      tableKey: 'hilosUsers',
+    })
     await openUsers(page)
     await openUsers(tabB)
     const controlId = `hilos-users-open-${ownedUser.userId}`
-    for (const tab of [page, tabB]) {
+    for (const { page: tab, windows } of [
+      { page, windows: sourceWindows },
+      { page: tabB, windows: targetWindows },
+    ]) {
+      const mark = await windows.mark()
       await typeInto(tab.getByTestId('hilos-table-search'), ownedUser.name)
-      // Settle the filter before observing a control that was already visible.
+      await windows.renderedSettled(expect, mark, { search: ownedUser.name }, [
+        String(ownedUser.userId),
+      ])
       await expect(
         tab.locator('[data-id^="hilos-users-open-"]').filter({ visible: true }),
       ).toHaveCount(1)

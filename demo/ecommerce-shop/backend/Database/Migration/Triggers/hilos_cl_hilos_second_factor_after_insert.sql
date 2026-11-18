@@ -1,4 +1,4 @@
--- valid from migration #91
+-- valid from migration #112
 CREATE TRIGGER `hilos_cl_hilos_second_factor_after_insert` AFTER INSERT ON `hilos_second_factor`
 FOR EACH ROW BEGIN
     DECLARE v_created_at BIGINT;
@@ -9,7 +9,7 @@ FOR EACH ROW BEGIN
     DECLARE v_record_key TEXT;
     SET v_created_at = TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', UTC_TIMESTAMP(6)) DIV 1000;
     INSERT IGNORE INTO {{change_log_database}}.`hilos_change_log_table` (`name`) VALUES ('hilos_second_factor');
-    SELECT `id` INTO v_table_id FROM {{change_log_database}}.`hilos_change_log_table` WHERE `name` = 'hilos_second_factor';
+    SET v_table_id = (SELECT dt_lookup.`id` FROM {{change_log_database}}.`hilos_change_log_table` AS dt_lookup WHERE dt_lookup.`name` = 'hilos_second_factor');
     SET v_record_key = JSON_ARRAY(NEW.`id`);
     INSERT INTO {{change_log_database}}.`hilos_change_log`
         (`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)

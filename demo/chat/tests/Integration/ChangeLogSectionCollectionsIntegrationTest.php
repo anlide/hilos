@@ -257,7 +257,7 @@ final class ChangeLogSectionCollectionsIntegrationTest extends IntegrationTestCa
             $this->assertGreaterThan(0, $trigger->validFromMigration);
         }
 
-        foreach (['bot' => 153, 'hilos_moderation_rule' => 153] as $table => $validFrom) {
+        foreach (['bot' => 174, 'hilos_moderation_rule' => 174] as $table => $validFrom) {
             $project = Hilos::$db->changeLogTables->sectionTable($table);
             $this->assertNotNull($project);
             $this->assertCount(3, $project->triggers);

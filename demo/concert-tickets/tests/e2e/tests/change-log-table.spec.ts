@@ -22,7 +22,7 @@ import {
 
 // The migration this demo journals hilos_user from: the header of its generated
 // backend/Database/Migration/Triggers/hilos_cl_hilos_user_after_insert.sql.
-const HILOS_USER_JOURNALED_SINCE = 1
+const HILOS_USER_JOURNALED_SINCE = 17
 
 test('follows a block receipt to the history of its record and back to the whole table', async ({
   browser,

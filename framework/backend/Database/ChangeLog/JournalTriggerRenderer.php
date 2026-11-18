@@ -159,8 +159,8 @@ final class JournalTriggerRenderer
             $schema->primaryKey));
         return [
             "    INSERT IGNORE INTO {$db}.`hilos_change_log_table` (`name`) VALUES (" . self::literal($schema->table) . ');',
-            "    SELECT `id` INTO v_table_id FROM {$db}.`hilos_change_log_table`"
-                . ' WHERE `name` = ' . self::literal($schema->table) . ';',
+            "    SET v_table_id = (SELECT dt_lookup.`id` FROM {$db}.`hilos_change_log_table` AS dt_lookup"
+                . ' WHERE dt_lookup.`name` = ' . self::literal($schema->table) . ');',
             "    SET v_record_key = JSON_ARRAY({$key});",
             "    INSERT INTO {$db}.`hilos_change_log`",
             '        (`created_at`, `receipt_id`, `table_id`, `record_key`, `record_key_hash`, `mutation_type`)',
@@ -194,8 +194,8 @@ final class JournalTriggerRenderer
             $row = [
                 "    INSERT IGNORE INTO {$db}.`hilos_change_log_field` (`table_id`, `name`)"
                     . ' VALUES (v_table_id, ' . self::literal($column) . ');',
-                "    SELECT `id` INTO v_field_id FROM {$db}.`hilos_change_log_field`"
-                    . ' WHERE `table_id` = v_table_id AND `name` = ' . self::literal($column) . ';',
+                "    SET v_field_id = (SELECT df_lookup.`id` FROM {$db}.`hilos_change_log_field` AS df_lookup"
+                    . ' WHERE df_lookup.`table_id` = v_table_id AND df_lookup.`name` = ' . self::literal($column) . ');',
                 "    INSERT INTO {$db}.`hilos_change_log_change`",
                 '        (`created_at`, `log_id`, `field_id`, `kind`, `old_present`, `new_present`, `old_value`, `new_value`)',
             ];

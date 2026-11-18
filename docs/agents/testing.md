@@ -1706,6 +1706,17 @@ from the repository root. The collector keeps
 staging paths, plus Playwright evidence and `SNAPSHOT.txt`, before teardown,
 under the same missing-source rules as binance.
 
+Cluster browser steps with more than one SQL backend that does not follow a primary
+(concert-tickets and roblox-game-server) run a Galera wait observer through main and
+the quarantine tail. An executing query lasting at least three seconds, an
+INNODB_LOCK_WAITS row, or current flow control or an apply queue present for three
+consecutive polls opens an episode. All members are captured every two seconds and
+once after release, up to 30 snapshots per episode and five episodes per step.
+Evidence goes to the demo's `data/logs-cluster/galera/`, collected as
+`artifacts/<step>/nodes/galera/`; `run.json` identifies the current run, and earlier
+evidence moves to its `archive/`. No episode text files on a quiet step is normal.
+Observer errors are reported without changing the browser verdict.
+
 The full run carries the fleets binance-btc-tracker, ecommerce-shop,
 online-testing, roblox-game-server, file-gallery-manager and concert-tickets.
 An e2e step may stand beside any fleet in the lane plan: nothing keeps them
