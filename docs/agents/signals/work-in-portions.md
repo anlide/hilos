@@ -176,11 +176,11 @@ including chat's prepared author transfer and message count through its
 existing assignment ask/answer entry, with no live merge sender until HIL-2000
 and HIL-1999. Operation/stage correlation rejects
 duplicate, old and foreign answers without advancing unrelated work
-(not in the code yet — HIL-2000). Recovery selects unfinished obligations
-from DB at start, on subsequent coordinator passes and on operation frames
-(not in the code yet — HIL-2002). These paths become live only at the merge
-cutover (not in the code yet — HIL-1999). No transaction spans frames and no
-new after-commit, file or external retry guarantee follows.
+(not in the code yet — HIL-2000). The shared first/hourly holder pass selects
+unfinished obligations from DB; owner startup reads merge owed-to state and
+resumes existing asks. Prepared merge operations use this recovery while
+production callers remain on the legacy path until HIL-1999. No transaction
+spans frames and no new after-commit, file or external retry guarantee follows.
 
 ## Anti-Patterns
 

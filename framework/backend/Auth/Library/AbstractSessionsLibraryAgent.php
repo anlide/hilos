@@ -7145,19 +7145,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Enters one portion of the open account erasures again (HIL-1951).
+     * Enters one portion of the open account erasures and merges again (HIL-1951, HIL-2002).
      *
      * A pass starts on the first tick of this holder and every hour after, and walks the open
-     * erasures in id order, {@see self::ACCOUNT_ERASURE_RECOVERY_PORTION} a tick: a full portion asks
+     * operations in id order, {@see self::ACCOUNT_ERASURE_RECOVERY_PORTION} a tick: a full portion asks
      * the next tick to go on without waiting for the hour, and a short one ends the pass. Each entry
-     * is the holder's own ({@see self::driveAccountErasure()}): it sends every ready duty that has no
-     * saved result, and ends an erasure whose saved finals ended it. Each entry is on its own: one
+     * is the holder's own ({@see self::driveAccountErasure()}, {@see self::driveAccountMerge()}): it
+     * sends ready duties and advances from their saved results. Each entry is on its own: one
      * that fails is logged and the pass goes on, and the next pass reads the same facts again. A
      * tick with no pass running and no hour struck reads nothing. The pass runs under one receipt,
      * opened by its first portion - the one that starts from no place - and closed by its end or by
      * the holder's stop.
      *
-     * @throws HilosException When the open erasures cannot be read or the receipt cannot be opened
+     * @throws HilosException When the open operations cannot be read or the receipt cannot be opened
      */
     private function sweepAccountErasureRecovery(): void
     {
@@ -7173,22 +7173,29 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         try {
             JournalReceiptScope::runPart($this->accountErasureRecoveryReceiptId, $this->getId(), function (): void {
                 $page = Hilos::$db->accountOperations->openPage(
-                    AccountOperationKind::Erasure,
+                    null,
                     $this->accountErasureRecoveryAfterId,
                     self::ACCOUNT_ERASURE_RECOVERY_PORTION,
                 );
                 foreach ($page as $operation) {
                     try {
-                        $this->driveAccountErasure($operation);
-                    } catch (Throwable $failure) {
+                        match ($operation->kind) {
+                            AccountOperationKind::Erasure => $this->driveAccountErasure($operation),
+                            AccountOperationKind::Merge => $this->driveAccountMerge($operation),
+                        };
+                    } catch (Throwable) {
                         $this->logAgentError(
-                            "Account erasure recovery of operation {$operation->id} failed, retried by the next pass: {$failure->getMessage()}",
+                            "Account erasure recovery of operation {$operation->id} failed, retried by the next pass: "
+                                . "kind={$operation->kind->value}; entry failed",
                         );
                     }
                     $this->accountErasureRecoveryAfterId = $operation->id;
                 }
                 $this->accountErasureRecoveryBacklog = count($page) === self::ACCOUNT_ERASURE_RECOVERY_PORTION;
             });
+        } catch (WiringRefusal $failure) {
+            $this->accountErasureRecoveryBacklog = false;
+            throw $failure;
         } catch (Throwable $failure) {
             $this->accountErasureRecoveryBacklog = false;
             throw $failure;

@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth\AccountOperation;
 
 use Error;
+use Generator;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
+use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
 use Hilos\Auth\AccountOperation\AccountOperationStepRefusal;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
@@ -224,6 +227,95 @@ final class AccountOperationAsksTest extends TestCase
         self::assertSame(0, $agent->frames);
     }
 
+    /** @return iterable<string, array{AccountOperationKind}> Either kind may fail independently */
+    public static function unreadableKinds(): iterable
+    {
+        yield 'erasure failed' => [AccountOperationKind::Erasure];
+        yield 'merge failed' => [AccountOperationKind::Merge];
+    }
+
+    /**
+     * A failed scan cannot hide the other kind; both see the same stable address and start does not fail.
+     *
+     * @param AccountOperationKind $failedKind Scan whose failure is independent of its neighbor
+     */
+    #[DataProvider('unreadableKinds')]
+    public function testResumeReadsBothKindsIndependentlyWithTheSameOwner(AccountOperationKind $failedKind): void
+    {
+        $reads = [];
+        $owners = [];
+        $assignments = $this->createMock(AccountOperationAssignments::class);
+        $assignments->expects(self::exactly(2))->method('openForOwner')->willReturnCallback(
+            static function (AccountOperationKind $kind, AccountOperationOwnerAddress $owner, int $afterId, int $limit) use (
+                $assignments, $failedKind, &$reads, &$owners,
+            ): AccountOperationAssignments {
+                $reads[] = $kind;
+                $owners[] = $owner;
+                self::assertSame(0, $afterId);
+                self::assertSame(100, $limit);
+                if ($kind === $failedKind) {
+                    throw new DbCollectionNotReadableException('Private startup wiring detail');
+                }
+
+                return $assignments;
+            },
+        );
+        $assignments->method('getIterator')->willReturnCallback(static function (): Generator {
+            yield from [];
+        });
+        $assignments->method('count')->willReturn(0);
+        $db = $this->createMock(HilosDbContext::class);
+        $db->method('__get')->with(HilosDbContext::accountOperationAssignments)->willReturn($assignments);
+        Hilos::$db = $db;
+        $boundApp = new ReflectionProperty(Hilos::class, 'appClass');
+        $previousApp = $boundApp->getValue();
+        $boundApp->setValue(null, AccountOperationAsksAuthHilos::class);
+        try {
+            $agent = new AccountOperationAsksParticipant('literal-index');
+            AccountOperationAsks::resume($agent, $agent->getType(), $agent->getIndex());
+            self::assertSame([AccountOperationKind::Erasure, AccountOperationKind::Merge], $reads);
+            self::assertSame($owners[0], $owners[1]);
+            self::assertSame('literal-index', $owners[0]->ownerIndex);
+            self::assertSame(0, $agent->frames);
+        } finally {
+            $boundApp->setValue(null, $previousApp);
+        }
+    }
+
+    /** Independent failures each get a safe diagnostic; neither exception text becomes a startup outcome. */
+    public function testResumeLogsBothReadFailuresWithoutPrivateExceptionWords(): void
+    {
+        $db = $this->createMock(HilosDbContext::class);
+        $db->expects(self::exactly(2))->method('__get')->willThrowException(new RuntimeException('Private startup payload'));
+        Hilos::$db = $db;
+        $boundApp = new ReflectionProperty(Hilos::class, 'appClass');
+        $previousApp = $boundApp->getValue();
+        $boundApp->setValue(null, AccountOperationAsksAuthHilos::class);
+        $logFile = tempnam(sys_get_temp_dir(), 'account-operation-start-');
+        self::assertNotFalse($logFile);
+        $mainLogProperty = new ReflectionProperty(Logger::class, 'logFile');
+        $errorLogProperty = new ReflectionProperty(Logger::class, 'errorLogFile');
+        $previousMainLog = $mainLogProperty->getValue();
+        $previousErrorLog = $errorLogProperty->getValue();
+        Logger::resetLogFile();
+        Logger::setErrorLogFile($logFile);
+        try {
+            $agent = new AccountOperationAsksParticipant();
+            AccountOperationAsks::resume($agent, $agent->getType(), $agent->getIndex());
+            self::assertSame(0, $agent->frames);
+            $log = file_get_contents($logFile);
+            self::assertNotFalse($log);
+            self::assertStringContainsString('kind=erasure; read failed', $log);
+            self::assertStringContainsString('kind=merge; read failed', $log);
+            self::assertStringNotContainsString('Private startup payload', $log);
+        } finally {
+            $boundApp->setValue(null, $previousApp);
+            $mainLogProperty->setValue(null, $previousMainLog);
+            $errorLogProperty->setValue(null, $previousErrorLog);
+            unlink($logFile);
+        }
+    }
+
     /**
      * @param AbstractAgent $agent Starting agent
      * @param class-string<Hilos> $appClass Project the start runs in
@@ -315,6 +407,12 @@ final class AccountOperationAsksParticipant extends AbstractAgent
     public const string ACCOUNT_OPERATION_SIGNAL = 'account_operation_asks_participant_step';
 
     public int $frames = 0;
+
+    /** @param ?string $index Literal optional address used by startup orchestration */
+    public function __construct(?string $index = null)
+    {
+        $this->agentIndex = $index;
+    }
 
     /**
      * @param AgentSignalData $data Wrapped payload, unused

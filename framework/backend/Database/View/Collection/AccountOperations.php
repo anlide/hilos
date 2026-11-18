@@ -58,13 +58,13 @@ class AccountOperations extends DbCollection
     }
 
     /**
-     * @param AccountOperationKind $kind Required operation kind
+     * @param ?AccountOperationKind $kind Required kind, or null for both erasure and merge
      * @param int $afterId Exclusive primary id cursor
      * @param int $limit Page size from one through the storage page ceiling
      * @return static Open operations in ascending primary id order
      * @throws HilosException When the storage reader, validation or item wrapper refuses the request
      */
-    public function openPage(AccountOperationKind $kind, int $afterId, int $limit): static
+    public function openPage(?AccountOperationKind $kind, int $afterId, int $limit): static
     {
         return $this->selectionFor($this->objectCollection->openPage($kind, $afterId, $limit));
     }

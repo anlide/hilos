@@ -365,10 +365,9 @@ requires both holder results, every original project result, the fixed personal
 proofs and current copy absence. The holder reads copy metadata and gains no
 right to delete it. Project stage carry preserves the original preparing
 expectation's owner, id and result binding.
-Recovery raises it only to complete those
-durable obligations, including after a lost frame or a move
-(not in the code yet — HIL-2002). This mode replaces the current immediate
-stop only at live merge cutover (not in the code yet — HIL-1999).
+Prepared DB recovery raises it only to complete those durable obligations,
+including after a lost frame or a move. This mode replaces the current
+immediate stop only at live merge cutover (not in the code yet — HIL-1999).
 
 The live erasure path uses the durable operation for both new starts and open
 work; the former holder-side erasure calls and grants were retired in HIL-1952.

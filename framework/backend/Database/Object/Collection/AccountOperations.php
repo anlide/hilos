@@ -227,18 +227,20 @@ class AccountOperations extends Objects
     }
 
     /**
-     * @param AccountOperationKind $kind Required operation kind
+     * @param ?AccountOperationKind $kind Required kind, or null for both erasure and merge
      * @param int $afterId Exclusive primary id cursor
      * @param int $limit Maximum rows in this page
      * @return static Open operations in ascending primary id order
      * @throws HilosException When the manual page cannot be initialized
      */
-    public function openPage(AccountOperationKind $kind, int $afterId, int $limit): static
+    public function openPage(?AccountOperationKind $kind, int $afterId, int $limit): static
     {
         self::validatePage($afterId, $limit);
         $entities = static::entityClass()::get( // fresh-sql: open membership must reflect persisted completion, not a partial mirror.
-            '`kind` = ? AND `finished_at` IS NULL AND `id` > ?',
-            [$kind->value, $afterId],
+            $kind === null
+                ? '`kind` IN (?,?) AND `finished_at` IS NULL AND `id` > ?'
+                : '`kind` = ? AND `finished_at` IS NULL AND `id` > ?',
+            $kind === null ? [AccountOperationKind::Erasure->value, AccountOperationKind::Merge->value, $afterId] : [$kind->value, $afterId],
             [EntityAccountOperation::id => SqlSortDirection::ASC],
             $limit,
         );

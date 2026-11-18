@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Closure;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountOperationCircle;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
@@ -19,6 +20,7 @@ use Hilos\Backup\Anonymization\PiiRegistry;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\DbWriteGuard;
@@ -737,6 +739,82 @@ final class AccountOperationStorageIntegrationTest extends FrameworkIntegrationT
         self::assertNull(Hilos::$db->accountOperations->byRequest(999));
         self::assertNull(Hilos::$db->accountOperations[$last->id + 1] ?? null);
         self::assertNull(Hilos::$db->accountOperationAssignments[$lastPart->id + 1] ?? null);
+    }
+
+    /** A warm mixed selection follows persisted completion and excludes unknown kinds before hydrating them. */
+    public function testNullablePageUsesPersistedOpenMembershipForBothKnownKinds(): void
+    {
+        $circle = AccountOperationCircle::fromArray([7], 7);
+        $choice = new AccountMergeChoice(null, null, null, null);
+        $erasure = Hilos::$db->accountOperations->actions->recordErasure(300, 7, $circle);
+        $merge = Hilos::$db->accountOperations->actions->recordMerge(7, 9, $choice);
+        $closedErasure = Hilos::$db->accountOperations->actions->recordErasure(100, 7, $circle);
+        $closedMerge = Hilos::$db->accountOperations->actions->recordMerge(7, 11, $choice);
+        $unknown = Hilos::$db->accountOperations->actions->recordErasure(200, 7, $circle);
+        self::assertCount(5, Hilos::$db->accountOperations->openPage(null, 0, 1000));
+        $held = Hilos::$db;
+        $this->mountFreshContext();
+        self::assertTrue(Hilos::$db->accountOperations[$closedErasure->id]->actions->finish(
+            $closedErasure->stage, AccountOperationOutcome::NotStarted,
+        ));
+        self::assertTrue(Hilos::$db->accountOperations[$closedMerge->id]->actions->finish(
+            $closedMerge->stage, AccountOperationOutcome::NotStarted,
+        ));
+        // Negative input: a future kind must never reach the known-kind row reader.
+        Database::sqlRun('UPDATE `hilos_account_operation` SET `kind` = ? WHERE `id` = ?', ['future', $unknown->id]);
+        Hilos::$db = $held;
+
+        self::assertSame([$erasure->id, $merge->id], array_keys(iterator_to_array(Hilos::$db->accountOperations->openPage(null, 0, 1000))));
+        self::assertSame([$erasure->id], array_keys(iterator_to_array(
+            Hilos::$db->accountOperations->openPage(AccountOperationKind::Erasure, 0, 1000),
+        )));
+        self::assertSame([$merge->id], array_keys(iterator_to_array(
+            Hilos::$db->accountOperations->openPage(AccountOperationKind::Merge, 0, 1000),
+        )));
+    }
+
+    /** Mixed cursor pages preserve held objects and discover a committed row behind an earlier negative lookup. */
+    public function testNullablePageKeepsExclusiveCursorLimitAndHeldIdentityAcrossANegativeMirror(): void
+    {
+        $first = Hilos::$db->accountOperations->actions->recordErasure(300, 7, AccountOperationCircle::fromArray([7], 7));
+        $object = $first->getObject();
+        self::assertNull(Hilos::$db->accountOperations[$first->id + 1] ?? null);
+        $held = Hilos::$db;
+        $this->mountFreshContext();
+        $second = Hilos::$db->accountOperations->actions->recordMerge(7, 9, new AccountMergeChoice(null, null, null, null));
+        self::assertSame($first->id + 1, $second->id, 'The new row occupies the key whose earlier lookup was negative.');
+        $last = Hilos::$db->accountOperations->actions->recordErasure(100, 7, AccountOperationCircle::fromArray([7], 7));
+        Hilos::$db = $held;
+        $stored = Database::sql('SELECT * FROM `hilos_account_operation` ORDER BY `id`')->rows();
+        $previousRouter = Hilos::$sr;
+        Hilos::$sr = new SignalRouter();
+        try {
+            $page = Hilos::$db->accountOperations->openPage(null, 0, 2);
+
+            self::assertSame([$first->id, $second->id], array_keys(iterator_to_array($page)));
+            self::assertSame($object, $page[$first->id]->getObject());
+            self::assertSame($object, Hilos::$db->accountOperations[$first->id]->getObject());
+            self::assertSame($page[$second->id]->getObject(), Hilos::$db->accountOperations[$second->id]->getObject());
+            self::assertSame([$second->id], array_keys(iterator_to_array(Hilos::$db->accountOperations->openPage(null, $first->id, 1))));
+            self::assertSame([$last->id], array_keys(iterator_to_array(Hilos::$db->accountOperations->openPage(null, $second->id, 1))));
+            self::assertCount(0, Hilos::$db->accountOperations->openPage(null, $last->id, 1000));
+            self::assertSame($stored, Database::sql('SELECT * FROM `hilos_account_operation` ORDER BY `id`')->rows());
+            self::assertNull(Hilos::$sr->getNextQueuedSignal(), 'Hydrating a read page must queue no sync or operation event.');
+        } finally {
+            Hilos::$sr = $previousRouter;
+        }
+    }
+
+    /**
+     * Nullable kind keeps the storage reader's existing bounded-page validation.
+     *
+     * @param int $afterId Supplied exclusive cursor
+     * @param int $limit Supplied page size
+     */
+    #[DataProvider('invalidPages')]
+    public function testNullablePageRefusesInvalidCursorAndLimits(int $afterId, int $limit): void
+    {
+        $this->assertValidationRefused(static fn () => Hilos::$db->accountOperations->openPage(null, $afterId, $limit));
     }
 
     /** @return iterable<string, array{int, int}> Invalid cursor and page sizes */

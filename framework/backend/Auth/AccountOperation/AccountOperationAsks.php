@@ -108,12 +108,27 @@ final class AccountOperationAsks
             return;
         }
         try {
-            $owed = AccountErasureCoordinator::owedTo(new AccountOperationOwnerAddress($ownerType, $ownerIndex));
-        } catch (Throwable $e) {
-            Logger::logAgentError($agent->getId(), "Account operation assignments not read at start: {$e->getMessage()}");
+            $owner = new AccountOperationOwnerAddress($ownerType, $ownerIndex);
+        } catch (Throwable) {
+            Logger::logAgentError($agent->getId(), 'Account operation assignments not read at start: invalid owner address');
 
             return;
         }
+        $owed = [];
+        foreach ([AccountOperationKind::Erasure, AccountOperationKind::Merge] as $kind) {
+            try {
+                $duties = match ($kind) {
+                    AccountOperationKind::Erasure => AccountErasureCoordinator::owedTo($owner),
+                    AccountOperationKind::Merge => AccountMergeCoordinator::owedTo($owner),
+                };
+                array_push($owed, ...$duties);
+            } catch (WiringRefusal) {
+                Logger::logAgentError($agent->getId(), "Account operation assignments not read at start: kind={$kind->value}; wiring refused");
+            } catch (Throwable) {
+                Logger::logAgentError($agent->getId(), "Account operation assignments not read at start: kind={$kind->value}; read failed");
+            }
+        }
+        usort($owed, static fn (AccountOperationAssignment $a, AccountOperationAssignment $b): int => $a->id <=> $b->id);
         $resumed = 0;
         foreach ($owed as $assignment) {
             if ($agent->shouldStop()) {
@@ -136,10 +151,10 @@ final class AccountOperationAsks
                     $duty();
                 }
                 $resumed++;
-            } catch (Throwable $e) {
+            } catch (Throwable) {
                 Logger::logAgentError(
                     $agent->getId(),
-                    "Account operation assignment {$assignment->id} not resumed at start: {$e->getMessage()}",
+                    "Account operation assignment {$assignment->id} not resumed at start: duty failed",
                 );
             }
         }

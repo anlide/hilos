@@ -146,9 +146,10 @@ leave settings untouched. It deletes its own trusts when the loser's
 preparation captured a confirmed factor, under the existing policy. These own
 writes and the exact `go`/`receive` result commit in one participant transaction.
 Warm receive uses applied memory; local startup resumes an existing obligation
-from current mapped own rows, including a new owner in the same worker. Normal
-transport/production cutover and general coordinator recovery remain
-HIL-2000/HIL-1999/HIL-2002. The prepared holder `go/sessions` duty ends loser
+from current mapped own rows, including a new owner in the same worker.
+Prepared hand-over transport, coordinator, and DB recovery continue these
+prepared duties; production callers remain on the legacy path until HIL-1999.
+The prepared holder `go/sessions` duty ends loser
 sessions after the exact give; `go/survivor_sessions` ends survivor sessions
 after the exact receipt only when the saved give retained the loser's factor.
 Each commits its strict `{"sessions":<n>,"accessLog":<m>}` result with its

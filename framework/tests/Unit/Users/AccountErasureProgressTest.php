@@ -214,12 +214,12 @@ final class MalformedProgressOperations extends AccountOperations
     }
 
     /**
-     * @param AccountOperationKind $kind Unused operation kind
+     * @param ?AccountOperationKind $kind Unused operation kind
      * @param int $afterId Unused cursor
      * @param int $limit Unused page size
      * @return static Never: this fixture refuses
      */
-    public function openPage(AccountOperationKind $kind, int $afterId, int $limit): static
+    public function openPage(?AccountOperationKind $kind, int $afterId, int $limit): static
     {
         ++$this->listReads;
         throw $this->failure;

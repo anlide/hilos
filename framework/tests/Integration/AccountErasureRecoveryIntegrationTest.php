@@ -17,6 +17,7 @@ use Hilos\Auth\AccountOperation\AccountErasureProjectOwner;
 use Hilos\Auth\AccountOperation\AccountErasureProjectStep;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\AccountOperation\AccountErasureStartPayload;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
@@ -392,6 +393,68 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
         self::assertCount(2, self::recoveryReceipts(), 'The pass of the rule opens a receipt of its own');
     }
 
+    /** The erasure-only first and hourly passes keep their owner-visible debts and historical cron attribution. */
+    public function testErasureFirstAndHourlyPassPreserveOwedDutiesAndReceiptAttribution(): void
+    {
+        $this->raiseJournal();
+        $root = self::seedPerson();
+        $operation = $this->openErasure($root);
+        $owner = new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$root);
+        $this->startHolder();
+        $this->tick();
+        $first = $this->operationFrames();
+        self::assertSame([AccountErasureStart::personalKey($root)], $this->frameKeys($first));
+        self::assertSame($this->frameIds($first), $this->owedIds($root, $owner));
+        self::assertSame([$operation->id], self::operationIds($first));
+        $receipt = self::recoveryReceipts()[0];
+        self::assertSame(HilosAgentType::HILOS_SESSIONS_LIBRARY, $receipt['agent']);
+        self::assertSame('hilos_account_erasure_recovery (0 * * * *)', $receipt['source']);
+
+        self::assertNotNull($this->holder?->armCronRuleForTest('hilos_account_erasure_recovery'));
+        $this->tick();
+
+        self::assertSame($this->frameIds($first), $this->frameIds($this->operationFrames()));
+        self::assertSame($this->frameIds($first), $this->owedIds($root, $owner));
+        self::assertCount(2, self::recoveryReceipts());
+        self::assertNull($operation->finishedAt);
+    }
+
+    /** A shared pass keeps erasure events alongside merge preparations under one receipt and one ten-operation portion. */
+    public function testSharedPassKeepsErasureDutiesAndOneReceiptAcrossTheMixedPortion(): void
+    {
+        $this->raiseJournal();
+        $operations = [];
+        for ($index = 0; $index < 11; $index++) {
+            if ($index % 2 === 0) {
+                $operations[] = $this->openErasure(self::seedPerson())->id;
+            } else {
+                Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('Merge survivor')");
+                $survivor = Database::lastInsertId();
+                Database::sql("INSERT INTO `hilos_user` (`name`) VALUES ('Merge loser')");
+                $loser = Database::lastInsertId();
+                $operations[] = $this->asHolder(fn () => $this->holder->openMerge($survivor, $loser))->id;
+            }
+        }
+        $this->operationFrames();
+        $holder = $this->startHolder();
+        $this->tick();
+        $first = $this->operationFrames();
+        self::assertSame(array_slice($operations, 0, 10), $holder->entered);
+        self::assertSame(array_slice($operations, 0, 10), array_values(array_unique(self::operationIds($first))));
+        self::assertCount(15, $first, 'Five erasures owe one start each; five merges owe two preparations each.');
+        $receipts = self::recoveryReceipts();
+        self::assertCount(1, $receipts);
+
+        $this->tick();
+
+        self::assertSame($operations, $holder->entered);
+        self::assertSame([$operations[10]], self::operationIds($this->operationFrames()));
+        self::assertSame($receipts, self::recoveryReceipts());
+        $this->tick();
+        self::assertSame([], $this->operationFrames());
+        self::assertSame($operations, $holder->entered);
+    }
+
     /** Case 5: eleven open erasures take two ticks, and an entry that fails is logged while the rest are entered. */
     public function testAPassEntersOnePortionATickAndLogsAFailingEntry(): void
     {
@@ -410,9 +473,10 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
         );
         self::assertSame($expected, self::operationIds($this->operationFrames()));
         self::assertStringContainsString(
-            "Account erasure recovery of operation {$failing->id} failed, retried by the next pass: The fixture refused the entry",
+            "Account erasure recovery of operation {$failing->id} failed, retried by the next pass: kind=erasure; entry failed",
             $this->agentLog(),
         );
+        self::assertStringNotContainsString('Private fixture payload', $this->agentLog());
 
         $this->tick();
 
@@ -1200,14 +1264,34 @@ final class ErasureRecoveryTestHolder extends AbstractSessionsLibraryAgent
 {
     /** Operation whose entry fails, to show that the pass goes on past it. */
     public ?int $failingOperationId = null;
+    /** @var list<int> Actual driver entries, independently of the number of queued duties */
+    public array $entered = [];
 
     /** @param AccountOperation $operation Open erasure the recovery pass enters */
     protected function driveAccountErasure(AccountOperation $operation): void
     {
+        $this->entered[] = $operation->id;
         if ($operation->id === $this->failingOperationId) {
-            throw new ValidationException('The fixture refused the entry');
+            throw new ValidationException('Private fixture payload');
         }
         parent::driveAccountErasure($operation);
+    }
+
+    /** @inheritDoc */
+    protected function driveAccountMerge(AccountOperation $operation): void
+    {
+        $this->entered[] = $operation->id;
+        parent::driveAccountMerge($operation);
+    }
+
+    /**
+     * @param int $survivor Survivor without project notes
+     * @param int $loser Loser without project notes
+     * @return AccountOperation Real prepared merge, kept at its personal preparations
+     */
+    public function openMerge(int $survivor, int $loser): AccountOperation
+    {
+        return $this->openAccountMerge($survivor, $loser, new AccountMergeChoice(null, null, null, null));
     }
 }
 

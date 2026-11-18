@@ -300,13 +300,14 @@ its order: the loser transfers its own rows under their existing ids, applies
 the fate to its own previous password, then writes the merge row and its own
 block in the same transaction with its nonsecret result and separate private
 hand-over copy. This [prepared give](account-operations.md#the-prepared-loser-give)
-has no live coordinator sender until HIL-2000. The survivor's memory admission
+is driven by the prepared coordinator and hand-over; production callers remain
+on the legacy path until HIL-1999. The survivor's memory admission
 and [durable fence against stale frames](account-operations.md#durable-merge-admission)
 are built as a prepared API. The [prepared survivor receipt](account-operations.md#the-prepared-survivor-receipt)
 commits its own captured password/protection writes and exact result together;
 local startup resumes an existing receive obligation from current own rows.
-Normal obligation production and hand-over transport remain HIL-2000, with
-production cutover in HIL-1999 and general recovery in HIL-2002.
+The shared first/hourly holder pass and owner-start resume continue open merge
+duties from DB.
 The [prepared loser cleanup and finishing](account-operations.md#the-prepared-loser-cleanup-and-finishing)
 commit copy deletion with strict `{"cleanup":"cleaned"}` after the exact
 receipt, then request stop; an exact saved replay can request the same stop.

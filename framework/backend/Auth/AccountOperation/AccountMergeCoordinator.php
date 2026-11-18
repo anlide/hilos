@@ -24,6 +24,8 @@ use Throwable;
  */
 final class AccountMergeCoordinator
 {
+    private const int OWED_PAGE = 100;
+
     /**
      * @param AccountOperation $operation Merge to enter again, even after a lost answer
      * @return list<AccountOperationAssignment> Ready duties, including at most one saved give replay before receipt
@@ -42,6 +44,42 @@ final class AccountMergeCoordinator
             AccountMergeStage::Go => self::go($current, true),
             AccountMergeStage::Cancelling => self::cancelling($current),
         };
+    }
+
+    /**
+     * Reads existing duties only; repairs, transitions and copy delivery remain with their owners.
+     *
+     * @param AccountOperationOwnerAddress $owner Stable executor address, including its nullable index
+     * @return list<AccountOperationAssignment> Canonical ready duties in ascending assignment id order
+     * @throws Throwable When immutable proofs, wiring or storage refuse the read
+     */
+    public static function owedTo(AccountOperationOwnerAddress $owner): array
+    {
+        $groups = [];
+        $afterId = 0;
+        do {
+            $page = Hilos::$db->accountOperationAssignments->openForOwner(AccountOperationKind::Merge, $owner, $afterId, self::OWED_PAGE);
+            foreach ($page as $assignment) {
+                $groups[$assignment->operationId][$assignment->id] = $assignment;
+                $afterId = $assignment->id;
+            }
+        } while (count($page) === self::OWED_PAGE);
+
+        $owed = [];
+        foreach ($groups as $operationId => $group) {
+            $operation = Hilos::$db->accountOperations->fresh($operationId);
+            if ($operation === null || $operation->kind !== AccountOperationKind::Merge || $operation->finishedAt !== null) {
+                continue;
+            }
+            foreach (self::ready($operation, true) as $assignment) {
+                if (isset($group[$assignment->id]) && $assignment->owner->equals($owner)) {
+                    $owed[] = $assignment;
+                }
+            }
+        }
+        usort($owed, static fn (AccountOperationAssignment $a, AccountOperationAssignment $b): int => $a->id <=> $b->id);
+
+        return $owed;
     }
 
     /**
@@ -77,7 +115,7 @@ final class AccountMergeCoordinator
             return [];
         }
         if (in_array($answered->assignmentKey, [AccountMergeDuty::Give->value, AccountMergeDuty::Receive->value], true)) {
-            return self::goReady($current, false);
+            return self::ready($current, false);
         }
 
         return [];
@@ -158,7 +196,7 @@ final class AccountMergeCoordinator
     {
         AccountMergeOpening::open($operation->survivorUserId, $operation->loserUserId, $operation->mergeChoice);
         if (self::preparations($operation) === null) {
-            return self::unanswered($operation, [AccountMergeDuty::PrepareSurvivor, AccountMergeDuty::PrepareLoser]);
+            return self::ready($operation, false);
         }
         if (self::refusalOf($operation) !== null) {
             self::cancel($operation);
@@ -210,7 +248,7 @@ final class AccountMergeCoordinator
             }
         });
 
-        return AccountMergeEnd::advance($operation) ? [] : self::goReady($operation, $replayGive);
+        return AccountMergeEnd::advance($operation) ? [] : self::ready($operation, $replayGive);
     }
 
     /**
@@ -227,6 +265,25 @@ final class AccountMergeCoordinator
             );
             self::duty($operation, $duty);
         }
+    }
+
+    /**
+     * @param AccountOperation $operation Existing merge whose current metadata decides readiness
+     * @param bool $replayGive Whether explicit reentry may replay the saved source give before receipt
+     * @return list<AccountOperationAssignment> Existing canonical duties without mutation or copy access
+     */
+    private static function ready(AccountOperation $operation, bool $replayGive): array
+    {
+        $operation = self::current($operation->id);
+        if ($operation->finishedAt !== null) {
+            return [];
+        }
+
+        return match (AccountMergeStage::from($operation->stage)) {
+            AccountMergeStage::Preparing => self::unanswered($operation, [AccountMergeDuty::PrepareSurvivor, AccountMergeDuty::PrepareLoser]),
+            AccountMergeStage::Cancelling => self::unanswered($operation, [AccountMergeDuty::ReleaseLoser, AccountMergeDuty::ReleaseSurvivor]),
+            AccountMergeStage::Go => self::goReady($operation, $replayGive),
+        };
     }
 
     /**
@@ -269,8 +326,7 @@ final class AccountMergeCoordinator
         AccountMergeCancellation::request($operation);
         self::finishCancellation($operation);
 
-        return self::current($operation->id)->finishedAt !== null
-            ? [] : self::unanswered($operation, [AccountMergeDuty::ReleaseLoser, AccountMergeDuty::ReleaseSurvivor]);
+        return self::ready($operation, false);
     }
 
     /**
