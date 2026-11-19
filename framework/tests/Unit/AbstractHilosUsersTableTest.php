@@ -5,14 +5,24 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit;
 
 use Hilos\AdminViewMode\ViewerFields;
+use Hilos\Core\Browser\Config\BrowserSourceKey;
+use Hilos\Core\Browser\Config\BrowserSourceType;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableFieldKey;
+use Hilos\Core\Table\Definition\MultiRowViewportTable;
+use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
 use Hilos\Tables\Users\HilosUserTableRow;
 use Hilos\Users\AccountErasureProgress;
+use Hilos\Users\AccountMergeProgress;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Constants\HilosAgentType;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 
@@ -25,6 +35,41 @@ use ReflectionMethod;
  */
 final class AbstractHilosUsersTableTest extends TestCase
 {
+    public function testEveryProjectObservesAllMergeDependenciesWithoutProjectingRawMetadata(): void
+    {
+        $keys = ['accountOperations', 'accountOperationAssignments', 'accountOperationResults', 'accountDeletions', 'userMerges'];
+        self::assertSame($keys, array_column(AbstractHilosUsersTable::MERGE_SOURCES, BrowserSourceKey::KEY));
+        self::assertSame(['id', 'id', 'id', 'userId', 'userId'],
+            array_column(AbstractHilosUsersTable::MERGE_ROWS, BrowserTableFieldKey::ROW_KEY));
+        self::assertCount(5, AbstractHilosUsersTable::MERGE_ROWS);
+        foreach (AbstractHilosUsersTable::MERGE_ROWS as $index => $row) {
+            self::assertSame([
+                BrowserTableFieldKey::SOURCE => [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => $keys[$index]],
+                BrowserTableFieldKey::ROW_KEY => $index < 3 ? 'id' : 'userId',
+                BrowserTableFieldKey::FIELDS => [],
+            ], $row);
+        }
+        $projects = ['binance-btc-tracker', 'chat', 'concert-tickets', 'ecommerce-shop', 'file-gallery-manager', 'online-testing',
+            'pmd', 'polls', 'preferans', 'roblox-game-server', 'solar-system-model', 'tasks'];
+        foreach ($projects as $project) {
+            $path = dirname(__DIR__, 3) . '/demo/' . $project . '/backend/Tables/HilosUser/HilosUsersTable.php';
+            $source = (string) file_get_contents($path);
+            self::assertMatchesRegularExpression('/BrowserTableConfigKey::SOURCES => \[\s*self::USERS_SOURCE,\s*'
+                . '\\.\\.\\.self::MERGE_SOURCES,/', $source, $project);
+            self::assertMatchesRegularExpression('/BrowserTableConfigKey::ROWS => \[\s*self::USERS_ROW,\s*'
+                . '\\.\\.\\.self::MERGE_ROWS,/', $source, $project);
+            self::assertStringContainsString('BrowserTableFieldKey::COMPUTED', $source, $project);
+        }
+        self::assertInstanceOf(MultiRowViewportTable::class, $this->table());
+        self::assertInstanceOf(MultiRowViewportTable::class, new HilosMergeCandidatesTable());
+        $candidateSources = HilosMergeCandidatesTable::BROWSER[BrowserTableConfigKey::SOURCES];
+        self::assertSame(['users', 'identities', 'secondFactors', ...$keys], array_column($candidateSources, BrowserSourceKey::KEY));
+        $candidateRows = HilosMergeCandidatesTable::BROWSER[BrowserTableConfigKey::ROWS];
+        self::assertSame($candidateSources[0], $candidateRows[0][BrowserTableFieldKey::SOURCE]);
+        self::assertSame(AbstractHilosUsersTable::MERGE_ROWS, array_slice($candidateRows, 1, 5));
+        self::assertCount(8, $candidateRows);
+    }
+
     public function testUnrelatedSourceIsIgnored(): void
     {
         $mutation = $this->table()->buildMutationForSourceEvent(
@@ -99,6 +144,7 @@ final class AbstractHilosUsersTableTest extends TestCase
                     ],
                     AbstractHilosUsersTable::SLOT_MERGE => [
                         HilosUserTableRow::merged => true,
+                        HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY => null,
                     ],
                 ],
             ],
@@ -195,7 +241,36 @@ final class AbstractHilosUsersTableTest extends TestCase
     /** A viewer of the admin view mode reads the bar's detail by the card's own declaration of the block. */
     public function testTheErasureDetailIsDeclaredTheWayTheCardDeclaresIt(): void
     {
-        $this->assertEquals(AccountErasureProgress::wireFields(), $this->table()->progressDetailFields());
+        $fields = $this->table()->progressDetailFields();
+        $this->assertEquals(AccountErasureProgress::wireFields() + AccountMergeProgress::wireFields(), $fields);
+        foreach (['parts', 'waits'] as $key) {
+            self::assertEquals(AccountErasureProgress::wireFields()[$key], AccountMergeProgress::wireFields()[$key]);
+            self::assertEquals(AccountMergeProgress::wireFields()[$key], $fields[$key]);
+        }
+    }
+
+    public function testMergeBarsCountOnlyDonePartsAndEqualityDoesNotEndWork(): void
+    {
+        $parts = [
+            ['participant' => 'prepare_survivor', 'owner' => HilosAgentType::HILOS_USER, 'userId' => 41, 'done' => true],
+            ['participant' => 'prepare_loser', 'owner' => HilosAgentType::HILOS_USER, 'userId' => 43, 'done' => false],
+        ];
+        foreach ([[], $parts, [$parts[0]]] as $known) {
+            $progress = new AccountMergeProgress(7, 41, 43, 'preparing', 'preparing', null, false, false,
+                new AccountMergeChoice(null, null, null, null), null, $known, []);
+            $bar = AbstractHilosUsersTable::mergeBar(43, $progress);
+            self::assertSame($known === [] ? 0 : 1, $bar->current);
+            self::assertSame($known === [] ? null : count($known), $bar->total);
+            self::assertFalse($bar->ended);
+            self::assertSame([
+                'scope' => 'row', 'progressKey' => 'hilos-account-merge', 'current' => $bar->current, 'rowKey' => '43',
+                ...($known === [] ? [] : ['total' => count($known)]), 'detail' => $progress->toArray(),
+            ], $bar->toArray());
+            self::assertSame($bar->toArray(), TableProgressDTO::fromArray($bar->toArray())->toArray());
+        }
+        self::assertSame([
+            'scope' => 'row', 'progressKey' => 'hilos-account-merge', 'current' => 0, 'rowKey' => '43', 'ended' => true,
+        ], AbstractHilosUsersTable::mergeBarEnded(43)->toArray());
     }
 
     /**

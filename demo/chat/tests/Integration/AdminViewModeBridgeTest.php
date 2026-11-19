@@ -17,10 +17,13 @@ use Demo\Chat\Tables\ChatTableContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergeCoordinator;
 use Hilos\Auth\AccountOperation\AccountMergeOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
+use Hilos\Auth\AccountOperation\AccountOperationCircle;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\SignalConstants;
@@ -32,6 +35,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Page\ActionRouteConfig;
@@ -41,9 +45,11 @@ use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\DTO\TableProgressSignalData;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Database;
 use Hilos\Database\Entity\Item\User as EntityUser;
 use Hilos\Database\Object\Item\AccountDeletion;
 use Hilos\Database\Identity\PasswordFate;
@@ -147,6 +153,152 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         parent::tearDown();
     }
 
+    public function testListMergeSnapshotAndLiveUseTheSameAdminAndViewerDetailOrigins(): void
+    {
+        $operation = $this->openMergeForPrivacy();
+        foreach ([false, true] as $admin) {
+            $this->connect(admin: $admin);
+            $window = $this->window($this->subscribe(UsersPage::class), ChatTableContext::hilosUsers);
+            $first = $this->pairBars($window[TableProgressSignalData::progress], $operation);
+            self::assertSame([(string) $this->personId, (string) $operation->loserUserId], array_column($first, 'rowKey'));
+            foreach ($first as $bar) {
+                self::assertSame('hilos-account-merge', $bar['progressKey']);
+                self::assertSame(0, $bar['current']);
+                self::assertSame(3, $bar['total']);
+                self::assertArrayNotHasKey('ended', $bar);
+                $raw = AccountMergeProgressResolver::of($this->personId)->toArray();
+                if ($admin) {
+                    self::assertSame($raw, $bar['detail']);
+                } else {
+                    $this->assertPrivateMergeFieldsHidden($bar['detail'], $raw);
+                }
+            }
+            $this->recordPrivacyWait($operation, $admin ? 'project:admin' : 'project:viewer');
+            AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+            $live = $this->pairBars($this->progressFrames($this->queuedFrames()), $operation);
+            self::assertCount(2, $live);
+            foreach ($live as $bar) {
+                self::assertSame($raw['state'], $bar['detail']['state']);
+                $now = AccountMergeProgressResolver::of($this->personId)->toArray();
+                if ($admin) {
+                    self::assertSame($now, $bar['detail']);
+                } else {
+                    $this->assertPrivateMergeFieldsHidden($bar['detail'], $now);
+                }
+            }
+            self::assertStringNotContainsString('Olena Kovalenko', json_encode($live, JSON_THROW_ON_ERROR));
+            self::assertStringNotContainsString('Private merge loser', json_encode($live, JSON_THROW_ON_ERROR));
+            self::assertStringNotContainsString($this->personAddress, json_encode($live, JSON_THROW_ON_ERROR));
+        }
+    }
+
+    public function testListProgressRechecksLostAdminAndLostViewerAccessOnEveryDelivery(): void
+    {
+        $operation = $this->openMergeForPrivacy();
+        $this->connect(admin: true);
+        $this->subscribe(UsersPage::class);
+        $adminId = Hilos::$rt->connections[self::ACCEPT_KEY]->userId;
+        Hilos::$db->users[$adminId]->actions->setAdmin(false);
+        $this->recordPrivacyWait($operation, 'project:first');
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        $live = $this->pairBars($this->progressFrames($this->queuedFrames()), $operation);
+        self::assertCount(2, $live);
+        foreach ($live as $bar) {
+            $this->assertPrivateMergeFieldsHidden($bar['detail'], AccountMergeProgressResolver::of($this->personId)->toArray());
+        }
+        Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
+        $this->recordPrivacyWait($operation, 'project:second');
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        self::assertSame([], $this->queuedFrames());
+    }
+
+    public function testListErasurePriorityEndsTheReplacedKeyAndMergeReturnsWhenErasureEnds(): void
+    {
+        $merge = $this->openMergeForPrivacy();
+        $this->connect(admin: true);
+        $this->subscribe(UsersPage::class);
+        $request = Hilos::$db->accountDeletions->liveOf($this->personId);
+        $erasure = Hilos::$db->accountOperations->actions->recordErasure($request->id, $this->personId,
+            AccountOperationCircle::fromArray([$this->personId], $this->personId));
+        self::assertTrue($request->actions->start());
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        $frames = $this->pairBars($this->progressFrames($this->queuedFrames()), $merge);
+        self::assertCount(2, $frames);
+        self::assertSame(['hilos-account-erasure', 'hilos-account-merge'], array_column($frames, 'progressKey'));
+        self::assertArrayNotHasKey('ended', $frames[0]);
+        self::assertTrue($frames[1]['ended']);
+        self::assertSame([(string) $this->personId, (string) $this->personId], array_column($frames, 'rowKey'));
+        $shared = $this->pairBars(
+            $this->window($this->subscribe(UsersPage::class), ChatTableContext::hilosUsers)[TableProgressSignalData::progress], $merge);
+        self::assertSame(['hilos-account-erasure', 'hilos-account-merge'], array_column($shared, 'progressKey'));
+        self::assertSame([(string) $this->personId, (string) $merge->loserUserId], array_column($shared, 'rowKey'));
+        self::assertTrue($erasure->actions->finish($erasure->stage, AccountOperationOutcome::Completed));
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        $returned = $this->pairBars($this->progressFrames($this->queuedFrames()), $merge);
+        self::assertSame(['hilos-account-merge', 'hilos-account-erasure'], array_column($returned, 'progressKey'));
+        self::assertArrayNotHasKey('ended', $returned[0]);
+        self::assertTrue($returned[1]['ended']);
+        self::assertSame($merge->id, $returned[0]['detail']['operationId']);
+    }
+
+    public function testRealOwnerReleasesRemoveMergeBarsWhileTheCardKeepsItsDurableOutcome(): void
+    {
+        $operation = $this->openMergeForPrivacy();
+        $this->connect(admin: false);
+        $this->subscribe(UsersPage::class);
+        $this->sessionsLibrary();
+        ExecutionContext::run(new ExecutionFrame(agentId: HilosAgentType::HILOS_SESSIONS_LIBRARY),
+            static fn () => AccountMergeCoordinator::cancel($operation));
+        foreach (Hilos::$db->accountOperationAssignments->forOperation($operation->id) as $assignment) {
+            if (!in_array($assignment->assignmentKey, [AccountMergeDuty::ReleaseSurvivor->value, AccountMergeDuty::ReleaseLoser->value], true)) {
+                continue;
+            }
+            $owner = $this->personAgent($assignment->userId);
+            $this->underAgent($owner, fn () => $owner->releaseMergePreparation($assignment->id));
+        }
+        ExecutionContext::run(new ExecutionFrame(agentId: HilosAgentType::HILOS_SESSIONS_LIBRARY),
+            static fn () => AccountMergeCoordinator::begin($operation));
+        self::assertSame('not_started', Database::sql('SELECT `outcome` FROM `hilos_account_operation` WHERE `id` = ?',
+            [$operation->id])->row()['outcome']);
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        $ended = $this->pairBars($this->progressFrames($this->queuedFrames()), $operation);
+        self::assertCount(2, $ended);
+        self::assertSame([(string) $this->personId, (string) $operation->loserUserId], array_column($ended, 'rowKey'));
+        foreach ($ended as $bar) {
+            self::assertTrue($bar['ended']);
+            self::assertSame('hilos-account-merge', $bar['progressKey']);
+            self::assertArrayNotHasKey('detail', $bar);
+            self::assertArrayNotHasKey('total', $bar);
+        }
+        self::assertSame([], $this->pairBars(array_map(static fn ($bar): array => $bar->toArray(),
+            AccountStandingAudience::progressBars()), $operation));
+        self::assertSame('not_started', AccountMergeProgressResolver::of($this->personId)->outcome);
+    }
+
+    public function testProgressCatchUpCarriesTheNewPictureBeforeTheFirstLiveBar(): void
+    {
+        $operation = $this->openMergeForPrivacy();
+        $this->connect(admin: true);
+        $this->subscribe(UsersPage::class);
+        $router = new PageSignalRouter(new HilosPageFactory(new DemoHilosAgent(), Hilos::class), new ActionRouteConfig([]));
+        $resender = $this->createMock(PageResender::class);
+        $resender->expects(self::once())->method('resendPage')->with(UsersPage::PAGE, self::ACCEPT_KEY, [], false)
+            ->willReturnCallback(static fn () => $router->resendPage(UsersPage::PAGE, self::ACCEPT_KEY, []));
+        Hilos::$browser->bindPageResender($resender);
+        Hilos::$sr->markPageDeliveryFailure(self::ACCEPT_KEY);
+        $this->recordPrivacyWait($operation, 'project:catch-up');
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        $frames = $this->queuedFrames();
+        self::assertFalse(Hilos::$sr->hasPageDeliveryFailure(self::ACCEPT_KEY));
+        self::assertSame([], $this->progressFrames($frames));
+        $picture = $this->pairBars($this->window($frames, ChatTableContext::hilosUsers)[TableProgressSignalData::progress], $operation);
+        self::assertCount(2, $picture);
+        foreach ($picture as $bar) {
+            self::assertSame(AccountMergeProgressResolver::of($this->personId)->toArray(), $bar['detail']);
+            self::assertSame([['participant' => 'project:catch-up', 'userId' => $operation->loserUserId]], $bar['detail']['waits']);
+        }
+    }
+
     public function testMergeAdminAndViewerFirstAndLiveUseTheSameRealPrivacyMap(): void
     {
         $operation = $this->openMergeForPrivacy();
@@ -155,6 +307,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
             $first = $this->pageData($this->subscribe(UserPage::class, ['userId' => (string) $this->personId]));
             $raw = AccountMergeProgressResolver::of($this->personId)->toArray();
             $merge = $first[UserPage::ACCOUNT_MERGE];
+            self::assertSame(['reserved' => false, 'available' => true], $first[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
             if ($admin) {
                 self::assertSame($raw, $merge);
                 self::assertStringNotContainsString(HiddenValue::KEY, json_encode($merge, JSON_THROW_ON_ERROR));
@@ -167,6 +320,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
             self::assertCount(1, $frames);
             $live = $this->frameNamed($frames, HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE)->toArray();
             self::assertSame($merge, $live[AccountStandingStateSignalData::accountMerge]);
+            self::assertSame($first[UserPage::ACCOUNT_MERGE_AVAILABILITY], $live[AccountStandingStateSignalData::accountMergeAvailability]);
             self::assertSame($operation->id, $raw['operationId']);
         }
     }
@@ -195,6 +349,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         AccountStandingAudience::onAgentTick(new DemoHilosAgent());
         $live = $this->frameNamed($this->queuedFrames(), HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE)->toArray();
         $merge = $live[AccountStandingStateSignalData::accountMerge];
+        self::assertSame(['reserved' => true, 'available' => false], $live[AccountStandingStateSignalData::accountMergeAvailability]);
         $this->assertPrivateMergeFieldsHidden($merge, $raw);
         self::assertSame($merge, $this->pageData($this->subscribe(UserPage::class, ['userId' => (string) $this->personId]))[UserPage::ACCOUNT_MERGE]);
         $wire = json_encode([$first[UserPage::ACCOUNT_MERGE], $merge], JSON_THROW_ON_ERROR);
@@ -214,6 +369,7 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         $this->recordPrivacyWait($operation, 'project:first');
         AccountStandingAudience::onAgentTick(new DemoHilosAgent());
         $live = $this->frameNamed($this->queuedFrames(), HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE)->toArray();
+        self::assertSame(['reserved' => false, 'available' => true], $live[AccountStandingStateSignalData::accountMergeAvailability]);
         $this->assertPrivateMergeFieldsHidden($live[AccountStandingStateSignalData::accountMerge],
             AccountMergeProgressResolver::of($this->personId)->toArray());
         $router = new PageSignalRouter(new HilosPageFactory(new DemoHilosAgent(), Hilos::class),
@@ -230,6 +386,37 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
         $this->recordPrivacyWait($operation, 'project:second');
         AccountStandingAudience::onAgentTick(new DemoHilosAgent());
         self::assertSame([], $this->queuedFrames());
+    }
+
+    public function testAvailabilityOnlyDeliveryRechecksAdminAndViewerAccessAndKeepsNestedOrigins(): void
+    {
+        $request = Hilos::$db->accountDeletions->actions->request(
+            $this->personId, TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
+        $this->connect(admin: true);
+        $before = $this->pageData($this->subscribe(UserPage::class, ['userId' => (string) $this->personId]));
+        self::assertSame(['reserved' => false, 'available' => true], $before[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
+        $adminId = Hilos::$rt->connections[self::ACCEPT_KEY]->userId;
+        Hilos::$db->users[$adminId]->actions->setAdmin(false);
+        $operation = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework())->operation;
+        self::assertNotNull($operation);
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        $live = $this->frameNamed($this->queuedFrames(), HilosSignalConstants::HILOS_ACCOUNT_STANDING_STATE)->toArray();
+        self::assertSame(['reserved' => false, 'available' => false], $live[AccountStandingStateSignalData::accountMergeAvailability]);
+        self::assertNull($live[AccountStandingStateSignalData::accountMerge]);
+        self::assertNull($live[AccountStandingStateSignalData::accountErasure]);
+        self::assertTrue(HiddenValue::isMark($live[AccountStandingStateSignalData::accountStanding][AccountStanding::mergedIntoName]));
+        $first = $this->pageData($this->subscribe(UserPage::class, ['userId' => (string) $this->personId]));
+        self::assertSame($live[AccountStandingStateSignalData::accountMergeAvailability], $first[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        self::assertSame([], $this->queuedFrames());
+        Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
+        self::assertTrue($operation->actions->finish($operation->stage, AccountOperationOutcome::Completed));
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        self::assertSame([], $this->queuedFrames());
+        self::assertNull(UserPage::standingFrame(self::ACCEPT_KEY,
+            new AccountStandingStateSignalData($this->personId, $before[UserPage::ACCOUNT_STANDING], null, null,
+                ['reserved' => false, 'available' => true])));
     }
 
     public function testAViewerSeesAPersonWithTheNameHiddenAndWhatIsNotPersonalShown(): void
@@ -505,6 +692,27 @@ final class AdminViewModeBridgeTest extends IntegrationTestCase
             $this->frameNamed($frames, HilosSignalConstants::SUBSCRIPTION_PAGE_HILOS_LOGS_KEYS),
         );
         self::assertStringNotContainsString(HiddenValue::KEY, json_encode(self::payloads($frames), JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param list<array{name: string, data: SignalDataInterface}> $frames Queued browser frames
+     * @return list<array<string, mixed>> Only serialized list progress frames
+     */
+    private function progressFrames(array $frames): array
+    {
+        return array_values(array_map(static fn (array $frame): array => $frame['data']->toArray(),
+            array_filter($frames, static fn (array $frame): bool => $frame['name'] === SignalTypeConstants::TABLE_PROGRESS)));
+    }
+
+    /**
+     * @param list<array<string, mixed>> $bars Shared list picture or live progress frames
+     * @param AccountOperation $operation Pair this case created, beside other cases' durable operations
+     * @return list<array<string, mixed>> Bars addressed to this case's pair
+     */
+    private function pairBars(array $bars, AccountOperation $operation): array
+    {
+        return array_values(array_filter($bars, static fn (array $bar): bool =>
+            in_array($bar['rowKey'], [(string) $operation->survivorUserId, (string) $operation->loserUserId], true)));
     }
 
     /** @return AccountOperation Opening with explicit saved choices, before any business preparation */

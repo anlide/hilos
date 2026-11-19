@@ -12,12 +12,14 @@ use Demo\Chat\Pages\Hilos\Users\UserPage;
 use Demo\Chat\Pages\Hilos\Users\UsersPage;
 use Demo\Chat\Runtime\View\Context\ChatRtContext;
 use Demo\Chat\Tables\HilosUser\HilosUsersTable;
+use Demo\Chat\Tables\ChatTableContext;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountMergeCoordinator;
 use Hilos\Auth\AccountOperation\AccountMergeOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
+use Hilos\Auth\AccountOperation\AccountOperationCircle;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
@@ -62,12 +64,20 @@ use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
+use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
+use Hilos\Database\Entity\Item\AccountOperation as EntityAccountOperation;
+use Hilos\Database\Entity\Item\AccountOperationAssignment as EntityAccountOperationAssignment;
+use Hilos\Database\Entity\Item\AccountOperationResult as EntityAccountOperationResult;
+use Hilos\Database\Entity\Item\AccountDeletion as EntityAccountDeletion;
+use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseNames;
 use Hilos\Hilos as HilosFacade;
+use Hilos\HilosException;
 use Hilos\Legal\LegalCatalogProviderInterface;
 use Hilos\Legal\LegalDocument;
 use Hilos\Legal\LegalRevision;
@@ -135,9 +145,11 @@ final class AccountStandingCardTest extends IntegrationTestCase
 
     public function testMergeFirstAnswerAndRefreshReadPreparingWaitingAndRealTerminalOutcome(): void
     {
+        self::assertSame(['reserved' => false, 'available' => true], $this->mergeCardData()[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
         $operation = $this->openMerge();
         $this->inCardWorker(function (AccountStandingCardWorker $worker) use ($operation): void {
             $first = $this->mergeCardData($worker->index());
+            self::assertSame(['reserved' => false, 'available' => true], $first[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
             self::assertSame('preparing', $first[UserPage::ACCOUNT_MERGE]['state']);
             self::assertSame([false, false], array_slice(array_column($first[UserPage::ACCOUNT_MERGE]['parts'], 'done'), 0, 2));
             self::assertSame($first[UserPage::ACCOUNT_MERGE], $this->mergeCardData($worker->index())[UserPage::ACCOUNT_MERGE]);
@@ -153,12 +165,15 @@ final class AccountStandingCardTest extends IntegrationTestCase
         ExecutionContext::run(new ExecutionFrame(agentId: HilosAgentType::HILOS_SESSIONS_LIBRARY),
             static fn () => AccountMergeCoordinator::begin($operation));
         $waiting = $this->mergeCardData();
+        self::assertSame(['reserved' => true, 'available' => false], $waiting[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
+        self::assertSame($waiting[UserPage::ACCOUNT_MERGE_AVAILABILITY], $this->mergeCardData()[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
         self::assertSame('wait', $waiting[UserPage::ACCOUNT_MERGE]['state']);
         self::assertSame('go', $waiting[UserPage::ACCOUNT_MERGE]['stage']);
         self::assertNull($waiting[UserPage::ACCOUNT_MERGE]['outcome']);
         self::assertSame($waiting[UserPage::ACCOUNT_MERGE], $this->mergeCardData()[UserPage::ACCOUNT_MERGE]);
         $this->cancelMerge($operation);
         $terminal = $this->mergeCardData();
+        self::assertSame(['reserved' => false, 'available' => true], $terminal[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
         self::assertSame('end', $terminal[UserPage::ACCOUNT_MERGE]['state']);
         self::assertSame('not_started', $terminal[UserPage::ACCOUNT_MERGE]['outcome']);
         self::assertSame($terminal[UserPage::ACCOUNT_MERGE], $this->mergeCardData()[UserPage::ACCOUNT_MERGE]);
@@ -187,6 +202,123 @@ final class AccountStandingCardTest extends IntegrationTestCase
         self::assertSame($before[UserPage::ACCOUNT_STANDING], $terminal[0]->accountStanding);
         AccountStandingAudience::onAgentTick(new DemoHilosAgent());
         self::assertSame([], $this->standingFrames());
+    }
+
+    public function testOnlyAvailabilityChangingSendsTheWholeCardOnceAndRefreshReadsTheSameFacts(): void
+    {
+        $request = Hilos::$db->accountDeletions->actions->request(
+            $this->personId, TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+        );
+        $before = $this->mergeCardData();
+        self::assertSame(['reserved' => false, 'available' => true], $before[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
+        $operation = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework())->operation;
+        self::assertNotNull($operation);
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        $frames = $this->standingFrames();
+        self::assertCount(1, $frames);
+        self::assertSame($before[UserPage::ACCOUNT_STANDING], $frames[0]->accountStanding);
+        self::assertSame($before[UserPage::ACCOUNT_ERASURE], $frames[0]->accountErasure);
+        self::assertSame($before[UserPage::ACCOUNT_MERGE], $frames[0]->accountMerge);
+        self::assertSame(['reserved' => false, 'available' => false], $frames[0]->accountMergeAvailability);
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        self::assertSame([], $this->standingFrames());
+        self::assertSame($frames[0]->accountMergeAvailability, $this->mergeCardData()[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
+        self::assertTrue($operation->actions->finish($operation->stage, AccountOperationOutcome::Completed));
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        $after = $this->standingFrames();
+        self::assertCount(1, $after);
+        self::assertSame(['reserved' => false, 'available' => true], $after[0]->accountMergeAvailability);
+        self::assertSame($before[UserPage::ACCOUNT_STANDING], $after[0]->accountStanding);
+        AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+        self::assertSame([], $this->standingFrames());
+    }
+
+    public function testUnreadableReservationIsUnknownLogsOnceAndRecoversWithoutReload(): void
+    {
+        $this->inCardWorker(function (AccountStandingCardWorker $worker): void {
+            $operation = $this->openMerge();
+            $assignment = Hilos::$db->accountOperationAssignments->byIdentity($operation->id, 'preparing', 'prepare_survivor');
+            $owner = $this->personAgent($this->personId);
+            $result = $this->underAgent($owner, fn () => $owner->prepareForMerge($assignment->id));
+            $before = $this->mergeCardData();
+            $saved = Database::sql('SELECT payload_json FROM hilos_account_operation_result WHERE id = ?', [$result->id])->row()['payload_json'];
+            $log = tempnam(sys_get_temp_dir(), 'hilos-card-availability-');
+            self::assertIsString($log);
+            $previousLog = new ReflectionProperty(Logger::class, 'logFile')->getValue();
+            Logger::setLogFile($log);
+            try {
+                // Repair fixture: no production writer can store a malformed preparation proof.
+                $this->repairPreparationProof($worker, $result->id, '{"private-engine-proof":true}');
+                AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+                $frames = $this->standingFrames();
+                self::assertCount(1, $frames);
+                self::assertNull($frames[0]->accountMergeAvailability);
+                self::assertSame($before[UserPage::ACCOUNT_STANDING], $frames[0]->accountStanding);
+                self::assertSame($before[UserPage::ACCOUNT_ERASURE], $frames[0]->accountErasure);
+                AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+                self::assertSame([], $this->standingFrames());
+                self::assertSame(1, substr_count(file_get_contents($log), 'Account card merge availability unavailable:'));
+                self::assertStringNotContainsString('private-engine-proof', file_get_contents($log));
+                self::assertStringNotContainsString('Syntax error', file_get_contents($log));
+                $this->repairPreparationProof($worker, $result->id, $saved);
+                AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+                $recovered = $this->standingFrames();
+                self::assertCount(1, $recovered);
+                self::assertSame($before[UserPage::ACCOUNT_MERGE_AVAILABILITY], $recovered[0]->accountMergeAvailability);
+                self::assertSame($before[UserPage::ACCOUNT_MERGE], $recovered[0]->accountMerge);
+                AccountStandingAudience::onAgentTick(new DemoHilosAgent());
+                self::assertSame([], $this->standingFrames());
+                $this->repairPreparationProof($worker, $result->id, '{"private-engine-proof":true}');
+                $frames = $this->routedCardFrames();
+                self::assertCount(1, $frames);
+                self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $frames[0]['name']);
+                self::assertSame(PageSubscriptionErrorSignalData::forStatus(UserPage::PAGE, 500, 'internal_error')->toArray(), $frames[0]['data']);
+                self::assertSame([], new ReflectionProperty(AccountStandingAudience::class, 'shownAvailability')->getValue());
+            } finally {
+                $this->repairPreparationProof($worker, $result->id, $saved);
+                if ($previousLog === null) {
+                    Logger::resetLogFile();
+                } else {
+                    Logger::setLogFile($previousLog);
+                }
+                unlink($log);
+            }
+            self::assertSame($before[UserPage::ACCOUNT_MERGE_AVAILABILITY], $this->mergeCardData()[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
+        });
+    }
+
+    public function testFirstAvailabilityReadFailureUsesOnlyTheSafeSubscriptionError(): void
+    {
+        $operation = $this->openErasure(started: false);
+        $this->inCardWorker(function (AccountStandingCardWorker $worker) use ($operation): void {
+            $before = $this->mergeCardData($worker->index());
+            self::assertNull($before[UserPage::ACCOUNT_MERGE]);
+            $saved = Database::sql('SELECT * FROM hilos_account_operation WHERE id = ?', [$operation->id])->row();
+            try {
+                // A malformed circle makes availability unreadable without breaking merge observation.
+                Database::sqlRun('UPDATE hilos_account_operation SET circle_user_ids = ? WHERE id = ?',
+                    ['{"private-engine-proof":true}', $operation->id]);
+                $row = Database::sql('SELECT * FROM hilos_account_operation WHERE id = ?', [$operation->id])->row();
+                $worker->deliver(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
+                    HilosDbContext::accountOperations, (string) $operation->id, $row,
+                ), 'other-node'));
+                self::assertNull(AccountMergeProgressResolver::of($this->personId));
+                $frames = $this->routedCardFrames($worker->index());
+                self::assertCount(1, $frames);
+                self::assertSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $frames[0]['name']);
+                self::assertSame(PageSubscriptionErrorSignalData::forStatus(UserPage::PAGE, 500, 'internal_error')->toArray(), $frames[0]['data']);
+                self::assertStringNotContainsString('private-engine-proof', json_encode($frames, JSON_THROW_ON_ERROR));
+                self::assertSame([], new ReflectionProperty(AccountStandingAudience::class, 'shownAvailability')->getValue());
+            } finally {
+                Database::sqlRun('UPDATE hilos_account_operation SET circle_user_ids = ? WHERE id = ?',
+                    [$saved['circle_user_ids'], $operation->id]);
+                $worker->deliver(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
+                    HilosDbContext::accountOperations, (string) $operation->id, $saved,
+                ), 'other-node'));
+            }
+            self::assertSame($before[UserPage::ACCOUNT_MERGE_AVAILABILITY],
+                $this->mergeCardData($worker->index())[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
+        });
     }
 
     /** @return iterable<string, array{bool}> Cold first read and a previously served absence */
@@ -267,6 +399,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
             $afterPreparation = $this->standingFrames();
             self::assertCount(1, $afterPreparation);
             self::assertTrue($afterPreparation[0]->accountMerge['parts'][0]['done']);
+            self::assertSame(['reserved' => true, 'available' => false], $afterPreparation[0]->accountMergeAvailability);
             self::assertSame('preparing', $afterPreparation[0]->accountMerge['state']);
             $cached = AccountMergeProgressResolver::of($this->personId);
             $waitFact = $this->inOtherWriter(function () use ($operation): DbSyncCreatedSignalData {
@@ -309,8 +442,10 @@ final class AccountStandingCardTest extends IntegrationTestCase
     public function testMergeWorkerStopNoReaderAndRestartReadARealOutcomeWrittenDuringTheGap(): void
     {
         $operation = $this->openMerge();
+        $this->preparePair($operation);
         $this->inCardWorker(function (AccountStandingCardWorker $worker) use ($operation): void {
             $before = $this->mergeCardData($worker->index());
+            self::assertSame(['reserved' => true, 'available' => false], $before[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
             $cached = AccountMergeProgressResolver::of($this->personId);
             foreach (DemoHilosAgent::readDbCollections() as $key) {
                 SourceInterestRegistry::register(SourceChange::KIND_DB, $key, SourceConsumer::page(self::ACCEPT_KEY));
@@ -318,6 +453,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
             $worker->deliver(new AgentStopDTO(HilosAgentType::HILOS_INDEX));
             self::assertNotSame($cached, AccountMergeProgressResolver::of($this->personId));
             self::assertSame([], new ReflectionProperty(AccountStandingAudience::class, 'shownMerge')->getValue());
+            self::assertSame([], new ReflectionProperty(AccountStandingAudience::class, 'shownAvailability')->getValue());
             $cached = AccountMergeProgressResolver::of($this->personId);
             $worker->releasePage(self::ACCEPT_KEY);
             foreach ([HilosDbContext::accountOperations, HilosDbContext::accountOperationAssignments,
@@ -331,6 +467,228 @@ final class AccountStandingCardTest extends IntegrationTestCase
             self::assertSame($before[UserPage::ACCOUNT_STANDING], $after[UserPage::ACCOUNT_STANDING]);
             self::assertSame('end', $after[UserPage::ACCOUNT_MERGE]['state']);
             self::assertSame('not_started', $after[UserPage::ACCOUNT_MERGE]['outcome']);
+            self::assertSame(['reserved' => false, 'available' => true], $after[UserPage::ACCOUNT_MERGE_AVAILABILITY]);
+        });
+    }
+
+    /** @return iterable<string, array{string, string}> Each mounted metadata source, independently of the other four */
+    public static function metadataSources(): iterable
+    {
+        yield 'operation' => [HilosDbContext::accountOperations, 'hilos_account_operation'];
+        yield 'assignment' => [HilosDbContext::accountOperationAssignments, 'hilos_account_operation_assignment'];
+        yield 'result' => [HilosDbContext::accountOperationResults, 'hilos_account_operation_result'];
+        yield 'deletion' => [HilosDbContext::accountDeletions, 'hilos_account_deletion'];
+        yield 'tombstone' => [HilosDbContext::userMerges, 'hilos_user_merge'];
+    }
+
+    /**
+     * E2e exception 1 (testing.md): prove each declared source at real WorkerManager ingress,
+     * retaining the warmed viewport and lazy mirrors while the separate owners commit.
+     * Immutable-source updates are accepted reannouncements; deletes are explicit repair fixtures.
+     *
+     * @param string $key Mounted metadata source under test
+     * @param string $table Physical fixture table for independent persisted evidence
+     */
+    #[DataProvider('metadataSources')]
+    public function testEachMetadataSourceReachesBothPeopleThroughRealWorkerIngress(string $key, string $table): void
+    {
+        $loserId = (int) Hilos::$db->users->actions->createWithName('Worker list loser')->id;
+        $this->inCardWorker(function (AccountStandingCardWorker $worker) use ($key, $table, $loserId): void {
+            $this->subscribeToUsersList($worker);
+            [$operation, $id] = $this->inOtherWriter(function () use ($key, $loserId): array {
+                $operation = AccountMergeOpening::open($this->personId, $loserId, new AccountMergeChoice(null, null, null, null));
+                $this->preparePair($operation);
+                $assignment = Hilos::$db->accountOperationAssignments->byIdentity($operation->id, 'preparing', 'prepare_loser');
+                $result = Hilos::$db->accountOperationResults->byAssignment($assignment->id);
+                $id = match ($key) {
+                    HilosDbContext::accountOperations => $operation->id,
+                    HilosDbContext::accountOperationAssignments => $assignment->id,
+                    HilosDbContext::accountOperationResults => $result->id,
+                    HilosDbContext::accountDeletions => Hilos::$db->accountDeletions->actions->request(
+                        $this->personId, TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND,
+                    )->id,
+                    HilosDbContext::userMerges => $loserId,
+                };
+                if ($key === HilosDbContext::userMerges) {
+                    Hilos::$db->userMerges->actions->add($loserId, $this->personId);
+                }
+
+                return [$operation, $id];
+            });
+            $primary = $key === HilosDbContext::userMerges ? 'user_id' : 'id';
+            $row = Database::sql('SELECT * FROM `' . $table . '` WHERE `' . $primary . '` = ?', [$id])->row();
+            self::assertIsArray($row);
+            $objects = Hilos::$db->mountedObjectCollection($key);
+            $held = array_keys($objects->toArray());
+            $worker->deliver(new WorkerDbSyncCreatedMessageDTO(new DbSyncCreatedSignalData($key, (string) $id, $row), 'other-node'));
+            self::assertSame($held, array_keys($objects->toArray()), 'Lazy ingress must not retain an unheld metadata row');
+            self::assertSame([], Hilos::$browser->flushToSignalRouter());
+            $expected = $key === HilosDbContext::accountDeletions ? [$this->personId] : [$this->personId, $loserId];
+            $this->assertListOccupancy($expected, true, false);
+
+            $this->inOtherWriter(function () use ($operation, $key): void {
+                $this->cancelMerge($operation);
+                if ($key === HilosDbContext::accountDeletions) {
+                    Hilos::$db->accountDeletions->liveOf($this->personId)->actions->cancel();
+                }
+            });
+            $row = Database::sql('SELECT * FROM `' . $table . '` WHERE `' . $primary . '` = ?', [$id])->row();
+            $worker->deliver(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData($key, (string) $id, $row), 'other-node'));
+            self::assertSame([], Hilos::$browser->flushToSignalRouter());
+            $deltas = $this->listDeltas();
+            self::assertEqualsCanonicalizing($expected, array_column($deltas, TableViewportDeltaDTO::rowKey));
+            foreach ($deltas as $delta) {
+                $availability = $delta['row']['slots']['merge']['accountMergeAvailability'];
+                self::assertSame(['reserved' => false, 'available' => $key !== HilosDbContext::userMerges
+                    || (int) $delta['rowKey'] !== $loserId], $availability);
+            }
+
+            $this->inOtherWriter(function () use ($key, $table, $primary, $id, $operation, $loserId): void {
+                // Removing immutable history is a repair fixture, never a production merge outcome.
+                if ($key === HilosDbContext::accountOperations) {
+                    Database::sqlRun('DELETE r FROM hilos_account_operation_result r'
+                        . ' JOIN hilos_account_operation_assignment a ON a.id = r.assignment_id WHERE a.operation_id = ?', [$operation->id]);
+                    Database::sqlRun('DELETE FROM hilos_account_operation_assignment WHERE operation_id = ?', [$operation->id]);
+                } elseif ($key === HilosDbContext::accountOperationAssignments) {
+                    Database::sqlRun('DELETE FROM hilos_account_operation_result WHERE assignment_id = ?', [$id]);
+                }
+                Database::sqlRun('DELETE FROM `' . $table . '` WHERE `' . $primary . '` = ?', [$id]);
+                self::assertNull(Database::sql('SELECT * FROM `' . $table . '` WHERE `' . $primary . '` = ?', [$id])->row());
+                $next = AccountMergeOpening::open($this->personId, $loserId, new AccountMergeChoice(null, null, null, null));
+                $this->preparePair($next);
+            });
+            $worker->deliver(new WorkerDbSyncDeletedMessageDTO(new DbSyncDeletedSignalData($key, (string) $id), 'other-node'));
+            self::assertSame([], Hilos::$browser->flushToSignalRouter());
+            $this->assertListOccupancy([$this->personId, $loserId], true, false);
+        });
+    }
+
+    /** @return iterable<string, array{string, string, bool, bool}> Native row/previous carriers and circle fallback */
+    public static function metadataRelations(): iterable
+    {
+        foreach (self::metadataSources() as $name => [$key, $table]) {
+            yield $name . ' previous relation' => [$key, $table, false, false];
+            yield $name . ' row relation' => [$key, $table, true, false];
+        }
+        yield 'operation previous circle' => [HilosDbContext::accountOperations, 'hilos_account_operation', false, true];
+        yield 'operation row circle' => [HilosDbContext::accountOperations, 'hilos_account_operation', true, true];
+    }
+
+    /**
+     * Existing repair carriers retain both native relations through the real lazy ingress.
+     * These reannouncements grant no mutation right over immutable assignments or results.
+     *
+     * @param string $key Metadata source with persisted relation keys
+     * @param string $table Physical table for independent fixture reads
+     * @param bool $reverse Whether the other relation is carried in row instead of previous
+     * @param bool $circle Whether only the operation circle is carried, requiring conservative recovery
+     */
+    #[DataProvider('metadataRelations')]
+    public function testEntityRelationsInRowAndPreviousReachOldAndNewPeopleThroughWorkerIngress(
+        string $key,
+        string $table,
+        bool $reverse,
+        bool $circle,
+    ): void
+    {
+        $loser = (int) Hilos::$db->users->actions->createWithName('Current relation loser')->id;
+        $otherRoot = (int) Hilos::$db->users->actions->createWithName('Previous relation root')->id;
+        $otherLoser = (int) Hilos::$db->users->actions->createWithName('Previous relation loser')->id;
+        Hilos::$db->users->actions->createWithName('Outside both relations');
+        $this->inCardWorker(function (AccountStandingCardWorker $worker) use (
+            $key, $table, $loser, $otherRoot, $otherLoser, $reverse, $circle,
+        ): void {
+            $this->subscribeToUsersList($worker);
+            [$id, $previousId] = $this->inOtherWriter(function () use ($key, $loser, $otherRoot, $otherLoser): array {
+                $current = AccountMergeOpening::open($this->personId, $loser, new AccountMergeChoice(null, null, null, null));
+                $this->preparePair($current);
+                $previous = AccountMergeOpening::open($otherRoot, $otherLoser, new AccountMergeChoice(null, null, null, null));
+                $this->preparePair($previous);
+                $currentAssignment = Hilos::$db->accountOperationAssignments->byIdentity($current->id, 'preparing', 'prepare_loser');
+                $previousAssignment = Hilos::$db->accountOperationAssignments->byIdentity($previous->id, 'preparing', 'prepare_loser');
+                if ($key === HilosDbContext::accountOperations) {
+                    return [$current->id, $previous->id];
+                }
+                if ($key === HilosDbContext::accountOperationAssignments) {
+                    return [$currentAssignment->id, $previousAssignment->id];
+                }
+                if ($key === HilosDbContext::accountDeletions) {
+                    $effectiveAt = TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+
+                    return [Hilos::$db->accountDeletions->actions->request($this->personId, $effectiveAt)->id,
+                        Hilos::$db->accountDeletions->actions->request($otherRoot, $effectiveAt)->id];
+                }
+                if ($key === HilosDbContext::userMerges) {
+                    Hilos::$db->userMerges->actions->add($loser, $this->personId);
+                    Hilos::$db->userMerges->actions->add($otherLoser, $otherRoot);
+
+                    return [$loser, $otherLoser];
+                }
+                // A normal owner result can belong to the entire erasure circle, without a personal user_id.
+                $result = ExecutionContext::run(new ExecutionFrame(agentId: self::TEST_AGENT), function () use ($loser) {
+                    $request = Hilos::$db->accountDeletions->actions->request($this->personId,
+                        TimeHelper::nowMs() + TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND);
+                    $erasure = Hilos::$db->accountOperations->actions->recordErasure(
+                        $request->id, $this->personId, AccountOperationCircle::fromArray([$loser, $this->personId], $this->personId),
+                    );
+                    $assignment = Hilos::$db->accountOperationAssignments->actions->record(
+                        $erasure->id, $erasure->stage, 'whole-circle', new AccountOperationOwnerAddress(self::TEST_AGENT),
+                        null, AccountOperationAssignmentPayload::fromJson('{}'),
+                    );
+                    Database::transactionStart();
+                    try {
+                        $result = Hilos::$db->accountOperationResults->actions->record(
+                            $assignment, AccountOperationResultPayload::fromJson('{}'),
+                        );
+                        Database::transactionCommit();
+
+                        return $result;
+                    } catch (HilosException $failure) {
+                        Database::transactionRollback();
+                        throw $failure;
+                    }
+                });
+                $saved = Database::sql('SELECT a.user_id, r.assignment_id FROM hilos_account_operation_assignment a'
+                    . ' JOIN hilos_account_operation_result r ON r.assignment_id = a.id WHERE r.id = ?', [$result->id])->row();
+                self::assertNotNull($saved);
+                self::assertNull($saved['user_id']);
+                self::assertSame($result->assignmentId, (int) $saved['assignment_id']);
+
+                return [$result->id, Hilos::$db->accountOperationResults->byAssignment($previousAssignment->id)->id];
+            });
+            $primary = $key === HilosDbContext::userMerges ? EntityUserMerge::user_id : 'id';
+            $row = Database::sql('SELECT * FROM `' . $table . '` WHERE `' . $primary . '` = ?', [$id])->row();
+            $previous = Database::sql('SELECT * FROM `' . $table . '` WHERE `' . $primary . '` = ?', [$previousId])->row();
+            self::assertIsArray($row);
+            self::assertIsArray($previous);
+            $relationFields = match ($key) {
+                HilosDbContext::accountOperations => [EntityAccountOperation::root_user_id, EntityAccountOperation::loser_user_id],
+                HilosDbContext::accountOperationAssignments => [EntityAccountOperationAssignment::operation_id,
+                    EntityAccountOperationAssignment::user_id],
+                HilosDbContext::accountOperationResults => [EntityAccountOperationResult::assignment_id],
+                HilosDbContext::accountDeletions => [EntityAccountDeletion::user_id],
+                default => [EntityUserMerge::user_id, EntityUserMerge::survivor_user_id],
+            };
+            if ($circle) {
+                $relationFields = [EntityAccountOperation::circle_user_ids];
+            }
+            $currentRelation = array_intersect_key($row, array_flip($relationFields));
+            $previousRelation = array_intersect_key($previous, array_flip($relationFields));
+            $expected = $key === HilosDbContext::accountDeletions
+                ? [$this->personId, $otherRoot] : [$this->personId, $loser, $otherRoot, $otherLoser];
+            $data = new DbSyncUpdatedSignalData($key, (string) $id, $reverse ? $previousRelation : $currentRelation,
+                previous: $reverse ? $currentRelation : $previousRelation);
+            $data = DbSyncUpdatedSignalData::fromArray(json_decode(json_encode($data->toArray(), JSON_THROW_ON_ERROR),
+                true, flags: JSON_THROW_ON_ERROR));
+            $worker->deliver(new WorkerDbSyncUpdatedMessageDTO($data, 'other-node'));
+            self::assertSame([], Hilos::$browser->flushToSignalRouter());
+            $deltas = $this->listDeltas();
+            self::assertCount(count($expected), $deltas);
+            self::assertEqualsCanonicalizing($expected, array_column($deltas, TableViewportDeltaDTO::rowKey));
+            foreach ($deltas as $delta) {
+                self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta[TableViewportDeltaDTO::kind]);
+                self::assertIsArray($delta['row']['slots']['merge']['accountMergeAvailability']);
+            }
         });
     }
 
@@ -421,9 +779,13 @@ final class AccountStandingCardTest extends IntegrationTestCase
         $this->mergeCardData();
         $memory = new ReflectionProperty(AccountStandingAudience::class, 'shownMerge');
         $failures = new ReflectionProperty(AccountStandingAudience::class, 'mergeFailures');
+        $availability = new ReflectionProperty(AccountStandingAudience::class, 'shownAvailability');
+        $availabilityFailures = new ReflectionProperty(AccountStandingAudience::class, 'availabilityFailures');
         foreach (['unsubscribe', 'navigation', 'reset'] as $exit) {
             self::assertArrayHasKey(self::ACCEPT_KEY, $memory->getValue());
             $failures->setValue(null, [self::ACCEPT_KEY => true]);
+            self::assertArrayHasKey(self::ACCEPT_KEY, $availability->getValue());
+            $availabilityFailures->setValue(null, [self::ACCEPT_KEY => true]);
             if ($exit === 'unsubscribe') {
                 new UserPage(new DemoHilosAgent())->onUnsubscribe(self::ACCEPT_KEY);
             } elseif ($exit === 'navigation') {
@@ -435,6 +797,8 @@ final class AccountStandingCardTest extends IntegrationTestCase
             }
             self::assertArrayNotHasKey(self::ACCEPT_KEY, $memory->getValue());
             self::assertArrayNotHasKey(self::ACCEPT_KEY, $failures->getValue());
+            self::assertArrayNotHasKey(self::ACCEPT_KEY, $availability->getValue());
+            self::assertArrayNotHasKey(self::ACCEPT_KEY, $availabilityFailures->getValue());
             AccountStandingAudience::onAgentTick(new DemoHilosAgent());
             self::assertSame([], $this->standingFrames());
             $this->mergeCardData();
@@ -459,6 +823,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
         self::assertCount(1, $errors);
         self::assertSame(404, $errors[0]['httpCode']);
         self::assertArrayNotHasKey(self::ACCEPT_KEY, $memory->getValue());
+        self::assertArrayNotHasKey(self::ACCEPT_KEY, $availability->getValue());
         AccountStandingAudience::onAgentTick(new DemoHilosAgent());
         self::assertSame([], $this->standingFrames());
     }
@@ -511,7 +876,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
                 HilosDbContext::accountOperationAssignments,
                 HilosDbContext::accountOperationResults,
             ] as $key) {
-                self::assertSame([$agentConsumer], SourceInterestRegistry::consumersOf(SourceChange::KIND_DB, $key));
+                self::assertSame([$agentConsumer, $pageConsumer], SourceInterestRegistry::consumersOf(SourceChange::KIND_DB, $key));
                 self::assertNotContains($key, $processWide);
             }
             self::assertSame([], SourceInterestRegistry::collectionsOfConsumer(SourceConsumer::agent(self::TEST_AGENT), SourceChange::KIND_DB));
@@ -674,6 +1039,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
                 AccountStandingStateSignalData::accountStanding => $before[UserPage::ACCOUNT_STANDING],
                 AccountStandingStateSignalData::accountErasure => $expectedErasure,
                 AccountStandingStateSignalData::accountMerge => null,
+                AccountStandingStateSignalData::accountMergeAvailability => ['reserved' => false, 'available' => false],
             ], $frames[0]->toArray());
             AccountStandingAudience::onAgentTick($worker->index());
             self::assertSame([], $this->standingFrames());
@@ -814,7 +1180,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
     public function testTheCardDoesNotHideABrokenExpectationPayload(): void
     {
         $operation = $this->openErasure();
-        Hilos::$db->accountOperationAssignments->actions->record(
+        $bad = Hilos::$db->accountOperationAssignments->actions->record(
             $operation->id,
             $operation->stage,
             'expect:broken',
@@ -824,7 +1190,12 @@ final class AccountStandingCardTest extends IntegrationTestCase
         );
 
         $this->expectException(InvalidFormatException::class);
-        $this->subscribeToCardData();
+        try {
+            $this->subscribeToCardData();
+        } finally {
+            Database::sqlRun('DELETE FROM hilos_account_operation_assignment WHERE id = ?', [$bad->id]);
+            SourceChangeBus::publish(SourceChange::dbDeleted(HilosDbContext::accountOperationAssignments, (string) $bad->id));
+        }
     }
 
     public function testUnsubscribeAndResetReleaseTheShownErasureMemory(): void
@@ -1079,6 +1450,95 @@ final class AccountStandingCardTest extends IntegrationTestCase
         }
     }
 
+    /**
+     * @param AccountStandingCardWorker $worker Worker receiving the repair through its normal ingress
+     * @param int $resultId Preparation proof to corrupt or restore
+     * @param string $payloadJson Repair fixture, never a production result mutation
+     */
+    private function repairPreparationProof(AccountStandingCardWorker $worker, int $resultId, string $payloadJson): void
+    {
+        Database::sqlRun('UPDATE hilos_account_operation_result SET payload_json = ? WHERE id = ?', [$payloadJson, $resultId]);
+        $saved = Database::sql('SELECT * FROM hilos_account_operation_result WHERE id = ?', [$resultId])->row();
+        $worker->deliver(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
+            HilosDbContext::accountOperationResults, (string) $resultId, $saved,
+        ), 'other-node'));
+    }
+
+    /** @param AccountOperation $operation Preparation addressed to both actual personal owners */
+    private function preparePair(AccountOperation $operation): void
+    {
+        foreach (['prepare_survivor', 'prepare_loser'] as $duty) {
+            $assignment = Hilos::$db->accountOperationAssignments->byIdentity($operation->id, 'preparing', $duty);
+            $owner = $this->personAgent($assignment->userId);
+            $this->underAgent($owner, fn () => $owner->prepareForMerge($assignment->id));
+        }
+    }
+
+    /** @param AccountStandingCardWorker $worker Real worker serving the declared people-list sources */
+    private function subscribeToUsersList(AccountStandingCardWorker $worker): void
+    {
+        $pageConsumer = SourceConsumer::page(self::ACCEPT_KEY);
+        $declared = Hilos::$browser->dbSourceKeysOfPage(UsersPage::PAGE);
+        foreach ([...UsersPage::READS_DB, ...$declared] as $source) {
+            SourceInterestRegistry::register(SourceChange::KIND_DB, $source, $pageConsumer);
+            $worker->deliver(new WorkerDbInterestReadyMessageDTO($source));
+        }
+        foreach (Hilos::$browser->rtSourceKeysOfPage(UsersPage::PAGE) as $source) {
+            SourceInterestRegistry::register(SourceChange::KIND_RT, $source, $pageConsumer);
+            SourceInterestRegistry::markReady(SourceChange::KIND_RT, $source);
+        }
+        foreach ([HilosDbContext::accountOperations, HilosDbContext::accountOperationAssignments,
+            HilosDbContext::accountOperationResults, HilosDbContext::accountDeletions, HilosDbContext::userMerges] as $source) {
+            self::assertContains($source, $declared);
+            self::assertContains($pageConsumer, SourceInterestRegistry::consumersOf(SourceChange::KIND_DB, $source));
+        }
+        $subscription = new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, UsersPage::PAGE, [],
+            [ChatTableContext::hilosUsers => new TableWindowDescriptorDTO(limit: 500)]);
+        Hilos::$sr->subscribeToPage(UsersPage::PAGE, $subscription);
+        $router = new PageSignalRouter(new HilosPageFactory($worker->index(), Hilos::class), new ActionRouteConfig());
+        $router->dispatchPageSubscribe($subscription, 'websocket', UsersPage::PAGE);
+        self::assertNotNull(Hilos::$sr->getTableViewports(self::ACCEPT_KEY)[ChatTableContext::hilosUsers] ?? null);
+        $this->listDeltas();
+        Hilos::$browser->flushToSignalRouter();
+        $this->listDeltas();
+    }
+
+    /** @return list<array<string, mixed>> Serialized row deltas from the real list viewport */
+    private function listDeltas(): array
+    {
+        $deltas = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if (!$signal->data instanceof WebSocketSignalData) {
+                continue;
+            }
+            self::assertNotSame(SignalConstants::SUBSCRIPTION_PAGE_ERROR, $signal->signalName->getName());
+            if ($signal->data->data instanceof TableViewportDeltaDTO) {
+                self::assertSame(self::ACCEPT_KEY, $signal->data->targetAcceptKey);
+                self::assertSame(ChatTableContext::hilosUsers, $signal->data->data->tableKey);
+                $deltas[] = $signal->data->data->toArray();
+            }
+        }
+
+        return $deltas;
+    }
+
+    /**
+     * @param list<int> $expected People the metadata source must repaint, with no operation or result id among them
+     * @param bool $reserved Expected reservation fact
+     * @param bool $available Expected availability fact
+     */
+    private function assertListOccupancy(array $expected, bool $reserved, bool $available): void
+    {
+        $deltas = $this->listDeltas();
+        self::assertEqualsCanonicalizing($expected, array_column($deltas, TableViewportDeltaDTO::rowKey));
+        foreach ($deltas as $delta) {
+            self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta[TableViewportDeltaDTO::kind]);
+            self::assertSame(['reserved' => $reserved, 'available' => $available],
+                $delta['row']['slots']['merge']['accountMergeAvailability']);
+            self::assertArrayHasKey('connections', $delta['row']['slots']);
+        }
+    }
+
     /** @return AccountOperation Real opening naming the card's account as survivor */
     private function openMerge(): AccountOperation
     {
@@ -1168,6 +1628,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
         self::assertSame(SignalTypeConstants::PAGE_RESPONSE, $frames[0]['name']);
         $data = $frames[0]['data'][PageResponseSignalData::payload][PagePayload::data];
         self::assertArrayHasKey('accountMerge', $data);
+        self::assertArrayHasKey('accountMergeAvailability', $data);
 
         return $data;
     }

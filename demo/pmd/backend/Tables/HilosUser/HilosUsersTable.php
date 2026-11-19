@@ -24,10 +24,12 @@ final class HilosUsersTable extends AbstractHilosUsersTable
     public const array BROWSER = [
         BrowserTableConfigKey::SOURCES => [
             self::USERS_SOURCE,
+            ...self::MERGE_SOURCES,
             PmdBrowserSource::RT_CONNECTIONS,
         ],
         BrowserTableConfigKey::ROWS => [
             self::USERS_ROW,
+            ...self::MERGE_ROWS,
             [
                 BrowserTableFieldKey::SOURCE => PmdBrowserSource::RT_CONNECTIONS,
                 BrowserTableFieldKey::ROW_KEY => ConnectionState::userId,

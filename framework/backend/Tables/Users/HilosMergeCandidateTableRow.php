@@ -6,6 +6,7 @@ namespace Hilos\Tables\Users;
 
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
+use Hilos\Users\AccountMergeAvailability;
 
 /**
  * One account the Hilos user page may offer as a merge loser (HIL-411).
@@ -26,6 +27,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
      * @param bool $hasSecondFactor Whether the account has a confirmed authenticator
      * @param ?int $exactUserId User id only when it exactly matches a numeric search term
      * @param ?string $unverifiedPasswordAddress Address of an unconfirmed password that a merge will remove instead of demoting
+     * @param ?AccountMergeAvailability $accountMergeAvailability Current occupancy, null for an unknown raw projection
      */
     public function __construct(
         public readonly array $userFields,
@@ -34,6 +36,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
         public readonly bool $hasSecondFactor,
         public readonly ?int $exactUserId = null,
         public readonly ?string $unverifiedPasswordAddress = null,
+        public readonly ?AccountMergeAvailability $accountMergeAvailability = null,
     ) {
     }
 
@@ -61,6 +64,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
             HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS => $this->unverifiedPasswordAddress,
             self::identityAddresses => implode(' ', array_column($this->identities, 'identifier')),
             self::exactUserId => $this->exactUserId,
+            HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY => $this->accountMergeAvailability?->toArray(),
         ];
     }
 
@@ -76,6 +80,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
         $hasPassword = self::requireBool($data, HilosMergeCandidatesTable::FIELD_HAS_PASSWORD);
         $hasSecondFactor = self::requireBool($data, HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR);
         $exactUserId = self::optionalInt($data, self::exactUserId);
+        $availability = self::optionalArray($data, HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY);
         $unverifiedPasswordAddress = self::optionalString($data, HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS);
         unset(
             $data[HilosMergeCandidatesTable::FIELD_IDENTITIES],
@@ -84,6 +89,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
             $data[HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS],
             $data[self::identityAddresses],
             $data[self::exactUserId],
+            $data[HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY],
         );
 
         /** @var list<array{type: string, identifier: string, provider: ?string, verified: bool}> $identities */
@@ -94,6 +100,7 @@ final class HilosMergeCandidateTableRow extends AbstractTableRow
             hasSecondFactor: $hasSecondFactor,
             exactUserId: $exactUserId,
             unverifiedPasswordAddress: $unverifiedPasswordAddress,
+            accountMergeAvailability: $availability === null ? null : AccountMergeAvailability::fromArray($availability),
         );
     }
 }

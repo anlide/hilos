@@ -19,7 +19,7 @@ use Hilos\Core\Table\DTO\TableSnapshotDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\Definition\MultiRowViewportTable;
 use Hilos\Core\Table\Exception\TableRowKeyMissingException;
 use Hilos\Core\Table\Exception\TableSearchFieldUnknownException;
 use Hilos\Core\Table\Exception\TableSearchNotSupportedException;
@@ -29,6 +29,11 @@ use Hilos\Core\Table\TableConstants;
 use Hilos\Core\Table\TableProgressScope;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Item\AccountOperation as ObjectAccountOperation;
+use Hilos\Database\Object\Item\AccountOperationAssignment as ObjectAccountOperationAssignment;
+use Hilos\Database\Object\Item\AccountOperationResult as ObjectAccountOperationResult;
+use Hilos\Database\Object\Item\AccountDeletion as ObjectAccountDeletion;
+use Hilos\Database\Object\Item\UserMerge as ObjectUserMerge;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Database\View\Item\User as DbUser;
@@ -44,6 +49,10 @@ use Hilos\Runtime\View\Collection\HilosConnections as ViewHilosConnections;
 use Hilos\Runtime\View\Collection\HilosPresenceSource;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Users\AccountErasureProgress;
+use Hilos\Users\AccountMergeProgress;
+use Hilos\Users\AccountMergeAvailability;
+use Hilos\Users\AccountMergeAvailabilityResolver;
+use Hilos\Users\AccountMergeSourceChange;
 use Hilos\Users\AccountStandingResolver;
 use OutOfBoundsException;
 use Throwable;
@@ -63,7 +72,7 @@ use Throwable;
  * {@see AccountStandingAudience}: a window's snapshot carries the picture the audience last sent,
  * and the audience's tick sends what changed. Nothing about them enters the row, the order or the count.
  */
-abstract class AbstractHilosUsersTable extends TableDefinition implements ViewportTable
+abstract class AbstractHilosUsersTable extends TableDefinition implements MultiRowViewportTable
 {
     /**
      * Wire slot the user entity rides — the entity-bearing slot the frontend
@@ -105,6 +114,8 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
      */
     public const string PROGRESS_KEY_ERASURE = 'hilos-account-erasure';
 
+    public const string PROGRESS_KEY_MERGE = 'hilos-account-merge';
+
     /** The framework's people, as a browser source every project declares the same way. */
     public const array USERS_SOURCE = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
@@ -126,6 +137,44 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             ObjectUser::block => HilosUserTableRow::block,
             ObjectUser::name => HilosUserTableRow::name,
             ObjectUser::lastActivity => HilosUserTableRow::lastActivity,
+        ],
+    ];
+
+    /** Durable dependencies of the public merge occupancy projection. */
+    public const array MERGE_SOURCES = [
+        [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => HilosDbContext::accountOperations],
+        [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => HilosDbContext::accountOperationAssignments],
+        [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => HilosDbContext::accountOperationResults],
+        [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => HilosDbContext::accountDeletions],
+        [BrowserSourceKey::TYPE => BrowserSourceType::DB, BrowserSourceKey::KEY => HilosDbContext::userMerges],
+    ];
+
+    /** Observation only: dependency primary keys never become people row keys or raw browser fields. */
+    public const array MERGE_ROWS = [
+        [
+            BrowserTableFieldKey::SOURCE => self::MERGE_SOURCES[0],
+            BrowserTableFieldKey::ROW_KEY => ObjectAccountOperation::id,
+            BrowserTableFieldKey::FIELDS => [],
+        ],
+        [
+            BrowserTableFieldKey::SOURCE => self::MERGE_SOURCES[1],
+            BrowserTableFieldKey::ROW_KEY => ObjectAccountOperationAssignment::id,
+            BrowserTableFieldKey::FIELDS => [],
+        ],
+        [
+            BrowserTableFieldKey::SOURCE => self::MERGE_SOURCES[2],
+            BrowserTableFieldKey::ROW_KEY => ObjectAccountOperationResult::id,
+            BrowserTableFieldKey::FIELDS => [],
+        ],
+        [
+            BrowserTableFieldKey::SOURCE => self::MERGE_SOURCES[3],
+            BrowserTableFieldKey::ROW_KEY => ObjectAccountDeletion::userId,
+            BrowserTableFieldKey::FIELDS => [],
+        ],
+        [
+            BrowserTableFieldKey::SOURCE => self::MERGE_SOURCES[4],
+            BrowserTableFieldKey::ROW_KEY => ObjectUserMerge::userId,
+            BrowserTableFieldKey::FIELDS => [],
         ],
     ];
 
@@ -165,6 +214,37 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
     }
 
     /**
+     * @param int $userId Existing account named by the merge
+     * @param AccountMergeProgress $progress Exact open operation projection
+     * @return TableProgressDTO Done parts with an unknown total until parts exist; equality never ends work
+     * @throws InvalidArgumentException Never: a row bar always names its row
+     */
+    public static function mergeBar(int $userId, AccountMergeProgress $progress): TableProgressDTO
+    {
+        $done = array_filter($progress->parts, static fn (array $part): bool => $part[AccountMergeProgress::done]);
+
+        return new TableProgressDTO(
+            TableProgressScope::Row,
+            self::PROGRESS_KEY_MERGE,
+            (string) $userId,
+            count($done),
+            $progress->parts === [] ? null : count($progress->parts),
+            false,
+            $progress->toArray(),
+        );
+    }
+
+    /**
+     * @param int $userId Account whose merge bar is removed
+     * @return TableProgressDTO Ended address without a business outcome
+     * @throws InvalidArgumentException Never: a row bar always names its row
+     */
+    public static function mergeBarEnded(int $userId): TableProgressDTO
+    {
+        return new TableProgressDTO(TableProgressScope::Row, self::PROGRESS_KEY_MERGE, (string) $userId, 0, null, true);
+    }
+
+    /**
      * Declares how many rows the first window of the Hilos users table carries.
      *
      * @return int Rows the first window carries
@@ -201,6 +281,29 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
         }
 
         return null;
+    }
+
+    /**
+     * @param SourceChange $change Source fact that may affect several people
+     * @return list<TableRowMutationDTO> One current mutation per affected account
+     * @throws Throwable When a source or row reader refuses the rebuild
+     */
+    final public function buildMutationsForSourceEvent(SourceChange $change): array
+    {
+        if ($change->sourceKey === HilosDbContext::users || $change->sourceKey === $this->presenceSourceKey()) {
+            $mutation = $this->buildMutationForSourceEvent($change);
+
+            return $mutation === null ? [] : [$mutation];
+        }
+        $mutations = [];
+        foreach (AccountMergeSourceChange::userIds($change) as $userId) {
+            $row = $this->rowForUserId($userId);
+            $mutations[] = $row === null
+                ? $this->mutation(TableMutationType::Delete, $userId)
+                : $this->mutation(TableMutationType::Update, $userId, $row);
+        }
+
+        return $mutations;
     }
 
     /**
@@ -256,12 +359,14 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
         ];
         $merge = [
             HilosUserTableRow::merged => $fields[HilosUserTableRow::merged] ?? false,
+            HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY => $fields[HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY] ?? null,
         ];
         unset(
             $fields[HilosUserTableRow::presence],
             $fields[HilosUserTableRow::onlineSessionCount],
             $fields[HilosUserTableRow::openSessionCount],
             $fields[HilosUserTableRow::merged],
+            $fields[HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY],
         );
 
         $rowKey = $row->requireRowKey();
@@ -304,6 +409,7 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             presence: $summary->presence,
             merged: isset(Hilos::$db->userMerges[(int) $user->id]),
             openSessionCount: $summary->openSessionCount,
+            accountMergeAvailability: AccountMergeAvailabilityResolver::of((int) $user->id),
         );
     }
 
@@ -460,33 +566,34 @@ abstract class AbstractHilosUsersTable extends TableDefinition implements Viewpo
             HilosUserTableRow::onlineSessionCount => WireField::notPersonal(),
             HilosUserTableRow::openSessionCount => WireField::notPersonal(),
             HilosUserTableRow::merged => WireField::notPersonal(),
+            HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY => WireField::each(AccountMergeAvailability::wireFields()),
         ];
     }
 
     /**
-     * Names the erasure bars a window is opened with: the picture the audience last sent (HIL-1955).
+     * Names the composed row bars a window is opened with: the picture the audience last sent.
      *
      * A window opened between two ticks shows the bars every other open list already shows, and the
      * next tick sends it only what changed after that picture.
      *
-     * @return list<TableProgressDTO> Bar of every account under a begun erasure, empty when none has begun
-     * @throws HilosException When the erasure progress cannot be read
+     * @return list<TableProgressDTO> Existing accounts' erasure bars, otherwise open merge bars
+     * @throws HilosException When a progress source cannot be read
      */
     public function progressSnapshot(): array
     {
-        return AccountStandingAudience::erasureBars();
+        return AccountStandingAudience::progressBars();
     }
 
     /**
-     * Declares the fields of the erasure bar's detail, for a viewer of the admin view mode (HIL-1955).
+     * Declares both progress details through the same origins as their card projections.
      *
-     * The detail is the card's erasure block, so it is declared the way the card declares it.
+     * Shared parts and waits retain identical origins in both maps.
      *
      * @return array<string, WireField> Detail field name to where it comes from
      */
     public function progressDetailFields(): array
     {
-        return AccountErasureProgress::wireFields();
+        return AccountErasureProgress::wireFields() + AccountMergeProgress::wireFields();
     }
 
     /**

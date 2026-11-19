@@ -24,6 +24,7 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Collection\AccountOperations as ObjectAccountOperations;
 use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
@@ -79,6 +80,33 @@ final class AccountMergeProgressResolver
 
             return $operation === null || $operation->kind !== AccountOperationKind::Merge ? null : self::fromOperation($operation);
         });
+    }
+
+    /**
+     * Reads every open merge by primary id, using the exact operation projection.
+     *
+     * @return array<int, AccountMergeProgress> Open merge progress keyed by operation id
+     * @throws Throwable When sources are unavailable or a saved fact is malformed
+     */
+    public static function open(): array
+    {
+        self::requireDatabase();
+        $open = [];
+        $afterId = 0;
+        do {
+            $page = Hilos::$db->accountOperations->openPage(AccountOperationKind::Merge, $afterId, ObjectAccountOperations::PAGE_LIMIT_MAX);
+            foreach ($page as $operationId => $operation) {
+                $afterId = (int) $operationId;
+                if ($operation->finishedAt === null) {
+                    $progress = self::forOperation($afterId);
+                    if ($progress !== null && $progress->outcome === null) {
+                        $open[$afterId] = $progress;
+                    }
+                }
+            }
+        } while (count($page) === ObjectAccountOperations::PAGE_LIMIT_MAX);
+
+        return $open;
     }
 
     /** Discards answers, absence and malformed-fact failures for both read entrances. */

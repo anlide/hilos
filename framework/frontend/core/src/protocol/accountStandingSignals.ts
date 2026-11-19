@@ -18,6 +18,7 @@ export const accountStandingStateSchema = z.looseObject({
   accountStanding: z.unknown(),
   accountErasure: z.unknown().optional(),
   accountMerge: z.unknown().optional(),
+  accountMergeAvailability: z.unknown().optional(),
 })
 
 /**

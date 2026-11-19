@@ -45,6 +45,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
 use Hilos\Tables\Users\HilosUserTableRow;
+use Hilos\Users\AccountMergeAvailability;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\AccountStandingKind;
@@ -550,7 +551,13 @@ final class AccountMergeTest extends IntegrationTestCase
         $this->assertFalse($table->rowFromUser(Hilos::$db->users[$survivorId])->merged);
 
         $sources = $table->browserRow($loserRow)[BrowserPageSignalData::sources];
-        $this->assertSame([HilosUserTableRow::merged => true], $sources[AbstractHilosUsersTable::SLOT_MERGE]);
+        $this->assertSame([
+            HilosUserTableRow::merged => true,
+            HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY => [
+                AccountMergeAvailability::reserved => false,
+                AccountMergeAvailability::available => false,
+            ],
+        ], $sources[AbstractHilosUsersTable::SLOT_MERGE]);
         $this->assertArrayNotHasKey(HilosUserTableRow::merged, $sources[AbstractHilosUsersTable::SLOT_USER]);
     }
 

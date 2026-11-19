@@ -14,6 +14,7 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Socket\WebSocket\DTO\HandshakeResponseSignalData;
 use Hilos\Users\AccountErasureProgress;
+use Hilos\Users\AccountMergeAvailability;
 use Hilos\Users\AccountMergeProgress;
 use Hilos\Users\AccountStanding;
 
@@ -26,7 +27,8 @@ use Hilos\Users\AccountStanding;
  * whole, in the one shape it has everywhere ({@see AccountStanding::toArray()}), so the card
  * reads one verdict rather than three flags. The same frame carries erasure progress, including
  * changes to expected owners or waits while the standing stays erasing (HIL-1954), and the full
- * merge observation even when only its saved progress changes (HIL-2003).
+ * merge observation even when only its saved progress changes (HIL-2003), and current merge
+ * availability even when only occupancy changes (HIL-2004).
  */
 final class AccountStandingStateSignalData extends BaseDTO implements SignalDataInterface
 {
@@ -34,6 +36,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
     public const string accountStanding = 'accountStanding';
     public const string accountErasure = 'accountErasure';
     public const string accountMerge = 'accountMerge';
+    public const string accountMergeAvailability = 'accountMergeAvailability';
 
     /**
      * @param int $userId Person the card shows
@@ -45,6 +48,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
      *     waits: list<array{participant: string, userId: int}>, refusals: list<array{userId: int, table: ?string}>}
      *     $accountErasure Begun erasure progress, or null
      * @param ?array<string, mixed> $accountMerge Full merge allowlist from AccountMergeProgress, or null
+     * @param ?array{reserved: bool, available: bool} $accountMergeAvailability Current occupancy, or null when unreadable
      * @throws InvalidFormatException When the id names no account (zero or negative)
      */
     public function __construct(
@@ -52,6 +56,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
         public readonly array $accountStanding,
         public readonly ?array $accountErasure = null,
         public readonly ?array $accountMerge = null,
+        public readonly ?array $accountMergeAvailability = null,
     ) {
         if ($userId <= 0) {
             throw new InvalidFormatException('Payload key ' . self::userId . ' holds a value that is not a positive integer');
@@ -60,7 +65,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
 
     /**
      * @return array{userId: int, accountStanding: array<string, mixed>, accountErasure: ?array<string, mixed>,
-     *     accountMerge: ?array<string, mixed>} DTO payload for transport
+     *     accountMerge: ?array<string, mixed>, accountMergeAvailability: ?array{reserved: bool, available: bool}} DTO payload for transport
      */
     public function toArray(): array
     {
@@ -69,6 +74,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
             self::accountStanding => $this->accountStanding,
             self::accountErasure => $this->accountErasure,
             self::accountMerge => $this->accountMerge,
+            self::accountMergeAvailability => $this->accountMergeAvailability,
         ];
     }
 
@@ -90,6 +96,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
             self::accountStanding => WireField::each(AccountStanding::wireFields()),
             self::accountErasure => WireField::each(AccountErasureProgress::wireFields()),
             self::accountMerge => WireField::each(AccountMergeProgress::wireFields()),
+            self::accountMergeAvailability => WireField::each(AccountMergeAvailability::wireFields()),
         ];
     }
 
@@ -110,6 +117,7 @@ final class AccountStandingStateSignalData extends BaseDTO implements SignalData
             $standing,
             self::optionalArray($data, self::accountErasure),
             self::optionalArray($data, self::accountMerge),
+            self::optionalArray($data, self::accountMergeAvailability),
         );
     }
 }

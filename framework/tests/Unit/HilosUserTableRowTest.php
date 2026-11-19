@@ -47,6 +47,7 @@ final class HilosUserTableRowTest extends TestCase
                 HilosUserTableRow::name => 'Ann',
                 HilosUserTableRow::lastActivity => 1790762400000,
                 HilosUserTableRow::merged => true,
+                HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY => null,
             ],
             $row->toArray(),
         );

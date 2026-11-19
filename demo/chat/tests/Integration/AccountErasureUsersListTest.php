@@ -436,8 +436,8 @@ final class AccountErasureUsersListTest extends IntegrationTestCase
             AccountStandingAudience::onAgentTick(new DemoHilosAgent());
             self::assertSame([], $this->queuedFrames());
             $logged = file_get_contents($log);
-            self::assertSame(1, substr_count($logged, 'Account list erasure progress failed:'));
-            self::assertSame(1, substr_count($logged, 'Account list erasure progress recovered.'));
+            self::assertSame(1, substr_count($logged, 'Account list row progress failed:'));
+            self::assertSame(1, substr_count($logged, 'Account list row progress recovered.'));
         } finally {
             if ($previousLog === null) {
                 Logger::resetLogFile();

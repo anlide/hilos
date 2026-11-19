@@ -2453,9 +2453,10 @@ path on its own:
   path is ready (HIL-2003) but does not switch production merge callers or
   retire legacy writers; that remains HIL-1999. See
   [Account Standing](account-standing.md#the-wire).
-- The list, card and candidates read the durable reservation/operation facts
-  without presenting an occupied or folded account as available
-  (not in the code yet — HIL-2004).
+- The list, card and candidates expose the durable reservation and operation
+  facts through the lazy typed core (HIL-2004); occupied or folded accounts
+  are never offered as available by that data model. See
+  [Merge observation data](#merge-observation-data).
 - Vue's list shows the states (not in the code yet — HIL-2005), its card
   shows them (not in the code yet — HIL-2006), and its merge window shows
   them (not in the code yet — HIL-2007). These display leaves implement no
@@ -2470,6 +2471,58 @@ path on its own:
   (not in the code yet — HIL-2011). Their interviews and those of the Vue
   display leaves choose the appearance of missing states; this canon declares
   no design.
+
+### Merge observation data
+
+The people list and merge candidates carry
+`sources.merge.accountMergeAvailability: {reserved: boolean, available: boolean}`
+in their inline `merge` slot, never in the normalized `users` entity. A reserved
+candidate remains in the table with `available: false`; missing or merged
+candidates leave through the existing removal path. Reservation and release
+read the canonical held operation: an attempted release is not freedom until
+its saved releases make it so. The five metadata sources are
+`accountOperations`, `accountOperationAssignments`, `accountOperationResults`,
+`accountDeletions` and `userMerges`.
+
+The card's one `page_response.data.accountMergeAvailability` and the existing
+`hilos_account_standing_state.accountMergeAvailability` carry the same nullable
+block alongside standing, erasure and merge progress. Each delivery checks the
+current viewer and page gate. The audience compares the whole card picture;
+an availability-only change sends one replacement, equal pictures are quiet,
+and a deleted card gets no reviving frame. A live availability read failure
+sends unknown (`null`), logs safely once per failure episode and recovers on a
+source repair. Subscription memory stores only the process-local last picture;
+restart reads the mounted DB facts again, with no new RT truth row.
+
+`AccountMergeProgressResolver::open()` supplies a `hilos-account-merge` row bar
+under each existing side of an open operation. The audience composes the one
+bar per row with erasure taking priority. Replacement or operation end sends
+`ended: true` for the previous key; parts reaching their count alone is not
+business end. The card may retain the durable terminal outcome after the row
+bar ends. Snapshot and live deliveries share these readers.
+
+The lazy `@hilos/core/admin/users` barrel exports
+`HilosAccountMergeAvailability`, `readHilosAccountMergeAvailability()`,
+`HILOS_USER_MERGE_AVAILABILITY_SECTION` and `HILOS_USERS_MERGE_PROGRESS_KEY`.
+Missing, hidden, malformed or contradictory (`reserved: true, available: true`)
+blocks read as `null`, without coercion. `HilosUserRow` and
+`HilosMergeCandidateRow.mergeAvailability` read only their inline merge slot;
+`HilosUserStanding.mergeAvailability` reads the first page section and then
+matching-user standing frames. A late frame with no current detail row or for
+another user is ignored; restart takes the fresh page scope and dispose clears
+the values. The eager signal schema keeps this field optional and unknown and
+imports no lazy admin model.
+
+`createHilosUsersTable().merges` maps only readable merge-key bars through the
+existing strict `readHilosAccountMerge()` parser, preserving its privacy
+projection. `createHilosMergeCandidates().selectableIds` includes only live
+rows whose availability is explicitly true, excluding unknown, unavailable,
+pending removals and placeholders before Apply. The candidate actions column
+includes the availability field in its rendered reads, so value deltas update
+that set immediately. Existing current/filtered/focused rows, session slots and
+the controller engine retain their behavior. These APIs prepare the display
+leaves above; they introduce no view or mutation and do not switch legacy merge
+callers. Real multi-node and backup evidence remains HIL-2013.
 
 **Evidence belongs with the behavior.** Preparation leaves use real owner,
 DB and applicator integration and component states while the production path

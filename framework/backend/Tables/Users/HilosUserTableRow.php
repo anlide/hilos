@@ -8,6 +8,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Table\Row\AbstractTableRow;
 use Hilos\Database\Object\Item\User as ObjectUser;
 use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
+use Hilos\Users\AccountMergeAvailability;
 
 /**
  * Row of the Hilos users table - one shape for every project.
@@ -25,6 +26,7 @@ final class HilosUserTableRow extends AbstractTableRow
     public const string admin = 'admin';
     public const string block = 'block';
     public const string merged = 'merged';
+    public const string FIELD_ACCOUNT_MERGE_AVAILABILITY = 'accountMergeAvailability';
     public const string FIELD_DELETION_EFFECTIVE_AT = 'deletionEffectiveAt';
     public const string FIELD_DELETION_GRACE_DAYS = 'deletionGraceDays';
     /** Computed field of a person's row: the live end of the merge chain the account leads to, or null (HIL-1292). */
@@ -47,6 +49,7 @@ final class HilosUserTableRow extends AbstractTableRow
      * @param ?string $presence Connection presence
      * @param bool $merged Whether the account was merged
      * @param ?int $openSessionCount Distinct sessions with registered connections, or null when unknown
+     * @param ?AccountMergeAvailability $accountMergeAvailability Current occupancy, null only for an unknown raw projection
      */
     public function __construct(
         public int $id,
@@ -58,6 +61,7 @@ final class HilosUserTableRow extends AbstractTableRow
         public ?string $presence = null,
         public bool $merged = false,
         public ?int $openSessionCount = null,
+        public ?AccountMergeAvailability $accountMergeAvailability = null,
     ) {
     }
 
@@ -81,10 +85,11 @@ final class HilosUserTableRow extends AbstractTableRow
      * Serializes the row to the frontend table payload shape.
      *
      * The key order is part of the wire: the presence summary sits between the flags and the name, and
-     * the merge flag closes the row.
+     * the merge flag and occupancy facts close the row.
      *
      * @return array{id: int, admin: bool, block: bool, onlineSessionCount: int, openSessionCount: ?int,
-     *     presence: ?string, name: string, lastActivity: ?int, merged: bool} Serialized user row
+     *     presence: ?string, name: string, lastActivity: ?int, merged: bool,
+     *     accountMergeAvailability: ?array{reserved: bool, available: bool}} Serialized user row
      */
     public function toArray(): array
     {
@@ -98,6 +103,7 @@ final class HilosUserTableRow extends AbstractTableRow
             self::name => $this->name,
             self::lastActivity => $this->lastActivity,
             self::merged => $this->merged,
+            self::FIELD_ACCOUNT_MERGE_AVAILABILITY => $this->accountMergeAvailability?->toArray(),
         ];
     }
 
@@ -110,6 +116,8 @@ final class HilosUserTableRow extends AbstractTableRow
      */
     public static function fromArray(array $data): static
     {
+        $availability = self::optionalArray($data, self::FIELD_ACCOUNT_MERGE_AVAILABILITY);
+
         return new static(
             id: self::requireInt($data, self::id),
             admin: self::requireBool($data, self::admin),
@@ -120,6 +128,7 @@ final class HilosUserTableRow extends AbstractTableRow
             presence: self::optionalString($data, self::presence),
             merged: self::requireBool($data, self::merged),
             openSessionCount: self::optionalInt($data, self::openSessionCount),
+            accountMergeAvailability: $availability === null ? null : AccountMergeAvailability::fromArray($availability),
         );
     }
 }

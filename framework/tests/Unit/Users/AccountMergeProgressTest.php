@@ -148,7 +148,11 @@ final class AccountMergeProgressTest extends TestCase
         Hilos::$db = null;
         AccountMergeProgressResolver::forgetAll();
         try {
-            foreach ([fn () => AccountMergeProgressResolver::of(7), fn () => AccountMergeProgressResolver::forOperation(3)] as $read) {
+            foreach ([
+                fn () => AccountMergeProgressResolver::of(7),
+                fn () => AccountMergeProgressResolver::forOperation(3),
+                fn () => AccountMergeProgressResolver::open(),
+            ] as $read) {
                 try {
                     $read();
                     self::fail('A missing source must fail observation.');
@@ -170,6 +174,7 @@ final class AccountMergeProgressTest extends TestCase
         self::assertNull($previous->accountMerge);
         self::assertSame([
             'userId' => 7, 'accountStanding' => $standing, 'accountErasure' => $erasure, 'accountMerge' => null,
+            'accountMergeAvailability' => null,
         ], $previous->toArray());
         $oldWire = $previous->toArray();
         unset($oldWire['accountMerge']);

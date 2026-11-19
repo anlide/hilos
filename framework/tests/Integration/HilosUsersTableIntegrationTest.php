@@ -5,12 +5,29 @@ declare(strict_types=1);
 namespace Hilos\Tests\Integration;
 
 use Generator;
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountOperationCircle;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
+use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
+use Hilos\Auth\AccountOperation\AccountOperationOwnerAddress;
+use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Database\Object\Item\AccountOperation as ObjectAccountOperation;
+use Hilos\Database\Object\Item\AccountOperationAssignment as ObjectAccountOperationAssignment;
+use Hilos\Database\Object\Item\AccountOperationResult as ObjectAccountOperationResult;
+use Hilos\Database\View\Item\AccountOperation;
+use Hilos\Users\AccountMergeAvailabilityResolver;
+use Hilos\Users\AccountMergeSourceChange;
+use Hilos\Users\AccountMergeProgressResolver;
+use Hilos\Pages\Users\AccountStandingAudience;
+use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Table\DTO\TableQueryDTO;
+use Hilos\Core\Table\DTO\TableProgressDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
@@ -38,7 +55,10 @@ use Hilos\Runtime\View\DTO\HilosUserPresenceSummary;
 use Hilos\Runtime\View\Item\HilosSessionConnection;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
 use Hilos\Tables\Users\HilosUserTableRow;
+use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\TruthSource\RtTruthSourceRegistry;
+
+require_once __DIR__ . '/MergeTableOwnerFrames.php';
 
 /**
  * The framework users table over the framework's own people (HIL-1201).
@@ -51,6 +71,267 @@ use Hilos\TruthSource\RtTruthSourceRegistry;
  */
 final class HilosUsersTableIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    use MergeTableOwnerFrames;
+
+    public function testRealPreparationCancellationAndReleaseRefreshOccupancyWithoutChangingConnectionSlots(): void
+    {
+        $this->withMergeOwners(function (): void {
+            $survivor = self::seedPerson('Survivor');
+            $loser = self::seedPerson('Loser');
+            $operation = $this->openTableMerge($survivor, $loser);
+            $table = $this->table();
+            $this->assertMergeBars($survivor, $loser, 0, 2, 'preparing');
+            self::assertSame(['reserved' => false, 'available' => true],
+                $table->getPage(new TableQueryDTO())->rows[0]->accountMergeAvailability->toArray());
+            $asks = $this->mergeFrames();
+            $this->deliverMergeFrame($asks[0]);
+            $this->assertMergeBars($survivor, $loser, 1, 2, 'preparing');
+            self::assertSame(['reserved' => true, 'available' => false], AccountMergeAvailabilityResolver::of($survivor)->toArray());
+            self::assertTrue(AccountMergeAvailabilityResolver::of($loser)->available);
+            $result = Hilos::$db->accountOperationResults->byAssignment($asks[0]->data->data->assignmentId);
+            self::assertNotNull(Database::sql('SELECT `id` FROM `hilos_account_operation_result` WHERE `id` = ?', [$result->id])->row());
+            foreach ([
+                SourceChange::dbUpdated(HilosDbContext::accountOperations, (string) $operation->id, []),
+                SourceChange::dbUpdated(HilosDbContext::accountOperationAssignments, (string) $result->assignmentId, []),
+                SourceChange::dbCreated(HilosDbContext::accountOperationResults, (string) $result->id, []),
+            ] as $event) {
+                $mutations = $table->buildMutationsForSourceEvent($event);
+                self::assertEqualsCanonicalizing([$survivor, $loser], array_column($mutations, 'rowKey'));
+                self::assertCount(2, $mutations);
+                foreach ($mutations as $mutation) {
+                    $wire = $table->browserRow($mutation->row);
+                    self::assertSame(['users', 'connections', 'merge'], array_keys($wire[BrowserPageSignalData::sources]));
+                    self::assertSame(['merged', 'accountMergeAvailability'], array_keys($wire[BrowserPageSignalData::sources]['merge']));
+                    self::assertSame(0, $wire[BrowserPageSignalData::sources]['connections']['openSessionCount']);
+                    self::assertArrayNotHasKey('accountMergeAvailability', $wire[BrowserPageSignalData::sources]['users']);
+                }
+            }
+            $this->asMergeHolder(fn () => $this->mergeHolder->cancelMerge($operation));
+            self::assertTrue(AccountMergeAvailabilityResolver::of($survivor)->reserved);
+            $releases = $this->mergeFrames();
+            foreach ($releases as $release) {
+                $this->deliverMergeFrame($release);
+                foreach ($this->mergeFrames() as $answer) {
+                    $this->deliverMergeFrame($answer);
+                }
+            }
+            self::assertSame(['reserved' => false, 'available' => true], AccountMergeAvailabilityResolver::of($survivor)->toArray());
+            self::assertTrue(AccountMergeAvailabilityResolver::of($loser)->available);
+            self::assertSame('not_started', Database::sql('SELECT `outcome` FROM `hilos_account_operation` WHERE `id` = ?',
+                [$operation->id])->row()['outcome']);
+            self::assertTrue($table->getPage(new TableQueryDTO())->rows[0]->accountMergeAvailability->available);
+            self::assertSame([], $this->mergeSnapshot());
+            self::assertSame('not_started', AccountMergeProgressResolver::of($survivor)->outcome);
+        });
+    }
+
+    /** A lawful whole-circle result repaints both consumers without introducing a nullable row key. */
+    public function testWholeCircleResultReachesBothRowsOfBothMergeTables(): void
+    {
+        $this->withMergeOwners(function (): void {
+            $first = self::seedPerson('Circle root');
+            $second = self::seedPerson('Circle member');
+            self::seedPerson('Outside circle');
+            $deletion = $this->requestTableDeletion($first);
+            $assignment = $this->asMergeHolder(function () use ($deletion, $first, $second) {
+                $operation = Hilos::$db->accountOperations->actions->recordErasure(
+                    $deletion->id, $first, AccountOperationCircle::fromArray([$second, $first], $first),
+                );
+
+                return Hilos::$db->accountOperationAssignments->actions->record(
+                    $operation->id, $operation->stage, 'whole-circle',
+                    new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string) $first),
+                    null, AccountOperationAssignmentPayload::fromJson('{}'),
+                );
+            });
+            $result = $this->asPerson($first, static function () use ($assignment) {
+                Database::transactionStart();
+                try {
+                    $result = Hilos::$db->accountOperationResults->actions->record(
+                        $assignment, AccountOperationResultPayload::fromJson('{}'),
+                    );
+                    Database::transactionCommit();
+
+                    return $result;
+                } catch (HilosException $failure) {
+                    Database::transactionRollback();
+                    throw $failure;
+                }
+            });
+            $saved = Database::sql('SELECT r.*, a.user_id FROM hilos_account_operation_result r'
+                . ' JOIN hilos_account_operation_assignment a ON a.id = r.assignment_id WHERE r.id = ?', [$result->id])->row();
+            self::assertNotNull($saved);
+            self::assertNull($saved['user_id']);
+            self::assertSame($assignment->id, (int) $saved['assignment_id']);
+            $event = SourceChange::dbCreated(HilosDbContext::accountOperationResults, (string) $result->id, $saved);
+            self::assertEqualsCanonicalizing([$first, $second], AccountMergeSourceChange::userIds($event));
+            foreach ([$this->table(), new HilosMergeCandidatesTable()] as $table) {
+                $mutations = $table->buildMutationsForSourceEvent($event);
+                self::assertCount(2, $mutations);
+                self::assertEqualsCanonicalizing([$first, $second], array_column($mutations, 'rowKey'));
+                foreach ($mutations as $mutation) {
+                    self::assertSame(TableMutationType::Update, $mutation->type);
+                    self::assertFalse($mutation->row->accountMergeAvailability->available);
+                    self::assertSame(['reserved' => false, 'available' => false],
+                        $table->browserRow($mutation->row)[BrowserPageSignalData::sources]['merge']['accountMergeAvailability']);
+                }
+            }
+        });
+    }
+
+    public function testARealPreparationRefusalKeepsTheOtherSidesReservationUntilItsRelease(): void
+    {
+        $this->withMergeOwners(function (): void {
+            $survivor = self::seedPerson('Survivor');
+            $loser = self::seedPerson('Loser');
+            $operation = $this->openTableMerge($survivor, $loser,
+                new AccountMergeChoice(null, null, true, false));
+            foreach (array_reverse($this->mergeFrames()) as $ask) {
+                $this->deliverMergeFrame($ask);
+                foreach ($this->mergeFrames() as $answer) {
+                    $this->deliverMergeFrame($answer);
+                }
+            }
+            self::assertSame('cancelling', $operation->stage);
+            $this->assertMergeBars($survivor, $loser, 2, 4, 'refusal');
+            self::assertTrue(AccountMergeAvailabilityResolver::of($loser)->reserved);
+            $row = $this->table()->getPage(new TableQueryDTO())->rows[1];
+            self::assertSame(['reserved' => true, 'available' => false], $row->accountMergeAvailability->toArray());
+            $releases = $this->mergeFrames();
+            self::assertCount(2, $releases);
+            foreach ($releases as $release) {
+                $this->deliverMergeFrame($release);
+                foreach ($this->mergeFrames() as $answer) {
+                    $this->deliverMergeFrame($answer);
+                }
+            }
+            self::assertSame(['reserved' => false, 'available' => true], AccountMergeAvailabilityResolver::of($loser)->toArray());
+            self::assertSame([], $this->mergeSnapshot());
+            self::assertSame('not_started', Database::sql('SELECT `outcome` FROM `hilos_account_operation` WHERE `id` = ?',
+                [$operation->id])->row()['outcome']);
+        });
+    }
+
+    public function testRealGiveReceiptAndEndReleaseOnlyTheSurvivorAndNeverReviveTheLoser(): void
+    {
+        $this->withMergeOwners(function (): void {
+            $survivor = self::seedPerson('Survivor');
+            $loser = self::seedPerson('Loser');
+            $operation = $this->openTableMerge($survivor, $loser);
+            foreach ($this->mergeFrames() as $ask) {
+                $this->deliverMergeFrame($ask);
+                foreach ($this->mergeFrames() as $answer) {
+                    $this->deliverMergeFrame($answer);
+                }
+            }
+            [$give] = $this->mergeFrames();
+            self::assertTrue(AccountMergeAvailabilityResolver::of($survivor)->reserved);
+            self::assertTrue(AccountMergeAvailabilityResolver::of($loser)->reserved);
+            $this->deliverMergeFrame($give);
+            $given = $this->mergeSnapshot();
+            self::assertSame([(string) $survivor, (string) $loser], array_column($given, 'rowKey'));
+            self::assertTrue($given[0]->detail['given']);
+            self::assertFalse($given[0]->detail['received']);
+            self::assertFalse($given[0]->ended);
+            self::assertSame($survivor, (int) Database::sql('SELECT `survivor_user_id` FROM `hilos_user_merge` WHERE `user_id` = ?',
+                [$loser])->row()['survivor_user_id']);
+            self::assertFalse(AccountMergeAvailabilityResolver::of($loser)->available);
+            self::assertTrue(AccountMergeAvailabilityResolver::of($survivor)->reserved);
+            [$handover, $giveAnswer] = $this->mergeFrames();
+            $this->deliverMergeFrame($handover);
+            self::assertTrue($this->mergeSnapshot()[0]->detail['received']);
+            self::assertFalse($this->mergeSnapshot()[0]->ended);
+            self::assertSame(['reserved' => false, 'available' => true], AccountMergeAvailabilityResolver::of($survivor)->toArray());
+            self::assertFalse(AccountMergeAvailabilityResolver::of($loser)->available);
+            $candidates = new HilosMergeCandidatesTable();
+            self::assertFalse($candidates->containsRow($loser, new TableQueryDTO()));
+            self::assertTrue($candidates->containsRow($survivor, new TableQueryDTO()));
+            $candidate = $candidates->getPage(new TableQueryDTO())->rows[0];
+            self::assertSame(['reserved' => false, 'available' => true], $candidate->accountMergeAvailability->toArray());
+            $lateResult = Hilos::$db->accountOperationResults->byAssignment($give->data->data->assignmentId);
+            $mutations = $candidates->buildMutationsForSourceEvent(SourceChange::dbCreated(
+                HilosDbContext::accountOperationResults, (string) $lateResult->id, []));
+            $loserMutation = array_values(array_filter($mutations, static fn ($mutation): bool => $mutation->rowKey === $loser))[0];
+            self::assertSame(TableMutationType::Delete, $loserMutation->type);
+            self::assertNull($loserMutation->row);
+            $pending = [...$this->mergeFrames(), $giveAnswer];
+            for ($round = 0; $round < 20 && $pending !== []; $round++) {
+                foreach ($pending as $frame) {
+                    $this->deliverMergeFrame($frame);
+                }
+                $pending = $this->mergeFrames();
+            }
+            self::assertSame([], $pending);
+            self::assertSame('completed', Database::sql('SELECT `outcome` FROM `hilos_account_operation` WHERE `id` = ?',
+                [$operation->id])->row()['outcome']);
+            $rows = $this->table()->getPage(new TableQueryDTO())->rows;
+            self::assertTrue($rows[0]->accountMergeAvailability->available);
+            self::assertFalse($rows[1]->accountMergeAvailability->available);
+            self::assertSame([], $this->mergeSnapshot());
+            self::assertSame('completed', AccountMergeProgressResolver::of($survivor)->outcome);
+        });
+    }
+
+    public function testNewListBeforeTickSharesTheSentPictureAndAllAnsweredPartsStillStayOpen(): void
+    {
+        $this->withMergeOwners(function (): void {
+            $survivor = self::seedPerson('Survivor');
+            $loser = self::seedPerson('Loser');
+            $operation = $this->openTableMerge($survivor, $loser);
+            AccountStandingAudience::addListSubscriber('first');
+            $first = $this->table()->progressSnapshot();
+            $answers = [];
+            foreach ($this->mergeFrames() as $ask) {
+                $this->deliverMergeFrame($ask);
+                array_push($answers, ...$this->mergeFrames());
+            }
+            self::assertSame('preparing', Database::sql('SELECT `stage` FROM `hilos_account_operation` WHERE `id` = ?',
+                [$operation->id])->row()['stage']);
+            AccountStandingAudience::addListSubscriber('late');
+            self::assertSame($first, $this->table()->progressSnapshot());
+            AccountStandingAudience::onAgentTick($this->createStub(PageAgentInterface::class));
+            $this->assertMergeBars($survivor, $loser, 2, 2, 'preparing');
+            foreach ($answers as $answer) {
+                $this->deliverMergeFrame($answer);
+            }
+            AccountStandingAudience::onAgentTick($this->createStub(PageAgentInterface::class));
+            $bars = $this->table()->progressSnapshot();
+            self::assertSame('wait', $bars[0]->detail['state']);
+            self::assertSame(7, $bars[0]->total);
+            self::assertNull($bars[0]->detail['outcome']);
+            self::assertFalse($bars[0]->ended);
+        });
+    }
+
+    /**
+     * @param int $survivor Existing survivor
+     * @param int $loser Existing loser
+     * @param int $current Answered real duties
+     * @param int $total Recorded real duties
+     * @param string $state Expected observation state
+     */
+    private function assertMergeBars(int $survivor, int $loser, int $current, int $total, string $state): void
+    {
+        $bars = $this->mergeSnapshot();
+        self::assertSame([(string) $survivor, (string) $loser], array_column($bars, 'rowKey'));
+        foreach ($bars as $bar) {
+            self::assertSame('hilos-account-merge', $bar->progressKey);
+            self::assertSame($current, $bar->current);
+            self::assertSame($total, $bar->total);
+            self::assertSame($state, $bar->detail['state']);
+            self::assertFalse($bar->ended);
+            self::assertSame(AccountMergeProgressResolver::of($survivor)->toArray(), $bar->detail);
+        }
+    }
+
+    /** @return list<TableProgressDTO> List progress read after the audience observes the latest owner commit */
+    private function mergeSnapshot(): array
+    {
+        AccountStandingAudience::onAgentTick($this->createStub(PageAgentInterface::class));
+
+        return $this->table()->progressSnapshot();
+    }
+
     /** Agent that holds the fixture connections, the way a project's connection holder does. */
     private const string CONNECTIONS_OWNER_AGENT_ID = 'test-agent:connections-owner';
 

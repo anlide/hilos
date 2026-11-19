@@ -59,6 +59,9 @@ import {
 } from '../../../src/admin/users/hilosUsers.js'
 import {
   HILOS_USER_MERGE_SECTION,
+  HILOS_USER_MERGE_AVAILABILITY_SECTION,
+  HILOS_USERS_MERGE_PROGRESS_KEY,
+  readHilosAccountMergeAvailability,
   readHilosAccountMerge,
   type HilosAccountMergeProgress,
   type HilosAccountMergeRefusal,
@@ -165,6 +168,7 @@ describe('resolveHilosUserRow', () => {
         onlineSessionCount: 2,
         openSessionCount: 1,
         merged: true,
+        mergeAvailability: null,
       })
       scopes.page()!.entities.upsert(ref, { block: !block })
       expect(resolved.get()).toMatchObject({
@@ -420,6 +424,7 @@ describe('resolveHilosMergeCandidateRow', () => {
       hasPassword: true,
       hasSecondFactor: false,
       unverifiedPasswordAddress: 'loser@example.test',
+      mergeAvailability: null,
     })
   })
 
@@ -678,7 +683,191 @@ describe('a name hidden from a viewer of the admin view mode (HIL-1260)', () => 
   })
 })
 
+describe('merge availability data', () => {
+  it.each([
+    { reserved: false, available: true },
+    { reserved: false, available: false },
+    { reserved: true, available: false },
+  ])(
+    'reads the strict availability block %j through the lazy barrel',
+    (raw) => {
+      expect(
+        readHilosAccountMergeAvailability({ ...raw, privateResult: 'omit' }),
+      ).toEqual(raw)
+      expect(HILOS_USER_MERGE_AVAILABILITY_SECTION).toBe(
+        'accountMergeAvailability',
+      )
+    },
+  )
+
+  it.each([
+    undefined,
+    null,
+    [],
+    {},
+    HIDDEN_VALUE,
+    { reserved: false },
+    { available: true },
+    { reserved: true, available: true },
+    { reserved: 'false', available: true },
+    { reserved: false, available: 'true' },
+    { reserved: 0, available: 1 },
+    { reserved: false, available: null },
+    { reserved: HIDDEN_VALUE, available: true },
+    { reserved: false, available: HIDDEN_VALUE },
+  ])('keeps unavailable knowledge unknown for %j without coercion', (raw) => {
+    expect(readHilosAccountMergeAvailability(raw)).toBeNull()
+  })
+
+  it('resolves availability only from the inline merge slot and preserves legacy rows', () => {
+    const { scopes, users } = userStore()
+    const ref = { type: 'user', id: 7 }
+    scopes.page()!.entities.upsert(ref, {
+      id: 7,
+      name: 'Person',
+      accountMergeAvailability: { reserved: false, available: true },
+    })
+    for (const resolve of [
+      resolveHilosUserRow,
+      resolveHilosMergeCandidateRow,
+    ]) {
+      const row = { rowKey: '7', slots: { users: ref } }
+      expect(resolve(row, users).mergeAvailability).toBeNull()
+      for (const availability of [
+        { reserved: true, available: false },
+        { reserved: false, available: true },
+        null,
+        HIDDEN_VALUE,
+      ]) {
+        expect(
+          resolve(
+            {
+              ...row,
+              slots: {
+                ...row.slots,
+                merge: { merged: true, accountMergeAvailability: availability },
+              },
+            },
+            users,
+          ).mergeAvailability,
+        ).toEqual(availability === HIDDEN_VALUE ? null : availability)
+      }
+      expect(
+        resolve({ rowKey: '8', slots: {} }, users).mergeAvailability,
+      ).toBeNull()
+    }
+    expect(
+      resolveHilosUserRow(
+        { rowKey: '7', slots: { merge: { merged: true } } },
+        users,
+      ),
+    ).toMatchObject({
+      merged: true,
+      mergeAvailability: null,
+    })
+  })
+})
+
 describe('createHilosMergeCandidates', () => {
+  it('delivers merge values and removes selection eligibility before Apply without removing reserved rows', () => {
+    const { scopes, users } = userStore()
+    const listeners = new Map<string, (signal: unknown) => void>()
+    const sent: TableViewportDescriptor[] = []
+    const connection = {
+      on(event: string, listener: (signal: unknown) => void) {
+        listeners.set(event, listener)
+        return () => {
+          listeners.delete(event)
+        }
+      },
+      registerTableWindow: () => {},
+      unregisterTableWindow: () => {},
+      sendTableRendered: () => true,
+      sendTableViewport: (
+        _page: string,
+        _table: string,
+        descriptor: TableViewportDescriptor,
+      ) => sent.push(descriptor) > 0,
+    } as unknown as HilosConnection
+    const candidates = createHilosMergeCandidates({
+      scopes,
+      users,
+      connection,
+    } as HilosUsersContext)
+    const available = { reserved: false, available: true }
+    const row = (id: number, availability: unknown): TableRow => ({
+      rowKey: String(id),
+      slots: { merge: { accountMergeAvailability: availability } },
+    })
+    const deliver = (data: unknown): void =>
+      listeners.get('tableViewportDelta')?.({ data })
+    candidates.start(12)
+    const controller = candidates.controller
+    controller.ingestSubscriptionWindow(
+      [
+        row(7, available),
+        row(8, { reserved: true, available: false }),
+        row(9, null),
+        row(10, { reserved: false, available: false }),
+        row(11, HIDDEN_VALUE),
+      ],
+      5,
+      true,
+      null,
+      null,
+      25,
+      undefined,
+      { survivor: 12 },
+      [],
+    )
+    controller.setSearch('person')
+    expect(sent.at(-1)?.rendered).toContain('accountMergeAvailability')
+    expect(
+      controller.frame.columns.get().find((column) => column.key === 'actions')
+        ?.reads,
+    ).toEqual(['hasPassword', 'hasSecondFactor', 'accountMergeAvailability'])
+    expect([...candidates.selectableIds.get()]).toEqual([7])
+    const address = { page: HilosPages.USER, tableKey: 'mergeCandidates' }
+    deliver({
+      ...address,
+      kind: 'row_updated',
+      rowKey: '8',
+      row: row(8, available),
+    })
+    expect([...candidates.selectableIds.get()]).toEqual([7, 8])
+    deliver({
+      ...address,
+      kind: 'row_updated',
+      rowKey: '7',
+      row: row(7, { reserved: true, available: false }),
+    })
+    expect([...candidates.selectableIds.get()]).toEqual([8])
+    expect(controller.rows.get()[0].row?.mergeAvailability?.reserved).toBe(true)
+    expect(controller.rows.get()).toHaveLength(5)
+    expect(controller.pendingCount.get()).toBe(0)
+
+    deliver({ ...address, kind: 'row_removed', rowKey: '8', reason: 'deleted' })
+    expect(controller.rows.get()[1]).toMatchObject({
+      placeholder: false,
+      pending: 'remove',
+    })
+    expect(candidates.selectableIds.get().size).toBe(0)
+    controller.apply()
+    expect(controller.rows.get()[1].placeholder).toBe(true)
+    expect(candidates.selectableIds.get().size).toBe(0)
+    deliver({
+      ...address,
+      kind: 'row_updated',
+      rowKey: '8',
+      row: row(8, available),
+    })
+    expect(candidates.selectableIds.get().size).toBe(0)
+    controller.ingestWindow([row(13, available)], 1, true, null, null, 25)
+    expect([...candidates.selectableIds.get()]).toEqual([13])
+    candidates.dispose()
+    controller.dispose()
+  })
+
   it('keeps the survivor preset in every server-side search window', () => {
     const { scopes, users } = userStore()
     const sent: Array<{
@@ -1033,6 +1222,7 @@ describe('hilosUserLifecyclePromptOffered', () => {
     deletionGraceDays: null,
     unverifiedPasswordAddress: null,
     merged: false,
+    mergeAvailability: null,
   }
 
   it('checks the table of all six choices across matching and opposite states', () => {
@@ -1990,6 +2180,71 @@ describe('account merge progress on the user card', () => {
     })
   })
 
+  describe('merge row progress', () => {
+    it('reads only merge bars with the existing strict parser and follows replacement and matching end', () => {
+      const { scopes, users } = userStore()
+      const table = createHilosUsersTable({
+        scopes,
+        users,
+      } as HilosUsersContext)
+      const controller = table.controller
+      const bar = {
+        scope: 'row' as const,
+        progressKey: HILOS_USERS_MERGE_PROGRESS_KEY,
+        rowKey: '7',
+        current: 1,
+        total: 1,
+        detail: merge,
+      }
+      expect(HILOS_USERS_MERGE_PROGRESS_KEY).toBe('hilos-account-merge')
+      expect(table.merges.get().size).toBe(0)
+      controller.ingestProgress(bar)
+      controller.ingestProgress({
+        ...bar,
+        rowKey: '8',
+        detail: { ...merge, given: 'true' },
+      })
+      controller.ingestProgress({
+        ...bar,
+        rowKey: '9',
+        progressKey: 'other-work',
+      })
+      expect([...table.merges.get()]).toEqual([['7', merge]])
+      expect(table.merges.get().get('7')?.state).toBe('preparing')
+      expect(table.erasures.get().size).toBe(0)
+      controller.ingestProgress({
+        ...bar,
+        detail: {
+          ...merge,
+          parts: [{ ...merge.parts[0], userId: HIDDEN_VALUE }],
+          choice: HIDDEN_VALUE,
+        },
+      })
+      expect(table.merges.get().get('7')).toMatchObject({
+        choice: null,
+        parts: [{ ...merge.parts[0], userId: null }],
+      })
+
+      const erasure = {
+        ...bar,
+        progressKey: HILOS_USERS_ERASURE_PROGRESS_KEY,
+        detail: { startedAt: 1_800_000_000_000, parts: [], waits: [] },
+      }
+      controller.ingestProgress(erasure)
+      expect(table.merges.get().size).toBe(0)
+      expect(table.erasures.get().has('7')).toBe(true)
+      controller.ingestProgress({ ...bar, ended: true })
+      expect(table.erasures.get().has('7')).toBe(true)
+      controller.ingestProgress(bar)
+      controller.ingestProgress({ ...erasure, ended: true })
+      expect(table.merges.get().get('7')).toEqual(merge)
+      controller.ingestProgress({ ...bar, ended: true })
+      expect(table.merges.get().size).toBe(0)
+      table.dispose()
+      controller.dispose()
+    })
+  })
+
   describe('viewer privacy', () => {
     const hidden = {
       ...merge,
@@ -2291,6 +2546,108 @@ describe('account merge progress on the user card', () => {
     })
   })
 
+  describe('card availability alongside operation progress', () => {
+    it('accepts the unknown optional protocol block and reads the first page and full live replacements', () => {
+      const { scopes } = userStore()
+      const page = scopes.page()!
+      page.tables.upsert('userDetail', 7, {})
+      const { connection, emit } = frameConnection()
+      const card = createHilosUserStanding({ scopes, connection })
+      const available = { reserved: false, available: true }
+      const held = { reserved: true, available: false }
+      const changed = vi.fn()
+      const off = subscribeSignal(card.mergeAvailability, changed)
+      expect(card.mergeAvailability.get()).toBeNull()
+      page.data.set(HILOS_USER_MERGE_AVAILABILITY_SECTION, available)
+      page.data.set(HILOS_USER_MERGE_SECTION, merge)
+      card.start()
+      expect(card.mergeAvailability.get()).toEqual(available)
+      page.data.set(HILOS_USER_MERGE_AVAILABILITY_SECTION, held)
+      expect(card.mergeAvailability.get()).toEqual(held)
+      changed.mockClear()
+      const frame = {
+        userId: 7,
+        accountStanding: wireStanding(),
+        accountMerge: merge,
+      }
+      for (const raw of [
+        available,
+        null,
+        HIDDEN_VALUE,
+        'invalid',
+        { reserved: true, available: true },
+        undefined,
+      ]) {
+        const wire = { ...frame, accountMergeAvailability: raw }
+        expect(accountStandingStateSchema.parse(wire)).toEqual(wire)
+        emit(SIGNAL_ACCOUNT_STANDING_STATE, wire)
+        expect(card.mergeAvailability.get()).toEqual(
+          raw === available ? available : null,
+        )
+        expect(card.merge.get()).toEqual(merge)
+        expect(card.standing.get()?.shown).toBe('none')
+      }
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+        ...frame,
+        accountMergeAvailability: held,
+      })
+      expect(card.mergeAvailability.get()).toEqual(held)
+      expect(changed).toHaveBeenCalled()
+      emit(SIGNAL_ACCOUNT_STANDING_STATE, frame)
+      expect(card.mergeAvailability.get()).toBeNull()
+      card.dispose()
+      off()
+    })
+
+    it('keeps stale and deleted cards empty, restarts from fresh sections and disconnects on dispose', () => {
+      const { scopes } = userStore()
+      const { connection, emit } = frameConnection()
+      const card = createHilosUserStanding({ scopes, connection })
+      const available = { reserved: false, available: true }
+      const held = { reserved: true, available: false }
+      const frame = (userId: number, availability: unknown): void =>
+        emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+          userId,
+          accountStanding: wireStanding(),
+          accountMergeAvailability: availability,
+        })
+      scopes.page()!.tables.upsert('userDetail', 7, {})
+      scopes.page()!.data.set(HILOS_USER_MERGE_AVAILABILITY_SECTION, available)
+      card.start()
+      card.start()
+      const changed = vi.fn()
+      const off = subscribeSignal(card.mergeAvailability, changed)
+      frame(7, held)
+      expect(changed).toHaveBeenCalledTimes(1)
+      const page = scopes.openPage(HilosPages.USER)
+      expect(card.mergeAvailability.get()).toBeNull()
+      frame(7, available)
+      expect(card.mergeAvailability.get()).toBeNull()
+      page.tables.upsert('userDetail', 8, {})
+      page.data.set(HILOS_USER_MERGE_AVAILABILITY_SECTION, held)
+      frame(7, available)
+      expect(card.mergeAvailability.get()).toEqual(held)
+      frame(8, available)
+      expect(card.mergeAvailability.get()).toEqual(available)
+      card.start()
+      expect(card.mergeAvailability.get()).toEqual(held)
+      card.dispose()
+      expect(card.mergeAvailability.get()).toBeNull()
+      changed.mockClear()
+      page.data.set(HILOS_USER_MERGE_AVAILABILITY_SECTION, available)
+      frame(8, held)
+      expect(changed).not.toHaveBeenCalled()
+      card.start()
+      expect(card.mergeAvailability.get()).toEqual(available)
+      page.tables.delete('userDetail', 8)
+      page.data.set(HILOS_USER_MERGE_AVAILABILITY_SECTION, null)
+      frame(8, held)
+      expect(card.mergeAvailability.get()).toBeNull()
+      card.dispose()
+      off()
+    })
+  })
+
   describe('server reasons and explicit terminal outcomes', () => {
     it.each<HilosAccountMergeRefusal['code']>([
       'missing',
@@ -2348,6 +2705,7 @@ describe('hilosUserLifecycleSections with a standing (HIL-945)', () => {
     deletionGraceDays: null,
     unverifiedPasswordAddress: null,
     merged: false,
+    mergeAvailability: null,
   }
 
   it('reads the block and the deletion from the verdict rather than the row', () => {
@@ -2598,6 +2956,7 @@ describe('a merged account on the card (HIL-1292)', () => {
     deletionGraceDays: null,
     unverifiedPasswordAddress: null,
     merged: false,
+    mergeAvailability: null,
   }
   const merged = readStanding({
     shown: 'merged',
@@ -2696,6 +3055,7 @@ describe('an erasing account on the card (HIL-1957)', () => {
     deletionGraceDays: null,
     unverifiedPasswordAddress: null,
     merged: false,
+    mergeAvailability: null,
   }
   const erasing = readStanding({ shown: 'erasing' })
   const startedAt = Date.parse('2026-01-01T00:30:05Z')
@@ -3581,6 +3941,7 @@ describe('readHilosUserImpersonationSettings (HIL-1170)', () => {
       deletionGraceDays: null,
       unverifiedPasswordAddress: null,
       merged: false,
+      mergeAvailability: null,
     }
 
     const sectionOff = hilosUserImpersonationSection(
@@ -3628,6 +3989,7 @@ describe('hilosUserImpersonationSection (HIL-1170)', () => {
     deletionGraceDays: null,
     unverifiedPasswordAddress: null,
     merged: false,
+    mergeAvailability: null,
   }
 
   /**

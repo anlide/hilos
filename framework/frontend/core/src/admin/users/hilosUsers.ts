@@ -188,6 +188,8 @@ export interface HilosUserRow {
    * such slot and reads it from the person's standing instead.
    */
   readonly merged: boolean
+  /** Reservation and merge eligibility from the inline merge slot, or null when unreadable. */
+  readonly mergeAvailability: HilosAccountMergeAvailability | null
 }
 
 /** One user-detail row, including whether its account owns a password identity. */
@@ -250,6 +252,8 @@ export interface HilosMergeCandidateRow {
    * confirmed, absent, or hidden from a viewer of the admin view mode.
    */
   readonly unverifiedPasswordAddress: string | null
+  /** Reservation and merge eligibility from the inline merge slot, or null when unreadable. */
+  readonly mergeAvailability: HilosAccountMergeAvailability | null
 }
 
 /** Password identity outcome when both accounts currently own a password. */
@@ -396,6 +400,15 @@ export const HILOS_USER_ERASURE_SECTION = 'accountErasure'
 
 /** Page data key of the merge progress of the person the card shows. */
 export const HILOS_USER_MERGE_SECTION = 'accountMerge'
+
+/** Page data key of the merge availability of the person the card shows. */
+export const HILOS_USER_MERGE_AVAILABILITY_SECTION = 'accountMergeAvailability'
+
+/** Row payload key of the merge availability in the inline merge slot. */
+const USER_MERGE_AVAILABILITY_FIELD = 'accountMergeAvailability'
+
+/** Key of the merge progress bar under either person's people-list row. */
+export const HILOS_USERS_MERGE_PROGRESS_KEY = 'hilos-account-merge'
 
 /**
  * Key of the bar of work under a people-list row whose account's erasure has
@@ -548,6 +561,9 @@ export function resolveHilosUserRow<TUser extends User>(
       ? openSessionCount
       : null,
     merged: merge ? readBoolean(merge, USER_MERGED_FIELD) : false,
+    mergeAvailability: readHilosAccountMergeAvailability(
+      merge?.[USER_MERGE_AVAILABILITY_FIELD],
+    ),
   }
 }
 
@@ -612,6 +628,9 @@ export function resolveHilosMergeCandidateRow<TUser extends User>(
       merge === undefined
         ? null
         : readStringOrNull(merge, USER_UNVERIFIED_PASSWORD_ADDRESS_FIELD),
+    mergeAvailability: readHilosAccountMergeAvailability(
+      merge?.[USER_MERGE_AVAILABILITY_FIELD],
+    ),
   }
 }
 
@@ -676,6 +695,10 @@ export interface HilosUsersTable {
   readonly erasures: ReadonlySignal<
     ReadonlyMap<string, HilosUsersErasureCaption>
   >
+  /** Readable merge progress by row key, excluding bars about other work. */
+  readonly merges: ReadonlySignal<
+    ReadonlyMap<string, HilosAccountMergeProgress>
+  >
   /** Bind the table to the connection and request the first window — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
@@ -694,6 +717,8 @@ export interface HilosUsersTableOptions {
 export interface HilosMergeCandidates {
   /** The server-windowed candidate controller. */
   readonly controller: TableViewportController<HilosMergeCandidateRow>
+  /** Available live candidate ids, excluding pending removals and placeholders before Apply. */
+  readonly selectableIds: ReadonlySignal<ReadonlySet<number>>
   /**
    * Bind the table to the connection for one survivor.
    *
@@ -805,7 +830,11 @@ const MERGE_CANDIDATE_COLUMNS: HilosTableColumnOf<HilosMergeCandidateRow>[] = [
     key: HILOS_TABLE_ACTIONS_KEY,
     label: '',
     source: MERGE_SLOT,
-    reads: [USER_HAS_PASSWORD_FIELD, USER_HAS_SECOND_FACTOR_FIELD],
+    reads: [
+      USER_HAS_PASSWORD_FIELD,
+      USER_HAS_SECOND_FACTOR_FIELD,
+      USER_MERGE_AVAILABILITY_FIELD,
+    ],
   },
   { key: 'name', label: 'Account', card: 'title' },
   {
@@ -904,12 +933,23 @@ export function createHilosUsersTable<TUser extends User>(
     }
     return captions
   })
+  const merges = computedSignal(() => {
+    const progress = new Map<string, HilosAccountMergeProgress>()
+
+    for (const [rowKey, bar] of controller.progress.rows.get()) {
+      if (bar.progressKey !== HILOS_USERS_MERGE_PROGRESS_KEY) continue
+      const merge = readHilosAccountMerge(bar.detail)
+      if (merge !== null) progress.set(rowKey, merge)
+    }
+    return progress
+  })
   const teardown: Array<() => void> = []
 
   return {
     controller,
     currentUserId: sessionUserId(context.scopes),
     erasures,
+    merges,
     start() {
       teardown.push(
         bindTableViewport(
@@ -968,10 +1008,25 @@ export function createHilosMergeCandidates<TUser extends User>(
     initialFilter,
     frame: MERGE_CANDIDATES_FRAME,
   })
+  const selectableIds = computedSignal(() => {
+    const ids = new Set<number>()
+
+    for (const entry of controller.rows.get()) {
+      if (
+        !entry.placeholder &&
+        entry.pending !== 'remove' &&
+        entry.row?.mergeAvailability?.available === true
+      ) {
+        ids.add(entry.row.id)
+      }
+    }
+    return ids
+  })
   const teardown: Array<() => void> = []
 
   return {
     controller,
+    selectableIds,
     start(survivorId) {
       initialFilter[USER_MERGE_SURVIVOR_FILTER] = survivorId
       const reset = controller.windowControlsAvailable.get()
@@ -1396,6 +1451,35 @@ export function readHilosAccountMerge(
   return { ...parsed.data, parts, waits }
 }
 
+/** Reservation and eligibility facts, without granting permission to mutate. */
+export interface HilosAccountMergeAvailability {
+  /** Whether a durable operation currently reserves the person. */
+  readonly reserved: boolean
+  /** Whether the person may currently be selected for a merge. */
+  readonly available: boolean
+}
+
+/**
+ * Read merge eligibility without coercion; unknown, hidden or contradictory facts stay unknown.
+ *
+ * @param raw The availability block from the merge slot, page section or standing frame.
+ */
+export function readHilosAccountMergeAvailability(
+  raw: unknown,
+): HilosAccountMergeAvailability | null {
+  const value = recordSlot(raw)
+  if (
+    value === undefined ||
+    isHiddenValue(raw) ||
+    typeof value['reserved'] !== 'boolean' ||
+    typeof value['available'] !== 'boolean' ||
+    (value['reserved'] && value['available'])
+  ) {
+    return null
+  }
+  return { reserved: value['reserved'], available: value['available'] }
+}
+
 /** The person's standing and operation progress, and their mount lifecycle. */
 export interface HilosUserStanding {
   /**
@@ -1407,6 +1491,8 @@ export interface HilosUserStanding {
   readonly erasure: ReadonlySignal<HilosAccountErasure | null>
   /** The begun merge's progress, or null when absent or unreadable. */
   readonly merge: ReadonlySignal<HilosAccountMergeProgress | null>
+  /** Current reservation and merge eligibility, or null when absent or unreadable. */
+  readonly mergeAvailability: ReadonlySignal<HilosAccountMergeAvailability | null>
   /** Start taking standing and operation progress from page data and live frames. */
   start(): void
   /** Stop taking them and forget them — call on unmount. */
@@ -1415,7 +1501,7 @@ export interface HilosUserStanding {
 
 /**
  * The one verdict a user card reads its person's standing from (HIL-945): the
- * page's `accountStanding`, `accountErasure` and `accountMerge` data, then every
+ * page's standing, operation progress and merge availability data, then every
  * `hilos_account_standing_state` frame after it — whichever arrived last.
  * A frame naming another person than the card's row is a late one from the
  * card left behind and is not taken.
@@ -1428,6 +1514,9 @@ export function createHilosUserStanding(
   const standing = createSignal<HilosAccountStanding | null>(null)
   const erasure = createSignal<HilosAccountErasure | null>(null)
   const merge = createSignal<HilosAccountMergeProgress | null>(null)
+  const mergeAvailability = createSignal<HilosAccountMergeAvailability | null>(
+    null,
+  )
   const detailRows = context.scopes.pageTableSignal(USER_DETAIL_TABLE)
   let stop: (() => void) | null = null
 
@@ -1447,6 +1536,7 @@ export function createHilosUserStanding(
     standing,
     erasure,
     merge,
+    mergeAvailability,
     start() {
       stop?.()
       const section = context.scopes.pageDataSignal(HILOS_USER_STANDING_SECTION)
@@ -1468,6 +1558,16 @@ export function createHilosUserStanding(
       const offMergeSection = subscribeSignal(mergeSection, (raw) =>
         merge.set(readHilosAccountMerge(raw)),
       )
+      const availabilitySection = context.scopes.pageDataSignal(
+        HILOS_USER_MERGE_AVAILABILITY_SECTION,
+      )
+      mergeAvailability.set(
+        readHilosAccountMergeAvailability(availabilitySection.get()),
+      )
+      const offAvailabilitySection = subscribeSignal(
+        availabilitySection,
+        (raw) => mergeAvailability.set(readHilosAccountMergeAvailability(raw)),
+      )
       const offFrames = context.connection.on(
         'projectSignal',
         (signal: ProjectSignal) => {
@@ -1484,6 +1584,9 @@ export function createHilosUserStanding(
           const row = detailRows.get()[0]
           if (row !== undefined && Number(row.rowKey) === frame.userId) {
             merge.set(readHilosAccountMerge(frame.accountMerge))
+            mergeAvailability.set(
+              readHilosAccountMergeAvailability(frame.accountMergeAvailability),
+            )
           }
         },
       )
@@ -1491,6 +1594,7 @@ export function createHilosUserStanding(
         offSection()
         offErasureSection()
         offMergeSection()
+        offAvailabilitySection()
         offFrames()
       }
     },
@@ -1500,6 +1604,7 @@ export function createHilosUserStanding(
       standing.set(null)
       erasure.set(null)
       merge.set(null)
+      mergeAvailability.set(null)
     },
   }
 }

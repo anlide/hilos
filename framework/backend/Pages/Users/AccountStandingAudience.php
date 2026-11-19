@@ -21,6 +21,7 @@ use Hilos\Legal\LegalDocument;
 use Hilos\Tables\Users\AbstractHilosUsersTable;
 use Hilos\Users\AccountErasureProgress;
 use Hilos\Users\AccountErasureProgressResolver;
+use Hilos\Users\AccountMergeAvailabilityResolver;
 use Hilos\Users\AccountMergeProgressResolver;
 use Hilos\Users\AccountStanding;
 use Hilos\Users\AccountStandingResolver;
@@ -38,14 +39,14 @@ use Throwable;
  * resolver answers now ({@see AccountStandingResolver}). The resolver remembers, and drops what a
  * write changed, so an unchanged standing costs a comparison.
  *
- * A card keeps the person's standing, erasure and merge progress in step. When any moves it is
- * sent all three whole, through the card's own road past the view mode's bridge
+ * A card keeps the person's standing, erasure and merge progress, and merge availability in step.
+ * When any moves it is sent the whole picture, through the card's own road past the view mode's bridge
  * ({@see AbstractHilosUserPage::standingFrame()}). A list window
  * narrowed to one document is sent again when the people past that document's deadline are no
  * longer the ones it was served with.
  *
- * The list also carries a bar of work under the row of every account a begun erasure covers
- * (HIL-1955). Its bars are one picture for every open list: the picture last sent, which a window
+ * The list carries one row bar per existing account: begun erasure takes precedence over open merge
+ * progress (HIL-1955, HIL-2004). Its bars are one picture for every open list: the picture last sent, which a window
  * opened between two ticks is served from ({@see AbstractHilosUsersTable::progressSnapshot()}), and
  * which the tick compares with the resolver's answer - a bar that appeared or moved is sent whole, a
  * bar that is gone is sent ended. The tick holds the new picture before it sends a bar, since a page
@@ -72,6 +73,12 @@ final class AccountStandingAudience
     /** @var array<string, true> Cards whose merge block is in a failure episode */
     private static array $mergeFailures = [];
 
+    /** @var array<string, ?array{reserved: bool, available: bool}> Occupancy last shown to each card connection */
+    private static array $shownAvailability = [];
+
+    /** @var array<string, true> Cards whose occupancy is in a failure episode */
+    private static array $availabilityFailures = [];
+
     /** @var array<string, true> Subscribers of the list of people, keyed by accept key */
     private static array $lists = [];
 
@@ -81,8 +88,8 @@ final class AccountStandingAudience
     /** @var array<string, array<string, list<int>>> People each list window was last served with, by accept key and table */
     private static array $listPeople = [];
 
-    /** @var ?array<int, TableProgressDTO> Erasure bar of each account the lists were last sent, null when no list holds one */
-    private static ?array $erasureBars = null;
+    /** @var ?array<int, TableProgressDTO> Composed row bar of each account the lists were last sent, null when no list holds one */
+    private static ?array $progressBars = null;
 
     /** @var ?array<int, AccountErasureProgress> Resolver picture the account filter last read */
     private static ?array $erasureSource = null;
@@ -93,15 +100,15 @@ final class AccountStandingAudience
     /** @var array<string, true> Cards whose erasure block is in a failure episode */
     private static array $erasureFailures = [];
 
-    private static bool $erasureBarsFailed = false;
+    private static bool $progressBarsFailed = false;
 
     /**
-     * Holds a card subscriber and the standing, erasure and merge progress its page answer showed.
+     * Holds a card subscriber and the standing, progress and availability its page answer showed.
      *
      * @param string $acceptKey Subscribing connection
      * @param int $userId Person the card shows
      * @throws HilosException When the person's standing or erasure progress cannot be read
-     * @throws PageInternalErrorException When the saved merge sources are unavailable or malformed
+     * @throws PageInternalErrorException When merge progress or availability cannot be read
      */
     public static function addSubscriber(string $acceptKey, int $userId): void
     {
@@ -110,10 +117,11 @@ final class AccountStandingAudience
         self::$shownErasure[$acceptKey] = AccountErasureProgressResolver::of($userId)?->toArray();
         try {
             self::$shownMerge[$acceptKey] = AccountMergeProgressResolver::of($userId)?->toArray();
+            self::$shownAvailability[$acceptKey] = AccountMergeAvailabilityResolver::of($userId)->toArray();
         } catch (Throwable $failure) {
             throw new PageInternalErrorException('Account merge progress is unavailable.', previous: $failure);
         }
-        unset(self::$mergeFailures[$acceptKey]);
+        unset(self::$mergeFailures[$acceptKey], self::$availabilityFailures[$acceptKey]);
     }
 
     /**
@@ -135,15 +143,17 @@ final class AccountStandingAudience
             self::$shownErasure[$acceptKey],
             self::$shownMerge[$acceptKey],
             self::$mergeFailures[$acceptKey],
+            self::$shownAvailability[$acceptKey],
+            self::$availabilityFailures[$acceptKey],
             self::$erasureFailures[$acceptKey],
             self::$lists[$acceptKey],
             self::$listDocuments[$acceptKey],
             self::$listPeople[$acceptKey],
         );
         if (self::$lists === []) {
-            self::$erasureBars = null;
+            self::$progressBars = null;
             self::forgetErasureFilter();
-            self::$erasureBarsFailed = false;
+            self::$progressBarsFailed = false;
         }
     }
 
@@ -155,13 +165,15 @@ final class AccountStandingAudience
         self::$shownErasure = [];
         self::$shownMerge = [];
         self::$mergeFailures = [];
+        self::$shownAvailability = [];
+        self::$availabilityFailures = [];
         self::$lists = [];
         self::$listDocuments = [];
         self::$listPeople = [];
-        self::$erasureBars = null;
+        self::$progressBars = null;
         self::forgetErasureFilter();
         self::$erasureFailures = [];
-        self::$erasureBarsFailed = false;
+        self::$progressBarsFailed = false;
     }
 
     /** Drops only the account-existence filter when accounts leave the data set. */
@@ -172,19 +184,37 @@ final class AccountStandingAudience
     }
 
     /**
-     * Names the erasure bars the lists were last sent, reading them now when no list holds a picture.
+     * A snapshot counts as sent, including before the page's after-response listener hook.
+     * The last listener leaving, reset and a tick without listeners discard the picture.
      *
-     * A picture read here counts as sent: the window it is read for carries it.
-     *
-     * @return list<TableProgressDTO> Bar of every account under a begun erasure
-     * @throws InvalidArgumentException Never: a row bar always names its row
-     * @throws HilosException When the erasure progress or an account cannot be read
+     * @return list<TableProgressDTO> Composed bars, with erasure taking precedence over merge
+     * @throws HilosException When a progress source or an account cannot be read
+     */
+    public static function progressBars(): array
+    {
+        self::$progressBars ??= self::currentProgressBars();
+
+        return array_values(self::$progressBars);
+    }
+
+    /**
+     * @return list<TableProgressDTO> Erasure portion of the lists' shared picture
+     * @throws HilosException When a progress source or an account cannot be read
      */
     public static function erasureBars(): array
     {
-        self::$erasureBars ??= self::currentErasureBars();
+        return array_values(array_filter(self::progressBars(),
+            static fn (TableProgressDTO $bar): bool => $bar->progressKey === AbstractHilosUsersTable::PROGRESS_KEY_ERASURE));
+    }
 
-        return array_values(self::$erasureBars);
+    /**
+     * @return list<TableProgressDTO> Merge portion of the lists' shared picture
+     * @throws HilosException When a progress source or an account cannot be read
+     */
+    public static function mergeBars(): array
+    {
+        return array_values(array_filter(self::progressBars(),
+            static fn (TableProgressDTO $bar): bool => $bar->progressKey === AbstractHilosUsersTable::PROGRESS_KEY_MERGE));
     }
 
     /**
@@ -209,20 +239,23 @@ final class AccountStandingAudience
             $standing = AccountStandingResolver::of($userId);
             $erasure = self::cardErasure($acceptKey, $userId);
             $merge = self::cardMerge($acceptKey, $userId);
+            $availability = self::cardAvailability($acceptKey, $userId);
             if ($standing->toArray() === self::$shown[$acceptKey]->toArray()
-                && $erasure === self::$shownErasure[$acceptKey] && $merge === self::$shownMerge[$acceptKey]) {
+                && $erasure === self::$shownErasure[$acceptKey] && $merge === self::$shownMerge[$acceptKey]
+                && $availability === self::$shownAvailability[$acceptKey]) {
                 continue;
             }
 
             self::$shown[$acceptKey] = $standing;
             self::$shownErasure[$acceptKey] = $erasure;
             self::$shownMerge[$acceptKey] = $merge;
+            self::$shownAvailability[$acceptKey] = $availability;
             $pageClass = Hilos::appClass()::PAGES[HilosPageConstants::HILOS_USER] ?? null;
             if ($pageClass === null || !is_subclass_of($pageClass, AbstractHilosUserPage::class)) {
                 continue;
             }
             $frame = $pageClass::standingFrame(
-                $acceptKey, new AccountStandingStateSignalData($userId, $standing->toArray(), $erasure, $merge),
+                $acceptKey, new AccountStandingStateSignalData($userId, $standing->toArray(), $erasure, $merge, $availability),
             );
             if ($frame === null) {
                 continue;
@@ -234,6 +267,8 @@ final class AccountStandingAudience
                 signalData: new WebSocketSignalData(data: $frame, targetAcceptKey: $acceptKey),
             );
         }
+
+        self::sendProgressBars();
 
         foreach (array_keys(self::$lists) as $acceptKey) {
             foreach (Hilos::$sr?->getTableViewports($acceptKey) ?? [] as $tableKey => $viewport) {
@@ -256,8 +291,6 @@ final class AccountStandingAudience
                 }
             }
         }
-
-        self::sendErasureBars();
     }
 
     /**
@@ -312,47 +345,73 @@ final class AccountStandingAudience
     }
 
     /**
-     * Sends every open list of people the erasure bars that changed since the picture it holds.
+     * @param string $acceptKey Card connection whose failure episode is remembered
+     * @param int $userId Account the card shows
+     * @return ?array{reserved: bool, available: bool} Occupancy, or null while its source refuses
+     */
+    private static function cardAvailability(string $acceptKey, int $userId): ?array
+    {
+        try {
+            $availability = AccountMergeAvailabilityResolver::of($userId)->toArray();
+        } catch (Throwable) {
+            if (!isset(self::$availabilityFailures[$acceptKey])) {
+                Logger::error("Account card merge availability unavailable: user={$userId}");
+                self::$availabilityFailures[$acceptKey] = true;
+            }
+
+            return null;
+        }
+        unset(self::$availabilityFailures[$acceptKey]);
+
+        return $availability;
+    }
+
+    /**
+     * Sends every open list the composed bars that changed since its last picture.
      *
      * The new picture is held before the first bar goes: a bar to a tab owed its page sends the page
      * whole instead, and a page sent again in the middle of the round must carry the current picture.
      *
      * @throws InvalidArgumentException Never: a row bar always names its row
      */
-    private static function sendErasureBars(): void
+    private static function sendProgressBars(): void
     {
         if (self::$lists === []) {
-            self::$erasureBars = null;
+            self::$progressBars = null;
             self::forgetErasureFilter();
-            self::$erasureBarsFailed = false;
+            self::$progressBarsFailed = false;
 
             return;
         }
 
         try {
-            $current = self::currentErasureBars();
-            if (self::$erasureBarsFailed) {
-                Logger::info('Account list erasure progress recovered.');
-                self::$erasureBarsFailed = false;
+            $current = self::currentProgressBars();
+            if (self::$progressBarsFailed) {
+                Logger::info('Account list row progress recovered.');
+                self::$progressBarsFailed = false;
             }
         } catch (Throwable $failure) {
             $current = [];
-            if (!self::$erasureBarsFailed) {
-                Logger::error('Account list erasure progress failed: ' . $failure->getMessage());
-                self::$erasureBarsFailed = true;
+            if (!self::$progressBarsFailed) {
+                Logger::error('Account list row progress failed: ' . $failure->getMessage());
+                self::$progressBarsFailed = true;
             }
         }
-        $previous = self::$erasureBars ?? [];
+        $previous = self::$progressBars ?? [];
         $changed = [];
         foreach ($current as $userId => $bar) {
             if (!isset($previous[$userId]) || $previous[$userId]->toArray() !== $bar->toArray()) {
                 $changed[] = $bar;
             }
         }
-        foreach (array_keys(array_diff_key($previous, $current)) as $userId) {
-            $changed[] = AbstractHilosUsersTable::erasureBarEnded($userId);
+        foreach ($previous as $userId => $bar) {
+            if (!isset($current[$userId]) || $current[$userId]->progressKey !== $bar->progressKey) {
+                $changed[] = $bar->progressKey === AbstractHilosUsersTable::PROGRESS_KEY_ERASURE
+                    ? AbstractHilosUsersTable::erasureBarEnded($userId)
+                    : AbstractHilosUsersTable::mergeBarEnded($userId);
+            }
         }
-        self::$erasureBars = $current;
+        self::$progressBars = $current;
 
         foreach (array_keys(self::$lists) as $acceptKey) {
             foreach (array_keys(Hilos::$sr?->getTableViewports($acceptKey) ?? []) as $tableKey) {
@@ -364,6 +423,30 @@ final class AccountStandingAudience
                 }
             }
         }
+    }
+
+    /**
+     * @return array<int, TableProgressDTO> One bar per existing account, erasure before merge
+     * @throws HilosException When a progress source or an account cannot be read
+     */
+    private static function currentProgressBars(): array
+    {
+        $merges = [];
+        $operations = [];
+        try {
+            foreach (AccountMergeProgressResolver::open() as $operationId => $progress) {
+                foreach ([$progress->survivorUserId, $progress->loserUserId] as $userId) {
+                    if ($operationId > ($operations[$userId] ?? 0) && isset(Hilos::$db->users[$userId])) {
+                        $operations[$userId] = $operationId;
+                        $merges[$userId] = AbstractHilosUsersTable::mergeBar($userId, $progress);
+                    }
+                }
+            }
+        } catch (Throwable $failure) {
+            throw new PageInternalErrorException('Account list merge progress is unavailable.', previous: $failure);
+        }
+
+        return self::currentErasureBars() + $merges;
     }
 
     /**

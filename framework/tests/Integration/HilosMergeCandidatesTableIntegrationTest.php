@@ -4,6 +4,20 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountOperationCircle;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
+use Hilos\Database\Entity\Item\AccountOperation as EntityAccountOperation;
+use Hilos\Database\Entity\Item\AccountOperationAssignment as EntityAccountOperationAssignment;
+use Hilos\Database\Entity\Item\AccountOperationResult as EntityAccountOperationResult;
+use Hilos\Database\Entity\Item\AccountDeletion as EntityAccountDeletion;
+use Hilos\Database\Entity\Item\UserMerge as EntityUserMerge;
+use Hilos\Database\Object\Item\AccountOperation as ObjectAccountOperation;
+use Hilos\Database\Object\Item\AccountOperationAssignment as ObjectAccountOperationAssignment;
+use Hilos\Database\Object\Item\AccountOperationResult as ObjectAccountOperationResult;
+use Hilos\Database\View\Item\AccountOperation;
+use Hilos\Users\AccountMergeAvailabilityResolver;
+use Hilos\Users\AccountMergeSourceChange;
 use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Source\SourceChange;
@@ -15,6 +29,7 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Object\Item\AccountDeletion as ObjectAccountDeletion;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Object\Item\SecondFactor as ObjectSecondFactor;
 use Hilos\Database\Object\Item\UserMerge as ObjectUserMerge;
@@ -24,6 +39,8 @@ use Hilos\Tables\Users\HilosMergeCandidatesTable;
 use Hilos\Tables\Users\HilosMergeCandidateTableRow;
 use Hilos\Tables\Users\HilosUserTableRow;
 use Hilos\Utils\Helpers\TimeHelper;
+
+require_once __DIR__ . '/MergeTableOwnerFrames.php';
 
 /**
  * The framework window of merge candidates over the framework's own tables (HIL-411, HIL-1201).
@@ -35,6 +52,167 @@ use Hilos\Utils\Helpers\TimeHelper;
  */
 final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegrationTestCase
 {
+    use MergeTableOwnerFrames;
+
+    public function testReservedCandidateStaysInItsWindowAndMetadataKeysReachBothSides(): void
+    {
+        TruthSourceRegistry::unregisterAgent(self::MERGE_OWNER_AGENT_ID);
+        $this->withMergeOwners(function (): void {
+            $this->seedPeople();
+            $operation = $this->openTableMerge(self::ALPHA, self::BETA);
+            $table = $this->table();
+            $query = new TableQueryDTO(filter: [HilosMergeCandidatesTable::FILTER_SURVIVOR => self::ALPHA]);
+            $before = $table->getPage($query);
+            $asks = $this->mergeFrames();
+            $this->deliverMergeFrame($asks[1]);
+            $result = Hilos::$db->accountOperationResults->byAssignment($asks[1]->data->data->assignmentId);
+            $after = $table->getPage($query);
+            self::assertSame(self::rowKeys($before->rows), self::rowKeys($after->rows));
+            self::assertSame($before->totalCount, $after->totalCount);
+            self::assertTrue($table->containsRow(self::BETA, $query));
+            $wire = $table->browserRow($after->rows[0])[BrowserPageSignalData::sources];
+            self::assertSame(['reserved' => true, 'available' => false], $wire['merge']['accountMergeAvailability']);
+            self::assertArrayNotHasKey('accountMergeAvailability', $wire['users']);
+            self::assertSame(['identities', 'hasPassword', 'hasSecondFactor', 'unverifiedPasswordAddress', 'accountMergeAvailability'],
+                array_keys($wire['merge']));
+            foreach ([
+                SourceChange::dbUpdated(HilosDbContext::accountOperations, (string) $operation->id, []),
+                SourceChange::dbUpdated(HilosDbContext::accountOperationAssignments, (string) $result->assignmentId, []),
+                SourceChange::dbCreated(HilosDbContext::accountOperationResults, (string) $result->id, []),
+            ] as $event) {
+                $mutations = $table->buildMutationsForSourceEvent($event);
+                self::assertEqualsCanonicalizing([self::ALPHA, self::BETA], array_column($mutations, 'rowKey'));
+                self::assertCount(2, $mutations);
+            }
+            $other = $this->openTableMerge(self::GAMMA, self::TWELVE);
+            $otherAssignment = Hilos::$db->accountOperationAssignments->forOperation($other->id)->first();
+            self::assertEqualsCanonicalizing([1, 2, 3, 12], AccountMergeSourceChange::userIds(SourceChange::dbUpdated(
+                HilosDbContext::accountOperationAssignments, (string) $result->assignmentId, [],
+                previous: [ObjectAccountOperationAssignment::operationId => $other->id])));
+            self::assertEqualsCanonicalizing([1, 2, 3, 12], AccountMergeSourceChange::userIds(SourceChange::dbUpdated(
+                HilosDbContext::accountOperationResults, (string) $result->id, [],
+                previous: [ObjectAccountOperationResult::assignmentId => $otherAssignment->id])));
+            self::assertEqualsCanonicalizing([1, 2, 3, 12], AccountMergeSourceChange::userIds(SourceChange::dbUpdated(
+                HilosDbContext::accountOperations, (string) $operation->id, [],
+                previous: [ObjectAccountOperation::rootUserId => self::TWELVE, ObjectAccountOperation::loserUserId => self::GAMMA])));
+            self::assertNotNull(Database::sql('SELECT `id` FROM `hilos_account_operation_result` WHERE `id` = ?', [$result->id])->row());
+            foreach ([HilosDbContext::accountOperations, HilosDbContext::accountOperationAssignments,
+                HilosDbContext::accountOperationResults, HilosDbContext::accountDeletions, HilosDbContext::userMerges] as $source) {
+                self::assertSame([1, 2, 3, 12], AccountMergeSourceChange::userIds(SourceChange::dbCleared($source)));
+            }
+            self::assertSame([1, 2, 3, 12], AccountMergeSourceChange::userIds(
+                SourceChange::dbDeleted(HilosDbContext::accountOperationResults, '9999')));
+            self::assertSame([1, 2, 3, 12], AccountMergeSourceChange::userIds(SourceChange::dbDeleted(
+                HilosDbContext::accountOperationAssignments, '9999', [ObjectAccountOperationAssignment::operationId => 9999])));
+            self::assertSame([1, 2, 3, 12], array_column($table->buildMutationsForSourceEvent(
+                SourceChange::dbCleared(HilosDbContext::accountOperationResults)), 'rowKey'));
+        });
+    }
+
+    /** Both carrier shapes retain row/previous relations, with fallback reserved for incomplete facts. */
+    public function testMetadataEntityAndObjectRowsPreserveRelationsAndConservativeFallbacks(): void
+    {
+        TruthSourceRegistry::unregisterAgent(self::MERGE_OWNER_AGENT_ID);
+        $this->withMergeOwners(function (): void {
+            $this->seedPeople();
+            Database::sqlRun('INSERT INTO hilos_user (id, name) VALUES (99, ?)', ['Outside both pairs']);
+            $operation = $this->openTableMerge(self::ALPHA, self::BETA);
+            $asks = $this->mergeFrames();
+            $this->deliverMergeFrame($asks[0]);
+            $result = Hilos::$db->accountOperationResults->byAssignment($asks[0]->data->data->assignmentId);
+            $other = $this->openTableMerge(self::GAMMA, self::TWELVE);
+            $otherAssignment = Hilos::$db->accountOperationAssignments->forOperation($other->id)->first();
+            $deletion = $this->requestTableDeletion(self::ALPHA);
+            $this->asMergeHolder(static fn () => Hilos::$db->userMerges->actions->add(self::ALPHA, self::BETA));
+            foreach ([
+                [HilosDbContext::accountOperations, $operation->id,
+                    [EntityAccountOperation::root_user_id => self::GAMMA, EntityAccountOperation::loser_user_id => self::TWELVE],
+                    [ObjectAccountOperation::rootUserId => self::GAMMA, ObjectAccountOperation::survivorUserId => self::TWELVE], [1, 2, 3, 12]],
+                [HilosDbContext::accountOperationAssignments, $result->assignmentId,
+                    [EntityAccountOperationAssignment::operation_id => $other->id],
+                    [ObjectAccountOperationAssignment::operationId => $other->id], [1, 2, 3, 12]],
+                [HilosDbContext::accountOperationAssignments, $result->assignmentId,
+                    [EntityAccountOperationAssignment::user_id => self::GAMMA],
+                    [ObjectAccountOperationAssignment::userId => self::GAMMA], [1, 2, 3]],
+                [HilosDbContext::accountOperationResults, $result->id,
+                    [EntityAccountOperationResult::assignment_id => $otherAssignment->id],
+                    [ObjectAccountOperationResult::assignmentId => $otherAssignment->id], [1, 2, 3, 12]],
+                [HilosDbContext::accountDeletions, $deletion->id,
+                    [EntityAccountDeletion::user_id => self::GAMMA], [ObjectAccountDeletion::userId => self::GAMMA], [1, 3]],
+                [HilosDbContext::userMerges, self::ALPHA,
+                    [EntityUserMerge::user_id => self::GAMMA, EntityUserMerge::survivor_user_id => self::TWELVE],
+                    [ObjectUserMerge::userId => self::GAMMA, ObjectUserMerge::survivorUserId => self::TWELVE], [1, 2, 3, 12]],
+            ] as [$source, $id, $entity, $object, $expected]) {
+                foreach ([$entity, $object] as $fields) {
+                    foreach ([false, true] as $previous) {
+                        $change = SourceChange::dbUpdated($source, (string) $id,
+                            $previous ? [] : $fields, previous: $previous ? $fields : []);
+                        self::assertEqualsCanonicalizing($expected, AccountMergeSourceChange::userIds($change));
+                    }
+                }
+            }
+            // Complete tombstone facts resolve without a current row, including the native delete carrier.
+            foreach ([
+                [EntityUserMerge::user_id => self::GAMMA, EntityUserMerge::survivor_user_id => self::TWELVE],
+                [ObjectUserMerge::userId => self::GAMMA, ObjectUserMerge::survivorUserId => self::TWELVE],
+            ] as $row) {
+                self::assertEqualsCanonicalizing([3, 12], AccountMergeSourceChange::userIds(
+                    SourceChange::dbDeleted(HilosDbContext::userMerges, (string) self::GAMMA, $row)));
+            }
+            foreach ([EntityAccountOperation::circle_user_ids, ObjectAccountOperation::circleUserIds] as $field) {
+                foreach ([false, true] as $previous) {
+                    $changedCircle = [$field => '[3,12]'];
+                    self::assertEqualsCanonicalizing([1, 2, 3, 12, 99], AccountMergeSourceChange::userIds(SourceChange::dbUpdated(
+                        HilosDbContext::accountOperations, (string) $operation->id,
+                        $previous ? [] : $changedCircle, previous: $previous ? $changedCircle : [])));
+                    self::assertEqualsCanonicalizing([1, 2], AccountMergeSourceChange::userIds(SourceChange::dbUpdated(
+                        HilosDbContext::accountOperations, (string) $operation->id, [$field => $operation->circleUserIds])));
+                }
+            }
+            foreach ([
+                SourceChange::dbDeleted(HilosDbContext::accountOperationAssignments, '9999',
+                    [EntityAccountOperationAssignment::operation_id => 9999]),
+                SourceChange::dbUpdated(HilosDbContext::accountOperationResults, (string) $result->id, [],
+                    previous: [EntityAccountOperationResult::assignment_id => 9999]),
+                SourceChange::dbUpdated(HilosDbContext::accountOperationAssignments, (string) $result->assignmentId, [],
+                    previous: [EntityAccountOperationAssignment::operation_id => 9999]),
+                SourceChange::dbCleared(HilosDbContext::accountOperations),
+            ] as $incomplete) {
+                self::assertEqualsCanonicalizing([1, 2, 3, 12, 99], AccountMergeSourceChange::userIds($incomplete));
+            }
+        });
+    }
+
+    public function testScheduledDeletionDoesNotHideACandidateButStartAndOpenErasureMakeItUnavailable(): void
+    {
+        TruthSourceRegistry::unregisterAgent(self::MERGE_OWNER_AGENT_ID);
+        $this->withMergeOwners(function (): void {
+            $this->seedPeople();
+            $deletion = $this->requestTableDeletion(self::BETA);
+            self::assertTrue(AccountMergeAvailabilityResolver::of(self::BETA)->available);
+            $this->asPerson(self::BETA, static fn () => $deletion->actions->start());
+            $mutations = $this->table()->buildMutationsForSourceEvent(SourceChange::dbUpdated(
+                HilosDbContext::accountDeletions, (string) $deletion->id, []));
+            self::assertSame([self::BETA], array_column($mutations, 'rowKey'));
+            self::assertFalse($mutations[0]->row->accountMergeAvailability->available);
+            self::assertNotNull(Database::sql('SELECT `started_at` FROM `hilos_account_deletion` WHERE `id` = ?',
+                [$deletion->id])->row()['started_at']);
+            $operation = $this->asMergeHolder(static fn () => Hilos::$db->accountOperations->actions->recordErasure(
+                $deletion->id, self::BETA, AccountOperationCircle::fromArray([self::GAMMA, self::BETA], self::BETA)));
+            self::assertFalse(AccountMergeAvailabilityResolver::of(self::GAMMA)->available);
+            $mutations = $this->table()->buildMutationsForSourceEvent(SourceChange::dbUpdated(
+                HilosDbContext::accountOperations, (string) $operation->id, []));
+            self::assertEqualsCanonicalizing([self::BETA, self::GAMMA], array_column($mutations, 'rowKey'));
+            foreach ($mutations as $mutation) {
+                self::assertSame(TableMutationType::Update, $mutation->type);
+                self::assertFalse($mutation->row->accountMergeAvailability->available);
+            }
+            self::assertSame(3, $this->table()->getPage(new TableQueryDTO(
+                filter: [HilosMergeCandidatesTable::FILTER_SURVIVOR => self::ALPHA]))->totalCount);
+            self::assertSame(['reserved' => false, 'available' => false], AccountMergeAvailabilityResolver::of(9999)->toArray());
+        });
+    }
+
     /** Agent that holds the whole merge table, the way the sessions library does. */
     private const string MERGE_OWNER_AGENT_ID = 'test-agent:merge-owner';
 
@@ -279,6 +457,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
                         HilosMergeCandidatesTable::FIELD_HAS_PASSWORD => true,
                         HilosMergeCandidatesTable::FIELD_HAS_SECOND_FACTOR => false,
                         HilosMergeCandidatesTable::FIELD_UNVERIFIED_PASSWORD_ADDRESS => null,
+                        HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY => null,
                     ],
                 ],
             ],
@@ -380,6 +559,12 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
         $this->assertSame(TableMutationType::Delete, $mutation->type);
         $this->assertSame(self::GAMMA, $mutation->rowKey);
         $this->assertNull($mutation->row);
+        $mutations = $this->table()->buildMutationsForSourceEvent(SourceChange::dbCreated(
+            HilosDbContext::userMerges, (string) self::GAMMA,
+            [ObjectUserMerge::userId => self::GAMMA, ObjectUserMerge::survivorUserId => self::ALPHA]));
+        self::assertSame([self::GAMMA, self::ALPHA], array_column($mutations, 'rowKey'));
+        self::assertSame(TableMutationType::Delete, $mutations[0]->type);
+        self::assertSame(TableMutationType::Update, $mutations[1]->type);
     }
 
     /**
@@ -389,6 +574,12 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
      */
     public function testRemovingAMergeRowLeavesTheWindowAlone(): void
     {
+        $this->seedPeople();
+        $mutations = $this->table()->buildMutationsForSourceEvent(SourceChange::dbDeleted(
+            HilosDbContext::userMerges, (string) self::GAMMA,
+            [ObjectUserMerge::userId => self::GAMMA, ObjectUserMerge::survivorUserId => self::ALPHA]));
+        self::assertSame([self::ALPHA], array_column($mutations, 'rowKey'));
+        self::assertSame([], $this->table()->buildMutationsForSourceEvent(SourceChange::dbCleared(HilosDbContext::userMerges)));
         $this->assertNull($this->table()->buildMutationForSourceEvent(
             SourceChange::dbDeleted(HilosDbContext::userMerges, (string) self::GAMMA),
         ));

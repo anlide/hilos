@@ -87,6 +87,15 @@ final class HilosUserPageTestRows implements ArrayAccess, IteratorAggregate
     }
 
     /**
+     * @param int $userId Person whose started deletion is asked for
+     * @return null No deletion has started
+     */
+    public function startedOf(int $userId): mixed
+    {
+        return null;
+    }
+
+    /**
      * @param int $userId Person whose begun erasure is asked for
      * @return null No erasure has begun
      */

@@ -288,6 +288,11 @@ final class AccountMergeProgressIntegrationTest extends HilosSessionIntegrationT
         }
         self::assertSame($older->id, AccountMergeProgressResolver::forOperation($older->id)->operationId);
         self::assertSame('not_started', AccountMergeProgressResolver::forOperation($closed->id)->outcome);
+        $open = AccountMergeProgressResolver::open();
+        self::assertSame([$older->id, $latest->id, $foreign->id], array_keys($open));
+        foreach ($open as $operationId => $progress) {
+            self::assertSame(AccountMergeProgressResolver::forOperation($operationId), $progress);
+        }
     }
 
     public function testForeignResultsMalformedPayloadsAndCanonicalAssignmentMismatchesFailClosed(): void

@@ -14,7 +14,7 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
-use Hilos\Core\Table\Definition\ViewportTable;
+use Hilos\Core\Table\Definition\MultiRowViewportTable;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -38,6 +38,9 @@ use Hilos\Database\View\Item\Identity as DbIdentity;
 use Hilos\Database\View\Item\User as DbUser;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Users\AccountMergeAvailability;
+use Hilos\Users\AccountMergeAvailabilityResolver;
+use Hilos\Users\AccountMergeSourceChange;
 use Throwable;
 
 /**
@@ -49,7 +52,7 @@ use Throwable;
  * mutations over the people, the identities, and the merges. A project registers the class as
  * it is.
  */
-final class HilosMergeCandidatesTable extends TableDefinition implements ViewportTable
+final class HilosMergeCandidatesTable extends TableDefinition implements MultiRowViewportTable
 {
     public const string TABLE = 'mergeCandidates';
     public const string FILTER_SURVIVOR = 'survivor';
@@ -65,10 +68,11 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
             AbstractHilosUsersTable::USERS_SOURCE,
             self::IDENTITIES_SOURCE,
             self::SECOND_FACTORS_SOURCE,
-            self::MERGES_SOURCE,
+            ...AbstractHilosUsersTable::MERGE_SOURCES,
         ],
         BrowserTableConfigKey::ROWS => [
             AbstractHilosUsersTable::USERS_ROW,
+            ...AbstractHilosUsersTable::MERGE_ROWS,
             [
                 BrowserTableFieldKey::SOURCE => self::IDENTITIES_SOURCE,
                 BrowserTableFieldKey::ROW_KEY => ObjectIdentity::userId,
@@ -83,13 +87,6 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
                 BrowserTableFieldKey::MANY => true,
                 BrowserTableFieldKey::FIELDS => [ObjectSecondFactor::userId],
             ],
-            [
-                BrowserTableFieldKey::SOURCE => self::MERGES_SOURCE,
-                BrowserTableFieldKey::ROW_KEY => ObjectUserMerge::userId,
-                BrowserTableFieldKey::FIELDS => [
-                    ObjectUserMerge::userId,
-                ],
-            ],
         ],
     ];
 
@@ -100,10 +97,6 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
     private const array SECOND_FACTORS_SOURCE = [
         BrowserSourceKey::TYPE => BrowserSourceType::DB,
         BrowserSourceKey::KEY => HilosDbContext::secondFactors,
-    ];
-    private const array MERGES_SOURCE = [
-        BrowserSourceKey::TYPE => BrowserSourceType::DB,
-        BrowserSourceKey::KEY => HilosDbContext::userMerges,
     ];
 
     /** @return int Rows the first candidate window carries */
@@ -152,6 +145,40 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
     }
 
     /**
+     * @param SourceChange $change Source fact that may affect both accounts of an operation
+     * @return list<TableRowMutationDTO> Current candidates, preserving tombstone removal semantics
+     * @throws Throwable When a source or candidate reader refuses the rebuild
+     */
+    public function buildMutationsForSourceEvent(SourceChange $change): array
+    {
+        if (in_array($change->sourceKey, [HilosDbContext::users, HilosDbContext::identities, HilosDbContext::secondFactors], true)) {
+            $mutation = $this->buildMutationForSourceEvent($change);
+
+            return $mutation === null ? [] : [$mutation];
+        }
+        $mutations = [];
+        foreach (AccountMergeSourceChange::userIds($change) as $userId) {
+            if ($change->sourceKey === HilosDbContext::userMerges
+                && ($change->mutationType === TableMutationType::Clear
+                    || ($change->mutationType === TableMutationType::Delete
+                        && $userId === (int) ($change->row[ObjectUserMerge::userId] ?? $change->sourceId)))) {
+                continue;
+            }
+            if ($change->sourceKey === HilosDbContext::userMerges
+                && $userId === (int) ($change->row[ObjectUserMerge::userId] ?? $change->sourceId)) {
+                $mutations[] = $this->mutation(TableMutationType::Delete, $userId);
+                continue;
+            }
+            $user = $this->candidateRowForUserId($userId);
+            $mutations[] = $user === null
+                ? $this->mutation(TableMutationType::Delete, $userId)
+                : $this->mutation(TableMutationType::Update, $userId, $this->candidateRow($user));
+        }
+
+        return $mutations;
+    }
+
+    /**
      * Address of an unconfirmed password that a merge will remove instead of demoting.
      *
      * When this password is not kept by the administrator, the core removes it rather than demoting it
@@ -188,6 +215,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
                     self::FIELD_HAS_PASSWORD => $row->hasPassword,
                     self::FIELD_HAS_SECOND_FACTOR => $row->hasSecondFactor,
                     self::FIELD_UNVERIFIED_PASSWORD_ADDRESS => $row->unverifiedPasswordAddress,
+                    HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY => $row->accountMergeAvailability?->toArray(),
                 ],
             ],
         ];
@@ -283,6 +311,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
             HilosUserTableRow::name => WireField::column(HilosDbContext::users, ObjectUser::name),
             HilosUserTableRow::lastActivity => WireField::column(HilosDbContext::users, ObjectUser::lastActivity),
             self::FIELD_HAS_PASSWORD => WireField::notPersonal(),
+            HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY => WireField::each(AccountMergeAvailability::wireFields()),
             HilosMergeCandidateTableRow::exactUserId => WireField::notPersonal(),
         ];
     }
@@ -452,6 +481,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
             $userFields[HilosUserTableRow::onlineSessionCount],
             $userFields[HilosUserTableRow::openSessionCount],
             $userFields[HilosUserTableRow::merged],
+            $userFields[HilosUserTableRow::FIELD_ACCOUNT_MERGE_AVAILABILITY],
         );
         $normalizedSearch = $search === null ? null : trim($search);
         $password = Hilos::$db->identities->findPasswordByUser($user->id);
@@ -467,6 +497,7 @@ final class HilosMergeCandidatesTable extends TableDefinition implements Viewpor
                     ? $user->id
                     : null,
             unverifiedPasswordAddress: self::unverifiedPasswordAddress($password),
+            accountMergeAvailability: AccountMergeAvailabilityResolver::of($user->id),
         );
     }
 

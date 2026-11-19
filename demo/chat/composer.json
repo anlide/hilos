@@ -86,7 +86,7 @@
         "test:db-prepare": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm chat-cli-test sh -c \"php backend/Bootstrap/cli.php db:wait && php backend/Bootstrap/cli.php test:db:reset && php backend/Bootstrap/cli.php test:user:seed 25\"",
         "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
-        "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm chat-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
+        "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm chat-cli-test php -d memory_limit=160M vendor/bin/phpunit -c tests/phpunit.xml",
         "test:check": [
             "docker compose -f docker/docker-compose.test.yml --profile cli run --rm chat-frontend-cli-test sh -c \"set -e; node ../../../framework/frontend/scripts/npm-install-if-stale.mjs; echo '--- frontend: check'; npm run check; echo '--- frontend: test'; npm run test; echo '--- frontend: lint'; npm run lint; echo '--- frontend: format-check'; npm run format:check\"",
             "@test:e2e-install",

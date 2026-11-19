@@ -232,7 +232,7 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   (`AbstractHilosUserPage::ACCOUNT_STANDING`) and `accountErasure`
   (`ACCOUNT_ERASURE`) of the person on the card; after that,
   `hilos_account_standing_state` (WS_USER,
-  `{userId, accountStanding, accountErasure, accountMerge?}`,
+  `{userId, accountStanding, accountErasure, accountMerge?, accountMergeAvailability?}`,
   `AccountStandingStateSignalData`) brings each change to those blocks
   (HIL-1954, HIL-2003). The trailing `accountMerge` block is optional at the
   DTO boundary; a missing value reads as `null`. `accountErasure` is `null`
@@ -290,9 +290,10 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   The initial page response carries `data.accountMerge`; the existing frame
   carries the same block. No additional request, frame, route, group or grant
   is introduced. Per-process subscription memory keeps the last full card
-  blocks. Each tick compares standing, erasure and merge once per card and sends at most
-  one replacement frame when any changes; equal blocks are quiet. The current
-  page and view gate is checked for every live frame, and a deleted person gets
+  blocks. Each tick compares standing, erasure, merge and merge availability
+  once per card and sends at most one replacement frame when any changes;
+  equal blocks are quiet. The current page and view gate is checked for every
+  live frame, and a deleted person gets
   no card frame that could revive the page.
 
   The resolver's process cache holds only derived projections, absence and
@@ -315,7 +316,11 @@ request, heartbeat, minute server frame, or epoch invalidation is introduced.
   alone, keeps the first readable duplicate, and strips unknown fields. The core card
   reader takes the page snapshot and then frames for the current user row;
   restart or re-subscribe reads the fresh page scope, and dispose clears its
-  values.
+  values. The same page and frame also carry the nullable
+  `accountMergeAvailability` block (HIL-2004). Inline list/candidate slots,
+  reservation semantics, row-bar priority and the lazy availability,
+  `selectableIds` and `merges` APIs are described in
+  [Merge observation data](account-operations.md#merge-observation-data).
 - **Refusal.** `account_frozen` with status 403, as `errorCode` of
   `subscription_page_error` and of `action_error`. It is not a 401 and opens no
   sign-in.
