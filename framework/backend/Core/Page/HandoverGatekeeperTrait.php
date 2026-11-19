@@ -9,6 +9,7 @@ use Hilos\Core\Action\DTO\HandoverAnswerSignalData;
 use Hilos\Core\Action\HandoverAskInterface;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Router\DTO\RelayedActionReplyDTO;
 
 /**
  * The gatekeeper side of the handover: forward the ask, and answer the client once the writer has
@@ -94,7 +95,12 @@ trait HandoverGatekeeperTrait
             if ($done->successMessage !== null) {
                 $this->setActionSuccessMessage($done->successMessage);
             }
-            $this->sendActionSuccess($done->acceptKey, $done->action, $done->requestId);
+            $this->sendActionSuccess(
+                $done->acceptKey,
+                $done->action,
+                $done->requestId,
+                $done->reply === null ? null : new RelayedActionReplyDTO($done->reply),
+            );
 
             return;
         }

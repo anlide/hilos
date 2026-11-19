@@ -262,6 +262,7 @@ use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Auth\SecondFactor\SecondFactorTrustRestrictionSweep;
 use Hilos\Users\AdminCommandConstants;
+use Hilos\Users\DTO\AccountMergeAcceptedReplyDTO;
 use Hilos\Users\DTO\AccountMergeCancelSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
@@ -6906,6 +6907,69 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             errorType: null,
             errorDetail: null,
         ));
+    }
+
+    /**
+     * SCAFFOLD: prepared browser start; HIL-1999 routes HILOS_ACCOUNT_MERGE here and removes handleAccountMergeRequest.
+     *
+     * Acceptance names the durable opening, including an exact repeat recovered after a drive
+     * failure. The operation's later outcome is independent of this action reply.
+     *
+     * @param AccountMergeSignalData $request Both accounts, immutable choices and the waiting browser
+     * @throws WiringRefusal When the holder cannot read the collections needed to judge the request
+     * @throws InvalidArgumentException When the answering frame cannot be named
+     */
+    protected function handlePreparedAccountMergeRequest(AccountMergeSignalData $request): void
+    {
+        try {
+            AskingAdministrator::confirmed($request->acceptKey, StepUpOperationKey::MERGE_ACCOUNTS);
+            $passwordFate = $request->passwordFate === null ? null : PasswordFate::tryFrom($request->passwordFate);
+            if ($request->passwordFate !== null && $passwordFate === null) {
+                throw new ValidationException('Unknown account-merge password fate');
+            }
+            $secondFactorFate = $request->secondFactorFate === null
+                ? null : SecondFactorFate::tryFrom($request->secondFactorFate);
+            if ($request->secondFactorFate !== null && $secondFactorFate === null) {
+                throw new ValidationException('Unknown account-merge second-factor fate');
+            }
+            if (
+                $passwordFate === null
+                && Hilos::$db->identities->passwordFateNeeded($request->loserUserId, $request->survivorUserId)
+            ) {
+                throw new ValidationException(self::ACCOUNT_MERGE_PASSWORD_FATE_REQUIRED_MESSAGE);
+            }
+            $choice = new AccountMergeChoice(
+                $passwordFate,
+                $secondFactorFate,
+                $request->expectedSurvivorHasSecondFactor,
+                $request->expectedLoserHasSecondFactor,
+            );
+            try {
+                $operation = $this->openAccountMerge($request->survivorUserId, $request->loserUserId, $choice);
+            } catch (Throwable $e) {
+                $operation = Hilos::$db->accountOperations->openMergeOfLoser($request->loserUserId);
+                if ($operation === null || $operation->survivorUserId !== $request->survivorUserId || !$operation->mergeChoice->equals($choice)) {
+                    throw $e;
+                }
+                $this->logAgentError(
+                    "Accepted account merge #{$operation->id} could not be driven: {$e->getMessage()}",
+                );
+            }
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError(
+                    "Account merge #{$request->loserUserId} into #{$request->survivorUserId} failed: {$e->getMessage()}",
+                );
+            }
+            $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
+
+            return;
+        }
+
+        $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::accepted($request, new AccountMergeAcceptedReplyDTO($operation->id)));
     }
 
     /**

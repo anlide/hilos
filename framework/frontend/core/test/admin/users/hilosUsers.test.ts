@@ -3,7 +3,7 @@ import {
   bindTimeZoneState,
   hilosTimeZone,
 } from '../../../src/timeZone/timeZoneState.js'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createHilosAccountMerge,
@@ -91,16 +91,23 @@ import {
 } from '../../../src/state/signal.js'
 import {
   ActionError,
+  ActionLifecycle,
   type ActionHandle,
 } from '../../../src/connection/actionLifecycle.js'
 import {
-  type HilosConnection,
+  HilosConnection,
   type TableViewportDescriptor,
+  type WebSocketLike,
 } from '../../../src/connection/HilosConnection.js'
+import {
+  SIGNAL_TYPE_ACTION_SUCCESS,
+  SIGNAL_TYPE_HANDSHAKE,
+} from '../../../src/protocol/constants.js'
 import { entityCollection } from '../../../src/state/EntityCollection.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { USER_ENTITY_TYPE, userFromFields } from '../../../src/state/entity.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
+import { ingest } from '../../../src/state/normalizer.js'
 import { applyServerTime } from '../../../src/session/serverClock.js'
 import { type TableRow } from '../../../src/state/TableRowsStore.js'
 import { type HilosTableProgress } from '../../../src/table/tableProgress.js'
@@ -944,41 +951,75 @@ describe('createHilosMergeCandidates', () => {
 })
 
 describe('createHilosAccountMerge', () => {
-  /** Record tracked-action payloads without constructing a live connection. */
-  function recordingContext(): {
-    context: HilosUsersContext
-    calls: Array<{ action: string; payload: Record<string, unknown> }>
-  } {
-    const calls: Array<{ action: string; payload: Record<string, unknown> }> =
-      []
-    const context = {
-      actions: {
-        dispatch(
-          action: string,
-          payload: Record<string, unknown>,
-        ): ActionHandle {
-          calls.push({ action, payload })
+  beforeEach(() => vi.useFakeTimers())
+  const connections: HilosConnection[] = []
+  afterEach(() => {
+    for (const connection of connections.splice(0)) connection.close()
+  })
 
-          return {} as ActionHandle
-        },
+  /** Real reply parsing and action lifecycle over a controlled socket. */
+  function recordingContext() {
+    const listeners = new Map<string, ((event: { data?: unknown }) => void)[]>()
+    const socket = {
+      send: vi.fn(),
+      close: vi.fn(),
+      addEventListener(type, listener) {
+        const list = listeners.get(type) ?? []
+        list.push(listener)
+        listeners.set(type, list)
       },
-    } as unknown as HilosUsersContext
-
-    return { context, calls }
+    } satisfies WebSocketLike
+    const connection = new HilosConnection({
+      url: 'ws://merge-action.test/ws',
+      webSocketFactory: () => socket,
+    })
+    connections.push(connection)
+    connection.connect()
+    for (const listener of listeners.get('open') ?? []) listener({})
+    function message(type: string, data: unknown, requestId?: string) {
+      for (const listener of listeners.get('message') ?? []) {
+        listener({ data: JSON.stringify({ type, data, requestId }) })
+      }
+    }
+    message(SIGNAL_TYPE_HANDSHAKE, { build: 'merge-action-test' })
+    const calls: Array<{ action: string; payload: unknown }> = []
+    const send = connection.sendAction.bind(connection)
+    vi.spyOn(connection, 'sendAction').mockImplementation(
+      (action, payload, requestId) => {
+        calls.push({ action, payload })
+        return send(action, payload, requestId)
+      },
+    )
+    const { scopes, users } = userStore()
+    const context: HilosUsersContext = {
+      scopes,
+      users,
+      connection,
+      actions: new ActionLifecycle(connection),
+    }
+    return {
+      context,
+      calls,
+      reply(requestId: string, reply?: unknown, action = 'hilos_user_merge') {
+        message(SIGNAL_TYPE_ACTION_SUCCESS, { action, reply }, requestId)
+      },
+    }
   }
 
-  it('addresses cancellation only by the existing operation id', () => {
-    const { context, calls } = recordingContext()
-    createHilosAccountMerge(context).cancel(41)
+  it('addresses cancellation only by the existing operation id', async () => {
+    const { context, calls, reply } = recordingContext()
+    const handle = createHilosAccountMerge(context).cancel(41)
 
     expect(calls).toEqual([
       { action: 'hilos_user_merge_cancel', payload: { operationId: 41 } },
     ])
+    reply(handle.requestId, undefined, 'hilos_user_merge_cancel')
+    await handle.done
   })
 
-  it('omits passwordFate when the accounts do not need a choice', () => {
-    const { context, calls } = recordingContext()
-    createHilosAccountMerge(context).merge(
+  it('omits passwordFate when the accounts do not need a choice', async () => {
+    const { context, calls, reply } = recordingContext()
+    const handle = createHilosAccountMerge(context).merge(
       12,
       57,
       undefined,
@@ -998,11 +1039,13 @@ describe('createHilosAccountMerge', () => {
         },
       },
     ])
+    reply(handle.requestId)
+    await handle.done
   })
 
-  it('sends the named password fate when both accounts have a password', () => {
-    const { context, calls } = recordingContext()
-    createHilosAccountMerge(context).merge(
+  it('sends the named password fate when both accounts have a password', async () => {
+    const { context, calls, reply } = recordingContext()
+    const handle = createHilosAccountMerge(context).merge(
       12,
       57,
       'loser',
@@ -1023,6 +1066,52 @@ describe('createHilosAccountMerge', () => {
         },
       },
     ])
+    reply(handle.requestId)
+    await handle.done
+  })
+
+  it.each([{ operationId: 42 }, undefined])(
+    'reads the accepted reply or legacy absence: %j',
+    async (accepted) => {
+      const { context, reply } = recordingContext()
+      const handle = createHilosAccountMerge(context).merge(
+        12,
+        57,
+        undefined,
+        undefined,
+        false,
+        false,
+      )
+      reply(handle.requestId, accepted)
+      await expect(handle.done).resolves.toEqual({
+        message: undefined,
+        reply: accepted,
+      })
+    },
+  )
+
+  it.each([
+    { operationId: 42, extra: true },
+    { operationId: 0 },
+    { operationId: '42' },
+    { operationId: 1.5 },
+    {},
+    null,
+  ])('rejects an invalid accepted reply: %j', async (accepted) => {
+    const { context, reply } = recordingContext()
+    const handle = createHilosAccountMerge(context).merge(
+      12,
+      57,
+      undefined,
+      undefined,
+      false,
+      false,
+    )
+    reply(handle.requestId, accepted)
+    await expect(handle.done).rejects.toBeInstanceOf(ActionError)
+    await expect(handle.done).rejects.toMatchObject({
+      outcome: 'invalid-reply',
+    })
   })
 })
 
@@ -2108,6 +2197,20 @@ describe('account erasure on the user card (HIL-1954)', () => {
 })
 
 describe('account merge progress on the user card', () => {
+  const releases: (() => void)[] = []
+  beforeEach(() => {
+    const scopes = new ScopeManager()
+    scopes.session.data.set('currentUser', { type: USER_ENTITY_TYPE, id: 99 })
+    scopes.session.entities.upsert(
+      { type: USER_ENTITY_TYPE, id: 99 },
+      { id: 99, admin: true },
+    )
+    releases.push(bindAdminAccess(scopes))
+  })
+  afterEach(() => {
+    for (const release of releases.splice(0).reverse()) release()
+  })
+
   const merge = {
     operationId: 41,
     survivorUserId: 7,
@@ -2279,6 +2382,206 @@ describe('account merge progress on the user card', () => {
       parts: [{ ...merge.parts[0], userId: null }],
       waits: [{ ...merge.waits[0], userId: null }],
     }
+
+    function liveCard() {
+      const { scopes } = userStore()
+      const page = scopes.page()!
+      page.tables.upsert('userDetail', 7, {
+        users: { type: USER_ENTITY_TYPE, id: 7 },
+      })
+      scopes.session.data.set('currentUser', { type: USER_ENTITY_TYPE, id: 99 })
+      function access(admin: boolean, viewMode = true): void {
+        scopes.session.data.set('adminViewMode', viewMode)
+        scopes.session.entities.upsert(
+          { type: USER_ENTITY_TYPE, id: 99 },
+          { id: 99, admin },
+        )
+      }
+      access(true)
+      releases.push(bindAdminAccess(scopes))
+      const { connection, emit } = frameConnection()
+      const card = createHilosUserStanding({ scopes, connection })
+      const refused = {
+        ...merge,
+        state: 'refusal',
+        refusal: {
+          code: 'occupied',
+          reason: 'The source account is reserved.',
+        },
+      }
+      page.data.set(HILOS_USER_MERGE_SECTION, refused)
+      card.start()
+      releases.push(() => card.dispose())
+      return {
+        scopes,
+        page,
+        card,
+        access,
+        refused,
+        frame(raw: unknown, userId = 7): void {
+          emit(SIGNAL_ACCOUNT_STANDING_STATE, {
+            userId,
+            accountStanding: wireStanding(),
+            accountMerge: raw,
+          })
+        },
+      }
+    }
+
+    it.each(['session first', 'page first'])(
+      'forgets private progress with %s and waits for fresh full progress after regrant',
+      (order) => {
+        const world = liveCard()
+        expect(world.card.merge.get()).toEqual(world.refused)
+        if (order === 'page first') world.frame(hidden)
+        world.access(false)
+        if (order === 'session first') {
+          expect(world.card.merge.get()).toBeNull()
+          world.frame(hidden)
+        }
+        expect(world.card.merge.get()).toEqual(visible)
+        world.frame(world.refused)
+        expect(world.card.merge.get()).toBeNull()
+        world.frame(hidden)
+        expect(world.card.merge.get()).toEqual(visible)
+        world.access(true)
+        expect(world.card.merge.get()).toBeNull()
+        world.page.data.set(HILOS_USER_MERGE_SECTION, { ...merge })
+        expect(world.card.merge.get()).toEqual(merge)
+      },
+    )
+
+    it('does not revive a private snapshot after a downgrade without a replacement', () => {
+      const world = liveCard()
+      world.access(false)
+      world.access(true)
+      expect(world.card.merge.get()).toBeNull()
+      world.frame(merge)
+      expect(world.card.merge.get()).toEqual(merge)
+      world.access(false, false)
+      expect(world.card.merge.get()).toBeNull()
+      world.frame(merge)
+      world.frame(hidden)
+      expect(world.card.merge.get()).toBeNull()
+      world.access(true)
+      expect(world.card.merge.get()).toBeNull()
+      world.frame(merge)
+      expect(world.card.merge.get()).toEqual(merge)
+    })
+
+    describe.each([true, false])(
+      'restart freshness with admin view mode %s',
+      (viewMode) => {
+        it.each([
+          { lifecycle: 'start', replacement: 'none' },
+          { lifecycle: 'start', replacement: 'before downgrade' },
+          { lifecycle: 'start', replacement: 'after downgrade' },
+          { lifecycle: 'dispose/start', replacement: 'none' },
+          { lifecycle: 'dispose/start', replacement: 'before downgrade' },
+          { lifecycle: 'dispose/start', replacement: 'after downgrade' },
+        ])(
+          'keeps the old page snapshot forgotten across $lifecycle (hidden replacement: $replacement)',
+          ({ lifecycle, replacement }) => {
+            const world = liveCard()
+            if (replacement === 'before downgrade') world.frame(hidden)
+            world.access(false, viewMode)
+            if (replacement === 'after downgrade') world.frame(hidden)
+            expect(world.card.merge.get()).toEqual(
+              replacement !== 'none' && viewMode ? visible : null,
+            )
+            expect(world.page.data.signal(HILOS_USER_MERGE_SECTION).get()).toBe(
+              world.refused,
+            )
+            world.access(true)
+            expect(world.card.merge.get()).toBeNull()
+            if (lifecycle === 'dispose/start') world.card.dispose()
+            world.card.start()
+            expect(world.card.merge.get()).toBeNull()
+
+            world.frame(world.refused, 8)
+            expect(world.card.merge.get()).toBeNull()
+            const resumed = { ...merge, operationId: 42, state: 'wait' }
+            world.frame(resumed)
+            expect(world.card.merge.get()).toEqual(resumed)
+            world.card.start()
+            expect(world.card.merge.get()).toEqual(resumed)
+            world.card.dispose()
+            world.card.start()
+            expect(world.card.merge.get()).toBeNull()
+            world.page.data.set(HILOS_USER_MERGE_SECTION, { ...merge })
+            expect(world.card.merge.get()).toEqual(merge)
+
+            world.access(false, viewMode)
+            world.access(true)
+            world.card.dispose()
+            world.page.data.set(HILOS_USER_MERGE_SECTION, resumed)
+            world.card.start()
+            expect(world.card.merge.get()).toEqual(resumed)
+          },
+        )
+      },
+    )
+
+    it.each(['before start', 'after start'])(
+      'accepts a new scope and its first row when data arrives %s',
+      (delivery) => {
+        const world = liveCard()
+        world.access(false)
+        world.access(true)
+        world.card.dispose()
+        const page = world.scopes.openPage(HilosPages.USER)
+        if (delivery === 'after start') world.card.start()
+        ingest(page, {
+          data: { [HILOS_USER_MERGE_SECTION]: world.refused },
+          tables: { userDetail: { rows: [{ rowKey: '8', slots: {} }] } },
+        })
+        if (delivery === 'before start') world.card.start()
+        expect(world.card.merge.get()).toEqual(world.refused)
+        world.frame(merge)
+        expect(world.card.merge.get()).toEqual(world.refused)
+        world.frame(merge, 8)
+        expect(world.card.merge.get()).toEqual(merge)
+      },
+    )
+
+    it('clears the shown person and releases access and person subscriptions on dispose', () => {
+      const world = liveCard()
+      world.page.tables.delete('userDetail', 7)
+      world.page.tables.upsert('userDetail', 8, {
+        users: { type: USER_ENTITY_TYPE, id: 8 },
+      })
+      expect(world.card.merge.get()).toBeNull()
+      world.frame(world.refused)
+      expect(world.card.merge.get()).toBeNull()
+      world.frame(merge, 8)
+      expect(world.card.merge.get()).toEqual(merge)
+      world.card.dispose()
+      const changed = vi.fn()
+      releases.push(subscribeSignal(world.card.merge, changed))
+      world.access(false)
+      world.access(true)
+      world.frame(merge, 8)
+      world.page.data.set(HILOS_USER_MERGE_SECTION, { ...merge })
+      world.page.tables.delete('userDetail', 8)
+      expect(changed).not.toHaveBeenCalled()
+      expect(world.card.merge.get()).toBeNull()
+    })
+
+    it('adopts the new page source when its data precedes its first detail row', () => {
+      const world = liveCard()
+      const page = world.scopes.openPage(HilosPages.USER)
+      expect(world.card.merge.get()).toBeNull()
+      const resumed = { ...merge, operationId: 42, state: 'wait' }
+      ingest(page, {
+        data: { [HILOS_USER_MERGE_SECTION]: resumed },
+        tables: { userDetail: { rows: [{ rowKey: '8', slots: {} }] } },
+      })
+      expect(world.card.merge.get()).toEqual(resumed)
+      world.frame(world.refused)
+      expect(world.card.merge.get()).toEqual(resumed)
+      world.frame({ ...resumed, received: true }, 8)
+      expect(world.card.merge.get()).toEqual({ ...resumed, received: true })
+    })
 
     it('keeps common progress and parts in snapshots and live frames', () => {
       const { scopes } = userStore()
@@ -2472,7 +2775,8 @@ describe('account merge progress on the user card', () => {
       })
       expect(changed).toHaveBeenCalledTimes(2)
       card.start()
-      expect(card.merge.get()).toEqual(merge)
+      expect(card.merge.get()).toEqual({ ...merge, waits: [] })
+      expect(changed).toHaveBeenCalledTimes(2)
       card.dispose()
       expect(card.merge.get()).toBeNull()
       changed.mockClear()

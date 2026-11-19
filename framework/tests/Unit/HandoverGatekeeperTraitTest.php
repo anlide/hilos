@@ -18,6 +18,7 @@ use Hilos\Core\Page\HandoverGatekeeperTrait;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Router\DTO\RelayedActionReplyDTO;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -28,6 +29,7 @@ use Hilos\Hilos;
 use Hilos\Runtime\View\Context\RtContext;
 use Hilos\Tests\Unit\Fixtures\AdminViewModeTestNode;
 use Hilos\Tests\Unit\Fixtures\IdentityTestBrowser;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -198,6 +200,79 @@ final class HandoverGatekeeperTraitTest extends TestCase
         $page->answer(HandoverAnswerSignalData::to(new HandoverGatekeeperTestAsk(requestId: null), null));
 
         $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testATrackedAcceptanceRelaysTheDomainReplyUnchanged(): void
+    {
+        $page = new HandoverGatekeeperTestAdminPage(new HandoverGatekeeperTestAgent());
+        $reply = ['operationId' => 31, 'nested' => ['flag' => false, 'empty' => [], 'nullable' => null]];
+        $done = HandoverAnswerSignalData::accepted(
+            new HandoverGatekeeperTestAsk(successMessage: null),
+            new RelayedActionReplyDTO($reply),
+        );
+
+        $page->answer(HandoverAnswerSignalData::fromArray($done->toArray()));
+
+        $ack = $this->nextAck(SignalConstants::ACTION_SUCCESS);
+        $this->assertSame(['action' => 'probe_action', 'requestId' => 'req-1', 'reply' => $reply], $ack->toArray());
+        $this->assertNull($done->error);
+        $this->assertNull($done->errorType);
+        $this->assertNull($done->errorDetail);
+        $this->assertSame('Probe saved.', HandoverAnswerSignalData::accepted(
+            new HandoverGatekeeperTestAsk(), new RelayedActionReplyDTO([]),
+        )->successMessage);
+    }
+
+    public function testAReplyDoesNotTravelOnARefusalOrAnUntrackedSubmit(): void
+    {
+        $page = new HandoverGatekeeperTestAdminPage(new HandoverGatekeeperTestAgent());
+        $refusal = $this->internalRefusal()->toArray();
+        $refusal['reply'] = ['operationId' => 31];
+        $page->answer(HandoverAnswerSignalData::fromArray($refusal));
+        $this->assertArrayNotHasKey('reply', $this->nextAck(SignalConstants::ACTION_ERROR)->toArray());
+
+        $refusal['requestId'] = null;
+        $page->answer(HandoverAnswerSignalData::fromArray($refusal));
+        $this->assertArrayNotHasKey('reply', $this->nextAck(SignalConstants::ACTION_ERROR)->toArray());
+
+        $page->answer(HandoverAnswerSignalData::accepted(
+            new HandoverGatekeeperTestAsk(requestId: null), new RelayedActionReplyDTO(['operationId' => 31]),
+        ));
+        $this->assertNull(Hilos::$sr->getNextQueuedSignal());
+    }
+
+    public function testTheOldAnswerWireFormHasNoReplyKeyAndRoundTripsUnchanged(): void
+    {
+        $wire = [
+            'acceptKey' => 'ak-1', 'requestId' => 'req-1', 'action' => 'probe_action',
+            'successMessage' => 'Probe saved.', 'error' => null, 'errorType' => null, 'errorDetail' => null,
+        ];
+        $this->assertSame($wire, HandoverAnswerSignalData::to(new HandoverGatekeeperTestAsk(), null)->toArray());
+        $this->assertSame($wire, HandoverAnswerSignalData::fromArray($wire)->toArray());
+        $page = new HandoverGatekeeperTestAdminPage(new HandoverGatekeeperTestAgent());
+        $page->answer(HandoverAnswerSignalData::fromArray($wire));
+        $this->assertArrayNotHasKey('reply', $this->nextAck(SignalConstants::ACTION_SUCCESS)->toArray());
+        $wire['reply'] = [];
+        $this->assertSame($wire, HandoverAnswerSignalData::fromArray($wire)->toArray());
+    }
+
+    /** @return iterable<string, array{mixed}> Present reply values that are not arrays */
+    public static function nonArrayReplies(): iterable
+    {
+        yield 'string' => ['operation-31'];
+        yield 'integer' => [31];
+        yield 'boolean' => [false];
+        yield 'null' => [null];
+    }
+
+    /** @param mixed $reply Invalid present reply */
+    #[DataProvider('nonArrayReplies')]
+    public function testANonArrayReplyIsRefusedAtTheTransportBoundary(mixed $reply): void
+    {
+        $wire = HandoverAnswerSignalData::to(new HandoverGatekeeperTestAsk(), null)->toArray();
+        $wire['reply'] = $reply;
+        $this->expectException(InvalidFormatException::class);
+        HandoverAnswerSignalData::fromArray($wire);
     }
 
     /**

@@ -1,22 +1,29 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createHilosAccountMergeWindow,
   HILOS_ACCOUNT_MERGE_WINDOW_COPY,
   type HilosAccountMergeWindow,
   type HilosAccountMergeWindowView,
+  type HilosAccountMergeRequest,
 } from '../../../src/admin/users/index.js'
 import {
+  createHilosAccountMerge,
   createHilosUserStanding,
   HILOS_USER_MERGE_SECTION,
   SIGNAL_ACCOUNT_STANDING_STATE,
   type HilosAccountMergeProgress,
 } from '../../../src/admin/users/hilosUsers.js'
+import { ActionLifecycle } from '../../../src/connection/actionLifecycle.js'
 import {
   HilosConnection,
   type WebSocketLike,
 } from '../../../src/connection/HilosConnection.js'
 import { ACCOUNT_STANDING_SIGNAL_SCHEMAS } from '../../../src/protocol/accountStandingSignals.js'
-import { SIGNAL_TYPE_HANDSHAKE } from '../../../src/protocol/constants.js'
+import {
+  SIGNAL_TYPE_ACTION_ERROR,
+  SIGNAL_TYPE_ACTION_SUCCESS,
+  SIGNAL_TYPE_HANDSHAKE,
+} from '../../../src/protocol/constants.js'
 import { HilosPages } from '../../../src/routing/hilosPages.js'
 import {
   bindAdminAccess,
@@ -27,7 +34,8 @@ import {
   SESSION_SIGNAL_SCHEMAS,
   SIGNAL_HANDSHAKE_RESPONSE,
 } from '../../../src/session/sessionScope.js'
-import { USER_ENTITY_TYPE } from '../../../src/state/entity.js'
+import { USER_ENTITY_TYPE, userFromFields } from '../../../src/state/entity.js'
+import { entityCollection } from '../../../src/state/EntityCollection.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
 import { ScopeManager } from '../../../src/state/ScopeManager.js'
 import { computedSignal, subscribeSignal } from '../../../src/state/signal.js'
@@ -92,9 +100,9 @@ function setup(raw: unknown = progress()) {
       listeners.set(type, list)
     },
   } satisfies WebSocketLike
-  function message(type: string, data: unknown): void {
+  function message(type: string, data: unknown, requestId?: string): void {
     for (const listener of listeners.get('message') ?? []) {
-      listener({ data: JSON.stringify({ type, data }) })
+      listener({ data: JSON.stringify({ type, data, requestId }) })
     }
   }
   const connection = new HilosConnection({
@@ -135,6 +143,12 @@ function setup(raw: unknown = progress()) {
   const shownUserId = computedSignal(readShown)
   const readMerge = vi.fn(() => standing.merge.get())
   const window = createHilosAccountMergeWindow({ get: readMerge }, shownUserId)
+  const mergeAction = createHilosAccountMerge({
+    scopes,
+    connection,
+    actions: new ActionLifecycle(connection),
+    users: entityCollection(scopes, USER_ENTITY_TYPE, userFromFields),
+  })
   releases.push(() => {
     window.dispose()
     standing.dispose()
@@ -151,6 +165,31 @@ function setup(raw: unknown = progress()) {
     connection,
     access,
     readMerge,
+    start(request: HilosAccountMergeRequest = mergeRequest()) {
+      const handle = mergeAction.merge(
+        request.survivorUserId,
+        request.loserUserId,
+        request.passwordFate ?? undefined,
+        request.secondFactorFate ?? undefined,
+        request.expectedSurvivorHasSecondFactor,
+        request.expectedLoserHasSecondFactor,
+      )
+      return { handle, done: window.track(handle, request) }
+    },
+    reply(requestId: string, reply?: unknown) {
+      message(
+        SIGNAL_TYPE_ACTION_SUCCESS,
+        { action: 'hilos_user_merge', reply },
+        requestId,
+      )
+    },
+    refuse(requestId: string) {
+      message(
+        SIGNAL_TYPE_ACTION_ERROR,
+        { action: 'hilos_user_merge', reason: 'The source account changed.' },
+        requestId,
+      )
+    },
     update(next: unknown) {
       page.data.set(HILOS_USER_MERGE_SECTION, next)
     },
@@ -164,6 +203,20 @@ function setup(raw: unknown = progress()) {
   }
 }
 
+function mergeRequest(
+  overrides: Partial<HilosAccountMergeRequest> = {},
+): HilosAccountMergeRequest {
+  return {
+    survivorUserId: 7,
+    loserUserId: 8,
+    passwordFate: 'loser',
+    secondFactorFate: 'both',
+    expectedSurvivorHasSecondFactor: true,
+    expectedLoserHasSecondFactor: true,
+    ...overrides,
+  }
+}
+
 function current(window: HilosAccountMergeWindow) {
   const view = window.view.get()
   expect(view?.kind).toBe('progress')
@@ -172,12 +225,310 @@ function current(window: HilosAccountMergeWindow) {
 }
 
 describe('createHilosAccountMergeWindow', () => {
+  describe('track', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('waits for the accepted id before projecting progress and later changes', async () => {
+      const { window, start, reply, frame } = setup()
+      const { handle, done } = start()
+      reply(handle.requestId, { operationId: 42 })
+      await expect(done).resolves.toBe('accepted')
+      expect(window.opened.get()).toBe(true)
+      const pending = {
+        kind: 'pending',
+        status: 'Preparing merge',
+        success: false,
+      }
+      expect(window.view.get()).toEqual(pending)
+      for (const old of [progress(), null, hiddenProgress()]) {
+        frame(old)
+        expect(window.view.get()).toEqual(pending)
+      }
+      frame(progress({ operationId: 42, state: 'wait', stage: 'go' }))
+      expect(current(window)).toMatchObject({
+        progress: { operationId: 42 },
+        status: 'Merge in progress',
+        success: false,
+      })
+      frame(null)
+      expect(window.view.get()?.kind).toBe('unavailable')
+      frame(hiddenProgress())
+      expect(current(window).progress.operationId).toBeNull()
+      frame(progress({ operationId: 43 }))
+      expect(window.view.get()?.kind).toBe('changed')
+    })
+
+    it('uses the first operation frame when it arrives before acceptance', async () => {
+      const { window, start, reply, frame } = setup()
+      const { handle, done } = start()
+      frame(progress({ operationId: 42 }))
+      reply(handle.requestId, { operationId: 42 })
+      await expect(done).resolves.toBe('accepted')
+      expect(current(window).progress.operationId).toBe(42)
+      expect(window.startNotice.get()).toBeNull()
+    })
+
+    it('rebinds an existing window without exposing a later operation', async () => {
+      const { window, start, reply, frame } = setup()
+      window.open()
+      const seen: (HilosAccountMergeWindowView | null)[] = []
+      releases.push(subscribeSignal(window.view, (view) => seen.push(view)))
+      const { handle, done } = start()
+      frame(progress({ operationId: 42 }))
+      reply(handle.requestId, { operationId: 42 })
+      await done
+      expect(current(window).progress.operationId).toBe(42)
+      seen.length = 0
+      frame(progress({ operationId: 43 }))
+      expect(seen.map((view) => view?.kind)).toEqual(['changed'])
+    })
+
+    it.each([false, true])(
+      'leaves an opened=%s window alone on refusal',
+      async (opened) => {
+        const { window, start, refuse } = setup()
+        if (opened) window.open()
+        const previous = window.view.get()
+        const { handle, done } = start()
+        refuse(handle.requestId)
+        await expect(done).resolves.toBe('refused')
+        expect(window.opened.get()).toBe(opened)
+        expect(window.view.get()).toBe(previous)
+        expect(window.startNotice.get()).toBeNull()
+      },
+    )
+
+    it('returns legacy without opening an observation window', async () => {
+      const { window, start, reply } = setup()
+      const { handle, done } = start()
+      reply(handle.requestId)
+      await expect(done).resolves.toBe('legacy')
+      expect(window.opened.get()).toBe(false)
+      expect(window.view.get()).toBeNull()
+      expect(window.startNotice.get()).toBeNull()
+    })
+
+    it.each(['timeout', 'disconnected', 'invalid-reply'])(
+      'notices %s and adopts the exact new operation',
+      async (outcome) => {
+        const { window, start, reply, connection, update } = setup()
+        const { handle, done } = start()
+        if (outcome === 'timeout') await vi.advanceTimersByTimeAsync(30000)
+        else if (outcome === 'disconnected') connection.close()
+        else reply(handle.requestId, { operationId: 0 })
+        await expect(done).resolves.toBe('unanswered')
+        expect(window.opened.get()).toBe(false)
+        expect(window.startNotice.get()).toBe(
+          'The merge request got no answer. If the merge started, it appears here.',
+        )
+        update(progress({ operationId: 42 }))
+        expect(window.startNotice.get()).toBeNull()
+        expect(window.opened.get()).toBe(true)
+        expect(current(window).progress.operationId).toBe(42)
+      },
+    )
+
+    it('finds an exact new operation already visible when the answer is lost', async () => {
+      const { window, start, frame } = setup()
+      const { done } = start()
+      frame(progress({ operationId: 42 }))
+      await vi.advanceTimersByTimeAsync(30000)
+      await expect(done).resolves.toBe('unanswered')
+      expect(window.startNotice.get()).toBeNull()
+      expect(current(window).progress.operationId).toBe(42)
+    })
+
+    it.each<[string, unknown]>([
+      ['previous id', progress()],
+      ['other survivor', progress({ operationId: 42, survivorUserId: 9 })],
+      ['other loser', progress({ operationId: 42, loserUserId: 9 })],
+      ['hidden operation', { ...progress(), operationId: HIDDEN_VALUE }],
+      [
+        'hidden survivor',
+        { ...progress({ operationId: 42 }), survivorUserId: HIDDEN_VALUE },
+      ],
+      [
+        'hidden loser',
+        { ...progress({ operationId: 42 }), loserUserId: HIDDEN_VALUE },
+      ],
+      [
+        'hidden choice',
+        { ...progress({ operationId: 42 }), choice: HIDDEN_VALUE },
+      ],
+      ...Object.entries({
+        passwordFate: 'survivor',
+        secondFactorFate: 'survivor',
+        expectedSurvivorHasSecondFactor: false,
+        expectedLoserHasSecondFactor: false,
+      }).flatMap<[string, unknown]>(([field, value]) => [
+        [
+          `different ${field}`,
+          {
+            ...progress({ operationId: 42 }),
+            choice: { ...progress().choice, [field]: value },
+          },
+        ],
+        [
+          `hidden ${field}`,
+          {
+            ...progress({ operationId: 42 }),
+            choice: { ...progress().choice, [field]: HIDDEN_VALUE },
+          },
+        ],
+      ]),
+    ])(
+      'ignores %s while waiting for an unanswered request',
+      async (_name, other) => {
+        const { window, start, frame } = setup()
+        const { done } = start()
+        await vi.advanceTimersByTimeAsync(30000)
+        await done
+        frame(other)
+        expect(window.opened.get()).toBe(false)
+        expect(window.startNotice.get()).toBe(
+          HILOS_ACCOUNT_MERGE_WINDOW_COPY.unanswered,
+        )
+        frame(progress({ operationId: 42 }))
+        expect(current(window).progress.operationId).toBe(42)
+      },
+    )
+
+    it('matches absent optional choices without accepting hidden expectations', async () => {
+      const { window, start, frame } = setup(null)
+      const { done } = start(
+        mergeRequest({
+          passwordFate: null,
+          secondFactorFate: null,
+          expectedSurvivorHasSecondFactor: false,
+          expectedLoserHasSecondFactor: false,
+        }),
+      )
+      await vi.advanceTimersByTimeAsync(30000)
+      await done
+      const choice = {
+        passwordFate: null,
+        secondFactorFate: null,
+        expectedSurvivorHasSecondFactor: false,
+        expectedLoserHasSecondFactor: false,
+      }
+      frame({
+        ...progress(),
+        choice: { ...choice, expectedLoserHasSecondFactor: HIDDEN_VALUE },
+      })
+      expect(window.opened.get()).toBe(false)
+      frame(progress({ choice }))
+      expect(current(window).progress.operationId).toBe(41)
+    })
+
+    it('ignores a late reply after timeout and still follows the live exact operation', async () => {
+      const { window, start, reply, frame } = setup()
+      const { handle, done } = start()
+      await vi.advanceTimersByTimeAsync(30000)
+      await done
+      reply(handle.requestId, { operationId: 99 })
+      await Promise.resolve()
+      expect(window.opened.get()).toBe(false)
+      expect(window.startNotice.get()).toBe(
+        HILOS_ACCOUNT_MERGE_WINDOW_COPY.unanswered,
+      )
+      frame(progress({ operationId: 42 }))
+      expect(current(window).progress.operationId).toBe(42)
+      reply(handle.requestId, { operationId: 99 })
+      await Promise.resolve()
+      expect(current(window).progress.operationId).toBe(42)
+    })
+
+    it('releases tracking when a notice observer closes the window', async () => {
+      const { window, start, frame, readMerge } = setup()
+      releases.push(
+        subscribeSignal(window.startNotice, (notice) => {
+          if (notice !== null) window.close()
+        }),
+      )
+      const { done } = start()
+      await vi.advanceTimersByTimeAsync(30000)
+      await done
+      readMerge.mockClear()
+      frame(progress({ operationId: 42 }))
+      expect(readMerge).not.toHaveBeenCalled()
+      expect(window.opened.get()).toBe(false)
+      expect(window.startNotice.get()).toBeNull()
+    })
+
+    it('replaces unanswered tracking and ignores an earlier in-flight action', async () => {
+      const { window, start, reply, frame } = setup()
+      const first = start()
+      await vi.advanceTimersByTimeAsync(30000)
+      await first.done
+      const second = start(mergeRequest({ loserUserId: 9 }))
+      expect(window.startNotice.get()).toBeNull()
+      frame(progress({ operationId: 42 }))
+      expect(window.opened.get()).toBe(false)
+      const third = start()
+      reply(second.handle.requestId, { operationId: 43 })
+      await second.done
+      expect(window.opened.get()).toBe(false)
+      reply(third.handle.requestId, { operationId: 44 })
+      await third.done
+      expect(window.view.get()?.kind).toBe('pending')
+      frame(progress({ operationId: 44 }))
+      expect(current(window).progress.operationId).toBe(44)
+    })
+
+    it.each(['close', 'dispose', 'card', 'row loss', 'view', 'none'])(
+      'releases unanswered observers and notice on %s',
+      async (change) => {
+        const { window, start, scopes, access, frame, readMerge } = setup()
+        const { done } = start()
+        await vi.advanceTimersByTimeAsync(30000)
+        await done
+        const off = subscribeSignal(window.view, () => {})
+        releases.push(off)
+        if (change === 'close') window.close()
+        else if (change === 'dispose') window.dispose()
+        else if (change === 'row loss') scopes.dropPage()
+        else if (change === 'card') {
+          const next = scopes.openPage(HilosPages.USER)
+          next.tables.upsert('userDetail', 9, {
+            users: { type: USER_ENTITY_TYPE, id: 9 },
+          })
+        } else access(change === 'view' ? 'view' : 'none')
+        expect(window.startNotice.get()).toBeNull()
+        readMerge.mockClear()
+        frame(progress({ operationId: 42 }))
+        access('full')
+        expect(readMerge).not.toHaveBeenCalled()
+        expect(window.opened.get()).toBe(false)
+        expect(window.view.get()).toBeNull()
+      },
+    )
+
+    it.each(['close', 'dispose', 'card', 'view'])(
+      'does not open on an answer after %s canceled tracking',
+      async (change) => {
+        const { window, start, reply, access, scopes } = setup()
+        const { handle, done } = start()
+        if (change === 'close') window.close()
+        else if (change === 'dispose') window.dispose()
+        else if (change === 'card') scopes.dropPage()
+        else access('view')
+        reply(handle.requestId, { operationId: 42 })
+        await done
+        expect(window.opened.get()).toBe(false)
+        expect(window.startNotice.get()).toBeNull()
+      },
+    )
+  })
+
   describe('state, outcome and refusal priority', () => {
     it('exports the window copy from the lazy users entry', () => {
       expect(HILOS_ACCOUNT_MERGE_WINDOW_COPY).toEqual({
         view: 'View merge',
         close: 'Close',
         unavailable: 'Merge progress is unavailable.',
+        unanswered:
+          'The merge request got no answer. If the merge started, it appears here.',
         changed:
           'The merge operation has changed. Close this window and open it again.',
         survivor: 'Survivor',

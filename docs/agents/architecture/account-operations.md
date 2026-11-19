@@ -2468,7 +2468,11 @@ path on its own:
   cutovers below.
 - Starting from the card preserves the chosen fates, shown flags, the
   `merge_accounts` step-up and existing refusal words. Acceptance is not end;
-  tracked success means durable end (not in the code yet — HIL-2008).
+  the prepared start answers with accepted `{operationId}`, and the window
+  observes that operation. Success requires `end` with `completed`. A lost
+  reply means neither success nor cancellation: the choices remain available,
+  and observation resumes only for the exact new operation matching the request.
+  Production activation remains at the common switch below (HIL-1999).
 - Vue's observation window offers `Cancel merge`, sending
   `hilos_user_merge_cancel` with only `{operationId}`. The sessions holder
   permits cancellation only before the loser's give fact. A successful reply

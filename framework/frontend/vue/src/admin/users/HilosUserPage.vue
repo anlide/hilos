@@ -227,6 +227,7 @@ const cancelAction = shallowRef(useTrackedAction({ toast: false }))
 const cancelError = computed(() => cancelAction.value.error.value)
 const mergeObserved = useSignal(mergeWindow.opened)
 const mergeView = useSignal(mergeWindow.view)
+const mergeStartNotice = useSignal(mergeWindow.startNotice)
 const mergeObservation = computed(() =>
   mergeView.value?.kind === 'progress' ? mergeView.value : null,
 )
@@ -242,7 +243,7 @@ watch(
   { flush: 'sync' },
 )
 const mergeObservationStatus = computed(() =>
-  mergeView.value?.kind === 'progress'
+  mergeView.value?.kind === 'progress' || mergeView.value?.kind === 'pending'
     ? mergeView.value.status
     : (mergeView.value?.message ?? ''),
 )
@@ -492,6 +493,33 @@ const mergeOpening = ref(false)
 const mergeBody = ref<HTMLElement | null>(null)
 watch(mergeProof, () => focusWindow(mergeBody))
 const currentUserId = useSignal(sessionUserId(props.context.scopes))
+// Cancel may disappear while observation stays open; recover only its focus.
+watch(
+  () => mergeCancelAvailable.value || mergeCancelPending.value,
+  (visible) => {
+    if (visible || !mergeObserved.value) return
+    const dialog = mergeBody.value?.closest<HTMLElement>('[role="dialog"]')
+    if (
+      !dialog ||
+      dialog.querySelector('[data-id="hilos-user-merge-cancel"]') !==
+        document.activeElement
+    )
+      return
+    const userId = detail.value?.id
+    void nextTick(() => {
+      const active = document.activeElement
+      if (
+        mergeObserved.value &&
+        detail.value?.id === userId &&
+        mergeBody.value?.closest('[role="dialog"]') === dialog &&
+        dialog.isConnected &&
+        (!active || active === document.body)
+      ) {
+        focusInitial(dialog)
+      }
+    })
+  },
+)
 const mergeDraftOpen = ref(false)
 const mergeOpen = computed({
   get: () => mergeDraftOpen.value || mergeObserved.value,
@@ -499,6 +527,21 @@ const mergeOpen = computed({
     if (!open) closeMerge()
   },
 })
+watch(
+  mergeObserved,
+  (observed) => {
+    if (!observed || !mergeDraftOpen.value) return
+    mergeDraftOpen.value = false
+    void nextTick(() => {
+      const dialog = mergeBody.value?.closest<HTMLElement>('[role="dialog"]')
+      const active = document.activeElement
+      if (dialog && (!active || active === document.body)) {
+        focusInitial(dialog)
+      }
+    })
+  },
+  { flush: 'sync' },
+)
 const mergeStep = ref<1 | 2>(1)
 const selectedCandidateId = ref<number | null>(null)
 const selectedSnapshot = ref<HilosMergeCandidateRow | null>(null)
@@ -708,18 +751,27 @@ async function submitMerge(): Promise<void> {
   const fate = passwordChoiceRequired.value
     ? (passwordFate.value ?? undefined)
     : undefined
-  if (
-    await mergeAction.run(
-      accountMerge.merge(
-        survivor.id,
-        loser.id,
-        fate,
-        secondFactorFate.value ?? undefined,
-        survivor.hasSecondFactor,
-        loser.hasSecondFactor,
-      ),
-    )
-  ) {
+  const handle = accountMerge.merge(
+    survivor.id,
+    loser.id,
+    fate,
+    secondFactorFate.value ?? undefined,
+    survivor.hasSecondFactor,
+    loser.hasSecondFactor,
+  )
+  const [outcome] = await Promise.all([
+    mergeWindow.track(handle, {
+      survivorUserId: survivor.id,
+      loserUserId: loser.id,
+      passwordFate: fate ?? null,
+      secondFactorFate: secondFactorFate.value ?? null,
+      expectedSurvivorHasSecondFactor: survivor.hasSecondFactor,
+      expectedLoserHasSecondFactor: loser.hasSecondFactor,
+    }),
+    mergeAction.run(handle),
+  ])
+  // SCAFFOLD: the synchronous producer remains until HIL-1999.
+  if (outcome === 'legacy') {
     closeMerge()
   }
 }
@@ -1390,22 +1442,27 @@ function submit(): void {
                   .filter(Boolean)
                   .join('\n')
               : mergeProof === 'skip'
-                ? mergeAction.error.value
+                ? mergeStartNotice === null
+                  ? mergeAction.error.value
+                  : null
                 : mergeStepUpRefusal
           }}
         </div>
         <div class="visually-hidden" role="status" aria-live="polite">
-          {{ mergeObservationStatus }}
+          {{ mergeObservationStatus || mergeStartNotice }}
         </div>
+        <p
+          class="text-truncate"
+          :title="mergeObservationStatus || mergeStartNotice || ''"
+        >
+          <span v-if="mergeObservationStatus || mergeStartNotice">{{
+            mergeObservationStatus || mergeStartNotice
+          }}</span>
+          <span v-else class="invisible" aria-hidden="true">{{
+            mergeCopy.preparing
+          }}</span>
+        </p>
         <template v-if="mergeObserved">
-          <p class="text-truncate" :title="mergeObservationStatus">
-            <span v-if="mergeObservationStatus">{{
-              mergeObservationStatus
-            }}</span>
-            <span v-else class="invisible" aria-hidden="true">{{
-              mergeCopy.preparing
-            }}</span>
-          </p>
           <HilosFormError
             :key="mergeObservation?.reason ?? ''"
             :message="mergeObservation?.reason ?? null"
@@ -1518,6 +1575,7 @@ function submit(): void {
         <template v-else>
           <HilosActionError
             :action="mergeAction"
+            :suppressed="mergeStartNotice !== null"
             details-title="Couldn't merge the accounts"
           />
           <form
@@ -1733,7 +1791,6 @@ function submit(): void {
               v-if="mergeCancelAvailable || mergeCancelPending"
               type="button"
               class="btn-sm btn-outline-danger"
-              :disabled="mergeCancelPending"
               :loading="mergeCancelPending"
               data-id="hilos-user-merge-cancel"
               @click="cancelMerge"

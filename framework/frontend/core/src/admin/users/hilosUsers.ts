@@ -95,6 +95,7 @@ import { type HilosTableProgress } from '../../table/tableProgress.js'
 import { TableViewportController } from '../../table/TableViewportController.js'
 import { ANALYTICS_PERSON_ROUTE_PARAM } from '../analytics/hilosAnalyticsPerson.js'
 import { hiddenAsWord } from '../../state/viewMode.js'
+import { readableHilosAccountMergeProgress } from './hilosAccountMergePrivacy.js'
 
 export {
   SIGNAL_ACCOUNT_STANDING_STATE,
@@ -407,6 +408,9 @@ export const HILOS_USER_MERGE_AVAILABILITY_SECTION = 'accountMergeAvailability'
 /** Row payload key of the merge availability in the inline merge slot. */
 const USER_MERGE_AVAILABILITY_FIELD = 'accountMergeAvailability'
 
+/** Row payload key of the current or accepted merge operation. */
+const ACCOUNT_MERGE_OPERATION_ID_FIELD = 'operationId'
+
 /** Key of the merge progress bar under either person's people-list row. */
 export const HILOS_USERS_MERGE_PROGRESS_KEY = 'hilos-account-merge'
 
@@ -494,6 +498,11 @@ export interface HilosUserRename {
   submitRename(id: number, name: string): boolean
 }
 
+/** Acceptance of a merge request; its outcome arrives through live progress. */
+export interface HilosAccountMergeAccepted {
+  readonly operationId: number
+}
+
 /** The account-merge action surface a user-detail view binds to. */
 export interface HilosAccountMerge {
   /**
@@ -513,7 +522,7 @@ export interface HilosAccountMerge {
     secondFactorFate: HilosSecondFactorFate | undefined,
     expectedSurvivorHasSecondFactor: boolean,
     expectedLoserHasSecondFactor: boolean,
-  ): ActionHandle
+  ): ActionHandle<HilosAccountMergeAccepted | undefined>
   /**
    * Request cancellation. Acceptance is not the end; the outcome arrives on
    * userStanding.merge.
@@ -1392,7 +1401,7 @@ const accountMergeRefusalSchema = z.object({
   reason: z.string(),
 })
 const accountMergeProgressSchema = z.object({
-  operationId: accountMergeIdSchema,
+  [ACCOUNT_MERGE_OPERATION_ID_FIELD]: accountMergeIdSchema,
   survivorUserId: accountMergeIdSchema,
   loserUserId: accountMergeIdSchema,
   state: z.enum(['preparing', 'wait', 'refusal', 'end']),
@@ -1527,6 +1536,10 @@ export function createHilosUserStanding(
   )
   const detailRows = context.scopes.pageTableSignal(USER_DETAIL_TABLE)
   let stop: (() => void) | null = null
+  // Remember the source identity through stop/start; rereading a consumed
+  // snapshot must not restore progress forgotten by access, person or dispose.
+  let mergeSnapshot:
+    { page: ReturnType<ScopeManager['page']>; raw: unknown } | undefined
 
   /**
    * Whether a frame speaks about the person the card shows: the card's row names
@@ -1562,10 +1575,51 @@ export function createHilosUserStanding(
       const mergeSection = context.scopes.pageDataSignal(
         HILOS_USER_MERGE_SECTION,
       )
-      merge.set(readHilosAccountMerge(mergeSection.get()))
+      let mergePerson = detailRows.get()[0]?.rowKey
+      const takeMerge = (raw: unknown): void => {
+        mergePerson = detailRows.get()[0]?.rowKey
+        merge.set(
+          readableHilosAccountMergeProgress(
+            readHilosAccountMerge(raw),
+            hilosAdminAccess.get(),
+          ),
+        )
+      }
+      const takeMergeSection = (raw: unknown): void => {
+        mergeSnapshot = { page: context.scopes.page(), raw }
+        takeMerge(raw)
+      }
+      const rawMerge = mergeSection.get()
+      if (
+        mergeSnapshot === undefined ||
+        mergeSnapshot.page !== context.scopes.page() ||
+        !Object.is(mergeSnapshot.raw, rawMerge)
+      ) {
+        takeMergeSection(rawMerge)
+      }
       const offMergeSection = subscribeSignal(mergeSection, (raw) =>
-        merge.set(readHilosAccountMerge(raw)),
+        takeMergeSection(raw),
       )
+      // A withheld replacement may precede the session verdict. Keep it whole;
+      // every other access change forgets the snapshot until a fresh source.
+      const offMergeAccess = subscribeSignal(hilosAdminAccess, (access) =>
+        merge.set(
+          access === 'view'
+            ? readableHilosAccountMergeProgress(merge.get(), access)
+            : null,
+        ),
+      )
+      const shownPerson = computedSignal(() => detailRows.get()[0]?.rowKey)
+      const offMergePerson = subscribeSignal(shownPerson, (person) => {
+        if (person !== undefined) {
+          // Page data can precede its first row. That row adopts the source;
+          // replacing an already named person forgets the previous source.
+          if (mergePerson !== undefined && person !== mergePerson) {
+            merge.set(null)
+          }
+          mergePerson = person
+        }
+      })
       const availabilitySection = context.scopes.pageDataSignal(
         HILOS_USER_MERGE_AVAILABILITY_SECTION,
       )
@@ -1591,7 +1645,7 @@ export function createHilosUserStanding(
           }
           const row = detailRows.get()[0]
           if (row !== undefined && Number(row.rowKey) === frame.userId) {
-            merge.set(readHilosAccountMerge(frame.accountMerge))
+            takeMerge(frame.accountMerge)
             mergeAvailability.set(
               readHilosAccountMergeAvailability(frame.accountMergeAvailability),
             )
@@ -1602,6 +1656,8 @@ export function createHilosUserStanding(
         offSection()
         offErasureSection()
         offMergeSection()
+        offMergeAccess()
+        offMergePerson()
         offAvailabilitySection()
         offFrames()
       }
@@ -2059,6 +2115,12 @@ export function hilosPasswordFateChoices(
   ]
 }
 
+const accountMergeAcceptedSchema = z
+  .object({ [ACCOUNT_MERGE_OPERATION_ID_FIELD]: z.number().int().positive() })
+  .strict()
+  // SCAFFOLD: legacy synchronous producer until HIL-1999.
+  .optional()
+
 /**
  * The tracked account-merge action for a user-detail view.
  *
@@ -2076,14 +2138,18 @@ export function createHilosAccountMerge(
       expectedSurvivorHasSecondFactor,
       expectedLoserHasSecondFactor,
     ) {
-      return context.actions.dispatch(HILOS_USER_MERGE_ACTION, {
-        survivorUserId,
-        loserUserId,
-        ...(passwordFate === undefined ? {} : { passwordFate }),
-        ...(secondFactorFate === undefined ? {} : { secondFactorFate }),
-        expectedSurvivorHasSecondFactor,
-        expectedLoserHasSecondFactor,
-      })
+      return context.actions.dispatch(
+        HILOS_USER_MERGE_ACTION,
+        {
+          survivorUserId,
+          loserUserId,
+          ...(passwordFate === undefined ? {} : { passwordFate }),
+          ...(secondFactorFate === undefined ? {} : { secondFactorFate }),
+          expectedSurvivorHasSecondFactor,
+          expectedLoserHasSecondFactor,
+        },
+        { replySchema: accountMergeAcceptedSchema },
+      )
     },
     cancel(operationId) {
       return context.actions.dispatch(HILOS_USER_MERGE_CANCEL_ACTION, {

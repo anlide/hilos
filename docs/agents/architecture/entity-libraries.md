@@ -483,6 +483,10 @@ answers builds it with `Hilos\Core\Action\ActionRefusal` — `said()` for a
 sentence of its own, `fromThrowable()` for a failure, which passes the same door
 a page action's failure does.
 
+The writer may accept an ask with a domain reply through
+`HandoverAnswerSignalData::accepted()`; the gatekeeper relays its wire form
+unchanged through `RelayedActionReplyDTO`.
+
 *On who the write belongs to* (HIL-1001). **Whoever asked travels with the ask,
 and the receipt of the ask stamps the write with them.** A write the gatekeeper
 performed itself carried the person who pressed the button as its origin for
@@ -519,7 +523,7 @@ id travels through the rebind, so the ack leaves behind the restored identity.
 three session-toast controls are the same again.
 
 **The accepting page answers even when only the project can perform part of the
-write.** Account merge follows the same two-step shape as impersonation: the framework
+write.** Legacy account merge follows the same two-step shape as impersonation: the framework
 single-user ADMIN page owns `HILOS_USER_MERGE`, forwards `HILOS_ACCOUNT_MERGE` with
 `HandoverGatekeeperTrait`, and defers the tracked action. The sessions library calls the
 project's merge seams inside the transaction, then answers the page on
@@ -530,13 +534,15 @@ deletion and takeover actions use the same handover: the sessions library writes
 blocks and the takeover, and the users library schedules or cancels deletion; the ADMIN
 page answers each press.
 
-For the [split merge](account-operations.md#merge-cutover-and-observation), tracked
-success will mean durable end, not acceptance of a request
-(not in the code yet — HIL-2008); the first page reply and live updates carry its
-saved observation, waits and safe refusal (HIL-2003; see
-[the card carriers](account-standing.md#the-wire)). This card read path stays
-read-only; legacy production callers remain until the common switch (not in the
-code yet — HIL-1999).
+For the prepared [split merge](account-operations.md#merge-cutover-and-observation),
+the tracked action's success reply means acceptance and carries `{operationId}`.
+The operation's saved observation, waits and safe refusal arrive in the first
+`page_response` and live standing updates (HIL-2003; see
+[the card carriers](account-standing.md#the-wire)). The outcome is read from
+that operation's live carrier: success requires `state=end` and
+`outcome=completed`. A lost action reply does not establish an outcome. This
+card read path stays read-only; legacy production callers remain until the
+common switch (not in the code yet — HIL-1999).
 
 **An operation with two entrances: the gatekeeper's lock closes the browser one
 only.** The writer keeps its own check for the entrance that has no page. The

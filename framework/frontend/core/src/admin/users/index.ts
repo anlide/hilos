@@ -103,6 +103,7 @@ export {
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   hilosPasswordFateChoices,
   type HilosAccountMerge,
+  type HilosAccountMergeAccepted,
   type HilosMergeCandidateIdentity,
   type HilosMergeCandidateRow,
   type HilosMergeCandidates,
@@ -130,6 +131,8 @@ export {
   HILOS_ACCOUNT_MERGE_WINDOW_COPY,
   type HilosAccountMergeWindow,
   type HilosAccountMergeWindowView,
+  type HilosAccountMergeRequest,
+  type HilosAccountMergeStartOutcome,
 } from './hilosAccountMergeWindow.js'
 export {
   createHilosAccountMergeCancel,
