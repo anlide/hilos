@@ -262,6 +262,7 @@ use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Auth\SecondFactor\SecondFactorTrustRestrictionSweep;
 use Hilos\Users\AdminCommandConstants;
+use Hilos\Users\DTO\AccountMergeCancelSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Utils\Helpers\HttpHeaderHelper;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -355,6 +356,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** Named end of a merge chain when that chain has no live account (HIL-1294). */
     public const string ACCOUNT_MERGE_ANOTHER_ACCOUNT = 'another account';
 
+    /** Refusal once the merge has a transfer fact or completed. */
+    public const string ACCOUNT_MERGE_CANCEL_TOO_LATE_MESSAGE = 'The merge can no longer be canceled';
+
+    /** Refusal when cancellation names no merge. */
+    public const string ACCOUNT_MERGE_CANCEL_MISSING_MESSAGE = 'This merge no longer exists';
+
     /**
      * Sessions and the coordinator's immutable work records belong to this holder. Its own
      * erasure part releases sessions and removes access-log rows. The remaining foreign rights
@@ -447,6 +454,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * {@see HilosSignalConstants::HILOS_SESSION_STATE} is deliberately absent - it is the
      * frame this library SENDS, and the project declares it. So is
      * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE}, the answer to the ninth.
+     * The user card also asks to cancel an existing merge preparation here; its acceptance
+     * returns to that page, while the saved release facts supply the observed end.
      *
      * The eleventh has no fixed sender at all (HIL-768): a toast addressed to a session may be
      * raised by any agent that finished something a person is waiting on, and it arrives here
@@ -526,6 +535,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
         HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
+        HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL => AccountMergeCancelSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER => AccountOperationAnswerSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET => AccountAdminSetSignalData::class,
         HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => AccountBlockSetSignalData::class,
@@ -4575,6 +4585,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL:
+                $cancel = $data->data;
+                if (!$cancel instanceof AccountMergeCancelSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountMergeCancelSignalData::class, $cancel);
+                }
+                $this->handleAccountMergeCancelRequest($cancel);
+
+                return;
+
             case HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER:
                 $answer = $data->data;
                 if (!$answer instanceof AccountOperationAnswerSignalData) {
@@ -6890,6 +6909,47 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Accepts cancellation under the holder's durable no-give gate; release ends independently.
+     *
+     * @param AccountMergeCancelSignalData $request Existing merge and waiting administrator
+     * @throws InvalidArgumentException When the answering frame cannot be named
+     */
+    private function handleAccountMergeCancelRequest(AccountMergeCancelSignalData $request): void
+    {
+        try {
+            AskingAdministrator::of($request->acceptKey);
+            $operation = Hilos::$db->accountOperations->fresh($request->operationId);
+            if ($operation === null || $operation->kind !== AccountOperationKind::Merge) {
+                throw new ValidationException(self::ACCOUNT_MERGE_CANCEL_MISSING_MESSAGE);
+            }
+            $state = $this->cancelAccountMerge($operation);
+            if ($state === AccountMergeCancellationState::TooLate) {
+                throw new ValidationException(self::ACCOUNT_MERGE_CANCEL_TOO_LATE_MESSAGE);
+            }
+        } catch (WiringRefusal $refusal) {
+            throw $refusal;
+        } catch (Throwable $e) {
+            $refusal = ActionRefusal::fromThrowable($e);
+            if ($refusal->isInternal()) {
+                $this->logAgentError("Account merge #{$request->operationId} cancellation failed: {$e->getMessage()}");
+            }
+            $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
+
+            return;
+        }
+
+        $this->sendToAgent($request->replySignal, new HandoverAnswerSignalData(
+            acceptKey: $request->acceptKey,
+            requestId: $request->requestId,
+            action: $request->action,
+            successMessage: null,
+            error: null,
+            errorType: null,
+            errorDetail: null,
+        ));
+    }
+
+    /**
      * Folds one account into another and reports what moved - the core behind both ways in
      * (HIL-378).
      *
@@ -7731,6 +7791,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Serves the user card cancellation handover through the existing coordinator and release drive.
+     *
      * @param AccountOperation $operation Prepared merge whose no-give gate decides cancellation
      * @return AccountMergeCancellationState Durable cancellation verdict, followed by release or forward duties
      * @throws Throwable When authority, proofs or transactional work refuses progress

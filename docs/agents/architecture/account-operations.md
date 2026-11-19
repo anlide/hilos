@@ -2461,16 +2461,22 @@ path on its own:
 - Vue's list shows the states (not in the code yet — HIL-2005), its card
   shows them. Its merge window observes the recorded operation through the
   shared core window, including live waits, refusal and end, with the server's
-  privacy projection. This observation is read-only; closing it releases
-  observation and does not cancel the operation. The separate draft uses the
-  candidates' availability verdict and invalidates password and protection
-  choices independently when their shown summaries change. It preserves the
-  legacy merge action pending the caller cutovers below.
+  privacy projection. Closing it releases observation and does not cancel the
+  operation. The separate draft uses the candidates' availability verdict and
+  invalidates password and protection choices independently when their shown
+  summaries change. It preserves the legacy merge action pending the caller
+  cutovers below.
 - Starting from the card preserves the chosen fates, shown flags, the
   `merge_accounts` step-up and existing refusal words. Acceptance is not end;
   tracked success means durable end (not in the code yet — HIL-2008).
-- Cancellation from the window is allowed only before the loser's fact;
-  closing the window is not cancellation (not in the code yet — HIL-2009).
+- Vue's observation window offers `Cancel merge`, sending
+  `hilos_user_merge_cancel` with only `{operationId}`. The sessions holder
+  permits cancellation only before the loser's give fact. A successful reply
+  accepts the request; it is not the end. The window closes with `Merge canceled`
+  only when the live operation reaches `not_started` without a business refusal.
+  A request refusal stays in the window beside the live progress. Closing the
+  window is not cancellation. This route is prepared before the live cutover;
+  there is no production durable merge to address until HIL-1999.
 - React carries the corresponding states and actions
   (not in the code yet — HIL-2010). Angular carries them too
   (not in the code yet — HIL-2011). Their interviews and those of the Vue

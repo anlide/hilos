@@ -967,6 +967,15 @@ describe('createHilosAccountMerge', () => {
     return { context, calls }
   }
 
+  it('addresses cancellation only by the existing operation id', () => {
+    const { context, calls } = recordingContext()
+    createHilosAccountMerge(context).cancel(41)
+
+    expect(calls).toEqual([
+      { action: 'hilos_user_merge_cancel', payload: { operationId: 41 } },
+    ])
+  })
+
   it('omits passwordFate when the accounts do not need a choice', () => {
     const { context, calls } = recordingContext()
     createHilosAccountMerge(context).merge(

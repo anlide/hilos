@@ -151,6 +151,7 @@ final class AdminViewModeGateTest extends IntegrationTestCase
         'hilos_user_block_set',
         'hilos_user_deletion_set',
         'hilos_user_merge',
+        'hilos_user_merge_cancel',
         'hilos_user_session_end',
         'hilos_user_sessions_end_all',
         'hilos_user_update',

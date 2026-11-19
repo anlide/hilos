@@ -58,6 +58,8 @@ use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
 use Hilos\Users\DTO\AccountMergeActionDTO;
+use Hilos\Users\DTO\AccountMergeCancelActionDTO;
+use Hilos\Users\DTO\AccountMergeCancelSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AccountStandingStateSignalData;
 use Throwable;
@@ -119,6 +121,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
     public const array ACTIONS = [
         HilosSignalConstants::HILOS_USER_UPDATE => HilosUserUpdateActionDTO::class,
         HilosSignalConstants::HILOS_USER_MERGE => AccountMergeActionDTO::class,
+        HilosSignalConstants::HILOS_USER_MERGE_CANCEL => AccountMergeCancelActionDTO::class,
         HilosSignalConstants::HILOS_USER_ADMIN_SET => HilosUserAdminSetActionDTO::class,
         HilosSignalConstants::HILOS_USER_BLOCK_SET => HilosUserBlockSetActionDTO::class,
         HilosSignalConstants::HILOS_USER_DELETION_SET => HilosUserDeletionSetActionDTO::class,
@@ -129,6 +132,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
         SignalTypeConstants::AGENT_SIGNAL => [
             HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE => HandoverAnswerSignalData::class,
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => HandoverAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => HandoverAnswerSignalData::class,
@@ -180,6 +184,14 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
                     throw new InvalidActionPayloadException($action, AccountMergeActionDTO::class, $dto);
                 }
                 $this->handleAccountMerge($acceptKey, $dto);
+
+                break;
+
+            case HilosSignalConstants::HILOS_USER_MERGE_CANCEL:
+                if (!$dto instanceof AccountMergeCancelActionDTO) {
+                    throw new InvalidActionPayloadException($action, AccountMergeCancelActionDTO::class, $dto);
+                }
+                $this->handleAccountMergeCancel($acceptKey, $dto);
 
                 break;
 
@@ -237,6 +249,7 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
         switch ($name) {
             case HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE:
             case HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE:
+            case HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL_DONE:
             case HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE:
             case HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE:
             case HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE:
@@ -537,6 +550,26 @@ abstract class AbstractHilosUserPage extends AbstractHilosPage
                 acceptKey: $acceptKey,
                 requestId: $this->currentActionRequestId(),
                 action: HilosSignalConstants::HILOS_USER_MERGE,
+                successMessage: null,
+            ),
+        );
+    }
+
+    /**
+     * @param string $acceptKey Initiating connection
+     * @param AccountMergeCancelActionDTO $dto Existing merge to cancel
+     * @throws InvalidArgumentException When the handover frame cannot be named
+     */
+    private function handleAccountMergeCancel(string $acceptKey, AccountMergeCancelActionDTO $dto): void
+    {
+        $this->forward(
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL,
+            new AccountMergeCancelSignalData(
+                operationId: $dto->operationId,
+                replySignal: HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL_DONE,
+                acceptKey: $acceptKey,
+                requestId: $this->currentActionRequestId(),
+                action: HilosSignalConstants::HILOS_USER_MERGE_CANCEL,
                 successMessage: null,
             ),
         );

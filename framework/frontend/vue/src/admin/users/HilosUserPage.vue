@@ -47,6 +47,7 @@ import {
   onMounted,
   onUnmounted,
   ref,
+  shallowRef,
   watch,
   type Ref,
 } from 'vue'
@@ -87,6 +88,8 @@ import {
   createHilosUserSessions,
   createHilosAccountMerge,
   createHilosAccountMergeWindow,
+  createHilosAccountMergeCancel,
+  HILOS_ACCOUNT_MERGE_CANCEL_COPY,
   HILOS_ACCOUNT_MERGE_WINDOW_COPY,
   HILOS_USER_MERGE_COPY,
   hilosUserMergeSection,
@@ -207,14 +210,36 @@ const mergeAvailability = useSignal(userStanding.mergeAvailability)
 const mergeSection = computed(() =>
   hilosUserMergeSection(mergeProgress.value, detail.value?.id),
 )
+const accountMerge = createHilosAccountMerge(props.context)
 const mergeWindow = createHilosAccountMergeWindow(
   userStanding.merge,
   computedSignal(() => userDetail.get()?.id),
 )
+const mergeCancel = createHilosAccountMergeCancel(
+  props.context,
+  mergeWindow,
+  accountMerge,
+)
+const mergeCancelAvailable = useSignal(mergeCancel.available)
+const mergeCancelPending = useSignal(mergeCancel.pending)
+const mergeAccess = useSignal(hilosAdminAccess)
+const cancelAction = shallowRef(useTrackedAction({ toast: false }))
+const cancelError = computed(() => cancelAction.value.error.value)
 const mergeObserved = useSignal(mergeWindow.opened)
 const mergeView = useSignal(mergeWindow.view)
 const mergeObservation = computed(() =>
   mergeView.value?.kind === 'progress' ? mergeView.value : null,
+)
+// A detached request may still settle; only this observation's runner is drawn.
+watch(
+  () =>
+    mergeAccess.value === 'full'
+      ? (mergeObservation.value?.progress.operationId ?? null)
+      : null,
+  () => {
+    cancelAction.value = useTrackedAction({ toast: false })
+  },
+  { flush: 'sync' },
 )
 const mergeObservationStatus = computed(() =>
   mergeView.value?.kind === 'progress'
@@ -292,6 +317,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   editor.dispose()
+  mergeCancel.dispose()
   mergeWindow.dispose()
   userStanding.dispose()
   clearInterval(lifecycleTick)
@@ -446,8 +472,6 @@ async function submitImpersonate(): Promise<void> {
 const mergeCandidates = createHilosMergeCandidates(props.context)
 const mergeRows = useSignal(mergeCandidates.controller.rows)
 const mergeSelectableIds = useSignal(mergeCandidates.selectableIds)
-const mergeAccess = useSignal(hilosAdminAccess)
-const accountMerge = createHilosAccountMerge(props.context)
 const mergeAction = useTrackedAction()
 const mergeStepUp = createHilosUserCardStepUp(props.context, () => {
   const survivor = detail.value
@@ -633,6 +657,12 @@ function closeMerge(): void {
   mergeWindow.close()
   mergeCandidates.dispose()
   clearMergeDraft()
+}
+
+/** Track the request; the core closes observation only on the live outcome. */
+function cancelMerge(): void {
+  const handle = mergeCancel.cancel()
+  if (handle) void cancelAction.value.run(handle)
 }
 
 function chooseCandidate(row: HilosMergeCandidateRow): void {
@@ -1356,7 +1386,9 @@ function submit(): void {
         >
           {{
             mergeObserved
-              ? mergeObservation?.reason
+              ? [mergeObservation?.reason, cancelError]
+                  .filter(Boolean)
+                  .join('\n')
               : mergeProof === 'skip'
                 ? mergeAction.error.value
                 : mergeStepUpRefusal
@@ -1379,6 +1411,10 @@ function submit(): void {
             :message="mergeObservation?.reason ?? null"
             data-id="hilos-user-merge-operation-refusal"
             :details-title="mergeCopy.refusalDetails"
+          />
+          <HilosFormError
+            :message="cancelError"
+            data-id="hilos-user-merge-cancel-refusal"
           />
           <template v-if="mergeObservation">
             <dl>
@@ -1684,15 +1720,27 @@ function submit(): void {
           </template>
         </template>
         <template #actions="{ requestClose }">
-          <button
-            v-if="mergeObserved"
-            type="button"
-            class="btn btn-secondary"
-            data-id="hilos-user-merge-close"
-            @click="requestClose"
-          >
-            {{ mergeWindowCopy.close }}
-          </button>
+          <template v-if="mergeObserved">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-id="hilos-user-merge-close"
+              @click="requestClose"
+            >
+              {{ mergeWindowCopy.close }}
+            </button>
+            <LoadingButton
+              v-if="mergeCancelAvailable || mergeCancelPending"
+              type="button"
+              class="btn-sm btn-outline-danger"
+              :disabled="mergeCancelPending"
+              :loading="mergeCancelPending"
+              data-id="hilos-user-merge-cancel"
+              @click="cancelMerge"
+            >
+              {{ HILOS_ACCOUNT_MERGE_CANCEL_COPY.cancel }}
+            </LoadingButton>
+          </template>
           <template v-else>
             <button
               type="button"

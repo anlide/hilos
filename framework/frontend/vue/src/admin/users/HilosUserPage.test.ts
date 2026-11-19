@@ -152,6 +152,9 @@ function userContext(
   updateCandidate: (merge: Record<string, unknown>) => void
   removeCandidate: (own?: boolean) => void
   answerMerge: (reason?: string) => void
+  answerMergeCancel: (reason?: string, requestId?: string) => void
+  listenerCount: (event: string) => number
+  disconnect: () => void
   answerImpersonate: (reason?: string) => void
   failRename: () => void
   standingFrame: (data: Record<string, unknown>) => void
@@ -225,19 +228,13 @@ function userContext(
     { id: 99, name: 'Admin', lastActivity: null },
   )
   const users = entityCollection(scopes, USER_ENTITY_TYPE, userFromFields)
-  const listeners = new Map<
-    string,
-    Set<(payload: { data?: unknown } & Record<string, unknown>) => void>
-  >()
+  const listeners = new Map<string, Set<(payload: unknown) => void>>()
   const sent: Array<{
     action: string
     data: unknown
     requestId?: string
   }> = []
-  const emit = (
-    event: string,
-    payload: { data?: unknown } & Record<string, unknown>,
-  ): void => {
+  const emit = (event: string, payload: unknown): void => {
     for (const listener of listeners.get(event) ?? []) {
       listener(payload)
     }
@@ -366,10 +363,7 @@ function userContext(
     sendTableRendered(): boolean {
       return true
     },
-    on(
-      event: string,
-      listener: (payload: { data?: unknown } & Record<string, unknown>) => void,
-    ): () => void {
+    on(event: string, listener: (payload: unknown) => void): () => void {
       const eventListeners = listeners.get(event) ?? new Set()
       eventListeners.add(listener)
       listeners.set(event, eventListeners)
@@ -434,6 +428,32 @@ function userContext(
         requestId,
         reason,
       })
+    },
+    listenerCount: (event) => listeners.get(event)?.size ?? 0,
+    answerMergeCancel(
+      reason?: string,
+      requestId = sent
+        .filter((entry) => entry.action === 'hilos_user_merge_cancel')
+        .at(-1)?.requestId,
+    ): void {
+      if (reason === undefined) {
+        emit('actionSuccess', {
+          kind: 'actionSuccess',
+          action: 'hilos_user_merge_cancel',
+          requestId,
+        })
+
+        return
+      }
+      emit('actionError', {
+        kind: 'actionError',
+        action: 'hilos_user_merge_cancel',
+        requestId,
+        reason,
+      })
+    },
+    disconnect(): void {
+      emit('state', 'disconnected')
     },
     answerImpersonate(reason?: string): void {
       const requestId = sent
@@ -4752,6 +4772,8 @@ describe('HilosUserPage merge observation', () => {
   const releases: (() => void)[] = []
   afterEach(() => {
     for (const release of releases.splice(0)) release()
+    hilosToasts.clear()
+    vi.useRealTimers()
   })
 
   function setup(
@@ -4819,6 +4841,424 @@ describe('HilosUserPage merge observation', () => {
     await flushPromises()
     return document.querySelector<HTMLElement>('[role="dialog"]')!
   }
+
+  it.each([
+    { name: 'preparing', snapshot: mergeProgress(), offered: true },
+    {
+      name: 'waiting before give',
+      snapshot: mergeProgress({ state: 'wait', stage: 'go' }),
+      offered: true,
+    },
+    { name: 'viewer', viewer: true, snapshot: mergeProgress(), offered: false },
+    {
+      name: 'disabled project',
+      disabled: true,
+      snapshot: mergeProgress(),
+      offered: false,
+    },
+    {
+      name: 'cancelling',
+      snapshot: mergeProgress({ state: 'wait', stage: 'cancelling' }),
+      offered: false,
+    },
+    { name: 'given', snapshot: mergeProgress({ given: true }), offered: false },
+    {
+      name: 'end',
+      snapshot: mergeProgress({ state: 'end', outcome: 'not_started' }),
+      offered: false,
+    },
+    {
+      name: 'withheld fields',
+      snapshot: hiddenMergeProgress(),
+      offered: false,
+    },
+  ])('offers cancellation only when allowed: $name', async (scenario) => {
+    const world = setup(!scenario.disabled, scenario.snapshot)
+    if (scenario.viewer) world.access(false)
+    await mountPage(world.context)
+    await openObservation()
+    const button = modalEl(
+      'hilos-user-merge-cancel',
+    ) as HTMLButtonElement | null
+    expect(button !== null).toBe(scenario.offered)
+    if (scenario.offered) {
+      expect(button?.textContent?.trim()).toBe('Cancel merge')
+      expect(button?.disabled).toBe(false)
+    }
+    expect(world.sent).toEqual([])
+  })
+
+  it('tracks one cancellation request and closes with success only at the live not-started end', async () => {
+    hilosToasts.clear()
+    const world = setup(true)
+    await mountPage(world.context)
+    const dialog = await openObservation()
+    modalEl('hilos-user-merge-cancel')!.click()
+    await nextTick()
+    expect(world.sent).toEqual([
+      {
+        action: 'hilos_user_merge_cancel',
+        data: { operationId: 41 },
+        requestId: expect.any(String),
+      },
+    ])
+    const button = modalEl('hilos-user-merge-cancel') as HTMLButtonElement
+    expect(button.disabled).toBe(true)
+    expect(button.getAttribute('aria-busy')).toBe('true')
+    button.click()
+    expect(world.sent).toHaveLength(1)
+    expect(dialog.textContent).toContain('Preparing merge')
+    expect(
+      (modalEl('hilos-user-merge-close') as HTMLButtonElement).disabled,
+    ).toBe(false)
+    world.answerMergeCancel()
+    await flushPromises()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+    expect(hilosToasts.toasts.get()).toEqual([])
+    world.update(mergeProgress({ state: 'wait', stage: 'go' }))
+    await nextTick()
+    expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+    world.update(mergeProgress({ state: 'wait', stage: 'cancelling' }))
+    await nextTick()
+    expect(dialog.textContent).toContain('Releasing merge reservations')
+    expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+    expect(hilosToasts.toasts.get()).toEqual([])
+    world.update(
+      mergeProgress({
+        state: 'end',
+        stage: 'cancelling',
+        outcome: 'not_started',
+      }),
+    )
+    await flushPromises()
+    expect(modalEl('modal')).toBeNull()
+    expect(hilosToasts.toasts.get()).toMatchObject([
+      { severity: 'success', message: 'Merge canceled', repeats: 1 },
+    ])
+    world.update(mergeProgress({ state: 'end', outcome: 'not_started' }))
+    await nextTick()
+    expect(hilosToasts.toasts.get()).toHaveLength(1)
+  })
+
+  it.each([
+    'The merge can no longer be canceled',
+    'This merge no longer exists',
+    'Administrator access is required',
+  ])(
+    'keeps the request refusal verbatim beside progress: %s',
+    async (reason) => {
+      hilosToasts.clear()
+      const world = setup(true)
+      await mountPage(world.context)
+      const dialog = await openObservation()
+      const voice = dialog.querySelector('[role="alert"]')!
+      expect(modalEl('hilos-user-merge-cancel-refusal-idle')).not.toBeNull()
+      modalEl('hilos-user-merge-cancel')!.click()
+      world.answerMergeCancel(reason)
+      await flushPromises()
+      expect(modalEl('modal')).not.toBeNull()
+      expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
+        reason,
+      )
+      expect(voice.textContent?.trim()).toBe(reason)
+      expect(dialog.querySelector('[role="alert"]')).toBe(voice)
+      expect(dialog.textContent).toContain('Preparing merge')
+      expect(modalEl('hilos-user-merge-operation-refusal')).toBeNull()
+      expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+      world.update(mergeProgress({ state: 'end', outcome: 'not_started' }))
+      await nextTick()
+      expect(modalEl('modal')).not.toBeNull()
+      expect(hilosToasts.toasts.get()).toEqual([])
+    },
+  )
+
+  it('keeps a business refusal in observation after cancellation was accepted', async () => {
+    hilosToasts.clear()
+    const world = setup(true)
+    await mountPage(world.context)
+    await openObservation()
+    modalEl('hilos-user-merge-cancel')!.click()
+    world.answerMergeCancel()
+    await flushPromises()
+    world.update(
+      mergeProgress({
+        state: 'end',
+        outcome: 'not_started',
+        refusal: {
+          code: 'occupied',
+          reason: 'The other account is reserved elsewhere.',
+        },
+      }),
+    )
+    await nextTick()
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-user-merge-operation-refusal')?.textContent).toBe(
+      'The other account is reserved elsewhere.',
+    )
+    expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('shows disconnection in the window, allows retry and clears the previous error', async () => {
+    hilosToasts.clear()
+    const world = setup(true)
+    await mountPage(world.context)
+    const dialog = await openObservation()
+    modalEl('hilos-user-merge-cancel')!.click()
+    world.disconnect()
+    await flushPromises()
+    expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
+      'The connection dropped before the action completed. Please try again.',
+    )
+    expect(dialog.textContent).toContain('Preparing merge')
+    expect(
+      (modalEl('hilos-user-merge-cancel') as HTMLButtonElement).disabled,
+    ).toBe(false)
+    expect(hilosToasts.toasts.get()).toEqual([])
+    modalEl('hilos-user-merge-cancel')!.click()
+    await nextTick()
+    expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
+    expect(modalEl('hilos-user-merge-cancel-refusal-idle')).not.toBeNull()
+    expect(world.sent).toHaveLength(2)
+    world.answerMergeCancel()
+    await flushPromises()
+    world.update(mergeProgress({ state: 'end', outcome: 'not_started' }))
+    await flushPromises()
+    expect(modalEl('modal')).toBeNull()
+    expect(hilosToasts.toasts.get()).toMatchObject([
+      { message: 'Merge canceled' },
+    ])
+  })
+
+  it.each(['hilos-user-merge-close', 'modal-close', 'Escape', 'unmount'])(
+    'allows %s while the request is pending and ignores its late success',
+    async (close) => {
+      hilosToasts.clear()
+      const world = setup(true)
+      const wrapper = await mountPage(world.context)
+      const dialog = await openObservation()
+      modalEl('hilos-user-merge-cancel')!.click()
+      await nextTick()
+      if (close === 'unmount') {
+        wrapper.unmount()
+        mounted.splice(mounted.indexOf(wrapper), 1)
+      } else if (close === 'Escape') {
+        dialog.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        )
+      } else modalEl(close)!.click()
+      await flushPromises()
+      expect(modalEl('modal')).toBeNull()
+      expect(modalEl('modal-confirm-discard')).toBeNull()
+      world.answerMergeCancel()
+      await flushPromises()
+      world.update(mergeProgress({ state: 'end', outcome: 'not_started' }))
+      await flushPromises()
+      expect(modalEl('modal')).toBeNull()
+      expect(world.sent).toHaveLength(1)
+      expect(hilosToasts.toasts.get()).toEqual([])
+    },
+  )
+
+  it.each([
+    { close: 'hilos-user-merge-close', early: false, reply: 'fail' },
+    { close: 'Escape', early: false, reply: 'timeout' },
+    { close: 'hilos-user-merge-close', early: false, reply: 'disconnected' },
+    { close: 'Escape', early: true, reply: 'fail' },
+    { close: 'hilos-user-merge-close', early: true, reply: 'success' },
+  ])(
+    'isolates a reopened request after $close from the old $reply (old first: $early)',
+    async ({ close, early, reply }) => {
+      const world = setup(true)
+      await mountPage(world.context)
+      const firstDialog = await openObservation()
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      modalEl('hilos-user-merge-cancel')!.click()
+      const firstId = world.sent.at(-1)!.requestId!
+      if (close === 'Escape') {
+        firstDialog.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        )
+      } else modalEl(close)!.click()
+      await flushPromises()
+      expect(modalEl('modal')).toBeNull()
+      expect(world.sent).toHaveLength(1)
+      const dialog = await openObservation()
+      modalEl('hilos-user-merge-cancel')!.click()
+      const secondId = world.sent.at(-1)!.requestId!
+      expect(secondId).not.toBe(firstId)
+      expect(world.sent).toHaveLength(2)
+      await nextTick()
+      expect(
+        modalEl('hilos-user-merge-cancel')?.getAttribute('aria-busy'),
+      ).toBe('true')
+      if (early) {
+        world.answerMergeCancel(
+          reply === 'fail' ? 'Old request refused.' : undefined,
+          firstId,
+        )
+        await flushPromises()
+        expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
+        expect(
+          modalEl('hilos-user-merge-cancel')?.getAttribute('aria-busy'),
+        ).toBe('true')
+      }
+      const reason = 'The merge can no longer be canceled'
+      world.answerMergeCancel(reason, secondId)
+      await flushPromises()
+      expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
+        reason,
+      )
+      expect(dialog.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+        reason,
+      )
+      if (!early) {
+        if (reply === 'timeout') await vi.runOnlyPendingTimersAsync()
+        else if (reply === 'disconnected') world.disconnect()
+        else world.answerMergeCancel('Old request refused.', firstId)
+        await flushPromises()
+      }
+      expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
+        reason,
+      )
+      expect(dialog.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+        reason,
+      )
+      expect(dialog.textContent).not.toContain('Old request refused.')
+      expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+      expect(hilosToasts.toasts.get()).toEqual([])
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
+
+  it('forgets a known refusal on close and tracks the next observation', async () => {
+    const world = setup(true)
+    await mountPage(world.context)
+    await openObservation()
+    modalEl('hilos-user-merge-cancel')!.click()
+    world.answerMergeCancel('Old request refused.')
+    await flushPromises()
+    expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
+      'Old request refused.',
+    )
+    modalEl('hilos-user-merge-close')!.click()
+    await flushPromises()
+    const dialog = await openObservation()
+    expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
+    expect(dialog.querySelector('[role="alert"]')?.textContent?.trim()).toBe('')
+    modalEl('hilos-user-merge-cancel')!.click()
+    world.answerMergeCancel('This merge no longer exists')
+    await flushPromises()
+    expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
+      'This merge no longer exists',
+    )
+    expect(world.sent).toHaveLength(2)
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it.each(['fail', 'disconnected'])(
+    'keeps a new observation isolated from a late %s after the live cancellation end',
+    async (reply) => {
+      const world = setup(true)
+      await mountPage(world.context)
+      await openObservation()
+      modalEl('hilos-user-merge-cancel')!.click()
+      const firstId = world.sent.at(-1)!.requestId!
+      world.update(mergeProgress({ state: 'end', outcome: 'not_started' }))
+      await flushPromises()
+      expect(modalEl('modal')).toBeNull()
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message: 'Merge canceled', repeats: 1 },
+      ])
+      world.update(mergeProgress({ operationId: 42 }))
+      await nextTick()
+      const dialog = await openObservation()
+      modalEl('hilos-user-merge-cancel')!.click()
+      world.answerMergeCancel('This merge no longer exists')
+      await flushPromises()
+      expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
+        'This merge no longer exists',
+      )
+      if (reply === 'fail')
+        world.answerMergeCancel('Old request refused.', firstId)
+      else world.disconnect()
+      await flushPromises()
+      expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
+        'This merge no longer exists',
+      )
+      expect(dialog.textContent).not.toContain('Old request refused.')
+      expect(hilosToasts.toasts.get()).toMatchObject([
+        { message: 'Merge canceled', repeats: 1 },
+      ])
+    },
+  )
+
+  it.each(['changed', 'unavailable', 'hidden id', 'view', 'none', 'unmount'])(
+    'detaches the old request on %s and releases observation subscriptions',
+    async (boundary) => {
+      const world = setup(true)
+      const listenersBefore = world.listenerCount('projectSignal')
+      let wrapper = await mountPage(world.context)
+      await openObservation()
+      modalEl('hilos-user-merge-cancel')!.click()
+      const firstId = world.sent.at(-1)!.requestId!
+      if (boundary === 'changed')
+        world.update(mergeProgress({ operationId: 42 }))
+      else if (boundary === 'unavailable') world.update(null)
+      else if (boundary === 'hidden id')
+        world.update(mergeProgress({ operationId: null }))
+      else if (boundary === 'view') world.access(false)
+      else if (boundary === 'none') {
+        world.scopes.session.data.set('adminViewMode', false)
+        world.access(false)
+      } else {
+        wrapper.unmount()
+        mounted.splice(mounted.indexOf(wrapper), 1)
+        expect(world.listenerCount('projectSignal')).toBe(listenersBefore)
+      }
+      await flushPromises()
+      expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+      world.answerMergeCancel('Old request refused.', firstId)
+      await flushPromises()
+      expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
+      expect(
+        document
+          .querySelector('[role="dialog"] [role="alert"]')
+          ?.textContent?.trim() ?? '',
+      ).toBe('')
+      if (boundary === 'changed') modalEl('hilos-user-merge-close')!.click()
+      world.access(true)
+      world.scopes.session.data.set('adminViewMode', true)
+      world.update(
+        mergeProgress({ operationId: boundary === 'changed' ? 42 : 41 }),
+      )
+      await flushPromises()
+      if (boundary === 'unmount') wrapper = await mountPage(world.context)
+      const dialog = await openObservation()
+      expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
+      modalEl('hilos-user-merge-cancel')!.click()
+      const secondId = world.sent.at(-1)!.requestId!
+      expect(world.sent).toHaveLength(2)
+      await nextTick()
+      expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
+      expect(dialog.querySelector('[role="alert"]')?.textContent?.trim()).toBe(
+        '',
+      )
+      expect(
+        modalEl('hilos-user-merge-cancel')?.getAttribute('aria-busy'),
+      ).toBe('true')
+      world.answerMergeCancel('This merge no longer exists', secondId)
+      await flushPromises()
+      expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
+        'This merge no longer exists',
+      )
+      expect(hilosToasts.toasts.get()).toEqual([])
+      wrapper.unmount()
+      mounted.splice(mounted.indexOf(wrapper), 1)
+      expect(world.listenerCount('projectSignal')).toBe(listenersBefore)
+    },
+  )
 
   it('opens the first snapshot without launch UI, proof, actions or a candidate viewport', async () => {
     const world = setup()
@@ -4948,7 +5388,7 @@ describe('HilosUserPage merge observation', () => {
   it.each(['hilos-user-merge-close', 'modal-close', 'Escape'])(
     'closes by %s and reopens from fresh data without cancellation or discard',
     async (close) => {
-      const world = setup()
+      const world = setup(true)
       const wrapper = await mountPage(world.context)
       await openObservation()
       if (close === 'Escape') {

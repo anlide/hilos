@@ -77,6 +77,7 @@ use Hilos\Status\DTO\StatusCancelPublicationSignalData;
 use Hilos\Status\DTO\StatusPublishNowSignalData;
 use Hilos\Status\StatusAgent;
 use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\DTO\AccountMergeCancelSignalData;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
@@ -132,6 +133,11 @@ final class AgentSignalPayloadGuardTest extends TestCase
                 AuthCodeAgent::class,
                 HilosSignalConstants::HILOS_AUTH_CODE_MINTED,
                 AuthCodeMintedSignalData::class,
+            ],
+            'HILOS_ACCOUNT_MERGE_CANCEL' => [
+                PayloadGuardSessionsLibraryAgent::class,
+                HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL,
+                AccountMergeCancelSignalData::class,
             ],
             'HILOS_ACCOUNT_ADMIN_SET' => [
                 PayloadGuardSessionsLibraryAgent::class,
@@ -406,6 +412,11 @@ final class AgentSignalPayloadGuardTest extends TestCase
             'HILOS_ACCOUNT_MERGE_DONE' => [
                 PayloadGuardHilosUserPage::class,
                 HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE,
+                HandoverAnswerSignalData::class,
+            ],
+            'HILOS_ACCOUNT_MERGE_CANCEL_DONE' => [
+                PayloadGuardHilosUserPage::class,
+                HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL_DONE,
                 HandoverAnswerSignalData::class,
             ],
             'HILOS_ACCOUNT_ADMIN_SET_DONE' => [

@@ -132,6 +132,11 @@ export {
   type HilosAccountMergeWindowView,
 } from './hilosAccountMergeWindow.js'
 export {
+  createHilosAccountMergeCancel,
+  HILOS_ACCOUNT_MERGE_CANCEL_COPY,
+  type HilosAccountMergeCancel,
+} from './hilosAccountMergeCancel.js'
+export {
   createHilosUserSessions,
   type HilosUserSession,
   type HilosUserSessions,

@@ -438,6 +438,7 @@ const HILOS_USER_UPDATE_FAIL = 'hilos_user_update_fail'
 // draws the control and no project restates the name.
 const HILOS_IMPERSONATE_START_ACTION = 'hilos_impersonate_start'
 const HILOS_USER_MERGE_ACTION = 'hilos_user_merge'
+const HILOS_USER_MERGE_CANCEL_ACTION = 'hilos_user_merge_cancel'
 const HILOS_USER_ADMIN_SET_ACTION = 'hilos_user_admin_set'
 const HILOS_USER_BLOCK_SET_ACTION = 'hilos_user_block_set'
 const HILOS_USER_DELETION_SET_ACTION = 'hilos_user_deletion_set'
@@ -513,6 +514,13 @@ export interface HilosAccountMerge {
     expectedSurvivorHasSecondFactor: boolean,
     expectedLoserHasSecondFactor: boolean,
   ): ActionHandle
+  /**
+   * Request cancellation. Acceptance is not the end; the outcome arrives on
+   * userStanding.merge.
+   *
+   * @param operationId The existing merge operation to cancel.
+   */
+  cancel(operationId: number): ActionHandle
 }
 
 /** Read a row slot as an inline record, or undefined when it is not one. */
@@ -2075,6 +2083,11 @@ export function createHilosAccountMerge(
         ...(secondFactorFate === undefined ? {} : { secondFactorFate }),
         expectedSurvivorHasSecondFactor,
         expectedLoserHasSecondFactor,
+      })
+    },
+    cancel(operationId) {
+      return context.actions.dispatch(HILOS_USER_MERGE_CANCEL_ACTION, {
+        operationId,
       })
     },
   }

@@ -659,6 +659,9 @@ final class HilosSignalConstants
     /** Client → server: merge another account into the displayed user (handled on the HILOS_USER page). */
     public const string HILOS_USER_MERGE = 'hilos_user_merge';
 
+    /** Client → server: cancel preparation of an existing merge before transfer on the HILOS_USER page. */
+    public const string HILOS_USER_MERGE_CANCEL = 'hilos_user_merge_cancel';
+
     /** Client → server: set administrator rights on the HILOS_USER page. */
     public const string HILOS_USER_ADMIN_SET = 'hilos_user_admin_set';
 
@@ -2857,6 +2860,17 @@ final class HilosSignalConstants
      * with the library's outcome. Carried by {@see HandoverAnswerSignalData}.
      */
     public const string HILOS_ACCOUNT_MERGE_DONE = 'hilos_account_merge_done';
+
+    /** User card → sessions holder: cancel preparation of an existing merge before its transfer. */
+    public const string HILOS_ACCOUNT_MERGE_CANCEL = 'hilos_account_merge_cancel';
+
+    /**
+     * Sessions holder → user card: cancellation accepted or refused.
+     *
+     * The way back for {@see self::HILOS_ACCOUNT_MERGE_CANCEL} and only for it.
+     * Acceptance completes the submit; the existing merge observation carries the eventual end.
+     */
+    public const string HILOS_ACCOUNT_MERGE_CANCEL_DONE = 'hilos_account_merge_cancel_done';
 
     /** Account-operation participant → sessions library: answer one assignment. */
     public const string HILOS_ACCOUNT_OPERATION_ANSWER = 'hilos_account_operation_answer';

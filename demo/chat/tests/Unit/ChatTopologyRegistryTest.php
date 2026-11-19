@@ -438,6 +438,7 @@ use Hilos\Sms\DTO\SmsSendSignalData;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\DTO\AccountDeletionSetSignalData;
+use Hilos\Users\DTO\AccountMergeCancelSignalData;
 use Hilos\Users\DTO\AccountMergeSignalData;
 use Hilos\Users\DTO\AdminRenameSignalData;
 use Hilos\Users\DTO\UserAccountDeletionCancelDoneSignalData;
@@ -1930,6 +1931,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SETTING_PRESET_APPLY => PageConstants::HILOS_LOGS_SETTINGS,
             HilosSignalConstants::HILOS_USER_UPDATE => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_MERGE => PageConstants::HILOS_USER,
+            HilosSignalConstants::HILOS_USER_MERGE_CANCEL => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_ADMIN_SET => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_BLOCK_SET => PageConstants::HILOS_USER,
             HilosSignalConstants::HILOS_USER_DELETION_SET => PageConstants::HILOS_USER,
@@ -2037,6 +2039,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::SETTING_PRESET_APPLY => AgentType::HILOS_LOGS,
             HilosSignalConstants::HILOS_USER_UPDATE => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_MERGE => AgentType::HILOS_INDEX,
+            HilosSignalConstants::HILOS_USER_MERGE_CANCEL => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_ADMIN_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_BLOCK_SET => AgentType::HILOS_INDEX,
             HilosSignalConstants::HILOS_USER_DELETION_SET => AgentType::HILOS_INDEX,
@@ -2095,6 +2098,7 @@ final class ChatTopologyRegistryTest extends TestCase
                     => HilosPageConstants::HILOS_LOGS_SETTINGS,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE => PageConstants::HILOS_USER,
+                HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => PageConstants::HILOS_USER,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => PageConstants::HILOS_USER,
@@ -2133,6 +2137,7 @@ final class ChatTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_LOGS_SETTINGS_PRESET_APPLY_DONE => AgentType::HILOS_LOGS,
                 HilosSignalConstants::HILOS_USER_ADMIN_RENAME_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE => AgentType::HILOS_INDEX,
+                HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE => AgentType::HILOS_INDEX,
                 HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE => AgentType::HILOS_INDEX,
@@ -2259,6 +2264,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_SESSION_REBIND => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE => HilosAgentType::HILOS_SESSIONS_LIBRARY,
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET => HilosAgentType::HILOS_SESSIONS_LIBRARY,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => HilosAgentType::HILOS_SESSIONS_LIBRARY,
@@ -2693,6 +2699,7 @@ final class ChatTopologyRegistryTest extends TestCase
             HilosSignalConstants::HILOS_AUTH_RECOVERY_WAIT_MOVED => AuthRecoveryWaitMovedSignalData::class,
             HilosSignalConstants::HILOS_SESSION_REBIND => SessionRebindSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_MERGE => AccountMergeSignalData::class,
+            HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL => AccountMergeCancelSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER => AccountOperationAnswerSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET => AccountAdminSetSignalData::class,
             HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET => AccountBlockSetSignalData::class,

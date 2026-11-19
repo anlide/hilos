@@ -159,6 +159,7 @@ final class UserCardLifecycleTwoStepTest extends TestCase
     public static function answers(): iterable
     {
         yield [HilosSignalConstants::HILOS_ACCOUNT_MERGE_DONE, HilosSignalConstants::HILOS_USER_MERGE];
+        yield [HilosSignalConstants::HILOS_ACCOUNT_MERGE_CANCEL_DONE, HilosSignalConstants::HILOS_USER_MERGE_CANCEL];
         yield [HilosSignalConstants::HILOS_ACCOUNT_ADMIN_SET_DONE, HilosSignalConstants::HILOS_USER_ADMIN_SET];
         yield [HilosSignalConstants::HILOS_ACCOUNT_BLOCK_SET_DONE, HilosSignalConstants::HILOS_USER_BLOCK_SET];
         yield [HilosSignalConstants::HILOS_ACCOUNT_DELETION_SET_DONE, HilosSignalConstants::HILOS_USER_DELETION_SET];

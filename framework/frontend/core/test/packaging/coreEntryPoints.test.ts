@@ -49,6 +49,7 @@ import * as statusHistory from '../../src/admin/status/hilosStatusHistory.js'
 import * as users from '../../src/admin/users/index.js'
 import * as userRows from '../../src/admin/users/hilosUsers.js'
 import * as userSessions from '../../src/admin/users/hilosUserSessions.js'
+import * as mergeCancel from '../../src/admin/users/hilosAccountMergeCancel.js'
 import * as base from '../../src/base/index.js'
 import * as calendarDates from '../../src/calendar/calendarDate.js'
 import * as calendarMatrix from '../../src/calendar/monthMatrix.js'
@@ -819,6 +820,22 @@ const profileRenameValues = [
 ]
 
 describe('core public entries', () => {
+  it('keeps merge cancellation values and types in the lazy users entry', () => {
+    expect(users.createHilosAccountMergeCancel).toBe(
+      mergeCancel.createHilosAccountMergeCancel,
+    )
+    expect(users.HILOS_ACCOUNT_MERGE_CANCEL_COPY).toBe(
+      mergeCancel.HILOS_ACCOUNT_MERGE_CANCEL_COPY,
+    )
+    for (const name of [
+      'createHilosAccountMergeCancel',
+      'HILOS_ACCOUNT_MERGE_CANCEL_COPY',
+    ]) {
+      expect(base).not.toHaveProperty(name)
+    }
+    expectTypeOf<users.HilosAccountMergeCancel>().toEqualTypeOf<mergeCancel.HilosAccountMergeCancel>()
+  })
+
   it('exports the local dependency controller from one implementation in base', () => {
     expect(base.createHilosLicenseDependencies).toBe(
       licenseDependencies.createHilosLicenseDependencies,
