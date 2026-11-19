@@ -145,6 +145,7 @@ use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
@@ -1106,6 +1107,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testTheWarehousesTableIsRegistered(): void
     {
         self::assertSame(WarehousesTable::class, Hilos::TABLES[EcommerceShopTableContext::warehouses]);
+    }
+
+    /** The categories table is registered under its key, for the page that binds it. */
+    public function testTheCategoriesTableIsRegistered(): void
+    {
+        self::assertSame(CategoriesTable::class, Hilos::TABLES[EcommerceShopTableContext::categories]);
     }
 
     public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void

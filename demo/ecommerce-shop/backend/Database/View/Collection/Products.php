@@ -7,6 +7,9 @@ namespace Demo\EcommerceShop\Database\View\Collection;
 use Demo\EcommerceShop\Database\Actions\Collection\ProductsActions;
 use Demo\EcommerceShop\Database\Object\Collection\Products as ObjectProducts;
 use Demo\EcommerceShop\Database\View\Item\Product;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
@@ -24,4 +27,16 @@ final class Products extends DbCollection
 {
     public const string DB_ITEM_CLASS = Product::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectProducts::class;
+
+    /**
+     * @param int $categoryId Category primary id
+     * @return int Number of its products of either kind, a unique piece not yet in a warehouse included
+     * @throws DatabaseException When the query fails
+     * @throws InvalidArgumentException When the entity column is invalid
+     * @throws LogicException When collection classes are not configured
+     */
+    public function countInCategory(int $categoryId): int
+    {
+        return $this->objectCollection->countInCategory($categoryId);
+    }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tables;
 
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Hilos\Core\Table\Context\TableContext;
@@ -53,7 +54,8 @@ use Hilos\Tables\Status\HilosStatusHistoryTable;
  * via Hilos::$table->hilosBackups, Hilos::$table->hilosVerifierCircle, Hilos::$table->settings and
  * Hilos::$table->hilosUsers. The other admin sections arrive with the leaves that move their e2e
  * onto this demo, each with its table. The shop's own sections arrive the same way, each leaf
- * with its table: today the warehouses, via Hilos::$table->warehouses.
+ * with its table: today the warehouses and the categories, via Hilos::$table->warehouses and
+ * Hilos::$table->categories.
  *
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
  * @property-read HilosTermsHistoryTable $hilosTermsHistory
@@ -76,6 +78,7 @@ use Hilos\Tables\Status\HilosStatusHistoryTable;
  * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
  * @property-read HilosUsersTable $hilosUsers
  * @property-read WarehousesTable $warehouses
+ * @property-read CategoriesTable $categories
  * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
  * @property-read HilosI18nLanguagesTable $hilosI18nLanguages
  * @property-read HilosI18nCountriesTable $hilosI18nCountries
@@ -118,6 +121,7 @@ final class EcommerceShopTableContext extends TableContext
     public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string warehouses = 'warehouses';
+    public const string categories = 'categories';
     public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
     public const string hilosI18nLanguages = HilosI18nLanguagesTable::TABLE;
     public const string hilosI18nCountries = HilosI18nCountriesTable::TABLE;
