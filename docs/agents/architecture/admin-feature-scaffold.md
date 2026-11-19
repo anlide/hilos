@@ -778,7 +778,7 @@ Chat journals five framework tables, `hilos_moderation_rule` among them, plus
 `bot`; tasks, polls and concert-tickets also journal those five framework tables
 after declaring `MODERATION`. Online-testing now journals those five framework tables too.
 Binance-btc-tracker continues to journal only the other four framework tables;
-ecommerce-shop journals those same four and its own `warehouse` and `category`. Chat and
+ecommerce-shop journals those same four and its own `warehouse`, `category` and `product`. Chat and
 binance-btc-tracker mount all three Vue pages of the
 section. The remaining
 view mounts keep the leaf boundaries above. Where

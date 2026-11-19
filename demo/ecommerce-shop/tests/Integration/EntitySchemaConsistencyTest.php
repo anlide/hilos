@@ -42,8 +42,11 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
     /** PSR-4 namespace of the demo's own Entity directory. */
     private const string OWN_ENTITY_NAMESPACE = 'Demo\\EcommerceShop\\Database\\Entity\\Item\\';
 
-    /** Lower bound so an empty discovery cannot masquerade as "no drift": the warehouse, the category and its address. */
-    private const int MIN_OWN_ENTITY_COUNT = 3;
+    /**
+     * Lower bound so an empty discovery cannot masquerade as "no drift": the warehouse, the
+     * category and its address, the product and its address.
+     */
+    private const int MIN_OWN_ENTITY_COUNT = 5;
 
     /** Lower bound so an unmigrated database cannot masquerade as "no drift" either. */
     private const int MIN_TABLE_COUNT = 6;

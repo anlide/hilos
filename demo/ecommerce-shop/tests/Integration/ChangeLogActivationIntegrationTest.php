@@ -39,7 +39,15 @@ final class ChangeLogActivationIntegrationTest extends IntegrationTestCase
         'hilos_change_log_receipt', 'hilos_change_log_field', 'hilos_change_log_table',
     ];
 
-    private const array JOURNALED_TABLES = ['category', 'hilos_identity', 'hilos_second_factor', 'hilos_setting', 'hilos_user', 'warehouse'];
+    private const array JOURNALED_TABLES = [
+        'category',
+        'hilos_identity',
+        'hilos_second_factor',
+        'hilos_setting',
+        'hilos_user',
+        'product',
+        'warehouse',
+    ];
 
     /** @var array<string, int> Journal row high water marks before the case */
     private array $baseline = [];

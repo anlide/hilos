@@ -66,7 +66,7 @@ final class Category extends Entity
         'idx_category_position' => [Entity::INDEX_COLUMNS => [self::position]],
     ];
 
-    // Nobody's set; the rows of the goods are to hang on a category (HIL-2158).
+    // Nobody's set. A product names its category but is a root of its own (HIL-2158).
     public const string _setVia = Entity::SET_STANDALONE;
     public const bool _setRoot = true;
 
