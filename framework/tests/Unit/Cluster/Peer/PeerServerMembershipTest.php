@@ -27,6 +27,8 @@ use Hilos\Cluster\Peer\DTO\PeerDrainDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerNodeEntry;
 use Hilos\Cluster\Peer\DTO\PeerNodeLeavingDTO;
+use Hilos\Cluster\Peer\DTO\PeerPingDTO;
+use Hilos\Cluster\Peer\DTO\PeerPongDTO;
 use Hilos\Cluster\Peer\DTO\PeerRosterDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
@@ -328,6 +330,124 @@ final class PeerServerMembershipTest extends TestCase
         $this->assertSame([], $observer->left);
         $this->closeLink($server, $candidate);
         $this->assertSame(['node-b'], $observer->left);
+    }
+
+    /**
+     * A winning duplicate parses nothing behind its own ready until the old route has read the drain
+     * marker: the frames wait in the order they came, and parsing goes on from where it stopped.
+     */
+    public function testAWinningDuplicateParsesNothingBehindItsReadyUntilTheOldRouteReadsTheMarker(): void
+    {
+        $server = $this->makeServer();
+        [$old, $oldFar] = $this->linkTo($server, 'node-0');
+        $this->drain($old, $oldFar);
+        [$candidate, $candidateFar] = $this->candidateTo($server, 'node-0');
+
+        $this->feed($candidate, $candidateFar, new PeerReadyDTO(true), new PeerPingDTO('same-read'));
+        $this->feed($candidate, $candidateFar, new PeerPingDTO('later-read'));
+        $this->assertSame([], $this->pongsOf($this->drain($candidate, $candidateFar)), 'Nothing behind the ready is parsed yet');
+
+        $this->feed($old, $oldFar, new PeerDrainDTO());
+        $candidate->read();
+        $this->assertSame(['same-read', 'later-read'], $this->pongsOf($this->drain($candidate, $candidateFar)));
+    }
+
+    /**
+     * A dialer that read the old route's drain marker before its ready ack holds nothing back: the
+     * frame behind the ack is parsed at once.
+     */
+    public function testAMarkerReadBeforeTheReadyAckLeavesTheFrameBehindTheAckParsedAtOnce(): void
+    {
+        $server = $this->makeServer();
+        [$old, $oldFar] = $this->linkTo($server, 'node-b');
+        $this->drain($old, $oldFar);
+        [$candidate, $candidateFar] = $this->dialedCandidateTo($server, 'node-b');
+
+        $this->feed($old, $oldFar, new PeerDrainDTO());
+        $this->feed($candidate, $candidateFar, new PeerReadyAckDTO(true), new PeerPingDTO('behind-ack'));
+        $this->assertSame(['behind-ack'], $this->pongsOf($this->drain($candidate, $candidateFar)));
+    }
+
+    /** The old route closing without its drain marker lets the new route parse what waited behind it. */
+    public function testTheOldRouteClosingWithoutAMarkerReleasesTheNewRoute(): void
+    {
+        $server = $this->makeServer();
+        [$old, $oldFar] = $this->linkTo($server, 'node-0');
+        $this->drain($old, $oldFar);
+        [$candidate, $candidateFar] = $this->candidateTo($server, 'node-0');
+        $this->feed($candidate, $candidateFar, new PeerReadyDTO(true), new PeerPingDTO('held'));
+        $this->assertSame([], $this->pongsOf($this->drain($candidate, $candidateFar)));
+
+        $this->closeOwn($server, $old);
+        $candidate->read();
+        $this->assertSame(['held'], $this->pongsOf($this->drain($candidate, $candidateFar)));
+        $this->assertSame(['node-0'], $server->linkedNodeIds());
+    }
+
+    /** The end of the new route's own stream closes it under the hold, without waiting for the old route. */
+    public function testTheNewRouteEndingUnderTheHoldClosesWithoutWaitingForTheOldRoute(): void
+    {
+        $server = $this->makeServer();
+        [$old, $oldFar] = $this->linkTo($server, 'node-0');
+        $this->drain($old, $oldFar);
+        [$candidate, $candidateFar] = $this->candidateTo($server, 'node-0');
+        $this->feed($candidate, $candidateFar, new PeerReadyDTO(true));
+
+        socket_write($candidateFar, new PeerPingDTO('unread')->toJson() . "\n");
+        socket_shutdown($candidateFar, 1);
+        $candidate->read();
+        $this->assertTrue($candidate->shouldClose(), 'The end of the stream closes the new route');
+        $this->assertFalse($old->shouldClose(), 'The old route has read no marker');
+    }
+
+    /** Bytes the new route reads under the hold renew its liveness, though it parses none of them. */
+    public function testBytesReadUnderTheHoldRenewTheNewRoutesLiveness(): void
+    {
+        $server = $this->makeServer();
+        [$old, $oldFar] = $this->linkTo($server, 'node-0');
+        $this->drain($old, $oldFar);
+        [$candidate, $candidateFar] = $this->candidateTo($server, 'node-0');
+        $this->feed($candidate, $candidateFar, new PeerReadyDTO(true));
+        $heard = new ReflectionProperty($candidate, 'lastHeardAt');
+
+        // Silent for longer than the 60 s link timeout set up for every case.
+        $heard->setValue($candidate, $heard->getValue($candidate) - 61);
+        $this->feed($candidate, $candidateFar, new PeerPingDTO('held'));
+        $candidate->onTick();
+        $this->assertFalse($candidate->shouldClose(), 'The held bytes renew the silence');
+        $this->assertSame([], $this->pongsOf($this->drain($candidate, $candidateFar)), 'Renewed, still unparsed');
+
+        $heard->setValue($candidate, $heard->getValue($candidate) - 61);
+        $candidate->onTick();
+        $this->assertTrue($candidate->shouldClose(), 'Without new bytes the same silence closes it');
+        $this->assertFalse($old->shouldClose());
+    }
+
+    /**
+     * A third route replacing a second one that is still held stands behind the second: the second
+     * parses its own drain marker once the first route's marker releases it, and that releases the third.
+     */
+    public function testAChainOfReplacementsIsReleasedInOrder(): void
+    {
+        $server = $this->makeServer();
+        [$first, $firstFar] = $this->linkTo($server, 'node-0');
+        $this->drain($first, $firstFar);
+        [$second, $secondFar] = $this->candidateTo($server, 'node-0');
+        $this->feed($second, $secondFar, new PeerReadyDTO(true), new PeerPingDTO('second'));
+        [$third, $thirdFar] = $this->candidateTo($server, 'node-0');
+        $this->feed($third, $thirdFar, new PeerReadyDTO(true), new PeerPingDTO('third'));
+        $this->feed($second, $secondFar, new PeerDrainDTO());
+        $this->assertSame([], $this->pongsOf($this->drain($second, $secondFar) . $this->drain($third, $thirdFar)));
+
+        $this->feed($first, $firstFar, new PeerDrainDTO());
+        $third->read();
+        $this->assertSame([], $this->pongsOf($this->drain($third, $thirdFar)), 'The third waits behind the second\'s marker');
+        $second->read();
+        $third->read();
+        // The second route drains, so its answer takes the working route ahead of the third's own.
+        $this->assertSame([], $this->pongsOf($this->drain($second, $secondFar)));
+        $this->assertSame(['second', 'third'], $this->pongsOf($this->drain($third, $thirdFar)));
+        $this->assertTrue($second->shouldClose(), 'The second route read its marker and closes once written');
     }
 
     /**
@@ -1066,18 +1186,52 @@ final class PeerServerMembershipTest extends TestCase
     }
 
     /**
-     * Delivers one frame to a link the way the node on the other end would.
+     * Delivers frames to a link the way the node on the other end would, all of them in one read.
      *
-     * @param PeerLink $link Link the frame arrives on
+     * @param PeerLink $link Link the frames arrive on
      * @param Socket $far Far end, standing in for the sending node
-     * @param PeerDTO $frame Frame that node sends
-     * @throws HilosException When the frame refuses to become wire input
-     * @throws SocketException When the pair refuses the frame
+     * @param PeerDTO ...$frames Frames that node sends, in order
+     * @throws HilosException When a frame refuses to become wire input
+     * @throws SocketException When the pair refuses the frames
      */
-    private function feed(PeerLink $link, Socket $far, PeerDTO $frame): void
+    private function feed(PeerLink $link, Socket $far, PeerDTO ...$frames): void
     {
-        socket_write($far, $frame->toJson() . "\n");
+        $bytes = '';
+        foreach ($frames as $frame) {
+            $bytes .= $frame->toJson() . "\n";
+        }
+        socket_write($far, $bytes);
         $link->read();
+    }
+
+    /**
+     * Closes a link through its own close, as the server's loop does, and leaves the teardown only the far end.
+     *
+     * @param PeerServer $server Server the link belongs to
+     * @param PeerLink $link Link that closes
+     * @throws HilosException When the link fails to announce the close
+     */
+    private function closeOwn(PeerServer $server, PeerLink $link): void
+    {
+        $near = $link->getSocket();
+        $link->close();
+        $server->removeClient($link);
+        $this->sockets = array_values(array_filter($this->sockets, static fn(Socket $socket): bool => $socket !== $near));
+    }
+
+    /**
+     * Picks out the pongs among the frames that reached a far end: a pong answers a ping the link parsed.
+     *
+     * @param string $bytes Newline-delimited frames read off a far end
+     * @return list<?string> Nonces of the pings answered, in the order they were parsed
+     * @throws PeerTransportException When a frame is not one this protocol knows
+     */
+    private function pongsOf(string $bytes): array
+    {
+        return array_values(array_map(
+            static fn(PeerPongDTO $pong): ?string => $pong->nonce,
+            array_filter($this->framesOf($bytes), static fn(PeerDTO $frame): bool => $frame instanceof PeerPongDTO),
+        ));
     }
 
     /**

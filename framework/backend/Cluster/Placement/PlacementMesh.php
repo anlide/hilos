@@ -7,6 +7,7 @@ namespace Hilos\Cluster\Placement;
 use Closure;
 use Hilos\Cluster\Consensus\ConsensusMesh;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\PeerLink;
 
 /**
  * Outbound port the placement coordinator uses to reach nodes and read their
@@ -72,7 +73,8 @@ interface PlacementMesh
      * and canceled snapshots end theirs without claiming delivery. Each stream captures its operation
      * revision when its wait is registered; later writes do not extend that boundary.
      * Link liveness bounds it; no timer does. A ready callback's failure follows the other ready waits
-     * and cleanup. This sending barrier does not order application across the two incoming epochs.
+     * and cleanup. This is a barrier on answers; the order of application across the two connections is
+     * held by the receiving fence ({@see PeerLink::holdIncomingBehind()}).
      *
      * @param Closure(): void $then Told the RT writes are answered
      */

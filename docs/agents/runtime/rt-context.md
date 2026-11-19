@@ -479,8 +479,9 @@ operation in its old position. The incomplete snapshot this node was reading on
 the old link is given up when that link closes, so its staging cancels without
 waiting for parts that will never arrive. A fully sent ordinary operation is not
 replayed; replacement ends its old answer obligation without asserting that it
-applied. The outgoing transfer does not fence application between the two incoming
-connections. A snapshot canceled here
+applied. Application between the two incoming connections is ordered by the
+receiving fence ([rt-state.md](rt-state.md#what-waits-behind-the-writes)), not by
+this transfer. A snapshot canceled here
 and asked for again - on the link that replaced the one it came on, when that one
 drains - keeps its node awaited once more: the same list is announced
 again under the next number, behind the request, and the wait ends with the

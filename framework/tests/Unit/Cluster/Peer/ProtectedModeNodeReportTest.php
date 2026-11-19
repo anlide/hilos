@@ -12,6 +12,7 @@ use Hilos\Cluster\Leadership;
 use Hilos\Cluster\NodeIdentity;
 use Hilos\Cluster\NodeRole;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerDrainDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeNodeReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
@@ -183,6 +184,8 @@ final class ProtectedModeNodeReportTest extends TestCase
         $this->tick($server, 102.0);
         $this->assertNull($this->rows()[1]['phase']);
 
+        // The new link parses nothing until the old one has read the peer's drain marker.
+        $this->feed($old, $oldFar, new PeerDrainDTO());
         $this->feed($new, $newFar, new PeerProtectedModeNodeReportDTO('active', 7, ['node-b'], [], 'node-b'));
         $server->onLinkClosed($old);
         $server->removeClient($old);

@@ -132,6 +132,11 @@ final class PeerReaderRepairTest extends TestCase
         $this->assertReport($mapB, 'node-a', $initial, $initial);
 
         [$newA, $newB] = $this->connect($a, $b, true, $rt, $db);
+        foreach ($queues as $queue) {
+            self::assertCount(0, $queue, 'The repeat on the new link waits behind the old link\'s drain marker');
+        }
+        $this->readOldDrain($oldB, $oldA, $newA);
+        $this->readOldDrain($oldA, $oldB, $newB);
         foreach ($oldCursors as $cursor) {
             $cursor->runPortion(256);
             self::assertFalse($cursor->hasWork());
@@ -206,6 +211,8 @@ final class PeerReaderRepairTest extends TestCase
         $migrated = $waiting ? [new PeerRtClaimsDTO('node-a', [new PeerRtClaimEntry('owner', 'owner', null, [$collection])])] : [];
         $new = $this->connect($a, $b, true, [$collection], [], $migrated);
         $drained = $this->take($oldA);
+        self::assertCount(0, $queue, 'The repeat on the new link waits behind the old link\'s drain marker');
+        $this->readOldDrain($oldB, $oldA, $new[0]);
         self::assertCount(1, $queue, 'The repeat on the new link waits for its delivery');
         $delivery = $queue->dequeue();
         $cursor = new SignalDispatch(null, static fn(): Generator => $delivery);
@@ -307,6 +314,8 @@ final class PeerReaderRepairTest extends TestCase
         };
         $a->setSourceInterestDelivery($binding);
         $new = $this->connect($a, $b, true, [$collection], []);
+        self::assertCount(0, $queue, 'The repeat on the new link waits behind the old link\'s drain marker');
+        $this->readOldDrain($oldB, $oldA, $new[0]);
         self::assertCount(1, $queue, 'The repeated interest has not yet recovered the base');
         $closed = [$oldA[0]->getSocket(), $oldB[0]->getSocket()];
         $oldA[0]->close();
@@ -398,6 +407,8 @@ final class PeerReaderRepairTest extends TestCase
         };
         $a->setSourceInterestDelivery($binding);
         $new = $this->connect($a, $b, true, [$collection], []);
+        self::assertCount(0, $queue, 'The repeat on the new link waits behind the old link\'s drain marker');
+        $this->readOldDrain($oldB, $oldA, $new[0]);
         self::assertCount(1, $queue, 'The repeat on the new link waits for its delivery');
         $delivery = $queue->dequeue();
         $cursor = new SignalDispatch(null, static fn(): Generator => $delivery);
@@ -462,6 +473,8 @@ final class PeerReaderRepairTest extends TestCase
             $this->relay($oldB, $oldA);
             self::assertSame([], $this->take($oldA), 'The work of the request waits in the FIFO');
             $new = $this->connect($a, $b, true, [$collection], []);
+            // The repeat is read behind the old link's drain marker, still behind the request's work.
+            $this->readOldDrain($oldB, $oldA, $new[0]);
             $busy = false;
             $this->drainManager($owner);
             $old = $this->take($oldA);
@@ -778,6 +791,21 @@ final class PeerReaderRepairTest extends TestCase
         $from[0]->write();
         $bytes = socket_read($from[1], 65536);
         return $bytes === false ? [] : $this->decode($bytes);
+    }
+
+    /**
+     * Relays what the peer's old endpoint still wrote, its drain marker last, which lets this node's
+     * replacement parse the frames that waited behind its old endpoint's inbound.
+     *
+     * @param array{PeerLink, Socket} $oldPeer The peer's old endpoint
+     * @param array{PeerLink, Socket} $old This node's old endpoint
+     * @param array{PeerLink, Socket} $new This node's replacement endpoint
+     */
+    private function readOldDrain(array $oldPeer, array $old, array $new): void
+    {
+        $read = $this->relay($oldPeer, $old);
+        self::assertInstanceOf(PeerDrainDTO::class, $read[array_key_last($read)] ?? null, 'The old endpoint ends with the drain marker');
+        $new[0]->read();
     }
 
     /**

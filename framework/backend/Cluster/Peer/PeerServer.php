@@ -1462,6 +1462,8 @@ final class PeerServer extends AbstractTlsServer implements
     /**
      * Switches the route after ready/ack and transfers unfinished writes before any new fan-out or
      * notification. Ready callback failures follow the old drain marker and the activation cleanup.
+     * Activation runs inside the parsing of the candidate's own ready or ack, so the candidate parses nothing more
+     * until the old link's inbound ends - its drain marker read, or its close ({@see PeerLink::holdIncomingBehind()}).
      *
      * @param PeerLink $link Candidate link
      * @param NodeIdentity $remote Certified remote identity
@@ -1481,7 +1483,10 @@ final class PeerServer extends AbstractTlsServer implements
         $this->activeLinks[$remote->nodeId] = $link;
         $failure = null;
         try {
-            $old?->beginDrain($link);
+            if ($old !== null) {
+                $link->holdIncomingBehind($old);
+                $old->beginDrain($link);
+            }
         } catch (Throwable $raised) {
             $failure = $raised;
         }

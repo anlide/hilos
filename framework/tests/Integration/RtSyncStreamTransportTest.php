@@ -1924,65 +1924,82 @@ final class RtSyncStreamTransportTest extends TestCase
     }
 
     /**
-     * Characterizes the unresolved cross-link order: an old final on its socket, or partway through
-     * decode, applies after the transferred and new updates. Only the outgoing W1/F1/W2 order holds.
+     * A wholly sent old final W0 - still on its socket, or accepted and partway through decode - applies on the
+     * master's own FIFO before the transferred W1, its waiting signal F1 and the new W2, once each: the new link
+     * parses nothing until the old one read the peer's drain marker, as on one connection. The worker sees
+     * exactly [W0, W1, F1, W2] when W2 arrives after F1 was handled; with W2 in the same read, F1 still follows W1.
      *
      * @param bool $accepted Whether the old final is accepted and partway through decode
+     * @param bool $late Whether W2 is sent only once F1 was parsed and handled
      */
-    #[TestWith([false])]
-    #[TestWith([true])]
-    public function testReplacementLeavesAWhollySentOldFinalOutsideTheNewEpochOrder(bool $accepted): void
+    #[TestWith([false, true])]
+    #[TestWith([true, true])]
+    #[TestWith([false, false])]
+    #[TestWith([true, false])]
+    public function testAWhollySentOldFinalAppliesBeforeTheTransferredAndNewWrites(bool $accepted, bool $late): void
     {
-        [$a, $b, $old] = $this->replacementServers();
-        $this->reader->received = [];
-        $a->setRtSyncStreamWake(static function (): void {
-        });
-        $b->setRtSyncStreamWake(static function (): void {
-        });
-        $donor = $old[1][0]->rtSyncStream();
-        $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['value' => 0]), 'node-b');
-        $this->drain($donor);
-        $old[1][0]->write();
-        $final = $this->wireDtos($old[1][1]);
-        $this->assertCount(1, $final);
-        $this->assertTrue($final[0]->frame->final);
-        $bytes = $final[0]->toJson() . "\n";
-        $this->assertSame(strlen($bytes), socket_write($old[0][1], $bytes));
-        if ($accepted) {
-            $old[0][0]->read();
-            $this->assertTrue($old[0][0]->rtSyncStream()->pump(new RtWorkBudget(4, 4096)));
-            $this->assertTrue($old[0][0]->rtSyncStream()->isReading(), 'The old decode still needs another portion');
-        }
-        $donor->send(new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 1], previous: ['value' => 0]), 'node-b');
-        $old[1][0]->sendFrame($this->signalToReader());
-        $a->setRtSyncStreamWake($this->master->wakeRtSyncStream(...));
-        $new = $this->replacementPair($a, $b, true);
-        $new[1][0]->rtSyncStream()->send(
-            new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 2], previous: ['value' => 1]), 'node-b');
-        $this->drain($new[1][0]->rtSyncStream());
-        $this->relayReplacement($new[1], $new[0]);
-        $this->drain($new[0][0]->rtSyncStream());
-        $this->master->drain();
-        $this->deliverToReader();
-        $this->assertSame([1, 2], array_map(
-            static fn (RtSyncStreamOperation $operation): int => RtRowValues::nativeMap($operation->row)['value'],
-            $this->reader->delivered,
-        ), 'The outgoing transfer does not fence the old incoming epoch');
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            [$a, $b, $old] = $this->replacementServers();
+            $this->reader->received = [];
+            $a->setRtSyncStreamWake($this->master->wakeRtSyncStream(...));
+            $b->setRtSyncStreamWake(static function (): void {
+            });
+            $donor = $old[1][0]->rtSyncStream();
+            $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['value' => 0]), 'node-b');
+            $final = $this->wholeFinal($old[1]);
+            $this->assertSame(strlen($final), socket_write($old[0][1], $final));
+            if ($accepted) {
+                $old[0][0]->read();
+                $this->assertTrue($old[0][0]->rtSyncStream()->pump(new RtWorkBudget(4, 4096)));
+                $this->assertTrue($old[0][0]->rtSyncStream()->isReading(), 'The old decode still needs another portion');
+            }
+            $donor->send(new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 1], previous: ['value' => 0]), 'node-b');
+            $old[1][0]->sendFrame($this->signalToReader());
+            $new = $this->replacementPair($a, $b, true);
+            $later = new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 2], previous: ['value' => 1]);
+            if (!$late) {
+                $new[1][0]->rtSyncStream()->send($later, 'node-b');
+            }
+            $this->drain($new[1][0]->rtSyncStream());
+            $this->assertSame(
+                $late ? [PeerRtSyncStreamDTO::class, PeerSignalDTO::class]
+                    : [PeerRtSyncStreamDTO::class, PeerSignalDTO::class, PeerRtSyncStreamDTO::class],
+                array_map(static fn (PeerDTO $frame): string => $frame::class, $this->relayReplacement($new[1], $new[0])),
+            );
+            $this->dispatchToReader(3);
+            $this->assertNotContains(DaemonAgentMessageDTO::class, $this->reader->received,
+                'Before the old link read the peer\'s drain marker, the worker got no F1');
+            $this->assertSame($accepted ? [0] : [], $this->deliveredValues(), 'and no W1 either');
 
-        $this->relayReplacement($old[1], $old[0]);
-        $this->drain($old[0][0]->rtSyncStream());
-        $this->drain($new[0][0]->rtSyncStream());
-        $this->master->drain();
-        $this->deliverToReader();
-        $this->assertSame([1, 2, 0], array_map(
-            static fn (RtSyncStreamOperation $operation): int => RtRowValues::nativeMap($operation->row)['value'],
-            $this->reader->delivered,
-        ));
-        $this->assertSame(['row-1', 'row-1', 'row-1'], array_column($this->reader->delivered, 'stateId'));
-        $this->assertSame([
-            WorkerRtSyncStreamDTO::class, DaemonAgentMessageDTO::class,
-            WorkerRtSyncStreamDTO::class, WorkerRtSyncStreamDTO::class,
-        ], $this->reader->received, 'W1/F1/W2 keep their order; the wholly sent W0 arrives afterward');
+            $this->relayReplacement($old[1], $old[0]);
+            $new[0][0]->read();
+            $this->dispatchToReader($late ? 2 : 3);
+            if ($late) {
+                $this->assertSame([WorkerRtSyncStreamDTO::class, WorkerRtSyncStreamDTO::class, DaemonAgentMessageDTO::class],
+                    $this->reader->received, 'F1 was parsed and handled after W1');
+                $new[1][0]->rtSyncStream()->send($later, 'node-b');
+                $this->drain($new[1][0]->rtSyncStream());
+                $this->relayReplacement($new[1], $new[0]);
+                $this->dispatchToReader(4);
+            }
+            $this->assertSame([0, 1, 2], $this->deliveredValues(), 'W0, W1 and W2 apply in the order sent, once each');
+            $this->assertSame(['row-1', 'row-1', 'row-1'], array_column($this->reader->delivered, 'stateId'));
+            $this->assertCount(4, $this->reader->received, 'Nothing reaches the worker twice');
+            $this->assertGreaterThanOrEqual(2, array_search(DaemonAgentMessageDTO::class, $this->reader->received, true),
+                'F1 never reaches the worker before W1');
+            if ($late) {
+                $this->assertSame([
+                    WorkerRtSyncStreamDTO::class, WorkerRtSyncStreamDTO::class,
+                    DaemonAgentMessageDTO::class, WorkerRtSyncStreamDTO::class,
+                ], $this->reader->received, 'The worker gets W0, W1, F1, W2, as on one connection');
+            }
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
     }
 
     /** An old final already queued for daemon apply keeps its existing source FIFO position after replacement. */
@@ -2022,6 +2039,9 @@ final class RtSyncStreamTransportTest extends TestCase
             $this->drain($new[1][0]->rtSyncStream());
             $this->relayReplacement($new[1], $new[0]);
             $this->relayReplacement($old[1], $old[0]);
+            $new[0][0]->read();
+            $this->relayReplacement($old[0], $old[1]);
+            $new[1][0]->read();
             $this->drain($new[0][0]->rtSyncStream());
             $this->assertSame([], $this->reader->delivered);
             $oldReference = WeakReference::create($old[0][0]);
@@ -2040,6 +2060,109 @@ final class RtSyncStreamTransportTest extends TestCase
             ));
             $this->relayReplacement($new[0], $new[1]);
             $this->assertTrue($new[1][0]->rtSyncStream()->isIdle(), 'Transferred waits receive their new-epoch answers');
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
+    }
+
+    /**
+     * A third link activated while the second still waits behind the first parses nothing until the second read
+     * the peer's drain marker, and the second reads it only once the first read its own: row-1 applies as 0, 1, 2
+     * once each, and F1, which waited behind W1, reaches the worker after it.
+     */
+    public function testAReplacementOfAHeldReplacementWaitsForTheWholeChain(): void
+    {
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            [$a, $b, $old] = $this->replacementServers();
+            $this->reader->received = [];
+            $a->setRtSyncStreamWake($this->master->wakeRtSyncStream(...));
+            $b->setRtSyncStreamWake(static function (): void {
+            });
+            $donor = $old[1][0]->rtSyncStream();
+            $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['value' => 0]), 'node-b');
+            $final = $this->wholeFinal($old[1]);
+            $this->assertSame(strlen($final), socket_write($old[0][1], $final));
+            $donor->send(new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 1], previous: ['value' => 0]), 'node-b');
+            $old[1][0]->sendFrame($this->signalToReader());
+            $middle = $this->replacementPair($a, $b, true);
+            $this->drain($middle[1][0]->rtSyncStream());
+            $this->assertSame([PeerRtSyncStreamDTO::class, PeerSignalDTO::class],
+                array_map(static fn (PeerDTO $frame): string => $frame::class, $this->relayReplacement($middle[1], $middle[0])));
+            $latest = $this->replacementPair($a, $b, true);
+            $latest[1][0]->rtSyncStream()->send(
+                new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 2], previous: ['value' => 1]), 'node-b');
+            $this->drain($latest[1][0]->rtSyncStream());
+            $this->assertSame([PeerRtSyncStreamDTO::class],
+                array_map(static fn (PeerDTO $frame): string => $frame::class, $this->relayReplacement($latest[1], $latest[0])));
+            $this->dispatchToReader(4);
+            $this->assertSame([], $this->reader->received, 'Neither replacement parses before the first link read the marker');
+
+            $this->assertSame([PeerDrainDTO::class],
+                array_map(static fn (PeerDTO $frame): string => $frame::class, $this->relayReplacement($middle[1], $middle[0])));
+            $latest[0][0]->read();
+            $this->dispatchToReader(4);
+            $this->assertSame([], $this->reader->received, 'The second link holds its own marker while it waits for the first');
+
+            $this->relayReplacement($old[1], $old[0]);
+            $middle[0][0]->read();
+            $latest[0][0]->read();
+            $this->dispatchToReader(4);
+            $this->assertSame([0, 1, 2], $this->deliveredValues(), 'W0, W1 and W2 apply in the order sent, once each');
+            $this->assertCount(4, $this->reader->received, 'Nothing reaches the worker twice');
+            $this->assertGreaterThanOrEqual(2, array_search(DaemonAgentMessageDTO::class, $this->reader->received, true),
+                'F1 never reaches the worker before W1');
+        } finally {
+            new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
+            $loop->close();
+        }
+    }
+
+    /**
+     * The old link breaks without the peer's drain marker - a reset, a timeout: its close lifts the hold, so the
+     * transferred W1 and F1 and the new W2 reach the worker and are answered. W0, lost on the broken socket, is
+     * neither applied nor sent again.
+     */
+    public function testAnOldLinkBrokenWithoutItsMarkerReleasesTheReplacementOnClose(): void
+    {
+        $loop = new EventLoop();
+        try {
+            new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($this->master, $loop);
+            new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($this->master);
+            [$a, $b, $old] = $this->replacementServers();
+            $this->reader->received = [];
+            $a->setRtSyncStreamWake($this->master->wakeRtSyncStream(...));
+            $b->setRtSyncStreamWake(static function (): void {
+            });
+            $donor = $old[1][0]->rtSyncStream();
+            $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['value' => 0]), 'node-b');
+            $this->wholeFinal($old[1]);
+            $donor->send(new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 1], previous: ['value' => 0]), 'node-b');
+            $old[1][0]->sendFrame($this->signalToReader());
+            $new = $this->replacementPair($a, $b, true);
+            $new[1][0]->rtSyncStream()->send(
+                new RtSyncUpdatedSignalData(self::COLLECTION, 'row-1', ['value' => 2], previous: ['value' => 1]), 'node-b');
+            $this->drain($new[1][0]->rtSyncStream());
+            $sent = $this->relayReplacement($new[1], $new[0]);
+            $this->assertSame([PeerRtSyncStreamDTO::class, PeerSignalDTO::class, PeerRtSyncStreamDTO::class],
+                array_map(static fn (PeerDTO $frame): string => $frame::class, $sent), 'W0 is not sent again');
+            $this->dispatchToReader(3);
+            $this->assertSame([], $this->reader->received, 'The new link waits for the old one');
+
+            $a->dropClient($old[0][0]);
+            $b->dropClient($old[1][0]);
+            $new[0][0]->read();
+            $new[1][0]->read();
+            $this->dispatchToReader(3);
+            $this->assertSame([1, 2], $this->deliveredValues(), 'The lost W0 is neither applied nor repeated');
+            $this->assertCount(3, $this->reader->received, 'Nothing reaches the worker twice');
+            $this->assertGreaterThanOrEqual(1, array_search(DaemonAgentMessageDTO::class, $this->reader->received, true),
+                'F1 never reaches the worker before W1');
+            $this->relayReplacement($new[0], $new[1]);
+            $this->assertTrue($new[1][0]->rtSyncStream()->isIdle(), 'Nothing hangs: the new link answered every write');
         } finally {
             new ReflectionMethod(DaemonManager::class, 'detachSignalDispatchEventLoop')->invoke($this->master);
             $loop->close();
@@ -2077,6 +2200,8 @@ final class RtSyncStreamTransportTest extends TestCase
         $this->assertSame(['sent only'], $told, 'Transfer ends only the wholly sent old obligation');
         $old[1][0]->close();
         $old[0][0]->close();
+        $new[0][0]->read();
+        $new[1][0]->read();
         $donor->receive($oldAnswers[0]->frame);
         $bytes = $oldAnswers[0]->toJson() . "\n";
         $this->assertSame(strlen($bytes), socket_write($new[1][1], $bytes));
@@ -2153,13 +2278,15 @@ final class RtSyncStreamTransportTest extends TestCase
         $new[1][0]->write();
         $this->assertSame([PeerPingDTO::class, PeerHeartbeatDTO::class], $this->wireFrames($new[1][1]),
             'Control frames bypass the transferred RT barrier');
-        $old[1][0]->write();
-        $this->assertSame([PeerDrainDTO::class], $this->wireFrames($old[1][1]));
+        $this->assertSame([PeerDrainDTO::class],
+            array_map(static fn (PeerDTO $frame): string => $frame::class, $this->relayReplacement($old[1], $old[0])));
+        $new[0][0]->read();
         $weak = WeakReference::create($donor);
         $b->dropClient($donor);
         unset($donor, $old[1]);
         gc_collect_cycles();
         $this->assertNull($weak->get(), 'Waiting callbacks retain their route, never the closed donor');
+        $new[1][0]->read();
 
         $this->drain($new[1][0]->rtSyncStream());
         $first = $this->relayReplacement($new[1], $new[0]);
@@ -2219,6 +2346,10 @@ final class RtSyncStreamTransportTest extends TestCase
         }
         unset($link, $part);
         $this->assertSame([0, 0], [$told, $late]);
+        $this->relayReplacement($old[1], $old[0]);
+        $middle[0][0]->read();
+        $this->relayReplacement($middle[1], $middle[0]);
+        $latest[0][0]->read();
         $firstWeak = WeakReference::create($old[1][0]);
         $secondWeak = WeakReference::create($middle[1][0]);
         $b->dropClient($old[1][0]);
@@ -2230,6 +2361,7 @@ final class RtSyncStreamTransportTest extends TestCase
         gc_collect_cycles();
         $this->assertNull($firstWeak->get());
         $this->assertNull($secondWeak->get());
+        $latest[1][0]->read();
         $this->drain($latest[1][0]->rtSyncStream());
         $head = $this->relayReplacement($latest[1], $latest[0]);
         $this->assertCount(1, $head);
@@ -2364,6 +2496,9 @@ final class RtSyncStreamTransportTest extends TestCase
         $this->assertSame([PeerRtSyncStreamDTO::class, PeerDrainDTO::class], $this->wireFrames($old[1][1]));
         $b->dropClient($old[1][0]);
         $this->assertSame(['raises', 'ready'], $told, 'Old close does not end the transferred tail');
+        $a->dropClient($old[0][0]);
+        $first[0]->read();
+        $second[0]->read();
         $this->drain($second[0]->rtSyncStream());
         $this->relayReplacement($second, $first);
         $this->drain($first[0]->rtSyncStream());
@@ -2392,6 +2527,8 @@ final class RtSyncStreamTransportTest extends TestCase
         $this->assertSame(1, $told);
         $this->assertNull($stream->getValue($old[1][0]));
         $this->assertNull($stream->getValue($new[1][0]));
+        $this->relayReplacement($old[0], $old[1]);
+        $new[1][0]->read();
         $new[0][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]), 'node-a');
         $this->relayReplacement($new[0], $new[1]);
         $this->assertNotNull($stream->getValue($new[1][0]), 'Receiving a write opened only the incoming direction');
@@ -2519,6 +2656,9 @@ final class RtSyncStreamTransportTest extends TestCase
             ++$late;
         });
         $old[1][0]->close();
+        $old[0][0]->close();
+        $new[0][0]->read();
+        $new[1][0]->read();
         $donor->receive(RtSyncStreamFrame::ack($donor->streamId, 1, 0, RtSyncStreamStatus::Applied));
         $this->assertSame([0, 0], [$answered, $late], 'Neither old close nor late old ack ends the transferred wait');
         $this->assertSame($new[1][0], $active->getValue($b)['node-a']);
@@ -2667,6 +2807,23 @@ final class RtSyncStreamTransportTest extends TestCase
 
         return array_map(PeerDTO::fromWire(...),
             array_values(array_filter(explode("\n", $bytes), static fn (string $line): bool => $line !== '')));
+    }
+
+    /**
+     * Sends the endpoint's queued write whole, in one final part, and takes it off the wire before anyone reads it.
+     *
+     * @param array{PeerLink, Socket} $from Sending endpoint, its stream holding one write
+     * @return string Wire bytes of the final part, for the case to deliver or to lose
+     */
+    private function wholeFinal(array $from): string
+    {
+        $this->drain($from[0]->rtSyncStream());
+        $from[0]->write();
+        $final = $this->wireDtos($from[1]);
+        $this->assertCount(1, $final);
+        $this->assertTrue($final[0]->frame->final);
+
+        return $final[0]->toJson() . "\n";
     }
 
     /**
@@ -2901,6 +3058,28 @@ final class RtSyncStreamTransportTest extends TestCase
             $this->reader->read();
             $this->readerLink->read();
         }
+    }
+
+    /**
+     * Runs this node's master passes over its own FIFO and moves what they queued to the reading worker, until the
+     * worker took the given number of frames or the passes run out.
+     *
+     * @param int $frames Frames the reading worker is to have taken
+     */
+    private function dispatchToReader(int $frames): void
+    {
+        $dispatch = new ReflectionMethod(DaemonManager::class, 'dispatchSignalsWithinBudget');
+        for ($pass = 0; $pass < 128 && count($this->reader->received) < $frames; ++$pass) {
+            $dispatch->invoke($this->master);
+            $this->deliverToReader();
+        }
+    }
+
+    /** @return list<int> Values of row-1 in the order the reading worker took its operations */
+    private function deliveredValues(): array
+    {
+        return array_map(static fn (RtSyncStreamOperation $operation): int => RtRowValues::nativeMap($operation->row)['value'],
+            $this->reader->delivered);
     }
 
     /**

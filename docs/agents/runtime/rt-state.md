@@ -440,11 +440,28 @@ and old interest answers dropped, so their repeat must renew the base. Without a
 successor, drain releases the waiting frames before its end marker. The budgeted
 portion of an upload keeps its own count of the link's bytes.
 
-This orders the outgoing work handed to the successor, not application across old
-and new incoming epochs. A fully sent old operation stays on its old transport:
-if its final part is unread or its decode unfinished, new operations can apply
-first. It is not replayed on the new route. Once an old operation has already
-queued its apply on the daemon's source FIFO, that FIFO keeps its existing place.
+The receiving side is fenced too. A node parses no frame of the new connection until
+the old one has read its end marker or closed (`PeerLink::holdIncomingBehind()`,
+`PeerServer::activateCandidate()`). Under the fence the new connection still reads its
+socket, and the bytes it reads keep its own wait for silence from running out; what it
+sends goes out as usual, but none of its frames is parsed - no RT stream part, signal,
+status or service frame such as a ping or a heartbeat - so the peer gets no answer on
+it, not even a pong, until the fence lifts. The frames wait in its buffer.
+So a fully sent old operation applies before the transferred and the new writes, once,
+and a frame that waited behind a write is handled after it: by the old end marker
+everything the old connection carried stands in the master's effect queue ahead of
+whatever the new one parses once the fence lifts - the same queue that keeps the order
+on one connection. As on one connection, a signal is not promised ahead of the next
+write: a pump already queued in that queue takes a write that came after the signal.
+The fence lasts while the old connection reads what the peer put into it before the
+marker, and if it falls silent, until its silence timeout. As on one connection, a long
+tail delays everything behind it, a ping and a heartbeat included.
+A replacement of a fenced replacement waits behind it, so the whole chain keeps the
+order. An old connection that closes without its marker lifts the fence: what it had
+not read is lost, neither reordered nor repeated. A marker refused as out of place
+lifts nothing. The fence is not set when there was no old connection, when its marker
+was parsed before the new one became active, or when it is already closing. The old
+operation is still not replayed on the new route.
 
 What names an agent keeps its order too. A master writing to a worker puts what it
 writes for an agent a waiting frame names - its stop, the answer to its protected-mode

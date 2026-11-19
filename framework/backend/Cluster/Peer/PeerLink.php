@@ -132,6 +132,10 @@ use WeakReference;
  * The markers a hello or a welcome carries are checked at the same place, right after the name
  * (HIL-1206): a peer that reads another database than this node is refused the same way, on both
  * ends of the link, by the rule {@see PeerMarkers::refusalFor()} states.
+ *
+ * A replacement link parses nothing it reads until the old link's inbound to the same node ends - its drain
+ * marker read, or the old link closing - so the node handles the peer's frames in the order they were sent,
+ * as on one connection ({@see self::holdIncomingBehind()}).
  */
 final class PeerLink extends AbstractClient
 {
@@ -187,6 +191,12 @@ final class PeerLink extends AbstractClient
 
     /** @var bool Whether the peer's drain marker arrived on this old link */
     private bool $peerDrained = false;
+
+    /** @var bool Whether this link's inbound frames wait unparsed for the end of the old link's inbound to the same node */
+    private bool $heldBehindPredecessor = false;
+
+    /** @var ?WeakReference<self> Successor whose inbound frames wait for the end of this link's inbound; held weakly */
+    private ?WeakReference $heldSuccessor = null;
 
     /** @var SocketTransportInterface Transport this link was created with, asked for the peer's certificate name */
     private SocketTransportInterface $transport;
@@ -641,6 +651,8 @@ final class PeerLink extends AbstractClient
      * base through the existing hand-over debt. Ordinary writes retain that debt as insurance.
      * Without a successor, waiting frames are released and answer waits end. A ready callback's
      * failure reaches the caller after the other ready callbacks, marker and liveness cleanup.
+     * This does not hold the successor's inbound: the caller does, just before, with {@see self::holdIncomingBehind()},
+     * so the successor parses nothing until this link's inbound ends - the peer's marker or this link's close.
      *
      * @param ?self $successor Replacement with an unused sending direction, or null for a final drain
      * @throws EventLoopException When the remaining silence deadline cannot be armed
@@ -706,6 +718,26 @@ final class PeerLink extends AbstractClient
     }
 
     /**
+     * Leaves this replacement's inbound frames unparsed in its buffer until the predecessor's inbound ends: the
+     * peer's drain marker read there, or the predecessor closing. Reading the socket and liveness go on as before.
+     * A predecessor whose inbound already ended holds nothing back.
+     *
+     * @param self $predecessor Old link to the same node this link replaces
+     * @throws LogicException When the predecessor is this link
+     */
+    public function holdIncomingBehind(self $predecessor): void
+    {
+        if ($predecessor === $this) {
+            throw new LogicException('A peer link cannot wait for its own inbound');
+        }
+        if ($predecessor->peerDrained || $predecessor->shouldClose || $predecessor->socket === null) {
+            return;
+        }
+        $this->heldBehindPredecessor = true;
+        $predecessor->heldSuccessor = WeakReference::create($this);
+    }
+
+    /**
      * Reports whether this side opened the connection (sent the hello).
      *
      * The duplicate-link tie-break keeps the connection dialed by the smaller node
@@ -754,7 +786,8 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Dispatches a bounded portion of whole peer frames, closing on a bad frame.
+     * Dispatches a bounded portion of whole peer frames, closing on a bad frame. A replacement held behind the old
+     * link's inbound parses nothing until that inbound ends ({@see self::holdIncomingBehind()}).
      *
      * @throws SocketException If buffer size or JSON depth exceeds limits
      * @throws PeerTransportException When a peer control frame arrives out of sequence
@@ -768,8 +801,9 @@ final class PeerLink extends AbstractClient
         for ($processed = 0; $this->readBuffer !== ''; ++$processed) {
             // Handling a frame can tear this link down mid-buffer. Once it is closing, stop
             // parsing the frames that followed in the same read, or a trailing gossip frame
-            // would be mis-flagged as arriving before the (now-undone) handshake.
-            if ($this->shouldClose) {
+            // would be mis-flagged as arriving before the (now-undone) handshake. A replacement that its
+            // own ready or ack has just held stops before the next frame, which stays in the buffer.
+            if ($this->shouldClose || $this->heldBehindPredecessor) {
                 return;
             }
 
@@ -849,6 +883,7 @@ final class PeerLink extends AbstractClient
      * ({@see self::afterRtWritesAnswered()}) - and notifies the server so it can mark the peer offline.
      * The waits and server notification finish even when the stream's close or a ready callback raises;
      * the first failure reaches the closer. A stale donor's close leaves its successor and transferred waits intact.
+     * First of all the end of this link's inbound releases a successor held behind it, which parses on its next pass.
      *
      * @throws HilosException When unused upload peer capacity cannot be canceled
      */
@@ -859,9 +894,14 @@ final class PeerLink extends AbstractClient
         $this->discardOutbound();
         $failure = null;
         try {
-            $this->rtSyncStream?->close();
+            $this->releaseHeldSuccessor();
         } catch (Throwable $raised) {
             $failure = $raised;
+        }
+        try {
+            $this->rtSyncStream?->close();
+        } catch (Throwable $raised) {
+            $failure ??= $raised;
         }
         try {
             $this->rtSyncStream?->endAnswerWaits();
@@ -1178,7 +1218,8 @@ final class PeerLink extends AbstractClient
     }
 
     /**
-     * Marks the peer's old stream complete without discarding frames preceding it.
+     * Marks the peer's old stream complete without discarding frames preceding it, and releases the successor
+     * held behind this link's inbound; a marker refused as out of place releases nothing.
      *
      * @throws PeerTransportException When drain arrives without a pending replacement
      * @throws EventLoopException When the rejected candidate's silence deadline cannot be armed
@@ -1195,9 +1236,23 @@ final class PeerLink extends AbstractClient
         }
 
         $this->peerDrained = true;
+        $this->releaseHeldSuccessor();
         if ($this->draining) {
             $this->closeOnceWritten();
         }
+    }
+
+    /** Lets the successor held behind this link's inbound parse again from the frame where it stopped. */
+    private function releaseHeldSuccessor(): void
+    {
+        $successor = $this->heldSuccessor?->get();
+        $this->heldSuccessor = null;
+        if ($successor === null || !$successor->heldBehindPredecessor) {
+            return;
+        }
+        $successor->heldBehindPredecessor = false;
+        // A real release is one new parsing opportunity; the next pass of the loop takes it.
+        $successor->continueReadBuffer();
     }
 
     /**
