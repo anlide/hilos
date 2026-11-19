@@ -185,6 +185,84 @@ and no dimmed buttons:
 - **With payment**: "Sold" for a unique piece;
 - **With search**: the search field in the header and the search page.
 
+### The cart
+
+The cart that is being built on the shop front above. It is a plan, not the
+running demo: what already works is listed under "Today" above. A guest has a
+cart just as a signed-in person does: looking and putting things in the cart
+need no sign-in.
+
+- **A guest's cart** belongs to the browser session: every tab of that
+  browser shares it, and it ends with the session — when the framework clears
+  an ended session away, its cart goes with it.
+- **An account's cart** is one per person: the same cart in every tab and on
+  every device they are signed in on.
+
+A cart line is a product and a quantity; a unique piece is always one unit
+and has no quantity (the kinds are the catalog's above).
+
+Each cart has one writer. Guests' carts are kept by the guest carts library —
+one per cluster, and the cluster picks its node, like the catalog's libraries
+above. An account's cart is kept by that person's agent, the one the
+framework keeps for each person —
+[the framework's rule for one person's rows](../../docs/agents/architecture/instance-owners.md#core-rule).
+The rules are the same for both owners: adding puts one unit in; an exact
+quantity is never above the stock — above it, the server refuses in its own
+words; a unique piece that is "Not in a warehouse yet" cannot be added (the
+shop front above does not show it either).
+
+When a guest signs in, their cart joins the account's cart — the quantities
+of a stock item add up, a unique piece already there is not doubled, and the
+guest's cart is gone. A sum above the stock is kept as it is: the cart holds
+no stock (below), and the cart page shows honestly what can be had. Each
+owner writes only its own: the guest carts library hands the guest's cart to
+the person's agent, the agent adds it to the account's cart, and only after
+the agent's answer does the library drop its own. Signing out leaves the
+browser a guest again, with an empty cart; the account's cart stays with the
+account until the next sign-in.
+
+Erasing an account erases its cart. When two accounts are merged, the cart of
+the account merged away joins the cart of the account it is merged into, by
+the same rule as at sign-in.
+
+Putting a product in a cart sets nothing aside — the stock stays as it was,
+and another buyer can still take the last unit; with payment, whoever pays
+first gets it. A cart line follows the catalog by itself: a price or
+availability changed in shop administration changes it in every open cart,
+and a line that can no longer be had greys out, is not counted in the total,
+and "Remove" takes it out.
+
+What a buyer sees:
+
+- **The header**: the cart with the number of units in it, for a guest too;
+  it changes by itself when something is added in another tab or on another
+  device, and leads to the cart page.
+- **A product**: "Add to cart" puts one unit in, without a window — "Adds
+  one. Change the quantity in the cart."; a unique piece already in the cart
+  shows "In your cart — go to cart" instead; what cannot be had is greyed
+  out. Next to who is looking, "In N carts" or "In nobody's cart yet" — how
+  many buyers, guests and accounts alike, have it in their cart now; the
+  administrators' product page shows the same number on its "On the shop
+  front" line.
+- **A category**: "Add" in a row, in "Table" and in "Tiles", puts one unit
+  in; a unique piece already in the cart says "In cart" and leads to the
+  cart; for a sold unique piece and a stock item at zero it is greyed out.
+- **The cart page**, `/cart`, open to everyone: a line per product — picture,
+  name leading to the product, price each and the line's total — then "Items"
+  and "Total". "−" and "+" change a quantity by one, without a window; the
+  number opens a "Quantity" window for an exact one; "Remove" takes a line
+  out, without a window; a unique piece shows "1 · one of a kind" instead of
+  a quantity. An empty cart says "Your cart is empty" and "Add something from
+  the shop — it stays here", with "for this browser session" for a guest, and
+  offers "Go shopping".
+
+What later phases bring is not on the cart page until then — the cart does
+not pass itself off as a purchase:
+
+- **With payment**: "Checkout", the delivery line, and "Sold — someone paid
+  first" on a line whose unique piece somebody else bought;
+- **With vouchers**: a voucher in the cart and its discount line.
+
 ## Change Log
 
 The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
