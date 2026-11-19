@@ -9,6 +9,9 @@ import {
   ActionLifecycle,
   formatMoment,
   HIDDEN_VALUE,
+  HilosPages,
+  hilosToasts,
+  resolveHilosPath,
   ScopeManager,
   createSignal,
   entityCollection,
@@ -22,7 +25,11 @@ import type {
   PageRouteMatch,
   TableViewportDescriptor,
 } from '@hilos/core/base'
-import type { HilosUsersContext } from '@hilos/core/admin/users'
+import {
+  HILOS_USERS_MERGE_PROGRESS_KEY,
+  HILOS_USERS_ERASURE_PROGRESS_KEY,
+  type HilosUsersContext,
+} from '@hilos/core/admin/users'
 
 import { HilosUsersPage } from '../src/admin/users/HilosUsersPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
@@ -133,8 +140,12 @@ function seededContext(users: UserSeed[]): HilosUsersContext {
  * {@link seededContext} with the live delta frames of the people table at hand.
  *
  * @param users The people of the first window.
+ * @param initialProgress The bars delivered beside the first window.
  */
-function liveUsers(users: UserSeed[]): LiveUsers {
+function liveUsers(
+  users: UserSeed[],
+  initialProgress: readonly Record<string, unknown>[] = [],
+): LiveUsers {
   const scopes = new ScopeManager()
   scopes.openPage('hilos_users')
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
@@ -173,6 +184,11 @@ function liveUsers(users: UserSeed[]): LiveUsers {
     }
     for (const listener of windowListeners) {
       listener({ data })
+    }
+    if (initialProgress.length > 0) {
+      queueMicrotask(() => {
+        for (const bar of initialProgress) progress(bar)
+      })
     }
   }
 
@@ -996,5 +1012,278 @@ describe('HilosUsersPage erasure (HIL-1961)', () => {
         .querySelector('[data-id="hilos-table-row-1"] td:nth-child(2)')
         ?.querySelector('[data-id="hilos-users-erasing"]')?.textContent,
     ).toBe('Being deleted')
+  })
+})
+
+describe('HilosUsersPage merge (HIL-2010)', () => {
+  const alice: UserSeed = {
+    id: 1,
+    name: 'Alice',
+    lastActivity: null,
+    presence: 'offline',
+    onlineSessionCount: 0,
+  }
+  const bob: UserSeed = { ...alice, id: 2, name: 'Bob' }
+  const detail = {
+    operationId: 10,
+    survivorUserId: 1,
+    loserUserId: 2,
+    state: 'preparing',
+    stage: 'preparing',
+    outcome: null,
+    given: true,
+    received: false,
+    choice: null,
+    refusal: null,
+    parts: [
+      { participant: 'profile', owner: 'user', userId: 1, done: true },
+      { participant: 'chat', owner: 'room', userId: 1, done: false },
+      { participant: 'files', owner: 'user', userId: 2, done: false },
+      { participant: 'auth', owner: 'credentials', userId: 2, done: false },
+    ],
+    waits: [
+      { participant: 'sessions', userId: 2 },
+      { participant: 'delivery', userId: null },
+    ],
+  }
+
+  /**
+   * The row's merge bar, with only the varying fields supplied by each case.
+   *
+   * @param rowKey The account the row shows.
+   * @param fields Fields that differ from a preparing merge.
+   */
+  function mergeBar(rowKey: string, fields: Record<string, unknown> = {}) {
+    return {
+      scope: 'row',
+      progressKey: HILOS_USERS_MERGE_PROGRESS_KEY,
+      rowKey,
+      current: 1,
+      total: 3,
+      detail,
+      ...fields,
+    }
+  }
+
+  /**
+   * Mount the real list and core table, including its project action cell.
+   *
+   * @param initialProgress The bars sent beside the first window.
+   * @param seeds The people shown in the window.
+   */
+  async function mountMerge(
+    initialProgress: Record<string, unknown>[] = [],
+    seeds: UserSeed[] = [alice, bob],
+  ) {
+    const live = liveUsers(seeds, initialProgress)
+    let view!: ReturnType<typeof render>
+    await act(async () => {
+      view = render(
+        <HilosRouterContext.Provider value={router()}>
+          <HilosUsersPage
+            context={live.context}
+            rowActions={(row) => (
+              <a
+                href={resolveHilosPath(HilosPages.USER, {
+                  userId: String(row.id),
+                })}
+              >
+                Open
+              </a>
+            )}
+          />
+        </HilosRouterContext.Provider>,
+      )
+    })
+    const progressRow = (id: number) =>
+      view.container.querySelector(`[data-id="hilos-table-progress-row-${id}"]`)
+    const caption = (id: number, line: string) =>
+      progressRow(id)?.querySelector(`[data-id="hilos-users-merge-${line}"]`) ??
+      null
+    const change = async (
+      fields: Record<string, unknown> = {},
+      rowKey = '1',
+    ) => {
+      await act(async () => live.progress(mergeBar(rowKey, fields)))
+    }
+
+    return { ...view, live, progressRow, caption, change }
+  }
+
+  afterEach(() => hilosToasts.clear())
+
+  it('reads the merge bar delivered with the first window', async () => {
+    const { caption } = await mountMerge([mergeBar('1')])
+    expect(caption(1, 'summary')?.textContent).toBe(
+      'Preparing merge · 1 of 3 parts done',
+    )
+    expect(caption(1, 'expected')?.textContent).toBe(
+      'Expected: chat; files · #2; auth · #2',
+    )
+    expect(caption(1, 'expected')?.querySelectorAll('code')).toHaveLength(3)
+    expect(caption(1, 'waits')?.textContent).toBe(
+      'Waiting for an owner: sessions · #2; delivery',
+    )
+    expect(caption(1, 'refusal')).toBeNull()
+  })
+
+  it('follows preparing, waiting, refusal and cancellation live', async () => {
+    const { caption, change, progressRow } = await mountMerge()
+    expect(progressRow(1)).toBeNull()
+    await change()
+    expect(caption(1, 'summary')?.textContent).toBe(
+      'Preparing merge · 1 of 3 parts done',
+    )
+    await change({
+      current: 2,
+      detail: { ...detail, state: 'wait', stage: 'go' },
+    })
+    expect(caption(1, 'summary')?.textContent).toBe(
+      'Merge in progress · 2 of 3 parts done',
+    )
+    await change({
+      detail: {
+        ...detail,
+        state: 'refusal',
+        refusal: {
+          code: 'occupied',
+          reason: 'Account has pending transactions',
+          permanent: false,
+        },
+      },
+    })
+    expect(caption(1, 'summary')?.textContent).toBe(
+      'Merge refused · 1 of 3 parts done',
+    )
+    expect(caption(1, 'refusal')?.textContent).toBe(
+      'Account has pending transactions',
+    )
+    await change({ detail: { ...detail, state: 'wait', stage: 'cancelling' } })
+    expect(caption(1, 'summary')?.textContent).toBe(
+      'Cancelling merge preparation · 1 of 3 parts done',
+    )
+    expect(caption(1, 'refusal')).toBeNull()
+  })
+
+  it('keeps Merged beside a full bar whose operation still waits', async () => {
+    const { container, caption, progressRow, change } = await mountMerge(
+      [],
+      [alice, { ...bob, merged: true }],
+    )
+    await change(
+      { current: 3, detail: { ...detail, state: 'wait', stage: 'go' } },
+      '2',
+    )
+    expect(
+      container.querySelector('[data-id="hilos-users-merged"]')?.textContent,
+    ).toBe('Merged')
+    expect(caption(2, 'summary')?.textContent).toBe(
+      'Merge in progress · 3 of 3 parts done',
+    )
+    expect(
+      progressRow(2)
+        ?.querySelector('[role="progressbar"]')
+        ?.getAttribute('aria-valuenow'),
+    ).toBe('100')
+    expect(caption(2, 'waits')?.textContent).toBe(
+      'Waiting for an owner: sessions; delivery',
+    )
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('caps both lists, preserves the exact refusal as text and keeps Open', async () => {
+    const { caption, change, container } = await mountMerge()
+    const reason =
+      '<img src=x onerror=alert(1)> Another merge already active on candidate'
+    await change({
+      detail: {
+        ...detail,
+        parts: [
+          ...detail.parts,
+          { participant: 'extra1', owner: 'sys', userId: 2, done: false },
+          { participant: 'extra2', owner: 'sys', userId: null, done: false },
+        ],
+        waits: [
+          ...detail.waits,
+          { participant: 'backup', userId: 2 },
+          { participant: 'audit', userId: null },
+        ],
+        refusal: { code: 'occupied', reason, permanent: true },
+      },
+    })
+    expect(caption(1, 'expected')?.textContent).toBe(
+      'Expected: chat; files · #2; auth · #2; +2 more',
+    )
+    expect(caption(1, 'waits')?.textContent).toBe(
+      'Waiting for an owner: sessions · #2; delivery; backup · #2; +1 more',
+    )
+    expect(caption(1, 'waits')?.querySelectorAll('code')).toHaveLength(3)
+    expect(caption(1, 'refusal')?.textContent).toBe(reason)
+    expect(caption(1, 'refusal')?.querySelector('img')).toBeNull()
+    const open = container.querySelector('[data-id="hilos-table-row-1"] a')
+    expect(open?.textContent).toBe('Open')
+    expect(open?.getAttribute('href')).toBe(
+      resolveHilosPath(HilosPages.USER, { userId: '1' }),
+    )
+  })
+
+  it('handles hidden or broken detail, erasure and other work, then clears without sending or toasting', async () => {
+    const { caption, change, progressRow, live, unmount } = await mountMerge()
+    const send = vi.spyOn(live.context.connection, 'sendAction')
+    for (const unreadable of [{}, HIDDEN_VALUE, null]) {
+      await change({ detail: unreadable })
+      expect(caption(1, 'summary')?.textContent).toBe('Merge in progress')
+      expect(caption(1, 'expected')).toBeNull()
+      expect(caption(1, 'waits')).toBeNull()
+      expect(caption(1, 'refusal')).toBeNull()
+    }
+    await change({
+      detail: {
+        ...detail,
+        stage: HIDDEN_VALUE,
+        refusal: HIDDEN_VALUE,
+        parts: [
+          {
+            participant: 'private_module',
+            owner: 'user',
+            userId: HIDDEN_VALUE,
+            done: false,
+          },
+        ],
+        waits: [{ participant: 'private_worker', userId: HIDDEN_VALUE }],
+      },
+    })
+    expect(caption(1, 'expected')?.textContent).toBe('Expected: private_module')
+    expect(caption(1, 'waits')?.textContent).toBe(
+      'Waiting for an owner: private_worker',
+    )
+    expect(caption(1, 'refusal')).toBeNull()
+    await change({
+      progressKey: HILOS_USERS_ERASURE_PROGRESS_KEY,
+      detail: {
+        startedAt: 1_800_000_000_000,
+        parts: [],
+        waits: [],
+        refusals: [],
+      },
+    })
+    expect(
+      progressRow(1)?.querySelector('[data-id="hilos-users-erasure-summary"]'),
+    ).not.toBeNull()
+    expect(caption(1, 'summary')).toBeNull()
+    await change({ progressKey: 'other-work' })
+    expect(progressRow(1)?.querySelector('[role="progressbar"]')).not.toBeNull()
+    expect(caption(1, 'summary')).toBeNull()
+    expect(
+      progressRow(1)?.querySelector('[data-id="hilos-users-erasure-summary"]'),
+    ).toBeNull()
+    await change()
+    await change({ ended: true })
+    expect(progressRow(1)).toBeNull()
+    expect(caption(1, 'summary')).toBeNull()
+    await change()
+    unmount()
+    expect(send).not.toHaveBeenCalled()
+    expect(hilosToasts.toasts.get()).toEqual([])
   })
 })

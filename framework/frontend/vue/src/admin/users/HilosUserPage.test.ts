@@ -1957,7 +1957,7 @@ describe('HilosUserPage merge draft', () => {
       accountMerge: mergeProgress(),
     })
     await flushPromises()
-    const cancel = button('hilos-user-merge-cancel')
+    const cancel = button('hilos-user-merge-operation-cancel')
     cancel.focus()
     cancel.click()
     await nextTick()
@@ -5285,7 +5285,7 @@ describe('HilosUserPage merge observation', () => {
     await mountPage(world.context)
     await openObservation()
     const button = modalEl(
-      'hilos-user-merge-cancel',
+      'hilos-user-merge-operation-cancel',
     ) as HTMLButtonElement | null
     expect(button !== null).toBe(scenario.offered)
     if (scenario.offered) {
@@ -5300,7 +5300,9 @@ describe('HilosUserPage merge observation', () => {
     const world = setup(true)
     await mountPage(world.context)
     const dialog = await openObservation()
-    const button = modalEl('hilos-user-merge-cancel') as HTMLButtonElement
+    const button = modalEl(
+      'hilos-user-merge-operation-cancel',
+    ) as HTMLButtonElement
     button.focus()
     expect(document.activeElement).toBe(button)
     button.click()
@@ -5325,16 +5327,16 @@ describe('HilosUserPage merge observation', () => {
     world.answerMergeCancel()
     await flushPromises()
     expect(modalEl('modal')).not.toBeNull()
-    expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+    expect(modalEl('hilos-user-merge-operation-cancel')).toBeNull()
     expect(dialog.contains(document.activeElement)).toBe(true)
     expect(hilosToasts.toasts.get()).toEqual([])
     world.update(mergeProgress({ state: 'wait', stage: 'go' }))
     await nextTick()
-    expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+    expect(modalEl('hilos-user-merge-operation-cancel')).toBeNull()
     world.update(mergeProgress({ state: 'wait', stage: 'cancelling' }))
     await nextTick()
     expect(dialog.textContent).toContain('Releasing merge reservations')
-    expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+    expect(modalEl('hilos-user-merge-operation-cancel')).toBeNull()
     expect(hilosToasts.toasts.get()).toEqual([])
     world.update(
       mergeProgress({
@@ -5366,7 +5368,7 @@ describe('HilosUserPage merge observation', () => {
       const dialog = await openObservation()
       const voice = dialog.querySelector('[role="alert"]')!
       expect(modalEl('hilos-user-merge-cancel-refusal-idle')).not.toBeNull()
-      const button = modalEl('hilos-user-merge-cancel')!
+      const button = modalEl('hilos-user-merge-operation-cancel')!
       button.focus()
       button.click()
       world.answerMergeCancel(reason)
@@ -5379,7 +5381,7 @@ describe('HilosUserPage merge observation', () => {
       expect(dialog.querySelector('[role="alert"]')).toBe(voice)
       expect(dialog.textContent).toContain('Preparing merge')
       expect(modalEl('hilos-user-merge-operation-refusal')).toBeNull()
-      expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+      expect(modalEl('hilos-user-merge-operation-cancel')).toBeNull()
       expect(dialog.contains(document.activeElement)).toBe(true)
       world.update(mergeProgress({ state: 'end', outcome: 'not_started' }))
       await nextTick()
@@ -5399,9 +5401,11 @@ describe('HilosUserPage merge observation', () => {
       'hidden',
       'view',
     ].flatMap((transition) =>
-      ['hilos-user-merge-cancel', 'hilos-user-merge-close', 'modal-close'].map(
-        (control) => ({ transition, control }),
-      ),
+      [
+        'hilos-user-merge-operation-cancel',
+        'hilos-user-merge-close',
+        'modal-close',
+      ].map((control) => ({ transition, control })),
     ),
   )(
     'keeps keyboard observation after $transition removes Cancel with focus on $control',
@@ -5409,7 +5413,7 @@ describe('HilosUserPage merge observation', () => {
       const world = setup(true)
       await mountPage(world.context)
       const dialog = await openObservation()
-      const cancel = modalEl('hilos-user-merge-cancel')!
+      const cancel = modalEl('hilos-user-merge-operation-cancel')!
       if (transition === 'accepted' || transition === 'refused') {
         cancel.focus()
         cancel.click()
@@ -5433,9 +5437,9 @@ describe('HilosUserPage merge observation', () => {
       else world.access(false)
       await flushPromises()
       expect(document.querySelector('[role="dialog"]')).toBe(dialog)
-      expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+      expect(modalEl('hilos-user-merge-operation-cancel')).toBeNull()
       expect(dialog.contains(document.activeElement)).toBe(true)
-      if (control !== 'hilos-user-merge-cancel')
+      if (control !== 'hilos-user-merge-operation-cancel')
         expect(document.activeElement).toBe(selected)
       const close = modalEl('hilos-user-merge-close')!
       if (document.activeElement !== close) {
@@ -5490,7 +5494,7 @@ describe('HilosUserPage merge observation', () => {
     const world = setup(true)
     const wrapper = await mountPage(world.context)
     const dialog = await openObservation()
-    modalEl('hilos-user-merge-cancel')!.focus()
+    modalEl('hilos-user-merge-operation-cancel')!.focus()
     world.update(mergeProgress({ given: true }))
     await nextTick()
     expect(dialog.contains(document.activeElement)).toBe(false)
@@ -5528,7 +5532,7 @@ describe('HilosUserPage merge observation', () => {
     const world = setup(true)
     await mountPage(world.context)
     await openObservation()
-    modalEl('hilos-user-merge-cancel')!.click()
+    modalEl('hilos-user-merge-operation-cancel')!.click()
     world.answerMergeCancel()
     await flushPromises()
     world.update(
@@ -5555,7 +5559,7 @@ describe('HilosUserPage merge observation', () => {
     const world = setup(true)
     await mountPage(world.context)
     const dialog = await openObservation()
-    modalEl('hilos-user-merge-cancel')!.click()
+    modalEl('hilos-user-merge-operation-cancel')!.click()
     world.disconnect()
     await flushPromises()
     expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
@@ -5563,10 +5567,11 @@ describe('HilosUserPage merge observation', () => {
     )
     expect(dialog.textContent).toContain('Preparing merge')
     expect(
-      (modalEl('hilos-user-merge-cancel') as HTMLButtonElement).disabled,
+      (modalEl('hilos-user-merge-operation-cancel') as HTMLButtonElement)
+        .disabled,
     ).toBe(false)
     expect(hilosToasts.toasts.get()).toEqual([])
-    modalEl('hilos-user-merge-cancel')!.click()
+    modalEl('hilos-user-merge-operation-cancel')!.click()
     await nextTick()
     expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
     expect(modalEl('hilos-user-merge-cancel-refusal-idle')).not.toBeNull()
@@ -5588,7 +5593,7 @@ describe('HilosUserPage merge observation', () => {
       const world = setup(true)
       const wrapper = await mountPage(world.context)
       const dialog = await openObservation()
-      modalEl('hilos-user-merge-cancel')!.click()
+      modalEl('hilos-user-merge-operation-cancel')!.click()
       await nextTick()
       if (close === 'unmount') {
         wrapper.unmount()
@@ -5624,7 +5629,7 @@ describe('HilosUserPage merge observation', () => {
       await mountPage(world.context)
       const firstDialog = await openObservation()
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-      modalEl('hilos-user-merge-cancel')!.click()
+      modalEl('hilos-user-merge-operation-cancel')!.click()
       const firstId = world.sent.at(-1)!.requestId!
       if (close === 'Escape') {
         firstDialog.dispatchEvent(
@@ -5635,13 +5640,13 @@ describe('HilosUserPage merge observation', () => {
       expect(modalEl('modal')).toBeNull()
       expect(world.sent).toHaveLength(1)
       const dialog = await openObservation()
-      modalEl('hilos-user-merge-cancel')!.click()
+      modalEl('hilos-user-merge-operation-cancel')!.click()
       const secondId = world.sent.at(-1)!.requestId!
       expect(secondId).not.toBe(firstId)
       expect(world.sent).toHaveLength(2)
       await nextTick()
       expect(
-        modalEl('hilos-user-merge-cancel')?.getAttribute('aria-busy'),
+        modalEl('hilos-user-merge-operation-cancel')?.getAttribute('aria-busy'),
       ).toBe('true')
       if (early) {
         world.answerMergeCancel(
@@ -5651,7 +5656,9 @@ describe('HilosUserPage merge observation', () => {
         await flushPromises()
         expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
         expect(
-          modalEl('hilos-user-merge-cancel')?.getAttribute('aria-busy'),
+          modalEl('hilos-user-merge-operation-cancel')?.getAttribute(
+            'aria-busy',
+          ),
         ).toBe('true')
       }
       const reason = 'The merge can no longer be canceled'
@@ -5676,7 +5683,7 @@ describe('HilosUserPage merge observation', () => {
         reason,
       )
       expect(dialog.textContent).not.toContain('Old request refused.')
-      expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+      expect(modalEl('hilos-user-merge-operation-cancel')).toBeNull()
       expect(hilosToasts.toasts.get()).toEqual([])
       expect(vi.getTimerCount()).toBe(0)
     },
@@ -5686,7 +5693,7 @@ describe('HilosUserPage merge observation', () => {
     const world = setup(true)
     await mountPage(world.context)
     await openObservation()
-    modalEl('hilos-user-merge-cancel')!.click()
+    modalEl('hilos-user-merge-operation-cancel')!.click()
     world.answerMergeCancel('Old request refused.')
     await flushPromises()
     expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
@@ -5697,7 +5704,7 @@ describe('HilosUserPage merge observation', () => {
     const dialog = await openObservation()
     expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
     expect(dialog.querySelector('[role="alert"]')?.textContent?.trim()).toBe('')
-    modalEl('hilos-user-merge-cancel')!.click()
+    modalEl('hilos-user-merge-operation-cancel')!.click()
     world.answerMergeCancel('This merge no longer exists')
     await flushPromises()
     expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
@@ -5713,7 +5720,7 @@ describe('HilosUserPage merge observation', () => {
       const world = setup(true)
       await mountPage(world.context)
       await openObservation()
-      modalEl('hilos-user-merge-cancel')!.click()
+      modalEl('hilos-user-merge-operation-cancel')!.click()
       const firstId = world.sent.at(-1)!.requestId!
       world.update(mergeProgress({ state: 'end', outcome: 'not_started' }))
       await flushPromises()
@@ -5724,7 +5731,7 @@ describe('HilosUserPage merge observation', () => {
       world.update(mergeProgress({ operationId: 42 }))
       await nextTick()
       const dialog = await openObservation()
-      modalEl('hilos-user-merge-cancel')!.click()
+      modalEl('hilos-user-merge-operation-cancel')!.click()
       world.answerMergeCancel('This merge no longer exists')
       await flushPromises()
       expect(modalEl('hilos-user-merge-cancel-refusal')?.textContent).toBe(
@@ -5751,7 +5758,7 @@ describe('HilosUserPage merge observation', () => {
       const listenersBefore = world.listenerCount('projectSignal')
       let wrapper = await mountPage(world.context)
       await openObservation()
-      modalEl('hilos-user-merge-cancel')!.click()
+      modalEl('hilos-user-merge-operation-cancel')!.click()
       const firstId = world.sent.at(-1)!.requestId!
       if (boundary === 'changed')
         world.update(mergeProgress({ operationId: 42 }))
@@ -5768,7 +5775,7 @@ describe('HilosUserPage merge observation', () => {
         expect(world.listenerCount('projectSignal')).toBe(listenersBefore)
       }
       await flushPromises()
-      expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+      expect(modalEl('hilos-user-merge-operation-cancel')).toBeNull()
       world.answerMergeCancel('Old request refused.', firstId)
       await flushPromises()
       expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
@@ -5787,7 +5794,7 @@ describe('HilosUserPage merge observation', () => {
       if (boundary === 'unmount') wrapper = await mountPage(world.context)
       const dialog = await openObservation()
       expect(modalEl('hilos-user-merge-cancel-refusal')).toBeNull()
-      modalEl('hilos-user-merge-cancel')!.click()
+      modalEl('hilos-user-merge-operation-cancel')!.click()
       const secondId = world.sent.at(-1)!.requestId!
       expect(world.sent).toHaveLength(2)
       await nextTick()
@@ -5796,7 +5803,7 @@ describe('HilosUserPage merge observation', () => {
         '',
       )
       expect(
-        modalEl('hilos-user-merge-cancel')?.getAttribute('aria-busy'),
+        modalEl('hilos-user-merge-operation-cancel')?.getAttribute('aria-busy'),
       ).toBe('true')
       world.answerMergeCancel('This merge no longer exists', secondId)
       await flushPromises()
@@ -5829,7 +5836,7 @@ describe('HilosUserPage merge observation', () => {
     expect(modalEl('hilos-table-search')).toBeNull()
     expect(modalEl('hilos-user-merge-next')).toBeNull()
     expect(modalEl('hilos-user-merge-confirm')).toBeNull()
-    expect(modalEl('hilos-user-merge-cancel')).toBeNull()
+    expect(modalEl('hilos-user-merge-operation-cancel')).toBeNull()
     expect(modalEl('hilos-user-merge-close')?.textContent?.trim()).toBe('Close')
     dialog.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),

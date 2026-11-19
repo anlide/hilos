@@ -27,7 +27,14 @@ import type {
   PageRouteMatch,
   ProjectSignal,
 } from '@hilos/core/base'
-import type { HilosUsersContext } from '@hilos/core/admin/users'
+import {
+  HILOS_USER_MERGE_SECTION,
+  HILOS_USER_MERGE_AVAILABILITY_SECTION,
+  HILOS_ACCOUNT_MERGE_WINDOW_COPY,
+  type HilosAccountMergeProgress,
+  HILOS_USER_ERASURE_SECTION,
+  type HilosUsersContext,
+} from '@hilos/core/admin/users'
 
 import { HilosUserPage } from '../src/admin/users/HilosUserPage.js'
 import { HilosRouterContext } from '../src/hilosRouterContext.js'
@@ -88,6 +95,7 @@ function userContext(
     candidateIdentitiesHidden?: boolean
     impersonation?: Record<string, unknown>
     currentUserId?: number
+    candidateAvailable?: boolean
   } = {},
 ): HilosUsersContext & {
   renameElsewhere: (name: string) => void
@@ -95,12 +103,19 @@ function userContext(
   failRename: () => void
   standingFrame: (data: Record<string, unknown>) => void
   answerImpersonate: (reason?: string) => void
-  answerMerge: (reason?: string) => void
+  answerMerge: (reason?: string, reply?: unknown) => void
+  answerMergeCancel: (reason?: string, requestId?: string) => void
+  updateCandidate: (fields: Record<string, unknown>) => void
+  disconnect: () => void
   removeCandidate: () => void
   sent: Array<{ action: string; data: unknown; requestId?: string }>
 } {
   const scopes = new ScopeManager()
   const page = scopes.openPage('hilos_user')
+  page.data.set(HILOS_USER_MERGE_AVAILABILITY_SECTION, {
+    reserved: false,
+    available: true,
+  })
   // The installation's impersonation settings ride the card's first answer (HIL-1170).
   if (options.impersonation !== undefined) {
     page.data.set('impersonation', options.impersonation)
@@ -141,6 +156,7 @@ function userContext(
   const connection = new HilosConnection({ url: 'ws://test/ws' })
   const sent: Array<{ action: string; data: unknown; requestId?: string }> = []
   const actionListeners = new Map<string, Array<(signal: unknown) => void>>()
+  const candidateFields: Record<string, unknown> = {}
   const candidateRows = () => [
     {
       rowKey: 2,
@@ -161,6 +177,11 @@ function userContext(
           hasSecondFactor: options.candidateHasSecondFactor ?? false,
           unverifiedPasswordAddress:
             options.candidateUnverifiedPasswordAddress ?? null,
+          accountMergeAvailability: {
+            reserved: options.candidateAvailable === false,
+            available: options.candidateAvailable !== false,
+          },
+          ...candidateFields,
         },
       },
     },
@@ -168,12 +189,18 @@ function userContext(
       rowKey: 99,
       slots: {
         users: { id: 99, name: 'Admin', lastActivity: null },
-        merge: { identities: [], hasPassword: false, hasSecondFactor: false },
+        merge: {
+          identities: [],
+          hasPassword: false,
+          hasSecondFactor: false,
+          accountMergeAvailability: { reserved: false, available: true },
+        },
       },
     },
   ]
   const tableWindowListeners: Array<(signal: unknown) => void> = []
   const tableDeltaListeners: Array<(signal: unknown) => void> = []
+  const stateListeners: Array<(signal: unknown) => void> = []
   const serveCandidates = (requestId?: string): void => {
     const signal = {
       kind: 'tableWindow',
@@ -266,6 +293,8 @@ function userContext(
         listener as (signal: Record<string, unknown>) => void,
       )
     }
+    if (event === 'state')
+      stateListeners.push(listener as (signal: unknown) => void)
     if (event === 'tableWindow') {
       tableWindowListeners.push(listener as (signal: unknown) => void)
     }
@@ -308,7 +337,7 @@ function userContext(
         })
       }
     },
-    answerMerge(reason?: string): void {
+    answerMerge(reason?: string, reply?: unknown): void {
       const requestId = sent.at(-1)?.requestId
       const signal =
         reason === undefined
@@ -316,7 +345,7 @@ function userContext(
               kind: 'actionSuccess',
               action: 'hilos_user_merge',
               requestId,
-              message: 'Merged.',
+              ...(reply === undefined ? { message: 'Merged.' } : { reply }),
             }
           : {
               kind: 'actionError',
@@ -327,6 +356,44 @@ function userContext(
       for (const listener of actionListeners.get(signal.kind) ?? []) {
         listener(signal)
       }
+    },
+    answerMergeCancel(
+      reason?: string,
+      requestId = sent
+        .filter((entry) => entry.action === 'hilos_user_merge_cancel')
+        .at(-1)?.requestId,
+    ): void {
+      const signal =
+        reason === undefined
+          ? {
+              kind: 'actionSuccess',
+              action: 'hilos_user_merge_cancel',
+              requestId,
+            }
+          : {
+              kind: 'actionError',
+              action: 'hilos_user_merge_cancel',
+              requestId,
+              reason,
+            }
+      for (const listener of actionListeners.get(signal.kind) ?? [])
+        listener(signal)
+    },
+    disconnect(): void {
+      for (const listener of stateListeners) listener('disconnected')
+    },
+    updateCandidate(fields: Record<string, unknown>): void {
+      Object.assign(candidateFields, fields)
+      for (const listener of tableDeltaListeners)
+        listener({
+          data: {
+            page: HilosPages.USER,
+            tableKey: 'mergeCandidates',
+            kind: 'row_updated',
+            rowKey: '2',
+            row: candidateRows()[0],
+          },
+        })
     },
     removeCandidate(): void {
       const signal = {
@@ -2801,5 +2868,795 @@ describe('HilosUserPage erasure (HIL-1961)', () => {
     expect(byId('modal')).toBeNull()
     expect(byId('hilos-user-erasing')).not.toBeNull()
     expect(byId('hilos-user-deletion-open')).toBeNull()
+  })
+})
+
+describe('HilosUserPage merge section (HIL-2010)', () => {
+  const releases: Array<() => void> = []
+
+  afterEach(() => {
+    cleanup()
+    for (const release of releases.splice(0)) release()
+    document.body.classList.remove('modal-open')
+    hilosToasts.clear()
+  })
+
+  /**
+   * The server's merge progress; each case varies only its relevant facts.
+   *
+   * @param facts Fields that differ from one unfinished preparing duty.
+   */
+  function mergeWire(
+    facts: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      operationId: 40,
+      survivorUserId: 1,
+      loserUserId: 74,
+      state: 'preparing',
+      stage: null,
+      outcome: null,
+      given: false,
+      received: false,
+      choice: null,
+      refusal: null,
+      parts: [
+        {
+          participant: 'prepare_survivor',
+          owner: 'auth',
+          userId: 74,
+          done: false,
+        },
+      ],
+      waits: [{ participant: 'prepare_loser', userId: 74 }],
+      ...facts,
+    }
+  }
+
+  /**
+   * Bind the actual admin verdict before the card consumes its snapshot.
+   *
+   * @param viewer Whether this reader only views the section.
+   * @param seed Whether the detail row has already arrived.
+   */
+  function cardContext(viewer = false, seed = true) {
+    const context = userContext(seed)
+    context.scopes.session.data.set('currentUser', {
+      type: USER_ENTITY_TYPE,
+      id: 99,
+    })
+    context.scopes.session.entities.upsert(
+      { type: USER_ENTITY_TYPE, id: 99 },
+      { id: 99, admin: !viewer },
+    )
+    context.scopes.session.data.set('adminViewMode', viewer)
+    releases.push(bindAdminAccess(context.scopes))
+
+    return context
+  }
+
+  function lines(id: string): string[] {
+    return Array.from(document.querySelectorAll(`[data-id="${id}"]`)).map(
+      (line) => line.textContent ?? '',
+    )
+  }
+
+  it('reads the first snapshot beside the existing erasure and sessions without enabling merge actions', () => {
+    const context = cardContext()
+    context.scopes.page()!.data.set(HILOS_USER_MERGE_SECTION, mergeWire())
+    context.scopes.page()!.data.set(HILOS_USER_ERASURE_SECTION, {
+      startedAt: 1_800_000_000_000,
+      parts: [
+        { participant: 'messages', owner: 'chat', userId: 7, done: false },
+      ],
+      waits: [],
+      refusals: [],
+    })
+    renderPage(context)
+    expect(byId('hilos-user-merge-status')?.textContent).toBe('Preparing merge')
+    expect(lines('hilos-user-merge-part')).toEqual([
+      'Prepare receiving account · #74',
+    ])
+    expect(lines('hilos-user-merge-wait')).toEqual([
+      'Prepare source account · #74',
+    ])
+    expect(lines('hilos-user-erasure-part')).toEqual([
+      'messages · #7 — Expected',
+    ])
+    expect(byId('hilos-user-sessions')).not.toBeNull()
+    expect(byId('hilos-user-merge-zone')).toBeNull()
+    expect(context.sent).toEqual([])
+  })
+
+  it('waits for the detail signal before projecting a snapshot', async () => {
+    const context = cardContext(false, false)
+    const page = context.scopes.page()!
+    page.data.set(HILOS_USER_MERGE_SECTION, mergeWire())
+    renderPage(context)
+    expect(byId('hilos-user-merge')).toBeNull()
+    await act(async () => {
+      page.entities.upsert(
+        { type: USER_ENTITY_TYPE, id: 1 },
+        { id: 1, name: 'Alice', lastActivity: null },
+      )
+      page.tables.upsert('userDetail', 1, {
+        users: { type: USER_ENTITY_TYPE, id: 1 },
+        connections: { presence: 'offline', onlineSessionCount: 0 },
+      })
+    })
+    expect(byId('hilos-user-merge-status')?.textContent).toBe('Preparing merge')
+    expect(lines('hilos-user-merge-part')).toEqual([
+      'Prepare receiving account · #74',
+    ])
+  })
+
+  it('follows live progress and clears the previous refusal and reading', async () => {
+    const context = cardContext()
+    renderPage(context)
+    const frame = byId('hilos-user-merge')
+    expect(byId('hilos-user-merge-status')?.textContent).toBe('')
+    for (const [facts, expected] of [
+      [{}, 'Preparing merge'],
+      [{ state: 'wait', stage: 'go' }, 'Merge in progress'],
+      [{ state: 'wait', stage: 'cancelling' }, 'Releasing merge reservations'],
+      [
+        {
+          state: 'refusal',
+          refusal: {
+            code: 'occupied',
+            reason: 'The source account is reserved',
+            permanent: false,
+          },
+        },
+        'Merge refused',
+      ],
+      [{ state: 'end', outcome: HIDDEN_VALUE }, 'Merge finished'],
+    ] as const) {
+      await act(async () =>
+        context.standingFrame({ userId: 1, accountMerge: mergeWire(facts) }),
+      )
+      expect(byId('hilos-user-merge-status')?.textContent).toBe(expected)
+      expect(byId('hilos-user-merge')).toBe(frame)
+    }
+    expect(byId('hilos-user-merge-refusal')).toBeNull()
+    await act(async () =>
+      context.standingFrame({ userId: 1, accountMerge: null }),
+    )
+    expect(byId('hilos-user-merge-status')?.textContent).toBe('')
+    expect(lines('hilos-user-merge-part')).toEqual([])
+    expect(lines('hilos-user-merge-wait')).toEqual([])
+    expect(byId('hilos-user-merge-refusal')).toBeNull()
+    expect(context.sent).toEqual([])
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('remounts from the current snapshot instead of retaining the previous operation', () => {
+    const old = cardContext()
+    old.scopes.page()!.data.set(HILOS_USER_MERGE_SECTION, mergeWire())
+    const view = renderPage(old)
+    expect(byId('hilos-user-merge-status')?.textContent).toBe('Preparing merge')
+    view.unmount()
+    const current = cardContext()
+    current.scopes.page()!.data.set(
+      HILOS_USER_MERGE_SECTION,
+      mergeWire({
+        state: 'wait',
+        stage: 'go',
+        parts: [],
+        waits: [{ participant: 'give', userId: 8 }],
+      }),
+    )
+    renderPage(current)
+    expect(byId('hilos-user-merge-status')?.textContent).toBe(
+      'Merge in progress',
+    )
+    expect(lines('hilos-user-merge-part')).toEqual([])
+    expect(lines('hilos-user-merge-wait')).toEqual([
+      'Transfer account data · #8',
+    ])
+  })
+
+  it('shows the viewer status without hidden accounts, outcomes or a previous refusal', async () => {
+    const context = cardContext(true)
+    const hiddenProgress = mergeWire({
+      operationId: HIDDEN_VALUE,
+      survivorUserId: HIDDEN_VALUE,
+      loserUserId: HIDDEN_VALUE,
+      state: 'refusal',
+      stage: HIDDEN_VALUE,
+      outcome: HIDDEN_VALUE,
+      choice: HIDDEN_VALUE,
+      refusal: HIDDEN_VALUE,
+      parts: [
+        {
+          participant: 'give',
+          owner: 'user',
+          userId: HIDDEN_VALUE,
+          done: false,
+        },
+      ],
+      waits: [{ participant: 'receive', userId: HIDDEN_VALUE }],
+    })
+    context.scopes.page()!.data.set(HILOS_USER_MERGE_SECTION, hiddenProgress)
+    renderPage(context)
+    expect(byId('hilos-user-merge-status')?.textContent).toBe('Merge refused')
+    expect(lines('hilos-user-merge-part')).toEqual(['Transfer account data'])
+    expect(lines('hilos-user-merge-wait')).toEqual(['Accept account data'])
+    expect(byId('hilos-user-merge-refusal')).toBeNull()
+    expect(byId('hilos-user-merge')?.textContent).not.toMatch(/#\d|_hidden/)
+    await act(async () =>
+      context.standingFrame({
+        userId: 1,
+        accountMerge: { ...hiddenProgress, state: 'end' },
+      }),
+    )
+    expect(byId('hilos-user-merge-status')?.textContent).toBe('Merge finished')
+    expect(context.sent).toEqual([])
+  })
+
+  it('keeps waiting on a merged card and takes its link from standing', async () => {
+    const context = cardContext()
+    renderPage(context, router({ resolvePath: resolveHilosPath }))
+    await act(async () =>
+      context.standingFrame({
+        userId: 1,
+        accountStanding: standing({
+          shown: 'merged',
+          blocked: true,
+          mergedInto: 9,
+          mergedIntoName: 'Bob',
+        }),
+        accountMerge: mergeWire({
+          state: 'wait',
+          survivorUserId: 5,
+          parts: [],
+          waits: [{ participant: 'give', userId: 8 }],
+        }),
+      }),
+    )
+    expect(byId('hilos-user-merged')?.textContent).toContain('Bob')
+    expect(byId('hilos-user-merged-link')?.getAttribute('href')).toBe(
+      resolveHilosPath(HilosPages.USER, { userId: '9' }),
+    )
+    expect(byId('hilos-user-merge-status')?.textContent).toBe(
+      'Merge in progress',
+    )
+    expect(lines('hilos-user-merge-wait')).toEqual([
+      'Transfer account data · #8',
+    ])
+    expect(byId('hilos-user-edit')).toBeNull()
+    expect(byId('hilos-user-merge-zone')).toBeNull()
+    expect(context.sent).toEqual([])
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+})
+
+describe('HilosUserPage merge observation, draft and cancellation', () => {
+  const releases: Array<() => void> = []
+
+  afterEach(() => {
+    cleanup()
+    for (const release of releases.splice(0)) release()
+    document.body.classList.remove('modal-open')
+    hilosToasts.clear()
+  })
+
+  /**
+   * Recorded progress with the choices the server accepted.
+   *
+   * @param facts Facts changed by this scenario.
+   */
+  function progress(
+    facts: Partial<HilosAccountMergeProgress> = {},
+  ): HilosAccountMergeProgress {
+    return {
+      operationId: 40,
+      survivorUserId: 1,
+      loserUserId: 2,
+      state: 'preparing',
+      stage: 'preparing',
+      outcome: null,
+      given: false,
+      received: false,
+      choice: {
+        passwordFate: null,
+        secondFactorFate: null,
+        expectedSurvivorHasSecondFactor: false,
+        expectedLoserHasSecondFactor: false,
+      },
+      refusal: null,
+      parts: [{ participant: 'give', owner: 'user', userId: 2, done: false }],
+      waits: [{ participant: 'sessions', userId: 2 }],
+      ...facts,
+    }
+  }
+
+  /**
+   * Bind the real access verdict and control frames and replies independently.
+   *
+   * @param enabled Whether the project allows merge mutations.
+   * @param snapshot The initial merge, if any.
+   * @param options Candidate and credential facts for the draft.
+   */
+  function setup(
+    enabled = false,
+    snapshot: unknown = progress(),
+    options: Parameters<typeof userContext>[3] = {},
+  ) {
+    const context = userContext(true, enabled, 'skip', options)
+    const { scopes } = context
+    scopes.session.data.set('adminViewMode', true)
+    scopes.session.data.set('currentUser', { type: USER_ENTITY_TYPE, id: 99 })
+    scopes.session.entities.upsert(
+      { type: USER_ENTITY_TYPE, id: 99 },
+      { id: 99, admin: true },
+    )
+    releases.push(bindAdminAccess(scopes))
+    scopes.page()!.data.set(HILOS_USER_MERGE_SECTION, snapshot)
+    scopes.page()!.data.set(HILOS_USER_MERGE_AVAILABILITY_SECTION, {
+      reserved: false,
+      available: true,
+    })
+    return {
+      ...context,
+      update(accountMerge: unknown, accountStanding = standing()) {
+        context.standingFrame({
+          userId: 1,
+          accountStanding,
+          accountMerge,
+          accountMergeAvailability: { reserved: false, available: true },
+        })
+      },
+      access(admin: boolean) {
+        scopes.session.entities.upsert(
+          { type: USER_ENTITY_TYPE, id: 99 },
+          { admin },
+        )
+      },
+    }
+  }
+
+  /** The server's viewer frame with every private fact withheld. */
+  function hiddenProgress(): Record<string, unknown> {
+    return {
+      ...progress(),
+      operationId: HIDDEN_VALUE,
+      survivorUserId: HIDDEN_VALUE,
+      loserUserId: HIDDEN_VALUE,
+      stage: HIDDEN_VALUE,
+      outcome: HIDDEN_VALUE,
+      choice: HIDDEN_VALUE,
+      refusal: HIDDEN_VALUE,
+      parts: [],
+      waits: [],
+    }
+  }
+
+  async function click(id: string): Promise<void> {
+    await act(async () => fireEvent.click(byId(id) as Element))
+  }
+
+  function dialog(): HTMLElement {
+    return document.querySelector('[role="dialog"]') as HTMLElement
+  }
+
+  it('observes without step-up, candidate requests or a mutation flag and keeps live regions and focus', async () => {
+    const world = setup()
+    renderPage(world)
+    await click('hilos-user-merge-view')
+    const modal = dialog()
+    expect(modal.getAttribute('aria-modal')).toBe('true')
+    expect(modal.getAttribute('aria-label')).toBe('Account merge')
+    expect(document.activeElement).toBe(modal)
+    expect(modal.textContent).toContain('Transfer account data · #2')
+    expect(modal.textContent).toContain('Close source sessions · #2')
+    expect(byId('hilos-user-merge-step-up')).toBeNull()
+    expect(byId('hilos-user-merge-next')).toBeNull()
+    expect(byId('hilos-user-merge-operation-cancel')).toBeNull()
+    expect(world.connection.sendTableViewport).not.toHaveBeenCalled()
+    const status = modal.querySelector('[role="status"]')!
+    const alert = modal.querySelector('[role="alert"]')!
+    byId('hilos-user-merge-close')!.focus()
+    await act(async () =>
+      world.update(progress({ state: 'wait', stage: 'go' })),
+    )
+    expect(status.textContent).toBe('Merge in progress')
+    const reason = 'The other account is reserved elsewhere.'
+    await act(async () =>
+      world.update(
+        progress({ state: 'refusal', refusal: { code: 'occupied', reason } }),
+      ),
+    )
+    expect(alert.textContent).toBe(reason)
+    expect(byId('hilos-user-merge-operation-refusal')?.textContent).toBe(reason)
+    await act(async () =>
+      world.update(
+        progress({ state: 'end', outcome: 'completed', parts: [], waits: [] }),
+      ),
+    )
+    expect(status.textContent).toBe('Merge completed')
+    expect(modal.querySelector('[role="status"]')).toBe(status)
+    expect(modal.querySelector('[role="alert"]')).toBe(alert)
+    expect(document.activeElement).toBe(byId('hilos-user-merge-close'))
+    expect(world.sent).toEqual([])
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it.each(['hilos-user-merge-close', 'modal-close', 'Escape'])(
+    'closes by %s and reopens from fresh data without dispatch or discard',
+    async (control) => {
+      const world = setup(true)
+      renderPage(world)
+      await click('hilos-user-merge-view')
+      if (control === 'Escape')
+        await act(async () => fireEvent.keyDown(dialog(), { key: 'Escape' }))
+      else await click(control)
+      expect(byId('modal')).toBeNull()
+      expect(byId('modal-confirm-discard')).toBeNull()
+      await act(async () =>
+        world.update(progress({ state: 'wait', stage: 'go' })),
+      )
+      await click('hilos-user-merge-view')
+      expect(dialog().textContent).toContain('Merge in progress')
+      expect(world.sent).toEqual([])
+    },
+  )
+
+  it('shows unavailable and changed messages without keeping an old pair', async () => {
+    const world = setup()
+    renderPage(world)
+    await click('hilos-user-merge-view')
+    await act(async () => world.update(null))
+    expect(dialog().textContent).toContain(
+      HILOS_ACCOUNT_MERGE_WINDOW_COPY.unavailable,
+    )
+    expect(dialog().querySelector('dd')).toBeNull()
+    await act(async () => world.update(progress({ operationId: 41 })))
+    expect(dialog().textContent).toContain(
+      HILOS_ACCOUNT_MERGE_WINDOW_COPY.changed,
+    )
+    await click('hilos-user-merge-close')
+    await click('hilos-user-merge-view')
+    expect(dialog().textContent).toContain('Preparing merge')
+    await act(async () => world.removeRow())
+    expect(byId('modal')).toBeNull()
+  })
+
+  it('keeps observation through a tombstone and draws recorded choices with privacy on downgrade', async () => {
+    const world = setup(
+      true,
+      progress({
+        choice: {
+          passwordFate: 'loser',
+          secondFactorFate: 'both',
+          expectedSurvivorHasSecondFactor: false,
+          expectedLoserHasSecondFactor: true,
+        },
+      }),
+    )
+    renderPage(world)
+    await click('hilos-user-merge-view')
+    const modal = dialog()
+    expect(
+      Array.from(modal.querySelectorAll('dd'), (entry) => entry.textContent),
+    ).toEqual(['#1', '#2'])
+    expect(modal.textContent).toContain('The other account password')
+    expect(modal.textContent).toContain(
+      'Transfer the other account’s protection',
+    )
+    await act(async () =>
+      world.update(
+        progress({ state: 'end', outcome: 'completed' }),
+        standing({
+          shown: 'merged',
+          mergedInto: 9,
+          mergedIntoName: 'Survivor',
+        }),
+      ),
+    )
+    expect(dialog()).toBe(modal)
+    expect(byId('hilos-user-merge-zone')).toBeNull()
+    expect(byId('hilos-user-sessions')).not.toBeNull()
+    await act(async () => world.access(false))
+    expect(dialog()).toBe(modal)
+    expect(modal.textContent).toContain(
+      HILOS_ACCOUNT_MERGE_WINDOW_COPY.unavailable,
+    )
+    await act(async () => world.update(hiddenProgress()))
+    expect(
+      Array.from(modal.querySelectorAll('dd'), (entry) => entry.textContent),
+    ).toEqual(['Hidden', 'Hidden'])
+    expect(modal.textContent).not.toContain('The other account password')
+    expect(byId('hilos-user-merge-operation-cancel')).toBeNull()
+  })
+
+  it('keeps active operations and unknown availability out of a new draft', async () => {
+    const world = setup(true)
+    renderPage(world)
+    expect((byId('hilos-user-merge-open') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    await click('hilos-user-merge-open')
+    expect(byId('modal')).toBeNull()
+    expect(world.sent).toEqual([])
+    await act(async () =>
+      world.update(progress({ state: 'refusal', outcome: 'not_started' })),
+    )
+    expect((byId('hilos-user-merge-open') as HTMLButtonElement).disabled).toBe(
+      false,
+    )
+    await act(async () =>
+      world.scopes
+        .page()!
+        .data.set(HILOS_USER_MERGE_AVAILABILITY_SECTION, HIDDEN_VALUE),
+    )
+    expect((byId('hilos-user-merge-open') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+  })
+
+  it('disables an occupied candidate and rejects a removed candidate before Apply', async () => {
+    const world = setup(true, null, { candidateAvailable: false })
+    renderPage(world)
+    await click('hilos-user-merge-open')
+    expect((byId('hilos-user-merge-row-2') as HTMLInputElement).disabled).toBe(
+      true,
+    )
+    await click('hilos-user-merge-row-2')
+    expect((byId('hilos-user-merge-next') as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+    await act(async () =>
+      world.updateCandidate({
+        accountMergeAvailability: { reserved: false, available: true },
+      }),
+    )
+    await click('hilos-user-merge-row-2')
+    await click('hilos-user-merge-next')
+    await act(async () => world.removeCandidate())
+    expect(byId('hilos-user-merge-gone')).not.toBeNull()
+    expect(mergeConfirm().disabled).toBe(true)
+    await click('hilos-user-merge-confirm')
+    expect(
+      world.sent.filter((entry) => entry.action === 'hilos_user_merge'),
+    ).toEqual([])
+  })
+
+  it('resets password and second-factor choices independently when the live pair changes', async () => {
+    const world = setup(true, null, {
+      detailHasPassword: true,
+      candidateHasPassword: true,
+      detailHasSecondFactor: true,
+      candidateHasSecondFactor: true,
+    })
+    renderPage(world)
+    await openMergeOnBob()
+    await click('hilos-user-merge-fate-survivor')
+    await click('hilos-user-merge-second-factor-survivor')
+    await act(async () =>
+      world.updateCandidate({ unverifiedPasswordAddress: 'new@example.test' }),
+    )
+    expect(
+      (byId('hilos-user-merge-fate-survivor') as HTMLInputElement).checked,
+    ).toBe(false)
+    expect(
+      (byId('hilos-user-merge-second-factor-survivor') as HTMLInputElement)
+        .checked,
+    ).toBe(true)
+    await click('hilos-user-merge-fate-survivor')
+    await act(async () => world.updateCandidate({ hasSecondFactor: false }))
+    expect(byId('hilos-user-merge-second-factor-survivor')).toBeNull()
+    expect(
+      (byId('hilos-user-merge-fate-survivor') as HTMLInputElement).checked,
+    ).toBe(true)
+    await act(async () => world.updateCandidate({ hasSecondFactor: true }))
+    expect(
+      (byId('hilos-user-merge-second-factor-survivor') as HTMLInputElement)
+        .checked,
+    ).toBe(false)
+  })
+
+  it.each(['accepted', 'legacy', 'refused', 'unanswered'] as const)(
+    'binds the %s start outcome to the same action handle',
+    async (outcome) => {
+      const world = setup(true, null)
+      renderPage(world)
+      await openMergeOnBob()
+      await click('hilos-user-merge-confirm')
+      expect(
+        world.sent.filter((entry) => entry.action === 'hilos_user_merge'),
+      ).toHaveLength(1)
+      await act(async () => {
+        if (outcome === 'accepted')
+          world.answerMerge(undefined, { operationId: 40 })
+        else if (outcome === 'legacy') world.answerMerge()
+        else if (outcome === 'refused') world.answerMerge('Merge refused')
+        else world.disconnect()
+      })
+      if (outcome === 'accepted') {
+        expect(byId('hilos-user-merge-close')).not.toBeNull()
+        expect(byId('hilos-user-merge-confirm')).toBeNull()
+        expect(hilosToasts.toasts.get()).toEqual([])
+        await act(async () => world.update(progress()))
+        expect(dialog().textContent).toContain('Preparing merge')
+      } else if (outcome === 'legacy') {
+        expect(byId('modal')).toBeNull()
+        expect(hilosToasts.toasts.get()).toEqual([
+          expect.objectContaining({ message: 'Merged.' }),
+        ])
+      } else if (outcome === 'refused') {
+        expect(byId('hilos-action-error')?.textContent).toBe('Merge refused')
+        expect(byId('hilos-user-merge-confirm')).not.toBeNull()
+      } else {
+        expect(dialog().querySelector('[role="status"]')?.textContent).toBe(
+          HILOS_ACCOUNT_MERGE_WINDOW_COPY.unanswered,
+        )
+        expect(byId('hilos-action-error')).toBeNull()
+        expect(mergeConfirm().disabled).toBe(false)
+        await act(async () => world.update(progress()))
+        expect(byId('hilos-user-merge-close')).not.toBeNull()
+      }
+    },
+  )
+
+  it.each([
+    { name: 'preparing', enabled: true, facts: {}, offered: true },
+    { name: 'viewer', enabled: true, facts: {}, viewer: true, offered: false },
+    { name: 'disabled project', enabled: false, facts: {}, offered: false },
+    {
+      name: 'cancelling',
+      enabled: true,
+      facts: { stage: 'cancelling' },
+      offered: false,
+    },
+    { name: 'given', enabled: true, facts: { given: true }, offered: false },
+    {
+      name: 'ended',
+      enabled: true,
+      facts: { state: 'end', outcome: 'completed' },
+      offered: false,
+    },
+  ] as const)(
+    'offers cancellation only when allowed: $name',
+    async (scenario) => {
+      const world = setup(scenario.enabled, progress(scenario.facts))
+      if ('viewer' in scenario) {
+        world.access(false)
+        world.scopes
+          .page()!
+          .data.set(HILOS_USER_MERGE_SECTION, hiddenProgress())
+      }
+      renderPage(world)
+      await click('hilos-user-merge-view')
+      expect(byId('hilos-user-merge-operation-cancel') !== null).toBe(
+        scenario.offered,
+      )
+      expect(world.sent).toEqual([])
+    },
+  )
+
+  it('sends only the operation id, stays pending through acceptance and closes on the live canceled end', async () => {
+    const world = setup(true)
+    renderPage(world)
+    await click('hilos-user-merge-view')
+    await click('hilos-user-merge-operation-cancel')
+    expect(world.sent).toEqual([
+      {
+        action: 'hilos_user_merge_cancel',
+        data: { operationId: 40 },
+        requestId: expect.any(String),
+      },
+    ])
+    expect(
+      byId('hilos-user-merge-operation-cancel')?.getAttribute('aria-busy'),
+    ).toBe('true')
+    await click('hilos-user-merge-operation-cancel')
+    expect(world.sent).toHaveLength(1)
+    await act(async () => world.answerMergeCancel())
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('hilos-user-merge-operation-cancel')).toBeNull()
+    await act(async () =>
+      world.update(progress({ state: 'wait', stage: 'cancelling' })),
+    )
+    expect(dialog().textContent).toContain('Releasing merge reservations')
+    await act(async () =>
+      world.update(
+        progress({
+          state: 'end',
+          stage: 'cancelling',
+          outcome: 'not_started',
+          parts: [],
+          waits: [],
+        }),
+      ),
+    )
+    expect(byId('modal')).toBeNull()
+    expect(hilosToasts.toasts.get()).toEqual([
+      expect.objectContaining({ message: 'Merge canceled' }),
+    ])
+  })
+
+  it('keeps a request refusal verbatim beside live progress and keeps a business refusal after acceptance', async () => {
+    const world = setup(true)
+    renderPage(world)
+    await click('hilos-user-merge-view')
+    await click('hilos-user-merge-operation-cancel')
+    const reason = 'The merge can no longer be canceled'
+    await act(async () => world.answerMergeCancel(reason))
+    expect(byId('hilos-user-merge-cancel-refusal')?.textContent).toContain(
+      reason,
+    )
+    expect(byId('hilos-user-merge-operation-refusal')).toBeNull()
+    expect(hilosToasts.toasts.get()).toEqual([])
+    await act(async () =>
+      world.update(progress({ state: 'wait', stage: 'go' })),
+    )
+    expect(dialog().textContent).toContain('Merge in progress')
+    await click('hilos-user-merge-close')
+    await click('hilos-user-merge-view')
+    expect(byId('hilos-user-merge-cancel-refusal')?.textContent).not.toContain(
+      reason,
+    )
+    await click('hilos-user-merge-operation-cancel')
+    await act(async () => world.answerMergeCancel())
+    await act(async () =>
+      world.update(
+        progress({
+          state: 'end',
+          outcome: 'not_started',
+          refusal: { code: 'occupied', reason: 'A participant refused.' },
+        }),
+      ),
+    )
+    expect(byId('modal')).not.toBeNull()
+    expect(byId('hilos-user-merge-operation-refusal')?.textContent).toBe(
+      'A participant refused.',
+    )
+    expect(hilosToasts.toasts.get()).toEqual([])
+  })
+
+  it('isolates a reopened observation from the old pending request and its late refusal', async () => {
+    const world = setup(true)
+    renderPage(world)
+    await click('hilos-user-merge-view')
+    await click('hilos-user-merge-operation-cancel')
+    const oldRequest = world.sent.at(-1)!.requestId!
+    await click('hilos-user-merge-close')
+    await click('hilos-user-merge-view')
+    await click('hilos-user-merge-operation-cancel')
+    const currentRequest = world.sent.at(-1)!.requestId!
+    expect(currentRequest).not.toBe(oldRequest)
+    await act(async () =>
+      world.answerMergeCancel('Old request refused.', oldRequest),
+    )
+    expect(dialog().textContent).not.toContain('Old request refused.')
+    expect(
+      byId('hilos-user-merge-operation-cancel')?.getAttribute('aria-busy'),
+    ).toBe('true')
+    await act(async () =>
+      world.answerMergeCancel(
+        'The merge can no longer be canceled',
+        currentRequest,
+      ),
+    )
+    expect(byId('hilos-user-merge-cancel-refusal')?.textContent).toContain(
+      'The merge can no longer be canceled',
+    )
+  })
+
+  it('releases cancellation after a dropped reply so it can be requested again', async () => {
+    const world = setup(true)
+    renderPage(world)
+    await click('hilos-user-merge-view')
+    await click('hilos-user-merge-operation-cancel')
+    await act(async () => world.disconnect())
+    expect(byId('hilos-user-merge-cancel-refusal')?.textContent).toContain(
+      'The connection dropped',
+    )
+    expect(
+      byId('hilos-user-merge-operation-cancel')?.getAttribute('aria-busy'),
+    ).toBeNull()
+    await click('hilos-user-merge-operation-cancel')
+    expect(world.sent).toHaveLength(2)
   })
 })

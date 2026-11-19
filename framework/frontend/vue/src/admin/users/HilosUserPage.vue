@@ -501,7 +501,7 @@ watch(
     const dialog = mergeBody.value?.closest<HTMLElement>('[role="dialog"]')
     if (
       !dialog ||
-      dialog.querySelector('[data-id="hilos-user-merge-cancel"]') !==
+      dialog.querySelector('[data-id="hilos-user-merge-operation-cancel"]') !==
         document.activeElement
     )
       return
@@ -1792,7 +1792,7 @@ function submit(): void {
               type="button"
               class="btn-sm btn-outline-danger"
               :loading="mergeCancelPending"
-              data-id="hilos-user-merge-cancel"
+              data-id="hilos-user-merge-operation-cancel"
               @click="cancelMerge"
             >
               {{ HILOS_ACCOUNT_MERGE_CANCEL_COPY.cancel }}

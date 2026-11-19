@@ -394,6 +394,15 @@ costs an array comparison.
 The core binds the session's standing once, in `bootHilos`
 (`session/accountStanding.ts`); each SDK's shell only reads it.
 
+React's people list draws the merge caption above the existing progress bar;
+its card draws the merge section from the same standing, including unfinished
+parts and waits after the account has merged (HIL-2010). View merge opens the
+observation window without proof or candidate requests. The window reads the
+recorded pair, choices, status and refusal; an accepted start moves the draft
+into observation, and cancellation follows the live outcome. Close releases
+only the local window. The action flag gates starting and cancelling, while
+the section and observation remain available to a viewer.
+
 `erasing` is drawn by Vue's card (HIL-1957) and Vue's list (HIL-1956), by
 React's card and list (HIL-1961), and by Angular's card and list (HIL-1962).
 Vue's list puts "Being deleted" beside the name of an account whose row bar is

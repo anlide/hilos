@@ -2481,8 +2481,7 @@ path on its own:
   A request refusal stays in the window beside the live progress. Closing the
   window is not cancellation. This route is prepared before the live cutover;
   there is no production durable merge to address until HIL-1999.
-- React carries the corresponding states and actions
-  (not in the code yet — HIL-2010). Angular carries them too
+- React carries the corresponding states and actions. Angular carries them too
   (not in the code yet — HIL-2011). Their interviews and those of the Vue
   display leaves choose the appearance of missing states; this canon declares
   no design.

@@ -17,7 +17,8 @@
 // a caption above its row bar: the summary, then the parts not done, the
 // owners awaited, and the refusals, three entries a line and "+N more"
 // (hilosUsersErasureCaption, HIL-1961). A bar about other work gets no
-// caption. Bootstrap classes only (styling-rules.md).
+// caption. A merge bar carries its summary, unfinished parts, waits and refusal.
+// Bootstrap classes only (styling-rules.md).
 import { Fragment, useContext, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { HILOS_TABLE_ACTIONS_KEY, HilosPages } from '@hilos/core/base'
@@ -26,6 +27,7 @@ import {
   USER_PRESENCE_FIELD,
   HILOS_PRESENCE_WIDEST_LABEL,
   HILOS_USER_ERASURE_COPY,
+  HILOS_USERS_MERGE_COPY,
   createHilosUsersTable,
   hilosPresenceBadge,
   hilosStandingBadge,
@@ -67,6 +69,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
     [context, router],
   )
   const erasures = useSignal(users.erasures)
+  const mergeCaptions = useSignal(users.mergeCaptions)
 
   // Bind the server-windowed table to the connection on mount, request the first
   // window, and unbind on unmount.
@@ -82,58 +85,106 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
         controller={users.controller}
         rowProgress={(_bar, rowKey) => {
           const caption = erasures.get(rowKey)
-          if (caption === undefined) {
+          if (caption !== undefined) {
+            return (
+              <>
+                <div data-id="hilos-users-erasure-summary">
+                  {caption.summary}
+                </div>
+                {caption.expected.shown.length > 0 ? (
+                  <div data-id="hilos-users-erasure-expected">
+                    {HILOS_USER_ERASURE_COPY.expected}:{' '}
+                    {caption.expected.shown.map((part, index) => (
+                      <Fragment key={part.key}>
+                        {index > 0 ? '; ' : null}
+                        <code>{part.participant}</code>
+                        {part.account !== null ? ` · #${part.account}` : null}
+                      </Fragment>
+                    ))}
+                    {caption.expected.more !== null
+                      ? `; ${caption.expected.more}`
+                      : null}
+                  </div>
+                ) : null}
+                {caption.waits.shown.length > 0 ? (
+                  <div data-id="hilos-users-erasure-waits">
+                    {HILOS_USER_ERASURE_COPY.waits}:{' '}
+                    {caption.waits.shown.map((wait, index) => (
+                      <Fragment key={wait.key}>
+                        {index > 0 ? '; ' : null}
+                        <code>{wait.participant}</code>
+                        {wait.account !== null ? ` · #${wait.account}` : null}
+                      </Fragment>
+                    ))}
+                    {caption.waits.more !== null
+                      ? `; ${caption.waits.more}`
+                      : null}
+                  </div>
+                ) : null}
+                {caption.refusals.shown.length > 0 ? (
+                  <div data-id="hilos-users-erasure-refusals">
+                    {HILOS_USER_ERASURE_COPY.refusals}:{' '}
+                    {caption.refusals.shown.map((refusal, index) => (
+                      <Fragment key={refusal.key}>
+                        {index > 0 ? '; ' : null}
+                        {refusal.account !== null
+                          ? `#${refusal.account} · `
+                          : null}
+                        {refusal.text}
+                      </Fragment>
+                    ))}
+                    {caption.refusals.more !== null
+                      ? `; ${caption.refusals.more}`
+                      : null}
+                  </div>
+                ) : null}
+              </>
+            )
+          }
+
+          const mergeCaption = mergeCaptions.get(rowKey)
+          if (mergeCaption === undefined) {
             return null
           }
 
           return (
             <>
-              <div data-id="hilos-users-erasure-summary">{caption.summary}</div>
-              {caption.expected.shown.length > 0 ? (
-                <div data-id="hilos-users-erasure-expected">
-                  {HILOS_USER_ERASURE_COPY.expected}:{' '}
-                  {caption.expected.shown.map((part, index) => (
+              <div data-id="hilos-users-merge-summary">
+                {mergeCaption.summary}
+              </div>
+              {mergeCaption.expected.shown.length > 0 ? (
+                <div data-id="hilos-users-merge-expected">
+                  {HILOS_USERS_MERGE_COPY.expected}:{' '}
+                  {mergeCaption.expected.shown.map((part, index) => (
                     <Fragment key={part.key}>
                       {index > 0 ? '; ' : null}
                       <code>{part.participant}</code>
                       {part.account !== null ? ` · #${part.account}` : null}
                     </Fragment>
                   ))}
-                  {caption.expected.more !== null
-                    ? `; ${caption.expected.more}`
+                  {mergeCaption.expected.more !== null
+                    ? `; ${mergeCaption.expected.more}`
                     : null}
                 </div>
               ) : null}
-              {caption.waits.shown.length > 0 ? (
-                <div data-id="hilos-users-erasure-waits">
-                  {HILOS_USER_ERASURE_COPY.waits}:{' '}
-                  {caption.waits.shown.map((wait, index) => (
+              {mergeCaption.waits.shown.length > 0 ? (
+                <div data-id="hilos-users-merge-waits">
+                  {HILOS_USERS_MERGE_COPY.waits}:{' '}
+                  {mergeCaption.waits.shown.map((wait, index) => (
                     <Fragment key={wait.key}>
                       {index > 0 ? '; ' : null}
                       <code>{wait.participant}</code>
                       {wait.account !== null ? ` · #${wait.account}` : null}
                     </Fragment>
                   ))}
-                  {caption.waits.more !== null
-                    ? `; ${caption.waits.more}`
+                  {mergeCaption.waits.more !== null
+                    ? `; ${mergeCaption.waits.more}`
                     : null}
                 </div>
               ) : null}
-              {caption.refusals.shown.length > 0 ? (
-                <div data-id="hilos-users-erasure-refusals">
-                  {HILOS_USER_ERASURE_COPY.refusals}:{' '}
-                  {caption.refusals.shown.map((refusal, index) => (
-                    <Fragment key={refusal.key}>
-                      {index > 0 ? '; ' : null}
-                      {refusal.account !== null
-                        ? `#${refusal.account} · `
-                        : null}
-                      {refusal.text}
-                    </Fragment>
-                  ))}
-                  {caption.refusals.more !== null
-                    ? `; ${caption.refusals.more}`
-                    : null}
+              {mergeCaption.refusal !== null ? (
+                <div data-id="hilos-users-merge-refusal">
+                  {mergeCaption.refusal}
                 </div>
               ) : null}
             </>
