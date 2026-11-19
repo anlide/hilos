@@ -26,6 +26,9 @@ final class AgentType
     /** @var string Warehouses library agent type (monopolistic; the one writer of the warehouses) */
     public const string WAREHOUSES_LIBRARY = 'warehouses_library';
 
+    /** @var string Categories library agent type (monopolistic; the one writer of the categories and their addresses) */
+    public const string CATEGORIES_LIBRARY = 'categories_library';
+
     /** @var string Hilos index agent type (dashboard the shell gear links to) */
     public const string HILOS_INDEX = HilosAgentType::HILOS_INDEX;
 

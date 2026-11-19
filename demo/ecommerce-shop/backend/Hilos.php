@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop;
 
+use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
@@ -20,6 +21,7 @@ use Demo\EcommerceShop\Auth\EcommerceShopAccountDataOwnerDirectory;
 use Demo\EcommerceShop\Auth\EcommerceShopAuthMethodDirectory;
 use Demo\EcommerceShop\Backup\BackupCatalog;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
+use Demo\EcommerceShop\Core\Agent\Daemon\CategoriesLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
@@ -376,6 +378,11 @@ final class Hilos extends HilosFacade
         WarehousesLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => WarehousesLibraryAgent::class,
             AgentRegistryKey::DAEMON => WarehousesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        CategoriesLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => CategoriesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => CategoriesLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         DemoHilosAgent::AGENT_TYPE => [

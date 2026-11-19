@@ -29,10 +29,12 @@ The backend is the base set: one app agent owning the connections and the
 home page, the Hilos index agent with the dashboard, Maintenance, Backup,
 Settings, Users and the footer pages, the settings library, the notifications
 library, the backup agent, the files library with the uploads and image-copy
-agents, and the framework sign-in libraries. It keeps one table of its own,
-the warehouses, and the warehouses library holds it whole: one for the whole
-cluster, on the node the cluster picks. People, sessions, the tables of signing
-in and the registry of files stay the framework's.
+agents, and the framework sign-in libraries. It keeps tables of its own: the
+warehouses, and the categories with every address a category has had. Each is
+held whole by its own library — the warehouses library, the categories
+library — one for the whole cluster, on the node the cluster picks. People,
+sessions, the tables of signing in and the registry of files stay the
+framework's.
 
 ### What it is going to show
 
@@ -268,7 +270,7 @@ not pass itself off as a purchase:
 ## Change Log
 
 The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
-`hilos_second_factor`, `hilos_setting` and `warehouse`, the shop's own table.
+`hilos_second_factor`, `hilos_setting`, `warehouse` and `category`, the shop's own tables.
 The journal is the primary database name plus `-change-log`, on the same MariaDB server with the same host, port, user,
 password and charset. No additional environment keys are needed. The primary
 migration track creates its six tables; connection 1 runs no separate migrator.

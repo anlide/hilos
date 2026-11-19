@@ -81,7 +81,7 @@ concert-tickets each journal all five framework tables after declaring
 `MODERATION`. Binance-btc-tracker and online-testing each journal the other
 four framework tables; none has `hilos_moderation_rule` until it declares
 `MODERATION`. Ecommerce-shop journals those same four framework tables and its
-own `warehouse`.
+own `warehouse` and `category`.
 Messages, events, attachments, guests and rename histories stay outside the
 journal. Quotes and votes are streams, not decisions.
 The column mode for a custom trigger belongs to phase 2, HIL-1413.
@@ -853,9 +853,9 @@ Every demo that declares the journal configures the journal connection and uses
 `DockerApplication`'s same startup sequence before starting a daemon, worker or
 socket. Chat commits 21 generated triggers for its seven journaled tables.
 Tasks, polls and concert-tickets each commit 15 generated triggers for their
-five framework tables; ecommerce-shop commits 15 too: 12 for its four framework
-tables and 3 for `warehouse`. Each of the two remaining demos commits 12 for its
-four framework tables. Generation runs through the existing
+five framework tables; ecommerce-shop commits 18: 12 for its four framework
+tables, 3 for `warehouse` and 3 for `category`. Each of the two remaining demos
+commits 12 for its four framework tables. Generation runs through the existing
 test CLI after migrations, and a repeat leaves matching files untouched.
 
 Startup then follows these steps:

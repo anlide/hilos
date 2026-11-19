@@ -52,6 +52,7 @@ use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
+use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
@@ -62,6 +63,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\WarehousesLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\CategoriesLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
@@ -993,11 +995,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         }
     }
 
-    public function testAgentRegistryIsTheAppItsWarehousesLibraryTheIndexSignInTheAdminSectionsTheFilesAndTheClusterProbes(): void
+    public function testAgentRegistryIsTheAppItsCatalogLibrariesTheIndexSignInTheAdminSectionsTheFilesAndTheClusterProbes(): void
     {
         $this->assertSame([
             AgentType::ECOMMERCE_SHOP,
             AgentType::WAREHOUSES_LIBRARY,
+            AgentType::CATEGORIES_LIBRARY,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_ANALYTICS,
             AgentType::HILOS_CHANGE_LOG,
@@ -1038,6 +1041,21 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $claims = OwnershipDeclaration::dbCollectionsOf(WarehousesLibraryAgent::class);
         self::assertSame([EcommerceShopDbContext::warehouses], array_keys($claims));
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::warehouses]->asList());
+    }
+
+    /** The categories library runs once on the policy-selected node, in a worker of its own, and owns the categories and their addresses whole. */
+    public function testCategoriesLibraryIsPolicyPlacedMonopolisticAndOwnsCategoriesAndTheirAddresses(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::CATEGORIES_LIBRARY];
+        self::assertSame(CategoriesLibraryAgent::class, AgentRegistry::workerClass($entry));
+        self::assertSame(CategoriesLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        self::assertTrue((new CategoriesLibraryAgentDaemon())->requiresMonopolisticProcess());
+        $claims = OwnershipDeclaration::dbCollectionsOf(CategoriesLibraryAgent::class);
+        self::assertSame([EcommerceShopDbContext::categories, EcommerceShopDbContext::categorySlugs], array_keys($claims));
+        self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::categories]->asList());
+        self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::categorySlugs]->asList());
     }
 
     public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void
