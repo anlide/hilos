@@ -26,6 +26,7 @@ export async function mountLayoutLifetime(
           nav: () => h('span', { 'data-id': 'lifetime-nav' }, 'Navigation'),
           user: () => h('span', { 'data-id': 'lifetime-user' }, 'Person'),
           banner: () => h('span', { 'data-id': 'lifetime-banner' }, 'Notice'),
+          actions: () => h('span', { 'data-id': 'lifetime-actions' }, 'Cart'),
           default: () =>
             h(LayoutLifetimeProbe, {
               record: (event: LayoutLifetimeEvent) => scope.events.push(event),

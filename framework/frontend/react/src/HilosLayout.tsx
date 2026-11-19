@@ -2,8 +2,11 @@
 // app frame a project fills rather than re-implements. React has no named
 // slots, so the brand and nav regions are node props and the routed page
 // content is children. It renders the top navigation bar carrying the brand and
-// nav, the shell's theme icon first in the right-hand group (it disappears when
-// switching is off and under maintenance), the framework admin entry (the gear
+// nav, the project's own header icons first in the right-hand group (the actions
+// prop: drawn with no wrapper of its own, outside the collapsible nav panel so
+// it stays in the row on a narrow screen, and not drawn under maintenance), the
+// shell's theme icon after them (it disappears when switching is off and under
+// maintenance), the framework admin entry (the gear
 // linking to the Hilos dashboard, drawn for an admin and, in the admin view
 // mode, for a viewer), the live connection indicator the SDK owns
 // (core-and-connection.md), after its tracked sign-out control while a
@@ -151,6 +154,14 @@ export interface HilosLayoutProps {
   /** The navigation region placed next to the brand. */
   nav?: ReactNode
   /**
+   * The project's own header icons (a cart, a search lens), placed first in the
+   * right-hand group, before the shell's theme icon (the Vue shell's `#actions`
+   * slot). It sits outside the collapsible nav panel, so it stays in the row on
+   * a narrow screen, and the shell draws nothing around it. Additive — omit it
+   * and the header is unchanged; it is not drawn under maintenance.
+   */
+  actions?: ReactNode
+  /**
    * The right-aligned user region placed after the admin gear (the Vue shell's
    * `#user` slot): the profile link, the notification bell, a guest's Sign in.
    * Additive — omit it and the shell still draws its own sign-out control before the connection indicator.
@@ -255,6 +266,7 @@ export function HilosLayout({
   toastCorner,
   brand = 'Hilos',
   nav,
+  actions,
   user,
   banner,
   children,
@@ -676,6 +688,7 @@ export function HilosLayout({
               <div className="d-flex align-items-center gap-2 gap-md-3 ms-auto flex-shrink-0">
                 {!underMaintenance && (
                   <>
+                    {actions}
                     <HilosThemeMenu />
                     {adminAccess !== 'none' ? (
                       <HilosLink

@@ -160,8 +160,8 @@ export function registerLayoutLifetimeCases<View extends LayoutLifetimeView>(
       try {
         const first = draft(view.root)
         const page = first.parentElement
-        const slots = ['brand', 'nav', 'user', 'banner'].map((slot) =>
-          part(view.root, `lifetime-${slot}`),
+        const slots = ['brand', 'nav', 'user', 'banner', 'actions'].map(
+          (slot) => part(view.root, `lifetime-${slot}`),
         )
         for (const slot of slots) expect(slot).not.toBeNull()
         await enterDraft(view, 'Keep this draft')
@@ -182,6 +182,7 @@ export function registerLayoutLifetimeCases<View extends LayoutLifetimeView>(
             'nav',
             'user',
             'banner',
+            'actions',
           ].entries())
             expect(part(view.root, `lifetime-${slot}`)).toBe(slots[index])
           expect(view.events).toEqual(started)

@@ -47,6 +47,16 @@ export async function mountLayoutChrome(
                       input.user!.text,
                     ),
                 }),
+          ...(input.projectActions
+            ? {
+                actions: () =>
+                  h(
+                    'a',
+                    { href: '/cart', 'data-id': 'project-action' },
+                    'Cart',
+                  ),
+              }
+            : {}),
           nav: () =>
             input.nav
               ? [

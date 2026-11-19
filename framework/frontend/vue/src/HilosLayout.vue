@@ -1,8 +1,11 @@
 <!-- HilosLayout — the tier-1 application shell (sdk-packaging.md): a slot-first
 app frame a project fills rather than re-implements. It renders the top navigation
-bar carrying the project's brand, nav, and user slots, the shell's theme icon
-first in the right-hand group (it disappears when switching is off and under
-maintenance), the framework admin entry (the gear linking to the Hilos dashboard,
+bar carrying the project's brand, nav, actions, and user slots, the project's own
+header icons first in the right-hand group (the #actions slot: drawn with no
+wrapper of its own, outside the collapsible nav panel so it stays in the row on a
+narrow screen, and not drawn under maintenance), the shell's theme icon after
+them (it disappears when switching is off and under maintenance), the framework
+admin entry (the gear linking to the Hilos dashboard,
 drawn for an admin and, in the admin view mode, for a viewer), the live connection
 indicator the SDK owns (core-and-connection.md), after its tracked sign-out
 control while a person stands behind the session; a full-width banner region below
@@ -673,6 +676,7 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
           class="d-flex align-items-center gap-2 gap-md-3 ms-auto flex-shrink-0"
         >
           <template v-if="!underMaintenance">
+            <slot name="actions" />
             <HilosThemeMenu />
             <HilosLink
               v-if="adminAccess !== 'none'"

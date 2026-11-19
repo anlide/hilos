@@ -1,6 +1,7 @@
 import type { HilosRouter } from '@hilos/core/base'
 import type * as Vitest from 'vitest'
 import {
+  FROZEN,
   layoutChromeConnection,
   layoutChromeRouter,
   type LayoutChromeView,
@@ -154,6 +155,7 @@ export function registerLayoutControlOrderCases(
             connection: layoutChromeConnection(),
             nav: true,
             projectUserControls: true,
+            projectActions: true,
             router,
           })
           await view.flush()
@@ -165,6 +167,7 @@ export function registerLayoutControlOrderCases(
             return element!
           }
           const ids = [
+            'project-action',
             'nav-theme',
             'nav-admin',
             'user-bell',
@@ -177,6 +180,7 @@ export function registerLayoutControlOrderCases(
           ]
 
           for (const id of [
+            'project-action',
             'nav-theme',
             'user-bell',
             'user-avatar',
@@ -186,6 +190,11 @@ export function registerLayoutControlOrderCases(
           ]) {
             get(id)
           }
+          // The panel exists (nav is mounted), so "not under it" proves a place.
+          get('nav-panel')
+          expect(
+            get('project-action').closest('[data-id="nav-panel"]'),
+          ).toBeNull()
 
           const present = ids
             .map((id) => part(root, id))
@@ -228,5 +237,38 @@ export function registerLayoutControlOrderCases(
         }
       },
     )
+
+    it('draws no project actions under maintenance', async () => {
+      let view: LayoutChromeView | undefined
+      const errors: unknown[] = []
+
+      try {
+        view = await mount({
+          connection: layoutChromeConnection(FROZEN),
+          projectActions: true,
+        })
+        await view.flush()
+
+        expect(part(view.root, 'maintenance')).not.toBeNull()
+        expect(part(view.root, 'project-action')).toBeNull()
+        expect(part(view.root, 'conn-state')).not.toBeNull()
+      } catch (error) {
+        errors.push(error)
+      } finally {
+        try {
+          await view?.unmount()
+        } catch (error) {
+          errors.push(error)
+        }
+      }
+
+      if (errors.length === 1) throw errors[0]
+      if (errors.length > 1) {
+        throw new AggregateError(
+          errors,
+          'Maintenance project actions case and cleanup failed',
+        )
+      }
+    })
   })
 }

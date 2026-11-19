@@ -33,6 +33,11 @@ import { HILOS_ROUTER } from '../src/hilosRouterToken.js'
           <span user [attr.data-id]="content.dataId">{{ content.text }}</span>
         }
       </ng-container>
+      <ng-container ngProjectAs="[actions]">
+        @if (projectActions()) {
+          <a href="/cart" data-id="project-action">Cart</a>
+        }
+      </ng-container>
       <ng-template hilosPage>
         @if (pageAction()) {
           <button hilosLoadingButton data-id="page-action">Send</button>
@@ -48,6 +53,7 @@ class LayoutChromeHost {
   banner = signal<LayoutChromeInput['banner']>(undefined)
   user = signal<LayoutChromeInput['user']>(undefined)
   projectUserControls = signal(false)
+  projectActions = signal(false)
   nav = signal(false)
   pageAction = signal(false)
 }
@@ -96,6 +102,8 @@ export async function mountLayoutChrome(
       fixture!.componentInstance.projectUserControls.set(
         patch.projectUserControls,
       )
+    if (patch.projectActions !== undefined)
+      fixture!.componentInstance.projectActions.set(patch.projectActions)
     if (patch.nav !== undefined) fixture!.componentInstance.nav.set(patch.nav)
     if (patch.pageAction !== undefined)
       fixture!.componentInstance.pageAction.set(patch.pageAction)

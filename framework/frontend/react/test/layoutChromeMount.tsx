@@ -14,6 +14,7 @@ function LayoutChromeHost({
   banner,
   user,
   projectUserControls,
+  projectActions,
   nav,
   pageAction,
   router,
@@ -54,6 +55,13 @@ function LayoutChromeHost({
           ) : user === undefined ? undefined : (
             <span data-id={user.dataId}>{user.text}</span>
           )
+        }
+        actions={
+          projectActions ? (
+            <a href="/cart" data-id="project-action">
+              Cart
+            </a>
+          ) : undefined
         }
       >
         {pageAction ? (

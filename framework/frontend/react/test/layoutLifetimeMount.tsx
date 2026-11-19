@@ -68,6 +68,7 @@ export async function mountLayoutLifetime(
           nav={<span data-id="lifetime-nav">Navigation</span>}
           user={<span data-id="lifetime-user">Person</span>}
           banner={<span data-id="lifetime-banner">Notice</span>}
+          actions={<span data-id="lifetime-actions">Cart</span>}
         >
           <LayoutLifetimeProbe events={scope.events} />
         </HilosLayout>

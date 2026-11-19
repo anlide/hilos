@@ -521,7 +521,12 @@ Several tier-1 components are part of the contract, so pages never reinvent them
   session (`hilosSignedIn`, bound by `bootHilos`) and runs it as a tracked
   `hilos_logout` answered behind the anonymous identity (HIL-1063). A project
   mounts nothing for it; its user region carries only its own controls (the
-  bell, the profile link, a guest's Sign in). The admin gear is the SDK's the
+  bell, the profile link, a guest's Sign in). A project's own header icons (a
+  cart, a search lens) go into the `actions` place: Vue takes them through the
+  `#actions` slot, React through the `actions` prop, Angular through a projected
+  `[actions]` node; it stands first in the right-hand row, left of the
+  framework's icons, stays in the row on a narrow screen, and is not drawn under
+  maintenance. The admin gear is the SDK's the
   same way: it is drawn from the session (`hilosAdminAccess`, bound by
   `bootHilos`) for an admin and, in the admin view mode, for a viewer, and the
   project passes nothing (HIL-1253). The banner region carries the

@@ -179,6 +179,7 @@ export interface LayoutChromeInput {
   banner?: { dataId: string; text: string }
   user?: { dataId: string; text: string }
   projectUserControls?: boolean
+  projectActions?: boolean
   nav?: boolean
   pageAction?: boolean
   router?: HilosRouter

@@ -2,7 +2,10 @@
 // app frame a project fills rather than re-implements. The brand and nav
 // regions are projected content and the routed page content is an
 // ng-template marked hilosPage. It renders the top navigation bar carrying
-// the brand and nav, the shell's theme icon first in the right-hand group
+// the brand and nav, the project's own header icons first in the right-hand
+// group (a projected [actions] node: drawn with no wrapper of its own, outside
+// the collapsible nav panel so it stays in the row on a narrow screen, and not
+// drawn under maintenance), the shell's theme icon after them
 // (it disappears when
 // switching is off and under maintenance), the framework admin entry (the gear
 // linking to the Hilos dashboard, drawn for an admin and, in the admin view
@@ -49,8 +52,9 @@
 // own do not (HILOS_TAKEOVER_VIEW_ONLY): the token reaches projected content
 // through `providers`, and the shell's view meets `false` first through
 // `viewProviders`. Angular cannot tell the page template from the named slots by
-// injector, so a control a project projects into [brand], [nav], [user] or
-// [banner] reads the takeover too — in Vue and React only the page's area does.
+// injector, so a control a project projects into [brand], [nav], [actions],
+// [user] or [banner] reads the takeover too — in Vue and React only the page's
+// area does.
 import { NgTemplateOutlet } from '@angular/common'
 import {
   ChangeDetectionStrategy,
@@ -261,6 +265,7 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
               class="d-flex align-items-center gap-2 gap-md-3 ms-auto flex-shrink-0"
             >
               @if (!underMaintenance()) {
+                <ng-content select="[actions]" />
                 <hilos-theme-menu />
                 @if (adminAccess() !== 'none') {
                   <a

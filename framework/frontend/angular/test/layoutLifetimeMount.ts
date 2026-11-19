@@ -48,6 +48,7 @@ class PageLifetimeProbe {
       <span nav data-id="lifetime-nav">Navigation</span>
       <span user data-id="lifetime-user">Person</span>
       <span banner data-id="lifetime-banner">Notice</span>
+      <span actions data-id="lifetime-actions">Cart</span>
       <ng-template hilosPage>
         <test-page-lifetime />
       </ng-template>
