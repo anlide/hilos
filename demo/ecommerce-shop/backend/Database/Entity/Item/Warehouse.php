@@ -46,7 +46,7 @@ final class Warehouse extends Entity
         'uk_warehouse_name' => [Entity::INDEX_UNIQUE => true, Entity::INDEX_COLUMNS => [self::name]],
     ];
 
-    // Nobody's set; the stock of a warehouse is to hang its rows on it (HIL-2159).
+    // Nobody's set: the rows of stock name a warehouse, but they are cut by their product.
     public const string _setVia = Entity::SET_STANDALONE;
     public const bool _setRoot = true;
 

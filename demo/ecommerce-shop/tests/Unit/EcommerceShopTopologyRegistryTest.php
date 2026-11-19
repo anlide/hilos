@@ -54,6 +54,7 @@ use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
+use Demo\EcommerceShop\Agents\StockLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
@@ -66,6 +67,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\WarehousesLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\CategoriesLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\ProductsLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\StockLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
@@ -1004,6 +1006,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AgentType::WAREHOUSES_LIBRARY,
             AgentType::CATEGORIES_LIBRARY,
             AgentType::PRODUCTS_LIBRARY,
+            AgentType::STOCK_LIBRARY,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_ANALYTICS,
             AgentType::HILOS_CHANGE_LOG,
@@ -1078,6 +1081,24 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::products]->asList());
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::productSlugs]->asList());
         self::assertSame([EcommerceShopDbContext::categories], ProductsLibraryAgent::readDbCollections());
+    }
+
+    /**
+     * The stock library runs once on the policy-selected node, in a worker of its own, owns the stock whole and reads
+     * the products and the warehouses.
+     */
+    public function testStockLibraryIsPolicyPlacedMonopolisticOwnsTheStockAndReadsProductsAndWarehouses(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::STOCK_LIBRARY];
+        self::assertSame(StockLibraryAgent::class, AgentRegistry::workerClass($entry));
+        self::assertSame(StockLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        self::assertTrue((new StockLibraryAgentDaemon())->requiresMonopolisticProcess());
+        $claims = OwnershipDeclaration::dbCollectionsOf(StockLibraryAgent::class);
+        self::assertSame([EcommerceShopDbContext::productWarehouseStocks], array_keys($claims));
+        self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::productWarehouseStocks]->asList());
+        self::assertSame([EcommerceShopDbContext::products, EcommerceShopDbContext::warehouses], StockLibraryAgent::readDbCollections());
     }
 
     public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void

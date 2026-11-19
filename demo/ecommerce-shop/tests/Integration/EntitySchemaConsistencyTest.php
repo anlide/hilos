@@ -44,9 +44,9 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
 
     /**
      * Lower bound so an empty discovery cannot masquerade as "no drift": the warehouse, the
-     * category and its address, the product and its address.
+     * category and its address, the product and its address, and the stock.
      */
-    private const int MIN_OWN_ENTITY_COUNT = 5;
+    private const int MIN_OWN_ENTITY_COUNT = 6;
 
     /** Lower bound so an unmigrated database cannot masquerade as "no drift" either. */
     private const int MIN_TABLE_COUNT = 6;
