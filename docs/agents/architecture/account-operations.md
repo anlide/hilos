@@ -2442,10 +2442,12 @@ The following leaves prepare observation and actions; none switches the live
 path on its own:
 
 - `account:merge` uses the daemon channel and distinguishes preparing, wait,
-  refusal and end with the selected fates. Waiting does not block the event
-  loop. A disconnected channel means neither cancellation nor success, and
-  success is printed only at durable end. Its exact response belongs to its
-  own contract (not in the code yet — HIL-2001).
+  refusal and end with the selected fates. The prepared command sends start or
+  observe, holds an open merge until the caller's deadline, prints an unknown
+  outcome when the channel fails, and exits 6 for an open snapshot. Waiting
+  does not block the event loop. A disconnected channel means neither
+  cancellation nor success, and success is printed only at durable end. This
+  prepared adapter stays inert until the live switch.
 - The first `page_response` and existing live standing frame carry the
   allowlisted merge observation, including its waits and safe refusal; the
   viewer projection hides its withheld personal fields. This read-only card

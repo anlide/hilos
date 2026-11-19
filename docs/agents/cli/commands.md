@@ -143,12 +143,14 @@ confirmation of the merge (the step-up operation `merge_accounts`, see
 confirm with.
 
 Under the detailed [merge canon](../architecture/account-operations.md#merge-cutover-and-observation),
-`account:merge` will distinguish preparing, wait, refusal and end, with the chosen
-fates, through the daemon channel. Waiting must not block the event loop; a channel
-disconnect is neither cancellation nor success. Success means durable end. The exact
-response is that leaf's contract, with no new command declared here
-(not in the code yet — HIL-2001). This becomes the live command path only at the
-single merge switch (not in the code yet — HIL-1999).
+`account:merge` distinguishes preparing, wait, refusal and end, with the chosen
+fates, through the daemon channel. The prepared command sends start or observe
+from the form that was typed, holds an open merge until the caller's deadline,
+and does not block the event loop. A channel disconnect is neither cancellation
+nor success: the outcome is unknown, and the merge is observed again. An open
+snapshot exits 6. Success means durable end. This prepared adapter stays inert
+until the live command path at the single merge switch
+(not in the code yet — HIL-1999).
 
 `impersonate:start` is judged by the same `assertImpersonationAllowed()` as the person's
 card, the impersonation settings included (HIL-1170,

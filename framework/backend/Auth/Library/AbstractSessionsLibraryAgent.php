@@ -12,6 +12,7 @@ use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureSessionsResult;
 use Hilos\Auth\AccountOperation\AccountMergeCancellationState;
 use Hilos\Auth\AccountOperation\AccountMergeChoice;
+use Hilos\Auth\AccountOperation\AccountMergeCommandReply;
 use Hilos\Auth\AccountOperation\AccountMergeCoordinator;
 use Hilos\Auth\AccountOperation\AccountMergeDuty;
 use Hilos\Auth\AccountOperation\AccountMergeEnd;
@@ -251,6 +252,7 @@ use Hilos\Users\AskingAdministrator;
 use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Users\AccountMergeProgressResolver;
 use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\AccountMergeRefusalText;
 use Hilos\Users\SecondFactorFate;
@@ -855,6 +857,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /** @var ?ForcePurgeWaits Force-purge commands parked in this process until their erasure ends */
     private ?ForcePurgeWaits $forcePurgeWaits = null;
 
+    /** @var ?AccountMergeCommandWaits Merge commands parked in this process until their merge ends */
+    private ?AccountMergeCommandWaits $accountMergeCommandWaits = null;
+
     /**
      * The results of the holder's account operation steps are keyed by its full id, the owner
      * their assignment names (HIL-1943); any other set is the base's refusal.
@@ -1109,6 +1114,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * reads nothing between passes and sends the frames of a pass to the people who still owe a
      * restriction.
      *
+     * Parked merge commands are answered on this same early pass, and only when their own
+     * deadline has passed. A tick with nothing parked reads no merge.
+     *
      * @throws HilosException On database or runtime failure
      * @throws EnvException When the verification TTL key is missing, outside the catalog, or of the wrong type
      * @throws InvalidArgumentException When a converge signal of the rollback cannot be named
@@ -1122,6 +1130,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         // Before the sign-in surface check: this command is the way out of an installation with every sign-in method off.
         $this->sweepAdminCreates(microtime(true));
         $this->sweepForcePurges(microtime(true));
+        $this->sweepAccountMergeCommands(microtime(true));
         if (!$this->hasSignInSurface()) {
             return;
         }
@@ -2330,6 +2339,32 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Answers every parked merge command whose deadline passed with the merge as it stands now.
+     * Each command gets exactly one answer, here or when its merge ends. An open merge, including
+     * a refusal that has not finished releasing, is still an ok snapshot without a summary.
+     *
+     * @param float $now Current time in seconds; tests can bring the deadline forward
+     * @throws InvalidArgumentException When a parked command's correlation id is empty
+     */
+    protected function sweepAccountMergeCommands(float $now): void
+    {
+        foreach ($this->accountMergeCommandWaits()->expired($now) as [$correlationId, $operationId]) {
+            try {
+                $operation = Hilos::$db->accountOperations->fresh($operationId);
+                $reply = $operation === null
+                    ? CommandReplyDTO::error($correlationId, "The merge operation {$operationId} no longer exists.")
+                    : AccountMergeCommandReply::of($correlationId, $operation);
+            } catch (WiringRefusal $refusal) {
+                $this->logAgentError("Account merge command could not read its merge here: {$refusal->getMessage()}");
+                $reply = CommandReplyDTO::error($correlationId, $refusal->getMessage());
+            } catch (Throwable $failure) {
+                $reply = CommandReplyDTO::error($correlationId, $failure->getMessage());
+            }
+            $this->replyToCommand($reply);
+        }
+    }
+
+    /**
      * Answers the commands parked on this erasure once it has ended; an open one keeps them parked.
      * Reads nothing while no command watches the erasure.
      *
@@ -2370,10 +2405,61 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         }
     }
 
+    /**
+     * Answers the commands parked on this merge once it has a saved end.
+     * Reads nothing while no command watches the merge. An open merge, including a refusal
+     * whose outcome is still unset, stays parked. A read failure is one error for each waiter.
+     *
+     * @param int $operationId Merge the coordinator just moved
+     * @throws InvalidArgumentException When a parked command's correlation id is empty
+     */
+    private function settleAccountMergeCommands(int $operationId): void
+    {
+        if (!$this->accountMergeCommandWaits()->isWaitingOn($operationId)) {
+            return;
+        }
+        try {
+            $progress = AccountMergeProgressResolver::forOperation($operationId);
+            if ($progress !== null && $progress->outcome === null) {
+                return;
+            }
+            $operation = $progress === null ? null : Hilos::$db->accountOperations->fresh($operationId);
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError("Account merge command could not read its merge here: {$refusal->getMessage()}");
+            foreach ($this->accountMergeCommandWaits()->settle($operationId) as $correlationId) {
+                $this->replyToCommand(CommandReplyDTO::error($correlationId, $refusal->getMessage()));
+            }
+
+            return;
+        } catch (Throwable $failure) {
+            foreach ($this->accountMergeCommandWaits()->settle($operationId) as $correlationId) {
+                $this->replyToCommand(CommandReplyDTO::error($correlationId, $failure->getMessage()));
+            }
+
+            return;
+        }
+        foreach ($this->accountMergeCommandWaits()->settle($operationId) as $correlationId) {
+            try {
+                $reply = $operation === null
+                    ? CommandReplyDTO::error($correlationId, "The merge operation {$operationId} no longer exists.")
+                    : AccountMergeCommandReply::of($correlationId, $operation);
+            } catch (Throwable $failure) {
+                $reply = CommandReplyDTO::error($correlationId, $failure->getMessage());
+            }
+            $this->replyToCommand($reply);
+        }
+    }
+
     /** @return ForcePurgeWaits Parked force-purge commands private to this holder process */
     private function forcePurgeWaits(): ForcePurgeWaits
     {
         return $this->forcePurgeWaits ??= new ForcePurgeWaits();
+    }
+
+    /** @return AccountMergeCommandWaits Parked merge commands private to this holder process */
+    private function accountMergeCommandWaits(): AccountMergeCommandWaits
+    {
+        return $this->accountMergeCommandWaits ??= new AccountMergeCommandWaits();
     }
 
     /**
@@ -4310,7 +4396,9 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * answers a trust renewal: a refusal is logged, and a pair the agent no longer found is
      * written again while the confirmation still holds (HIL-1907).
      * Account-operation answers advance correlated open erasures and prepared merges; participant
-     * results remain the durable evidence of completion.
+     * results remain the durable evidence of completion. A merge command parked in this process
+     * is answered when that end is saved, and an open merge, including a refusal whose outcome
+     * is still unset, keeps the command parked.
      *
      * The switch is the framework's rather than a project's because what each frame means
      * is: the users library ends a ceremony by saying what happened, and the order this
@@ -4493,8 +4581,12 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                     throw new InvalidAgentSignalPayloadException($name, AccountOperationAnswerSignalData::class, $answer);
                 }
                 $this->askAccountOperation($this->afterAccountOperationAnswer($answer, $sender));
-                if ((Hilos::$db->accountOperations[$answer->operationId] ?? null)?->kind === AccountOperationKind::Erasure) {
+                $kind = (Hilos::$db->accountOperations[$answer->operationId] ?? null)?->kind;
+                if ($kind === AccountOperationKind::Erasure) {
                     $this->settleForcePurges($answer->operationId);
+                }
+                if ($kind === AccountOperationKind::Merge) {
+                    $this->settleAccountMergeCommands($answer->operationId);
                 }
 
                 return;
@@ -6477,6 +6569,242 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * SCAFFOLD: prepared merge command; production callers switch to it in HIL-1999.
+     * Start opens through openAccountMerge, and an exact open pair keeps that operation.
+     * A saved terminal pair is answered as it stands and is not opened again.
+     * Observation only reads. Every path answers once or parks the command.
+     *
+     * @param CommandRequestDTO $data Prepared start or observe request
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    protected function handlePreparedAccountMergeCommand(CommandRequestDTO $data): void
+    {
+        try {
+            $mode = $data->payload[AccountMergeCommandConstants::FIELD_MODE] ?? null;
+            if ($mode === AccountMergeCommandConstants::MODE_START) {
+                $this->startPreparedAccountMerge($data);
+            } elseif ($mode === AccountMergeCommandConstants::MODE_OBSERVE) {
+                $this->observePreparedAccountMerge($data);
+            } else {
+                throw new ValidationException('The account merge command requires mode start or observe.');
+            }
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError("Account merge command could not read its merge here: {$refusal->getMessage()}");
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $refusal->getMessage()));
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $failure->getMessage()));
+        }
+    }
+
+    /**
+     * Answers from the merge as it stands now. A saved end is one ok reply. An open merge,
+     * including a refusal whose outcome is still unset, parks the command without blocking.
+     *
+     * @param CommandRequestDTO $command Command waiting for this merge
+     * @param AccountOperation $operation Merge the command addresses, as read now
+     * @throws InvalidArgumentException When the reply carries an empty correlation id
+     */
+    protected function answerAccountMergeCommand(CommandRequestDTO $command, AccountOperation $operation): void
+    {
+        try {
+            $operationId = $operation->id;
+            if ($operationId === null) {
+                throw new InvalidFormatException('A merge reply requires a saved merge.');
+            }
+            $progress = AccountMergeProgressResolver::forOperation($operationId);
+            if ($progress === null) {
+                throw new InvalidFormatException('A merge reply requires a saved merge.');
+            }
+            if ($progress->outcome !== null) {
+                $this->replyToCommand(AccountMergeCommandReply::of($command->correlationId, $operation));
+
+                return;
+            }
+            $this->accountMergeCommandWaits()->park($command->correlationId, $operationId, microtime(true));
+        } catch (WiringRefusal $refusal) {
+            $this->logAgentError("Account merge command could not read its merge here: {$refusal->getMessage()}");
+            $this->replyToCommand(CommandReplyDTO::error($command->correlationId, $refusal->getMessage()));
+        } catch (Throwable $failure) {
+            $this->replyToCommand(CommandReplyDTO::error($command->correlationId, $failure->getMessage()));
+        }
+    }
+
+    /**
+     * @param CommandRequestDTO $data Start request
+     * @throws Throwable When the request is refused or the merge cannot be opened
+     */
+    private function startPreparedAccountMerge(CommandRequestDTO $data): void
+    {
+        $payload = $data->payload;
+        $this->refuseUnexpectedMergeFields($payload, [
+            AccountMergeCommandConstants::FIELD_MODE,
+            AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID,
+            AccountMergeCommandConstants::FIELD_LOSER_USER_ID,
+            AccountMergeCommandConstants::FIELD_PASSWORD_FATE,
+            AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE,
+        ]);
+        $survivorUserId = $this->positiveAccountId($payload, AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID);
+        $loserUserId = $this->positiveAccountId($payload, AccountMergeCommandConstants::FIELD_LOSER_USER_ID);
+        if ($survivorUserId === $loserUserId) {
+            throw new ValidationException('The merge requires two different positive account ids.');
+        }
+        $terminal = $this->savedTerminalMerge($survivorUserId, $loserUserId);
+        $this->answerAccountMergeCommand($data, $terminal ?? $this->openAccountMerge(
+            $survivorUserId,
+            $loserUserId,
+            new AccountMergeChoice($this->passwordFate($payload), $this->secondFactorFate($payload), null, null),
+        ));
+    }
+
+    /**
+     * @param CommandRequestDTO $data Observe request
+     * @throws Throwable When the request is refused or the saved merge cannot be read
+     */
+    private function observePreparedAccountMerge(CommandRequestDTO $data): void
+    {
+        $payload = $data->payload;
+        if (array_key_exists(AccountMergeCommandConstants::FIELD_PASSWORD_FATE, $payload)
+            || array_key_exists(AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE, $payload)) {
+            throw new ValidationException('An account merge observation does not choose a password or a second factor.');
+        }
+        $hasOperation = array_key_exists(AccountMergeCommandConstants::FIELD_OPERATION_ID, $payload);
+        $hasPair = array_key_exists(AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID, $payload)
+            || array_key_exists(AccountMergeCommandConstants::FIELD_LOSER_USER_ID, $payload);
+        if ($hasOperation === $hasPair) {
+            throw new ValidationException(
+                'The account merge command needs exactly one address: an operation id, or a survivor and a loser.',
+            );
+        }
+        if ($hasOperation) {
+            $this->refuseUnexpectedMergeFields($payload, [
+                AccountMergeCommandConstants::FIELD_MODE,
+                AccountMergeCommandConstants::FIELD_OPERATION_ID,
+            ]);
+            $operationId = $this->positiveAccountId($payload, AccountMergeCommandConstants::FIELD_OPERATION_ID);
+            $operation = AccountMergeProgressResolver::forOperation($operationId) === null
+                ? null
+                : Hilos::$db->accountOperations->fresh($operationId);
+            if ($operation === null) {
+                throw new ValidationException('No saved merge has that operation id.');
+            }
+            $this->answerAccountMergeCommand($data, $operation);
+
+            return;
+        }
+        if (!array_key_exists(AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID, $payload)
+            || !array_key_exists(AccountMergeCommandConstants::FIELD_LOSER_USER_ID, $payload)) {
+            throw new ValidationException(
+                'The account merge command needs exactly one address: an operation id, or a survivor and a loser.',
+            );
+        }
+        $this->refuseUnexpectedMergeFields($payload, [
+            AccountMergeCommandConstants::FIELD_MODE,
+            AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID,
+            AccountMergeCommandConstants::FIELD_LOSER_USER_ID,
+        ]);
+        $survivorUserId = $this->positiveAccountId($payload, AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID);
+        $loserUserId = $this->positiveAccountId($payload, AccountMergeCommandConstants::FIELD_LOSER_USER_ID);
+        if ($survivorUserId === $loserUserId) {
+            throw new ValidationException('The merge requires two different positive account ids.');
+        }
+        $latest = Hilos::$db->accountOperations->latestMergeNaming($loserUserId);
+        if ($latest === null) {
+            throw new ValidationException(
+                'No recorded merge was found for this pair. The outcome of the earlier request is unknown.',
+            );
+        }
+        if ($latest->kind !== AccountOperationKind::Merge || $latest->survivorUserId !== $survivorUserId
+            || $latest->loserUserId !== $loserUserId) {
+            throw new ValidationException(
+                'The latest recorded merge names a different pair. Use --operation to observe an earlier operation.',
+            );
+        }
+        $this->answerAccountMergeCommand($data, $latest);
+    }
+
+    /**
+     * @param array<string, mixed> $payload Prepared command payload
+     * @param list<string> $allowed Keys this address form accepts
+     * @throws ValidationException When the payload carries any other key
+     */
+    private function refuseUnexpectedMergeFields(array $payload, array $allowed): void
+    {
+        if (array_diff(array_keys($payload), $allowed) !== []) {
+            throw new ValidationException('The account merge command has an unexpected field.');
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $payload Prepared command payload
+     * @param string $field Account id key
+     * @return int Positive account id
+     * @throws ValidationException When the field is missing or not a positive integer
+     */
+    private function positiveAccountId(array $payload, string $field): int
+    {
+        if (!array_key_exists($field, $payload) || !is_int($payload[$field]) || $payload[$field] <= 0) {
+            throw new ValidationException('The account merge command requires a positive integer account id.');
+        }
+
+        return $payload[$field];
+    }
+
+    /**
+     * @param array<string, mixed> $payload Prepared command payload
+     * @return ?PasswordFate Named password choice, or null when the request leaves it unnamed
+     * @throws ValidationException When the named choice is not one of the password fates
+     */
+    private function passwordFate(array $payload): ?PasswordFate
+    {
+        if (!array_key_exists(AccountMergeCommandConstants::FIELD_PASSWORD_FATE, $payload)
+            || $payload[AccountMergeCommandConstants::FIELD_PASSWORD_FATE] === null) {
+            return null;
+        }
+        $named = $payload[AccountMergeCommandConstants::FIELD_PASSWORD_FATE];
+        if (!is_string($named) || PasswordFate::tryFrom($named) === null) {
+            throw new ValidationException('Unknown account-merge password fate');
+        }
+
+        return PasswordFate::from($named);
+    }
+
+    /**
+     * @param array<string, mixed> $payload Prepared command payload
+     * @return ?SecondFactorFate Named second-factor choice, or null when the request leaves it unnamed
+     * @throws ValidationException When the named choice is not one of the second-factor fates
+     */
+    private function secondFactorFate(array $payload): ?SecondFactorFate
+    {
+        if (!array_key_exists(AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE, $payload)
+            || $payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE] === null) {
+            return null;
+        }
+        $named = $payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE];
+        if (!is_string($named) || SecondFactorFate::tryFrom($named) === null) {
+            throw new ValidationException('Unknown account-merge second-factor fate');
+        }
+
+        return SecondFactorFate::from($named);
+    }
+
+    /**
+     * @param int $survivorUserId Survivor the start names
+     * @param int $loserUserId Loser the start names
+     * @return ?AccountOperation Latest saved merge of this exact pair when that merge has already ended
+     * @throws HilosException When the latest merge cannot be read
+     */
+    private function savedTerminalMerge(int $survivorUserId, int $loserUserId): ?AccountOperation
+    {
+        $latest = Hilos::$db->accountOperations->latestMergeNaming($loserUserId);
+        if ($latest === null || $latest->kind !== AccountOperationKind::Merge || $latest->survivorUserId !== $survivorUserId
+            || $latest->loserUserId !== $loserUserId || $latest->outcome === null) {
+            return null;
+        }
+
+        return $latest;
+    }
+
+    /**
      * The erasure a force-purge command for this account watches: the standing request's, else
      * the erased request's, whose saved results still answer it.
      *
@@ -7387,12 +7715,19 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
+     * Enters or resumes a prepared merge, then answers a command parked on it once that merge has ended.
+     * The settle observes the saved end and does not write it.
+     *
      * @param AccountOperation $operation Prepared merge to enter or resume
      * @throws Throwable When authority, proofs or transactional work refuses progress
+     * @throws InvalidArgumentException When a parked command's correlation id is empty
      */
     protected function driveAccountMerge(AccountOperation $operation): void
     {
         $this->askAccountOperation(AccountMergeCoordinator::begin($operation));
+        if ($operation->id !== null) {
+            $this->settleAccountMergeCommands($operation->id);
+        }
     }
 
     /**

@@ -60,4 +60,28 @@ final class AccountMergeCommandConstants
 
     /** @var string Reply key: whose confirmed second factors remain */
     public const string FIELD_SECOND_FACTOR_KEPT = 'secondFactorKept';
+
+    /** @var string Option name: watch a merge instead of starting one */
+    public const string OPTION_OBSERVE = 'observe';
+
+    /** @var string Option name: the saved operation to watch */
+    public const string OPTION_OPERATION = 'operation';
+
+    /** @var string Request key: whether the command starts a merge or watches one */
+    public const string FIELD_MODE = 'mode';
+
+    /** @var string Request value: open a merge */
+    public const string MODE_START = 'start';
+
+    /** @var string Request value: read a merge without opening one */
+    public const string MODE_OBSERVE = 'observe';
+
+    /** @var string Request key: saved operation a watch names directly */
+    public const string FIELD_OPERATION_ID = 'operationId';
+
+    /** @var string Reply key: the saved merge, as the admin progress allowlist */
+    public const string FIELD_MERGE = 'merge';
+
+    /** @var string Reply key: what a completed merge moved, or null until that end */
+    public const string FIELD_SUMMARY = 'summary';
 }
