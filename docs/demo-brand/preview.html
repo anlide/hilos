@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Hilos demo marks — research preview</title>
+  <title>Hilos marks and demo signs — research preview</title>
   <style>
     /* Standalone research sheet, outside the SDK and demo builds.
        Fixed swatch backgrounds are the comparison content, not an app theme. */
@@ -17,302 +17,831 @@
     a { color: #084298; text-underline-offset: 3px; }
     code { font-size: 0.875em; overflow-wrap: anywhere; }
     .intro { max-width: 80ch; margin-bottom: 24px; }
-    .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 20px; }
+    .block { margin-top: 32px; }
+    .block > h2 { margin-bottom: 12px; }
+    .gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 20px; }
     article { min-width: 0; background: #fff; border: 1px solid #ced4da; border-radius: 12px; overflow: hidden; }
     .label { padding: 16px 20px; }
     .label p { margin: 2px 0 0; }
-    .themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+    .themes { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); }
+    .ladder .themes { grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); }
     .swatch { padding: 16px 20px; }
     .light { background: #fff; color: #212529; }
     .dark { background: #212529; color: #f8f9fa; }
-    .sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+    .dark a { color: #9ec5fe; }
+    .sizes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px; margin-top: 12px; }
     figure { margin: 0; text-align: center; }
-    .mark { height: 64px; display: flex; align-items: center; justify-content: center; }
+    .mark { min-height: 64px; display: flex; align-items: center; justify-content: center; }
     img { display: block; flex-shrink: 0; }
     figcaption { margin-top: 8px; font-size: 0.875rem; }
-    .notes { margin-top: 24px; max-width: 80ch; }
+    .signs { display: grid; gap: 20px; }
+    .notes { margin-top: 32px; max-width: 80ch; }
+    .tiles { display: flex; flex-wrap: wrap; gap: 20px; margin-top: 12px; padding: 20px; background: #212529; color: #f8f9fa; border-radius: 12px; }
+    .tiles figure { width: 180px; }
+    .tile { width: 180px; height: 180px; padding: 20px; background: #fff; border-radius: 40px; }
   </style>
 </head>
 <body>
   <main>
     <header class="intro">
-      <h1>One family. Six demo marks.</h1>
-      <p>HIL-1539 · Second draw of the HIL-1316 research samples, for owner review. Three
-        plain blue nodes without spokes and one approved center color per demo. The same
-        editable SVG is shown at 16, 32 and 64 CSS pixels on both backgrounds. View at
-        100% browser zoom.</p>
-      <p><a href="README.md">Specification, sources and export instructions</a></p>
+      <h1>One bolt. Three variants of the Hilos logo.</h1>
+      <p>HIL-2151 · A blue circle <code>#0288D1</code> with a yellow lightning bolt
+        <code>#FFD500</code>. The bolt simplifies as the logo gets smaller: two bends from
+        48 CSS pixels, one bend from 20, a thin zigzag line from 10, and a plain dot below
+        that. Every demo sign carries the logo as a mark in its top-right corner, apart from
+        the demo's symbol by a transparent gap. View at 100% browser zoom.</p>
+      <p><a href="README.md">Ladder, mark construction, palette and sources</a></p>
     </header>
-    <div class="gallery">
-      <article aria-labelledby="chat-title">
-        <header class="label">
-          <h2 id="chat-title">Hilos Chat</h2>
-          <p>Speech bubble · Violet center · <code>#8B5CF6</code> · <a href="sources/chat.svg">Master SVG</a></p>
-          <p><code>chat</code></p>
-        </header>
+
+    <section class="block" aria-labelledby="variants-title">
+      <h2 id="variants-title">The three variants</h2>
+      <div class="gallery">
+        <article aria-labelledby="large-title">
+          <header class="label">
+            <h3 id="large-title">Large · bolt with two bends</h3>
+            <p>Circle 48 px and up · <a href="sources/hilos-large.svg"><code>hilos-large.svg</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Large variant on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="mark"><img src="sources/hilos-large.svg" width="128" height="128" alt="Hilos logo, large variant: bolt with two bends"></div>
+            </section>
+            <section class="swatch dark" aria-label="Large variant on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="mark"><img src="sources/hilos-large.svg" width="128" height="128" alt="Hilos logo, large variant: bolt with two bends"></div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="medium-title">
+          <header class="label">
+            <h3 id="medium-title">Medium · bolt with one bend</h3>
+            <p>Circle 20 to below 48 px · <a href="sources/hilos-medium.svg"><code>hilos-medium.svg</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Medium variant on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="mark"><img src="sources/hilos-medium.svg" width="128" height="128" alt="Hilos logo, medium variant: bolt with one bend"></div>
+            </section>
+            <section class="swatch dark" aria-label="Medium variant on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="mark"><img src="sources/hilos-medium.svg" width="128" height="128" alt="Hilos logo, medium variant: bolt with one bend"></div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="small-title">
+          <header class="label">
+            <h3 id="small-title">Small · zigzag line</h3>
+            <p>Circle 10 to below 20 px · <a href="sources/hilos-small.svg"><code>hilos-small.svg</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Small variant on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="mark"><img src="sources/hilos-small.svg" width="128" height="128" alt="Hilos logo, small variant: bolt as a zigzag line"></div>
+            </section>
+            <section class="swatch dark" aria-label="Small variant on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="mark"><img src="sources/hilos-small.svg" width="128" height="128" alt="Hilos logo, small variant: bolt as a zigzag line"></div>
+            </section>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="block ladder" aria-labelledby="ladder-title">
+      <h2 id="ladder-title">The logo by the ladder</h2>
+      <article aria-label="The logo at 16, 32, 64 and 180 CSS pixels">
         <div class="themes">
-          <section class="swatch light" aria-labelledby="chat-light">
-            <h3 id="chat-light">Light · #FFFFFF</h3>
+          <section class="swatch light" aria-labelledby="ladder-light">
+            <h3 id="ladder-light">Light · #FFFFFF</h3>
             <div class="sizes">
               <figure>
-                <div class="mark"><img src="sources/chat.svg" width="16" height="16" alt="Hilos Chat: speech bubble in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
+                <div class="mark"><img src="sources/hilos-small.svg" width="16" height="16" alt="Hilos logo at 16 px, small variant"></div>
+                <figcaption>16 px · <code>hilos-small.svg</code></figcaption>
               </figure>
               <figure>
-                <div class="mark"><img src="sources/chat.svg" width="32" height="32" alt="Hilos Chat: speech bubble in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
+                <div class="mark"><img src="sources/hilos-medium.svg" width="32" height="32" alt="Hilos logo at 32 px, medium variant"></div>
+                <figcaption>32 px · <code>hilos-medium.svg</code></figcaption>
               </figure>
               <figure>
-                <div class="mark"><img src="sources/chat.svg" width="64" height="64" alt="Hilos Chat: speech bubble in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
+                <div class="mark"><img src="sources/hilos-large.svg" width="64" height="64" alt="Hilos logo at 64 px, large variant"></div>
+                <figcaption>64 px · <code>hilos-large.svg</code></figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/hilos-large.svg" width="180" height="180" alt="Hilos logo at 180 px, large variant"></div>
+                <figcaption>180 px · <code>hilos-large.svg</code></figcaption>
               </figure>
             </div>
           </section>
-          <section class="swatch dark" aria-labelledby="chat-dark">
-            <h3 id="chat-dark">Dark · #212529</h3>
+          <section class="swatch dark" aria-labelledby="ladder-dark">
+            <h3 id="ladder-dark">Dark · #212529</h3>
             <div class="sizes">
               <figure>
-                <div class="mark"><img src="sources/chat.svg" width="16" height="16" alt="Hilos Chat: speech bubble in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
+                <div class="mark"><img src="sources/hilos-small.svg" width="16" height="16" alt="Hilos logo at 16 px, small variant"></div>
+                <figcaption>16 px · <code>hilos-small.svg</code></figcaption>
               </figure>
               <figure>
-                <div class="mark"><img src="sources/chat.svg" width="32" height="32" alt="Hilos Chat: speech bubble in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
+                <div class="mark"><img src="sources/hilos-medium.svg" width="32" height="32" alt="Hilos logo at 32 px, medium variant"></div>
+                <figcaption>32 px · <code>hilos-medium.svg</code></figcaption>
               </figure>
               <figure>
-                <div class="mark"><img src="sources/chat.svg" width="64" height="64" alt="Hilos Chat: speech bubble in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
+                <div class="mark"><img src="sources/hilos-large.svg" width="64" height="64" alt="Hilos logo at 64 px, large variant"></div>
+                <figcaption>64 px · <code>hilos-large.svg</code></figcaption>
+              </figure>
+              <figure>
+                <div class="mark"><img src="sources/hilos-large.svg" width="180" height="180" alt="Hilos logo at 180 px, large variant"></div>
+                <figcaption>180 px · <code>hilos-large.svg</code></figcaption>
               </figure>
             </div>
           </section>
         </div>
       </article>
-      <article aria-labelledby="tasks-title">
-        <header class="label">
-          <h2 id="tasks-title">Hilos Tasks</h2>
-          <p>Check mark · Green center · <code>#16A34A</code> · <a href="sources/tasks.svg">Master SVG</a></p>
-          <p><code>tasks</code></p>
-        </header>
-        <div class="themes">
-          <section class="swatch light" aria-labelledby="tasks-light">
-            <h3 id="tasks-light">Light · #FFFFFF</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/tasks.svg" width="16" height="16" alt="Hilos Tasks: check mark in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/tasks.svg" width="32" height="32" alt="Hilos Tasks: check mark in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/tasks.svg" width="64" height="64" alt="Hilos Tasks: check mark in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-          <section class="swatch dark" aria-labelledby="tasks-dark">
-            <h3 id="tasks-dark">Dark · #212529</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/tasks.svg" width="16" height="16" alt="Hilos Tasks: check mark in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/tasks.svg" width="32" height="32" alt="Hilos Tasks: check mark in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/tasks.svg" width="64" height="64" alt="Hilos Tasks: check mark in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-        </div>
-      </article>
-      <article aria-labelledby="polls-title">
-        <header class="label">
-          <h2 id="polls-title">Hilos Polls</h2>
-          <p>Answer options · Blue center · <code>#3B82F6</code> · <a href="sources/polls.svg">Master SVG</a></p>
-          <p><code>polls</code></p>
-        </header>
-        <div class="themes">
-          <section class="swatch light" aria-labelledby="polls-light">
-            <h3 id="polls-light">Light · #FFFFFF</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/polls.svg" width="16" height="16" alt="Hilos Polls: answer options in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/polls.svg" width="32" height="32" alt="Hilos Polls: answer options in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/polls.svg" width="64" height="64" alt="Hilos Polls: answer options in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-          <section class="swatch dark" aria-labelledby="polls-dark">
-            <h3 id="polls-dark">Dark · #212529</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/polls.svg" width="16" height="16" alt="Hilos Polls: answer options in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/polls.svg" width="32" height="32" alt="Hilos Polls: answer options in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/polls.svg" width="64" height="64" alt="Hilos Polls: answer options in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-        </div>
-      </article>
-      <article aria-labelledby="binance-btc-tracker-title">
-        <header class="label">
-          <h2 id="binance-btc-tracker-title">BTC Tracker</h2>
-          <p>Bitcoin · Orange center · <code>#EA580C</code> · <a href="sources/binance-btc-tracker.svg">Master SVG</a></p>
-          <p><code>binance-btc-tracker</code></p>
-        </header>
-        <div class="themes">
-          <section class="swatch light" aria-labelledby="binance-btc-tracker-light">
-            <h3 id="binance-btc-tracker-light">Light · #FFFFFF</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="16" height="16" alt="BTC Tracker: bitcoin in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="32" height="32" alt="BTC Tracker: bitcoin in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="64" height="64" alt="BTC Tracker: bitcoin in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-          <section class="swatch dark" aria-labelledby="binance-btc-tracker-dark">
-            <h3 id="binance-btc-tracker-dark">Dark · #212529</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="16" height="16" alt="BTC Tracker: bitcoin in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="32" height="32" alt="BTC Tracker: bitcoin in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/binance-btc-tracker.svg" width="64" height="64" alt="BTC Tracker: bitcoin in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-        </div>
-      </article>
-      <article aria-labelledby="ecommerce-shop-title">
-        <header class="label">
-          <h2 id="ecommerce-shop-title">Hilos Flowers</h2>
-          <p>Flower · Pink center · <code>#DB2777</code> · <a href="sources/ecommerce-shop.svg">Master SVG</a></p>
-          <p><code>ecommerce-shop</code></p>
-        </header>
-        <div class="themes">
-          <section class="swatch light" aria-labelledby="ecommerce-shop-light">
-            <h3 id="ecommerce-shop-light">Light · #FFFFFF</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/ecommerce-shop.svg" width="16" height="16" alt="Hilos Flowers: flower in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/ecommerce-shop.svg" width="32" height="32" alt="Hilos Flowers: flower in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/ecommerce-shop.svg" width="64" height="64" alt="Hilos Flowers: flower in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-          <section class="swatch dark" aria-labelledby="ecommerce-shop-dark">
-            <h3 id="ecommerce-shop-dark">Dark · #212529</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/ecommerce-shop.svg" width="16" height="16" alt="Hilos Flowers: flower in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/ecommerce-shop.svg" width="32" height="32" alt="Hilos Flowers: flower in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/ecommerce-shop.svg" width="64" height="64" alt="Hilos Flowers: flower in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-        </div>
-      </article>
-      <article aria-labelledby="online-testing-title">
-        <header class="label">
-          <h2 id="online-testing-title">Hilos Testing</h2>
-          <p>Graduation cap · Gold center · <code>#B58B00</code> · <a href="sources/online-testing.svg">Master SVG</a></p>
-          <p><code>online-testing</code></p>
-        </header>
-        <div class="themes">
-          <section class="swatch light" aria-labelledby="online-testing-light">
-            <h3 id="online-testing-light">Light · #FFFFFF</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/online-testing.svg" width="16" height="16" alt="Hilos Testing: graduation cap in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/online-testing.svg" width="32" height="32" alt="Hilos Testing: graduation cap in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/online-testing.svg" width="64" height="64" alt="Hilos Testing: graduation cap in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-          <section class="swatch dark" aria-labelledby="online-testing-dark">
-            <h3 id="online-testing-dark">Dark · #212529</h3>
-            <div class="sizes">
-              <figure>
-                <div class="mark"><img src="sources/online-testing.svg" width="16" height="16" alt="Hilos Testing: graduation cap in the Hilos network"></div>
-                <figcaption>16 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/online-testing.svg" width="32" height="32" alt="Hilos Testing: graduation cap in the Hilos network"></div>
-                <figcaption>32 px</figcaption>
-              </figure>
-              <figure>
-                <div class="mark"><img src="sources/online-testing.svg" width="64" height="64" alt="Hilos Testing: graduation cap in the Hilos network"></div>
-                <figcaption>64 px</figcaption>
-              </figure>
-            </div>
-          </section>
-        </div>
-      </article>
-    </div>
+    </section>
+
+    <section class="block ladder" aria-labelledby="signs-title">
+      <h2 id="signs-title">The demo signs</h2>
+      <p>Each demo at 16, 32, 64 and 180 CSS pixels. Each size is labeled with the sign file it uses:
+        <code>-small</code> below 24 px, <code>-medium</code> from 24 to below 48, <code>-large</code> from 48.</p>
+      <div class="signs">
+        <article aria-labelledby="binance-btc-tracker-title">
+          <header class="label">
+            <h3 id="binance-btc-tracker-title">BTC Tracker · bitcoin</h3>
+            <p><code>binance-btc-tracker</code> · <a href="sources/binance-btc-tracker-large.svg"><code>large</code></a> · <a href="sources/binance-btc-tracker-medium.svg"><code>medium</code></a> · <a href="sources/binance-btc-tracker-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="BTC Tracker sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/binance-btc-tracker-small.svg" width="16" height="16" alt="BTC Tracker sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>binance-btc-tracker-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/binance-btc-tracker-medium.svg" width="32" height="32" alt="BTC Tracker sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>binance-btc-tracker-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/binance-btc-tracker-large.svg" width="64" height="64" alt="BTC Tracker sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>binance-btc-tracker-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/binance-btc-tracker-large.svg" width="180" height="180" alt="BTC Tracker sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>binance-btc-tracker-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="BTC Tracker sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/binance-btc-tracker-small.svg" width="16" height="16" alt="BTC Tracker sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>binance-btc-tracker-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/binance-btc-tracker-medium.svg" width="32" height="32" alt="BTC Tracker sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>binance-btc-tracker-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/binance-btc-tracker-large.svg" width="64" height="64" alt="BTC Tracker sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>binance-btc-tracker-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/binance-btc-tracker-large.svg" width="180" height="180" alt="BTC Tracker sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>binance-btc-tracker-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="chat-title">
+          <header class="label">
+            <h3 id="chat-title">Chat · speech bubble</h3>
+            <p><code>chat</code> · <a href="sources/chat-large.svg"><code>large</code></a> · <a href="sources/chat-medium.svg"><code>medium</code></a> · <a href="sources/chat-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Chat sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/chat-small.svg" width="16" height="16" alt="Chat sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>chat-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/chat-medium.svg" width="32" height="32" alt="Chat sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>chat-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/chat-large.svg" width="64" height="64" alt="Chat sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>chat-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/chat-large.svg" width="180" height="180" alt="Chat sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>chat-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="Chat sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/chat-small.svg" width="16" height="16" alt="Chat sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>chat-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/chat-medium.svg" width="32" height="32" alt="Chat sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>chat-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/chat-large.svg" width="64" height="64" alt="Chat sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>chat-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/chat-large.svg" width="180" height="180" alt="Chat sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>chat-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="concert-tickets-title">
+          <header class="label">
+            <h3 id="concert-tickets-title">Concert Tickets · ticket</h3>
+            <p><code>concert-tickets</code> · <a href="sources/concert-tickets-large.svg"><code>large</code></a> · <a href="sources/concert-tickets-medium.svg"><code>medium</code></a> · <a href="sources/concert-tickets-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Concert Tickets sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/concert-tickets-small.svg" width="16" height="16" alt="Concert Tickets sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>concert-tickets-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/concert-tickets-medium.svg" width="32" height="32" alt="Concert Tickets sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>concert-tickets-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/concert-tickets-large.svg" width="64" height="64" alt="Concert Tickets sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>concert-tickets-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/concert-tickets-large.svg" width="180" height="180" alt="Concert Tickets sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>concert-tickets-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="Concert Tickets sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/concert-tickets-small.svg" width="16" height="16" alt="Concert Tickets sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>concert-tickets-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/concert-tickets-medium.svg" width="32" height="32" alt="Concert Tickets sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>concert-tickets-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/concert-tickets-large.svg" width="64" height="64" alt="Concert Tickets sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>concert-tickets-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/concert-tickets-large.svg" width="180" height="180" alt="Concert Tickets sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>concert-tickets-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="ecommerce-shop-title">
+          <header class="label">
+            <h3 id="ecommerce-shop-title">Flowers · flower</h3>
+            <p><code>ecommerce-shop</code> · <a href="sources/ecommerce-shop-large.svg"><code>large</code></a> · <a href="sources/ecommerce-shop-medium.svg"><code>medium</code></a> · <a href="sources/ecommerce-shop-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Flowers sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/ecommerce-shop-small.svg" width="16" height="16" alt="Flowers sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>ecommerce-shop-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/ecommerce-shop-medium.svg" width="32" height="32" alt="Flowers sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>ecommerce-shop-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/ecommerce-shop-large.svg" width="64" height="64" alt="Flowers sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>ecommerce-shop-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/ecommerce-shop-large.svg" width="180" height="180" alt="Flowers sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>ecommerce-shop-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="Flowers sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/ecommerce-shop-small.svg" width="16" height="16" alt="Flowers sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>ecommerce-shop-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/ecommerce-shop-medium.svg" width="32" height="32" alt="Flowers sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>ecommerce-shop-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/ecommerce-shop-large.svg" width="64" height="64" alt="Flowers sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>ecommerce-shop-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/ecommerce-shop-large.svg" width="180" height="180" alt="Flowers sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>ecommerce-shop-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="file-gallery-manager-title">
+          <header class="label">
+            <h3 id="file-gallery-manager-title">File Gallery Manager · pictures</h3>
+            <p><code>file-gallery-manager</code> · <a href="sources/file-gallery-manager-large.svg"><code>large</code></a> · <a href="sources/file-gallery-manager-medium.svg"><code>medium</code></a> · <a href="sources/file-gallery-manager-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="File Gallery Manager sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/file-gallery-manager-small.svg" width="16" height="16" alt="File Gallery Manager sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>file-gallery-manager-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/file-gallery-manager-medium.svg" width="32" height="32" alt="File Gallery Manager sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>file-gallery-manager-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/file-gallery-manager-large.svg" width="64" height="64" alt="File Gallery Manager sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>file-gallery-manager-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/file-gallery-manager-large.svg" width="180" height="180" alt="File Gallery Manager sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>file-gallery-manager-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="File Gallery Manager sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/file-gallery-manager-small.svg" width="16" height="16" alt="File Gallery Manager sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>file-gallery-manager-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/file-gallery-manager-medium.svg" width="32" height="32" alt="File Gallery Manager sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>file-gallery-manager-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/file-gallery-manager-large.svg" width="64" height="64" alt="File Gallery Manager sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>file-gallery-manager-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/file-gallery-manager-large.svg" width="180" height="180" alt="File Gallery Manager sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>file-gallery-manager-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="online-testing-title">
+          <header class="label">
+            <h3 id="online-testing-title">Testing · graduation cap</h3>
+            <p><code>online-testing</code> · <a href="sources/online-testing-large.svg"><code>large</code></a> · <a href="sources/online-testing-medium.svg"><code>medium</code></a> · <a href="sources/online-testing-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Testing sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/online-testing-small.svg" width="16" height="16" alt="Testing sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>online-testing-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/online-testing-medium.svg" width="32" height="32" alt="Testing sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>online-testing-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/online-testing-large.svg" width="64" height="64" alt="Testing sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>online-testing-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/online-testing-large.svg" width="180" height="180" alt="Testing sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>online-testing-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="Testing sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/online-testing-small.svg" width="16" height="16" alt="Testing sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>online-testing-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/online-testing-medium.svg" width="32" height="32" alt="Testing sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>online-testing-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/online-testing-large.svg" width="64" height="64" alt="Testing sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>online-testing-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/online-testing-large.svg" width="180" height="180" alt="Testing sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>online-testing-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="pmd-title">
+          <header class="label">
+            <h3 id="pmd-title">PMD · letter P</h3>
+            <p><code>pmd</code> · <a href="sources/pmd-large.svg"><code>large</code></a> · <a href="sources/pmd-medium.svg"><code>medium</code></a> · <a href="sources/pmd-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="PMD sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/pmd-small.svg" width="16" height="16" alt="PMD sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>pmd-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/pmd-medium.svg" width="32" height="32" alt="PMD sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>pmd-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/pmd-large.svg" width="64" height="64" alt="PMD sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>pmd-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/pmd-large.svg" width="180" height="180" alt="PMD sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>pmd-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="PMD sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/pmd-small.svg" width="16" height="16" alt="PMD sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>pmd-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/pmd-medium.svg" width="32" height="32" alt="PMD sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>pmd-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/pmd-large.svg" width="64" height="64" alt="PMD sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>pmd-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/pmd-large.svg" width="180" height="180" alt="PMD sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>pmd-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="polls-title">
+          <header class="label">
+            <h3 id="polls-title">Polls · bar chart</h3>
+            <p><code>polls</code> · <a href="sources/polls-large.svg"><code>large</code></a> · <a href="sources/polls-medium.svg"><code>medium</code></a> · <a href="sources/polls-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Polls sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/polls-small.svg" width="16" height="16" alt="Polls sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>polls-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/polls-medium.svg" width="32" height="32" alt="Polls sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>polls-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/polls-large.svg" width="64" height="64" alt="Polls sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>polls-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/polls-large.svg" width="180" height="180" alt="Polls sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>polls-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="Polls sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/polls-small.svg" width="16" height="16" alt="Polls sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>polls-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/polls-medium.svg" width="32" height="32" alt="Polls sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>polls-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/polls-large.svg" width="64" height="64" alt="Polls sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>polls-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/polls-large.svg" width="180" height="180" alt="Polls sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>polls-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="preferans-title">
+          <header class="label">
+            <h3 id="preferans-title">Preferans · spade</h3>
+            <p><code>preferans</code> · <a href="sources/preferans-large.svg"><code>large</code></a> · <a href="sources/preferans-medium.svg"><code>medium</code></a> · <a href="sources/preferans-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Preferans sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/preferans-small.svg" width="16" height="16" alt="Preferans sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>preferans-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/preferans-medium.svg" width="32" height="32" alt="Preferans sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>preferans-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/preferans-large.svg" width="64" height="64" alt="Preferans sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>preferans-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/preferans-large.svg" width="180" height="180" alt="Preferans sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>preferans-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="Preferans sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/preferans-small.svg" width="16" height="16" alt="Preferans sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>preferans-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/preferans-medium.svg" width="32" height="32" alt="Preferans sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>preferans-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/preferans-large.svg" width="64" height="64" alt="Preferans sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>preferans-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/preferans-large.svg" width="180" height="180" alt="Preferans sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>preferans-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="roblox-game-server-title">
+          <header class="label">
+            <h3 id="roblox-game-server-title">Roblox Game Server · game controller</h3>
+            <p><code>roblox-game-server</code> · <a href="sources/roblox-game-server-large.svg"><code>large</code></a> · <a href="sources/roblox-game-server-medium.svg"><code>medium</code></a> · <a href="sources/roblox-game-server-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Roblox Game Server sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/roblox-game-server-small.svg" width="16" height="16" alt="Roblox Game Server sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>roblox-game-server-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/roblox-game-server-medium.svg" width="32" height="32" alt="Roblox Game Server sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>roblox-game-server-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/roblox-game-server-large.svg" width="64" height="64" alt="Roblox Game Server sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>roblox-game-server-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/roblox-game-server-large.svg" width="180" height="180" alt="Roblox Game Server sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>roblox-game-server-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="Roblox Game Server sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/roblox-game-server-small.svg" width="16" height="16" alt="Roblox Game Server sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>roblox-game-server-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/roblox-game-server-medium.svg" width="32" height="32" alt="Roblox Game Server sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>roblox-game-server-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/roblox-game-server-large.svg" width="64" height="64" alt="Roblox Game Server sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>roblox-game-server-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/roblox-game-server-large.svg" width="180" height="180" alt="Roblox Game Server sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>roblox-game-server-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="solar-system-model-title">
+          <header class="label">
+            <h3 id="solar-system-model-title">Solar System · sun</h3>
+            <p><code>solar-system-model</code> · <a href="sources/solar-system-model-large.svg"><code>large</code></a> · <a href="sources/solar-system-model-medium.svg"><code>medium</code></a> · <a href="sources/solar-system-model-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Solar System sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/solar-system-model-small.svg" width="16" height="16" alt="Solar System sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>solar-system-model-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/solar-system-model-medium.svg" width="32" height="32" alt="Solar System sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>solar-system-model-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/solar-system-model-large.svg" width="64" height="64" alt="Solar System sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>solar-system-model-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/solar-system-model-large.svg" width="180" height="180" alt="Solar System sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>solar-system-model-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="Solar System sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/solar-system-model-small.svg" width="16" height="16" alt="Solar System sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>solar-system-model-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/solar-system-model-medium.svg" width="32" height="32" alt="Solar System sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>solar-system-model-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/solar-system-model-large.svg" width="64" height="64" alt="Solar System sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>solar-system-model-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/solar-system-model-large.svg" width="180" height="180" alt="Solar System sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>solar-system-model-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+        <article aria-labelledby="tasks-title">
+          <header class="label">
+            <h3 id="tasks-title">Tasks · check box</h3>
+            <p><code>tasks</code> · <a href="sources/tasks-large.svg"><code>large</code></a> · <a href="sources/tasks-medium.svg"><code>medium</code></a> · <a href="sources/tasks-small.svg"><code>small</code></a></p>
+          </header>
+          <div class="themes">
+            <section class="swatch light" aria-label="Tasks sign on light #FFFFFF">
+              <p>Light · #FFFFFF</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/tasks-small.svg" width="16" height="16" alt="Tasks sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>tasks-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/tasks-medium.svg" width="32" height="32" alt="Tasks sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>tasks-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/tasks-large.svg" width="64" height="64" alt="Tasks sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>tasks-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/tasks-large.svg" width="180" height="180" alt="Tasks sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>tasks-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+            <section class="swatch dark" aria-label="Tasks sign on dark #212529">
+              <p>Dark · #212529</p>
+              <div class="sizes">
+                <figure>
+                  <div class="mark"><img src="sources/tasks-small.svg" width="16" height="16" alt="Tasks sign at 16 px, small file"></div>
+                  <figcaption>16 px · <code>tasks-small.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/tasks-medium.svg" width="32" height="32" alt="Tasks sign at 32 px, medium file"></div>
+                  <figcaption>32 px · <code>tasks-medium.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/tasks-large.svg" width="64" height="64" alt="Tasks sign at 64 px, large file"></div>
+                  <figcaption>64 px · <code>tasks-large.svg</code></figcaption>
+                </figure>
+                <figure>
+                  <div class="mark"><img src="sources/tasks-large.svg" width="180" height="180" alt="Tasks sign at 180 px, large file"></div>
+                  <figcaption>180 px · <code>tasks-large.svg</code></figcaption>
+                </figure>
+              </div>
+            </section>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="block" aria-labelledby="tiles-title">
+      <h2 id="tiles-title">Phone home-screen tiles</h2>
+      <p>The markup imitates <code>&lt;name&gt;-touch-180.png</code>, which <a href="export.cjs"><code>export.cjs</code></a>
+        writes: the <code>-large</code> file at 140 px on an opaque <code>#FFFFFF</code> square of 180 × 180 CSS px,
+        20 px of padding on every side. The PNG itself is an export and is not kept in the repository.
+        The rounded corners only illustrate the mask that iOS lays over the square tile; the file has
+        square corners, and the platform rounds them.</p>
+      <div class="tiles">
+          <figure>
+            <div class="tile"><img src="sources/hilos-large.svg" width="140" height="140" alt="Hilos phone tile"></div>
+            <figcaption>Hilos · <code>hilos-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/binance-btc-tracker-large.svg" width="140" height="140" alt="BTC Tracker phone tile"></div>
+            <figcaption>BTC Tracker · <code>binance-btc-tracker-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/chat-large.svg" width="140" height="140" alt="Chat phone tile"></div>
+            <figcaption>Chat · <code>chat-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/concert-tickets-large.svg" width="140" height="140" alt="Concert Tickets phone tile"></div>
+            <figcaption>Concert Tickets · <code>concert-tickets-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/ecommerce-shop-large.svg" width="140" height="140" alt="Flowers phone tile"></div>
+            <figcaption>Flowers · <code>ecommerce-shop-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/file-gallery-manager-large.svg" width="140" height="140" alt="File Gallery Manager phone tile"></div>
+            <figcaption>File Gallery Manager · <code>file-gallery-manager-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/online-testing-large.svg" width="140" height="140" alt="Testing phone tile"></div>
+            <figcaption>Testing · <code>online-testing-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/pmd-large.svg" width="140" height="140" alt="PMD phone tile"></div>
+            <figcaption>PMD · <code>pmd-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/polls-large.svg" width="140" height="140" alt="Polls phone tile"></div>
+            <figcaption>Polls · <code>polls-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/preferans-large.svg" width="140" height="140" alt="Preferans phone tile"></div>
+            <figcaption>Preferans · <code>preferans-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/roblox-game-server-large.svg" width="140" height="140" alt="Roblox Game Server phone tile"></div>
+            <figcaption>Roblox Game Server · <code>roblox-game-server-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/solar-system-model-large.svg" width="140" height="140" alt="Solar System phone tile"></div>
+            <figcaption>Solar System · <code>solar-system-model-touch-180.png</code></figcaption>
+          </figure>
+          <figure>
+            <div class="tile"><img src="sources/tasks-large.svg" width="140" height="140" alt="Tasks phone tile"></div>
+            <figcaption>Tasks · <code>tasks-touch-180.png</code></figcaption>
+          </figure>
+      </div>
+    </section>
+
     <section class="notes" aria-labelledby="review-title">
       <h2 id="review-title">What to review</h2>
-      <p>At 16 px, compare the marks side by side first; at 32 and 64 px, check the central
-        detail and the three plain blue nodes, <code>#32C5FF</code> in every mark. Each center has
-        its own color, named on its card, and its own shape; both must tell the demos apart.</p>
-      <p>All six use their master at every size and the same shade on both backgrounds. The
-        light-blue nodes are soft on white; names stay beside marks. Bitcoin and the graduation
-        cap need the closest small-size review.</p>
-      <p>This sheet loads only local SVG files. It needs no server, JavaScript, web fonts or network.
-        Production favicons and headers are a separate implementation after review.</p>
+      <p>At each size, check that the bolt reads as a bolt and not as a smudge. The variant is
+        chosen by the CSS size of the circle; a high-density screen does not change it. Below
+        10 px the logo is the circle alone.</p>
+      <p>One file and one shade serve both backgrounds. The bolt sits only on the circle;
+        the circle is what meets the background.</p>
+      <p>For each demo sign, check that the symbol reads on both backgrounds from one file,
+        that the gap keeps it apart from the mark, and that the mark at 16 px is a dot,
+        at 32 a zigzag line and from 64 a bolt with one bend.</p>
+      <p>For each phone tile, check that the symbol and the mark stay clear of the rounded
+        corners. The real browser tab and home-screen icon are checked on the devices: a
+        headless browser draws neither.</p>
+      <p>This sheet loads only local SVG files. It needs no server, JavaScript, web fonts or network.</p>
     </section>
   </main>
 </body>

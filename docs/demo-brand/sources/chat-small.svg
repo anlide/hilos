@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
+  <title id="title">Hilos Chat — speech bubble</title>
+  <desc id="desc">A violet speech bubble. In the top-right corner, a plain blue dot.</desc>
+  <!-- HIL-2151: the small sign of the chat demo.
+       Symbol: the HIL-1316 speech bubble, original geometry.
+       Corner mark: the Hilos logo, original geometry. MIT; see ../README.md. -->
+  <mask id="hilos-mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+    <rect width="32" height="32" fill="#fff"/>
+    <circle cx="25" cy="7" r="9" fill="#000"/>
+  </mask>
+  <g id="demo-symbol" fill="#845EF7" mask="url(#hilos-mark-gap)">
+    <path transform="matrix(2.4 0 0 2.4 -26.4 -21.8)" d="M13 11.5H19A2 2 0 0 1 21 13.5V17.5A2 2 0 0 1 19 19.5H16L12 22V19.3A2 2 0 0 1 11 17.5V13.5A2 2 0 0 1 13 11.5Z"/>
+  </g>
+  <g id="hilos-mark">
+    <circle cx="25" cy="7" r="7" fill="#0288D1"/>
+  </g>
+</svg>
