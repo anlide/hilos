@@ -731,6 +731,17 @@ final class AccountErasureUsersListResender implements PageResender
     {
         return PageResendOutcome::Unserved;
     }
+
+    /**
+     * @param string $page Unused page key
+     * @param string $acceptKey Unused connection key
+     * @param array<string, string> $targetParams Unused new address
+     * @return PageResendOutcome No renamed row is moved by this fixture
+     */
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
+    {
+        return PageResendOutcome::Unserved;
+    }
 }
 
 /** Router answering from the chat demo's topology rather than the framework's bare one. */

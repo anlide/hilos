@@ -21,6 +21,8 @@ use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\PageAccountFrozenException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Page\Exception\PageMovedException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
@@ -427,7 +429,8 @@ abstract class AbstractPage implements ActionHostInterface
      * whole. The counts beside the filters of the windows follow the frame, as a
      * frame of their own. A subscription that throws sends no answer at all — the
      * PageSubscriptionException becomes a subscription_page_error, which the client
-     * waits on the same way.
+     * waits on the same way, and its PageMovedException child becomes a page_moved
+     * frame with the new address.
      *
      * The frame also carries the page's own identity - its heading, its lead and its breadcrumb -
      * whenever the page catalog holds an entry for it, so one subscription answers with
@@ -438,10 +441,13 @@ abstract class AbstractPage implements ActionHostInterface
      *
      * The row the page is about, when it has one, is resolved before that work and bound only
      * after this one frame is queued, before the after-response hook. Null is a page that names
-     * no row. A refusal before the frame is queued binds nothing.
+     * no row. A refusal before the frame is queued binds nothing. A row that declares the route
+     * param its address is read from ({@see PageResource::addressedBy()}) must find that param in
+     * the subscription: the live move could not name the new address without it.
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription
+     * @throws PageInternalErrorException When the row's address param is not a non-empty route param of the subscription
      * @throws PageSubscriptionException When the resource hook, the before-response hook or the browser snapshot refuses
      * @throws InvalidArgumentException When the page-response or the facet-counts signal cannot be named
      * @throws HilosException Whatever else the resource hook, the before-response hook, the payload build or the browser part raises
@@ -449,6 +455,12 @@ abstract class AbstractPage implements ActionHostInterface
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
         $pageResource = $this->resolvePageResource($acceptKey, $params);
+        $addressParam = $pageResource?->addressParam;
+        if ($addressParam !== null && !$params->has($addressParam)) {
+            throw new PageInternalErrorException(
+                "Page resource address param {$addressParam} is not a route param of page " . static::PAGE,
+            );
+        }
         $this->onSubscribeBeforeResponse($acceptKey, $params);
         $own = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params), $acceptKey, $params);
         $snapshot = Hilos::$browser?->buildSubscribeSnapshot(static::PAGE, $acceptKey, $params) ?? new PagePayload();
@@ -516,6 +528,12 @@ abstract class AbstractPage implements ActionHostInterface
      *
      * Called before the payload and the before-response work, so a refusal there never
      * binds a row the answer did not ship. The default names nothing.
+     *
+     * A page whose address is read from a column of the row declares it with
+     * {@see PageResource::addressedBy()}; when an update changes that column while the page is
+     * open, the browser fan-out moves the window to the new address. An address that is no
+     * longer the row's - a previous one the page still recognises - is answered here, or in a
+     * later check of the address, by throwing {@see PageMovedException} with the new one.
      *
      * @param string $acceptKey WebSocket accept key
      * @param PageRouteParams $params Route params from page subscription

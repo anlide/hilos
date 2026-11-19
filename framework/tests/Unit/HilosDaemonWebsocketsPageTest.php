@@ -696,6 +696,17 @@ final class WebsocketsTestResender implements PageResender
     {
         return PageResendOutcome::Unserved;
     }
+
+    /**
+     * @param string $page Unused page key
+     * @param string $acceptKey Unused connection key
+     * @param array<string, string> $targetParams Unused new address
+     * @return PageResendOutcome No database resource is served by this fixture
+     */
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
+    {
+        return PageResendOutcome::Unserved;
+    }
 }
 
 final class WebsocketsTestConnection extends HilosConnection

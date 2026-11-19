@@ -1279,6 +1279,45 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
+     * Moves one live subscription to the new address of the row it is about.
+     *
+     * The walk is the refusal's. The subscription mirror names the agent, that agent is
+     * already running in this worker, and the move runs under it and under the connection,
+     * synchronously. No agent is started for it and no other worker's registry is scanned.
+     * Unserved means this worker has no such owner.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the move is addressed to
+     * @param array<string, string> $targetParams Every route param of the new address
+     * @return PageResendOutcome Refused when the frame was formed; Unserved when no agent of this worker serves it
+     * @throws InvalidArgumentException When the page-moved signal cannot be named
+     * @throws FramePopOrderException When the page leaves the execution stack imbalanced
+     */
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
+    {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page || $subscription->agentType === null) {
+            return PageResendOutcome::Unserved;
+        }
+
+        $agentId = $this->agentManager->buildAgentId($subscription->agentType, $subscription->agentIndex);
+        $agent = $agentId === null ? null : $this->agentManager->getAgent($agentId);
+        if ($agentId === null || $agent === null) {
+            return PageResendOutcome::Unserved;
+        }
+
+        try {
+            return ExecutionContext::run(
+                new ExecutionFrame(agentId: $agentId, acceptKey: $acceptKey),
+                fn (): PageResendOutcome => $this->getPageSignalRouter($agentId, $agent)
+                    ->moveRenamedResource($page, $acceptKey, $targetParams),
+            );
+        } catch (PageSignalRouterNotFoundException) {
+            return PageResendOutcome::Unserved;
+        }
+    }
+
+    /**
      * Marks the daemon connection as registered and logs the worker session.
      *
      * @param WorkerRegisteredDTO $data Worker registration acknowledgement

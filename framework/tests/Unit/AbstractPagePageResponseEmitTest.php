@@ -20,8 +20,10 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\PageBadRequestException;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\PageAgentInterface;
+use Hilos\Core\Page\PageResource;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Analytics\AnalyticsOverviewSnapshot;
 use Hilos\Core\Router\SignalData;
@@ -469,6 +471,30 @@ final class AbstractPagePageResponseEmitTest extends TestCase
     }
 
     /**
+     * A row whose address param the subscription does not carry is the page's broken declaration (HIL-2190).
+     *
+     * The live move could not name the new address without that param, so the subscription is
+     * refused as an internal error before any answer is queued.
+     */
+    public function testARowAddressedByAParamTheSubscriptionLacksIsAnInternalError(): void
+    {
+        $page = new AbstractPagePageResponseEmitTestAddressedPage(new AbstractPagePageResponseEmitTestAgent());
+
+        try {
+            $page->onSubscribe('ak-1', new PageRouteParams(['id' => '12']));
+            $this->fail('A row addressed by a param the subscription lacks must not let the subscription through.');
+        } catch (PageInternalErrorException $exception) {
+            $this->assertSame(
+                'Page resource address param slug is not a route param of page ' . AbstractPagePageResponseEmitTestAddressedPage::PAGE,
+                $exception->getMessage(),
+            );
+        }
+
+        $this->assertSame([], $this->queuedSignalNames());
+        $this->assertNull(Hilos::$sr->pageResource('ak-1'));
+    }
+
+    /**
      * A page with a part of its own and a browser part answers with one frame carrying both (HIL-1236).
      *
      * The client releases the page on the first page_response it receives, so the browser part sent as
@@ -753,6 +779,26 @@ final class AbstractPagePageResponseEmitTestRefusingPage extends AbstractPage
     protected function onSubscribeBeforeResponse(string $acceptKey, PageRouteParams $params): void
     {
         throw new PageBadRequestException('Refused before the answer');
+    }
+}
+
+/**
+ * Test page whose row reads its address from a param the route does not carry.
+ */
+final class AbstractPagePageResponseEmitTestAddressedPage extends AbstractPage
+{
+    public const string PAGE = 'probe_addressed';
+
+    /**
+     * @param string $acceptKey WebSocket accept key (unused)
+     * @param PageRouteParams $params Route params from page subscription
+     * @return PageResource The product, addressed by a slug the route never names
+     * @throws MissingPageRouteParamException When the route carries no id
+     * @throws PageInternalErrorException When the id names no row
+     */
+    protected function resolvePageResource(string $acceptKey, PageRouteParams $params): PageResource
+    {
+        return PageResource::db('products', $params->requireString('id'))->addressedBy('slug', 'slug');
     }
 }
 

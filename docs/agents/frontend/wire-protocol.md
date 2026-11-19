@@ -491,8 +491,68 @@ the same one complete frame. That complete frame is the acknowledgement the
 client waits on before it shows the page (`router.pageLoading`), so a page is
 never shown and then taken away by a denial still in flight. A subscription
 that is refused answers with `subscription_page_error` instead, and the client
-waits on that the same way; a page that answered neither would leave the client
-with nothing to wait for.
+waits on that the same way. A subscription at an address the page has since
+left answers with `page_moved`, the third answer, below. A page that answered
+none of the three would leave the client with nothing to wait for.
+
+**A page that lives at another address answers `page_moved`.** The frame is
+`{"type":"page_moved","data":{"page":"<pageKey>","params":{},"targetPage":"<pageKey>","targetParams":{}}}`.
+`page` and `params` are the page and the params that were judged: the params
+the subscription held, or, on a change of params, those params merged with the
+change. `targetPage` and `targetParams` are the page and EVERY
+param of the address to go to. Both maps are always objects on the wire, so an
+empty map is `{}`, never `[]`. The server sends it in two places and in no
+other:
+
+- **On opening.** The page throws `PageMovedException` from its own check of
+  the address (`resolvePageResource()`, `onSubscribeBeforeResponse()` or a typed
+  subscribe hook) with the key of the target page and all the params of its
+  address. The same answer comes from a change of params and from the
+  re-judgment of an open page. A silent re-send of a debt never sends it. The
+  access verdict comes first, as always, so only a subscriber who would have been
+  let in at the old address is redirected. The page releases what it held for
+  the connection, the registration of the subscription stays until the client's
+  next `page_subscribe`, and the frame takes the place of `page_response`. A
+  tracked delivery ends with the same `hilos_delivery_complete`.
+- **Live.** The page was open, its row was updated, and the update changed the
+  column the page's address is read from
+  (`PageResource::addressedBy()`). The window gets the frame in the browser
+  fan-out, before grouping
+  ([A renamed address, before grouping](../architecture/browser-source-fanout.md#a-renamed-address-before-grouping)).
+
+A target that is the page itself at the very address it was judged at is a
+broken declaration of the page, not a move: it is logged as an error and
+answered with `subscription_page_error` 500 `internal_error`, not with a loop of
+subscriptions.
+
+The client accepts the frame only for the current page with the params the
+subscription holds now, as it does for `page_resubscribe`; a late one is
+dropped. It builds the address with the navigator (`HilosRouter.resolvePath`)
+and writes it over the current one with `HilosRouter.replacePath`, so no history
+entry is added. When the target is the same page, the subscription repeats **in
+place** under the new params: the page scope, `pageLoading`, the error and the
+windows of the page's tables stay, as on `page_resubscribe`. The repeat goes as
+`page_subscribe`, not as `page_update_subscription`, although only the params
+change: on a per-instance page the new address names another instance, and only
+a fresh subscription reaches the agent that serves it (*Rename* in
+[Per-instance page subscriptions](../signals/routing.md#per-instance-page-subscriptions)).
+When it is another page, the client leaves and subscribes in the ordinary way. When the navigator
+cannot build the address, the client draws the "no such page" screen
+(`not_served`, the same refusal as an unbuilt page) and the address bar stays.
+The frame sets no page debt and carries no text for a person.
+
+Example: the product "Morning meadow" is renamed "Summer meadow". A tab open at
+`/product/morning-meadow` receives `page_moved` whose `targetParams` are
+`{"slug":"summer-meadow"}`, replaces its address with `/product/summer-meadow`
+and subscribes again to the same page. A visitor who opens
+`/product/morning-meadow` after the rename gets the same frame in place of the
+page, and the address bar shows `/product/summer-meadow`.
+
+`page_moved` is a signal of its own, not a `subscription_page_error` with code
+301, for two reasons. It has no text for a person and no debt, so it is not a
+refusal. And a name outside the `subscription_page_` prefix is not held for a
+late listener (the paragraph on held frames, below) and is not coalesced by
+delivery.
 
 A live page-data publisher may also send `page_response` with only changed
 `payload.data`. `BrowserContext::publishPageData()` sends this data-only update

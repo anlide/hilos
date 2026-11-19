@@ -29,6 +29,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageMovedSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
@@ -249,6 +250,83 @@ final class WorkerManagerResendPageTest extends TestCase
         $this->drainQueue();
 
         $this->assertSame(PageResendOutcome::Unserved, $manager->refuseDeletedResource(ResendWorkerTestPage::PAGE, 'ak-1'));
+        $this->assertSame([], $this->drainQueue());
+    }
+
+    /**
+     * The live move runs under the serving agent, releases the page, then sends page_moved.
+     */
+    public function testTheLiveMoveRunsUnderTheServingAgentAndReleasesBeforeTheFrame(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST, ['countryCode' => 'se']);
+        $page = $this->servedPage($manager, ResendWorkerTestManager::FIRST);
+        $this->assertSame([SignalTypeConstants::PAGE_RESPONSE], $this->drainQueue());
+        $manager->signals->marks = [];
+
+        $outcome = $manager->moveRenamedResource(ResendWorkerTestPage::PAGE, 'ak-1', ['countryCode' => 'sw']);
+
+        $this->assertSame(PageResendOutcome::Refused, $outcome);
+        $this->assertSame(1, $page->subscribeCount);
+        $this->assertSame(1, $page->unsubscribeCount);
+        $this->assertSame(
+            [ResendWorkerTestAgent::AGENT_TYPE . ':' . ResendWorkerTestManager::FIRST, 'ak-1'],
+            $page->releaseFrame,
+        );
+        $this->assertSame(0, $this->servedPage($manager, ResendWorkerTestManager::SECOND)->unsubscribeCount);
+        $this->assertSame(['release', SignalConstants::PAGE_MOVED], $manager->signals->marks);
+        $signal = Hilos::$sr->getNextQueuedSignal();
+        $this->assertSame(SignalConstants::PAGE_MOVED, $signal?->signalName->getName());
+        $this->assertInstanceOf(WebSocketSignalData::class, $signal->data);
+        $this->assertSame('ak-1', $signal->data->targetAcceptKey);
+        $moved = $signal->data->data;
+        $this->assertInstanceOf(PageMovedSignalData::class, $moved);
+        $this->assertSame(ResendWorkerTestPage::PAGE, $moved->page);
+        $this->assertSame(['countryCode' => 'se'], $moved->params);
+        $this->assertSame(ResendWorkerTestPage::PAGE, $moved->targetPage);
+        $this->assertSame(['countryCode' => 'sw'], $moved->targetParams);
+        $this->assertSame([], $this->drainQueue());
+        $this->assertFalse(Hilos::$sr->hasPageDeliveryFailure('ak-1'));
+        $this->assertSame(ResendWorkerTestPage::PAGE, Hilos::$sr->pageSubscription('ak-1')?->page);
+        $this->assertSame(['countryCode' => 'se'], Hilos::$sr->pageSubscription('ak-1')?->params);
+    }
+
+    public function testALiveMoveForAConnectionWithNoSubscriptionHereIsUnserved(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        $this->drainQueue();
+
+        $this->assertSame(
+            PageResendOutcome::Unserved,
+            $manager->moveRenamedResource(ResendWorkerTestPage::PAGE, 'ak-other', ['countryCode' => 'sw']),
+        );
+        $this->assertSame([], $this->drainQueue());
+        $this->assertSame(0, $this->servedPage($manager, ResendWorkerTestManager::FIRST)->unsubscribeCount);
+    }
+
+    public function testALiveMoveForAnotherPageIsUnserved(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        $this->drainQueue();
+
+        $this->assertSame(
+            PageResendOutcome::Unserved,
+            $manager->moveRenamedResource('resend_worker_other_page', 'ak-1', ['countryCode' => 'sw']),
+        );
+        $this->assertSame(PageResendOutcome::Unserved, $manager->moveRenamedResource('', 'ak-1', ['countryCode' => 'sw']));
+        $this->assertSame([], $this->drainQueue());
+        $this->assertSame(0, $this->servedPage($manager, ResendWorkerTestManager::FIRST)->unsubscribeCount);
+    }
+
+    public function testALiveMoveWhoseAgentIsGoneIsUnserved(): void
+    {
+        $manager = $this->subscribedManager(ResendWorkerTestManager::FIRST);
+        $manager->removeAgent(ResendWorkerTestManager::FIRST);
+        $this->drainQueue();
+
+        $this->assertSame(
+            PageResendOutcome::Unserved,
+            $manager->moveRenamedResource(ResendWorkerTestPage::PAGE, 'ak-1', ['countryCode' => 'sw']),
+        );
         $this->assertSame([], $this->drainQueue());
     }
 

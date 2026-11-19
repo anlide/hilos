@@ -63,7 +63,11 @@ workflow and implementation status in `docs/agents/architecture/page-head.md`.
 7. Keep domain checks (entity exists, permissions, lookup by id) inside the
    page handler, not in the DTO. Throw `PageResourceNotFoundException` or
    another `PageSubscriptionException` subclass after the DTO has validated
-   the raw route shape.
+   the raw route shape. An address the row has since left is not a missing
+   resource: throw `PageMovedException` with the key of the target page and ALL
+   the params of its address, as strings. The page answers `page_moved`, not
+   `subscription_page_error`. For a rename while the page is open, declare the
+   address on the resource: `PageResource::db(…)->addressedBy(param, column)`.
 8. `PageRouteParams` never performs DB lookups. Do not import collections,
    actions, or `Hilos::$db` inside `fromPageRouteParams()`.
 9. When the concrete page has no subclasses and no shared subscribe logic,
@@ -86,6 +90,9 @@ workflow and implementation status in `docs/agents/architecture/page-head.md`.
 - Do not catch `MissingPageRouteParamException` or
   `InvalidPageRouteParamException` inside page code; let the router convert
   them into a `subscription_page_error` signal.
+- Do not guard with `DB_EXISTS` a route param that can turn out to be the
+  address a row had before: the guard answers 404 before the page can say where
+  the row went. Look the row up in the page and throw `PageMovedException`.
 - Do not keep page subscription ownership in project SignalRouter code for
   registered pages; keep it on page `SUBSCRIPTION_AGENT_TYPE` and let
   `SignalRouter` read `Hilos::getPageRoutes()`.

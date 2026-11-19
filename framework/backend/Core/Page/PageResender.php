@@ -23,6 +23,9 @@ use Hilos\HilosException;
  * The same door refuses a subscription whose row was just deleted. The worker reaches the
  * page that holds the subscription, and that page forms the refusal. No new signal, transport
  * or route carries it.
+ *
+ * The same door moves a subscription whose row changed the column its address is read from:
+ * the page that holds it answers the open window with the new address.
  */
 interface PageResender
 {
@@ -58,4 +61,22 @@ interface PageResender
      * @throws HilosException When the access gate cannot read standing or the administrator lookup
      */
     public function refuseDeletedResource(string $page, string $acceptKey): PageResendOutcome;
+
+    /**
+     * Moves one live subscription to the new address of the row it is about.
+     *
+     * Synchronous, like the refusal: the serving agent is the one the subscription mirror
+     * already names, and the move runs under that agent and that connection. No access
+     * verdict is asked; the browser's next subscription at the new address is judged whole.
+     * Refused means the page_moved frame was formed. Unserved means this worker has no such
+     * owner. A failure to deliver the frame is not reported as the move.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the move is addressed to
+     * @param array<string, string> $targetParams Every route param of the new address
+     * @return PageResendOutcome What went out to the connection
+     * @throws InvalidArgumentException When the page-moved signal cannot be named
+     * @throws FramePopOrderException When the move leaves the execution stack imbalanced
+     */
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome;
 }

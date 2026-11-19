@@ -963,6 +963,18 @@ final class PageResourceRouterPort implements PageResender
     {
         return $this->router->refuseDeletedResource($page, $acceptKey);
     }
+
+    /**
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the move is addressed to
+     * @param array<string, string> $targetParams Every route param of the new address
+     * @return PageResendOutcome What the router answered
+     * @throws InvalidArgumentException When the page-moved signal cannot be named
+     */
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
+    {
+        return $this->router->moveRenamedResource($page, $acceptKey, $targetParams);
+    }
 }
 
 /**
@@ -1031,6 +1043,26 @@ final class PageResourceScriptedPort implements PageResender
         }
 
         return $this->inner->refuseDeletedResource($page, $acceptKey);
+    }
+
+    /**
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the move is addressed to
+     * @param array<string, string> $targetParams Every route param of the new address
+     * @return PageResendOutcome What the inner port answered, or Unserved for the scripted connection
+     * @throws LogicException When the scripted connection is the one whose move fails
+     * @throws InvalidArgumentException When the page-moved signal cannot be named
+     */
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
+    {
+        if ($acceptKey === $this->throwFor) {
+            throw new LogicException('renamed-page move failed');
+        }
+        if ($acceptKey === $this->unservedFor) {
+            return PageResendOutcome::Unserved;
+        }
+
+        return $this->inner->moveRenamedResource($page, $acceptKey, $targetParams);
     }
 }
 

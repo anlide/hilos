@@ -311,7 +311,9 @@ takeover (*The takeover gate*).
 ## Error codes
 
 A guard failure throws a `PageSubscriptionException` subclass, which is caught and
-sent to the client as a `subscription_page_error` signal. The frame carries the
+sent to the client as a `subscription_page_error` signal. One child is the
+exception: `PageMovedException` (301) is not a refusal and is answered with the
+`page_moved` frame, below. The refusal frame carries the
 exception's HTTP status and error code, but not its message: that text is written
 for the journal, and the router logs it in full on the refusal's info line, while
 `PageSubscriptionErrorSignalData::forStatus()` supplies required `title` and
@@ -332,6 +334,16 @@ those words and uses the codes only for behavior
 - 401 `unauthorized` — `PageUnauthorizedException`: not authenticated at all.
   Raised by the `AUTHENTICATED`/`ADMIN` access levels and the `AUTHENTICATED`
   guard; the frontend mounts the in-place sign-in surface over the page.
+- 301 `moved` — `PageMovedException`: **not** a refusal. The page lives at
+  another address now, and its own check of the address names that address: the
+  key of the target page and all the params of its address. The answer is the
+  `page_moved` frame, which carries no code and no words for a person, sets no
+  page debt, and replaces `page_response`
+  ([wire-protocol.md](../frontend/wire-protocol.md#page-subscriptions-01)). The
+  access verdict comes first, so only a subscriber who would be let in at the
+  old address is told the new one. Do not guard the param that carries the
+  address with `DB_EXISTS`: the guard answers 404 for the old value before
+  the page can say where it went.
 - 500 `internal_error` — `PageInternalErrorException`: **not** a guard verdict.
   The declaration itself is broken — a `SIGNAL` that is not a name, a guard of an
   unknown `TYPE`, an access guard with no `FIELD`, a source naming no collection.
@@ -447,6 +459,15 @@ out as that status and carries no deletion line. Every other result of
 those guards is the ordinary 404 with the line. The page's own subscribe
 is not called. Which flush decides to refuse is in
 [browser-source-fanout.md](browser-source-fanout.md#a-deleted-row-before-grouping).
+
+A move to another address releases in the same way, though it is not a
+refusal: on the roads that open a page the `page_moved` answer follows
+`releaseUnservedConnection` like a refusal frame, and the live move of a row
+whose address was renamed goes through `PageSignalRouter::moveRenamedResource`,
+which calls it before the frame. The subscription registration stays until the
+client's next `page_subscribe`, and no page debt is set. That subscribe is
+judged whole at the new address
+([browser-source-fanout.md](browser-source-fanout.md#a-renamed-address-before-grouping)).
 
 The window and the limit are named, and neither is closed. The window runs
 from the write that removes the rights until the stop reaches the file owner:

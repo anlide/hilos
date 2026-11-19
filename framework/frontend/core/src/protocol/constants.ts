@@ -52,6 +52,9 @@ export const SIGNAL_TYPE_PAGE_RESUBSCRIBE = 'page_resubscribe'
 /** Server frame `type` reporting a page subscription error (PHP `SignalConstants::SUBSCRIPTION_PAGE_ERROR`). */
 export const SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR = 'subscription_page_error'
 
+/** The page lives at another address now (PHP `SignalConstants::PAGE_MOVED`). */
+export const SIGNAL_TYPE_PAGE_MOVED = 'page_moved'
+
 /** Client frame `type` joining a WebSocket group (PHP `SignalTypeConstants::GROUP_SUBSCRIBE`). */
 export const SIGNAL_TYPE_GROUP_SUBSCRIBE = 'group_subscribe'
 

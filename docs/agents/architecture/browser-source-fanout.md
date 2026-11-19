@@ -51,7 +51,9 @@ its local subscription mirror.
 
 Before grouping, that flush also refuses an open page whose row a raw DB
 delete or clear removed
-([A deleted row, before grouping](#a-deleted-row-before-grouping)).
+([A deleted row, before grouping](#a-deleted-row-before-grouping)), and moves
+an open page whose row a raw DB update gave a new address
+([A renamed address, before grouping](#a-renamed-address-before-grouping)).
 
 ### A deleted row, before grouping
 
@@ -106,8 +108,10 @@ Every connection the pass touched is skipped for the rest of the flush,
 including one whose port could not serve the page. This does not suppress the
 one immediate attempt above. After it, the connection receives no browser
 delta, window, mutation, facet count, staleness move or second debt probe. The
-skip is `skippedForDeletedResource`,
-memory of this one flush on this worker. Nothing else reads it, so it stays
+skip is `skippedForPageResource`,
+memory of this one flush on this worker. A window moved to a new address
+([A renamed address, before grouping](#a-renamed-address-before-grouping))
+is in the same set. Nothing else reads it, so it stays
 on the browser context rather than in a runtime collection, and the
 `finally` of `flushToSignalRouter()` drops it with the buffer. It is a
 different set from `setAsideThisFlush`.
@@ -118,6 +122,68 @@ production port is `WorkerManager`, which forms it on
 [page-access-control.md](page-access-control.md#a-refusal-releases-what-the-page-holds).
 The optional line is in
 [wire-protocol.md](../frontend/wire-protocol.md#page-subscriptions-01).
+
+### A renamed address, before grouping
+
+Right after the pass above and still before grouping, `flushToSignalRouter()`
+moves an open page whose address its row has just changed
+(`moveRenamedPageResources()`). A page declares that its address is read from
+its row with `PageResource::addressedBy(param, column)`: the route param of the
+address and the column the param is read from. Grouping folds the several
+updates of one row into one change, so the pass reads the raw updates of the
+buffer, as the deleted-row pass reads the raw deletes. Example: the product
+"Morning meadow" is renamed "Summer meadow" while a tab is open at
+`/product/morning-meadow`. The flush sends that tab `page_moved` with the
+address `/product/summer-meadow`, and the tab subscribes there.
+
+A window is moved when all of these hold:
+
+- the page it stands on declared its address with `addressedBy()`, and the
+  row of its last answer is the row this update names, by collection and
+  primary key (`sourceId`). An RT fact, another row, and an update that does not
+  carry the address column match nothing;
+- the last update of that row in buffer order carries the column with a value
+  that is not the one the subscription holds for the address param. Several
+  updates of one row in one flush are read in buffer order and the last one
+  wins, so a value renamed away and back moves nothing;
+- the new value is a non-empty scalar. Otherwise the address cannot be named,
+  and the window stays where it is.
+
+The target is the same page with the params of the subscription, as strings,
+with the address param replaced by the new value. A param that does not read as
+a non-empty string is left out of the target: route params read an empty one as
+absent, and a value that is not a scalar names no address.
+
+A window to which the same flush already sent a live 404 is not moved. The
+author of the rename is moved like any other window: the author of a delete is
+told by the acknowledgement of the action, but nobody else would tell the author
+of a rename that the address changed. The access verdict is not asked again: the
+window already sees this row, and the browser's next `page_subscribe` at the
+new address goes through the whole verdict, so a 401, 403 or 503 comes as the
+answer to that one. No page debt is consulted and none is set.
+
+A moved window receives no delta, window, mutation, facet count, staleness
+move or debt probe for the rest of the flush, because the new subscription
+answers the page whole. It is in the same `skippedForPageResource` set as a
+window the deleted-row pass touched. The page releases the connection and the
+link to the row is dropped, so a later update of the row does not move the
+window twice.
+
+The frame is asked through `PageResender::moveRenamedResource`. The production
+port is `WorkerManager`, which forms it on
+`PageSignalRouter::moveRenamedResource`. That method releases the page's hold
+for the connection first, as
+[page-access-control.md](page-access-control.md#a-refusal-releases-what-the-page-holds)
+describes, and then sends the frame with the page and params the subscription
+holds and the new address. A port that does not serve the page (`Unserved`) or
+that throws is handled as for the live 404: one contained failure of that
+subscription and the page is told it was not delivered. The frame is in
+[wire-protocol.md](../frontend/wire-protocol.md#page-subscriptions-01).
+
+An agent that serves one instance sends the frame through its own signal
+source and releases the connection. The count of viewers is built again by the
+agent of the new address, which the client's next subscription reaches
+([routing.md](../signals/routing.md#per-instance-page-subscriptions)).
 
 ## Subscription Mirror
 

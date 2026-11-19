@@ -418,6 +418,17 @@ Consequences worth knowing before declaring one:
   page one is not subscribed to never meant anything.
 - **Disconnect.** The same [departure delivery](#websocket--agent) reaches the bound
   instance before the connection's subscription records are dropped.
+- **Rename.** An instance whose address is read from a changeable column of its row
+  (a product's slug) may be renamed while a tab is open on it, or a tab may open the
+  address it had before. The agent of the previous address answers the subscription
+  with `page_moved` and releases the connection. It sends the frame through its own
+  signal source, and the viewer count is gathered again by the agent of the new
+  address: the browser's next `page_subscribe` carries the new index value, so the
+  master routes it to that agent as to any other subscribe. Example: the product
+  "Morning meadow" becomes "Summer meadow"; the tab on `/product/morning-meadow`
+  is sent to `/product/summer-meadow`, and the agent of "Summer meadow" serves it.
+  The frame is described in
+  [wire-protocol.md](../frontend/wire-protocol.md#page-subscriptions-01).
 - **Move on sign-in.** A guest who signs in stays on the same page, and the page is
   re-judged rather than re-subscribed: `page_access_reassess` carries a copy of the
   subscribe, its address is recomputed, and the client gets a full page answer without

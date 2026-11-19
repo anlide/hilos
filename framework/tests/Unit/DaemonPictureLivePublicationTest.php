@@ -1159,6 +1159,11 @@ final class LivePublicationTestResender implements PageResender
     {
         return PageResendOutcome::Unserved;
     }
+
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
+    {
+        return PageResendOutcome::Unserved;
+    }
 }
 
 abstract class LivePublicationTestHilos extends Hilos

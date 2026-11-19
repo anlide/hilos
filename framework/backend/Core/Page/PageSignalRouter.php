@@ -34,6 +34,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\Exception\FramePopOrderException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Page\DTO\PageMovedSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\ActionAccountFrozenException;
 use Hilos\Core\Page\Exception\ActionForbiddenException;
@@ -44,6 +45,7 @@ use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageAccountFrozenException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Page\Exception\PageMovedException;
 use Hilos\Core\Page\Exception\PageNotFoundException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\Exception\PageSubscriptionException;
@@ -199,7 +201,8 @@ class PageSignalRouter
      * Dispatch page subscribe signal to page handler
      *
      * Catches PageSubscriptionException and sends structured error signal while
-     * preserving the subscription. Catches any other exception as internal error.
+     * preserving the subscription, or the page_moved frame when it is a
+     * PageMovedException. Catches any other exception as internal error.
      *
      * A subscription that arrives before this worker learns who sent it is parked
      * rather than judged ({@see self::parkUntilIdentified}), because the gate below
@@ -210,7 +213,7 @@ class PageSignalRouter
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
-     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidArgumentException When the subscription-error or page-moved signal cannot be named
      * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function dispatchPageSubscribe(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
@@ -246,7 +249,7 @@ class PageSignalRouter
      * @param WebSocketPageSubscribeSignalDTO $data Signal data, shaped exactly like the subscribe it re-judges
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
-     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidArgumentException When the subscription-error or page-moved signal cannot be named
      * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function dispatchPageAccessReassess(WebSocketPageSubscribeSignalDTO $data, string $source, string $name): void
@@ -297,7 +300,7 @@ class PageSignalRouter
      * @param array<string, mixed> $params Route params of the subscription, as the subscription mirror holds them
      * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome What went out to the connection
-     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidArgumentException When the subscription-error or page-moved signal cannot be named
      * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function resendPage(string $page, string $acceptKey, array $params, bool $reportRefusal = false): PageResendOutcome
@@ -391,6 +394,51 @@ class PageSignalRouter
     }
 
     /**
+     * Moves a live subscription whose row has just changed the column its address is read from.
+     *
+     * The page answers the open window with the page_moved frame a subscribe at the previous
+     * address would get: the page and params the subscription holds, and the new address. No
+     * access verdict is asked here; the browser's next page_subscribe at the new address goes
+     * through the whole one. What the page holds for the connection is released before the
+     * frame, the row binding with it, and the subscription registration stays. No page debt
+     * is set. A failure to queue the frame leaves this method instead of coming back as Refused.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the move is addressed to
+     * @param array<string, string> $targetParams Every route param of the new address
+     * @return PageResendOutcome Refused when the frame was formed, Unserved when this agent does not hold the subscription
+     * @throws InvalidArgumentException When the page-moved signal cannot be named
+     */
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
+    {
+        if ($page === '' || $acceptKey === '') {
+            return PageResendOutcome::Unserved;
+        }
+
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page) {
+            return PageResendOutcome::Unserved;
+        }
+
+        $pageInstance = $this->resolvePage($page, false);
+        if ($pageInstance === null) {
+            return PageResendOutcome::Unserved;
+        }
+
+        $this->releaseUnservedConnection($pageInstance, $acceptKey);
+        $this->sendPageMoved(
+            $pageInstance->getAgent()->getAgentSignalSource(),
+            $page,
+            $acceptKey,
+            $subscription->params,
+            $page,
+            $targetParams,
+        );
+
+        return PageResendOutcome::Refused;
+    }
+
+    /**
      * Whether a PUBLIC page can still refuse a particular person through its own guards.
      *
      * The non-throwing twin of {@see BrowserContext::pageAccessDependsOnIdentity}, in the
@@ -430,6 +478,10 @@ class PageSignalRouter
      * An answer that is not the page releases what the page holds for the connection
      * ({@see AbstractPage::onUnsubscribe()}); the subscription registration stays.
      *
+     * A page that lives at another address ({@see PageMovedException}) is answered with a
+     * page_moved frame under the same switches as a refusal, and it sets no debt. A move to
+     * no address or to the address it was judged at is answered as an internal failure.
+     *
      * @param WebSocketPageSubscribeSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name fallback)
@@ -437,7 +489,7 @@ class PageSignalRouter
      * @param bool $reportFailure Whether a refusal or failure must be reported to the connection and log
      * @param bool $reportRefusal Whether this deletion attempt may report its current domain refusal
      * @return PageResendOutcome Whether the whole page was answered, refused, failed, or unserved
-     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidArgumentException When the subscription-error or page-moved signal cannot be named
      */
     private function runPageSubscribeFrame(
         WebSocketPageSubscribeSignalDTO $data,
@@ -516,11 +568,52 @@ class PageSignalRouter
 
                 return PageResendOutcome::Failed;
             } catch (PageSubscriptionException $e) {
+                if ($e instanceof PageMovedException && !$this->movesElsewhere($page, $data->params, $e)) {
+                    // A move that names no address or the very address it was judged at is a
+                    // broken declaration of the page, not a verdict: answered exactly as the node
+                    // being wrong about itself above, instead of a loop of subscriptions.
+                    $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                    if (!$reportFailure) {
+                        return PageResendOutcome::Failed;
+                    }
+                    $broken = new PageInternalErrorException("Page moved to a broken target {$e->targetPage}", $e);
+                    Logger::error(
+                        "Page subscription error: page={$page}, httpCode={$broken->httpCode}, error={$broken->errorCode}, "
+                        . "message={$broken->getMessage()}",
+                    );
+                    $this->sendSubscriptionError(
+                        $pageInstance->getAgent()->getAgentSignalSource(),
+                        $page,
+                        $data->acceptKey,
+                        $broken->httpCode,
+                        $broken->errorCode,
+                    );
+
+                    return PageResendOutcome::Failed;
+                }
                 if (!$reportFailure && $reportRefusal && Hilos::$sr?->hasPageDeliveryFailure($data->acceptKey) === false) {
                     return PageResendOutcome::Answered;
                 }
                 $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
                 if (!$reportFailure && !$reportRefusal) {
+                    return PageResendOutcome::Refused;
+                }
+                if ($e instanceof PageMovedException) {
+                    // Not a refusal: the browser follows the frame to the new address, and its
+                    // next page_subscribe goes through the whole verdict there. The registration
+                    // stays until then, and no page debt is set.
+                    if ($reportFailure) {
+                        Logger::info("Page moved: page={$page}, target={$e->targetPage}");
+                    }
+                    $this->sendPageMoved(
+                        $pageInstance->getAgent()->getAgentSignalSource(),
+                        $page,
+                        $data->acceptKey,
+                        $data->params,
+                        $e->targetPage,
+                        $e->targetParams,
+                    );
+
                     return PageResendOutcome::Refused;
                 }
                 // The subscription registration is intentionally KEPT alive, not torn down.
@@ -580,7 +673,8 @@ class PageSignalRouter
      * Judged like a fresh subscribe — access level, freeze, params, browser guards —
      * but on the MERGED param set, because the frame is allowed to carry only what it
      * changes. Mirrors {@see self::dispatchPageSubscribe} error handling: a
-     * PageSubscriptionException becomes a structured subscription error signal, and
+     * PageSubscriptionException becomes a structured subscription error signal, a
+     * PageMovedException a page_moved frame that names the merged params it judged, and
      * any other exception becomes a generic internal error. The subscription is
      * preserved either way, with its previous params.
      *
@@ -595,7 +689,7 @@ class PageSignalRouter
      * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name)
-     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidArgumentException When the subscription-error or page-moved signal cannot be named
      * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
     public function dispatchPageUpdateSubscription(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
@@ -618,7 +712,7 @@ class PageSignalRouter
      * @param WebSocketPageUpdateSubscriptionSignalDTO $data Signal data
      * @param string $source Signal source
      * @param string $name Signal name (page name)
-     * @throws InvalidArgumentException When the subscription-error signal cannot be named
+     * @throws InvalidArgumentException When the subscription-error or page-moved signal cannot be named
      */
     private function runPageUpdateSubscriptionFrame(WebSocketPageUpdateSubscriptionSignalDTO $data, string $source, string $name): void
     {
@@ -688,6 +782,39 @@ class PageSignalRouter
                 );
             } catch (PageSubscriptionException $e) {
                 $this->releaseUnservedConnection($pageInstance, $data->acceptKey);
+                if ($e instanceof PageMovedException) {
+                    // The same answer a subscribe gets, judged on the merged params the update
+                    // would have settled. A move that names no address or the address it was
+                    // judged at is the page's broken declaration, answered as an internal error.
+                    $mergedParams = $this->mergedSubscriptionParams($data);
+                    if ($this->movesElsewhere($page, $mergedParams, $e)) {
+                        Logger::info("Page moved: page={$page}, target={$e->targetPage}");
+                        $this->sendPageMoved(
+                            $pageInstance->getAgent()->getAgentSignalSource(),
+                            $page,
+                            $data->acceptKey,
+                            $mergedParams,
+                            $e->targetPage,
+                            $e->targetParams,
+                        );
+
+                        return;
+                    }
+                    $broken = new PageInternalErrorException("Page moved to a broken target {$e->targetPage}", $e);
+                    Logger::error(
+                        "Page update subscription error: page={$page}, httpCode={$broken->httpCode}, error={$broken->errorCode}, "
+                        . "message={$broken->getMessage()}",
+                    );
+                    $this->sendSubscriptionError(
+                        $pageInstance->getAgent()->getAgentSignalSource(),
+                        $page,
+                        $data->acceptKey,
+                        $broken->httpCode,
+                        $broken->errorCode,
+                    );
+
+                    return;
+                }
                 Logger::info(
                     "Page update subscription error: page={$page}, httpCode={$e->httpCode}, error={$e->errorCode}, message={$e->getMessage()}",
                 );
@@ -2712,6 +2839,81 @@ class PageSignalRouter
         if ($httpCode !== HttpConstants::HTTP_UNAUTHORIZED) {
             Hilos::$sr->markPageDeliveryFailure($acceptKey);
         }
+    }
+
+    /**
+     * Whether a page's move names a real address other than the one it was judged at.
+     *
+     * The target page must be named, and every target param must be a non-empty string under a
+     * non-empty string name: a list, or a numeric name, names no route param. A target that is
+     * the same page with the same params, whatever the order of their keys, would send the
+     * browser round in a loop of subscriptions. Params are compared as strings, because a
+     * subscription may hold a param that is not one.
+     *
+     * @param string $page Page that was judged
+     * @param array<string, mixed> $params Params that were judged, as the subscription holds them
+     * @param PageMovedException $moved The page's move
+     * @return bool Whether the move can be sent as a page_moved frame
+     */
+    private function movesElsewhere(string $page, array $params, PageMovedException $moved): bool
+    {
+        if ($moved->targetPage === '') {
+            return false;
+        }
+        foreach ($moved->targetParams as $key => $value) {
+            if (!is_string($key) || $key === '' || !is_string($value) || $value === '') {
+                return false;
+            }
+        }
+        if ($moved->targetPage !== $page || count($moved->targetParams) !== count($params)) {
+            return true;
+        }
+        foreach ($params as $key => $value) {
+            if (!is_scalar($value) || (string) $value !== ($moved->targetParams[$key] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Queues the page_moved answer to the connection that subscribed at the previous address.
+     *
+     * A separate path from the refusal: the frame carries no public refusal wording and sets
+     * no page debt, because the page was not refused - it lives elsewhere, and the browser's
+     * next subscription there is answered whole.
+     *
+     * @param SignalSourceInterface $signalSource Page agent source for the answer
+     * @param string $page Page that was judged
+     * @param string $acceptKey Target connection acceptKey
+     * @param array<string, mixed> $params Params that were judged, as the subscription holds them
+     * @param string $targetPage Page the address moved to
+     * @param array<string, string> $targetParams Every route param of the new address
+     * @throws InvalidArgumentException When the page-moved signal cannot be named
+     */
+    private function sendPageMoved(
+        SignalSourceInterface $signalSource,
+        string $page,
+        string $acceptKey,
+        array $params,
+        string $targetPage,
+        array $targetParams,
+    ): void {
+        Hilos::$sr->queueSignal(
+            signalSource: $signalSource,
+            signalType: new SignalType(SignalTypeConstants::WS_USER),
+            signalName: new SignalName(SignalConstants::PAGE_MOVED),
+            signalData: new WebSocketSignalData(
+                data: new PageMovedSignalData(
+                    page: $page,
+                    params: $params,
+                    targetPage: $targetPage,
+                    targetParams: $targetParams,
+                ),
+                targetAcceptKey: $acceptKey,
+            ),
+        );
     }
 
     /**

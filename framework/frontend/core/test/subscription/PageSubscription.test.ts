@@ -727,6 +727,206 @@ describe('PageSubscription leader recovery', () => {
   })
 })
 
+describe('PageSubscription page moves', () => {
+  /** A page_moved of `page` at `params`, to `targetParams` of the same page. */
+  function move(
+    page: string,
+    params: Record<string, unknown>,
+    targetParams: Record<string, string>,
+  ) {
+    return { page, params, targetPage: page, targetParams }
+  }
+
+  it('hands a move of the current page and params to its listeners and changes nothing', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
+    const scope = pages.subscribe('product', { slug: 'morning-meadow' })
+    const listener = vi.fn()
+    pages.onPageMoved(listener)
+
+    const accepted = pages.handlePageMoved({
+      page: 'product',
+      params: { slug: 'morning-meadow' },
+      targetPage: 'catalog_product',
+      targetParams: { slug: 'summer-meadow' },
+    })
+
+    expect(accepted).toBe(true)
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(listener).toHaveBeenCalledWith({
+      page: 'catalog_product',
+      params: { slug: 'summer-meadow' },
+    })
+    expect(connection.sent).toEqual([
+      {
+        type: 'page_subscribe',
+        page: 'product',
+        params: { slug: 'morning-meadow' },
+      },
+    ])
+    expect(pages.pageKey()).toBe('product')
+    expect(scopes.page()).toBe(scope)
+    expect(pages.pageLoading.get()).toBe(true)
+    expect(pages.pageError.get()).toBeNull()
+    expect(connection.forgotPageFrames).toBe(1)
+  })
+
+  it('drops a move of another page, other params, or no subscription, and a removed listener hears nothing', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    const listener = vi.fn()
+    const stop = pages.onPageMoved(listener)
+
+    expect(
+      pages.handlePageMoved(
+        move('product', { slug: 'morning-meadow' }, { slug: 'summer-meadow' }),
+      ),
+    ).toBe(false)
+    pages.subscribe('product', { slug: 'morning-meadow' })
+    expect(
+      pages.handlePageMoved(
+        move('category', { slug: 'morning-meadow' }, { slug: 'summer-meadow' }),
+      ),
+    ).toBe(false)
+    expect(
+      pages.handlePageMoved(
+        move('product', { slug: 'evening-meadow' }, { slug: 'summer-meadow' }),
+      ),
+    ).toBe(false)
+    expect(
+      pages.handlePageMoved(move('product', {}, { slug: 'summer-meadow' })),
+    ).toBe(false)
+    expect(listener).not.toHaveBeenCalled()
+
+    stop()
+    expect(
+      pages.handlePageMoved(
+        move('product', { slug: 'morning-meadow' }, { slug: 'summer-meadow' }),
+      ),
+    ).toBe(true)
+    expect(listener).not.toHaveBeenCalled()
+    expect(connection.sent).toHaveLength(1)
+  })
+
+  it('follows a move in place: one subscribe with the new params and the windows the tables hold', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const prepare = vi.fn(
+      (_page: string, params: Readonly<Record<string, unknown>>) => ({
+        ...params,
+        prepared: 'yes',
+      }),
+    )
+    const pages = new PageSubscription(connection, scopes, prepare)
+    pages.releaseOnSession()
+    const scope = pages.subscribe('product', { slug: 'morning-meadow' })
+    pages.ingestPageResponse('product', { data: { name: 'Morning meadow' } })
+    connection.windows = {
+      reviews: {
+        filter: { query: 'fresh' },
+        sort: [{ field: 'stars', direction: 'desc' }],
+        limit: 25,
+        anchor: null,
+        anchorDirection: 'after',
+        pageIndex: 3,
+      },
+    }
+    const descriptors = vi.spyOn(connection, 'tableWindowDescriptors')
+
+    pages.followMove({ slug: 'summer-meadow' })
+
+    expect(prepare).toHaveBeenLastCalledWith('product', {
+      slug: 'summer-meadow',
+    })
+    expect(descriptors).toHaveBeenCalledTimes(1)
+    expect(descriptors).toHaveBeenCalledWith(false)
+    expect(connection.sent).toEqual([
+      {
+        type: 'page_subscribe',
+        page: 'product',
+        params: { slug: 'morning-meadow', prepared: 'yes' },
+      },
+      {
+        type: 'page_subscribe',
+        page: 'product',
+        params: { slug: 'summer-meadow', prepared: 'yes' },
+        tableWindows: connection.windows,
+      },
+    ])
+    expect(pages.pageKey()).toBe('product')
+    expect(scopes.page()).toBe(scope)
+    expect(scope.data.signal('name').get()).toBe('Morning meadow')
+    expect(pages.pageLoading.get()).toBe(false)
+    expect(pages.pageError.get()).toBeNull()
+    expect(connection.forgotPageFrames).toBe(1)
+
+    // The subscription now stands on the new address: a move of the old one is
+    // late, and a reconnect re-sends the new one as it was prepared.
+    expect(
+      pages.handlePageMoved(
+        move(
+          'product',
+          { slug: 'morning-meadow', prepared: 'yes' },
+          { slug: 'other' },
+        ),
+      ),
+    ).toBe(false)
+    expect(
+      pages.handlePageMoved(
+        move(
+          'product',
+          { slug: 'summer-meadow', prepared: 'yes' },
+          { slug: 'other' },
+        ),
+      ),
+    ).toBe(true)
+    connection.setState('disconnected')
+    connection.setState('connected')
+    pages.releaseOnSession()
+    expect(prepare).toHaveBeenCalledTimes(2)
+    expect(connection.sent.at(-1)).toEqual({
+      type: 'page_subscribe',
+      page: 'product',
+      params: { slug: 'summer-meadow', prepared: 'yes' },
+      tableWindows: connection.windows,
+    })
+  })
+
+  it('keeps an opening waiting through the follow until the new address answers', () => {
+    const connection = fakeConnection()
+    const scopes = new ScopeManager()
+    const pages = new PageSubscription(connection, scopes)
+    pages.releaseOnSession()
+    const scope = pages.subscribe('product', { slug: 'morning-meadow' })
+
+    pages.followMove({ slug: 'summer-meadow' })
+
+    expect(pages.pageLoading.get()).toBe(true)
+    expect(scopes.page()).toBe(scope)
+    expect(connection.sent.at(-1)).toEqual({
+      type: 'page_subscribe',
+      page: 'product',
+      params: { slug: 'summer-meadow' },
+    })
+    pages.ingestPageResponse('product', { data: { name: 'Summer meadow' } })
+    expect(pages.pageLoading.get()).toBe(false)
+  })
+
+  it('sends nothing when no page is subscribed', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+
+    pages.followMove({ slug: 'summer-meadow' })
+
+    expect(connection.sent).toEqual([])
+    expect(pages.pageKey()).toBeUndefined()
+  })
+})
+
 describe('PageSubscription.refuseUnbuilt', () => {
   it('leaves the current page, drops its data and held frames, and ignores late answers', () => {
     const connection = fakeConnection()

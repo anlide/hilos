@@ -7,6 +7,7 @@
 
 import { type HilosConnection } from '../connection/HilosConnection.js'
 import {
+  SIGNAL_TYPE_PAGE_MOVED,
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
 } from '../protocol/constants.js'
@@ -14,6 +15,7 @@ import {
   pageSubscriptionErrorSchema,
   type PageSubscriptionError,
 } from '../protocol/pageError.js'
+import { pageMovedSchema, type PageMoved } from '../protocol/pageMoved.js'
 import {
   pageResponseSchema,
   type PageResponseWire,
@@ -35,6 +37,7 @@ const pageSubscriptions = new WeakMap<HilosConnection, PageSubscription>()
 export const PAGE_SIGNAL_SCHEMAS = {
   [SIGNAL_TYPE_PAGE_RESPONSE]: pageResponseSchema,
   [SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR]: pageSubscriptionErrorSchema,
+  [SIGNAL_TYPE_PAGE_MOVED]: pageMovedSchema,
 }
 
 /**
@@ -68,6 +71,10 @@ export function bindPageScope(
       // Validated against pageSubscriptionErrorSchema at the parse boundary;
       // the typed selector for that schema's output.
       pages.handleSubscriptionError(signal.data as PageSubscriptionError)
+    } else if (signal.type === SIGNAL_TYPE_PAGE_MOVED) {
+      // Validated against pageMovedSchema at the parse boundary; the typed
+      // selector for that schema's output.
+      pages.handlePageMoved(signal.data as PageMoved)
     }
   })
 

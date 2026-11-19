@@ -96,7 +96,18 @@ This is intentional public API for projects to throw from
 `onSubscribeBeforeResponse()` / `onUpdateSubscription()` domain checks. Some classes are not thrown anywhere in
 framework or demo code yet — that is expected. Do not delete them as "dead code":
 they exist so a project always has the right status class without re-inventing
-one, and `PageSignalRouter` maps each to a `subscription_page_error` signal.
+one, and `PageSignalRouter` maps each to a `subscription_page_error` signal,
+except `PageMovedException`.
+
+`PageMovedException` (301, error code `moved`) is the one child that is not a
+refusal. A page throws it from its own check of the address —
+`resolvePageResource()`, `onSubscribeBeforeResponse()` or a typed subscribe
+hook — with the key of the page and ALL the params of the address it lives at
+now, as strings. `PageSignalRouter` answers it with a `page_moved` frame, not
+with a `subscription_page_error`: a move has no words for a person and no page
+debt ([wire-protocol.md](../frontend/wire-protocol.md#page-subscriptions-01)).
+A target that is the page itself at the same address is a broken declaration
+and is answered as `PageInternalErrorException`.
 
 The message of these exceptions is written for the journal, not for the client:
 it may name keys, ids and collections. `PageSubscriptionErrorSignalData::forStatus()`

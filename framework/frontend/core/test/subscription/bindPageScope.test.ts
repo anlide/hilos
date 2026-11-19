@@ -11,6 +11,7 @@ import {
 } from '../../src/subscription/bindPageScope.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import {
+  SIGNAL_TYPE_PAGE_MOVED,
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
 } from '../../src/protocol/constants.js'
@@ -87,6 +88,17 @@ function fakeConnection() {
         kind: 'project',
         type: SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
         data: { page, httpCode, errorCode, title: 'Server title', message },
+        envelope: {},
+      } as unknown as ProjectSignal
+      for (const listener of projectListeners) {
+        listener(signal)
+      }
+    },
+    emitPageMoved(data: Record<string, unknown>): void {
+      const signal = {
+        kind: 'project',
+        type: SIGNAL_TYPE_PAGE_MOVED,
+        data,
         envelope: {},
       } as unknown as ProjectSignal
       for (const listener of projectListeners) {
@@ -200,6 +212,48 @@ describe('bindPageScope', () => {
     )
 
     expect(pages.pageError.get()?.httpCode).toBe(404)
+  })
+
+  it('routes a page_moved for the current page into the manager', () => {
+    const connection = fakeConnection()
+    const pages = bindPageScope(
+      connection as unknown as HilosConnection,
+      new ScopeManager(),
+    )
+    const moved = vi.fn()
+    pages.onPageMoved(moved)
+    const handled = vi.spyOn(pages, 'handlePageMoved')
+    const frame = {
+      page: 'product',
+      params: { slug: 'morning-meadow' },
+      targetPage: 'product',
+      targetParams: { slug: 'summer-meadow' },
+    }
+
+    pages.subscribe('product', { slug: 'morning-meadow' })
+    connection.emitPageMoved(frame)
+
+    expect(handled).toHaveBeenCalledWith(frame)
+    expect(moved).toHaveBeenCalledWith({
+      page: 'product',
+      params: { slug: 'summer-meadow' },
+    })
+  })
+
+  it('keys a page_moved schema that refuses a frame without its target params', () => {
+    const schema = PAGE_SIGNAL_SCHEMAS[SIGNAL_TYPE_PAGE_MOVED]
+    const frame = {
+      page: 'product',
+      params: { slug: 'morning-meadow' },
+      targetPage: 'product',
+    }
+
+    const moved = { ...frame, targetParams: { slug: 'summer-meadow' } }
+    const blank = { ...frame, targetParams: { slug: '' } }
+
+    expect(schema.safeParse(moved).success).toBe(true)
+    expect(schema.safeParse(frame).success).toBe(false)
+    expect(schema.safeParse(blank).success).toBe(false)
   })
 
   it('returns a manager that subscribes the page over the connection', () => {

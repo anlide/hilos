@@ -51,6 +51,7 @@ import {
 import { hilosToasts } from '../state/toasts.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { bindAccessReaction } from '../subscription/bindAccessReaction.js'
+import { bindPageMove } from '../subscription/bindPageMove.js'
 import { bindPageScope } from '../subscription/bindPageScope.js'
 import { bindPageReady, openPageReady } from '../subscription/pageReadyGate.js'
 import { bindUploads } from '../uploads/hilosUploads.js'
@@ -233,6 +234,10 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
     },
     hilosUnbuiltPages(config.viewLayer, config.projectViews),
   )
+  // A page answers that its address moved (HIL-2190): the navigator rewrites
+  // the address without a history entry, and the same page is subscribed again
+  // in place under the new params.
+  bindPageMove(pages, hilosRouter)
   // Bind before other page-clearing reactions and before the socket opens.
   bindAccessLoss(config.scopes, hilosRouter, config.session)
   // A rights change reaches the open tab (HIL-621): the handshake response the

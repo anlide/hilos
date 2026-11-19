@@ -599,6 +599,19 @@ final class DeliveryErrorRecordingResender implements PageResender
 
         return PageResendOutcome::Unserved;
     }
+
+    /**
+     * The move port is not this double. It forms no page_moved frame of its own.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the move would be addressed to
+     * @param array<string, string> $targetParams Every route param of the new address
+     * @return PageResendOutcome Unserved, because this double does not move a renamed row
+     */
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
+    {
+        return PageResendOutcome::Unserved;
+    }
 }
 
 final class DeliveryErrorWindowTableContext extends TableContext

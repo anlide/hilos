@@ -734,6 +734,17 @@ final class SummaryAudienceTestResender implements PageResender
     {
         return PageResendOutcome::Unserved;
     }
+
+    /**
+     * @param string $page Unused moved resource page
+     * @param string $acceptKey Unused recipient
+     * @param array<string, string> $targetParams Unused new address
+     * @return PageResendOutcome No moved resource service in this fixture
+     */
+    public function moveRenamedResource(string $page, string $acceptKey, array $targetParams): PageResendOutcome
+    {
+        return PageResendOutcome::Unserved;
+    }
 }
 
 final class SummaryAudienceTestFramePage extends AbstractHilosCommunicationsChannelFramePage

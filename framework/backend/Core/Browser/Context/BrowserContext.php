@@ -243,18 +243,19 @@ abstract class BrowserContext
     private array $skippedThisFlush = [];
 
     /**
-     * Accept keys whose open page was about a row deleted in this flush, until the flush ends.
+     * Accept keys whose open page was about a row deleted in this flush, or moved to a new address
+     * by an update of it, until the flush ends.
      *
      * Not {@see self::$setAsideThisFlush} (one window of one table) and not
      * {@see self::$skippedThisFlush} (one unbuilt change, journaled once). This set is the
      * flush's own memory on this worker: no browser delta, window, mutation, facet, staleness
-     * move or debt probe is sent to these connections on top of the refusal. Nothing else
+     * move or debt probe is sent to these connections on top of the refusal or the move. Nothing else
      * reads it, so it stays on the context rather than in a runtime collection, and the
      * finally of {@see self::flushToSignalRouter()} drops it with the buffer.
      *
      * @var array<string, true>
      */
-    private array $skippedForDeletedResource = [];
+    private array $skippedForPageResource = [];
 
     /** @var array<string, PageSubscription> Subscriptions tried whole or failed by a publisher until the flush ends */
     private array $publishedWholeThisFlush = [];
@@ -1657,6 +1658,10 @@ abstract class BrowserContext
      * later create of the same id and hide it; the refusal has to see the delete first. It
      * is another look at this buffer, not a second fan-out.
      *
+     * After the refusal and still before grouping, a raw DB update that changes the column an
+     * open page's address is read from moves that page to its new address
+     * ({@see self::moveRenamedPageResources()}). A page refused in the same flush does not move.
+     *
      * @return list<ContainedFailure> Subscriptions whose fan-out failed, in the order they failed
      * @throws InvalidArgumentException When a fanned-out signal cannot be named
      */
@@ -1672,6 +1677,7 @@ abstract class BrowserContext
 
         try {
             $contained = $this->refuseDeletedPageResources();
+            $contained = [...$contained, ...$this->moveRenamedPageResources()];
             $this->groupSourceChanges();
 
             return [...$contained, ...$this->emitBrowserSignals()];
@@ -1685,7 +1691,7 @@ abstract class BrowserContext
             $this->setAsideThisFlush = [];
             $this->catchUpAtFlush = [];
             $this->skippedThisFlush = [];
-            $this->skippedForDeletedResource = [];
+            $this->skippedForPageResource = [];
             $this->publishedWholeThisFlush = [];
         }
     }
@@ -1735,7 +1741,7 @@ abstract class BrowserContext
                 continue;
             }
 
-            $this->skippedForDeletedResource[$subscriber] = true;
+            $this->skippedForPageResource[$subscriber] = true;
             $page = (string) $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
             if ($this->deletionAuthoredBy($matched, $subscriber)) {
                 Hilos::$sr->clearPageResource($subscriber);
@@ -1862,7 +1868,165 @@ abstract class BrowserContext
     }
 
     /**
-     * One contained failure for a refusal this worker could not finish, unless the page was already told.
+     * Moves open pages whose row an update of this flush gave a new address, before grouping.
+     *
+     * Walks the subscription mirror and each connection's page resource. Only a resource that
+     * declares its address ({@see PageResource::addressedBy()}) can move. A raw DB update of that
+     * collection and primary id that carries the address column is read in buffer order, and the
+     * last value wins: a value back to the one the subscription holds moves nothing. An RT fact,
+     * another row, or an update without the column matches nothing. A page refused in this flush
+     * is not moved.
+     *
+     * The new address is the params the subscription holds, as strings, with the address param
+     * replaced; a param that does not read as a non-empty string is left out of it. An empty or
+     * non-scalar new value cannot name an address, and the page stays where it is. The author
+     * of the update is moved too: nobody else would tell it its address changed. The page's
+     * debt is not consulted; the browser's next subscription at the new address answers it
+     * whole. A moved connection is skipped for the rest of the flush.
+     *
+     * @return list<ContainedFailure> Subscriptions whose move failed, in the order they failed
+     */
+    private function moveRenamedPageResources(): array
+    {
+        if (Hilos::$sr === null) {
+            return [];
+        }
+
+        $updates = $this->rawResourceUpdates();
+        if ($updates === []) {
+            return [];
+        }
+
+        $contained = [];
+        foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
+            $subscriber = (string) $acceptKey;
+            if ($this->isSkippedForPageResource($subscriber)) {
+                continue;
+            }
+            $resource = Hilos::$sr->pageResource($subscriber);
+            if ($resource === null) {
+                continue;
+            }
+
+            $targetParams = $this->renamedAddress(
+                $updates,
+                $resource,
+                $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [],
+            );
+            if ($targetParams === null) {
+                continue;
+            }
+
+            $this->skippedForPageResource[$subscriber] = true;
+            $page = (string) $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
+            $contained = [...$contained, ...$this->moveOneRenamedPage($page, $subscriber, $targetParams)];
+        }
+
+        return $contained;
+    }
+
+    /**
+     * Raw DB updates in the buffer, before grouping folds them together.
+     *
+     * @return list<SourceChange> DB updates, in buffer order
+     */
+    private function rawResourceUpdates(): array
+    {
+        $updates = [];
+        foreach ($this->changes->all() as $change) {
+            if ($change->kind === SourceChange::KIND_DB && $change->mutationType === TableMutationType::Update) {
+                $updates[] = $change;
+            }
+        }
+
+        return $updates;
+    }
+
+    /**
+     * The address a page moves to after this flush's updates of its row, or null when it stays.
+     *
+     * @param list<SourceChange> $updates Raw DB updates of this flush
+     * @param PageResource $resource Row the page's last answer named
+     * @param array<string, mixed> $params Params the subscription holds
+     * @return ?array<string, string> Every param of the new address, or null when the page does not move
+     */
+    private function renamedAddress(array $updates, PageResource $resource, array $params): ?array
+    {
+        if ($resource->addressParam === null || $resource->addressColumn === null) {
+            return null;
+        }
+
+        $newValue = null;
+        foreach ($updates as $change) {
+            if (
+                $change->sourceKey === $resource->collectionKey
+                && $change->sourceId === $resource->idString
+                && array_key_exists($resource->addressColumn, $change->row)
+            ) {
+                $newValue = $change->row[$resource->addressColumn];
+            }
+        }
+        if (!is_scalar($newValue) || (string) $newValue === '') {
+            return null;
+        }
+        $heldAddress = $params[$resource->addressParam] ?? null;
+        if (is_scalar($heldAddress) && (string) $heldAddress === (string) $newValue) {
+            return null;
+        }
+
+        // A param that does not read as a non-empty string names no part of an address: route
+        // params read an empty one as absent, and an array is no address at all. It is left
+        // out of the target instead of keeping the window at an address that is gone.
+        $targetParams = [];
+        foreach ($params as $name => $value) {
+            if (is_scalar($value) && (string) $value !== '') {
+                $targetParams[$name] = (string) $value;
+            }
+        }
+        $targetParams[$resource->addressParam] = (string) $newValue;
+
+        return $targetParams;
+    }
+
+    /**
+     * Asks the bound port to move one subscription, and contains a miss per subscription.
+     *
+     * Refused means the port formed the page_moved frame and released the page. Unserved, and a
+     * throw, are the delivery-failure path of the live 404: the subscriber is told the page could
+     * not be delivered and the worker is handed one contained failure.
+     *
+     * @param string $page Page the subscription stands on
+     * @param string $acceptKey Connection the move is addressed to
+     * @param array<string, string> $targetParams Every route param of the new address
+     * @return list<ContainedFailure> One failure when the port could not move the page, else empty
+     */
+    private function moveOneRenamedPage(string $page, string $acceptKey, array $targetParams): array
+    {
+        try {
+            $outcome = $this->pageResender?->moveRenamedResource($page, $acceptKey, $targetParams) ?? PageResendOutcome::Unserved;
+        } catch (Throwable $failure) {
+            $contained = $this->containedRefusalFailure($page, $acceptKey, $failure);
+            $this->tellPageDeliveryFailed($page, $acceptKey);
+
+            return $contained;
+        }
+
+        if ($outcome === PageResendOutcome::Refused) {
+            return [];
+        }
+
+        $contained = $this->containedRefusalFailure(
+            $page,
+            $acceptKey,
+            new LogicException("Browser could not move a renamed page nobody serves here: page={$page}, acceptKey={$acceptKey}"),
+        );
+        $this->tellPageDeliveryFailed($page, $acceptKey);
+
+        return $contained;
+    }
+
+    /**
+     * One contained failure for a refusal or a move this worker could not finish, unless the page was already told.
      *
      * @param string $page Page the subscription stands on
      * @param string $acceptKey Connection the refusal was addressed to
@@ -1883,14 +2047,14 @@ abstract class BrowserContext
     }
 
     /**
-     * Whether this flush already refused the page, so no later delta of the flush may reach it.
+     * Whether this flush already refused or moved the page, so no later delta of the flush may reach it.
      *
      * @param string $acceptKey Connection to check
-     * @return bool True when the page's row was deleted in this flush
+     * @return bool True when the page's row was deleted in this flush, or the window moved to a new address
      */
-    private function isSkippedForDeletedResource(string $acceptKey): bool
+    private function isSkippedForPageResource(string $acceptKey): bool
     {
-        return isset($this->skippedForDeletedResource[$acceptKey]);
+        return isset($this->skippedForPageResource[$acceptKey]);
     }
 
     /**
@@ -2034,7 +2198,7 @@ abstract class BrowserContext
         $failedSubscriptions = [];
         foreach ($this->changes->all() as $change) {
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
-                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)
+                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForPageResource((string) $acceptKey)
                     || isset($this->publishedWholeThisFlush[$acceptKey])
                 ) {
                     continue;
@@ -2068,7 +2232,7 @@ abstract class BrowserContext
 
         foreach ($this->staleness as $collectionKey => $stateIds) {
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
-                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)
+                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForPageResource((string) $acceptKey)
                     || isset($this->publishedWholeThisFlush[$acceptKey])
                 ) {
                     continue;
@@ -2110,7 +2274,7 @@ abstract class BrowserContext
             foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
                 $page = $subscription[SignalPayloadConstants::SUBSCRIPTION_PAGE_KEY];
                 if ($page !== HilosPageConstants::HILOS_STATUS || isset($failedSubscriptions[$acceptKey])
-                    || isset($this->publishedWholeThisFlush[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)) {
+                    || isset($this->publishedWholeThisFlush[$acceptKey]) || $this->isSkippedForPageResource((string) $acceptKey)) {
                     continue;
                 }
                 $contained = [...$contained, ...$this->resendWholePage($page, (string) $acceptKey)];
@@ -2173,7 +2337,7 @@ abstract class BrowserContext
         $this->recountMarkedWindows($failedSubscriptions);
 
         foreach ($this->buildBrowserPayloads($signalTables) as $acceptKey => $pages) {
-            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)
+            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForPageResource((string) $acceptKey)
                     || isset($this->publishedWholeThisFlush[$acceptKey])
                 ) {
                 // Rows collected before the page was told it failed, or before this flush refused
@@ -2402,7 +2566,7 @@ abstract class BrowserContext
     private function publicationSubscription(string $page, string $acceptKey): ?PageSubscription
     {
         $subscription = Hilos::$sr?->pageSubscription($acceptKey);
-        if ($subscription === null || $subscription->page !== $page || $this->isSkippedForDeletedResource($acceptKey)
+        if ($subscription === null || $subscription->page !== $page || $this->isSkippedForPageResource($acceptKey)
             || ($this->publishedWholeThisFlush[$acceptKey] ?? null) === $subscription
         ) {
             return null;
@@ -4917,7 +5081,7 @@ abstract class BrowserContext
             $subscriber = (string) $acceptKey;
             foreach ($tables as $tableKey => [$page, $subscription, $viewport]) {
                 $browserKey = (string) $tableKey;
-                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource($subscriber)
+                if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForPageResource($subscriber)
                     || isset($this->publishedWholeThisFlush[$acceptKey])
                     || Hilos::$sr->pageSubscription($subscriber) !== $subscription
                     || Hilos::$sr->getTableViewport($subscriber, $browserKey) !== $viewport
@@ -4996,7 +5160,7 @@ abstract class BrowserContext
         foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
             if (
                 isset($failedSubscriptions[$acceptKey])
-                || $this->isSkippedForDeletedResource((string) $acceptKey)
+                || $this->isSkippedForPageResource((string) $acceptKey)
                 || ($guardAllows[$acceptKey] ?? null) === false
             ) {
                 continue;
@@ -6097,7 +6261,7 @@ abstract class BrowserContext
         }
 
         foreach ($allWindows as $acceptKey => $tables) {
-            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForDeletedResource((string) $acceptKey)
+            if (isset($failedSubscriptions[$acceptKey]) || $this->isSkippedForPageResource((string) $acceptKey)
                 || isset($this->publishedWholeThisFlush[$acceptKey])
             ) {
                 continue;

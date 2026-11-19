@@ -40,8 +40,11 @@ final class SignalConstants
     public const string RT_SYNC_UPDATED = SignalTypeConstants::RT_SYNC_UPDATED;
     public const string RT_SYNC_DELETED = SignalTypeConstants::RT_SYNC_DELETED;
 
-    /** @var string Page subscription error signal - sent when onSubscribe throws PageSubscriptionException */
+    /** @var string Page subscription error signal - sent when onSubscribe throws PageSubscriptionException other than PageMovedException */
     public const string SUBSCRIPTION_PAGE_ERROR = 'subscription_page_error';
+
+    /** @var string Page subscription answer: the page lives at another address now; sent instead of page_response */
+    public const string PAGE_MOVED = 'page_moved';
 
     /** @var string Internal marker that a page delivery has completed */
     public const string DELIVERY_COMPLETE = 'hilos_delivery_complete';

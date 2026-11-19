@@ -31,6 +31,7 @@ import {
   PAGE_ERROR_NOT_SERVED,
   type PageSubscriptionError,
 } from '../protocol/pageError.js'
+import { type PageMoved } from '../protocol/pageMoved.js'
 import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
 import {
   ingest,
@@ -78,6 +79,12 @@ export type PageSubscribeParamsPreparer = (
   pageKey: string,
   params: Readonly<Record<string, unknown>>,
 ) => Record<string, unknown>
+
+/** The address a page_moved names: the page and route params it lives at now. */
+export interface PageMoveTarget {
+  readonly page: string
+  readonly params: Readonly<Record<string, string>>
+}
 
 export class PageSubscription {
   private current: {
@@ -131,6 +138,9 @@ export class PageSubscription {
 
   /** Waits owned by this page subscription, forgotten on departure or dispatch. */
   private readonly subscriptionWaiters = new Set<() => void>()
+
+  /** Who turns an accepted page_moved into an address; bootHilos binds one. */
+  private readonly moveListeners = new Set<(target: PageMoveTarget) => void>()
 
   /** The current page's catalog identity, read off the page scope it arrives in. */
   private readonly pageIdentitySignal: ReadonlySignal<
@@ -514,6 +524,75 @@ export class PageSubscription {
     this.refuse(error)
 
     return true
+  }
+
+  /**
+   * Hand a `page_moved` for the current subscription to the listeners of
+   * {@link onPageMoved}: the record the address named lives at another address
+   * now. Only a move for the current page with the params it is subscribed
+   * with is accepted — the same guard as the server's page_resubscribe — so one
+   * that arrives after the page or its params changed is dropped, and the
+   * return value reports which happened.
+   *
+   * Nothing on screen changes here: the page keeps its scope, its loading state
+   * and its error until the answer for the new address lands.
+   *
+   * @param move The address subscribed and the address the record lives at now.
+   */
+  handlePageMoved(move: PageMoved): boolean {
+    if (
+      this.current?.pageKey !== move.page ||
+      !sameParams(this.current.params, move.params)
+    ) {
+      return false
+    }
+    const target: PageMoveTarget = {
+      page: move.targetPage,
+      params: move.targetParams,
+    }
+    for (const listener of [...this.moveListeners]) {
+      listener(target)
+    }
+
+    return true
+  }
+
+  /**
+   * Listen for an accepted `page_moved`. The listener receives the address the
+   * record lives at now and decides how to reach it; {@link followMove} is how
+   * it stays on the same page.
+   *
+   * @param listener Called with the target of every accepted move.
+   * @returns A function that removes this listener.
+   */
+  onPageMoved(listener: (target: PageMoveTarget) => void): () => void {
+    this.moveListeners.add(listener)
+
+    return () => {
+      this.moveListeners.delete(listener)
+    }
+  }
+
+  /**
+   * Repeat the current page's subscription in place under new route params: the
+   * page the server moved is the same page at another address. The params pass
+   * the same preparer as a navigation's, and the frame reports the windows the
+   * page's tables hold now — their filters, page and view stay, as on a
+   * page_resubscribe. The page scope, {@link pageLoading}, {@link pageError}
+   * and the held frames are left alone: the answer for the new address lands
+   * over them. A no-op with no current page.
+   *
+   * @param params The route params of the new address.
+   */
+  followMove(params: Record<string, string>): void {
+    const current = this.current
+    if (!current) {
+      return
+    }
+    current.params = this.prepareParams(current.pageKey, params)
+    current.prepared = true
+    this.subscribeDelivered = false
+    this.sendSubscribe()
   }
 
   /**
