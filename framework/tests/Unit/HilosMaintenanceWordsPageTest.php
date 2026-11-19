@@ -220,7 +220,7 @@ final class WordsViewerTestBrowser extends IdentityTestBrowser
         parent::__construct(1, true);
     }
 
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

@@ -1578,7 +1578,7 @@ abstract class BrowserContext
     {
         $pageClass = $this->hilosClass::PAGES[$page] ?? null;
 
-        return is_string($pageClass) && $this->isAdminViewModeViewer($pageClass, $acceptKey);
+        return is_string($pageClass) && $this->isAdminViewModeViewer($pageClass::ACCESS_LEVEL, $acceptKey);
     }
 
     /**
@@ -7940,10 +7940,10 @@ abstract class BrowserContext
     /**
      * Whether a connection looks at an admin page in the admin view mode - the one place the question is asked.
      *
-     * Three facts together: the page is `ADMIN`, the mode of this node is on, and the connection does not
-     * act as an admin ({@see self::actsAsAdmin()}). A session without an account is a viewer too.
-     * The cheap fact goes first: with the mode off the answer is no and nothing else is read - not the
-     * page, not the database - so a node without the mode sends every frame exactly as before. The mode
+     * Three facts together: the level is `ADMIN` - a page's `ACCESS_LEVEL` or an upload target's `accessLevel()` -
+     * the mode of this node is on, and the connection does not act as an admin ({@see self::actsAsAdmin()}).
+     * A session without an account is a viewer too. The cheap fact goes first: with the mode off the answer is no and nothing else is read -
+     * not the level, not the database - so a node without the mode sends every frame exactly as before. The mode
      * is the node's runtime row `hilosAdminViewModeRuntime`, not the variable: the environment of a living
      * process cannot change, the row can, and a page never reads the variable itself.
      *
@@ -7954,16 +7954,16 @@ abstract class BrowserContext
      * Not final: a test double answers yes to see the viewer's frames without a project's identity.
      * Who is an admin is a project's to decide through isAdmin(), not here.
      *
-     * @param class-string<AbstractPage> $pageClass Class of the page the frame belongs to
+     * @param PageAccessLevel $level Access level of the page the frame belongs to, or of the upload target a file is declared for
      * @param string $acceptKey Connection the frame goes to
      * @return bool Whether the frame has to pass the bridge before it leaves
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         if (Hilos::$rt?->hilosAdminViewModeRuntime?->enabled !== true) {
             return false;
         }
-        if ($pageClass::ACCESS_LEVEL !== PageAccessLevel::ADMIN) {
+        if ($level !== PageAccessLevel::ADMIN) {
             return false;
         }
 

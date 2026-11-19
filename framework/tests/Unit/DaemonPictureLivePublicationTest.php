@@ -1090,7 +1090,7 @@ final class LivePublicationTestBrowser extends IdentityTestBrowser
         parent::__construct($userId, true);
     }
 
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

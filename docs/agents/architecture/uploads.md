@@ -63,7 +63,8 @@ in flight, independently of a target's `maxBytes()` or the disk storage limit.
 ## Targets And Checks
 
 A target (`AbstractUploadTarget`) is the policy of one kind of file:
-`maxBytes()`, `requiresSignIn()` and `visibility()` — no defaults: an action says out loud who may
+`maxBytes()`, `accessLevel()` (a `PageAccessLevel`: `PUBLIC`, `AUTHENTICATED`
+or `ADMIN`) and `visibility()` — no defaults: an action says out loud who may
 perform it — and optionally `acceptedMimeTypes()` (exact types or `image/*`
 masks; empty accepts any), `sniffsContent()` and `extraChecks()`.
 `visibility()` declares who may read a published file of this type, such as
@@ -72,10 +73,25 @@ different audience for the same target. A project target name beginning with
 `hilos_` is refused at startup; that prefix belongs to framework targets.
 `Hilos::uploadTargets()` combines project and enabled framework targets.
 
+The uploads agent judges a target's level the way the page gate judges a page
+(`PageAccessGate::verdict()`), without the freeze, which the dispatcher has
+already judged: `PUBLIC` asks nothing, `AUTHENTICATED` wants a signed-in
+connection, and `ADMIN` is judged as an admin page. A declaration is judged by
+every level; a cancel only by `ADMIN`, since after a sign-out the browser
+cancels uploads the server already takes for a guest's. With the admin view mode on
+([admin-view-mode.md](admin-view-mode.md)), a viewer — a guest too — is refused
+403 `view_mode` with the server's sentence (`ActionViewModeException`); with it
+off, a guest is refused 401 (`ActionUnauthorizedException`) and a person who
+does not act as an administrator 403 `forbidden` (`ActionForbiddenException`).
+The viewer question is `BrowserContext::isAdminViewModeViewer()`, the one the
+page gate asks; the agent does not read the mode itself.
+
 `assertBrowserMutationAllowed(string $acceptKey, string $clientUploadId): void`
 lets a target refuse browser init or cancel with `ValidationException`. Init
 asks the declared target and, when replacing an upload of another target, its
-**existing** target too; cancel asks the existing target. All guards run before
+**existing** target too; cancel asks the existing target. Each target's hook is
+asked after its access level, where one is judged, has let the connection in:
+"only an administrator" is declared by the `ADMIN` level, not by this hook. All guards run before
 deleting an existing row or file. Init is guarded even when no upload remains,
 so internal cleanup cannot allow a held id to be reintroduced. The default
 permits mutation. A consumer's policy reads its runtime View collection; the
@@ -192,12 +208,23 @@ upload credit before any chunks are sent. It is refused, with no new row
 left behind, in this order: a malformed payload (the reader: an id outside
 1–64 of `[A-Za-z0-9_-]`, an empty or over-255-character name once its path is
 cut, a negative size); a look-only state (a view-only takeover, a freeze) — the
-action does not only read; an unknown target; sign-in required by the target
-on an anonymous connection (401, `ActionUnauthorizedException`); the same id
-still ready or uploading; an active owner hold; the declared or existing target's
-browser mutation guard (a failed or complete upload is replaced with its file only after both
-permit it); sixteen uploads holding a file on the connection; a target check; a tmp file
-that cannot be created.
+action does not only read; an unknown target; the target's access level: a viewer
+of the admin view mode on an `ADMIN` target (403 `view_mode`), an anonymous
+connection on an `AUTHENTICATED` or `ADMIN` target (401), a non-admin on an
+`ADMIN` target (403 `forbidden`); the same id still ready or uploading; an active
+owner hold; the declared target's browser mutation guard, and when an upload of
+another target is replaced, that target's access level and then its guard (a failed
+or complete upload is replaced with its file only after all of them permit it); sixteen
+uploads holding a file on the connection; a target check; a tmp file that cannot be created.
+
+`hilos_upload_cancel` of an upload the connection still has is judged by the
+access level only when that upload's target is `ADMIN`: the same three refusals
+as above (403 `view_mode`, 401, 403 `forbidden`). The connection cancels an
+upload of an `AUTHENTICATED` or `PUBLIC` target on its own, whoever it is now:
+on a sign-out the browser cancels every upload it declared, and the server
+already takes that connection for a guest. Then, for every level, the owner
+hold and the target's guard judge it. A cancel of an upload that is gone has
+nothing to judge and succeeds.
 
 Every chunk is a signed `frame_binary` frame (`UploadFrame`):
 
@@ -471,10 +498,11 @@ upload's own touches it again.
 An upload goes with its file when:
 
 - the browser cancels it (`hilos_upload_cancel {clientUploadId}`, in any phase;
-  canceling one that is already gone succeeds), unless a live owner hold or its
-  target's browser mutation guard refuses — frame `gone` on success;
+  canceling one that is already gone succeeds), unless the access level of an
+  `ADMIN` target, a live owner hold or its target's browser mutation guard
+  refuses — frame `gone` on success;
 - the same id is declared again after it failed or completed, unless the
-  owner hold or the existing target's browser mutation guard refuses;
+  owner hold or the existing target's access level or browser mutation guard refuses;
 - its connection is no longer among the live ones — silently, on the agent's
   bounded sweep (a new pass begins at most once a second); a project with no
   connections collection skips this comparison;
@@ -497,7 +525,8 @@ An upload goes with its file when:
 `composer run test:framework:unit` (frame, MIME, checks, DTOs, activation,
 the frame route, the tmp refusal, picture container stripping and orientation)
 and `composer run test:framework:integration`
-(`UploadsAgentIntegrationTest`: every refusal, chunks, sniffing, the
+(`UploadsAgentIntegrationTest`: every refusal, an `ADMIN` target with the
+admin view mode on and off, chunks, sniffing, the
 fingerprint, clean and malformed pictures, cancel, sweep, start and stop;
 `FilePublishIntegrationTest`: clean stored bytes, their measured size and
 fingerprint, the storage limit and duplicate check, beside publication itself).

@@ -629,7 +629,7 @@ final class LegalAcceptancesExports
                 // A reassessment keeps the subscription alive while its current verdict denies delivery.
                 continue;
             }
-            if (Hilos::$browser?->isAdminViewModeViewer($pageClass, $acceptKey) === true) {
+            if (Hilos::$browser?->isAdminViewModeViewer($pageClass::ACCESS_LEVEL, $acceptKey) === true) {
                 continue;
             }
             Hilos::$sr->queueSignal(

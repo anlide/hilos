@@ -8,6 +8,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Context\BrowserContext;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\AgentSignalData;
@@ -281,11 +282,11 @@ final class ReadLinesTestBrowser extends BrowserContext
     public bool $viewer = false;
 
     /**
-     * @param string $pageClass Page being served (unused in this double)
+     * @param PageAccessLevel $level Access level of the page being served (unused in this double)
      * @param string $acceptKey Connection being served (unused in this double)
      * @return bool Injected view-mode verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

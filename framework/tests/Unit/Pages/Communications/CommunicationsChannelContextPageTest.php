@@ -308,11 +308,11 @@ final class ChannelContextTestBrowser extends BrowserContext
     public bool $viewer = false;
 
     /**
-     * @param string $pageClass Subscribed page class
+     * @param PageAccessLevel $level Access level of the subscribed page
      * @param string $acceptKey Subscribing connection
      * @return bool Fixture's viewer verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

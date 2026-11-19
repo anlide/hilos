@@ -7,13 +7,19 @@ namespace Hilos\Tests\Integration;
 use Generator;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Core\Action\ActionMessages;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
+use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
+use Hilos\Core\Page\Exception\ActionViewModeException;
+use Hilos\Core\Page\PageAccessLevel;
+use Hilos\Core\Page\PageException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
@@ -39,6 +45,7 @@ use Hilos\Runtime\RtRowReader;
 use Hilos\Runtime\RtRowWriter;
 use Hilos\Runtime\Snapshot\RtWork;
 use Hilos\Runtime\State\Collection\HilosConnections;
+use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Runtime\State\Item\HilosConnection;
 use Hilos\Runtime\State\Item\HilosUpload as StateHilosUpload;
 use Hilos\Runtime\View\Context\RtContext;
@@ -65,6 +72,10 @@ final class UploadsAgentIntegrationTest extends TestCase
 
     private const int SIGNED_IN_USER = UploadsAgentIntegrationTestKeys::SIGNED_IN_USER;
 
+    private const string ADMIN = UploadsAgentIntegrationTestKeys::ADMIN;
+
+    private const int ADMIN_USER = UploadsAgentIntegrationTestKeys::ADMIN_USER;
+
     /** A 1x1 PNG: the smallest content libmagic names image/png. */
     private const string PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
@@ -86,6 +97,8 @@ final class UploadsAgentIntegrationTest extends TestCase
 
     private UploadsTestRtContext $rt;
 
+    private UploadsTestBrowserContext $browser;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -103,7 +116,8 @@ final class UploadsAgentIntegrationTest extends TestCase
         Hilos::$fs = new UploadsTestFsContext($this->tmpPath);
         Hilos::$fs->configure();
         Hilos::$sr = new SignalRouter();
-        Hilos::$browser = new UploadsTestBrowserContext();
+        $this->browser = new UploadsTestBrowserContext();
+        Hilos::$browser = $this->browser;
         self::bindAppClass(UploadsTestHilos::class);
         // The wrapper a removed row leaves in the view cache is dropped by this subscriber alone.
         SourceChangeBus::reset();
@@ -116,6 +130,8 @@ final class UploadsAgentIntegrationTest extends TestCase
         Hilos::$rt = $this->rt;
         $this->connect(self::GUEST);
         $this->connect(self::SIGNED_IN);
+        $this->connect(self::ADMIN);
+        RtTruthSourceRegistry::registerDaemon(AdminViewModeRuntime::RT_ITEM);
 
         ExecutionContext::setCurrentAgentId(HilosAgentType::HILOS_UPLOADS);
         $this->agent = new UploadsAgent();
@@ -126,6 +142,7 @@ final class UploadsAgentIntegrationTest extends TestCase
     protected function tearDown(): void
     {
         RtTruthSourceRegistry::unregister(StateHilosUpload::RT_COLLECTION, HilosAgentType::HILOS_UPLOADS);
+        RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
         ExecutionContext::clear();
         SourceChangeBus::reset();
         Logger::resetLogFile();
@@ -180,6 +197,113 @@ final class UploadsAgentIntegrationTest extends TestCase
         $this->expectException(ActionUnauthorizedException::class);
 
         $this->declare(self::GUEST, 'u1', target: UploadsTestHilos::IMAGE, mimeType: 'image/png');
+    }
+
+    public function testWithTheModeOnAGuestOnAnAdminTargetMeetsTheModesRefusal(): void
+    {
+        $this->switchMode(true);
+
+        $this->assertViewModeRefusal(fn() => $this->declare(self::GUEST, 'u1', target: UploadsTestHilos::ADMIN));
+
+        $this->assertNull(Hilos::$rt->hilosUploads->find(self::GUEST, 'u1'));
+    }
+
+    public function testWithTheModeOnASignedInPersonWhoIsNoAdminMeetsTheModesRefusal(): void
+    {
+        $this->switchMode(true);
+
+        $this->assertViewModeRefusal(fn() => $this->declare(self::SIGNED_IN, 'u1', target: UploadsTestHilos::ADMIN));
+
+        $this->assertNull(Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u1'));
+    }
+
+    public function testWithTheModeOffAnAdminTargetAsksAGuestToSignInAndForbidsAPersonWhoIsNoAdmin(): void
+    {
+        $this->switchMode(false);
+
+        $this->assertInstanceOf(
+            ActionUnauthorizedException::class,
+            $this->refusalOf(fn() => $this->declare(self::GUEST, 'u1', target: UploadsTestHilos::ADMIN)),
+        );
+        $forbidden = $this->refusalOf(fn() => $this->declare(self::SIGNED_IN, 'u1', target: UploadsTestHilos::ADMIN));
+        $this->assertInstanceOf(ActionForbiddenException::class, $forbidden);
+        $this->assertSame('forbidden', $forbidden->errorCode);
+
+        $this->assertNull(Hilos::$rt->hilosUploads->find(self::GUEST, 'u1'));
+        $this->assertNull(Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u1'));
+    }
+
+    public function testAnAdministratorUploadsToAnAdminTargetWithTheModeOnAndOff(): void
+    {
+        $this->switchMode(true);
+        $this->assertNull($this->declare(self::ADMIN, 'u1', target: UploadsTestHilos::ADMIN));
+        $this->switchMode(false);
+        $this->assertNull($this->declare(self::ADMIN, 'u2', target: UploadsTestHilos::ADMIN));
+
+        $this->assertSame(self::ADMIN_USER, $this->upload(self::ADMIN, 'u1')->userId);
+        $this->assertSame(self::ADMIN_USER, $this->upload(self::ADMIN, 'u2')->userId);
+    }
+
+    public function testWithTheModeOnAGuestOnATargetRequiringSignInIsAskedToSignIn(): void
+    {
+        $this->switchMode(true);
+
+        $this->assertInstanceOf(
+            ActionUnauthorizedException::class,
+            $this->refusalOf(fn() => $this->declare(self::GUEST, 'u1', target: UploadsTestHilos::IMAGE, mimeType: 'image/png')),
+        );
+    }
+
+    public function testAViewerCannotCancelAnUploadOfAnAdminTarget(): void
+    {
+        $this->switchMode(false);
+        $this->declare(self::ADMIN, 'u1', target: UploadsTestHilos::ADMIN);
+        $this->browser->adminRights = false;
+        $this->switchMode(true);
+
+        $this->assertViewModeRefusal(fn() => $this->agent->onAgentAction(
+            self::ADMIN,
+            HilosSignalConstants::HILOS_UPLOAD_CANCEL,
+            new UploadCancelActionDTO('u1'),
+        ));
+
+        $this->assertNotNull(Hilos::$rt->hilosUploads->find(self::ADMIN, 'u1'));
+    }
+
+    public function testAConnectionThatSignedOutStillCancelsItsUploadOfAnAuthenticatedTarget(): void
+    {
+        $this->switchMode(true);
+        $this->declare(self::SIGNED_IN, 'u1', target: UploadsTestHilos::IMAGE, mimeType: 'image/png', size: 10);
+        $path = $this->path($this->upload(self::SIGNED_IN, 'u1'));
+        $this->frames();
+        $this->browser->signedOut[] = self::SIGNED_IN;
+
+        $this->assertNull($this->agent->onAgentAction(
+            self::SIGNED_IN,
+            HilosSignalConstants::HILOS_UPLOAD_CANCEL,
+            new UploadCancelActionDTO('u1'),
+        ));
+
+        $this->assertNull(Hilos::$rt->hilosUploads->find(self::SIGNED_IN, 'u1'));
+        $this->assertFileDoesNotExist($path);
+        $this->assertSame([[self::SIGNED_IN, 'u1', null, null]], $this->frames());
+    }
+
+    public function testAViewerCannotReplaceAnUploadOfAnAdminTargetUnderAnotherTarget(): void
+    {
+        $this->switchMode(false);
+        $this->declare(self::ADMIN, 'u1', target: UploadsTestHilos::ADMIN, size: 2);
+        $this->chunk(self::ADMIN, 'u1', 'ab');
+        $path = $this->path($this->upload(self::ADMIN, 'u1'));
+        $this->browser->adminRights = false;
+        $this->switchMode(true);
+
+        $this->assertViewModeRefusal(fn() => $this->declare(self::ADMIN, 'u1', size: 5));
+
+        $kept = $this->upload(self::ADMIN, 'u1');
+        $this->assertSame(UploadsTestHilos::ADMIN, $kept->target);
+        $this->assertSame(UploadPhase::COMPLETE, $kept->phase);
+        $this->assertFileExists($path);
     }
 
     public function testAnUploadInProgressCannotBeDeclaredAgain(): void
@@ -539,6 +663,44 @@ final class UploadsAgentIntegrationTest extends TestCase
     }
 
     /**
+     * @param callable(): mixed $action Action expected to be refused by the target's access level
+     * @return PageException The refusal
+     */
+    private function refusalOf(callable $action): PageException
+    {
+        try {
+            $action();
+        } catch (PageException $refused) {
+            return $refused;
+        }
+
+        $this->fail('Expected the action to be refused by the target\'s access level');
+    }
+
+    /**
+     * @param callable(): mixed $action Action a viewer of the admin view mode is expected to be refused
+     */
+    private function assertViewModeRefusal(callable $action): void
+    {
+        $refused = $this->refusalOf($action);
+
+        $this->assertInstanceOf(ActionViewModeException::class, $refused);
+        $this->assertSame(403, $refused->getCode());
+        $this->assertSame('view_mode', $refused->errorCode);
+        $this->assertSame(ActionMessages::VIEW_MODE, $refused->getMessage());
+    }
+
+    /**
+     * Turns the node's admin view mode on or off the way the master does - as the daemon, not as the agent.
+     *
+     * @param bool $enabled Whether the mode is on
+     */
+    private function switchMode(bool $enabled): void
+    {
+        ExecutionContext::run(new ExecutionFrame(), fn() => Hilos::$rt?->hilosAdminViewModeRuntime?->actions->set($enabled));
+    }
+
+    /**
      * @param string $acceptKey Connection
      * @param string $clientUploadId Upload id
      * @return HilosUpload The upload, which must exist
@@ -613,7 +775,7 @@ final class UploadsAgentIntegrationTest extends TestCase
 }
 
 /**
- * Facade of a project that declares uploads with two targets.
+ * Facade of a project that declares uploads with three targets.
  */
 final class UploadsTestHilos extends Hilos
 {
@@ -621,11 +783,14 @@ final class UploadsTestHilos extends Hilos
 
     public const string IMAGE = 'image';
 
+    public const string ADMIN = 'admin';
+
     protected const array FEATURES = [HilosFeature::UPLOADS];
 
     public const array UPLOAD_TARGETS = [
         self::OPEN => UploadsTestOpenTarget::class,
         self::IMAGE => UploadsTestImageTarget::class,
+        self::ADMIN => UploadsTestAdminTarget::class,
     ];
 
     /**
@@ -653,11 +818,11 @@ final class UploadsTestOpenTarget extends AbstractUploadTarget
     }
 
     /**
-     * @return bool False: guests upload too
+     * @return PageAccessLevel PUBLIC: guests upload too
      */
-    public function requiresSignIn(): bool
+    public function accessLevel(): PageAccessLevel
     {
-        return false;
+        return PageAccessLevel::PUBLIC;
     }
 
     /** @return FileVisibility A signed-in person may read a published file */
@@ -681,11 +846,11 @@ final class UploadsTestImageTarget extends AbstractUploadTarget
     }
 
     /**
-     * @return bool True: only a signed-in person
+     * @return PageAccessLevel AUTHENTICATED: only a signed-in person
      */
-    public function requiresSignIn(): bool
+    public function accessLevel(): PageAccessLevel
     {
-        return true;
+        return PageAccessLevel::AUTHENTICATED;
     }
 
     /** @return FileVisibility A signed-in person may read a published file */
@@ -712,30 +877,87 @@ final class UploadsTestImageTarget extends AbstractUploadTarget
 }
 
 /**
- * Browser context that knows one signed-in connection.
+ * Target only an administrator uploads to, any type, up to a hundred bytes.
  */
-final class UploadsTestBrowserContext extends BrowserContext
+final class UploadsTestAdminTarget extends AbstractUploadTarget
 {
     /**
-     * @param string $acceptKey Connection accept key
-     * @return ConnectionIdentity The signed-in person on one connection, a guest on any other
+     * @return int A hundred bytes
      */
-    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
+    public function maxBytes(): int
     {
-        return ConnectionIdentity::resolved(
-            $acceptKey === UploadsAgentIntegrationTestKeys::SIGNED_IN ? UploadsAgentIntegrationTestKeys::SIGNED_IN_USER : null,
-        );
+        return 100;
+    }
+
+    /**
+     * @return PageAccessLevel ADMIN: judged the way an admin page is
+     */
+    public function accessLevel(): PageAccessLevel
+    {
+        return PageAccessLevel::ADMIN;
+    }
+
+    /** @return FileVisibility Every visitor may read a published file */
+    public function visibility(): FileVisibility
+    {
+        return FileVisibility::PUBLIC;
     }
 }
 
 /**
- * The signed-in connection of the case, readable by its browser fixture.
+ * Browser context that knows two signed-in connections, one of them an administrator's.
+ *
+ * Who acts as an admin is answered here rather than read: the case has neither the person table
+ * nor the impersonation setting the framework's answer reads.
+ */
+final class UploadsTestBrowserContext extends BrowserContext
+{
+    /** Whether the administrator of the case still holds their rights. */
+    public bool $adminRights = true;
+
+    /** @var list<string> Connections whose person has signed out: the server takes each of them for a guest from now on. */
+    public array $signedOut = [];
+
+    /**
+     * @param string $acceptKey Connection accept key
+     * @return ConnectionIdentity The person on one of the two signed-in connections unless signed out, a guest on any other
+     */
+    protected function resolveConnectionIdentity(string $acceptKey): ConnectionIdentity
+    {
+        if (in_array($acceptKey, $this->signedOut, true)) {
+            return ConnectionIdentity::resolved(null);
+        }
+
+        return ConnectionIdentity::resolved(match ($acceptKey) {
+            UploadsAgentIntegrationTestKeys::SIGNED_IN => UploadsAgentIntegrationTestKeys::SIGNED_IN_USER,
+            UploadsAgentIntegrationTestKeys::ADMIN => UploadsAgentIntegrationTestKeys::ADMIN_USER,
+            default => null,
+        });
+    }
+
+    /**
+     * @param string $acceptKey Connection asked about
+     * @param int $userId Person the session acts as
+     * @return bool Whether the person is the administrator of the case and still holds their rights
+     */
+    public function actsAsAdmin(string $acceptKey, int $userId): bool
+    {
+        return $userId === UploadsAgentIntegrationTestKeys::ADMIN_USER && $this->adminRights;
+    }
+}
+
+/**
+ * The signed-in connections of the case, readable by its browser fixture.
  */
 final class UploadsAgentIntegrationTestKeys
 {
     public const string SIGNED_IN = 'ak-signed-in';
 
     public const int SIGNED_IN_USER = 42;
+
+    public const string ADMIN = 'ak-admin';
+
+    public const int ADMIN_USER = 7;
 }
 
 /**

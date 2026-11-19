@@ -157,12 +157,12 @@ change the body of that question, not the mode around it.
   `PageAccessGate::verdict()` returns `PageAccessVerdict::ALLOW` — look and
   act — or `PageAccessVerdict::VIEW` — look only; a refusal stays what it was,
   `PageUnauthorizedException` (401) or `PageForbiddenException` (403). *View*
-  is three facts together: an `ADMIN` page, the mode on, a connection that did
-  not prove an admin — the one question `BrowserContext::isAdminViewModeViewer()`
-  asks. The order: a `PUBLIC` page allows; a viewer views; an anonymous
-  session is refused 401; a non-admin on an `ADMIN` page 403; anything else
-  allows. With the mode on a failed admin lookup views; with it off it throws
-  as it always has.
+  is three facts together: an `ADMIN` level — a page's or an upload target's —
+  the mode on, a connection that did not prove an admin — the one question
+  `BrowserContext::isAdminViewModeViewer()` asks. The order: a `PUBLIC` page
+  allows; a viewer views; an anonymous session is refused 401; a non-admin on
+  an `ADMIN` page 403; anything else allows. With the mode on a failed admin
+  lookup views; with it off it throws as it always has.
 - Two questions are asked of it. *May the connection look* —
   `PageAccessGate::assert()`, where *view* passes: the subscription and its
   update are let through, every delivery goes — the reactive fan-out and the
@@ -276,6 +276,13 @@ why an admin mutation keeps its name on the page: the rule *The Lock Does Not
 Travel With The Name* of
 [entity-libraries.md](entity-libraries.md#the-lock-does-not-travel-with-the-name-hil-771)
 is here also a condition of the mode.
+
+One exception: an upload. The uploads agent judges `hilos_upload_init` by the
+access level of the declared target, and `hilos_upload_cancel` by the level of
+the upload's target only when it is `ADMIN`. On an `ADMIN` target, in both, it
+asks the same `BrowserContext::isAdminViewModeViewer()`: a viewer is refused 403
+`view_mode` with the server's sentence ([uploads.md](uploads.md), *Targets And
+Checks*).
 
 Outside the browser the mode opens nothing: a CLI command has no caller to
 judge ([command-server.md](command-server.md), *Who may call a command —
@@ -396,9 +403,9 @@ nobody is asked*).
   shown it by `TableDefinition::progressDetailFields()`, and the count of the
   work (current, total, ended) always.
 - "Is this viewer in the mode?" is asked in one place of the server —
-  `BrowserContext::isAdminViewModeViewer()`: an `ADMIN` page, the node's mode
-  on, and a connection whose user is not an admin (a session without an
-  account included). With the mode off nothing else is read. A failed admin
+  `BrowserContext::isAdminViewModeViewer()`: an `ADMIN` level — a page's or an
+  upload target's — the node's mode on, and a connection whose user is not an
+  admin (a session without an account included). With the mode off nothing else is read. A failed admin
   lookup answers yes: the bridge closes rather than opens. It is asked on
   every delivery and never remembered, so a grant or a revoke is what the
   next frame goes by. A page does not read the variable itself.

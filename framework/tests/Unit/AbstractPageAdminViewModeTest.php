@@ -560,11 +560,11 @@ final class PageViewerTestBrowser extends BrowserContext
     }
 
     /**
-     * @param string $pageClass Class of the page the frame belongs to
+     * @param PageAccessLevel $level Access level of the page the frame belongs to
      * @param string $acceptKey Connection the frame goes to
      * @return bool The answer the test was built with
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }
@@ -600,11 +600,11 @@ final class PageViewerTableTestBrowser extends BrowserContext
     private const string SIGNAL = 'page_viewer_table_signal';
 
     /**
-     * @param string $pageClass Class of the page the frame belongs to
+     * @param PageAccessLevel $level Access level of the page the frame belongs to
      * @param string $acceptKey Connection the frame goes to
      * @return bool Always a viewer
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return true;
     }

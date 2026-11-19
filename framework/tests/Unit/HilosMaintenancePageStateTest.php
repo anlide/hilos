@@ -10,6 +10,7 @@ use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalData;
@@ -602,11 +603,11 @@ final class HilosMaintenancePageStateTest extends TestCase
         if ($revokeAdmin) {
             Hilos::$browser = new class(1, false) extends IdentityTestBrowser {
                 /**
-                 * @param string $pageClass Page whose viewer verdict is asked (unused)
+                 * @param PageAccessLevel $level Access level of the page whose viewer verdict is asked (unused)
                  * @param string $acceptKey Connection whose rights were revoked (unused)
                  * @return bool The view mode is off for this guard check
                  */
-                public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+                public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
                 {
                     return false;
                 }
@@ -950,7 +951,7 @@ final class MaintenanceStateViewerBrowser extends IdentityTestBrowser
         parent::__construct(null, false);
     }
 
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return true;
     }

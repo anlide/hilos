@@ -237,7 +237,7 @@ final class DaemonEnvOrphansPageTestBrowser extends BrowserContext
         parent::__construct();
     }
 
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

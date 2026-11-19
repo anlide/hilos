@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Files\Upload;
 
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\Upload\Check\DuplicateContentCheck;
 use Hilos\Files\Upload\Check\StorageLimitCheck;
@@ -16,13 +17,12 @@ use Hilos\HilosException;
  *
  * A browser names the target when it declares a file - a chat attachment, an avatar - and the
  * target answers how large the file may be, which types it may have, whether its content is
- * sniffed and whether only a signed-in person may send it. Targets are listed by name in the
- * combined {@see Hilos::uploadTargets()} catalog; the uploads agent creates one instance of each when it
- * starts, so a target takes no constructor arguments.
+ * sniffed and who may send it - its access level, the three a page declares. Targets are listed by
+ * name in the combined {@see Hilos::uploadTargets()} catalog; the uploads agent creates one instance
+ * of each when it starts, so a target takes no constructor arguments.
  *
- * Whether a target requires sign-in has no default on purpose: an upload is an action, and an
- * action says who may perform it out loud (docs/agents/frontend/wire-protocol.md, "Mandatory
- * declared authorization").
+ * The access level has no default on purpose: an upload is an action, and an action says who may
+ * perform it out loud (docs/agents/frontend/wire-protocol.md, "Mandatory declared authorization").
  */
 abstract class AbstractUploadTarget
 {
@@ -35,9 +35,19 @@ abstract class AbstractUploadTarget
     abstract public function maxBytes(): int;
 
     /**
-     * @return bool Whether only a signed-in connection may declare a file for this target
+     * Who may declare a file of this target, judged by the uploads agent before anything else.
+     *
+     * PUBLIC lets any connection in, AUTHENTICATED a signed-in one. ADMIN is judged the way an admin
+     * page is: with the admin view mode on, a viewer of the mode - a guest too - meets the mode's
+     * refusal; otherwise a guest has to sign in and a person who does not act as an administrator is
+     * refused. Canceling a file is judged by the level on an ADMIN target alone: a connection cancels
+     * its own file of a PUBLIC or AUTHENTICATED target without being asked who it is now, because the
+     * browser cancels what a person declared after that person has signed out
+     * (docs/agents/architecture/uploads.md).
+     *
+     * @return PageAccessLevel Access level of the target
      */
-    abstract public function requiresSignIn(): bool;
+    abstract public function accessLevel(): PageAccessLevel;
 
     /** @return bool Whether publication requires the owner's live hold and final consumer approval */
     public function requiresUploadHoldForPublication(): bool
@@ -77,7 +87,12 @@ abstract class AbstractUploadTarget
      * Guards browser init and cancel before any upload row or file is changed.
      *
      * Init asks the declared target and, on replacement, the existing target as well. Cancel
-     * asks the existing target. Both run before a replaced row or its file is removed.
+     * asks the existing target. Both run before a replaced row or its file is removed, and
+     * after the target's {@see self::accessLevel()} has let the connection in, where that level
+     * is judged: on init always, on cancel only for an ADMIN target. A cancel of a PUBLIC or
+     * AUTHENTICATED target may reach this hook from a connection that is already a guest's - the
+     * browser cancels uploads after a sign-out - so the hook must not require a sign-in there.
+     * "Only an administrator" is declared by the ADMIN level, not by this hook.
      * A consumer may protect a held submission through its project's runtime View collection.
      * Internal publication and cleanup do not call this guard. The default permits mutation.
      *

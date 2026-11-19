@@ -960,7 +960,7 @@ final class TasksTopologyRegistryTest extends TestCase
         $target = new ProfilePhotoUploadTarget();
         self::assertSame(524288, $target->maxBytes());
         self::assertSame(['image/jpeg'], $target->acceptedMimeTypes());
-        self::assertTrue($target->requiresSignIn());
+        self::assertSame(PageAccessLevel::AUTHENTICATED, $target->accessLevel());
         self::assertTrue($target->sniffsContent());
         self::assertSame(FileVisibility::PUBLIC, $target->visibility());
         self::assertSame([

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Files\Upload;
 
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\Upload\Check\AllowedContentCheck;
 use Hilos\Files\Upload\Check\DeclaredMimeCheck;
@@ -174,11 +175,11 @@ final class UploadChecksTestTarget extends AbstractUploadTarget
     }
 
     /**
-     * @return bool Never asked by the size check
+     * @return PageAccessLevel PUBLIC: never asked by the size check
      */
-    public function requiresSignIn(): bool
+    public function accessLevel(): PageAccessLevel
     {
-        return false;
+        return PageAccessLevel::PUBLIC;
     }
 
     /** @return FileVisibility A signed-in person may read a published file */

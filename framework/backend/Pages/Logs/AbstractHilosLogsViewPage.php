@@ -453,7 +453,7 @@ abstract class AbstractHilosLogsViewPage extends AbstractHilosPage
      */
     private function viewerOf(string $acceptKey): bool
     {
-        return Hilos::$browser?->isAdminViewModeViewer(static::class, $acceptKey) === true;
+        return Hilos::$browser?->isAdminViewModeViewer(static::ACCESS_LEVEL, $acceptKey) === true;
     }
 
     /**

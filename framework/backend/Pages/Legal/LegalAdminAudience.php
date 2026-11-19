@@ -245,7 +245,7 @@ final class LegalAdminAudience
                     }
                     // A viewer of the admin view mode gets the filters untyped and hidden, so the frame is per
                     // connection for them alone; everyone else shares the one typed frame (HIL-1250).
-                    $frame = Hilos::$browser?->isAdminViewModeViewer($pageClass, $acceptKey) === true
+                    $frame = Hilos::$browser?->isAdminViewModeViewer($pageClass::ACCESS_LEVEL, $acceptKey) === true
                         ? new SignalData(Hilos::$browser->hideForViewer(
                             $data->toArray(),
                             HilosLegalAcceptanceFiltersSignalData::wireFields(),

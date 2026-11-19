@@ -21,6 +21,7 @@ use Hilos\Core\Feature\FeatureRegistry;
 use Hilos\Core\Feature\FeatureRequirements;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\AbstractPage;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableSnapshotDTO;
@@ -373,7 +374,7 @@ final class FeatureActivationValidatorTest extends TestCase
         $target = new ProfilePhotoUploadTarget();
         self::assertSame(524288, $target->maxBytes());
         self::assertSame(['image/jpeg'], $target->acceptedMimeTypes());
-        self::assertTrue($target->requiresSignIn());
+        self::assertSame(PageAccessLevel::AUTHENTICATED, $target->accessLevel());
         self::assertTrue($target->sniffsContent());
         self::assertSame(FileVisibility::PUBLIC, $target->visibility());
         self::assertSame(
@@ -1111,11 +1112,11 @@ final class FeatureActivationUploadTarget extends AbstractUploadTarget
     }
 
     /**
-     * @return bool False: anyone may upload
+     * @return PageAccessLevel PUBLIC: anyone may upload
      */
-    public function requiresSignIn(): bool
+    public function accessLevel(): PageAccessLevel
     {
-        return false;
+        return PageAccessLevel::PUBLIC;
     }
 
     /** @return FileVisibility A signed-in person may read a published file */

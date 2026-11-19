@@ -15,6 +15,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\HilosFeature;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Page\SignalRouteConfig;
@@ -553,11 +554,11 @@ final class ModerationKindPageTestBrowser extends BrowserContext
     }
 
     /**
-     * @param string $pageClass Page being delivered
+     * @param PageAccessLevel $level Access level of the page being delivered
      * @param string $acceptKey Receiving connection
      * @return bool Fixture viewer verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

@@ -82,7 +82,7 @@ final class PageAccessGate
             return PageAccessVerdict::ALLOW;
         }
 
-        if (Hilos::$browser?->isAdminViewModeViewer($pageClass, $acceptKey) === true) {
+        if (Hilos::$browser?->isAdminViewModeViewer($level, $acceptKey) === true) {
             return PageAccessVerdict::VIEW;
         }
 

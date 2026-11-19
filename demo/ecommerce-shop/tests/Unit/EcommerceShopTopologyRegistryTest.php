@@ -711,7 +711,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $target = new CatalogPictureUploadTarget();
         self::assertSame(10485760, $target->maxBytes());
         self::assertSame(['image/jpeg', 'image/png'], $target->acceptedMimeTypes());
-        self::assertTrue($target->requiresSignIn());
+        self::assertSame(PageAccessLevel::ADMIN, $target->accessLevel());
         self::assertTrue($target->sniffsContent());
         self::assertSame(FileVisibility::PUBLIC, $target->visibility());
         self::assertFalse($target->requiresUploadHoldForPublication());

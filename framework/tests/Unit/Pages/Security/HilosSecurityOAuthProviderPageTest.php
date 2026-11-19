@@ -14,6 +14,7 @@ use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
@@ -378,11 +379,11 @@ final class ProviderPageTestBrowser extends IdentityTestBrowser
     }
 
     /**
-     * @param string $pageClass Subscribed page class
+     * @param PageAccessLevel $level Access level of the subscribed page
      * @param string $acceptKey Connection receiving the frame
      * @return bool Scripted viewer verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Page\PageRouteParams;
@@ -451,7 +452,7 @@ final class SettingPresetsPageViewerBrowser extends IdentityTestBrowser
         parent::__construct(null, false);
     }
 
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return true;
     }

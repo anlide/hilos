@@ -10,6 +10,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageException;
 use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Files\Upload\UploadsAgent;
 use Throwable;
 
 /**
@@ -21,6 +22,10 @@ use Throwable;
  * ({@see AbstractPage::READING_ACTIONS}). The code is its own and not `forbidden`: a viewer
  * without an account must not be answered with the sign-in modal, and a signed-in one must not
  * be told they lack a right the page is showing them anyway.
+ *
+ * The same refusal meets a viewer who declares or cancels a file of an upload target of the ADMIN
+ * level: the uploads agent judges the target's level the way the gate judges an admin page
+ * ({@see UploadsAgent}, docs/agents/architecture/uploads.md).
  *
  * The message is person-facing and travels with the code in the action-error frame.
  * The dispatcher ({@see PageSignalRouter::dispatchAction}) journals it as a verdict, not as a

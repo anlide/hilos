@@ -317,7 +317,7 @@ final class StatusWorksActionsIntegrationTest extends FrameworkIntegrationTestCa
             $frame->signalName->getName() === SignalTypeConstants::PAGE_RESPONSE));
         self::assertCount(1, $pages);
         $reply = $pages[0]->data->data;
-        self::assertTrue(Hilos::$browser->isAdminViewModeViewer(AbstractHilosStatusWorksPage::class, 'ak-status'));
+        self::assertTrue(Hilos::$browser->isAdminViewModeViewer(AbstractHilosStatusWorksPage::ACCESS_LEVEL, 'ak-status'));
         self::assertSame(1, $reply->payload->data['statusWorks']['upcomingCount']);
         $work = $reply->payload->windows[HilosStatusWorksTable::TABLE]['rows'][0]['slots']['work'];
         self::assertSame($row['public_id'], $work['publicId']);

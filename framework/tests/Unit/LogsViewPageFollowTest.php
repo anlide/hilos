@@ -11,6 +11,7 @@ use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\AbstractPageFactory;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\Exception\PageNotFoundException;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -432,11 +433,11 @@ final class FollowTestBrowser extends BrowserContext
     public bool $viewer = false;
 
     /**
-     * @param string $pageClass Page being served (unused in this double)
+     * @param PageAccessLevel $level Access level of the page being served (unused in this double)
      * @param string $acceptKey Connection being served (unused in this double)
      * @return bool Injected view-mode verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

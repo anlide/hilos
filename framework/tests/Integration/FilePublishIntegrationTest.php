@@ -17,6 +17,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -1072,10 +1073,10 @@ final class FilePublishTestHeldTarget extends AbstractUploadTarget
         return 1024;
     }
 
-    /** @return bool Signed-in people only */
-    public function requiresSignIn(): bool
+    /** @return PageAccessLevel AUTHENTICATED: signed-in people only */
+    public function accessLevel(): PageAccessLevel
     {
-        return true;
+        return PageAccessLevel::AUTHENTICATED;
     }
 
     /** @return FileVisibility Only the owner reads the published file */
@@ -1105,11 +1106,11 @@ final class FilePublishTestOpenTarget extends AbstractUploadTarget
     }
 
     /**
-     * @return bool False: guests upload too
+     * @return PageAccessLevel PUBLIC: guests upload too
      */
-    public function requiresSignIn(): bool
+    public function accessLevel(): PageAccessLevel
     {
-        return false;
+        return PageAccessLevel::PUBLIC;
     }
 
     /** @return FileVisibility Only its owner may read a published file */
@@ -1133,11 +1134,11 @@ final class FilePublishTestSniffingTarget extends AbstractUploadTarget
     }
 
     /**
-     * @return bool False: guests upload too
+     * @return PageAccessLevel PUBLIC: guests upload too
      */
-    public function requiresSignIn(): bool
+    public function accessLevel(): PageAccessLevel
     {
-        return false;
+        return PageAccessLevel::PUBLIC;
     }
 
     /** @return FileVisibility A signed-in person may read a published file */
@@ -1169,11 +1170,11 @@ final class FilePublishTestDedupTarget extends AbstractUploadTarget
     }
 
     /**
-     * @return bool False: guests upload too
+     * @return PageAccessLevel PUBLIC: guests upload too
      */
-    public function requiresSignIn(): bool
+    public function accessLevel(): PageAccessLevel
     {
-        return false;
+        return PageAccessLevel::PUBLIC;
     }
 
     /** @return FileVisibility A signed-in person may read a published file */

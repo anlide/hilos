@@ -7,6 +7,7 @@ namespace Hilos\Tests\Unit\Fixtures;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Core\Page\AbstractHilosPage;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\Table\Context\TableContext;
@@ -147,7 +148,7 @@ final class MaintenanceNodesTestBrowser extends IdentityTestBrowser
         return $this->administrator;
     }
 
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

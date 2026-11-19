@@ -83,7 +83,7 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
         Hilos::$rt = null;
         $browser = new ViewerTestBrowser(null, false);
 
-        $this->assertFalse($browser->isAdminViewModeViewer(ViewerTestAdminPage::class, 'ak-1'));
+        $this->assertFalse($browser->isAdminViewModeViewer(PageAccessLevel::ADMIN, 'ak-1'));
         $this->assertSame(0, $browser->identityReads);
     }
 
@@ -92,18 +92,18 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
         $this->switchMode(false);
         $browser = new ViewerTestBrowser(7, false);
 
-        $this->assertFalse($browser->isAdminViewModeViewer(ViewerTestAdminPage::class, 'ak-1'));
+        $this->assertFalse($browser->isAdminViewModeViewer(PageAccessLevel::ADMIN, 'ak-1'));
         $this->assertSame(0, $browser->identityReads);
         $this->assertSame(0, $browser->adminReads);
     }
 
-    public function testAPublicOrAuthenticatedPageHasNoViewer(): void
+    public function testAPublicOrAuthenticatedLevelHasNoViewer(): void
     {
         $this->switchMode(true);
         $browser = new ViewerTestBrowser(7, false);
 
-        $this->assertFalse($browser->isAdminViewModeViewer(ViewerTestPublicPage::class, 'ak-1'));
-        $this->assertFalse($browser->isAdminViewModeViewer(ViewerTestAuthenticatedPage::class, 'ak-1'));
+        $this->assertFalse($browser->isAdminViewModeViewer(PageAccessLevel::PUBLIC, 'ak-1'));
+        $this->assertFalse($browser->isAdminViewModeViewer(PageAccessLevel::AUTHENTICATED, 'ak-1'));
         $this->assertSame(0, $browser->adminReads);
     }
 
@@ -112,7 +112,7 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
         $this->switchMode(true);
         $browser = new ViewerTestBrowser(null, false);
 
-        $this->assertTrue($browser->isAdminViewModeViewer(ViewerTestAdminPage::class, 'ak-1'));
+        $this->assertTrue($browser->isAdminViewModeViewer(PageAccessLevel::ADMIN, 'ak-1'));
         $this->assertSame(0, $browser->adminReads);
     }
 
@@ -120,7 +120,7 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
     {
         $this->switchMode(true);
 
-        $this->assertTrue((new ViewerTestBrowser(7, false))->isAdminViewModeViewer(ViewerTestAdminPage::class, 'ak-1'));
+        $this->assertTrue((new ViewerTestBrowser(7, false))->isAdminViewModeViewer(PageAccessLevel::ADMIN, 'ak-1'));
     }
 
     public function testAnAdminIsNotAViewer(): void
@@ -128,7 +128,7 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
         $this->switchMode(true);
         $browser = new ViewerTestBrowser(7, true);
 
-        $this->assertFalse($browser->isAdminViewModeViewer(ViewerTestAdminPage::class, 'ak-1'));
+        $this->assertFalse($browser->isAdminViewModeViewer(PageAccessLevel::ADMIN, 'ak-1'));
         $this->assertSame(1, $browser->adminReads);
     }
 
@@ -136,13 +136,13 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
     {
         $this->switchMode(true);
         $browser = new ViewerTestBrowser(7, true);
-        $this->assertFalse($browser->isAdminViewModeViewer(ViewerTestAdminPage::class, 'ak-1'));
+        $this->assertFalse($browser->isAdminViewModeViewer(PageAccessLevel::ADMIN, 'ak-1'));
 
         $browser->admin = false;
 
-        $this->assertTrue($browser->isAdminViewModeViewer(ViewerTestAdminPage::class, 'ak-1'));
+        $this->assertTrue($browser->isAdminViewModeViewer(PageAccessLevel::ADMIN, 'ak-1'));
         $this->switchMode(false);
-        $this->assertFalse($browser->isAdminViewModeViewer(ViewerTestAdminPage::class, 'ak-1'));
+        $this->assertFalse($browser->isAdminViewModeViewer(PageAccessLevel::ADMIN, 'ak-1'));
     }
 
     public function testAFailedAdminLookupClosesTheBridgeAndSaysSo(): void
@@ -150,7 +150,7 @@ final class BrowserContextAdminViewModeViewerTest extends TestCase
         $this->switchMode(true);
         $browser = new ViewerTestBrowser(7, true, adminLookupFails: true);
 
-        $this->assertTrue($browser->isAdminViewModeViewer(ViewerTestAdminPage::class, 'ak-1'));
+        $this->assertTrue($browser->isAdminViewModeViewer(PageAccessLevel::ADMIN, 'ak-1'));
 
         $lines = $this->writtenLines();
         $this->assertCount(1, $lines);
@@ -317,18 +317,6 @@ final class ViewerTestRtContext extends RtContext
 
 final class ViewerTestDbContext extends HilosDbContext
 {
-}
-
-final class ViewerTestPublicPage extends AbstractPage
-{
-    public const string PAGE = 'viewer_test_public';
-}
-
-final class ViewerTestAuthenticatedPage extends AbstractPage
-{
-    public const string PAGE = 'viewer_test_authenticated';
-
-    public const PageAccessLevel ACCESS_LEVEL = PageAccessLevel::AUTHENTICATED;
 }
 
 final class ViewerTestAdminPage extends AbstractPage

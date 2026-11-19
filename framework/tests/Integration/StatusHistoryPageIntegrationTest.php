@@ -85,7 +85,7 @@ final class StatusHistoryPageIntegrationTest extends FrameworkIntegrationTestCas
         $pages = $this->pages($this->env->drain());
         self::assertCount(1, $pages);
         $payload = $pages[0]->data->data->payload;
-        self::assertTrue(Hilos::$browser->isAdminViewModeViewer(AbstractHilosStatusHistoryPage::class, 'ak-status'));
+        self::assertTrue(Hilos::$browser->isAdminViewModeViewer(AbstractHilosStatusHistoryPage::ACCESS_LEVEL, 'ak-status'));
         self::assertSame(StatusHistoryData::read()->toArray(), $payload->data['statusHistory']);
         self::assertSame($expected, $payload->windows[HilosStatusHistoryTable::TABLE]['rows'][0]['slots']['history']);
         self::assertSame([], AbstractHilosStatusHistoryPage::ACTIONS);

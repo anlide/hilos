@@ -18,6 +18,7 @@ use Hilos\Core\Browser\Config\BrowserPageConfig;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageResendOutcome;
 use Hilos\Core\Page\PageRouteParams;
@@ -675,11 +676,11 @@ final class SummaryAudienceTestBrowser extends IdentityTestBrowser
     }
 
     /**
-     * @param string $pageClass Subscribed class
+     * @param PageAccessLevel $level Access level of the subscribed page
      * @param string $acceptKey Recipient
      * @return bool Fixture viewer verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

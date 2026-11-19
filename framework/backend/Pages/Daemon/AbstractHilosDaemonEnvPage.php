@@ -93,7 +93,7 @@ abstract class AbstractHilosDaemonEnvPage extends AbstractHilosDaemonNodePage
         ];
         if ($includeEnvironment) {
             $pageData[self::ENVIRONMENT] = $ownerAnswers
-                ? $reading->view(Hilos::$browser?->isAdminViewModeViewer(static::class, $acceptKey) === true,
+                ? $reading->view(Hilos::$browser?->isAdminViewModeViewer(static::ACCESS_LEVEL, $acceptKey) === true,
                     Hilos::$cluster?->isEnabled() === true)
                 : null;
         }

@@ -1741,11 +1741,11 @@ final class ModerationTablesBrowser extends BrowserContext
     }
 
     /**
-     * @param string $pageClass Local test page
+     * @param PageAccessLevel $level Access level of the local test page
      * @param string $acceptKey Local connection
      * @return bool The fixture's admitted viewer verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

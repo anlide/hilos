@@ -138,7 +138,7 @@ abstract class AbstractHilosChangeLogFeedPage extends AbstractHilosPage
             && !Hilos::$db->changeLogEntries->receiptEntries($dto->receiptId, $lastId, self::CONTINUATION_PROBE_ROWS)->isEmpty()
             ? $lastId : null;
         $header = HilosChangeLogDetailWire::receipt($receipt);
-        if (Hilos::$browser->isAdminViewModeViewer(static::class, $acceptKey)) {
+        if (Hilos::$browser->isAdminViewModeViewer(static::ACCESS_LEVEL, $acceptKey)) {
             $header = Hilos::$browser->hideForViewer($header, HilosChangeLogDetailWire::receiptFields());
         }
         $wireEntries = [];

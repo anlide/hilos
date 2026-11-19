@@ -16,6 +16,7 @@ use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\PageAccessGate;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
@@ -195,7 +196,7 @@ final class ChangeLogSectionWireBrowser extends BrowserContext
     }
 
     /** @inheritDoc */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

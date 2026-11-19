@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Files;
 
-use Demo\EcommerceShop\Hilos;
-use Hilos\Core\Page\Exception\ActionForbiddenException;
-use Hilos\Core\Page\Exception\ActionUnauthorizedException;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\Upload\AbstractUploadTarget;
-use Hilos\HilosException;
 
 /**
  * A picture of a category or a product; only an administrator uploads one (HIL-2155).
@@ -43,18 +40,18 @@ final class CatalogPictureUploadTarget extends AbstractUploadTarget
     /** Types a catalog picture may have; content of any other type is refused. */
     private const array ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png'];
 
-    private const string MESSAGE_ADMIN_ONLY = 'Only an administrator can upload catalog pictures';
-
     /** @return int Largest catalog picture in bytes */
     public function maxBytes(): int
     {
         return self::MAX_BYTES;
     }
 
-    /** @return bool Always true: a guest only looks at the catalog */
-    public function requiresSignIn(): bool
+    /**
+     * @return PageAccessLevel ADMIN: only an administrator uploads one; a viewer of the admin view mode meets the mode's refusal
+     */
+    public function accessLevel(): PageAccessLevel
     {
-        return true;
+        return PageAccessLevel::ADMIN;
     }
 
     /** @return FileVisibility Every visitor of the shop front sees a catalog picture */
@@ -73,26 +70,5 @@ final class CatalogPictureUploadTarget extends AbstractUploadTarget
     public function sniffsContent(): bool
     {
         return true;
-    }
-
-    /**
-     * Lets only an administrator declare, replace or cancel a catalog picture.
-     *
-     * It asks the question the admin pages' gate asks, so an administrator's rights carried into a
-     * takeover upload here exactly where they open an admin page. The people the answer reads are
-     * read process-wide in every agent, the uploads agent included.
-     *
-     * @param string $acceptKey Connection declaring, replacing or canceling the upload
-     * @param string $clientUploadId Upload id the browser would create, replace or remove
-     * @throws ActionUnauthorizedException When the connection has no signed-in person behind it
-     * @throws ActionForbiddenException When the person behind the connection is not an administrator
-     * @throws HilosException When the people, the session row or the impersonation setting cannot be read
-     */
-    public function assertBrowserMutationAllowed(string $acceptKey, string $clientUploadId): void
-    {
-        $userId = ActionUnauthorizedException::requireUser(Hilos::$browser?->resolveActionUserId($acceptKey));
-        if (Hilos::$browser?->actsAsAdmin($acceptKey, $userId) !== true) {
-            throw new ActionForbiddenException(self::MESSAGE_ADMIN_ONLY);
-        }
     }
 }

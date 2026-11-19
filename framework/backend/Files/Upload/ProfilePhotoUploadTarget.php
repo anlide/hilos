@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Files\Upload;
 
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Files\FileVisibility;
 
 /** One cropped profile photo produced by the browser. */
@@ -21,10 +22,10 @@ final class ProfilePhotoUploadTarget extends AbstractUploadTarget
         return self::MAX_BYTES;
     }
 
-    /** @return bool A person must be signed in to change their photo */
-    public function requiresSignIn(): bool
+    /** @return PageAccessLevel AUTHENTICATED: a person must be signed in to change their photo */
+    public function accessLevel(): PageAccessLevel
     {
-        return true;
+        return PageAccessLevel::AUTHENTICATED;
     }
 
     /** @return list<string> The browser sends a cropped JPEG */

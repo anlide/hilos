@@ -9,6 +9,7 @@ use Demo\Chat\Database\Settings\ChatSettingsConstants;
 use Demo\Chat\Hilos;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Settings\Exception\SettingException;
 use Hilos\Files\FileVisibility;
@@ -51,11 +52,11 @@ final class ChatAttachmentUploadTarget extends AbstractUploadTarget
     }
 
     /**
-     * @return bool Always true: a guest reads the chat but sends nothing into it
+     * @return PageAccessLevel AUTHENTICATED: a guest reads the chat but sends nothing into it
      */
-    public function requiresSignIn(): bool
+    public function accessLevel(): PageAccessLevel
     {
-        return true;
+        return PageAccessLevel::AUTHENTICATED;
     }
 
     /** @return bool Publication requires final owner approval of the whole original attachment group */

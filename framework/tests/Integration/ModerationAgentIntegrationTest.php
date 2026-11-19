@@ -19,6 +19,7 @@ use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Feature\Definition\ModerationFeature;
 use Hilos\Core\Feature\Definition\UploadsFeature;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalRouter;
@@ -1336,10 +1337,10 @@ final class ModerationIntegrationUploadTarget extends AbstractUploadTarget
         return 1048576;
     }
 
-    /** @return bool This fixture target also accepts anonymous uploads */
-    public function requiresSignIn(): bool
+    /** @return PageAccessLevel PUBLIC: this fixture target also accepts anonymous uploads */
+    public function accessLevel(): PageAccessLevel
     {
-        return false;
+        return PageAccessLevel::PUBLIC;
     }
 
     /** @return FileVisibility The ordinary authenticated file policy */

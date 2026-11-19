@@ -1196,7 +1196,7 @@ abstract class AbstractPage implements ActionHostInterface
     private function withPageIdentity(?PagePayload $payload, string $acceptKey, PageRouteParams $params): PagePayload
     {
         $payload ??= new PagePayload();
-        $viewer = Hilos::$browser?->isAdminViewModeViewer(static::class, $acceptKey) === true;
+        $viewer = Hilos::$browser?->isAdminViewModeViewer(static::ACCESS_LEVEL, $acceptKey) === true;
         if ($viewer) {
             $payload = new PagePayload(
                 entities: Hilos::$browser->hideForViewer($payload->entities, []),

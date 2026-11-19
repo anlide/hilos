@@ -15,6 +15,7 @@ use Hilos\Core\Browser\Context\ConnectionIdentity;
 use Hilos\Core\Daemon\WorkerManager;
 use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageAgentInterface;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Page\PageRouteParams;
@@ -176,11 +177,11 @@ final class StatusPageBrowser extends BrowserContext
     }
 
     /**
-     * @param string $pageClass Page class
+     * @param PageAccessLevel $level Access level of the page
      * @param string $acceptKey Judged connection
      * @return bool Current view-mode verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

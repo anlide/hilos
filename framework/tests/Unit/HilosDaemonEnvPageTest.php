@@ -12,6 +12,7 @@ use Hilos\Core\Agent\Hilos\DaemonCollectorAgent;
 use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\DaemonSection\ClusterDaemonPictureMirror;
 use Hilos\DaemonSection\NodeEnvironmentKey;
@@ -186,7 +187,7 @@ final class DaemonEnvPageTestBrowser extends BrowserContext
         parent::__construct();
     }
 
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

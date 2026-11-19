@@ -814,11 +814,11 @@ final class ModerationKindRulesPageTestBrowser extends BrowserContext
     }
 
     /**
-     * @param string $pageClass Page being delivered
+     * @param PageAccessLevel $level Access level of the page being delivered
      * @param string $acceptKey Receiving connection
      * @return bool Fixture viewer verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

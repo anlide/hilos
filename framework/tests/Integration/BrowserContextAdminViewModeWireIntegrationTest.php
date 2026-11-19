@@ -8,6 +8,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\TableViewportSubscription;
@@ -421,11 +422,11 @@ final class DeletionCardHiddenSettingsCatalog implements CatalogProviderInterfac
 final class DeletionCardWireBrowser extends BrowserContext
 {
     /**
-     * @param string $pageClass Page being viewed
+     * @param PageAccessLevel $level Access level of the page being viewed
      * @param string $acceptKey Viewer connection
      * @return bool Viewer verdict
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return true;
     }

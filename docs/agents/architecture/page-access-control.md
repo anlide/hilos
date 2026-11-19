@@ -85,7 +85,9 @@ dispatcher reads either owner through `ActionHostInterface::readingActions()`.
 
 A page's level closes the actions the *page* holds, and it does not travel with
 the name. An agent action has its own `AUTH_ACTIONS` sign-in requirement and is
-judged by the freeze and takeover gates, but has no page-level admin gate. The
+judged by the freeze and takeover gates, but has no page-level admin gate —
+except an upload: the uploads agent judges it by its target's access level, the
+order of a page's verdict ([uploads.md](uploads.md), *Targets And Checks*). The
 per-action `AUTH_ACTIONS` list also serves project pages with anonymous reads
 and authenticated writes. Which names may leave the page, and the two-step
 shape of the ones that may not, is in

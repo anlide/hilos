@@ -17,7 +17,11 @@ use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Core\Feature\HilosFeature;
+use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
+use Hilos\Core\Page\Exception\ActionViewModeException;
+use Hilos\Core\Page\PageAccessGate;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
@@ -86,8 +90,9 @@ final class UploadsAgent extends AbstractAgent
 
     /**
      * The two upload actions, owned by the agent rather than by a page: an upload outlives the
-     * navigation that started it. Neither is in AUTH_ACTIONS - whether sign-in is required is
-     * the target's answer, not the action's.
+     * navigation that started it. Neither is in AUTH_ACTIONS - who may perform them is the
+     * target's access level, not the action's; a cancel is judged by the level of an ADMIN target
+     * alone, and a connection cancels its own upload of any other target by itself.
      */
     public const array AGENT_ACTIONS = [
         HilosSignalConstants::HILOS_UPLOAD_INIT => UploadInitActionDTO::class,
@@ -209,8 +214,11 @@ final class UploadsAgent extends AbstractAgent
      * @return null Both actions answer with nothing: success is the whole answer
      * @throws AgentUnknownActionException When the action is not one of the two
      * @throws ValidationException When the declaration is refused, with the sentence the person reads
-     * @throws ActionUnauthorizedException When the target requires sign-in and the connection is anonymous
-     * @throws HilosException Whatever writing the upload row or deleting a replaced file raises
+     * @throws ActionViewModeException When the target is ADMIN and the connection is a viewer of the admin view mode
+     * @throws ActionUnauthorizedException When a declared or replaced target, or the ADMIN target of a canceled upload,
+     *     wants a signed-in connection and it is anonymous
+     * @throws ActionForbiddenException When the target is ADMIN and the connection does not act as an admin
+     * @throws HilosException Whatever writing the upload row, deleting a replaced file or the administrator lookup raises
      */
     public function onAgentAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
     {
@@ -471,6 +479,40 @@ final class UploadsAgent extends AbstractAgent
     }
 
     /**
+     * Lets the connection declare or cancel a file of the target only where the target's access level lets it in.
+     *
+     * The order of {@see PageAccessGate::verdict()}: a PUBLIC target asks nothing; on an ADMIN target a
+     * viewer of the admin view mode - a guest too - meets the mode's refusal; a guest has to sign in; on an
+     * ADMIN target a person who does not act as an administrator is refused. The freeze and the takeover
+     * are judged by the dispatcher before the action reaches this agent. With the mode off a failed
+     * administrator lookup leaves here, as it leaves the page gate.
+     *
+     * @param AbstractUploadTarget $target Target whose file is declared, replaced or canceled
+     * @param string $acceptKey Acting connection accept key
+     * @param ?int $userId Person the connection acts as, or null for a guest
+     * @throws ActionViewModeException When the target is ADMIN and the connection is a viewer of the admin view mode
+     * @throws ActionUnauthorizedException When the target's level requires a signed-in connection and it is anonymous
+     * @throws ActionForbiddenException When the target is ADMIN and the connection does not act as an admin
+     * @throws HilosException When the administrator lookup fails with the admin view mode off
+     */
+    private function assertTargetAccess(AbstractUploadTarget $target, string $acceptKey, ?int $userId): void
+    {
+        $level = $target->accessLevel();
+        if ($level === PageAccessLevel::PUBLIC) {
+            return;
+        }
+
+        if (Hilos::$browser?->isAdminViewModeViewer($level, $acceptKey) === true) {
+            throw new ActionViewModeException();
+        }
+
+        $userId = ActionUnauthorizedException::requireUser($userId);
+        if ($level === PageAccessLevel::ADMIN && Hilos::$browser?->actsAsAdmin($acceptKey, $userId) !== true) {
+            throw new ActionForbiddenException();
+        }
+    }
+
+    /**
      * @param HilosUpload $upload Authoritative row before a browser mutation
      * @throws ValidationException When the owner holds the upload for a live attempt
      */
@@ -489,17 +531,17 @@ final class UploadsAgent extends AbstractAgent
      * @param string $acceptKey Acting connection accept key
      * @param UploadInitActionDTO $dto Declaration, already in its checked form
      * @throws ValidationException When the declaration is refused
-     * @throws ActionUnauthorizedException When the target requires sign-in and the connection is anonymous
-     * @throws HilosException Whatever writing the upload row or deleting a replaced file raises
+     * @throws ActionViewModeException When the declared or replaced target is ADMIN and the connection is a viewer of the admin view mode
+     * @throws ActionUnauthorizedException When the target's level requires a signed-in connection and it is anonymous
+     * @throws ActionForbiddenException When the declared or replaced target is ADMIN and the connection does not act as an admin
+     * @throws HilosException Whatever writing the upload row, deleting a replaced file or the administrator lookup raises
      */
     private function declare(string $acceptKey, UploadInitActionDTO $dto): void
     {
         $target = $this->targets[$dto->target] ?? throw new ValidationException(self::MESSAGE_NOT_ACCEPTED);
 
         $userId = Hilos::$browser?->resolveActionUserId($acceptKey);
-        if ($target->requiresSignIn()) {
-            ActionUnauthorizedException::requireUser($userId);
-        }
+        $this->assertTargetAccess($target, $acceptKey, $userId);
 
         $uploads = Hilos::$rt->hilosUploads;
         $existing = $uploads->find($acceptKey, $dto->clientUploadId);
@@ -512,6 +554,7 @@ final class UploadsAgent extends AbstractAgent
         $target->assertBrowserMutationAllowed($acceptKey, $dto->clientUploadId);
         if ($existing !== null) {
             if ($existing->target !== $dto->target) {
+                $this->assertTargetAccess($this->targets[$existing->target], $acceptKey, $userId);
                 $this->targets[$existing->target]->assertBrowserMutationAllowed($acceptKey, $dto->clientUploadId);
             }
             $this->forget($existing);
@@ -722,9 +765,16 @@ final class UploadsAgent extends AbstractAgent
     /**
      * Drops one upload of the connection, if it still has it; a missing one is not an error.
      *
+     * Only an ADMIN target judges the connection by its access level, as a declaration does. A connection
+     * cancels an upload of any other level on its own, without asking who it is now: after a sign-out the
+     * browser cancels the uploads it declared, and the server already takes that connection for a guest.
+     *
      * @param string $acceptKey Acting connection accept key
      * @param UploadCancelActionDTO $dto Cancel of one upload
-     * @throws HilosException Whatever removing the upload row or deleting its file raises
+     * @throws ActionViewModeException When the upload's target is ADMIN and the connection is a viewer of the admin view mode
+     * @throws ActionUnauthorizedException When the upload's target is ADMIN and the connection is anonymous with the admin view mode off
+     * @throws ActionForbiddenException When the upload's target is ADMIN and the connection does not act as an admin
+     * @throws HilosException Whatever removing the upload row, deleting its file or the administrator lookup raises
      */
     private function cancel(string $acceptKey, UploadCancelActionDTO $dto): void
     {
@@ -733,8 +783,12 @@ final class UploadsAgent extends AbstractAgent
             return;
         }
 
+        $target = $this->targets[$upload->target];
+        if ($target->accessLevel() === PageAccessLevel::ADMIN) {
+            $this->assertTargetAccess($target, $acceptKey, Hilos::$browser?->resolveActionUserId($acceptKey));
+        }
         $this->assertNotHeld($upload);
-        $this->targets[$upload->target]->assertBrowserMutationAllowed($acceptKey, $dto->clientUploadId);
+        $target->assertBrowserMutationAllowed($acceptKey, $dto->clientUploadId);
         $this->forget($upload);
         $this->sendState($acceptKey, UploadStateSignalData::gone($dto->clientUploadId));
     }

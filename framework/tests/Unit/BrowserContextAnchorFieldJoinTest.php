@@ -22,6 +22,7 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\AbstractPage;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
@@ -498,11 +499,11 @@ final class AnchorFieldBrowserContext extends BrowserContext
     }
 
     /**
-     * @param string $pageClass Page class registered by the fixture
+     * @param PageAccessLevel $level Access level of the page registered by the fixture
      * @param string $acceptKey Connection the frame goes to
      * @return bool Whether the connection is one of the fixture's viewers
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return in_array($acceptKey, $this->viewers, true);
     }

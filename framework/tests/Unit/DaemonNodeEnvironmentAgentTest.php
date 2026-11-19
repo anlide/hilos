@@ -14,6 +14,7 @@ use Hilos\Core\Agent\Hilos\DaemonNodeAgent;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Page\DTO\PagePayload;
+use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\DaemonSection\DTO\DaemonNodePictureSignalData;
@@ -243,7 +244,7 @@ final class DaemonNodeEnvironmentTestBrowser extends BrowserContext
     public ?DaemonNodeEnvironmentOrphansTestPage $orphansPage = null;
     public bool $viewer = false;
 
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

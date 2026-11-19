@@ -345,11 +345,11 @@ final class StatusHistoryFanoutBrowser extends IdentityTestBrowser
     public bool $viewer = false;
 
     /**
-     * @param string $pageClass Local ADMIN page
+     * @param PageAccessLevel $level Access level of the local ADMIN page
      * @param string $acceptKey Local admitted administrator
      * @return bool Whether this case exercises the viewer serialization bridge
      */
-    public function isAdminViewModeViewer(string $pageClass, string $acceptKey): bool
+    public function isAdminViewModeViewer(PageAccessLevel $level, string $acceptKey): bool
     {
         return $this->viewer;
     }

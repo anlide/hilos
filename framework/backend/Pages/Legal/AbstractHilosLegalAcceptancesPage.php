@@ -85,7 +85,7 @@ abstract class AbstractHilosLegalAcceptancesPage extends AbstractHilosPage
     protected function buildPagePayload(string $acceptKey, PageRouteParams $params): ?PagePayload
     {
         $userId = Hilos::$rt?->sessionConnectionsSource()?->get($acceptKey)?->userId;
-        if ($userId === null || Hilos::$browser?->isAdminViewModeViewer(static::class, $acceptKey) === true) {
+        if ($userId === null || Hilos::$browser?->isAdminViewModeViewer(static::ACCESS_LEVEL, $acceptKey) === true) {
             return null;
         }
 
