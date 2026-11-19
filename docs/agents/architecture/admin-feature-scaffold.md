@@ -777,8 +777,9 @@ The schema, receipt, trigger and restore contracts live in
 Chat journals five framework tables, `hilos_moderation_rule` among them, plus
 `bot`; tasks, polls and concert-tickets also journal those five framework tables
 after declaring `MODERATION`. Online-testing now journals those five framework tables too.
-Binance-btc-tracker and ecommerce-shop continue to journal only the other four
-framework tables. Chat and binance-btc-tracker mount all three Vue pages of the
+Binance-btc-tracker continues to journal only the other four framework tables;
+ecommerce-shop journals those same four and its own `warehouse`. Chat and
+binance-btc-tracker mount all three Vue pages of the
 section. The remaining
 view mounts keep the leaf boundaries above. Where
 Backup is already active, it collects the six journal verdicts from the journal

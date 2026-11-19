@@ -51,6 +51,7 @@ use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
+use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
@@ -60,6 +61,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\WarehousesLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
@@ -991,10 +993,11 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         }
     }
 
-    public function testAgentRegistryIsTheAppTheIndexSignInTheAdminSectionsTheFilesAndTheClusterProbes(): void
+    public function testAgentRegistryIsTheAppItsWarehousesLibraryTheIndexSignInTheAdminSectionsTheFilesAndTheClusterProbes(): void
     {
         $this->assertSame([
             AgentType::ECOMMERCE_SHOP,
+            AgentType::WAREHOUSES_LIBRARY,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_ANALYTICS,
             AgentType::HILOS_CHANGE_LOG,
@@ -1021,6 +1024,20 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosAgentType::HILOS_PROBE_CLAIMER,
             HilosAgentType::HILOS_PROBE_BALLAST,
         ], array_keys(Hilos::AGENTS));
+    }
+
+    /** The warehouses library runs once on the policy-selected node, in a worker of its own, and owns the warehouses whole. */
+    public function testWarehousesLibraryIsPolicyPlacedMonopolisticAndOwnsWarehouses(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::WAREHOUSES_LIBRARY];
+        self::assertSame(WarehousesLibraryAgent::class, AgentRegistry::workerClass($entry));
+        self::assertSame(WarehousesLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        self::assertTrue((new WarehousesLibraryAgentDaemon())->requiresMonopolisticProcess());
+        $claims = OwnershipDeclaration::dbCollectionsOf(WarehousesLibraryAgent::class);
+        self::assertSame([EcommerceShopDbContext::warehouses], array_keys($claims));
+        self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::warehouses]->asList());
     }
 
     public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void

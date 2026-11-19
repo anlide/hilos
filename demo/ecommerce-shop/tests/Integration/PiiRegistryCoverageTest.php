@@ -43,10 +43,10 @@ final class PiiRegistryCoverageTest extends IntegrationTestCase
 
     /**
      * Lower bound on the tables read out of the live schema, so an introspection query
-     * that returned nothing cannot pass as a covered schema. The demo carries 25 tables
-     * today (24 from its migrations plus `migration`, which the migration runner creates),
-     * every one of them the framework's; this is a floor, because adding a table is allowed
-     * and adding a row for it is what the coverage gate then demands.
+     * that returned nothing cannot pass as a covered schema. The demo carries many more
+     * today, every one of them the framework's but `warehouse`, the shop's own; this is a
+     * floor, because adding a table is allowed and adding a row for it is what the coverage
+     * gate then demands.
      */
     private const int MIN_LIVE_TABLE_COUNT = 21;
 

@@ -15,6 +15,8 @@ use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
+use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
+use Demo\EcommerceShop\Auth\EcommerceShopAccountDataOwnerDirectory;
 use Demo\EcommerceShop\Auth\EcommerceShopAuthMethodDirectory;
 use Demo\EcommerceShop\Backup\BackupCatalog;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
@@ -28,6 +30,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\WarehousesLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\Pages\PageCatalog;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
@@ -227,6 +230,8 @@ final class Hilos extends HilosFacade
 
     protected const string AUTH_METHOD_DIRECTORY = EcommerceShopAuthMethodDirectory::class;
 
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = EcommerceShopAccountDataOwnerDirectory::class;
+
     protected const ?string LEGAL_CATALOG = EcommerceShopLegalCatalog::class;
 
     protected const ?string BACKUP_CATALOG = BackupCatalog::class;
@@ -367,6 +372,11 @@ final class Hilos extends HilosFacade
         EcommerceShopAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => EcommerceShopAgent::class,
             AgentRegistryKey::DAEMON => EcommerceShopAgentDaemon::class,
+        ],
+        WarehousesLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => WarehousesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => WarehousesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,

@@ -1,0 +1,24 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Demo\EcommerceShop\Auth;
+
+use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
+use Hilos\Auth\AccountOperation\AccountErasureExemption;
+
+/**
+ * EcommerceShopAccountDataOwnerDirectory - whose the shop's own collections are.
+ *
+ * The warehouses are the shop's premises, nobody's personal data, and stay out of the erasure.
+ * No collection of the shop holds a person's rows yet, so there is no owner to name.
+ */
+final class EcommerceShopAccountDataOwnerDirectory extends AccountDataOwnerDirectory
+{
+    /** @return array<string, AccountErasureExemption> The warehouses, which carry nothing personal */
+    protected static function exempt(): array
+    {
+        return [EcommerceShopDbContext::warehouses => AccountErasureExemption::NotPersonal];
+    }
+}

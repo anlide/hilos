@@ -21,14 +21,14 @@ use Hilos\Database\Schema\TablesWithoutEntityProvider;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
- * Integration test: framework Entity metadata against the ecommerce-shop
- * demo's live database schema.
+ * Integration test: ecommerce-shop demo Entity metadata against the live
+ * database schema.
  *
  * Drives the reusable auditor {@see EntitySchemaAudit} in both directions.
  *
- * Entity to schema: every framework entity is audited axis by axis, one test
- * case each; the demo has no entity of its own. A framework entity whose table
- * this demo does not create is skipped — a demo activates a subset of the
+ * Entity to schema: the demo's own entities and every framework entity are
+ * discovered and audited axis by axis, one test case each. A framework entity
+ * whose table this demo does not create is skipped — a demo activates a subset of the
  * framework subsystems, and carries the DDL of that subset only.
  *
  * Schema to Entity: one case demands the opposite of every live table, that some
@@ -39,8 +39,24 @@ use PHPUnit\Framework\Attributes\DataProvider;
  */
 final class EntitySchemaConsistencyTest extends IntegrationTestCase
 {
+    /** PSR-4 namespace of the demo's own Entity directory. */
+    private const string OWN_ENTITY_NAMESPACE = 'Demo\\EcommerceShop\\Database\\Entity\\Item\\';
+
+    /** Lower bound so an empty discovery cannot masquerade as "no drift": the warehouse. */
+    private const int MIN_OWN_ENTITY_COUNT = 1;
+
     /** Lower bound so an unmigrated database cannot masquerade as "no drift" either. */
     private const int MIN_TABLE_COUNT = 6;
+
+    /**
+     * @return iterable<string, array{class-string<Entity>}> Case name => [entity class]
+     */
+    public static function ownEntityProvider(): iterable
+    {
+        foreach (EntitySchemaAudit::discoverEntities(self::ownEntityDir(), self::OWN_ENTITY_NAMESPACE) as $entityClass) {
+            yield self::shortName($entityClass) => [$entityClass];
+        }
+    }
 
     /**
      * @return iterable<string, array{class-string<Entity>}> Case name => [entity class]
@@ -61,6 +77,35 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
         yield 'framework moment also declared by project' => [[
             DatabaseConnectionDefaults::PRIMARY_INDEX => MigrationClaimMomentProvider::class,
         ]];
+    }
+
+    /**
+     * Discovery must find at least the known demo entities, so a broken scan
+     * cannot silently turn the audit into a no-op.
+     */
+    public function testDiscoveryFindsDemoEntities(): void
+    {
+        $entities = EntitySchemaAudit::discoverEntities(self::ownEntityDir(), self::OWN_ENTITY_NAMESPACE);
+
+        $this->assertGreaterThanOrEqual(
+            self::MIN_OWN_ENTITY_COUNT,
+            count($entities),
+            'Entity discovery found fewer classes than expected; PSR-4 mapping or directory changed',
+        );
+    }
+
+    /**
+     * A demo-owned Entity must match its table on every audit axis.
+     *
+     * @param class-string<Entity> $entityClass Entity under test
+     * @throws DatabaseException When an introspection query fails
+     */
+    #[DataProvider('ownEntityProvider')]
+    public function testOwnEntityMatchesSchema(string $entityClass): void
+    {
+        $mismatches = EntitySchemaAudit::audit([$entityClass]);
+
+        $this->assertSame([], $mismatches, self::describeAll($mismatches));
     }
 
     /**
@@ -107,9 +152,14 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
     #[DataProvider('momentProviderRegistrations')]
     public function testLiveMomentsMatchStorageNorm(array $additionalProviders): void
     {
+        $ownEntities = EntitySchemaAudit::discoverEntities(self::ownEntityDir(), self::OWN_ENTITY_NAMESPACE);
+        self::assertGreaterThanOrEqual(self::MIN_OWN_ENTITY_COUNT, count($ownEntities));
         $frameworkEntities = EntitySchemaAudit::frameworkEntities();
         self::assertNotEmpty($frameworkEntities, 'Framework Entity discovery must not be empty');
-        $entities = array_values(array_unique(array_map(EntitySchemaAudit::mountedClassOf(...), $frameworkEntities)));
+        $entities = array_values(array_unique([
+            ...$ownEntities,
+            ...array_map(EntitySchemaAudit::mountedClassOf(...), $frameworkEntities),
+        ]));
 
         $tablesByIndex = [];
         $mismatchesByIndex = [];
@@ -130,6 +180,7 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
             $tablesByIndex[$index] ??= EntitySchemaAudit::liveTables($index);
             $mismatchesByIndex[$index] ??= [];
             if ($index === DatabaseConnectionDefaults::PRIMARY_INDEX
+                && !in_array($entityClass, $ownEntities, true)
                 && !in_array($entityClass::_table, $tablesByIndex[$index], true)) {
                 continue;
             }
@@ -167,11 +218,12 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
     }
 
     /**
-     * Every table of the live schema must be claimed: by one of the framework
-     * entities, or by the framework's declaration that it has no entity at all.
+     * Every table of the live schema must be claimed: by one of the entities this
+     * demo audits, or by the framework's declaration that it has no entity at all.
      * A table nobody claims is the finding this direction exists to make.
      *
-     * The demo passes no allowance of its own — it migrates no table for itself.
+     * The demo passes no allowance of its own — every table it migrates for itself
+     * has an Entity behind it.
      *
      * @throws DatabaseException When an introspection query fails
      */
@@ -185,9 +237,20 @@ final class EntitySchemaConsistencyTest extends IntegrationTestCase
             'live schema holds fewer tables than expected; the database is not migrated',
         );
 
-        $mismatches = EntitySchemaAudit::auditTableCoverage(EntitySchemaAudit::frameworkEntities());
+        $mismatches = EntitySchemaAudit::auditTableCoverage([
+            ...EntitySchemaAudit::discoverEntities(self::ownEntityDir(), self::OWN_ENTITY_NAMESPACE),
+            ...EntitySchemaAudit::frameworkEntities(),
+        ]);
 
         $this->assertSame([], $mismatches, self::describeAll($mismatches));
+    }
+
+    /**
+     * @return string Absolute path of the demo's own Entity directory
+     */
+    private static function ownEntityDir(): string
+    {
+        return __DIR__ . '/../../backend/Database/Entity/Item';
     }
 
     /**
