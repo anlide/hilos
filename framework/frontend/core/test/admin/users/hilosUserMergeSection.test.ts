@@ -1,13 +1,656 @@
 import { describe, expect, it } from 'vitest'
+
 import {
   HILOS_USER_MERGE_COPY,
   hilosUserMergeSection,
-} from '../../../src/admin/users/index.js'
-import {
-  readHilosAccountMerge,
   type HilosAccountMergeProgress,
-} from '../../../src/admin/users/hilosUsers.js'
+} from '../../../src/admin/users/index.js'
+import { readHilosAccountMerge } from '../../../src/admin/users/hilosUsers.js'
 import { HIDDEN_VALUE } from '../../../src/state/hiddenValue.js'
+
+function mergeProgress(
+  over: Partial<HilosAccountMergeProgress> &
+    Pick<HilosAccountMergeProgress, 'state'>,
+): HilosAccountMergeProgress {
+  return {
+    operationId: 40,
+    survivorUserId: 5,
+    loserUserId: 9,
+    stage: null,
+    outcome: null,
+    given: false,
+    received: false,
+    choice: null,
+    refusal: null,
+    parts: [],
+    waits: [],
+    ...over,
+  }
+}
+
+describe('the card merge section', () => {
+  it('returns nothing while progress is absent or the card has no person yet', () => {
+    const refused = mergeProgress({
+      state: 'refusal',
+      refusal: { code: 'occupied', reason: 'The source account is reserved' },
+    })
+    const completed = mergeProgress({ state: 'end', outcome: 'completed' })
+
+    expect(hilosUserMergeSection(null, 5)).toBeNull()
+    expect(hilosUserMergeSection(null, undefined)).toBeNull()
+    expect(hilosUserMergeSection(completed, undefined)).toBeNull()
+
+    const shown = hilosUserMergeSection(refused, 5)
+    expect(shown?.refusal).toBe('The source account is reserved')
+    expect(shown?.successful).toBe(false)
+    expect(hilosUserMergeSection(null, 5)).toBeNull()
+    expect(shown).toEqual({
+      status: 'Merge refused',
+      successful: false,
+      pendingParts: [],
+      waits: [],
+      refusal: 'The source account is reserved',
+    })
+  })
+
+  it('names each merge state in the closed words, including a hidden end', () => {
+    expect(HILOS_USER_MERGE_COPY).toEqual({
+      title: 'Account merge',
+      preparing: 'Preparing merge',
+      waiting: 'Merge in progress',
+      releasing: 'Releasing merge reservations',
+      refused: 'Merge refused',
+      completed: 'Merge completed',
+      notStarted: 'Merge not started',
+      ended: 'Merge finished',
+      parts: 'Unfinished parts',
+      waits: 'Waiting for participants',
+      refusalDetails: "Couldn't merge the accounts",
+    })
+
+    const cases: readonly {
+      state: HilosAccountMergeProgress['state']
+      stage: HilosAccountMergeProgress['stage']
+      outcome: HilosAccountMergeProgress['outcome']
+      status: string
+      successful: boolean
+    }[] = [
+      {
+        state: 'preparing',
+        stage: null,
+        outcome: null,
+        status: 'Preparing merge',
+        successful: false,
+      },
+      {
+        state: 'preparing',
+        stage: 'cancelling',
+        outcome: null,
+        status: 'Preparing merge',
+        successful: false,
+      },
+      {
+        state: 'wait',
+        stage: null,
+        outcome: null,
+        status: 'Merge in progress',
+        successful: false,
+      },
+      {
+        state: 'wait',
+        stage: 'preparing',
+        outcome: null,
+        status: 'Merge in progress',
+        successful: false,
+      },
+      {
+        state: 'wait',
+        stage: 'go',
+        outcome: null,
+        status: 'Merge in progress',
+        successful: false,
+      },
+      {
+        state: 'wait',
+        stage: 'cancelling',
+        outcome: null,
+        status: 'Releasing merge reservations',
+        successful: false,
+      },
+      {
+        state: 'refusal',
+        stage: null,
+        outcome: null,
+        status: 'Merge refused',
+        successful: false,
+      },
+      {
+        state: 'end',
+        stage: null,
+        outcome: 'completed',
+        status: 'Merge completed',
+        successful: true,
+      },
+      {
+        state: 'end',
+        stage: 'cancelling',
+        outcome: 'completed',
+        status: 'Merge completed',
+        successful: true,
+      },
+      {
+        state: 'end',
+        stage: null,
+        outcome: 'not_started',
+        status: 'Merge not started',
+        successful: false,
+      },
+      {
+        state: 'end',
+        stage: 'go',
+        outcome: null,
+        status: 'Merge finished',
+        successful: false,
+      },
+    ]
+
+    for (const item of cases) {
+      expect(
+        hilosUserMergeSection(
+          mergeProgress({
+            state: item.state,
+            stage: item.stage,
+            outcome: item.outcome,
+          }),
+          4,
+        ),
+      ).toEqual({
+        status: item.status,
+        successful: item.successful,
+        pendingParts: [],
+        waits: [],
+        refusal: null,
+      })
+    }
+  })
+
+  it('does not treat finished parts or given and received work as success', () => {
+    const finished = [
+      { participant: 'give', owner: 'auth', userId: 9, done: true },
+      { participant: 'receive', owner: 'auth', userId: 5, done: true },
+    ] as const
+
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'wait',
+          stage: 'go',
+          given: true,
+          received: true,
+          parts: [...finished],
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge in progress',
+      successful: false,
+      pendingParts: [],
+      waits: [],
+      refusal: null,
+    })
+
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'end',
+          outcome: 'not_started',
+          given: true,
+          received: true,
+          parts: [...finished],
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge not started',
+      successful: false,
+      pendingParts: [],
+      waits: [],
+      refusal: null,
+    })
+
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'end',
+          outcome: null,
+          given: true,
+          received: true,
+          parts: [...finished],
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge finished',
+      successful: false,
+      pendingParts: [],
+      waits: [],
+      refusal: null,
+    })
+
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'end',
+          outcome: 'completed',
+          given: false,
+          received: false,
+          parts: [
+            { participant: 'give', owner: 'auth', userId: 9, done: false },
+          ],
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge completed',
+      successful: true,
+      pendingParts: [
+        {
+          key: '["give","auth",9]',
+          participant: 'Transfer account data',
+          account: 9,
+        },
+      ],
+      waits: [],
+      refusal: null,
+    })
+  })
+
+  it('lists an unfinished duty while no participant is waited on', () => {
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'wait',
+          stage: 'go',
+          parts: [
+            { participant: 'sessions', owner: 'auth', userId: 5, done: true },
+            {
+              participant: 'survivor_sessions',
+              owner: 'auth',
+              userId: 9,
+              done: false,
+            },
+            { participant: 'cleanup', owner: 'auth', userId: 9, done: false },
+          ],
+          waits: [],
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge in progress',
+      successful: false,
+      pendingParts: [
+        {
+          key: '["survivor_sessions","auth",9]',
+          participant: 'Close receiving sessions',
+          account: 9,
+        },
+        {
+          key: '["cleanup","auth",9]',
+          participant: 'Remove transfer copy',
+          account: 9,
+        },
+      ],
+      waits: [],
+      refusal: null,
+    })
+
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'preparing',
+          parts: [
+            { participant: 'receive', owner: 'auth', userId: 9, done: false },
+          ],
+          waits: [],
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Preparing merge',
+      successful: false,
+      pendingParts: [
+        {
+          key: '["receive","auth",9]',
+          participant: 'Accept account data',
+          account: 9,
+        },
+      ],
+      waits: [],
+      refusal: null,
+    })
+  })
+
+  it('keeps unfinished release work beside a refusal', () => {
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'refusal',
+          stage: 'cancelling',
+          given: true,
+          received: true,
+          refusal: {
+            code: 'occupied',
+            reason: 'Source account is <reserved> &',
+          },
+          parts: [
+            {
+              participant: 'release_loser',
+              owner: 'auth',
+              userId: 9,
+              done: false,
+            },
+            {
+              participant: 'release_survivor',
+              owner: 'auth',
+              userId: 5,
+              done: false,
+            },
+            { participant: 'cleanup', owner: 'auth', userId: 9, done: true },
+          ],
+          waits: [
+            { participant: 'release_loser', userId: 9 },
+            { participant: 'release_survivor', userId: 5 },
+          ],
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge refused',
+      successful: false,
+      pendingParts: [
+        {
+          key: '["release_loser","auth",9]',
+          participant: 'Release source reservation',
+          account: 9,
+        },
+        {
+          key: '["release_survivor","auth",5]',
+          participant: 'Release receiving reservation',
+          account: null,
+        },
+      ],
+      waits: [
+        {
+          key: '["release_loser",9]',
+          participant: 'Release source reservation',
+          account: 9,
+        },
+        {
+          key: '["release_survivor",5]',
+          participant: 'Release receiving reservation',
+          account: null,
+        },
+      ],
+      refusal: 'Source account is <reserved> &',
+    })
+  })
+
+  it('shows the server refusal words unchanged and only while refused', () => {
+    const reason = 'Could not merge <b>these</b> accounts & keep both'
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'refusal',
+          refusal: { code: 'survivor_merged', reason },
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge refused',
+      successful: false,
+      pendingParts: [],
+      waits: [],
+      refusal: 'Could not merge <b>these</b> accounts & keep both',
+    })
+
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'refusal',
+          refusal: { code: 'missing', reason: '' },
+        }),
+        5,
+      )?.refusal,
+    ).toBe('')
+
+    expect(
+      hilosUserMergeSection(mergeProgress({ state: 'refusal' }), 5)?.refusal,
+    ).toBeNull()
+
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'wait',
+          stage: 'go',
+          refusal: { code: 'occupied', reason: 'Leftover refusal words' },
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge in progress',
+      successful: false,
+      pendingParts: [],
+      waits: [],
+      refusal: null,
+    })
+
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'end',
+          outcome: 'completed',
+          refusal: { code: 'occupied', reason: 'Leftover refusal words' },
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge completed',
+      successful: true,
+      pendingParts: [],
+      waits: [],
+      refusal: null,
+    })
+  })
+
+  it('names no account for the card itself or a hidden person', () => {
+    expect(
+      hilosUserMergeSection(
+        mergeProgress({
+          state: 'wait',
+          stage: 'go',
+          choice: {
+            passwordFate: 'survivor',
+            secondFactorFate: 'both',
+            expectedSurvivorHasSecondFactor: true,
+            expectedLoserHasSecondFactor: false,
+          },
+          parts: [
+            { participant: 'give', owner: 'auth', userId: 5, done: false },
+            { participant: 'sessions', owner: 'auth', userId: 12, done: false },
+            {
+              participant: 'receive',
+              owner: 'auth',
+              userId: null,
+              done: false,
+            },
+          ],
+          waits: [
+            { participant: 'give', userId: 5 },
+            { participant: 'survivor_sessions', userId: 12 },
+            { participant: 'cleanup', userId: null },
+          ],
+        }),
+        5,
+      ),
+    ).toEqual({
+      status: 'Merge in progress',
+      successful: false,
+      pendingParts: [
+        {
+          key: '["give","auth",5]',
+          participant: 'Transfer account data',
+          account: null,
+        },
+        {
+          key: '["sessions","auth",12]',
+          participant: 'Close source sessions',
+          account: 12,
+        },
+        {
+          key: '["receive","auth",null]',
+          participant: 'Accept account data',
+          account: null,
+        },
+      ],
+      waits: [
+        {
+          key: '["give",5]',
+          participant: 'Transfer account data',
+          account: null,
+        },
+        {
+          key: '["survivor_sessions",12]',
+          participant: 'Close receiving sessions',
+          account: 12,
+        },
+        {
+          key: '["cleanup",null]',
+          participant: 'Remove transfer copy',
+          account: null,
+        },
+      ],
+      refusal: null,
+    })
+  })
+
+  it('keeps two operations apart and lists project parts in arrival order', () => {
+    const first = hilosUserMergeSection(
+      mergeProgress({
+        operationId: 70,
+        state: 'end',
+        outcome: 'completed',
+        parts: [
+          { participant: 'invoices', owner: 'billing', userId: 9, done: false },
+          {
+            participant: 'prepare_loser',
+            owner: 'auth',
+            userId: 5,
+            done: false,
+          },
+          { participant: 'give', owner: 'auth', userId: 11, done: false },
+          { participant: 'give', owner: 'chat', userId: 11, done: false },
+        ],
+        waits: [{ participant: 'invoices', userId: 9 }],
+      }),
+      5,
+    )
+    const second = hilosUserMergeSection(
+      mergeProgress({
+        operationId: 71,
+        state: 'preparing',
+        parts: [
+          { participant: 'receive', owner: 'auth', userId: 8, done: false },
+          {
+            participant: '<ledger>',
+            owner: 'billing',
+            userId: null,
+            done: false,
+          },
+          {
+            participant: 'prepare_survivor',
+            owner: 'project',
+            userId: 3,
+            done: false,
+          },
+        ],
+        waits: [
+          { participant: '<ledger>', userId: 3 },
+          { participant: 'sessions', userId: 8 },
+        ],
+      }),
+      8,
+    )
+
+    expect(first).toEqual({
+      status: 'Merge completed',
+      successful: true,
+      pendingParts: [
+        {
+          key: '["invoices","billing",9]',
+          participant: 'invoices',
+          account: 9,
+        },
+        {
+          key: '["prepare_loser","auth",5]',
+          participant: 'Prepare source account',
+          account: null,
+        },
+        {
+          key: '["give","auth",11]',
+          participant: 'Transfer account data',
+          account: 11,
+        },
+        {
+          key: '["give","chat",11]',
+          participant: 'Transfer account data',
+          account: 11,
+        },
+      ],
+      waits: [
+        {
+          key: '["invoices",9]',
+          participant: 'invoices',
+          account: 9,
+        },
+      ],
+      refusal: null,
+    })
+    expect(second).toEqual({
+      status: 'Preparing merge',
+      successful: false,
+      pendingParts: [
+        {
+          key: '["receive","auth",8]',
+          participant: 'Accept account data',
+          account: null,
+        },
+        {
+          key: '["<ledger>","billing",null]',
+          participant: '<ledger>',
+          account: null,
+        },
+        {
+          key: '["prepare_survivor","project",3]',
+          participant: 'Prepare receiving account',
+          account: 3,
+        },
+      ],
+      waits: [
+        {
+          key: '["<ledger>",3]',
+          participant: '<ledger>',
+          account: 3,
+        },
+        {
+          key: '["sessions",8]',
+          participant: 'Close source sessions',
+          account: null,
+        },
+      ],
+      refusal: null,
+    })
+  })
+})
 
 function progress(
   overrides: Partial<HilosAccountMergeProgress> = {},

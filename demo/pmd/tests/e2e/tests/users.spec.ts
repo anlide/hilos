@@ -230,6 +230,7 @@ test('reads its own Overview, opens rename from the keyboard and sees the live s
     // With no project slot, only the framework sections exist; no empty panel or
     // project heading is rendered beside them.
     await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+      'Account merge',
       'Profile',
       'Rights',
       'Access to the product',

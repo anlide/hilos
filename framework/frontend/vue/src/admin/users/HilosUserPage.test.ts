@@ -50,8 +50,9 @@ import type {
 } from '@hilos/core/base'
 import {
   createHilosUserDetail,
-  HILOS_USER_MERGE_SECTION,
+  HILOS_USER_ERASURE_SECTION,
   HILOS_USER_MERGE_AVAILABILITY_SECTION,
+  HILOS_USER_MERGE_SECTION,
   type HilosAccountMergeProgress,
   type HilosUserDetailRow,
   type HilosUsersContext,
@@ -645,7 +646,11 @@ describe('HilosUserPage Overview', () => {
     await nextTick()
     expect(wrapper.get('h1').text()).toBe('Alicia')
     expect(
-      wrapper.get('[data-id="hilos-user-detail"] section:first-of-type').text(),
+      wrapper
+        .get('[data-id="hilos-user-detail"]')
+        .findAll('section')
+        .find((section) => section.text().includes('Display name'))!
+        .text(),
     ).toContain('Alicia')
     expect(navigation.currentTitle.get()).toBe('Alicia · Test app')
 
@@ -696,6 +701,7 @@ describe('HilosUserPage Overview', () => {
     await nextTick()
     const overview = wrapper.get('[data-id="hilos-user-detail"]')
     expect(overview.findAll('h2').map((heading) => heading.text())).toEqual([
+      'Account merge',
       'Profile',
       'Rights',
       'Access to the product',
@@ -708,7 +714,11 @@ describe('HilosUserPage Overview', () => {
       'Impersonation',
       'Merge another account into this one',
     ])
-    const profile = overview.get('section:first-of-type')
+    const profile = overview
+      .findAll('section')
+      .find((section) =>
+        section.find('[data-id="hilos-user-time-zone"]').exists(),
+      )!
     const timeZone = profile.get('[data-id="hilos-user-time-zone"]')
     expect(timeZone.findAll('p').map((paragraph) => paragraph.text())).toEqual([
       'Time zone',
@@ -725,6 +735,7 @@ describe('HilosUserPage Overview', () => {
         .findAll('section')
         .map((section) => section.attributes('data-id')),
     ).toEqual([
+      'hilos-user-merge',
       undefined,
       'hilos-user-rights',
       'hilos-user-access',
@@ -757,9 +768,7 @@ describe('HilosUserPage Overview', () => {
       createHilosUserDetail(context).get(),
     )
     expect(sent).toEqual([])
-    const opener = overview.get(
-      'section:first-of-type [data-id="hilos-user-edit"]',
-    )
+    const opener = profile.get('[data-id="hilos-user-edit"]')
     expect(opener.text()).toBe('Change name')
     await opener.trigger('click')
     expect(nameInput().value).toBe('Alice')
@@ -1050,8 +1059,9 @@ describe('HilosUserPage Overview', () => {
     await nextTick()
     expect(
       wrapper.findAll('[data-id="hilos-user-detail"] section'),
-    ).toHaveLength(3)
+    ).toHaveLength(4)
     expect(wrapper.findAll('h2').map((heading) => heading.text())).toEqual([
+      'Account merge',
       'Profile',
       'Rights',
       'Access to the product',
@@ -1154,6 +1164,7 @@ describe('HilosUserPage Overview', () => {
     expect(wrapper.findAll('[data-id="hilos-user-merged"]')).toHaveLength(1)
     expect(overview.findAll('button')).toHaveLength(0)
     expect(overview.findAll('h2').map((heading) => heading.text())).toEqual([
+      'Account merge',
       'Profile',
       'Chat participant',
     ])
@@ -4341,6 +4352,355 @@ describe('HilosUserPage presence (HIL-1566)', () => {
     expect(presence().badge?.classList.contains('text-bg-secondary')).toBe(true)
     expect(presence().twin?.textContent?.trim()).toBe('probably offline')
     expect(sessions()).toBe('0')
+  })
+})
+
+describe('HilosUserPage account merge section (HIL-2006)', () => {
+  const reservedReason = 'The source account is reserved'
+
+  /**
+   * Merge progress as the wire carries it. A case names only what it varies.
+   * Participant names stay the server's keys.
+   *
+   * @param facts The facts that differ from a merge preparing one unfinished duty.
+   */
+  function mergeWire(
+    facts: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      operationId: 40,
+      survivorUserId: 5,
+      loserUserId: 9,
+      state: 'preparing',
+      stage: null,
+      outcome: null,
+      given: false,
+      received: false,
+      choice: null,
+      refusal: null,
+      parts: [
+        {
+          participant: 'prepare_survivor',
+          owner: 'auth',
+          userId: 9,
+          done: false,
+        },
+      ],
+      waits: [{ participant: 'prepare_loser', userId: 9 }],
+      ...facts,
+    }
+  }
+
+  async function settle(): Promise<void> {
+    await flushPromises()
+    await nextTick()
+  }
+
+  async function mountCard(context: HilosUsersContext): Promise<void> {
+    mounted.push(
+      mount(HilosUserPage, {
+        props: { context: markRaw(context) },
+        attachTo: document.body,
+        global: {
+          provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+        },
+      }),
+    )
+    await settle()
+  }
+
+  function lines(id: string): string[] {
+    return Array.from(document.querySelectorAll(`[data-id="${id}"]`)).map(
+      (line) => (line.textContent ?? '').replace(/\s+/g, ' ').trim(),
+    )
+  }
+
+  function statusText(): string {
+    return (modalEl('hilos-user-merge-status')?.textContent ?? '').trim()
+  }
+
+  it('shows the first snapshot beside the summary, the profile slot and the erasure', async () => {
+    const { context } = userContext()
+    const page = context.scopes.page()!
+    page.data.set(HILOS_USER_MERGE_SECTION, mergeWire())
+    page.data.set(HILOS_USER_ERASURE_SECTION, {
+      startedAt: Date.parse('2026-01-01T00:30:05Z'),
+      parts: [
+        { participant: 'messages', owner: 'chat', userId: 7, done: false },
+      ],
+      waits: [{ participant: 'messages', userId: 7 }],
+      refusals: [],
+    })
+    const slot = vi.fn(({ detail }: { detail: HilosUserDetailRow }) =>
+      h('section', { 'data-id': 'project-user-overview' }, [
+        h('a', { href: `/user/${detail.id}` }, 'Open participant card'),
+      ]),
+    )
+    mounted.push(
+      mount(HilosUserPage, {
+        props: { context: markRaw(context) },
+        slots: { 'project-overview': slot },
+        attachTo: document.body,
+        global: {
+          provide: { [hilosRouterKey as symbol]: router(context.scopes) },
+        },
+      }),
+    )
+    await settle()
+
+    expect(statusText()).toBe('Preparing merge')
+    expect(lines('hilos-user-merge-part')).toEqual([
+      'Prepare receiving account · #9',
+    ])
+    expect(lines('hilos-user-merge-wait')).toEqual([
+      'Prepare source account · #9',
+    ])
+    expect(modalEl('hilos-user-sessions')).not.toBeNull()
+    expect(modalEl('hilos-user-time-zone')).not.toBeNull()
+    expect(modalEl('project-user-overview')).not.toBeNull()
+    expect(slot).toHaveBeenCalled()
+    expect(lines('hilos-user-erasure-part')).toEqual([
+      'messages · #7 — Expected',
+    ])
+    expect(lines('hilos-user-erasure-wait')).toEqual(['messages · #7'])
+    expect(modalEl('hilos-user-erasure')?.textContent).not.toContain(
+      'Prepare receiving account',
+    )
+    expect(modalEl('hilos-user-merge')?.textContent).not.toContain(
+      'messages · #7',
+    )
+  })
+
+  it('follows preparing, wait, refusal and end on the same card', async () => {
+    const { context, standingFrame } = userContext()
+    context.scopes.page()!.data.set(HILOS_USER_MERGE_SECTION, mergeWire())
+    await mountCard(context)
+    expect(statusText()).toBe('Preparing merge')
+
+    standingFrame({
+      userId: 1,
+      accountMerge: mergeWire({ state: 'wait', stage: null }),
+    })
+    await settle()
+    expect(statusText()).toBe('Merge in progress')
+
+    standingFrame({
+      userId: 1,
+      accountMerge: mergeWire({ state: 'wait', stage: 'cancelling' }),
+    })
+    await settle()
+    expect(statusText()).toBe('Releasing merge reservations')
+
+    standingFrame({
+      userId: 1,
+      accountMerge: mergeWire({
+        state: 'refusal',
+        refusal: { code: 'occupied', reason: reservedReason },
+      }),
+    })
+    await settle()
+    expect(statusText()).toBe('Merge refused')
+    expect(modalEl('hilos-user-merge-refusal')?.textContent).toContain(
+      reservedReason,
+    )
+
+    standingFrame({
+      userId: 1,
+      accountMerge: mergeWire({
+        state: 'end',
+        outcome: 'completed',
+        parts: [],
+        waits: [],
+      }),
+    })
+    await settle()
+    expect(statusText()).toBe('Merge completed')
+
+    standingFrame({
+      userId: 1,
+      accountMerge: mergeWire({
+        state: 'end',
+        outcome: 'not_started',
+        parts: [],
+        waits: [],
+      }),
+    })
+    await settle()
+    expect(statusText()).toBe('Merge not started')
+
+    standingFrame({
+      userId: 1,
+      accountMerge: mergeWire({
+        state: 'end',
+        outcome: null,
+        parts: [],
+        waits: [],
+      }),
+    })
+    await settle()
+    expect(statusText()).toBe('Merge finished')
+    expect(statusText()).not.toBe('Merge completed')
+  })
+
+  it('shows the progress already in the new scopes, not the card just left', async () => {
+    const stale = userContext()
+    stale.context.scopes.page()!.data.set(HILOS_USER_MERGE_SECTION, mergeWire())
+    await mountCard(stale.context)
+    expect(statusText()).toBe('Preparing merge')
+    expect(lines('hilos-user-merge-part')).toEqual([
+      'Prepare receiving account · #9',
+    ])
+    for (const wrapper of mounted.splice(0)) {
+      wrapper.unmount()
+    }
+
+    const current = userContext()
+    current.context.scopes.page()!.data.set(
+      HILOS_USER_MERGE_SECTION,
+      mergeWire({
+        state: 'wait',
+        stage: 'go',
+        parts: [],
+        waits: [{ participant: 'give', userId: 8 }],
+      }),
+    )
+    await mountCard(current.context)
+
+    expect(statusText()).toBe('Merge in progress')
+    expect(lines('hilos-user-merge-wait')).toEqual([
+      'Transfer account data · #8',
+    ])
+    expect(lines('hilos-user-merge-part')).toEqual([])
+    expect(statusText()).not.toBe('Preparing merge')
+  })
+
+  it('keeps the status when ids and the reason are hidden and sends no merge', async () => {
+    const { context, standingFrame, sent } = userContext()
+    context.scopes.page()!.data.set(
+      HILOS_USER_MERGE_SECTION,
+      mergeWire({
+        state: 'refusal',
+        refusal: { code: 'occupied', reason: reservedReason },
+      }),
+    )
+    await mountCard(context)
+    expect(modalEl('hilos-user-merge-refusal')?.textContent).toContain(
+      reservedReason,
+    )
+    expect(lines('hilos-user-merge-part')).toEqual([
+      'Prepare receiving account · #9',
+    ])
+
+    standingFrame({
+      userId: 1,
+      accountMerge: mergeWire({
+        operationId: HIDDEN_VALUE,
+        survivorUserId: HIDDEN_VALUE,
+        loserUserId: HIDDEN_VALUE,
+        state: 'refusal',
+        stage: HIDDEN_VALUE,
+        outcome: HIDDEN_VALUE,
+        choice: HIDDEN_VALUE,
+        refusal: HIDDEN_VALUE,
+        parts: [
+          {
+            participant: 'prepare_survivor',
+            owner: 'auth',
+            userId: HIDDEN_VALUE,
+            done: false,
+          },
+        ],
+        waits: [{ participant: 'prepare_loser', userId: HIDDEN_VALUE }],
+      }),
+    })
+    await settle()
+
+    expect(statusText()).toBe('Merge refused')
+    expect(lines('hilos-user-merge-part')).toEqual([
+      'Prepare receiving account',
+    ])
+    expect(lines('hilos-user-merge-wait')).toEqual(['Prepare source account'])
+    const section = modalEl('hilos-user-merge')?.textContent ?? ''
+    expect(section).not.toContain(reservedReason)
+    expect(section).not.toContain('#0')
+    expect(section).not.toMatch(/#\d/)
+    expect(section).not.toContain('40')
+    expect(section).not.toContain('_hidden')
+    expect(sent.map((entry) => entry.action)).not.toContain('hilos_user_merge')
+  })
+
+  it('shows a waiting merge on a merged account without taking the operation survivor as the link', async () => {
+    const progress = mergeWire({
+      state: 'wait',
+      stage: null,
+      survivorUserId: 5,
+      parts: [],
+      waits: [{ participant: 'prepare_loser', userId: 8 }],
+    })
+    const { context, standingFrame } = userContext()
+    await mountCard(context)
+
+    standingFrame({
+      userId: 1,
+      accountStanding: standing({
+        shown: 'merged',
+        blocked: true,
+        mergedInto: 9,
+        mergedIntoName: 'Bob',
+      }),
+      accountMerge: progress,
+    })
+    await settle()
+    expect(lines('hilos-user-merge-wait')).toEqual([
+      'Prepare source account · #8',
+    ])
+    expect(modalEl('hilos-user-merged')?.textContent).toContain('Bob')
+    expect(modalEl('hilos-user-merged')?.textContent).toContain('(#9)')
+    expect(modalEl('hilos-user-merged-link')?.getAttribute('href')).toBe(
+      '/hilos/user/9',
+    )
+
+    standingFrame({
+      userId: 1,
+      accountStanding: standing({
+        shown: 'merged',
+        blocked: true,
+        mergedInto: 12,
+        mergedIntoName: 'Cara',
+      }),
+      accountMerge: progress,
+    })
+    await settle()
+    expect(modalEl('hilos-user-merged')?.textContent).toContain('Cara')
+    expect(modalEl('hilos-user-merged')?.textContent).toContain('(#12)')
+    expect(modalEl('hilos-user-merged-link')?.getAttribute('href')).toBe(
+      '/hilos/user/12',
+    )
+    expect(modalEl('hilos-user-merged-link')?.getAttribute('href')).not.toBe(
+      '/hilos/user/5',
+    )
+    expect(lines('hilos-user-merge-wait')).toEqual([
+      'Prepare source account · #8',
+    ])
+
+    standingFrame({
+      userId: 1,
+      accountStanding: standing({
+        shown: 'merged',
+        blocked: true,
+        mergedInto: null,
+        mergedIntoName: null,
+      }),
+      accountMerge: progress,
+    })
+    await settle()
+    expect(modalEl('hilos-user-merged')?.textContent?.trim()).toBe(
+      'This account was merged into another one.',
+    )
+    expect(modalEl('hilos-user-merged-link')).toBeNull()
+    expect(lines('hilos-user-merge-wait')).toEqual([
+      'Prepare source account · #8',
+    ])
   })
 })
 

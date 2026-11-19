@@ -1,9 +1,14 @@
-import type { HilosAccountMergeProgress } from './hilosUsers.js'
+// The account-merge reading shared by the person card and the observation
+// window. It names the state, the unfinished duties and the waits, and the
+// server's refusal. It reads no connection, store or clock. The card's scope
+// already holds the progress; the window passes that same safe progress in.
 
-// SCAFFOLD: the merge window observer and Vue window consume this presentation;
-// the user card (HIL-2006) still needs its UI wiring.
+import { type HilosAccountMergeProgress } from './hilosUsers.js'
 
-/** Shared headings and progress words for an account merge. */
+/**
+ * What the card of an account being merged says: the section title, each
+ * progress state, and the headings of its parts, waits and refusal.
+ */
 export const HILOS_USER_MERGE_COPY = {
   title: 'Account merge',
   preparing: 'Preparing merge',
@@ -18,53 +23,105 @@ export const HILOS_USER_MERGE_COPY = {
   refusalDetails: "Couldn't merge the accounts",
 } as const
 
-const mergeDutyLabels: ReadonlyMap<string, string> = new Map([
-  ['prepare_survivor', 'Prepare receiving account'],
-  ['prepare_loser', 'Prepare source account'],
-  ['give', 'Transfer account data'],
-  ['receive', 'Accept account data'],
-  ['sessions', 'Close source sessions'],
-  ['survivor_sessions', 'Close receiving sessions'],
-  ['cleanup', 'Remove transfer copy'],
-  ['release_loser', 'Release source reservation'],
-  ['release_survivor', 'Release receiving reservation'],
-])
+/**
+ * Display names of the nine merge duties. Any other participant is already
+ * the server's words and is shown unchanged.
+ */
+const MERGE_DUTY_LABEL = {
+  prepare_survivor: 'Prepare receiving account',
+  prepare_loser: 'Prepare source account',
+  give: 'Transfer account data',
+  receive: 'Accept account data',
+  sessions: 'Close source sessions',
+  survivor_sessions: 'Close receiving sessions',
+  cleanup: 'Remove transfer copy',
+  release_loser: 'Release source reservation',
+  release_survivor: 'Release receiving reservation',
+} as const
 
-/** One unfinished merge part, with its participant ready to display as text. */
+type MergeDuty = keyof typeof MERGE_DUTY_LABEL
+
+/** One unfinished merge duty as the card's merge section lists it. */
 export interface HilosUserMergePartLine {
-  /** The source participant, owner and person tuple's stable key. */
+  /** The line's key: the JSON tuple of participant, owner and person. */
   readonly key: string
-  /** A standard duty label, or the project's participant text verbatim. */
+  /** The duty's name, or the server's own words for any other participant. */
   readonly participant: string
-  /** The available other account id; null for the shown account or a hidden id. */
+  /**
+   * The other account the part is about, or `null` when it is the card's own
+   * or the person is hidden.
+   */
   readonly account: number | null
 }
 
-/** One actual merge wait, with its participant ready to display as text. */
+/** One awaited participant as the card's merge section lists it. */
 export interface HilosUserMergeWaitLine {
-  /** The source participant and person tuple's stable key. */
+  /** The line's key: the JSON tuple of participant and person. */
   readonly key: string
-  /** A standard duty label, or the project's participant text verbatim. */
+  /** The duty's name, or the server's own words for any other participant. */
   readonly participant: string
-  /** The available other account id; null for the shown account or a hidden id. */
+  /**
+   * The other account the wait is about, or `null` when it is the card's own
+   * or the person is hidden.
+   */
   readonly account: number | null
 }
 
-/** Pure presentation shared by the user card and merge window. */
+/** The card's section about a merge. */
 export interface HilosUserMergeSection {
-  /** The common progress state in words. */
+  /** The progress state in words. */
   readonly status: string
-  /** True only for an ended merge whose explicit outcome is completed. */
+  /** Whether the merge finished by completing. Every other state is not a success. */
   readonly successful: boolean
-  /** Unfinished parts in the safe reader's order. */
+  /** The duties that have not finished, in the progress order. */
   readonly pendingParts: readonly HilosUserMergePartLine[]
-  /** Actual waits in the safe reader's order, independent of pending parts. */
+  /** The participants still awaited, in the progress order. */
   readonly waits: readonly HilosUserMergeWaitLine[]
-  /** The server's reason verbatim in refusal state, otherwise null. */
+  /** The server's refusal words, or `null` unless the merge is refused. */
   readonly refusal: string | null
 }
 
-/** Translate only the common state and explicit outcome into progress words. */
+/**
+ * The card's merge section, or `null` while no merge progress stands or the
+ * card has no person yet. A line about the card's own person, and a line
+ * whose person is hidden, names no account. A known duty is named from the
+ * closed map; any other participant is the server's own words, unchanged.
+ * Success is only a finished merge whose outcome is completed. Given work,
+ * received work and finished parts do not make it so. The refusal is the
+ * server's reason, and only while the merge is refused; unfinished parts
+ * and waits stay listed beside it.
+ *
+ * @param merge The merge progress, or `null` when none stands.
+ * @param shownUserId The person the card shows, absent until the card has one.
+ */
+export function hilosUserMergeSection(
+  merge: HilosAccountMergeProgress | null,
+  shownUserId: number | undefined,
+): HilosUserMergeSection | null {
+  if (merge === null || shownUserId === undefined) {
+    return null
+  }
+
+  return {
+    status: mergeStatus(merge),
+    successful: merge.state === 'end' && merge.outcome === 'completed',
+    pendingParts: merge.parts
+      .filter((part) => !part.done)
+      .map((part) => ({
+        key: JSON.stringify([part.participant, part.owner, part.userId]),
+        participant: mergeDutyLabel(part.participant),
+        account: shownAccount(part.userId, shownUserId),
+      })),
+    waits: merge.waits.map((wait) => ({
+      key: JSON.stringify([wait.participant, wait.userId]),
+      participant: mergeDutyLabel(wait.participant),
+      account: shownAccount(wait.userId, shownUserId),
+    })),
+    refusal: merge.state === 'refusal' ? (merge.refusal?.reason ?? null) : null,
+  }
+}
+
+/** The section's status line for one merge progress. */
 function mergeStatus(merge: HilosAccountMergeProgress): string {
   const copy = HILOS_USER_MERGE_COPY
   switch (merge.state) {
@@ -75,48 +132,29 @@ function mergeStatus(merge: HilosAccountMergeProgress): string {
     case 'refusal':
       return copy.refused
     case 'end':
-      return merge.outcome === 'completed'
-        ? copy.completed
-        : merge.outcome === 'not_started'
-          ? copy.notStarted
-          : copy.ended
+      if (merge.outcome === 'completed') return copy.completed
+      if (merge.outcome === 'not_started') return copy.notStarted
+      return copy.ended
   }
 }
 
-/**
- * Present the current safe progress without retaining any prior operation.
- * Participant and refusal words are plain text; no account name is looked up.
- *
- * @param merge The safe progress, or null while none is available.
- * @param shownUserId The shown person, absent until the card's row is available.
- */
-export function hilosUserMergeSection(
-  merge: HilosAccountMergeProgress | null,
-  shownUserId: number | undefined,
-): HilosUserMergeSection | null {
-  if (merge === null || shownUserId === undefined) {
-    return null
-  }
-  const account = (userId: number | null): number | null =>
-    userId === shownUserId ? null : userId
-  const participant = (name: string): string =>
-    mergeDutyLabels.get(name) ?? name
+/** A known duty's display name, or the participant words as the server sent them. */
+function mergeDutyLabel(participant: string): string {
+  return isMergeDuty(participant) ? MERGE_DUTY_LABEL[participant] : participant
+}
 
-  return {
-    status: mergeStatus(merge),
-    successful: merge.state === 'end' && merge.outcome === 'completed',
-    pendingParts: merge.parts
-      .filter((part) => !part.done)
-      .map((part) => ({
-        key: JSON.stringify([part.participant, part.owner, part.userId]),
-        participant: participant(part.participant),
-        account: account(part.userId),
-      })),
-    waits: merge.waits.map((wait) => ({
-      key: JSON.stringify([wait.participant, wait.userId]),
-      participant: participant(wait.participant),
-      account: account(wait.userId),
-    })),
-    refusal: merge.state === 'refusal' ? (merge.refusal?.reason ?? null) : null,
-  }
+/** Whether this participant is one of the nine merge duties. */
+function isMergeDuty(participant: string): participant is MergeDuty {
+  return Object.hasOwn(MERGE_DUTY_LABEL, participant)
+}
+
+/**
+ * The other account a line names, or `null` for the card's own person and
+ * for a person the progress left hidden.
+ */
+function shownAccount(
+  userId: number | null,
+  shownUserId: number,
+): number | null {
+  return userId === null || userId === shownUserId ? null : userId
 }

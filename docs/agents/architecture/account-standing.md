@@ -447,6 +447,21 @@ beside the name and the same caption above the bar (`hilosUsersErasureCaption`).
   `HILOS_USER_ERASURE_COPY`), an account merged into it named by its number.
   When the erasure ends, the card ends in the live 404
   ([page-head.md](page-head.md), Deleted While Open).
+  Vue's card draws the Account merge section first in the body of
+  `hilos-user-detail`, after the standing notice in the shell. The `merge`
+  signal in `HilosUserPage.vue` computes `hilosUserMergeSection()` from
+  `userStanding.merge` and the id of the open card; the component is
+  `HilosUserMergeSection.vue` and the copy is `HILOS_USER_MERGE_COPY`. The
+  states are "Preparing merge", "Merge in progress", "Releasing merge
+  reservations" when a preparation is canceled, "Merge refused", "Merge
+  completed" only when the operation has ended and completed, "Merge not
+  started", and "Merge finished" with no mark of success. Unfinished duties
+  and waits are two lists. A refusal is the server's reason, word for word.
+  An empty progress leaves the section's empty frame. The section has no
+  start, no cancel, no choice of a fate and no proof. The merged notice and
+  the link to the live end of the chain remain `hilosUserMergedNotice()` from
+  the standing, not from the operation's pair. The erasure section is drawn
+  beside it, from its own fields.
 - The shell draws nothing for a merged account — no strip, no mark: its
   sessions are closed by the merge and a takeover of it is refused. Its tone,
   `secondary`, exists for the badges alone.

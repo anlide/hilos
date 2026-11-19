@@ -667,6 +667,7 @@ test('the user Overview exposes a shared heading, named navigation and keyboard 
   await gotoPage(expect, page, `/hilos/user/${userId}`)
   await expectHilosUserOverview(expect, page, userId, name, 'Hilos Chat')
   await expect(page.getByRole('heading', { level: 2 })).toHaveText([
+    'Account merge',
     'Profile',
     'Rights',
     'Access to the product',

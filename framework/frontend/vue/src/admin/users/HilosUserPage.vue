@@ -35,6 +35,9 @@ An account whose erasure has begun (HIL-1957) is offered no action at all, as a
 merged one is not (hilosUserOffersActions): the card shows the erasure's progress
 instead — its parts, the owners it waits for and the refused finals — and when
 the erasure ends, the card ends in the common 404 of a deleted page.
+A merge in progress is its own section (hilosUserMergeSection): the status,
+the unfinished duties, the waits and the refusal, read from the standing the
+card already holds. The section stays up while no merge stands.
 Bootstrap classes only (styling-rules.md). -->
 <script setup lang="ts">
 import {
@@ -119,6 +122,7 @@ import LoadingButton from '../../LoadingButton.vue'
 import { hilosRouterKey } from '../../hilosRouterKey.js'
 import { useSignal } from '../../useSignal.js'
 import { useTrackedAction } from '../../useTrackedAction.js'
+import HilosUserMergeSection from './HilosUserMergeSection.vue'
 import HilosUserPageShell from './HilosUserPageShell.vue'
 
 const props = defineProps<{
@@ -191,6 +195,13 @@ const erasure = useSignal(
   ),
 )
 const erasureCopy = HILOS_USER_ERASURE_COPY
+// The progress of a begun merge. The card reads the standing it already holds;
+// an empty progress is the section's empty frame.
+const merge = useSignal(
+  computedSignal(() =>
+    hilosUserMergeSection(userStanding.merge.get(), userDetail.get()?.id),
+  ),
+)
 const mergeProgress = useSignal(userStanding.merge)
 const mergeAvailability = useSignal(userStanding.mergeAvailability)
 const mergeSection = computed(() =>
@@ -755,6 +766,7 @@ function submit(): void {
 <template>
   <HilosUserPageShell :context="context" :page="HilosPages.USER">
     <div v-if="detail" data-id="hilos-user-detail">
+      <HilosUserMergeSection :section="merge" />
       <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg-4">
           <div class="card h-100">

@@ -2459,13 +2459,13 @@ path on its own:
   are never offered as available by that data model. See
   [Merge observation data](#merge-observation-data).
 - Vue's list shows the states (not in the code yet — HIL-2005), its card
-  shows them (not in the code yet — HIL-2006). Its merge window observes
-  the recorded operation through the shared core window, including live waits,
-  refusal and end, with the server's privacy projection. This observation is
-  read-only; closing it releases observation and does not cancel the operation.
-  The separate draft uses the candidates' availability verdict and invalidates
-  password and protection choices independently when their shown summaries
-  change. It preserves the legacy merge action pending the caller cutovers below.
+  shows them. Its merge window observes the recorded operation through the
+  shared core window, including live waits, refusal and end, with the server's
+  privacy projection. This observation is read-only; closing it releases
+  observation and does not cancel the operation. The separate draft uses the
+  candidates' availability verdict and invalidates password and protection
+  choices independently when their shown summaries change. It preserves the
+  legacy merge action pending the caller cutovers below.
 - Starting from the card preserves the chosen fates, shown flags, the
   `merge_accounts` step-up and existing refusal words. Acceptance is not end;
   tracked success means durable end (not in the code yet — HIL-2008).
