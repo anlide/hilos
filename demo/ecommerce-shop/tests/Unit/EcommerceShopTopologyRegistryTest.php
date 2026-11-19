@@ -177,6 +177,21 @@ use Hilos\Database\Settings\SettingsCatalogConstants;
 use Hilos\Theme\ThemeSettingsCatalog;
 use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\DataExport\DataExportHttp;
+use Hilos\Database\Settings\Validation\PositiveIntegerRule;
+use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\FileVisibility;
+use Hilos\Files\HilosFiles;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Image\ImagesAgentDaemon;
+use Hilos\Files\Image\ImageVariant;
+use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsAgentDaemon;
+use Hilos\Files\Upload\UploadsSettingsCatalog;
+use Demo\EcommerceShop\Agents\Hilos\FilesLibraryAgent;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\FilesLibraryAgentDaemon;
+use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Hilos\HilosException;
 use Hilos\Notification\NotificationAction;
 use Hilos\Notification\NotificationPreferenceAction;
@@ -629,11 +644,14 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         }
     }
 
-    /** The archive address is answered by the export owner. */
-    public function testDataExportHttpRoute(): void
+    /** The archive address is answered by the export owner, a published file by the files library. */
+    public function testFileAndDataExportHttpRoutes(): void
     {
         self::assertSame([
-            HttpConstants::METHOD_GET => [DataExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_DATA_EXPORT],
+            HttpConstants::METHOD_GET => [
+                DataExportHttp::DOWNLOAD_PATH => HilosAgentType::HILOS_DATA_EXPORT,
+                HilosFiles::DOWNLOAD_PATH => HilosAgentType::HILOS_FILES_LIBRARY,
+            ],
         ], Hilos::getHttpAgentRoutes());
     }
 
@@ -645,6 +663,84 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(DataExportAgentDaemon::class, AgentRegistry::daemonClass($entry));
         self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
         self::assertTrue((new DataExportAgentDaemon())->requiresMonopolisticProcess());
+    }
+
+    /** A catalog picture is the one upload; four 4:3 copies, three policy-placed agents and framework settings serve it. */
+    public function testCatalogPicturesAreActivated(): void
+    {
+        self::assertSame([
+            'catalog_picture' => CatalogPictureUploadTarget::class,
+        ], Hilos::UPLOAD_TARGETS);
+        self::assertSame(Hilos::UPLOAD_TARGETS, Hilos::uploadTargets());
+        self::assertSame([
+            'catalog_xs' => [
+                ImageVariant::WIDTH => 72,
+                ImageVariant::HEIGHT => 54,
+                ImageVariant::FIT => ImageFit::COVER,
+                ImageVariant::FORMAT => ImageFormat::WEBP,
+            ],
+            'catalog_sm' => [
+                ImageVariant::WIDTH => 128,
+                ImageVariant::HEIGHT => 96,
+                ImageVariant::FIT => ImageFit::COVER,
+                ImageVariant::FORMAT => ImageFormat::WEBP,
+            ],
+            'catalog_tile' => [
+                ImageVariant::WIDTH => 840,
+                ImageVariant::HEIGHT => 630,
+                ImageVariant::FIT => ImageFit::COVER,
+                ImageVariant::FORMAT => ImageFormat::WEBP,
+            ],
+            'catalog_lg' => [
+                ImageVariant::WIDTH => 1200,
+                ImageVariant::HEIGHT => 900,
+                ImageVariant::FIT => ImageFit::COVER,
+                ImageVariant::FORMAT => ImageFormat::WEBP,
+            ],
+        ], Hilos::IMAGE_VARIANTS);
+        self::assertSame(Hilos::IMAGE_VARIANTS, Hilos::imageVariants());
+
+        $target = new CatalogPictureUploadTarget();
+        self::assertSame(10485760, $target->maxBytes());
+        self::assertSame(['image/jpeg', 'image/png'], $target->acceptedMimeTypes());
+        self::assertTrue($target->requiresSignIn());
+        self::assertTrue($target->sniffsContent());
+        self::assertSame(FileVisibility::PUBLIC, $target->visibility());
+        self::assertFalse($target->requiresUploadHoldForPublication());
+        self::assertSame([], $target->extraChecks());
+
+        foreach ([
+            HilosAgentType::HILOS_FILES_LIBRARY => [FilesLibraryAgent::class, FilesLibraryAgentDaemon::class],
+            HilosAgentType::HILOS_UPLOADS => [UploadsAgent::class, UploadsAgentDaemon::class],
+            HilosAgentType::HILOS_IMAGES => [ImagesAgent::class, ImagesAgentDaemon::class],
+        ] as $agentType => [$workerClass, $daemonClass]) {
+            $entry = Hilos::AGENTS[$agentType];
+            self::assertSame($workerClass, AgentRegistry::workerClass($entry));
+            self::assertSame($daemonClass, AgentRegistry::daemonClass($entry));
+            self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        }
+
+        $catalog = EcommerceShopSettingsCatalog::getCatalog();
+        foreach ([
+            FilesSettingsCatalog::UNBOUND_TTL_HOURS_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 24,
+            ],
+            FilesSettingsCatalog::MAX_TOTAL_BYTES_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 0,
+            ],
+            UploadsSettingsCatalog::MEMORY_POOL_BYTES_KEY => [
+                SettingsCatalogConstants::CATALOG_ENTRY_TYPE => SettingsCatalogConstants::TYPE_INTEGER,
+                SettingsCatalogConstants::CATALOG_ENTRY_ADMIN_VIEW_VISIBLE => true,
+                SettingsCatalogConstants::CATALOG_ENTRY_DEFAULT_VALUE => 2147483648,
+                SettingsCatalogConstants::CATALOG_ENTRY_RULE => PositiveIntegerRule::class,
+            ],
+        ] as $key => $entry) {
+            self::assertSame($entry, $catalog[$key]);
+        }
     }
 
     public function testPageRegistryIsTheHomeTheDashboardTheAdminSectionsAndTheFooter(): void
@@ -895,7 +991,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         }
     }
 
-    public function testAgentRegistryIsTheAppTheIndexSignInTheAdminSectionsAndTheClusterProbes(): void
+    public function testAgentRegistryIsTheAppTheIndexSignInTheAdminSectionsTheFilesAndTheClusterProbes(): void
     {
         $this->assertSame([
             AgentType::ECOMMERCE_SHOP,
@@ -912,6 +1008,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AgentType::HILOS_NOTIFICATIONS_LIBRARY,
             HilosAgentType::HILOS_SETTINGS_LIBRARY,
             HilosAgentType::HILOS_I18N_LIBRARY,
+            HilosAgentType::HILOS_FILES_LIBRARY,
+            HilosAgentType::HILOS_UPLOADS,
+            HilosAgentType::HILOS_IMAGES,
             HilosAgentType::HILOS_MAIL,
             HilosAgentType::HILOS_AUTH_THROTTLE,
             HilosAgentType::HILOS_BACKUP,
@@ -1245,6 +1344,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_SETTING_DELETE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 HilosSignalConstants::HILOS_SETTING_PRESET_APPLY => HilosAgentType::HILOS_SETTINGS_LIBRARY,
                 HilosSignalConstants::HILOS_SETTING_COMMAND_DONE => HilosAgentType::HILOS_SETTINGS_LIBRARY,
+                // The catalog pictures' frames (HIL-2155): the files library binds, removes and
+                // publishes a file and hears that a copy was drawn; the uploads agent hands a
+                // complete upload over; the images agent draws a copy.
+                HilosSignalConstants::HILOS_FILE_BIND => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_FILE_REMOVE => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_FILE_PUBLISH => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_IMAGE_RENDERED => HilosAgentType::HILOS_FILES_LIBRARY,
+                HilosSignalConstants::HILOS_UPLOAD_PUBLISH => HilosAgentType::HILOS_UPLOADS,
+                HilosSignalConstants::HILOS_UPLOAD_HOLD_SETTLE => HilosAgentType::HILOS_UPLOADS,
+                HilosSignalConstants::HILOS_IMAGE_RENDER => HilosAgentType::HILOS_IMAGES,
                 HilosSignalConstants::HILOS_MAIL_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_DELIVER => HilosAgentType::HILOS_MAIL,
                 HilosSignalConstants::HILOS_MAIL_SEND => HilosAgentType::HILOS_MAIL,
@@ -1293,7 +1402,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         // stopped being routed here would otherwise look like a working surface until somebody
         // submitted the form it belongs to. The other features are backup, settings and the
         // people (HIL-1225), whose actions are their pages' and so stay out of this map, and
-        // notifications with delivery, whose actions close the map.
+        // notifications with delivery, whose actions close the map. The files, uploads and
+        // images that carry the catalog pictures (HIL-2155) add the two upload actions, which
+        // the uploads agent answers.
         $this->assertSame([
             HilosFeature::ANALYTICS,
             HilosFeature::AUTH,
@@ -1307,6 +1418,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             HilosFeature::HILOS_USERS,
             HilosFeature::NOTIFICATIONS,
             HilosFeature::NOTIFICATION_DELIVERY,
+            HilosFeature::FILES,
+            HilosFeature::UPLOADS,
+            HilosFeature::IMAGES,
         ], Hilos::features());
 
         $this->assertSame(UsersLibraryAgent::class, AgentRegistry::workerClass(
@@ -1420,6 +1534,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             PushSubscriptionAction::SUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             PushSubscriptionAction::UNSUBSCRIBE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
             PushSubscriptionAction::REMOVE => HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY,
+            HilosSignalConstants::HILOS_UPLOAD_INIT => HilosAgentType::HILOS_UPLOADS,
+            HilosSignalConstants::HILOS_UPLOAD_CANCEL => HilosAgentType::HILOS_UPLOADS,
             HilosSignalConstants::STATUS_SUBSCRIBE => HilosAgentType::HILOS_STATUS,
             HilosSignalConstants::STATUS_SUBSCRIPTION_CONFIRM => HilosAgentType::HILOS_STATUS,
             HilosSignalConstants::STATUS_UNSUBSCRIBE_PREVIEW => HilosAgentType::HILOS_STATUS,
@@ -1571,6 +1687,9 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AnalyticsSettingsCatalog::JOURNAL_MAX_BYTES,
             ProtectedModeSettingsCatalog::MANUAL_RESTART_IS_NORMAL,
             AuthThrottleSettings::OUTAGE_GRACE_SECONDS_KEY,
+            FilesSettingsCatalog::UNBOUND_TTL_HOURS_KEY,
+            FilesSettingsCatalog::MAX_TOTAL_BYTES_KEY,
+            UploadsSettingsCatalog::MEMORY_POOL_BYTES_KEY,
         ], array_keys($catalog));
         foreach (ThemeSettingsCatalog::KEYS as $key) {
             $this->assertSame(ThemeSettingsCatalog::getCatalog()[$key], $catalog[$key]);

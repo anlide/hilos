@@ -14,6 +14,7 @@ use PHPUnit\Framework\TestCase;
  *
  * The directories the project registers keeps the account exports, and the export agent may
  * move between nodes, so the directory is the cluster's and the start accepts the declaration.
+ * The published catalog pictures and the uploads under way are the cluster's for the same reason.
  */
 final class EcommerceShopFsContextTest extends TestCase
 {
@@ -23,12 +24,17 @@ final class EcommerceShopFsContextTest extends TestCase
         $context->configure();
 
         self::assertSame(
-            [FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT, FsContext::STATUS],
+            [FsContext::ANALYTICS_JOURNAL, FsContext::DATA_EXPORT, FsContext::STATUS, FsContext::FILES],
             array_keys($context->getDirectories()),
         );
         self::assertSame(DirectoryScope::NODE, $context->getDirectory(FsContext::ANALYTICS_JOURNAL)->getScope());
         self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::DATA_EXPORT)->getScope());
+        self::assertSame(DirectoryScope::CLUSTER, $context->getDirectory(FsContext::FILES)->getScope());
+        self::assertSame(DirectoryScope::CLUSTER, $context->getTmp()->getScope());
         self::assertSame([], $context->declarationErrors());
+        $dataRoot = dirname(__DIR__, 2) . '/data';
+        self::assertSame($dataRoot . '/files/published', $context->getDirectory(FsContext::FILES)->getPath());
+        self::assertSame($dataRoot . '/files/tmp', $context->getTmp()->getPath());
     }
 
     public function testStatusUsesItsOwnSharedDataDirectory(): void

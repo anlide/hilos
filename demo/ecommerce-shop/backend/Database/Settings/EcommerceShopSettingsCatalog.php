@@ -11,6 +11,8 @@ use Hilos\Auth\StepUp\StepUpSettings;
 use Hilos\Auth\Throttle\AuthThrottleSettingsCatalog;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Settings\SettingsCatalogConstants;
+use Hilos\Files\FilesSettingsCatalog;
+use Hilos\Files\Upload\UploadsSettingsCatalog;
 use Hilos\Mail\Delivery\MailDeliveryChannel;
 use Hilos\Notification\Delivery\ChannelSettingsCatalog;
 use Hilos\Notification\Delivery\DeliveryChannelSettings;
@@ -27,10 +29,10 @@ use Hilos\Status\StatusSettingsCatalog;
  * orphans.
  *
  * The catalog carries the three example keys, the shared theme settings and the grace of a
- * silent throttle agent, which the auth throttle feature requires. The settings and toast
- * specs write the example keys. The step-up list and the deletion grace period answer their
- * declared defaults when the catalog carries no key for them ({@see StepUpSettings},
- * {@see AccountDeletionSettings}).
+ * silent throttle agent, which the auth throttle feature requires, and the file and upload
+ * limits the catalog pictures need. The settings and toast specs write the example keys. The
+ * step-up list and the deletion grace period answer their declared defaults when the catalog
+ * carries no key for them ({@see StepUpSettings}, {@see AccountDeletionSettings}).
  *
  * @see SettingsCatalogConstants
  */
@@ -71,6 +73,8 @@ final class EcommerceShopSettingsCatalog implements CatalogProviderInterface
             AnalyticsSettingsCatalog::getCatalog(),
             ProtectedModeSettingsCatalog::getCatalog(),
             AuthThrottleSettingsCatalog::getCatalog(),
+            FilesSettingsCatalog::getCatalog(),
+            UploadsSettingsCatalog::getCatalog(),
         );
     }
 }

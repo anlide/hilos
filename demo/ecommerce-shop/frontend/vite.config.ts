@@ -69,6 +69,11 @@ export default defineConfig(({ mode, command, isSsrBuild }) => {
           target: 'http://ecommerce-shop-files-local',
           changeOrigin: true,
         },
+        // A published file: the same gateway asks the files library, then streams it via X-Accel.
+        '/_hilos/file': {
+          target: 'http://ecommerce-shop-files-local',
+          changeOrigin: true,
+        },
         '/_hilos/data-export': {
           target:
             env.VITE_DATA_EXPORT_TARGET ||

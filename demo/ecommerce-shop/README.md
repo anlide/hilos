@@ -16,11 +16,11 @@ The empty shell of the shop, and the smallest complete Hilos project on React
   confirm the address with a code sent by mail.
 - **Home page** that says who is looking: "Browsing anonymously" for a visitor,
   "Signed in as …" with an account.
-- **Admin dashboard** at `/hilos` with **Settings** (the three example keys),
-  **Users** (the list and a person's card: rename, takeover and rights; no
-  account merge), **Backup** (database archives) and **Maintenance** (the
-  verifier circle). The other admin sections arrive with the leaves that
-  bring them.
+- **Admin dashboard** at `/hilos` with **Settings** (the three example keys
+  and the file and upload limits), **Users** (the list and a person's card:
+  rename, takeover and rights; no account merge), **Backup** (database
+  archives) and **Maintenance** (the verifier circle). The other admin
+  sections arrive with the leaves that bring them.
 - **Notifications**: the bell in the header for a signed-in person, with
   delivery by email.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
@@ -28,8 +28,9 @@ The empty shell of the shop, and the smallest complete Hilos project on React
 The backend is the base set: one app agent owning the connections and the
 home page, the Hilos index agent with the dashboard, Maintenance, Backup,
 Settings, Users and the footer pages, the settings library, the notifications
-library, the backup agent, and the framework sign-in libraries. It keeps no
-table of its own — people, sessions and the tables of signing in are the
+library, the backup agent, the files library with the uploads and image-copy
+agents, and the framework sign-in libraries. It keeps no table of its own —
+people, sessions, the tables of signing in and the registry of files are the
 framework's.
 
 ### What it is going to show

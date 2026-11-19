@@ -1,0 +1,2 @@
+-- hilos-framework: {"format":1,"kind":"install","units":["file_variant"],"parts":[{"changeId":"20261109114206000000_HIL-1926_file_moments","unit":"file_variant","upSha256":"6a9e036d65400a184e17422444eb66542c88e05d06e5557757817a124af55168","downSha256":"a9b2417d0380636576e59db48eea52daeedb8c97e551ff96dd8df78d94341ba1"}],"upSha256":"c5dd09c379dc9dc5d122a6603be8d4a840e41877a50ab202d85adba03a4dbb2d","downSha256":"798523b36b0eebbed81733fa6aab098fd74da550ed42a5454271d607969f76d5"}
+DROP TABLE IF EXISTS `hilos_file_variant`;

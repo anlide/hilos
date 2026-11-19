@@ -10,6 +10,7 @@ use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAnalyticsAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosChangeLogAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosDaemonAgent;
+use Demo\EcommerceShop\Agents\Hilos\FilesLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
@@ -22,6 +23,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosDaemonAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\FilesLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
@@ -30,6 +32,7 @@ use Demo\EcommerceShop\Database\Pages\PageCatalog;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Environment\EcommerceShopEnvCatalog;
+use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Fs\EcommerceShopFsContext;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
@@ -137,6 +140,13 @@ use Hilos\Database\Settings\Library\SettingsLibraryAgent;
 use Hilos\Database\Settings\Library\SettingsLibraryAgentDaemon;
 use Hilos\Database\Settings\SettingsAccessor;
 use Hilos\Environment\EnvAccessor;
+use Hilos\Files\Image\ImageFit;
+use Hilos\Files\Image\ImageFormat;
+use Hilos\Files\Image\ImagesAgent;
+use Hilos\Files\Image\ImagesAgentDaemon;
+use Hilos\Files\Image\ImageVariant;
+use Hilos\Files\Upload\UploadsAgent;
+use Hilos\Files\Upload\UploadsAgentDaemon;
 use Hilos\Fs\Context\FsContext;
 use Hilos\I18n\Browser\CountryCardBrowserData;
 use Hilos\I18n\Browser\LanguageCardBrowserData;
@@ -240,6 +250,42 @@ final class Hilos extends HilosFacade
         HilosFeature::HILOS_USERS,
         HilosFeature::NOTIFICATIONS,
         HilosFeature::NOTIFICATION_DELIVERY,
+        HilosFeature::FILES,
+        HilosFeature::UPLOADS,
+        HilosFeature::IMAGES,
+    ];
+
+    /** A picture of a category or a product - the shop's one kind of upload (HIL-2155). */
+    public const array UPLOAD_TARGETS = [
+        CatalogPictureUploadTarget::NAME => CatalogPictureUploadTarget::class,
+    ];
+
+    /** Four 4:3 copies of a catalog picture, each twice the widest frame it fills on a screen. */
+    public const array IMAGE_VARIANTS = [
+        CatalogPictureUploadTarget::VARIANT_XS => [
+            ImageVariant::WIDTH => 72,
+            ImageVariant::HEIGHT => 54,
+            ImageVariant::FIT => ImageFit::COVER,
+            ImageVariant::FORMAT => ImageFormat::WEBP,
+        ],
+        CatalogPictureUploadTarget::VARIANT_SM => [
+            ImageVariant::WIDTH => 128,
+            ImageVariant::HEIGHT => 96,
+            ImageVariant::FIT => ImageFit::COVER,
+            ImageVariant::FORMAT => ImageFormat::WEBP,
+        ],
+        CatalogPictureUploadTarget::VARIANT_TILE => [
+            ImageVariant::WIDTH => 840,
+            ImageVariant::HEIGHT => 630,
+            ImageVariant::FIT => ImageFit::COVER,
+            ImageVariant::FORMAT => ImageFormat::WEBP,
+        ],
+        CatalogPictureUploadTarget::VARIANT_LG => [
+            ImageVariant::WIDTH => 1200,
+            ImageVariant::HEIGHT => 900,
+            ImageVariant::FIT => ImageFit::COVER,
+            ImageVariant::FORMAT => ImageFormat::WEBP,
+        ],
     ];
 
     protected const array DATABASE_GUARANTEES = [
@@ -383,6 +429,21 @@ final class Hilos extends HilosFacade
         I18nLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => I18nLibraryAgent::class,
             AgentRegistryKey::DAEMON => I18nLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        FilesLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => FilesLibraryAgent::class,
+            AgentRegistryKey::DAEMON => FilesLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        UploadsAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => UploadsAgent::class,
+            AgentRegistryKey::DAEMON => UploadsAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ImagesAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ImagesAgent::class,
+            AgentRegistryKey::DAEMON => ImagesAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         MailDeliveryChannelAgent::AGENT_TYPE => [

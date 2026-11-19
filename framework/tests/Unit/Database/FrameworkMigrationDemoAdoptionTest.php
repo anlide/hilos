@@ -985,6 +985,32 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             $origins[] = $this->fenceInstallPair($project->root, $copyIndices[$index] + 1, $catalog, $schema);
             $mergeObservationIndices = [175, 132, 132, 114, 113, 115];
             $origins[] = $this->assertMergeObservationPair($project->root, $mergeObservationIndices[$index], $catalog, $schema);
+            if ($index === 4) {
+                // The shop installs files for its catalog pictures at the files' current stubs (HIL-2155).
+                foreach (['file', 'file_variant'] as $offset => $key) {
+                    $unit = $schema->unit($key);
+                    $base = $project->root . '/' . sprintf('%03d', 114 + $offset) . '_framework_install_' . $key;
+                    $up = FsPath::read($base . '.sql');
+                    $down = FsPath::read($base . '_down.sql');
+                    $install = $catalog->verifyPair($up, $down);
+                    self::assertSame(FrameworkMigrationOrigin::INSTALL, $install->kind);
+                    self::assertSame([$key], $install->units);
+                    self::assertCount(1, $install->parts);
+                    self::assertSame('20261109114206000000_HIL-1926_file_moments/' . $key, $install->parts[0]->key());
+                    $source = $catalog->part($install->parts[0]->changeId, $key);
+                    self::assertSame(
+                        [$source->toArray()],
+                        array_map(static fn (FrameworkMigrationPart $part): array => $part->toArray(), $install->parts),
+                    );
+                    self::assertFalse($source->introducesUnit);
+                    self::assertSame([], $source->requires);
+                    self::assertSame(FsPath::read($unit->upPath), substr($up, strpos($up, "\n") + 1));
+                    self::assertSame(FsPath::read($unit->downPath), substr($down, strpos($down, "\n") + 1));
+                    self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($unit->upPath)), $source->afterStubUpSha256);
+                    self::assertSame(FrameworkMigrationOrigin::bodyHash(FsPath::read($unit->downPath)), $source->afterStubDownSha256);
+                    $origins[] = $install;
+                }
+            }
             self::assertSame([], $catalog->missingParts(array_column($schema->selectedUnits($project->facade), 'key'), $origins));
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);

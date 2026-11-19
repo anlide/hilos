@@ -93,6 +93,7 @@ services:
       - PHP_INI_SCAN_DIR=/usr/local/etc/php/conf.d
       - HTTP_STATUS_HOST=0.0.0.0
       - HTTP_STATUS_PORT=8090
+      - HILOS_FILES_XACCEL_LOCATION=/__hilos_files
       - WORKER_COMM_HOST=0.0.0.0
       - WORKER_COMM_PORT=8091
       - WEBSOCKET_HOST=0.0.0.0
@@ -188,6 +189,7 @@ services:
       - ../frontend/dist:/usr/share/nginx/html:ro
       - ../data/data_export:/data_export:ro
       - ../data/status:/status:ro
+      - ../data/files/published:/published:ro
       - nginx-ssl-local:/etc/nginx/ssl
     ports:
       # HTTPS only. The container's own :80 vhost stays unpublished on purpose —
@@ -205,14 +207,19 @@ services:
       hilos-ecommerce-shop-local-network:
         ipv4_address: ${DOCKER_NGINX_IP:-10.202.0.12}
 
-  # Internal dev gateway: the frontend reads public Status files from the
-  # writer's shared directory even when no daemon answers. No host listener.
+  # Internal dev gateway for public Status files and published files: the frontend
+  # reads Status from the writer's shared directory even when no daemon answers,
+  # and Vite proxies the same-origin download path here so nginx streams a
+  # published file via X-Accel. Both directories are read-only; no host listener.
   ecommerce-shop-files-local:
     image: nginx:1.31.8-alpine@sha256:785835ea65db4bba6f021acc0f3be91b0fef76a53fe41f8588c6698d2aed0606
     container_name: ecommerce-shop-files-local
     volumes:
       - ./nginx.files-local.conf:/etc/nginx/conf.d/default.conf:ro
       - ../data/status:/status:ro
+      - ../data/files/published:/published:ro
+    depends_on:
+      - ecommerce-shop-daemon-local
     restart: unless-stopped
     networks:
       - hilos-ecommerce-shop-local-network
