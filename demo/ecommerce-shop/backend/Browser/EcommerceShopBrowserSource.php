@@ -19,6 +19,16 @@ final class EcommerceShopBrowserSource
         BrowserSourceKey::KEY => EcommerceShopDbContext::users,
     ];
 
+    public const array DB_WAREHOUSES = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => EcommerceShopDbContext::warehouses,
+    ];
+
+    public const array DB_PRODUCT_WAREHOUSE_STOCKS = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => EcommerceShopDbContext::productWarehouseStocks,
+    ];
+
     public const array RT_CONNECTIONS = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => EcommerceShopRtContext::connections,

@@ -147,6 +147,7 @@ use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
+use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Throttle\AuthThrottleSettings;
 use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
@@ -1099,6 +1100,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([EcommerceShopDbContext::productWarehouseStocks], array_keys($claims));
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::productWarehouseStocks]->asList());
         self::assertSame([EcommerceShopDbContext::products, EcommerceShopDbContext::warehouses], StockLibraryAgent::readDbCollections());
+    }
+
+    /** The warehouses table is registered under its key, for the page that binds it. */
+    public function testTheWarehousesTableIsRegistered(): void
+    {
+        self::assertSame(WarehousesTable::class, Hilos::TABLES[EcommerceShopTableContext::warehouses]);
     }
 
     public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void

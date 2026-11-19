@@ -5,8 +5,15 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Database\View\Collection;
 
 use Demo\EcommerceShop\Database\Actions\Collection\ProductWarehouseStocksActions;
+use Demo\EcommerceShop\Database\DTO\WarehouseStockTotals;
 use Demo\EcommerceShop\Database\Object\Collection\ProductWarehouseStocks as ObjectProductWarehouseStocks;
+use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProductWarehouseStock;
 use Demo\EcommerceShop\Database\View\Item\ProductWarehouseStock;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\View\Collection\DbCollection;
 
 /**
@@ -25,4 +32,31 @@ final class ProductWarehouseStocks extends DbCollection
 {
     public const string DB_ITEM_CLASS = ProductWarehouseStock::class;
     public const string OBJECT_COLLECTION_CLASS = ObjectProductWarehouseStocks::class;
+
+    /**
+     * Counts the products one warehouse keeps and sums their units.
+     *
+     * The stock library holds the whole set and answers from memory; any other process finds the
+     * warehouse's rows by SQL on the warehouse index, and a row it already holds is read as the
+     * last sync left it.
+     *
+     * @param int $warehouseId Id of the warehouse
+     * @return WarehouseStockTotals Its stock rows counted and their units summed; zeros for a warehouse keeping nothing
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded object does not match the collection
+     * @throws DatabaseException When the rows cannot be read
+     * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
+     * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
+     */
+    public function totalsInWarehouse(int $warehouseId): WarehouseStockTotals
+    {
+        $productCount = 0;
+        $unitCount = 0;
+        foreach ($this->whereColumnIs(ObjectProductWarehouseStock::warehouseId, $warehouseId) as $stock) {
+            $productCount++;
+            $unitCount += $stock->units;
+        }
+
+        return new WarehouseStockTotals($productCount, $unitCount);
+    }
 }

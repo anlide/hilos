@@ -6,6 +6,7 @@ namespace Demo\EcommerceShop\Tables;
 
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
+use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
 use Hilos\Tables\Legal\HilosTermsHistoryTable;
@@ -51,7 +52,8 @@ use Hilos\Tables\Status\HilosStatusHistoryTable;
  * maintenance section's verifier circle table, the settings table and the people table, accessed
  * via Hilos::$table->hilosBackups, Hilos::$table->hilosVerifierCircle, Hilos::$table->settings and
  * Hilos::$table->hilosUsers. The other admin sections arrive with the leaves that move their e2e
- * onto this demo, each with its table.
+ * onto this demo, each with its table. The shop's own sections arrive the same way, each leaf
+ * with its table: today the warehouses, via Hilos::$table->warehouses.
  *
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
  * @property-read HilosTermsHistoryTable $hilosTermsHistory
@@ -73,6 +75,7 @@ use Hilos\Tables\Status\HilosStatusHistoryTable;
  * @property-read HilosCommunicationsChannelFieldsTable $hilosCommunicationsChannelFields
  * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
  * @property-read HilosUsersTable $hilosUsers
+ * @property-read WarehousesTable $warehouses
  * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
  * @property-read HilosI18nLanguagesTable $hilosI18nLanguages
  * @property-read HilosI18nCountriesTable $hilosI18nCountries
@@ -114,6 +117,7 @@ final class EcommerceShopTableContext extends TableContext
     public const string hilosCommunicationsChannelFields = HilosCommunicationsChannelFieldsTable::TABLE;
     public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
+    public const string warehouses = 'warehouses';
     public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
     public const string hilosI18nLanguages = HilosI18nLanguagesTable::TABLE;
     public const string hilosI18nCountries = HilosI18nCountriesTable::TABLE;
