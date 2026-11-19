@@ -868,8 +868,8 @@ stay with their marked leaves:
 
 The name window's framework wiring and `Checking your name…` line are separate
 from mounting the admin section.
-Profile photos in tasks are separate work. (not in the code yet — HIL-1644)
-Profile photos in polls are separate work. (not in the code yet — HIL-1645)
+Profile photos in tasks and polls are turned on separately from mounting the
+section (HIL-1644, HIL-1645); see [moderation.md](moderation.md).
 
 Apply the [admin view mode](admin-view-mode.md) with each surface: the viewer
 looks without mutation, with the framework controls and server refusal. Do not

@@ -83,8 +83,7 @@ use Throwable;
  *
  * Each channel or shard also takes part in account erasure by deleting its own
  * captured delivery rows. It does not begin an attempt for a recipient whose
- * erasure has started; the erasure part is prepared, with no production caller
- * until HIL-1952.
+ * erasure has started.
  *
  * Under a freeze that silences the writers the roster walk leaves running
  * ({@see ProtectedModeRuntime::silencesUnstoppedWriters()}) the pipeline drops everything it
@@ -242,7 +241,6 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
     /**
      * Deletes captured deliveries held by this channel/shard's current route and records their count atomically.
      * Uncaptured account deliveries or a silencing freeze refuse the part before any deletion.
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId Assignment the coordinator gave this channel/shard
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt

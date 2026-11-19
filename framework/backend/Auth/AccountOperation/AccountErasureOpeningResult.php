@@ -10,7 +10,6 @@ use Hilos\Database\View\Item\AccountOperationAssignment;
 /**
  * What one erasure opening came to: the operation it opened or found, or the open erasure it was
  * deferred behind, and the assignments it wrote.
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
  */
 final readonly class AccountErasureOpeningResult
 {

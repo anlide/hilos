@@ -10,7 +10,6 @@ use Hilos\Core\Exception\ValueTooLongException;
 
 /**
  * A durable agent address, independent of its current process or placement.
- * SCAFFOLD: durable assignment storage will consume this value (HIL-1936).
  */
 final readonly class AccountOperationOwnerAddress
 {

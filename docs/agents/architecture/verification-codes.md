@@ -199,8 +199,8 @@ registration consent, holds a free number for that browser and issues the code;
 `hilos_auth_code_minted` hands delivery, or a refusal, to the code agent. The
 order remains probe → mint → send, so an unreachable channel consumes neither
 a hold nor a code's send allowance. The library is the only full owner of codes
-and registration holds; the sessions holder's borrowed `Remove` of verification
-rows during account erasure remains the declared exception.
+and registration holds; in an account erasure the library deletes the person's
+codes itself, as its participant step.
 
 The minted frame is a self-contained order, not a reply matched to an operation
 in memory. It reaches the code agent on the library's node, which may differ

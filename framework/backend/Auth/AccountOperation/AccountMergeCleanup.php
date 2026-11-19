@@ -22,7 +22,7 @@ final class AccountMergeCleanup
 {
     /**
      * Saved cleanup precedes current-stage, copy and business reads, even after a later merge.
-     * SCAFFOLD: the coordinator produces this assignment in HIL-2000; the live switch remains HIL-1999.
+     * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
      *
      * @param int $assignmentId Immutable loser go/cleanup assignment
      * @param int $userId Person represented by the current owner

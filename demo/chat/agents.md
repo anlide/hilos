@@ -71,22 +71,23 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
    `userStates`.
    The [chat erasure part](spec/agents/chat-agent.md#responsibilities) deletes messages
    across all rooms, attachments, registrations and feed events in one `ChatAgent`
-   transaction with its result; `ChatAgent::eraseAccountPart()` is built but inert,
-   with no live caller until HIL-1952. After erasure starts, ChatAgent
+   transaction with its result; `ChatAgent::eraseAccountPart()` runs in the live
+   erasure through the `chat_account_operation_step` ask/answer entry
+   (HIL-1952). After erasure starts, ChatAgent
    refuses a message after an approved verdict before handing attachments to the
    registry, and again when the registry replies before writing; the connected tab
    sees the unavailable state. ChatAgent is the sole message writer and runs each
    handler to completion; the holder's post-commit sign-out frame cannot close this
-   door. The current borrowed
-   erasure rights stay until the live switch (not in the code yet — HIL-1952), and
-   whatever rights the old merge needs stay afterward.
+   door. The live erasure switch (HIL-1952) retired the holder's borrowed erasure
+   rights; whatever rights the old merge needs stay.
    The [chat merge part](spec/agents/chat-agent.md#responsibilities) transfers the
    loser's message authorship across all rooms in one `ChatAgent` transaction with
    its result through `AccountMergeProjectStep`. The directory's `chat` singleton
    implements both project owner interfaces; its prepared `mergeAccountPart()`
    uses the existing `chat_account_operation_step` ask/answer entry, dispatching
-   by the assignment operation's durable kind. There is no live merge sender
-   until HIL-2000 and HIL-1999. A committed merge already closes both late
+   by the assignment operation's durable kind. Its sender, the merge coordinator,
+   is built by HIL-2000 and goes live at the merge switch (not in the code yet —
+   HIL-1999). A committed merge already closes both late
    publication doors through the fresh `isMergedInDatabase()` reader, including
    a null-survivor tombstone, without waiting for sign-out or DB_SYNC. The
    existing draft/unavailable outcome stays, with no publication as survivor;

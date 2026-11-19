@@ -17,9 +17,8 @@ use Throwable;
  * Opens the erasure of a live deletion request with its expected composition in one transaction,
  * and reconciles an open erasure by recording what the census expects and the operation does not
  * carry yet. Neither path deletes or rewrites an assignment.
- * SCAFFOLD: no live caller of the opening until the erasure coordinator opens its operation
- * (HIL-1952); the reconciliation is called by the start, the passes and the refusals, with live
- * recovery callers (HIL-1951, HIL-1942, HIL-1950, HIL-1940), and no erasure is opened until HIL-1952.
+ * Live callers: the holder's scheduled and forced openings of an erasure call the opening; the
+ * reconciliation is called by the start, the passes and the refusals (HIL-1951, HIL-1942, HIL-1950, HIL-1940).
  */
 final class AccountErasureOpening
 {

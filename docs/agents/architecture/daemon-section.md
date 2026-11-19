@@ -258,7 +258,6 @@ independently of admin viewers. With that consumer present, “nobody watches”
 does not mean there is no interest or that the collector may stop its delivery.
 Use the existing whole-node picture chain, not the placement table or page
 mirror as a source; see [status-page.md](status-page.md#facts-and-ownership).
-(not in the code yet — HIL-1688)
 
 Keep the collector and page agent separate: the source of the cluster picture
 and the surface that shows it are different owners. On a standalone installation

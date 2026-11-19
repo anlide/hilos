@@ -20,8 +20,7 @@ use Hilos\HilosException;
  * none. A per-person owner is never registered for the merge: a row moving from the loser's set to
  * the survivor's is a write across two sets, the whole-table owner's write. Whether the class also
  * erases its part has no bearing here.
- * SCAFFOLD: no live caller until the merge coordinator opens its operation (HIL-2000), live at the
- * merge switch (HIL-1999).
+ * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
  */
 final readonly class AccountMergeProjectParticipant
 {

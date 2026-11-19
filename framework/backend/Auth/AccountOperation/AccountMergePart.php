@@ -7,8 +7,7 @@ namespace Hilos\Auth\AccountOperation;
 /**
  * The part of an account merge one project owner is asked to carry: the survivor and the loser of
  * one operation, as the operation records them.
- * SCAFFOLD: no live caller until the merge coordinator asks its owners (HIL-2000), live at the
- * merge switch (HIL-1999).
+ * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
  */
 final readonly class AccountMergePart
 {

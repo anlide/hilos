@@ -15,7 +15,6 @@ use stdClass;
  * The payload is exactly `{"sessions":<int>,"accessLog":<int>}`: how many different sessions the
  * holder changed - a wait released, a session made a guest's, an "Access closed" card lowered -
  * and how many access log rows it deleted. With nothing to release it is `{"sessions":0,"accessLog":0}`.
- * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final readonly class AccountErasureSessionsResult
 {

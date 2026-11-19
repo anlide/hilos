@@ -11,8 +11,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 /**
  * The coordinator hands a person's requested time zone to the person's agent.
  *
- * SCAFFOLD: The internal write/done handover is implemented and tested. Keep this API until
- * HIL-1593 adds the first browser caller.
+ * Sent when a person chooses a time zone in the browser (HIL-1593).
  */
 final class UserTimeZoneWriteSignalData extends BaseDTO implements HandoverAskInterface
 {

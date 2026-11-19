@@ -759,10 +759,11 @@ body up to 4 MiB to a browser this node holds.
 finish; the sweep runs at the agent's start and every hour, and removes the
 files of the directory no ready export names. An erased account removes every
 ready and failed export with its file and starts the export being built again
-(`hilos_legal_acceptances_export_forget`, [account-deletion.md](account-deletion.md)):
-which person is in which file is not known, and no copy on the server may
-outlive the records of an erased account. The legal agent's participant step
-deletes the account's order and records the counts
+([account-deletion.md](account-deletion.md#the-erasure)): which person is in
+which file is not known, and no copy on the server may outlive the records of an
+erased account. The legal agent's participant step,
+`LegalAcceptancesExports::eraseAccountPart()`, deletes the account's order and
+every ready and failed export and records the counts
 ([account-operations.md](account-operations.md), *The legal export part*).
 After commit, its existing build, sweep, state and file cleanup run in order;
 the old holder forget frame is retired. Disk cleanup keeps its existing limits.

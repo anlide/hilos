@@ -913,7 +913,7 @@ final class ErasureFinalTestSessionsHolder extends AbstractSessionsLibraryAgent
 }
 
 /**
- * The person's agent with the rights it receives at the switch (HIL-1952): removing its own row,
+ * The person's agent with the rights it holds in the erasure (HIL-1952): removing its own row,
  * its rename journal and its merge row.
  */
 final class ErasureFinalTestUserAgent extends AbstractUserAgent

@@ -22,8 +22,8 @@ through this agent. Uploads belong to the framework uploads agent.
   personal owner unlinks its own rows on request before the events are deleted.
 - **Erasure participant**: deletes the person's messages across every room, attachment
   links, registration details and feed events in one transaction of its own with its result.
-  `ChatAgent::eraseAccountPart()` is built but inert, with no live caller until
-  HIL-1952.
+  `ChatAgent::eraseAccountPart()` runs in the live erasure through the
+  `chat_account_operation_step` ask/answer entry (HIL-1952).
   It uses saved event ids and the personal journal owner's confirmed unlink; other
   people's mentions keep their existing `SET NULL` fate, and attachment files follow
   the existing post-commit path. After erasure starts, ChatAgent refuses a message
@@ -31,9 +31,8 @@ through this agent. Uploads belong to the framework uploads agent.
   again when the registry replies before writing; the connected tab sees the
   unavailable state. ChatAgent is the sole message writer and runs each handler
   to completion; the holder's post-commit sign-out frame cannot close this door.
-  The current session
-  holder's project seam and borrowed terminal rights remain until live erasure switches
-  (not in the code yet — HIL-1952); rights needed for the old merge remain afterward.
+  The live erasure switch (HIL-1952) retired the session holder's project seam and its
+  borrowed erasure rights; rights needed for the old merge remain.
   The framework [erasure canon](../../../../docs/agents/architecture/account-operations.md#erasure)
   owns the protocol and its participant boundary.
 
@@ -43,8 +42,9 @@ through this agent. Uploads belong to the framework uploads agent.
   implements both project owner interfaces. Its prepared `mergeAccountPart()`
   runs in `AccountMergeProjectStep` and records exactly `{"rows":{"messages":<n>}}`.
   The existing `chat_account_operation_step` ask/answer entry selects merge or
-  erasure by the assignment operation's durable kind. No live merge sender
-  exists until HIL-2000 and HIL-1999. The late-publication guard already rejects
+  erasure by the assignment operation's durable kind. Its sender, the merge
+  coordinator, is built by HIL-2000 and goes live at the merge switch (not in the
+  code yet — HIL-1999). The late-publication guard already rejects
   a committed merged author through the existing draft/unavailable outcome,
   without publishing as the survivor: it uses fresh `isMergedInDatabase()` at
   both write doors, including null-survivor tombstones, before sign-out or

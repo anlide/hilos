@@ -36,7 +36,6 @@ use Throwable;
  * account folded into the root marks its own standing request begun as the first write of its
  * part, inside that part's transaction ({@see startOwnRequest()}). Neither sends a frame: the
  * opening records the start intention atomically; recovery fills a missing start through recordMissing().
- * SCAFFOLD: the production erasure entry opens in HIL-1952.
  */
 final class AccountErasureStart
 {
@@ -63,7 +62,7 @@ final class AccountErasureStart
     /**
      * Records the root's start at the current stage, unless its key is already stored at any stage.
      *
-     * Live callers: the holder's recovery pass (HIL-1951); no erasure is opened until HIL-1952.
+     * Live callers: the holder's scheduled and forced openings of an erasure and its recovery pass (HIL-1951).
      *
      * @param AccountOperation $operation Open erasure whose root is to start
      * @return ?AccountOperationAssignment New start assignment, or null on a repeat

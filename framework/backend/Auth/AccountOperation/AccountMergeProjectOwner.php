@@ -23,8 +23,7 @@ use Hilos\HilosException;
  * full agent id as the set key, and {@see HilosDbContext::accountOperationAssignments} and
  * {@see HilosDbContext::accountOperations} in `READS_DB`. Without the claim the result row is
  * refused with `CreateNotAllowedException`.
- * SCAFFOLD: no live caller until the merge coordinator asks its owners (HIL-2000), live at the
- * merge switch (HIL-1999).
+ * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
  */
 interface AccountMergeProjectOwner
 {

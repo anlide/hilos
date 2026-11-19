@@ -29,7 +29,7 @@ use Throwable;
 
 /**
  * Applies the survivor's own protection and records its receipt in one participant transaction.
- * SCAFFOLD: HIL-2000 supplies the handover transport; HIL-1999 switches the live merge.
+ * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
  */
 final class AccountMergeReceiving
 {

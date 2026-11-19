@@ -372,7 +372,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
     }
 
     /**
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
+     * The set key of the agent's claim on a collection: its full id for the operation results it records.
      *
      * @param string $collection Collection whose set claim is being resolved
      * @return string The agent's full id for its results, the base's answer otherwise
@@ -386,7 +386,6 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
      * Deletes the person's messages, attachments, registrations and captured rename feed events
      * inside the common step's transaction. Other people's mentions remain under SET NULL;
      * registry files leave after commit through {@see AccountErasureProjectStep}.
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param AccountErasurePart $part Operation and account whose chat rows go
      * @return AccountErasure Deleted row counts and attachment registry ids
@@ -418,7 +417,7 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
 
     /**
      * Transfers the loser's message authorship inside the common merge step's transaction.
-     * SCAFFOLD: no live sender until HIL-2000 and the merge switch in HIL-1999.
+     * SCAFFOLD: sent by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
      *
      * @param AccountMergePart $part Operation, survivor and loser whose messages move
      * @return array<string, int> Number of messages moved to the survivor

@@ -20,7 +20,6 @@ use stdClass;
  * The payload is exactly `{"addresses":[…],"project":{…}}`: the identifier of every way in the
  * person had, each once, in ascending string order, and the keys the project asked to keep beside
  * them. `project` stays a JSON object even when the project keeps nothing.
- * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final readonly class AccountErasurePersonalCaptureResult
 {
@@ -36,7 +35,7 @@ final readonly class AccountErasurePersonalCaptureResult
     }
 
     /**
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
+     * The payload of a personal capture: each address once, in ascending order, and the project's keys.
      *
      * @param list<string> $addresses Identifiers of the person's ways in, repeats allowed
      * @param array<string, mixed> $project Keys the project keeps beside them
@@ -57,7 +56,7 @@ final readonly class AccountErasurePersonalCaptureResult
     }
 
     /**
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
+     * Reads a personal capture back from its saved result.
      *
      * @param AccountOperationResultPayload $payload Saved result of a personal capture
      * @return self The addresses and the project's keys the payload names
@@ -81,8 +80,6 @@ final readonly class AccountErasurePersonalCaptureResult
 
     /**
      * The person's capture in an erasure, at whatever stage it was assigned.
-     *
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param int $operationId Erasure whose circle the person belongs to
      * @param int $userId Account whose capture is read

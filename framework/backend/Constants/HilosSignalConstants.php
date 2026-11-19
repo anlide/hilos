@@ -792,8 +792,7 @@ final class HilosSignalConstants
      * Coordinator → the person's agent: write an exact time zone or reset to Automatic (HIL-1580).
      *
      * Carried by {@see UserTimeZoneWriteSignalData}; the owner answers under the ask's replySignal.
-     * SCAFFOLD: The internal write/done handover is implemented and tested. Keep this API until
-     * HIL-1593 adds the first browser caller.
+     * Sent when a person chooses a time zone in the browser (HIL-1593).
      */
     public const string HILOS_USER_TIME_ZONE_WRITE = 'hilos_user_time_zone_write';
 

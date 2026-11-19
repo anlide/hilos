@@ -152,11 +152,10 @@ synced memory, in three places: before it starts a build, before it publishes
 one, and when a build fails. A yes in any of them removes the unfinished bytes,
 if any, and deletes the order, with no publication, no state frame and no
 notice; the erasure part later finds no order and records `{"orders":0}`
-([The Erasure Part](#the-erasure-part)). Account erasure, on the path in use
-today, deletes the order inside its transaction. After it commits,
-`DataExportNotifier::forgetUser()` queues `hilos_data_export_forget_user` to
-remove files no ready order keeps. This also closes an erasure arriving after
-the builder's final check. A late completion cannot finish a request replaced
+([The Erasure Part](#the-erasure-part)). Account erasure deletes the order in
+the agent's own participant step, `runErasurePart()`, and after that step
+commits the agent removes the files no ready order keeps. This also closes an
+erasure arriving after the builder's final check. A late completion cannot finish a request replaced
 while it was being built.
 
 ## The Erasure Part
@@ -168,9 +167,9 @@ records `{"orders":1}`, or `{"orders":0}` when there is none, in the same
 transaction. For that it claims `accountOperationResults` for its own set
 (`hilos_data_export`) and reads `accountOperationAssignments` and
 `accountOperations`. Files are not touched inside the transaction: after the
-commit, and only when the call did the work, the step runs the sweep the forget
-frame runs - expired orders, then every file no ready order keeps, then the
-state to the person's tabs. A failed removal is logged and not repeated; the
+commit, and only when the call did the work, the step runs the agent's own
+sweep - expired orders, then every file no ready order keeps, then the state to
+the person's tabs. A failed removal is logged and not repeated; the
 hourly sweep or the agent's start takes what is left. A repeated call returns
 the saved result and sweeps nothing. The census waits for this part only while
 the person has an order saved

@@ -22,9 +22,9 @@ use Hilos\HilosException;
  * of its collections and the collections it leaves out in its {@see AccountDataOwnerDirectory}, and
  * {@see installation()} takes them after the framework's own; {@see with()} adds a participant
  * that is not an owner from the directory.
- * SCAFFOLD: {@see framework()}, {@see with()} and the row questions of the framework's participants have no
- * live caller until the erasure coordinator opens its operation (HIL-1952); the startup coverage gate reads
- * {@see installation()}.
+ * The erasure opening and the startup coverage gate read {@see installation()}, and the census asks its
+ * participants the row questions. SCAFFOLD: {@see framework()} and {@see with()} have no production caller
+ * (no leaf yet).
  */
 final class AccountErasureParticipantCatalog
 {

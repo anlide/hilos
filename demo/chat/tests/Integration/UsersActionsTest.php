@@ -18,7 +18,8 @@ final class UsersActionsTest extends IntegrationTestCase
      * createWithName creates a durable user carrying the given display name; the
      * session→user binding is applied separately through the auth seam (HIL-161),
      * so the user row holds no session token (HIL-360 dropped the auto-guest
-     * register primitive). Broader session≠user coverage lands in HIL-167 / HIL-370.
+     * register primitive). Broader session≠user coverage lives in the auth e2e
+     * (HIL-167) and the auth core tests (HIL-370).
      *
      * @throws HilosException On database error
      */

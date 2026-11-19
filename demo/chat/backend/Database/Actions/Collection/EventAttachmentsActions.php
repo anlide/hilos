@@ -71,9 +71,9 @@ final class EventAttachmentsActions extends DbActions
     /**
      * Deletes the attachments of the given messages and names their registry files (HIL-302, HIL-144).
      *
-     * ChatAgent's erasure part (HIL-1949) and, until HIL-1952, the session holder under its
-     * borrowed claim delete the rows inside the erasure transaction. The files are only named;
-     * the caller asks the files library to remove them after commit.
+     * ChatAgent's erasure part (HIL-1949) deletes the rows inside its participant step's
+     * transaction. The files are only named; the framework's common step for a project owner's
+     * part asks the files library to remove them once that transaction commits.
      *
      * @param list<int> $eventIds Event ids of the messages whose attachments go
      * @return list<int> Ids of the registry files the deleted attachments linked

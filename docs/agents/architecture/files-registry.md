@@ -230,11 +230,15 @@ copies' bytes go regardless, as the janitor's do. An id the registry does not
 hold is a warning. The pass ends with one line, `Files removed: N, kept M`.
 
 Who calls it today: the chat's history cleanup (every 30 minutes) and the
-erasure of an account — the project's `applyAccountErasure()` names the registry
-files its deleted rows pointed at in `AccountErasure::$fileIds`, and the session
-holder calls `remove()` after the commit if the project declares `FILES`
-([account-deletion.md](account-deletion.md)). Nothing deletes a registry file
-past the library.
+erasure of an account — a project owner's part,
+`AccountErasureProjectOwner::eraseAccountPart()`, names the registry files its
+deleted rows pointed at in `AccountErasure::$fileIds`, and
+`AccountErasureProjectStep` calls `remove()` after the part commits if the
+project declares `FILES`
+([account-deletion.md](account-deletion.md#the-projects-seam)); the person's
+agent removes the profile photo's file the same way after its own erasure part
+commits ([account-deletion.md](account-deletion.md#the-erasure)). Nothing
+deletes a registry file past the library.
 
 ## The Janitor
 

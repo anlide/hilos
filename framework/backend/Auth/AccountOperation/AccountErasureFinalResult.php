@@ -16,7 +16,6 @@ use stdClass;
  * The payload is exactly `{"request":<id>}` naming the deletion request the final completed in its transaction -
  * the operation's begun request at the root, the live one of a folded account - and `{"request":null}` when the
  * account had no request to complete.
- * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final readonly class AccountErasureFinalResult
 {

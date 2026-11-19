@@ -100,8 +100,6 @@ final class UserAgent extends AbstractUserAgent
      * it named in the capture, for ChatAgent to delete once the person is gone (HIL-1940). The link
      * and unlink frames are served as before after the capture (HIL-1939).
      *
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
-     *
      * @param int $userId Person whose account is being erased
      * @return array<string, list<int>> The capture's `project` keys: `renameEvents`, possibly empty
      * @throws DatabaseException When no transaction carries the unlink

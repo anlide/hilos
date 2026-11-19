@@ -25,7 +25,7 @@ use JsonException;
  * Their mirrors drop it at the write, including inside a transaction, through
  * {@see AccountErasureProgressChangeSubscriber}. It is derived memory, not shared RT state.
  * The card and its standing frame read one account's answer; the list of people reads every begun
- * erasure at once through {@see begun()} (HIL-1955). Live erasure stays inert until HIL-1952 opens its entry.
+ * erasure at once through {@see begun()} (HIL-1955).
  */
 final class AccountErasureProgressResolver
 {

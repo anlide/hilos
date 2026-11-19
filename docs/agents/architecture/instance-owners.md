@@ -89,8 +89,9 @@ change. The transfer door and the
 [prepared loser give](account-operations.md#the-prepared-loser-give) are built:
 `AccountMergeGiving::run()` commits the own-row transfer, tombstone, block,
 nonsecret result and separate private copy together; `copy()` reads only that
-saved carrier. The owner entry and assignment match have no live coordinator
-sender until HIL-2000. The owner-local erasure path is live from HIL-1952; the
+saved carrier. The owner entry and assignment match are sent by the merge
+coordinator, built by HIL-2000 and live at the merge switch (HIL-1999). The
+owner-local erasure path is live from HIL-1952; the
 old merge remains until HIL-1999 (not in the code yet — HIL-1999).
 
 **Executors keep their working rows.** A delivery status, a personal data export

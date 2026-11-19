@@ -36,7 +36,7 @@ final class BackupCatalog implements CatalogProviderInterface
 {
     /**
      * @return array<string, array<string, mixed>> Backup catalog (reference registry;
-     *     schedule lands in HIL-273)
+     *     no schedule of its own, so the framework default applies)
      */
     public static function getCatalog(): array
     {

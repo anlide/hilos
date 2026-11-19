@@ -39,7 +39,6 @@ use stdClass;
  * delivery of it is named by a portion to its resolved owner; one created after a portion, or one
  * whose channel has no owner, stays uncaptured until a later portion names it, and a channel
  * without an owner is never captured: the operation waits on its census wait instead.
- * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureDeliveryCapture
 {
@@ -48,7 +47,7 @@ final class AccountErasureDeliveryCapture
     private const int DELIVERIES_PER_PAGE = 1000;
 
     /**
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
+     * The payload of a delivery portion that names a channel's notifications.
      *
      * @param string $channel Channel whose deliveries the portion names
      * @param list<int> $notificationIds Notification numbers, each once, ascending
@@ -70,7 +69,7 @@ final class AccountErasureDeliveryCapture
     }
 
     /**
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
+     * The channel a delivery portion names.
      *
      * @param AccountOperationAssignmentPayload $payload Stored payload of a delivery portion
      * @return string Channel the portion names
@@ -83,7 +82,7 @@ final class AccountErasureDeliveryCapture
     }
 
     /**
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
+     * The notification numbers a delivery portion names.
      *
      * @param AccountOperationAssignmentPayload $payload Stored payload of a delivery portion
      * @return list<int> Notification numbers the portion names, ascending
@@ -97,8 +96,6 @@ final class AccountErasureDeliveryCapture
 
     /**
      * The delivery portions of one account in an erasure, at whatever stage each was assigned.
-     *
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param int $operationId Erasure whose circle the account belongs to
      * @param int $userId Account whose portions are read
@@ -122,8 +119,6 @@ final class AccountErasureDeliveryCapture
      * The account's notifications that are not ready to be deleted: a delivery of each has no
      * owner, or no portion to its owner names it. A notification without deliveries is ready, and
      * an installation without the delivery table has nothing uncaptured.
-     *
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param int $operationId Erasure whose circle the account belongs to
      * @param int $userId Account whose notifications are read
@@ -161,8 +156,6 @@ final class AccountErasureDeliveryCapture
      * the circle, keyed by its first notification number; a repeat records only what a new delivery
      * left uncaptured. Deliveries without an owner are not captured and no other writer takes
      * them. Runs inside the caller's transaction.
-     *
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
      *
      * @param AccountOperation $operation Open erasure to record on, at its current stage
      * @return list<AccountOperationAssignment> Portions written, by account in circle order, then by channel and owner in delivery order

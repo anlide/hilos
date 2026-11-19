@@ -20,7 +20,6 @@ use Throwable;
  * full agent id as the set key, and {@see HilosDbContext::accountOperationAssignments} and
  * {@see HilosDbContext::accountOperations} in `READS_DB`. Without the claim the result row is
  * refused with `CreateNotAllowedException`.
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
  */
 interface AccountErasureProjectOwner
 {

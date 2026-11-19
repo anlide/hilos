@@ -61,7 +61,7 @@ class AccountOperationAssignments extends DbCollection
     }
 
     /**
-     * SCAFFOLD: no live caller until the erasure coordinator reconciles its obligations (HIL-1952).
+     * The assignments of one operation, whatever stage each was given at.
      *
      * @param int $operationId Parent operation id
      * @return static Assignments of every stage in ascending primary id order

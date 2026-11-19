@@ -2738,9 +2738,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * Whose fact this is comes from the emitter stamp alone: another worker writing
      * the same row must not be mistaken for this one's echo.
      *
-     * The emptiness check stays until HIL-532 rules on whether an incomplete
-     * signal payload must be rejected by fromArray(): this side reads a payload
-     * off the pipe, so an empty key here is broken input, not a sentinel this
+     * HIL-532 ruled that fromArray() refuses a payload missing the key, not one
+     * carrying it empty, so the emptiness check stays: this side reads a payload
+     * off the pipe, and an empty key here is broken input, not a sentinel this
      * code minted.
      *
      * @param DbSyncSignalDataInterface $signalData DB sync payload
@@ -2765,9 +2765,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * carries the emitter identity and the check is a comparison with this process's
      * own.
      *
-     * The emptiness check stays until HIL-532 rules on whether an incomplete
-     * signal payload must be rejected by fromArray(): this side reads a payload
-     * off the pipe, so an empty key here is broken input, not a sentinel this
+     * HIL-532 ruled that fromArray() refuses a payload missing the key, not one
+     * carrying it empty, so the emptiness check stays: this side reads a payload
+     * off the pipe, and an empty key here is broken input, not a sentinel this
      * code minted.
      *
      * @param DbSyncClearedSignalData $signalData DB clear sync payload
@@ -2787,9 +2787,9 @@ abstract class WorkerManager extends BaseManager implements PageResender
      *
      * Whose fact this is comes from the emitter stamp alone; nothing is spent.
      *
-     * The emptiness check stays until HIL-532 rules on whether an incomplete
-     * signal payload must be rejected by fromArray(): this side reads a payload
-     * off the pipe, so an empty key here is broken input, not a sentinel this
+     * HIL-532 ruled that fromArray() refuses a payload missing the key, not one
+     * carrying it empty, so the emptiness check stays: this side reads a payload
+     * off the pipe, and an empty key here is broken input, not a sentinel this
      * code minted.
      *
      * @param RtSyncSignalDataInterface $signalData RT sync payload

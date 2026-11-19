@@ -14,7 +14,6 @@ use Hilos\HilosException;
  *
  * A participant is activated when any of its collections is mounted and its table is in the
  * schema; one whose tables this installation never created has nothing to erase and is not asked.
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
  */
 final class AccountErasureCensus
 {

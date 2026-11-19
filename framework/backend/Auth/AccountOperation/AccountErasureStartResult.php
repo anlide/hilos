@@ -14,7 +14,6 @@ use stdClass;
  *
  * The payload is exactly `{"start":"started"}` when this step marked the deletion request begun,
  * and `{"start":"lost"}` when it did not: "Keep my account" won, or the request had begun already.
- * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureStartResult
 {

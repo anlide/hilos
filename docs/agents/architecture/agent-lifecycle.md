@@ -209,7 +209,8 @@ Source stop is independent of operation end: the
 other owners' committed results and current copy absence. Completed replay
 preserves the terminal timestamps, and saved project results skip further work
 on the original expectation.
-Production coordination remains HIL-2000 and live cutover remains HIL-1999.
+Production coordination is built by HIL-2000 and goes live at the merge switch
+(not in the code yet — HIL-1999).
 
 The stop is the ordinary one — `onStop()`, truth sources handed back, the
 daemon told — and never a path of its own. Under protected mode nothing is

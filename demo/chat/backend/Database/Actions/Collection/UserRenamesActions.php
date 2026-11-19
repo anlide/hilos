@@ -52,8 +52,6 @@ final class UserRenamesActions extends FrameworkUserRenamesActions
      * keeps the events they named, for ChatAgent to delete after the person is gone (HIL-1940).
      * The rows and the events stay; a write failure rolls the whole capture back.
      *
-     * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
-     *
      * @param int $userId Person whose journal is unlinked
      * @return list<int> Feed events the person's rows named before the unlink, in id order
      * @throws DatabaseException When no transaction is open: the capture's own must carry the unlink

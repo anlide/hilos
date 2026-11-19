@@ -32,7 +32,7 @@ use LogicException;
  * {@see BackupHistories} collection under
  * {@see RT_COLLECTION}, and the monopoly backup agent is its single writer.
  * Rows mirror the {@see BackupMetadata} sidecar (files=truth, RT=index). The
- * browser view/representation lands in HIL-278.
+ * browser sees them through the backup history table (HIL-278).
  */
 final class BackupHistory extends RtState
 {

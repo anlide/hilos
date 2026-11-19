@@ -21,7 +21,8 @@ use Throwable;
  * The session holder's erasure transitions, selected from assignments and their saved results.
  * Participants carry their own work and record their own results. The coordinator records duties,
  * reconciles refusals and returns the assignments to send, keeping the operation at its current stage.
- * Live callers: the holder's recovery pass and an owner's start (HIL-1951); no erasure is opened until HIL-1952.
+ * Live callers: the holder's scheduled and forced openings of an erasure, its recovery pass, its handling of an
+ * answer and an owner's start (HIL-1951).
  */
 final class AccountErasureCoordinator
 {

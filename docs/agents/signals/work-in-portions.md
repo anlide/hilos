@@ -98,15 +98,13 @@ related writes is
 the name and its journal row are written in one transaction, and what follows
 the commit — the notice to the person, the project's hook — is the library's,
 on the answer.
-[`AbstractSessionsLibraryAgent::eraseAccount()`](../../../framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php)
-is the erasure as implemented today: the rows of every owner leave together in
-one transaction at the sessions holder, and file removal and export cleanup
-follow the commit, under
-[The Erasure](../architecture/account-deletion.md#the-erasure). It is not the
-example of this rule, because its one transaction crosses other owners'
-tables; the approved research design that replaces it keeps each owner's
-related writes in one transaction of that owner and puts a recorded fact and a
-signal between owners
+The erasure follows the same rule at each of its owners
+([The Erasure](../architecture/account-deletion.md#the-erasure)):
+[`AbstractSessionsLibraryAgent::eraseAccountSessionsPart()`](../../../framework/backend/Auth/Library/AbstractSessionsLibraryAgent.php),
+the sessions holder's part, takes the person out of every session, deletes
+their access log and records its result in one transaction of the holder, and
+tells the tabs only after the commit. No transaction crosses another owner's
+tables: a recorded fact and a signal stand between owners
 ([account-operations.md](../architecture/account-operations.md#erasure)). For
 erasure, the obligation is durable and the participant alone writes its
 assigned result. The generic participant step commits callback work and result
@@ -157,26 +155,30 @@ pass running reads nothing. These paths are live from the HIL-1952 cutover.
 For [merge](../architecture/account-operations.md#merge), the loser commits
 its work, nonsecret result and separate private copy together in the
 [prepared give](../architecture/account-operations.md#the-prepared-loser-give),
-with no live coordinator sender until HIL-2000; the survivor commits its own
+sent by the merge coordinator, built by HIL-2000 and live at the merge switch
+(HIL-1999); the survivor commits its own
 work with its exact receipt in the
 [prepared survivor step](../architecture/account-operations.md#the-prepared-survivor-receipt),
 including local startup resume from current own rows for an existing obligation,
-with no normal producer before HIL-2000 and HIL-1999. The holder's prepared
+its normal producer built by HIL-2000 and live at the merge switch (HIL-1999).
+The holder's prepared
 `go/sessions` and `go/survivor_sessions` duties commit their own work with
 strict nonsecret `{"sessions":<n>,"accessLog":<m>}` results: the first follows
 the exact give, and the second follows the exact receipt and ends survivor
 sessions only when the saved give retained the loser's factor. Each replays a
 saved result before current-stage or business reads and publishes
-session/profile notifications only after commit (HIL-1995). No normal merge
-producer is connected before HIL-2000, and the live cutover remains HIL-1999.
+session/profile notifications only after commit (HIL-1995). The normal merge
+producer is built by HIL-2000 and goes live at the merge switch
+(not in the code yet — HIL-1999).
 Declared project
 participants follow that same local atomic boundary — `AccountMergeProjectStep`
 commits an owner's move with its result, built and live at the merge switch —
 including chat's prepared author transfer and message count through its
-existing assignment ask/answer entry, with no live merge sender until HIL-2000
-and HIL-1999. Operation/stage correlation rejects
-duplicate, old and foreign answers without advancing unrelated work
-(not in the code yet — HIL-2000). The shared first/hourly holder pass selects
+existing assignment ask/answer entry, sent by the merge coordinator, built by
+HIL-2000 and live at the merge switch (HIL-1999). Operation/stage correlation
+rejects duplicate, old and foreign answers without advancing unrelated work;
+it is built by HIL-2000 and goes live at the merge switch
+(not in the code yet — HIL-1999). The shared first/hourly holder pass selects
 unfinished obligations from DB; owner startup reads merge owed-to state and
 resumes existing asks. Prepared merge operations use this recovery while
 production callers remain on the legacy path until HIL-1999. No transaction

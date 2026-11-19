@@ -252,8 +252,8 @@ use Throwable;
  * agent deletes its own child sets as its part of the erasure ({@see eraseAccountPersonalPart()},
  * HIL-1941). Once every required part of the account has its result, the agent's final deletes its
  * merge row, its rename journal, its capture and its own row, completes the deletion request, and
- * the agent stops after this last write ({@see finishAccountErasure()}, HIL-1942); the right to
- * delete the person's row, journal and merge row it receives at the switch (HIL-1952).
+ * the agent stops after this last write ({@see finishAccountErasure()}, HIL-1942), holding the
+ * right to delete the person's row, journal and merge row (HIL-1952).
  * The agent also checks its own side of a merge and records a reservation or refusal
  * ({@see prepareForMerge()}, HIL-1988).
  */
@@ -608,8 +608,6 @@ abstract class AbstractUserAgent extends AbstractAgent
      * Captures the person's addresses and the project's part as the agent's step in the erasure of
      * the account, before the ways in are deleted (HIL-1940); a repeat answers the saved capture.
      *
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
-     *
      * @param int $assignmentId Capture assignment the coordinator gave this agent
      * @return AccountOperationResult Committed capture or the saved one of an earlier attempt
      * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
@@ -638,8 +636,6 @@ abstract class AbstractUserAgent extends AbstractAgent
      * result in the same transaction, so a failure rolls back both. The photo's registry file leaves
      * for the files library only once that transaction commits ({@see HilosFiles::remove()}); a failed
      * removal is logged and not repeated.
-     *
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId The person's expected part the coordinator gave this agent
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
@@ -702,8 +698,6 @@ abstract class AbstractUserAgent extends AbstractAgent
      * The stop is asked after the step returned, outside its transaction, so it follows only a
      * committed or saved final; a refusal leaves the agent running.
      *
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
-     *
      * @param int $assignmentId The person's final the coordinator gave this agent
      * @return AccountOperationResult Committed final or the saved outcome of an earlier attempt
      * @throws AccountOperationStepRefusedException When the caller, assignment or current stage refuses new work
@@ -725,7 +719,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     /**
      * Checks the person's own side of a merge and records the preparation in the participant transaction;
      * a repeat returns the saved result without checking again.
-     * SCAFFOLD: the merge coordinator sends the preparation in HIL-2000.
+     * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
      *
      * @param int $assignmentId Preparation assignment the coordinator gave this agent
      * @return AccountOperationResult Committed preparation or the saved result of an earlier attempt
@@ -2394,8 +2388,6 @@ abstract class AbstractUserAgent extends AbstractAgent
      * Called inside the capture's transaction; it opens none of its own. A throw rolls the whole
      * capture back: nothing it wrote stays, and no result is recorded.
      *
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
-     *
      * @param int $userId Person whose account is being erased
      * @return array<string, mixed> Project's keys of the capture's `project` object; none by default
      * @throws HilosException Whatever the project's part raises
@@ -2416,8 +2408,6 @@ abstract class AbstractUserAgent extends AbstractAgent
      * this part's (HIL-1942).
      *
      * Not final: the framework's test stands replace it to make the part fail.
-     *
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $userId Person whose account is being erased
      * @return AccountErasure The photo row and its registry file, or nothing when there was no photo or photos are not activated

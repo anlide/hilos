@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\AccountOperation;
 
-/** SCAFFOLD: terminal outcomes for durable operation storage (HIL-1936). */
+/** Terminal outcomes of a durable account operation. */
 enum AccountOperationOutcome: string
 {
     case Completed = 'completed';

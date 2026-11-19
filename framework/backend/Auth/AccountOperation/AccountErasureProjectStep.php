@@ -24,10 +24,9 @@ use Throwable;
  * assignment's operation and account; inside the step's transaction the owner deletes its rows of
  * that account, and its answer is recorded as the result in the same transaction, so an owner's
  * failure rolls back both. The registry files the rows pointed at leave for the files library
- * only once that transaction commits ({@see HilosFiles::remove()}), as they do for the session
- * holder; a failed removal is logged for the owner and not repeated. A repeated call returns the
- * saved result without asking the owner again.
- * SCAFFOLD: no live caller until the erasure coordinator opens its operation (HIL-1952).
+ * only once that transaction commits ({@see HilosFiles::remove()}); a failed removal is logged for
+ * the owner and not repeated. A repeated call returns the saved result without asking the owner
+ * again.
  */
 final class AccountErasureProjectStep
 {

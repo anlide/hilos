@@ -25,7 +25,8 @@ use Throwable;
 
 /**
  * Admits the source's committed batch at the canonical survivor, using only mapped snapshots.
- * SCAFFOLD: HIL-2000 supplies the handover caller; HIL-1994 owns the separate receive receipt.
+ * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
+ * HIL-1994 owns the separate receive receipt.
  */
 final class AccountMergeAdmission
 {

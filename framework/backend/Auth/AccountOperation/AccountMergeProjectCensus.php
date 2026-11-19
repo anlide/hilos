@@ -17,8 +17,7 @@ use Hilos\HilosException;
  * An owner is activated when any of its collections is mounted and its table is in the schema; one
  * whose tables this installation never created has nothing to move and is not asked. The survivor
  * is never asked: its rows stay where they are.
- * SCAFFOLD: no live caller until the merge coordinator opens its operation (HIL-2000), live at the
- * merge switch (HIL-1999).
+ * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
  */
 final class AccountMergeProjectCensus
 {

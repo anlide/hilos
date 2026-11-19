@@ -14,7 +14,8 @@ use JsonException;
 /**
  * What one account operation expects from one participant for one account of its circle: a named
  * owner to carry its part, or a wait the coordinator holds while no owner is there to carry it.
- * SCAFFOLD: no live caller until the erasure (HIL-1952) and merge (HIL-1999) switches.
+ * The erasure reads it. SCAFFOLD: the merge reads it too, with no production caller until the merge switch
+ * (HIL-1999).
  */
 final readonly class AccountOperationExpectation
 {

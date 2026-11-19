@@ -109,8 +109,9 @@ production `Remove` claim. Under the detailed
 [merge canon](account-operations.md#merge), the loser writes its own block
 after its merge row in the
 [prepared give transaction](account-operations.md#the-prepared-loser-give).
-The owner entry has no live coordinator sender until HIL-2000; the holder's
-old `Update` remains until the merge switch named above.
+The owner entry is sent by the merge coordinator, built by HIL-2000 and live at
+the merge switch named above; until that switch the holder's old `Update`
+remains.
 
 ## What The Framework Does For A Person
 

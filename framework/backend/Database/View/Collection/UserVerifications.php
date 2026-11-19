@@ -67,7 +67,6 @@ class UserVerifications extends DbCollection
 
     /**
      * Whether a challenge deleteForUser() or deleteForIdentifiers() would remove is still saved.
-     * SCAFFOLD: no live caller until the erasure coordinator reconciles its participants (HIL-1952).
      *
      * @param int $userId Person whose challenges are asked about
      * @param list<string> $identifiers Person's current addresses, whatever user id their challenges carry

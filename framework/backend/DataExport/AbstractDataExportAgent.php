@@ -63,7 +63,7 @@ use Throwable;
  * Cluster-wide owner of personal data copies (HIL-303).
  * Assembly is deliberately one blocking tick in a monopolistic worker.
  * It erases a person's copy order itself as its participant step of an account erasure
- * ({@see self::runErasurePart()}); until HIL-1952 the session holder's old path stays beside it.
+ * ({@see self::runErasurePart()}).
  */
 abstract class AbstractDataExportAgent extends AbstractAgent
 {
@@ -288,7 +288,6 @@ abstract class AbstractDataExportAgent extends AbstractAgent
      * ready order keeps, the person's copy and an interrupted build among them, and the person's
      * tabs are told the copy is gone ({@see self::forgetUser()}); a failed removal is logged and
      * not repeated. A repeated call returns the saved result without deleting or sweeping again.
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId Assignment the coordinator gave the agent
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt

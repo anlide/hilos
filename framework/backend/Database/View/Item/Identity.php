@@ -72,7 +72,7 @@ class Identity extends DbItem
     }
 
     /**
-     * SCAFFOLD: the merge give transaction in HIL-1992 supplies the production caller.
+     * SCAFFOLD: called by the prepared give (HIL-1992); no production caller until the merge switch (HIL-1999).
      *
      * @param AccountMergeTransfer $transfer Active right over this captured source row
      * @return ?string Stored secret for the attempt-local hand-over copy

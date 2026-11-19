@@ -11,7 +11,6 @@ use stdClass;
 
 /**
  * The immutable count of journal rows deleted by one delivery channel/shard's erasure part (HIL-1945).
- * SCAFFOLD: no production caller until the erasure switch (HIL-1952).
  */
 final class AccountErasureDeliveryResult
 {

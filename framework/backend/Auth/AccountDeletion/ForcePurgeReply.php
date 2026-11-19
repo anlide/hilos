@@ -28,7 +28,6 @@ use JsonException;
  *
  * Only a finished erasure says it was carried out; an open one names the stage it reached, with
  * the same progress block the people card reads (HIL-1953).
- * SCAFFOLD: no live caller until the force-purge entry switches (HIL-1952).
  */
 final class ForcePurgeReply
 {

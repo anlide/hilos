@@ -66,7 +66,7 @@ class NotificationDeliveries extends DbCollection
     }
 
     /**
-     * SCAFFOLD: no live caller until the erasure coordinator reconciles its delivery owners (HIL-1952).
+     * One page of the saved identities of a recipient's deliveries, after a cursor.
      *
      * @param int $recipientUserId Recipient whose notifications the deliveries belong to
      * @param int $afterId Exclusive delivery primary-key cursor

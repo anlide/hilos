@@ -8,7 +8,6 @@ use Hilos\Core\Exception\ValidationException;
 
 /**
  * A checked account operation order supplied by the caller, with the root account last.
- * SCAFFOLD: durable operation storage will consume this value (HIL-1936).
  */
 final readonly class AccountOperationCircle
 {

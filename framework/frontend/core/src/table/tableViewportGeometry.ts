@@ -204,8 +204,7 @@ function copyTracks(tracks: TableColumnTracks): TableColumnTracks {
  * Numeric geometry local to one controller's presentation lifetime.
  *
  * The controller owns window identities and presentation preparation here.
- * SCAFFOLD: DOM adapter wiring lands in later HIL-1749 slices. This model
- * deliberately has no DOM or table-row payloads.
+ * This model deliberately has no DOM or table-row payloads.
  * Local storage extends the controller's window lifetime: Hilos::$rt shares
  * backend state across workers, whereas these pixels belong to one view only.
  */

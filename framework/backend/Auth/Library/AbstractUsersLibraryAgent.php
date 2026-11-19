@@ -316,10 +316,9 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * rather than left to {@see self::defaultTruthSourceOperations()}: that default is what a
      * library does to a row it SHARES, and these rows are edited in place. Since HIL-1411 this
      * library is their only full writer: it issues a phone code on the code agent's frame after
-     * the channel probe, and takes, releases and sweeps registration holds here. The session
-     * holder retains the borrowed removal of an erased person's verification rows only until
-     * HIL-1952; beside it this library deletes the person's codes itself, by their user id and by
-     * the captured addresses, as its participant step of the erasure ({@see self::runErasurePart()}).
+     * the channel probe, and takes, releases and sweeps registration holds here. This library
+     * deletes an erased person's codes itself, by their user id and by the captured addresses, as
+     * its participant step of the erasure ({@see self::runErasurePart()}).
      *
      * The ways in and the passkey credentials are claimed for creation alone (HIL-1405). A
      * registration, an added password, phone or key is born here, and born whole - the secret and
@@ -1008,7 +1007,6 @@ abstract class AbstractUsersLibraryAgent extends AbstractAgent
      * person's user id, and their count is recorded as the result in the same transaction, so a failure
      * rolls back both. The addresses never enter the result. A repeated call returns the saved result
      * without deleting again.
-     * SCAFFOLD: the production erasure entry opens in HIL-1952.
      *
      * @param int $assignmentId Assignment the coordinator gave the library
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt

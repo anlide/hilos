@@ -70,8 +70,9 @@ class AccountOperations extends DbCollection
     }
 
     /**
-     * Asked by the old merge's refusal ({@see AbstractSessionsLibraryAgent::assertMergeable()}, HIL-1960); the erasure opening
-     * asks it once it is live (HIL-1952).
+     * Asked by the old merge's refusal ({@see AbstractSessionsLibraryAgent::assertMergeable()}, HIL-1960), by the
+     * erasure opening, by the card's erasure progress, by the merge preparation and by the merge availability that
+     * the people list, the merge candidates and the card show.
      *
      * @param int $userId Account asked about
      * @return ?AccountOperation First open erasure whose fixed circle contains the account

@@ -123,52 +123,62 @@ Once a minute, where a sign-in exists, the session holder sweeps the due
 requests (`AbstractSessionsLibraryAgent`). A due request erases its named account
 and every account folded into it, including folded accounts down a chain. Those
 accounts belong to one person (owner decision, 30 September 2026). The holder
-gathers the entire circle first and erases it from leaves to the named account
-in ONE transaction:
+first opens one durable erasure in one transaction — the fixed circle, folded
+accounts first and the named account last, the owners the census expects for
+each account, and the named account's start — and then asks each owner for its
+part. Every owner carries its part in a transaction of its own, in this order:
 
-1. the request is marked carried out; lost to a cancel — rolled back, nothing
-   touched;
-2. for each folded account, a live request of its own is marked carried out;
-3. for each account, the framework's rows go: device keys before ways in, codes
-   — those carrying the person's id and those on their current addresses,
-   whatever user they carry (HIL-1163),
-   the second factor whole, operation confirmations, legal acceptances, the
-   [access log](access-log.md) (HIL-1174), and the account's merge row when it
-   was folded into another one (HIL-1199). Notification deliveries, notifications,
-   channel preferences and push subscriptions leave where their tables are active.
-   Orders for the person's data copy and their legal acceptance export leave too.
-   A published profile photo row leaves where that optional table is active;
-   its registry file id joins the post-commit removal.
-   Every session signed in as the person or run by them under an impersonation is
-   signed out, waits on their second factor are cleared, and cards about their
-   closed access are lowered (HIL-1202);
-4. the project's seam `applyAccountErasure(int $userId): AccountErasure` deletes
-   its rows for that account;
-5. the framework removes the account's rename journal rows, then its person row.
+1. the named account's agent marks the request begun, against "Keep my
+   account": if the cancel won, the start records it lost and the holder ends
+   the operation as not started, with nothing erased. Only that account's final
+   (step 5) marks the request carried out;
+2. after the start, for each account, the session holder signs out every
+   session signed in as the person or run by them under an impersonation,
+   clears waits on their second factor, lowers cards about their closed access
+   and deletes their [access log](access-log.md) (HIL-1202, HIL-1174); the data
+   copy agent deletes the person's copy order; and the account's agent captures
+   the person's addresses before any way in goes;
+3. after the capture, the account's agent deletes, in the person's part, device
+   keys before ways in, the second factor whole, operation confirmations, legal
+   acceptances and, where their tables are active, notifications, channel
+   preferences, push subscriptions and the published profile photo row; a
+   folded account's agent first marks its own live request, if it has one,
+   begun. The users library deletes the codes carrying the person's id and those
+   on the captured addresses, whatever user they carry (HIL-1163). Each owner
+   the project names deletes its rows of that account in its own participant
+   step, `AccountErasureProjectOwner::eraseAccountPart()` (see
+   [The Project's Seam](#the-projects-seam));
+4. after the person's part, each delivery channel deletes its own deliveries of
+   the person, and the legal agent takes its part (see below);
+5. last, the account's agent runs its final once every part of the account has
+   its result and no account is still folded into it: in one transaction it
+   marks its request carried out and deletes the account's merge row when it
+   was folded into another one (HIL-1199), its rename journal rows, its capture
+   and its person row.
 
 Erasing the survivor erases the accounts folded into it: it is one person.
 Erasing a folded account under its own earlier request erases it and the
-accounts folded into it, leaving its survivor alone. The leaf-first order
-removes each merge row while its survivor still exists; the merge table's
+accounts folded into it, leaving its survivor alone. The leaf-first order of the
+finals removes each merge row while its survivor still exists; the merge table's
 `SET NULL` does not run in this erasure. Folded accounts receive no new request:
-the named account's completed request and the erasure log record the operation.
+the named account's completed request and the durable erasure operation — its
+circle, assignments and results — record it.
 
-Any failure rolls all of it back; the request stays live and due, and the next
-minute tries again. Half an erased account never exists.
+A failure rolls back only the failing owner's current part; parts already
+recorded stay. The request stays live and due, and each minute the sweep
+re-enters the open erasure and resends every ready part with no result, as the
+holder's first tick and hourly recovery pass do. While the operation is open the
+account is partly erased; its person row goes only in its final.
 
-The target obligations, owners and order are detailed in
-[Erasure](account-operations.md#erasure). Each participant commits its work and
-result in its own transaction; a refusal rolls back only that owner's current
-work, while earlier results remain durable and the open operation is resumed
-from its saved facts. The fixed circle and folded-first ordering are now used
-by the live erasure path. The final personal delete follows required results
-and uses `RESTRICT` as the last safeguard; a refusal leaves the operation open
-with a safe reason, the account's number and the referencing table's name.
-The canon names the personal, library, channel, export, sessions and project
-portions individually, including their saved anchors and post-commit limits.
-The due sweep and force-purge use these owner-local portions from HIL-1952;
-that switch retired the old erasure calls, borrowed rights and debt while
-keeping rights the old merge still needs.
+The obligations, owners and order are detailed in
+[Erasure](account-operations.md#erasure), which names the personal, library,
+channel, export, sessions and project portions individually, including their
+saved anchors and post-commit limits. The final's delete of the person row uses
+`RESTRICT` as the last safeguard; a refusal rolls back only the final and leaves
+the operation open with a safe reason, the account's number and the referencing
+table's name. The due sweep and force-purge use these owner-local portions from
+HIL-1952; that switch retired the old erasure calls, borrowed rights and debt
+while keeping rights the old merge still needs.
 
 Tests can bring a request due with `test:account:force-purge <userId>`: the
 session holder asks the personal owner to start it and waits on the resulting
@@ -181,29 +191,32 @@ outcome, and the operation continues. The existing wait window is unchanged; a
 large RT snapshot (HIL-1817) can consume it. Run the command again to observe
 the same durable operation.
 
-After the commit, the agent of every account in the circle stops itself, on
-whichever node it was up. One that was not up does not rise.
+Each account's agent carries its own steps in its own frame, rising for them if
+it was not up, and stops itself, on whichever node it runs, once its final has
+committed or a repeat returned the saved one; a refused final leaves it running.
 
-After the commit, outside the transaction: the registry files the project and
-the framework photo row named go to the files library in one
-`Hilos::$files->remove()` when the project declares `FILES`
+Files leave only after the step that deleted their rows commits, outside its
+transaction, when the project declares `FILES`: the registry files a project
+owner's part names go to the files library through `Hilos::$files->remove()`
+once `AccountErasureProjectStep` commits, and the published profile photo's file
+once the person's agent commits its part, `eraseAccountPersonalPart()`
 ([files-registry.md](files-registry.md#removing)) — nothing is deleted from disk
-past the registry. Export agents receive forget frames to remove files whose
-orders the erasure already deleted. A failure after the commit is logged and not
-retried: the request is carried out, and no sweep comes back for it.
+past the registry. A failed removal is logged and not retried: the part's result
+stands, and no sweep comes back for it.
 
-`DataExportNotifier::forgetUser()` also queues `hilos_data_export_forget_user`
-for each account to the export owner after the commit, removing files with no
-ready order. A builder checks the retained completed-erasure row before
-publishing; see [data-export.md](data-export.md).
+The data export agent deletes the person's copy order in its own participant
+step, `AbstractDataExportAgent::runErasurePart()`; after that step commits it
+removes every file no ready order keeps and tells the person's tabs. A builder
+checks the person's begun or completed erasure before publishing; see
+[data-export.md](data-export.md#the-erasure-part).
 
-`LegalAcceptancesExportNotifier::forgetUser()` queues
-`hilos_legal_acceptances_export_forget` for each account to the legal agent,
-where the project registers one (HIL-1234). Which person is in which
-administrator's file of acceptance records is not known, and the records of an
-erased account go with it, so every ready and failed export is removed with its
-file and the export being built starts again; see
-[legal-documents.md](legal-documents.md), "Export of acceptances".
+The legal agent, where the project registers one (HIL-1234), takes its part in
+its own participant step, `LegalAcceptancesExports::eraseAccountPart()`, once the
+account's acceptances are gone. Which person is in which administrator's file of
+acceptance records is not known, and the records of an erased account go with
+it, so the step deletes the account's own order and every ready and failed
+export; after it commits their files go and the export being built starts
+again; see [legal-documents.md](legal-documents.md), "Export of acceptances".
 
 ## The Project's Seam
 
@@ -213,29 +226,32 @@ exist, an administrator (`Remove the admin rights first`), and an account folded
 into another one (`This account was merged into another one`, HIL-1199). A
 project with a refusal of its own overrides it and calls the parent first.
 
-`applyAccountErasure()` refuses by default (`NotImplementedException`), like the
-merge's seam: a project that forgot to erase its rows hears it when the first
-account falls due. It is called for every account in the circle. An implementation
-deletes EVERY row of its own that belongs to that account; where the person is
-only mentioned in somebody else's row, the mention goes and the row stays.
-The framework deletes the rename journal and person row after the hook; the
-journal is still readable during the hook. It runs inside the transaction and
-under the holder's own claims, so each table it
-writes needs a borrowed claim on the project's session holder. Files are
-named in the answer by their registry ids (`AccountErasure::$fileIds`), never
-removed in the seam: a file gone from disk cannot come back if the transaction
-rolls back, so the library removes them after the commit.
+A project's own rows of the person are erased by the owners it names, and the
+tables it leaves out are named beside them, in its `AccountDataOwnerDirectory`
+(the facade's `ACCOUNT_DATA_OWNER_DIRECTORY`). The agent class registered under
+an owner's type implements `AccountErasureProjectOwner`; an owner whose class
+does not is treated as unregistered, and the coordinator waits while the account
+has rows. For every account in the circle the owner's agent carries its part
+through `AccountErasureProjectStep::run()` with the assignment the coordinator
+gave it; `ChatAgent::eraseAccountPart()` is the worked example. Inside the step's
+transaction `eraseAccountPart(AccountErasurePart $part): AccountErasure` deletes
+EVERY row of the owner's own that belongs to that account; where the person is
+only mentioned in somebody else's row, the mention goes and the row stays. The
+answer is recorded as the owner's result in the same transaction, so a failure
+rolls back both, and a repeated call returns the saved result without asking the
+owner again. The owner deletes under its own claims and declares the participant
+result claim ([*The participant result claim*](account-operations.md#current-implementation)).
+Files are named in the answer by their registry ids (`AccountErasure::$fileIds`),
+never removed in the part: a file gone from disk cannot come back if the
+transaction rolls back, so the step hands them to the files library after the
+commit. The person's agent deletes the rename journal and the person row in its
+final, after the required results
+([*The erasure final*](account-operations.md#current-implementation)).
 
-That is the seam today, and a project written today writes it. Under the
-target [participant boundary](account-operations.md#erasure), a project names
-its own owners, each deleting its rows with a result. A table never activated
-owes no participant; existing rows with no owner remain visible unfinished
-work, with no fallback writer. The project names its owners and the tables it
-leaves out in its `AccountDataOwnerDirectory` (the facade's
-`ACCOUNT_DATA_OWNER_DIRECTORY`); the class registered under an owner's type
-implements `AccountErasureProjectOwner` and carries its part through
-`AccountErasureProjectStep`; and the daemon refuses to start over a mounted
-table that no owner covers and no exemption names
+Under the [participant boundary](account-operations.md#erasure), a table never
+activated owes no participant; existing rows with no owner remain visible
+unfinished work, with no fallback writer. The daemon refuses to start over a
+mounted table that no owner covers and no exemption names
 (`AccountErasureCoverageGuard`). The directory, gate and owners' parts are live
 in HIL-1952. The switch retired the erasure seam's former borrowed write
 rights; rights still needed by the old merge remain until its separate cutover.

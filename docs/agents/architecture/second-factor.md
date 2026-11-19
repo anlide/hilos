@@ -121,7 +121,8 @@ remain until their own
 [erasure](account-operations.md#erasure) and [merge](account-operations.md#merge)
 canons give each prepared capability its own address. For merge, each owner
 checks its protection, shown flag and pending-removal refusals at preparation
-(built, but with no live sender until HIL-2000). Reservation guards cover the
+(built; its sender, the merge coordinator, is built by HIL-2000 and goes live at
+the merge switch, HIL-1999). Reservation guards cover the
 existing personal protection mutations and affected policy entrances, including
 late service frames (built, HIL-1989). Saved trust policy still limits reads;
 startup and service application defer the material writes while this account is
@@ -138,8 +139,8 @@ These guards are active, but the prepared merge remains inert until HIL-1999.
 The loser transfers or deletes its factor
 and backup codes by fate, preserving spent status, and removes its other
 second-factor rows with its nonsecret result and separate private copy in the
-[prepared give](account-operations.md#the-prepared-loser-give), with no live
-coordinator sender until HIL-2000. The [prepared survivor receipt](account-operations.md#the-prepared-survivor-receipt)
+[prepared give](account-operations.md#the-prepared-loser-give), sent by the merge
+coordinator, built by HIL-2000 and live at the merge switch (HIL-1999). The [prepared survivor receipt](account-operations.md#the-prepared-survivor-receipt)
 writes the longer saved-source/current-own effective wait for `BOTH`, clears
 pending shortening and preserves app-code misses and lock state. Other fates
 leave settings untouched. It deletes its own trusts when the loser's
@@ -154,8 +155,8 @@ sessions after the exact give; `go/survivor_sessions` ends survivor sessions
 after the exact receipt only when the saved give retained the loser's factor.
 Each commits its strict `{"sessions":<n>,"accessLog":<m>}` result with its
 work and publishes session/profile notifications only after commit (HIL-1995).
-These duties remain prepared: normal merge production is HIL-2000 and the live
-cutover is HIL-1999.
+These duties remain prepared: normal merge production is built by HIL-2000 and
+goes live at the merge switch (not in the code yet — HIL-1999).
 
 The loser's sessions end after the prepared duty commits. When its factor first
 protects the survivor, the survivor's sessions end after receipt too. A
