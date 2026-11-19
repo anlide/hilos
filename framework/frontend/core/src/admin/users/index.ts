@@ -119,6 +119,19 @@ export {
   type HilosImpersonate,
 } from './hilosUsers.js'
 export {
+  HILOS_USER_MERGE_COPY,
+  hilosUserMergeSection,
+  type HilosUserMergeSection,
+  type HilosUserMergePartLine,
+  type HilosUserMergeWaitLine,
+} from './hilosUserMergeSection.js'
+export {
+  createHilosAccountMergeWindow,
+  HILOS_ACCOUNT_MERGE_WINDOW_COPY,
+  type HilosAccountMergeWindow,
+  type HilosAccountMergeWindowView,
+} from './hilosAccountMergeWindow.js'
+export {
   createHilosUserSessions,
   type HilosUserSession,
   type HilosUserSessions,

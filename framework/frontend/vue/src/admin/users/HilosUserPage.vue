@@ -52,6 +52,7 @@ import {
   ACCOUNT_DELETION_TICK_MS,
   computedSignal,
   focusInitial,
+  hilosAdminAccess,
   HILOS_STEP_UP_COPY,
   type HilosStepUpOpenOutcome,
   HilosPages,
@@ -82,6 +83,10 @@ import {
   createHilosUserDetail,
   createHilosUserSessions,
   createHilosAccountMerge,
+  createHilosAccountMergeWindow,
+  HILOS_ACCOUNT_MERGE_WINDOW_COPY,
+  HILOS_USER_MERGE_COPY,
+  hilosUserMergeSection,
   createHilosMergeCandidates,
   createHilosUserRename,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
@@ -186,6 +191,46 @@ const erasure = useSignal(
   ),
 )
 const erasureCopy = HILOS_USER_ERASURE_COPY
+const mergeProgress = useSignal(userStanding.merge)
+const mergeAvailability = useSignal(userStanding.mergeAvailability)
+const mergeSection = computed(() =>
+  hilosUserMergeSection(mergeProgress.value, detail.value?.id),
+)
+const mergeWindow = createHilosAccountMergeWindow(
+  userStanding.merge,
+  computedSignal(() => userDetail.get()?.id),
+)
+const mergeObserved = useSignal(mergeWindow.opened)
+const mergeView = useSignal(mergeWindow.view)
+const mergeObservation = computed(() =>
+  mergeView.value?.kind === 'progress' ? mergeView.value : null,
+)
+const mergeObservationStatus = computed(() =>
+  mergeView.value?.kind === 'progress'
+    ? mergeView.value.status
+    : (mergeView.value?.message ?? ''),
+)
+const mergeWindowCopy = HILOS_ACCOUNT_MERGE_WINDOW_COPY
+const mergeCopy = HILOS_USER_MERGE_COPY
+const mergeDraftBlocked = computed(
+  () =>
+    mergeAvailability.value?.available !== true ||
+    (mergeProgress.value !== null &&
+      mergeProgress.value.state !== 'end' &&
+      mergeProgress.value.outcome !== 'not_started'),
+)
+const observedProtectionChoices = computed(() => {
+  const choice = mergeObservation.value?.progress.choice
+  if (
+    typeof choice?.expectedSurvivorHasSecondFactor !== 'boolean' ||
+    typeof choice.expectedLoserHasSecondFactor !== 'boolean'
+  )
+    return []
+  return hilosSecondFactorFateChoices(
+    { hasSecondFactor: choice.expectedSurvivorHasSecondFactor },
+    { hasSecondFactor: choice.expectedLoserHasSecondFactor },
+  ).filter((entry) => entry.value === choice.secondFactorFate)
+})
 const lifecycleNow = ref(Date.now())
 watch(
   [
@@ -236,6 +281,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   editor.dispose()
+  mergeWindow.dispose()
   userStanding.dispose()
   clearInterval(lifecycleTick)
 })
@@ -388,11 +434,18 @@ async function submitImpersonate(): Promise<void> {
 
 const mergeCandidates = createHilosMergeCandidates(props.context)
 const mergeRows = useSignal(mergeCandidates.controller.rows)
+const mergeSelectableIds = useSignal(mergeCandidates.selectableIds)
+const mergeAccess = useSignal(hilosAdminAccess)
 const accountMerge = createHilosAccountMerge(props.context)
 const mergeAction = useTrackedAction()
 const mergeStepUp = createHilosUserCardStepUp(props.context, () => {
   const survivor = detail.value
-  if (survivor && mergeProof.value === 'ask' && mergeOpen.value) {
+  if (
+    survivor &&
+    mergeProof.value === 'ask' &&
+    mergeDraftOpen.value &&
+    !mergeDraftBlocked.value
+  ) {
     mergeProof.value = 'skip'
     mergeCandidates.start(survivor.id)
   }
@@ -404,40 +457,62 @@ const mergeOpening = ref(false)
 const mergeBody = ref<HTMLElement | null>(null)
 watch(mergeProof, () => focusWindow(mergeBody))
 const currentUserId = useSignal(sessionUserId(props.context.scopes))
-const mergeOpen = ref(false)
+const mergeDraftOpen = ref(false)
+const mergeOpen = computed({
+  get: () => mergeDraftOpen.value || mergeObserved.value,
+  set: (open: boolean) => {
+    if (!open) closeMerge()
+  },
+})
 const mergeStep = ref<1 | 2>(1)
 const selectedCandidateId = ref<number | null>(null)
 const selectedSnapshot = ref<HilosMergeCandidateRow | null>(null)
 const passwordFate = ref<HilosPasswordFate | null>(null)
 const secondFactorFate = ref<HilosSecondFactorFate | null>(null)
 
-const selectedCandidate = computed(() => {
+const selectedCandidateRow = computed(() => {
   const selected = mergeRows.value.find(
     (entry) => entry.row?.id === selectedCandidateId.value,
   )
 
-  return selected?.pending === 'remove' || selected?.placeholder
-    ? null
-    : (selected?.row ?? null)
+  return selected?.row ?? null
 })
+const selectedCandidate = computed(() =>
+  selectedCandidateId.value !== null &&
+  canChooseCandidate(selectedCandidateId.value)
+    ? selectedCandidateRow.value
+    : null,
+)
 const mergeSummaryCandidate = computed(
-  () => selectedCandidate.value ?? selectedSnapshot.value,
+  () => selectedCandidateRow.value ?? selectedSnapshot.value,
 )
 const passwordChoiceRequired = computed(
   () =>
     detail.value?.hasPassword === true &&
-    selectedCandidate.value?.hasPassword === true,
+    mergeSummaryCandidate.value?.hasPassword === true,
 )
 const passwordChoices = computed(() =>
-  hilosPasswordFateChoices(detail.value, selectedCandidate.value),
+  hilosPasswordFateChoices(detail.value, mergeSummaryCandidate.value),
 )
 const secondFactorChoices = computed(() =>
-  hilosSecondFactorFateChoices(detail.value, selectedCandidate.value),
+  hilosSecondFactorFateChoices(detail.value, mergeSummaryCandidate.value),
+)
+watch(
+  [
+    () => detail.value?.hasPassword,
+    () => mergeSummaryCandidate.value?.hasPassword,
+    () => detail.value?.unverifiedPasswordAddress,
+    () => mergeSummaryCandidate.value?.unverifiedPasswordAddress,
+  ],
+  () => {
+    passwordFate.value = null
+  },
+  { flush: 'sync' },
 )
 watch(
   [
     () => detail.value?.hasSecondFactor,
-    () => selectedCandidate.value?.hasSecondFactor,
+    () => mergeSummaryCandidate.value?.hasSecondFactor,
   ],
   () => {
     secondFactorFate.value = null
@@ -457,15 +532,43 @@ const mergeDisabled = computed(
     (secondFactorChoices.value.length > 0 && secondFactorFate.value === null),
 )
 
-watch(mergeRows, () => {
-  if (
-    mergeStep.value === 1 &&
-    selectedCandidateId.value !== null &&
-    selectedCandidate.value === null
-  ) {
-    selectedCandidateId.value = null
-  }
-})
+watch(
+  [selectedCandidateRow, selectedCandidate],
+  ([candidate, selectable]) => {
+    if (candidate !== null && mergeStep.value === 2) {
+      selectedSnapshot.value = candidate
+    } else if (selectable === null && mergeStep.value === 1) {
+      selectedCandidateId.value = null
+    }
+  },
+  { flush: 'sync' },
+)
+watch(
+  mergeAccess,
+  (access, previous) => {
+    if (previous === 'full' && access !== 'full') {
+      clearMergeDraft()
+      mergeDraftOpen.value = false
+      mergeCandidates.dispose()
+    }
+  },
+  { flush: 'sync' },
+)
+
+function clearMergeDraft(): void {
+  selectedCandidateId.value = null
+  selectedSnapshot.value = null
+  passwordFate.value = null
+  secondFactorFate.value = null
+}
+
+function canChooseCandidate(id: number): boolean {
+  return (
+    !mergeDraftBlocked.value &&
+    id !== currentUserId.value &&
+    mergeSelectableIds.value.has(id)
+  )
+}
 
 function identityTitle(identity: HilosMergeCandidateIdentity): string {
   return identity.provider ?? identity.type
@@ -473,20 +576,25 @@ function identityTitle(identity: HilosMergeCandidateIdentity): string {
 
 async function openMerge(): Promise<void> {
   const survivor = detail.value
-  if (!survivor || mergeOpening.value) {
+  const access = mergeAccess.value
+  if (!survivor || mergeOpening.value || mergeDraftBlocked.value) {
     return
   }
   mergeCandidates.dispose()
   mergeAction.clearError()
   mergeStep.value = 1
-  selectedCandidateId.value = null
-  selectedSnapshot.value = null
-  passwordFate.value = null
-  secondFactorFate.value = null
+  clearMergeDraft()
   mergeOpening.value = true
   mergeProof.value = await mergeStepUp.open('merge')
   mergeOpening.value = false
-  mergeOpen.value = true
+  if (
+    detail.value?.id !== survivor.id ||
+    mergeAccess.value !== access ||
+    mergeDraftBlocked.value ||
+    mergeObserved.value
+  )
+    return
+  mergeDraftOpen.value = true
   // Other accounts are shown only once the administrator stands confirmed.
   if (mergeProof.value === 'skip') {
     mergeCandidates.start(survivor.id)
@@ -498,9 +606,11 @@ async function confirmMergeStep(): Promise<void> {
   const survivor = detail.value
   if (
     survivor &&
+    !mergeDraftBlocked.value &&
     mergeProof.value === 'ask' &&
     (await mergeStepUp.step.confirm()) &&
-    mergeOpen.value
+    mergeDraftOpen.value &&
+    !mergeDraftBlocked.value
   ) {
     mergeProof.value = 'skip'
     mergeCandidates.start(survivor.id)
@@ -508,12 +618,14 @@ async function confirmMergeStep(): Promise<void> {
 }
 
 function closeMerge(): void {
-  mergeOpen.value = false
+  mergeDraftOpen.value = false
+  mergeWindow.close()
   mergeCandidates.dispose()
+  clearMergeDraft()
 }
 
 function chooseCandidate(row: HilosMergeCandidateRow): void {
-  if (row.id === currentUserId.value) {
+  if (!canChooseCandidate(row.id) || row.id === selectedCandidateId.value) {
     return
   }
   selectedCandidateId.value = row.id
@@ -627,7 +739,7 @@ watch(offersActions, (offers) => {
     return
   }
   if (!loading.value) closeEdit()
-  if (!mergeAction.busy.value) closeMerge()
+  if (!mergeObserved.value && !mergeAction.busy.value) closeMerge()
   closeLifecycle()
   closeImpersonate()
 })
@@ -917,6 +1029,17 @@ function submit(): void {
           </div>
         </div>
       </section>
+      <div v-if="mergeSection" class="mb-4">
+        <p class="mb-1">{{ mergeSection.status }}</p>
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          data-id="hilos-user-merge-view"
+          @click="mergeWindow.open()"
+        >
+          {{ mergeWindowCopy.view }}
+        </button>
+      </div>
       <slot
         v-if="$slots['project-overview']"
         name="project-overview"
@@ -939,6 +1062,7 @@ function submit(): void {
               class="btn-outline-danger"
               opens-window
               :loading="mergeOpening"
+              :disabled="mergeDraftBlocked"
               data-id="hilos-user-merge-open"
               @click="openMerge"
             >
@@ -1193,17 +1317,21 @@ function submit(): void {
         </template>
       </HilosModal>
 
+      <!-- The draft's child marks its first field. Observation has no marked
+      field, so the same inner placement falls back to the dialog itself. -->
       <HilosModal
         v-model="mergeOpen"
         :title="
-          mergeProof !== 'skip'
-            ? HILOS_STEP_UP_COPY.title
-            : detail
-              ? `Merge an account into ${hiddenAsWord(detail.name)}`
-              : 'Merge an account'
+          mergeObserved
+            ? mergeCopy.title
+            : mergeProof !== 'skip'
+              ? HILOS_STEP_UP_COPY.title
+              : detail
+                ? `Merge an account into ${hiddenAsWord(detail.name)}`
+                : 'Merge an account'
         "
-        :confirm-on-close="selectedCandidateId !== null"
-        :busy="mergeAction.busy.value"
+        :confirm-on-close="!mergeObserved && selectedCandidateId !== null"
+        :busy="!mergeObserved && mergeAction.busy.value"
         initial-focus="inner"
         size="wide"
         @cancel="closeMerge"
@@ -1215,258 +1343,393 @@ function submit(): void {
           aria-live="assertive"
         >
           {{
-            mergeProof === 'skip' ? mergeAction.error.value : mergeStepUpRefusal
+            mergeObserved
+              ? mergeObservation?.reason
+              : mergeProof === 'skip'
+                ? mergeAction.error.value
+                : mergeStepUpRefusal
           }}
         </div>
-        <HilosActionError
-          :action="mergeAction"
-          details-title="Couldn't merge the accounts"
-        />
-        <form
-          v-if="mergeProof !== 'skip'"
-          id="hilos-user-merge-proof"
-          data-id="hilos-user-merge-step-up"
-          @submit.prevent="confirmMergeStep()"
-        >
-          <HilosStepUpStep :controller="mergeStepUp.step" />
-        </form>
-        <template v-else-if="mergeStep === 1">
-          <div role="radiogroup" aria-label="Account to merge">
-            <HilosViewportTable
-              :controller="mergeCandidates.controller"
-              :autofocus-search="true"
-            >
-              <template #cell-actions="{ row }">
-                <input
-                  type="radio"
-                  class="form-check-input"
-                  :aria-label="
-                    isHiddenValue(row.name)
-                      ? `Merge #${row.id}`
-                      : `Merge ${row.name}`
-                  "
-                  :data-id="`hilos-user-merge-row-${row.id}`"
-                  :checked="selectedCandidateId === row.id"
-                  :disabled="row.id === currentUserId"
-                  @change="chooseCandidate(row)"
-                />
-              </template>
-              <template #cell-name="{ row }">
-                <!-- The space before the id lives in its span: a
-                   whitespace-only node between two elements is dropped. -->
-                <HilosHideable :value="row.name" />
-                <span class="text-body-secondary"> #{{ row.id }}</span>
-                <span
-                  v-if="row.id === currentUserId"
-                  class="badge text-bg-secondary ms-2"
-                  >you</span
+        <div class="visually-hidden" role="status" aria-live="polite">
+          {{ mergeObservationStatus }}
+        </div>
+        <template v-if="mergeObserved">
+          <p class="text-truncate" :title="mergeObservationStatus">
+            <span v-if="mergeObservationStatus">{{
+              mergeObservationStatus
+            }}</span>
+            <span v-else class="invisible" aria-hidden="true">{{
+              mergeCopy.preparing
+            }}</span>
+          </p>
+          <HilosFormError
+            :key="mergeObservation?.reason ?? ''"
+            :message="mergeObservation?.reason ?? null"
+            data-id="hilos-user-merge-operation-refusal"
+            :details-title="mergeCopy.refusalDetails"
+          />
+          <template v-if="mergeObservation">
+            <dl>
+              <dt>{{ mergeWindowCopy.survivor }}</dt>
+              <dd>
+                <template
+                  v-if="mergeObservation.progress.survivorUserId !== null"
+                  >#{{ mergeObservation.progress.survivorUserId }}</template
                 >
-              </template>
-              <template #cell-identities="{ row }">
-                <HilosHideable :value="row.identities">
-                  <template #default="{ value: identities }">
-                    <ul class="list-unstyled mb-0">
-                      <li
-                        v-for="identity in identities"
-                        :key="`${identity.type}:${identity.identifier}`"
-                      >
-                        <span class="fw-medium">{{
-                          identityTitle(identity)
-                        }}</span>
-                        <template v-if="identity.type !== 'passkey'">
-                          · {{ identity.identifier }}
-                        </template>
-                        <template v-if="identity.verified">
-                          <span aria-hidden="true"> ✓</span
-                          ><span class="visually-hidden"> Verified</span>
-                        </template>
-                      </li>
-                    </ul>
-                  </template>
-                </HilosHideable>
-              </template>
-              <template #cell-lastActivity="{ row }">{{
-                row.lastActivity ?? '—'
-              }}</template>
-            </HilosViewportTable>
-          </div>
-        </template>
-        <template v-else-if="mergeSummaryCandidate">
-          <p data-id="hilos-user-merge-summary">
-            <strong
-              ><HilosHideable :value="mergeSummaryCandidate.name" /> (#{{
-                mergeSummaryCandidate.id
-              }})</strong
+                <HilosHiddenMark v-else />
+              </dd>
+              <dt>{{ mergeWindowCopy.loser }}</dt>
+              <dd>
+                <template v-if="mergeObservation.progress.loserUserId !== null"
+                  >#{{ mergeObservation.progress.loserUserId }}</template
+                >
+                <HilosHiddenMark v-else />
+              </dd>
+            </dl>
+            <p
+              v-if="
+                mergeObservation.progress.choice?.passwordFate !== null &&
+                mergeObservation.progress.choice?.passwordFate !== undefined
+              "
             >
-            will be merged into
-            <strong
-              ><HilosHideable v-if="detail" :value="detail.name" /> (#{{
-                detail?.id
-              }})</strong
-            >.
-          </p>
-          <ul>
-            <li>
-              Its sign-in methods and everything it wrote move to the survivor.
-            </li>
-            <li>
-              The other account is closed for good; it cannot sign in and its
-              open tabs sign out.
-            </li>
-            <li>This cannot be undone.</li>
-          </ul>
-          <p
-            v-if="mergeGone"
-            class="text-danger"
-            data-id="hilos-user-merge-gone"
-          >
-            No longer available
-          </p>
-          <p
-            data-id="hilos-user-merge-second-factor-summary"
-            role="status"
-            aria-live="polite"
-          >
-            {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.survivor }}
-            {{
-              detail?.hasSecondFactor === true
-                ? 'Yes'
-                : detail?.hasSecondFactor === false
-                  ? 'No'
-                  : 'Hidden'
-            }}. {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.loser }}
-            {{
-              mergeSummaryCandidate?.hasSecondFactor === true
-                ? 'Yes'
-                : mergeSummaryCandidate?.hasSecondFactor === false
-                  ? 'No'
-                  : 'Hidden'
-            }}.
-          </p>
-          <fieldset v-if="secondFactorChoices.length > 0" class="mb-3">
-            <legend class="h6">
-              {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.legend }}
-            </legend>
-            <p class="form-text">
-              {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.trusts }}
+              {{
+                HILOS_ACCOUNT_MERGE_PASSWORD_COPY[
+                  mergeObservation.progress.choice.passwordFate
+                ]
+              }}
             </p>
-            <div
-              v-for="choice in secondFactorChoices"
-              :key="choice.value"
-              class="form-check"
-            >
-              <input
-                :id="`hilos-user-merge-second-factor-${choice.value}-field`"
-                v-model="secondFactorFate"
-                class="form-check-input"
-                type="radio"
-                name="hilos-user-merge-second-factor"
-                :value="choice.value"
-                :data-id="`hilos-user-merge-second-factor-${choice.value}`"
-                :aria-describedby="`hilos-user-merge-second-factor-${choice.value}-consequence`"
-              />
-              <label
-                class="form-check-label"
-                :for="`hilos-user-merge-second-factor-${choice.value}-field`"
-                >{{ choice.label }}</label
-              >
-              <p
-                :id="`hilos-user-merge-second-factor-${choice.value}-consequence`"
-                class="form-text"
-              >
-                {{ choice.consequence }}
+            <section>
+              <h3 class="h6">
+                {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.legend }}
+              </h3>
+              <p>
+                {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.survivor }}
+                <template
+                  v-if="
+                    typeof mergeObservation.progress.choice
+                      ?.expectedSurvivorHasSecondFactor === 'boolean'
+                  "
+                  >{{
+                    mergeObservation.progress.choice
+                      .expectedSurvivorHasSecondFactor
+                      ? 'Yes'
+                      : 'No'
+                  }}</template
+                >
+                <HilosHiddenMark v-else />.
+                {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.loser }}
+                <template
+                  v-if="
+                    typeof mergeObservation.progress.choice
+                      ?.expectedLoserHasSecondFactor === 'boolean'
+                  "
+                  >{{
+                    mergeObservation.progress.choice
+                      .expectedLoserHasSecondFactor
+                      ? 'Yes'
+                      : 'No'
+                  }}</template
+                >
+                <HilosHiddenMark v-else />.
               </p>
-            </div>
-          </fieldset>
-          <fieldset v-if="passwordChoiceRequired" class="mb-3">
-            <legend class="h6">
-              {{ HILOS_ACCOUNT_MERGE_PASSWORD_COPY.legend }}
-            </legend>
-            <div
-              v-for="choice in passwordChoices"
-              :key="choice.value"
-              class="form-check"
-            >
-              <input
-                :id="`hilos-user-merge-fate-${choice.value}-field`"
-                v-model="passwordFate"
-                class="form-check-input"
-                type="radio"
-                name="hilos-user-merge-password-fate"
-                :value="choice.value"
-                :data-id="`hilos-user-merge-fate-${choice.value}`"
-                :aria-describedby="
-                  choice.removes.length > 0
-                    ? `hilos-user-merge-fate-${choice.value}-removes`
-                    : undefined
-                "
-              />
-              <label
-                class="form-check-label"
-                :for="`hilos-user-merge-fate-${choice.value}-field`"
-                >{{ choice.label }}</label
-              >
               <div
-                v-if="choice.removes.length > 0"
-                :id="`hilos-user-merge-fate-${choice.value}-removes`"
-                :data-id="`hilos-user-merge-fate-${choice.value}-removes`"
-                class="form-text text-danger"
+                v-for="choice in observedProtectionChoices"
+                :key="choice.value"
               >
-                <div v-for="removal in choice.removes" :key="removal">
-                  {{ removal }}
+                <p class="mb-1">{{ choice.label }}</p>
+                <p>{{ choice.consequence }}</p>
+              </div>
+            </section>
+            <section v-if="mergeObservation.pendingParts.length > 0">
+              <h3 class="h6">{{ mergeCopy.parts }}</h3>
+              <ul>
+                <li
+                  v-for="part in mergeObservation.pendingParts"
+                  :key="part.key"
+                >
+                  {{ part.participant
+                  }}<template v-if="part.account !== null">
+                    · #{{ part.account }}</template
+                  >
+                </li>
+              </ul>
+            </section>
+            <section v-if="mergeObservation.waits.length > 0">
+              <h3 class="h6">{{ mergeCopy.waits }}</h3>
+              <ul>
+                <li v-for="wait in mergeObservation.waits" :key="wait.key">
+                  {{ wait.participant
+                  }}<template v-if="wait.account !== null">
+                    · #{{ wait.account }}</template
+                  >
+                </li>
+              </ul>
+            </section>
+          </template>
+        </template>
+        <template v-else>
+          <HilosActionError
+            :action="mergeAction"
+            details-title="Couldn't merge the accounts"
+          />
+          <form
+            v-if="mergeProof !== 'skip'"
+            id="hilos-user-merge-proof"
+            data-id="hilos-user-merge-step-up"
+            @submit.prevent="confirmMergeStep()"
+          >
+            <HilosStepUpStep :controller="mergeStepUp.step" />
+          </form>
+          <template v-else-if="mergeStep === 1">
+            <div role="radiogroup" aria-label="Account to merge">
+              <HilosViewportTable
+                :controller="mergeCandidates.controller"
+                :autofocus-search="true"
+              >
+                <template #cell-actions="{ row }">
+                  <input
+                    type="radio"
+                    class="form-check-input"
+                    :aria-label="
+                      isHiddenValue(row.name)
+                        ? `Merge #${row.id}`
+                        : `Merge ${row.name}`
+                    "
+                    :data-id="`hilos-user-merge-row-${row.id}`"
+                    :checked="selectedCandidateId === row.id"
+                    :disabled="!canChooseCandidate(row.id)"
+                    @change="chooseCandidate(row)"
+                  />
+                </template>
+                <template #cell-name="{ row }">
+                  <!-- The space before the id lives in its span: a
+                   whitespace-only node between two elements is dropped. -->
+                  <HilosHideable :value="row.name" />
+                  <span class="text-body-secondary"> #{{ row.id }}</span>
+                  <span
+                    v-if="row.id === currentUserId"
+                    class="badge text-bg-secondary ms-2"
+                    >you</span
+                  >
+                </template>
+                <template #cell-identities="{ row }">
+                  <HilosHideable :value="row.identities">
+                    <template #default="{ value: identities }">
+                      <ul class="list-unstyled mb-0">
+                        <li
+                          v-for="identity in identities"
+                          :key="`${identity.type}:${identity.identifier}`"
+                        >
+                          <span class="fw-medium">{{
+                            identityTitle(identity)
+                          }}</span>
+                          <template v-if="identity.type !== 'passkey'">
+                            · {{ identity.identifier }}
+                          </template>
+                          <template v-if="identity.verified">
+                            <span aria-hidden="true"> ✓</span
+                            ><span class="visually-hidden"> Verified</span>
+                          </template>
+                        </li>
+                      </ul>
+                    </template>
+                  </HilosHideable>
+                </template>
+                <template #cell-lastActivity="{ row }">{{
+                  row.lastActivity ?? '—'
+                }}</template>
+              </HilosViewportTable>
+            </div>
+          </template>
+          <template v-else-if="mergeSummaryCandidate">
+            <p data-id="hilos-user-merge-summary">
+              <strong
+                ><HilosHideable :value="mergeSummaryCandidate.name" /> (#{{
+                  mergeSummaryCandidate.id
+                }})</strong
+              >
+              will be merged into
+              <strong
+                ><HilosHideable v-if="detail" :value="detail.name" /> (#{{
+                  detail?.id
+                }})</strong
+              >.
+            </p>
+            <ul>
+              <li>
+                Its sign-in methods and everything it wrote move to the
+                survivor.
+              </li>
+              <li>
+                The other account is closed for good; it cannot sign in and its
+                open tabs sign out.
+              </li>
+              <li>This cannot be undone.</li>
+            </ul>
+            <p
+              v-if="mergeGone"
+              class="text-danger"
+              data-id="hilos-user-merge-gone"
+            >
+              No longer available
+            </p>
+            <p
+              data-id="hilos-user-merge-second-factor-summary"
+              role="status"
+              aria-live="polite"
+            >
+              {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.survivor }}
+              {{
+                detail?.hasSecondFactor === true
+                  ? 'Yes'
+                  : detail?.hasSecondFactor === false
+                    ? 'No'
+                    : 'Hidden'
+              }}. {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.loser }}
+              {{
+                mergeSummaryCandidate?.hasSecondFactor === true
+                  ? 'Yes'
+                  : mergeSummaryCandidate?.hasSecondFactor === false
+                    ? 'No'
+                    : 'Hidden'
+              }}.
+            </p>
+            <fieldset v-if="secondFactorChoices.length > 0" class="mb-3">
+              <legend class="h6">
+                {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.legend }}
+              </legend>
+              <p class="form-text">
+                {{ HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY.trusts }}
+              </p>
+              <div
+                v-for="choice in secondFactorChoices"
+                :key="choice.value"
+                class="form-check"
+              >
+                <input
+                  :id="`hilos-user-merge-second-factor-${choice.value}-field`"
+                  v-model="secondFactorFate"
+                  class="form-check-input"
+                  type="radio"
+                  name="hilos-user-merge-second-factor"
+                  :value="choice.value"
+                  :data-id="`hilos-user-merge-second-factor-${choice.value}`"
+                  :aria-describedby="`hilos-user-merge-second-factor-${choice.value}-consequence`"
+                />
+                <label
+                  class="form-check-label"
+                  :for="`hilos-user-merge-second-factor-${choice.value}-field`"
+                  >{{ choice.label }}</label
+                >
+                <p
+                  :id="`hilos-user-merge-second-factor-${choice.value}-consequence`"
+                  class="form-text"
+                >
+                  {{ choice.consequence }}
+                </p>
+              </div>
+            </fieldset>
+            <fieldset v-if="passwordChoiceRequired" class="mb-3">
+              <legend class="h6">
+                {{ HILOS_ACCOUNT_MERGE_PASSWORD_COPY.legend }}
+              </legend>
+              <div
+                v-for="choice in passwordChoices"
+                :key="choice.value"
+                class="form-check"
+              >
+                <input
+                  :id="`hilos-user-merge-fate-${choice.value}-field`"
+                  v-model="passwordFate"
+                  class="form-check-input"
+                  type="radio"
+                  name="hilos-user-merge-password-fate"
+                  :value="choice.value"
+                  :data-id="`hilos-user-merge-fate-${choice.value}`"
+                  :aria-describedby="
+                    choice.removes.length > 0
+                      ? `hilos-user-merge-fate-${choice.value}-removes`
+                      : undefined
+                  "
+                />
+                <label
+                  class="form-check-label"
+                  :for="`hilos-user-merge-fate-${choice.value}-field`"
+                  >{{ choice.label }}</label
+                >
+                <div
+                  v-if="choice.removes.length > 0"
+                  :id="`hilos-user-merge-fate-${choice.value}-removes`"
+                  :data-id="`hilos-user-merge-fate-${choice.value}-removes`"
+                  class="form-text text-danger"
+                >
+                  <div v-for="removal in choice.removes" :key="removal">
+                    {{ removal }}
+                  </div>
                 </div>
               </div>
-            </div>
-          </fieldset>
+            </fieldset>
+          </template>
         </template>
         <template #actions="{ requestClose }">
           <button
+            v-if="mergeObserved"
             type="button"
             class="btn btn-secondary"
-            :disabled="mergeAction.busy.value"
-            data-id="hilos-user-merge-cancel"
+            data-id="hilos-user-merge-close"
             @click="requestClose"
           >
-            Cancel
+            {{ mergeWindowCopy.close }}
           </button>
-          <LoadingButton
-            v-if="mergeProof === 'ask'"
-            class="btn-primary"
-            type="submit"
-            form="hilos-user-merge-proof"
-            :loading="mergeStepUpBusy"
-            data-id="hilos-user-merge-step-up-confirm"
-            >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
-          >
-          <button
-            v-else-if="mergeProof === 'skip' && mergeStep === 1"
-            type="button"
-            class="btn btn-primary"
-            :disabled="selectedCandidate === null"
-            data-id="hilos-user-merge-next"
-            @click="nextMergeStep"
-          >
-            Next
-          </button>
-          <template v-else-if="mergeProof === 'skip'">
+          <template v-else>
             <button
               type="button"
               class="btn btn-secondary"
               :disabled="mergeAction.busy.value"
-              data-id="hilos-user-merge-back"
-              @click="previousMergeStep"
+              data-id="hilos-user-merge-cancel"
+              @click="requestClose"
             >
-              Back
+              Cancel
             </button>
             <LoadingButton
-              class="btn-danger"
-              :loading="mergeAction.busy.value"
-              :disabled="mergeDisabled"
-              data-id="hilos-user-merge-confirm"
-              @click="submitMerge"
+              v-if="mergeProof === 'ask'"
+              class="btn-primary"
+              type="submit"
+              form="hilos-user-merge-proof"
+              :loading="mergeStepUpBusy"
+              data-id="hilos-user-merge-step-up-confirm"
+              >{{ HILOS_STEP_UP_COPY.confirm }}</LoadingButton
             >
-              Merge
-            </LoadingButton>
+            <button
+              v-else-if="mergeProof === 'skip' && mergeStep === 1"
+              type="button"
+              class="btn btn-primary"
+              :disabled="selectedCandidate === null"
+              data-id="hilos-user-merge-next"
+              @click="nextMergeStep"
+            >
+              Next
+            </button>
+            <template v-else-if="mergeProof === 'skip'">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                :disabled="mergeAction.busy.value"
+                data-id="hilos-user-merge-back"
+                @click="previousMergeStep"
+              >
+                Back
+              </button>
+              <LoadingButton
+                class="btn-danger"
+                :loading="mergeAction.busy.value"
+                :disabled="mergeDisabled"
+                data-id="hilos-user-merge-confirm"
+                @click="submitMerge"
+              >
+                Merge
+              </LoadingButton>
+            </template>
           </template>
         </template>
       </HilosModal>
