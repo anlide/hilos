@@ -2458,7 +2458,7 @@ path on its own:
   facts through the lazy typed core (HIL-2004); occupied or folded accounts
   are never offered as available by that data model. See
   [Merge observation data](#merge-observation-data).
-- Vue's list shows the states (not in the code yet — HIL-2005), its card
+- Vue's list shows the merge progress caption and its unfinished states, its card
   shows them. Its merge window observes the recorded operation through the
   shared core window, including live waits, refusal and end, with the server's
   privacy projection. Closing it releases observation and does not cancel the

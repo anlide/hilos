@@ -25,6 +25,7 @@ import {
   HILOS_PRESENCE_WIDEST_LABEL,
   HILOS_USER_ERASURE_COPY,
   HILOS_USERS_LIST_COPY,
+  HILOS_USERS_MERGE_COPY,
   hilosPresenceBadge,
   hilosStandingBadge,
   type HilosUserRow,
@@ -57,6 +58,7 @@ const users = createHilosUsersTable(props.context, router, { idInName: true })
 const usersTable = users.controller
 const currentUserId = useSignal(users.currentUserId)
 const erasures = useSignal(users.erasures)
+const mergeCaptions = useSignal(users.mergeCaptions)
 
 // Bind the server-windowed table to the connection on mount, request the first
 // window, and unbind on unmount.
@@ -201,6 +203,56 @@ const erasingBadge = hilosStandingBadge('erasing')
               ><template v-if="caption.refusals.more !== null"
                 >; {{ caption.refusals.more }}</template
               >
+            </div>
+          </template>
+        </template>
+        <template
+          v-for="(caption, captionIndex) in [mergeCaptions.get(rowKey)]"
+          :key="captionIndex"
+        >
+          <template v-if="caption !== undefined">
+            <div data-id="hilos-users-merge-summary">
+              {{ caption.summary }}
+            </div>
+            <div
+              v-if="caption.expected.shown.length > 0"
+              data-id="hilos-users-merge-expected"
+            >
+              {{ HILOS_USERS_MERGE_COPY.expected }}:
+              <template
+                v-for="(part, index) in caption.expected.shown"
+                :key="part.key"
+                ><template v-if="index > 0">; </template
+                ><code>{{ part.participant }}</code
+                ><template v-if="part.account !== null">
+                  · #{{ part.account }}</template
+                ></template
+              ><template v-if="caption.expected.more !== null"
+                >; {{ caption.expected.more }}</template
+              >
+            </div>
+            <div
+              v-if="caption.waits.shown.length > 0"
+              data-id="hilos-users-merge-waits"
+            >
+              {{ HILOS_USERS_MERGE_COPY.waits }}:
+              <template
+                v-for="(wait, index) in caption.waits.shown"
+                :key="wait.key"
+                ><template v-if="index > 0">; </template
+                ><code>{{ wait.participant }}</code
+                ><template v-if="wait.account !== null">
+                  · #{{ wait.account }}</template
+                ></template
+              ><template v-if="caption.waits.more !== null"
+                >; {{ caption.waits.more }}</template
+              >
+            </div>
+            <div
+              v-if="caption.refusal !== null"
+              data-id="hilos-users-merge-refusal"
+            >
+              {{ caption.refusal }}
             </div>
           </template>
         </template>

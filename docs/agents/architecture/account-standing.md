@@ -410,6 +410,15 @@ erasure row in place of the merged row, draws the "Being deleted" badge, the
 progress section, and closes its modals; Angular's list puts "Being deleted"
 beside the name and the same caption above the bar (`hilosUsersErasureCaption`).
 
+Merge progress in the users list is drawn by Vue's list (HIL-2005) through
+`HilosUsersTable.mergeCaptions`: a caption above the merge bar
+(`hilos-account-merge`) with state summary (`Preparing merge`,
+`Merge in progress`, `Cancelling merge preparation`, `Merge refused`),
+a parts counter `{done} of {total} parts done`, unfinished expected parts,
+awaited owners, and the server refusal reason, limiting items to 3 per line
+and "+N more" past them. The "Merged" badge remains a fact of absorption and
+does not mean the ongoing operation has ended.
+
 - **Deletion strip** (`hilosDeletionStrip`) — the standing the session acts as
   is `deletion_scheduled` with a known `deletionEffectiveAt`. It is shown during
   a takeover too, for the represented person. "Your account will be deleted on

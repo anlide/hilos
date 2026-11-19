@@ -153,8 +153,12 @@ function seededContext(users: UserSeed[]): HilosUsersContext {
  * {@link seededContext} with the live delta frames of the people table at hand.
  *
  * @param users The people of the first window.
+ * @param initialProgress Initial progress bars served with the first window.
  */
-function liveUsers(users: UserSeed[]): LiveUsers {
+function liveUsers(
+  users: UserSeed[],
+  initialProgress?: readonly Record<string, unknown>[],
+): LiveUsers {
   const scopes = new ScopeManager()
   scopes.openPage('hilos_users')
   const windowListeners = new Set<(signal: { data: unknown }) => void>()
@@ -185,6 +189,13 @@ function liveUsers(users: UserSeed[]): LiveUsers {
     }
     for (const listener of windowListeners) {
       listener({ data })
+    }
+    if (initialProgress && initialProgress.length > 0) {
+      queueMicrotask(() => {
+        for (const bar of initialProgress) {
+          progress(bar)
+        }
+      })
     }
   }
 
@@ -271,6 +282,7 @@ async function mountList(
     ...(options?.attachTo ? { attachTo: options.attachTo } : {}),
   })
   mounted.push(wrapper)
+  await flushPromises()
   await nextTick()
 
   return wrapper
@@ -965,5 +977,380 @@ describe('HilosUsersPage erasure (HIL-1956)', () => {
 
     expect(caption(1, 'summary').text()).toContain('4 of 5 parts done')
     expect(wrapper.get('[data-id="hilos-table-row-1"]').element).toBe(row)
+  })
+})
+
+describe('HilosUsersPage merge (HIL-2005)', () => {
+  const alice: UserSeed = {
+    id: 1,
+    name: 'Alice',
+    lastActivity: null,
+    presence: 'offline',
+    onlineSessionCount: 0,
+    block: false,
+  }
+  const bob: UserSeed = { ...alice, id: 2, name: 'Bob' }
+  const mergeDetail = {
+    operationId: 10,
+    survivorUserId: 1,
+    loserUserId: 2,
+    state: 'preparing',
+    stage: 'preparing',
+    outcome: null,
+    given: true,
+    received: false,
+    choice: null,
+    refusal: null,
+    parts: [
+      { participant: 'profile', owner: 'user', userId: 1, done: true },
+      { participant: 'chat', owner: 'room', userId: 1, done: false },
+      { participant: 'files', owner: 'user', userId: 2, done: false },
+      { participant: 'auth', owner: 'credentials', userId: 2, done: false },
+    ],
+    waits: [
+      { participant: 'sessions', userId: 2 },
+      { participant: 'delivery', userId: null },
+    ],
+  }
+
+  /**
+   * The merge bar of one row as the server sends it.
+   *
+   * @param rowKey The account the row shows.
+   * @param fields What differs from a running bar one of three parts along.
+   */
+  function mergeBar(
+    rowKey: string,
+    fields: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      scope: 'row',
+      progressKey: 'hilos-account-merge',
+      rowKey,
+      current: 1,
+      total: 3,
+      detail: mergeDetail,
+      ...fields,
+    }
+  }
+
+  /**
+   * Mount the list over Alice and Bob with merge caption selectors ready.
+   *
+   * @param seeds The people of the first window.
+   * @param initialProgress Initial progress bars served with the window.
+   * @param options Mount options like DOM attachment.
+   */
+  async function mountMerge(
+    seeds: UserSeed[] = [alice, bob],
+    initialProgress?: Record<string, unknown>[],
+    options?: { attachTo?: HTMLElement },
+  ) {
+    const live = liveUsers(seeds, initialProgress)
+    live.context.scopes.session.data.set('currentUser', {
+      type: USER_ENTITY_TYPE,
+      id: 1,
+    })
+    const wrapper = await mountList(live.context, options)
+    const progressRow = (id: number) =>
+      wrapper.find(`[data-id="hilos-table-progress-row-${id}"]`)
+    const caption = (id: number, line: string) => {
+      const row = progressRow(id)
+      return row.exists()
+        ? row.find(`[data-id="hilos-users-merge-${line}"]`)
+        : row
+    }
+
+    return { live, wrapper, progressRow, caption }
+  }
+
+  it('renders initial merge progress caption upon mount', async () => {
+    const { progressRow, caption } = await mountMerge(
+      [alice, bob],
+      [mergeBar('1')],
+    )
+
+    expect(progressRow(1).exists()).toBe(true)
+    expect(caption(1, 'summary').text()).toBe(
+      'Preparing merge · 1 of 3 parts done',
+    )
+    expect(caption(1, 'expected').text()).toBe(
+      'Expected: chat; files · #2; auth · #2',
+    )
+    expect(caption(1, 'expected').findAll('code')).toHaveLength(3)
+    expect(caption(1, 'waits').text()).toBe(
+      'Waiting for an owner: sessions · #2; delivery',
+    )
+    expect(caption(1, 'refusal').exists()).toBe(false)
+  })
+
+  it('updates merge caption live through preparing, wait, refusal and cancelling states', async () => {
+    const { live, progressRow, caption } = await mountMerge([alice, bob])
+    expect(progressRow(1).exists()).toBe(false)
+
+    // Preparing
+    live.progress(
+      mergeBar('1', { detail: { ...mergeDetail, stage: 'preparing' } }),
+    )
+    await flushPromises()
+    expect(progressRow(1).exists()).toBe(true)
+    expect(caption(1, 'summary').text()).toBe(
+      'Preparing merge · 1 of 3 parts done',
+    )
+
+    // Wait
+    live.progress(
+      mergeBar('1', {
+        current: 2,
+        detail: { ...mergeDetail, stage: 'go', state: 'wait' },
+      }),
+    )
+    await flushPromises()
+    expect(caption(1, 'summary').text()).toBe(
+      'Merge in progress · 2 of 3 parts done',
+    )
+
+    // Refusal
+    live.progress(
+      mergeBar('1', {
+        detail: {
+          ...mergeDetail,
+          refusal: {
+            code: 'occupied',
+            reason: 'Account has pending transactions',
+            permanent: false,
+          },
+        },
+      }),
+    )
+    await flushPromises()
+    expect(caption(1, 'summary').text()).toBe(
+      'Merge refused · 1 of 3 parts done',
+    )
+    expect(caption(1, 'refusal').text()).toBe(
+      'Account has pending transactions',
+    )
+
+    // Cancelling
+    live.progress(
+      mergeBar('1', {
+        detail: {
+          ...mergeDetail,
+          stage: 'cancelling',
+          refusal: null,
+        },
+      }),
+    )
+    await flushPromises()
+    expect(caption(1, 'summary').text()).toBe(
+      'Cancelling merge preparation · 1 of 3 parts done',
+    )
+    expect(caption(1, 'refusal').exists()).toBe(false)
+  })
+
+  it('displays Merged badge beside continuing wait without treating it as operation end', async () => {
+    const { live, wrapper, progressRow, caption } = await mountMerge([
+      alice,
+      { ...bob, merged: true },
+    ])
+    const name = cell(wrapper, 2, 'Name')
+    expect(name.get('[data-id="hilos-users-merged"]').text()).toBe('Merged')
+
+    live.progress(
+      mergeBar('2', {
+        current: 3,
+        total: 3,
+        detail: {
+          ...mergeDetail,
+          loserUserId: 2,
+          stage: 'go',
+          state: 'wait',
+        },
+      }),
+    )
+    await flushPromises()
+
+    expect(name.get('[data-id="hilos-users-merged"]').text()).toBe('Merged')
+    expect(progressRow(2).exists()).toBe(true)
+    expect(caption(2, 'summary').text()).toBe(
+      'Merge in progress · 3 of 3 parts done',
+    )
+    expect(
+      progressRow(2).get('[role="progressbar"]').attributes('aria-valuenow'),
+    ).toBe('100')
+  })
+
+  it('formats expected, waits, server refusal reason and preserves the Open action slot', async () => {
+    const { live, wrapper, caption } = await mountMerge([alice, bob])
+    const longDetail = {
+      ...mergeDetail,
+      parts: [
+        { participant: 'profile', owner: 'user', userId: 1, done: true },
+        { participant: 'chat', owner: 'room', userId: 1, done: false },
+        { participant: 'files', owner: 'user', userId: 2, done: false },
+        { participant: 'auth', owner: 'credentials', userId: 2, done: false },
+        { participant: 'extra1', owner: 'sys', userId: 2, done: false },
+        { participant: 'extra2', owner: 'sys', userId: null, done: false },
+      ],
+      waits: [
+        { participant: 'sessions', userId: 2 },
+        { participant: 'delivery', userId: null },
+        { participant: 'backup', userId: 2 },
+        { participant: 'audit', userId: null },
+      ],
+      refusal: {
+        code: 'occupied',
+        reason: 'Another merge already active on candidate',
+        permanent: true,
+      },
+    }
+
+    live.progress(mergeBar('1', { detail: longDetail }))
+    await flushPromises()
+
+    expect(caption(1, 'expected').text()).toBe(
+      'Expected: chat; files · #2; auth · #2; +2 more',
+    )
+    expect(caption(1, 'expected').findAll('code')).toHaveLength(3)
+
+    expect(caption(1, 'waits').text()).toBe(
+      'Waiting for an owner: sessions · #2; delivery; backup · #2; +1 more',
+    )
+    expect(caption(1, 'waits').findAll('code')).toHaveLength(3)
+
+    expect(caption(1, 'refusal').text()).toBe(
+      'Another merge already active on candidate',
+    )
+    const row = wrapper.get('[data-id="hilos-table-row-1"]')
+    expect(row.text()).toContain('Open')
+    expect(row.get('a').attributes('href')).toBe('/hilos/user/1')
+  })
+
+  it('falls back to Merge in progress and hides private fields for unreadable or viewer-hidden detail', async () => {
+    const { live, caption } = await mountMerge([alice, bob])
+
+    live.progress(mergeBar('1', { detail: { unparseable: true } }))
+    await flushPromises()
+    expect(caption(1, 'summary').text()).toBe('Merge in progress')
+    expect(caption(1, 'expected').exists()).toBe(false)
+    expect(caption(1, 'waits').exists()).toBe(false)
+    expect(caption(1, 'refusal').exists()).toBe(false)
+
+    const hiddenDetail = {
+      ...mergeDetail,
+      stage: HIDDEN_VALUE,
+      refusal: HIDDEN_VALUE,
+      choice: HIDDEN_VALUE,
+      parts: [
+        {
+          participant: 'secret_module',
+          owner: 'hidden',
+          userId: HIDDEN_VALUE,
+          done: false,
+        },
+      ],
+      waits: [
+        {
+          participant: 'secret_worker',
+          userId: HIDDEN_VALUE,
+        },
+      ],
+    }
+    live.progress(mergeBar('1', { detail: hiddenDetail }))
+    await flushPromises()
+    expect(caption(1, 'summary').text()).toBe(
+      'Merge in progress · 1 of 3 parts done',
+    )
+    expect(caption(1, 'expected').text()).toBe('Expected: secret_module')
+    expect(caption(1, 'expected').text()).not.toContain('#')
+    expect(caption(1, 'waits').text()).toBe(
+      'Waiting for an owner: secret_worker',
+    )
+    expect(caption(1, 'waits').text()).not.toContain('#')
+    expect(caption(1, 'refusal').exists()).toBe(false)
+  })
+
+  it('preserves erasure and other-work behaviors and gives erasure bar priority', async () => {
+    const { live, wrapper, progressRow, caption } = await mountMerge([
+      alice,
+      bob,
+    ])
+
+    // Other work
+    live.progress({
+      scope: 'row',
+      progressKey: 'other-work',
+      rowKey: '1',
+      current: 1,
+      total: 2,
+    })
+    await flushPromises()
+    expect(progressRow(1).find('[role="progressbar"]').exists()).toBe(true)
+    expect(caption(1, 'summary').exists()).toBe(false)
+    expect(
+      progressRow(1).find('[data-id="hilos-users-erasure-summary"]').exists(),
+    ).toBe(false)
+
+    // Erasure bar
+    const erasureDetail = {
+      startedAt: 1_800_000_000_000,
+      parts: [
+        { participant: 'profile', owner: 'user', userId: 1, done: false },
+      ],
+      waits: [],
+      refusals: [],
+    }
+    live.progress({
+      scope: 'row',
+      progressKey: 'hilos-account-erasure',
+      rowKey: '1',
+      current: 1,
+      total: 2,
+      detail: erasureDetail,
+    })
+    await flushPromises()
+
+    expect(
+      cell(wrapper, 1, 'Name').find('[data-id="hilos-users-erasing"]').exists(),
+    ).toBe(true)
+    expect(
+      progressRow(1).find('[data-id="hilos-users-erasure-summary"]').exists(),
+    ).toBe(true)
+    expect(caption(1, 'summary').exists()).toBe(false)
+  })
+
+  it('clears merge caption on ended, reset and unmount without toasts or mutation commands', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const { live, wrapper, progressRow, caption } = await mountMerge(
+      [alice, bob],
+      undefined,
+      { attachTo: container },
+    )
+    const sendSpy = vi.spyOn(live.context.connection, 'sendAction')
+
+    live.progress(mergeBar('1'))
+    await flushPromises()
+    expect(progressRow(1).exists()).toBe(true)
+
+    // Ended
+    live.progress(mergeBar('1', { current: 3, total: 3, ended: true }))
+    await flushPromises()
+    expect(progressRow(1).exists()).toBe(false)
+    expect(caption(1, 'summary').exists()).toBe(false)
+    expect(wrapper.findAll('.toast')).toHaveLength(0)
+    expect(sendSpy).not.toHaveBeenCalled()
+
+    // Re-appear then unmount
+    live.progress(mergeBar('1'))
+    await flushPromises()
+    expect(progressRow(1).exists()).toBe(true)
+
+    wrapper.unmount()
+    expect(
+      container.querySelector('[data-id="hilos-users-merge-summary"]'),
+    ).toBeNull()
+    expect(sendSpy).not.toHaveBeenCalled()
+    container.remove()
   })
 })

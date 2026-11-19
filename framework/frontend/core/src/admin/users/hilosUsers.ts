@@ -716,6 +716,10 @@ export interface HilosUsersTable {
   readonly merges: ReadonlySignal<
     ReadonlyMap<string, HilosAccountMergeProgress>
   >
+  /** Readable merge captions by row key, excluding bars about other work. */
+  readonly mergeCaptions: ReadonlySignal<
+    ReadonlyMap<string, HilosUsersMergeCaption>
+  >
   /** Bind the table to the connection and request the first window — call on mount. */
   start(): void
   /** Unbind from the connection — call on unmount. */
@@ -960,6 +964,23 @@ export function createHilosUsersTable<TUser extends User>(
     }
     return progress
   })
+  const mergeCaptions = computedSignal(() => {
+    const captions = new Map<string, HilosUsersMergeCaption>()
+    const mergeProgress = merges.get()
+
+    for (const [rowKey, bar] of controller.progress.rows.get()) {
+      if (bar.progressKey !== HILOS_USERS_MERGE_PROGRESS_KEY) continue
+      const rowId = Number(rowKey)
+      if (!Number.isInteger(rowId) || rowId <= 0) continue
+
+      const merge = mergeProgress.get(rowKey) ?? null
+      const caption = hilosUsersMergeCaption(bar, rowId, merge)
+      if (caption !== null) {
+        captions.set(rowKey, caption)
+      }
+    }
+    return captions
+  })
   const teardown: Array<() => void> = []
 
   return {
@@ -967,6 +988,7 @@ export function createHilosUsersTable<TUser extends User>(
     currentUserId: sessionUserId(context.scopes),
     erasures,
     merges,
+    mergeCaptions,
     start() {
       teardown.push(
         bindTableViewport(
@@ -2346,6 +2368,131 @@ function erasureList<L>(entries: readonly L[]): HilosUsersErasureList<L> {
     more:
       rest > 0
         ? HILOS_USERS_ERASURE_COPY.more.replace('{count}', String(rest))
+        : null,
+  }
+}
+
+/**
+ * Presentation copy for the users list's account merge progress caption (HIL-2005).
+ */
+export const HILOS_USERS_MERGE_COPY = {
+  preparing: 'Preparing merge',
+  inProgress: 'Merge in progress',
+  refused: 'Merge refused',
+  cancelling: 'Cancelling merge preparation',
+  count: '{done} of {total} parts done',
+  expected: 'Expected',
+  waits: 'Waiting for an owner',
+  more: '+{count} more',
+} as const
+
+/** How many entries one line of the list's merge caption shows before "+N more". */
+export const HILOS_USERS_MERGE_LIMIT = 3
+
+/** One item line in an account merge progress caption (HIL-2005). */
+export interface HilosUsersMergeLine {
+  readonly key: string
+  readonly participant: string
+  readonly account: number | null
+}
+
+/** One section list in an account merge progress caption (HIL-2005). */
+export interface HilosUsersMergeList {
+  readonly shown: readonly HilosUsersMergeLine[]
+  readonly more: string | null
+}
+
+/** The caption the users list draws above the bar of an account being merged (HIL-2005). */
+export interface HilosUsersMergeCaption {
+  readonly summary: string
+  readonly expected: HilosUsersMergeList
+  readonly waits: HilosUsersMergeList
+  readonly refusal: string | null
+}
+
+/**
+ * The caption above a users-list row's merge bar, or `null` when the bar is about
+ * other work. Only what stands in the way is listed: unfinished parts, owners
+ * awaited, refusal. A null or unreadable merge detail keeps the summary alone and
+ * empty lists.
+ *
+ * @param progress The row's bar, as the table's viewport controller holds it.
+ * @param rowId The account the row shows.
+ * @param merge The safe merge progress model, or null when missing or unreadable.
+ */
+export function hilosUsersMergeCaption(
+  progress: HilosTableProgress,
+  rowId: number,
+  merge: HilosAccountMergeProgress | null,
+): HilosUsersMergeCaption | null {
+  if (progress.progressKey !== HILOS_USERS_MERGE_PROGRESS_KEY) {
+    return null
+  }
+  if (merge === null) {
+    return {
+      summary: HILOS_USERS_MERGE_COPY.inProgress,
+      expected: { shown: [], more: null },
+      waits: { shown: [], more: null },
+      refusal: null,
+    }
+  }
+
+  const status =
+    merge.refusal !== null
+      ? HILOS_USERS_MERGE_COPY.refused
+      : merge.stage === 'cancelling'
+        ? HILOS_USERS_MERGE_COPY.cancelling
+        : merge.stage === 'preparing'
+          ? HILOS_USERS_MERGE_COPY.preparing
+          : HILOS_USERS_MERGE_COPY.inProgress
+
+  const summaryParts: string[] = [status]
+  if (progress.total !== null) {
+    summaryParts.push(
+      HILOS_USERS_MERGE_COPY.count
+        .replace('{done}', String(progress.current))
+        .replace('{total}', String(progress.total)),
+    )
+  }
+
+  const expectedLines: HilosUsersMergeLine[] = merge.parts
+    .filter((part) => !part.done)
+    .map((part) => ({
+      key: JSON.stringify([part.participant, part.owner, part.userId]),
+      participant: part.participant,
+      account:
+        part.userId !== null && part.userId !== rowId ? part.userId : null,
+    }))
+
+  const waitsLines: HilosUsersMergeLine[] = merge.waits.map((wait) => ({
+    key: JSON.stringify([wait.participant, wait.userId]),
+    participant: wait.participant,
+    account: wait.userId !== null && wait.userId !== rowId ? wait.userId : null,
+  }))
+
+  return {
+    summary: summaryParts.join(' · '),
+    expected: mergeList(expectedLines),
+    waits: mergeList(waitsLines),
+    refusal: merge.refusal?.reason ?? null,
+  }
+}
+
+/**
+ * Cut one merge caption line down to {@link HILOS_USERS_MERGE_LIMIT} entries.
+ *
+ * @param entries Every entry of the line, in the wire's order.
+ */
+function mergeList(
+  entries: readonly HilosUsersMergeLine[],
+): HilosUsersMergeList {
+  const rest = entries.length - HILOS_USERS_MERGE_LIMIT
+
+  return {
+    shown: entries.slice(0, HILOS_USERS_MERGE_LIMIT),
+    more:
+      rest > 0
+        ? HILOS_USERS_MERGE_COPY.more.replace('{count}', String(rest))
         : null,
   }
 }

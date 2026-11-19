@@ -65,6 +65,10 @@ import {
   readHilosAccountMerge,
   type HilosAccountMergeProgress,
   type HilosAccountMergeRefusal,
+  HILOS_USERS_MERGE_COPY,
+  HILOS_USERS_MERGE_LIMIT,
+  hilosUsersMergeCaption,
+  type HilosUsersMergeCaption,
   USER_OPEN_SESSION_COUNT_FIELD,
 } from '../../../src/admin/users/index.js'
 import { accountStandingStateSchema } from '../../../src/protocol/accountStandingSignals.js'
@@ -1949,6 +1953,193 @@ describe('hilosUsersErasureCaption (HIL-1956)', () => {
   })
 })
 
+describe('hilosUsersMergeCaption (HIL-2005)', () => {
+  const baseMerge: HilosAccountMergeProgress = {
+    operationId: 10,
+    survivorUserId: 7,
+    loserUserId: 74,
+    state: 'wait',
+    stage: 'go',
+    outcome: null,
+    given: true,
+    received: false,
+    choice: null,
+    refusal: null,
+    parts: [
+      { participant: 'profile', owner: 'user', userId: 7, done: true },
+      { participant: 'chat', owner: 'room', userId: 7, done: false },
+      { participant: 'chat', owner: 'room', userId: 74, done: false },
+    ],
+    waits: [{ participant: 'delivery:email', userId: 74 }],
+  }
+
+  function bar(
+    total: number | null = 5,
+    progressKey: string = HILOS_USERS_MERGE_PROGRESS_KEY,
+    current = 3,
+  ): HilosTableProgress {
+    return {
+      progressKey,
+      current,
+      total,
+      fraction: total === null ? null : current / total,
+      detail: {},
+    }
+  }
+
+  it('leaves the bar of other work alone', () => {
+    expect(
+      hilosUsersMergeCaption(bar(5, 'other-work'), 7, baseMerge),
+    ).toBeNull()
+  })
+
+  it('provides a fallback caption when merge progress is null', () => {
+    const fallback: HilosUsersMergeCaption | null = hilosUsersMergeCaption(
+      bar(5),
+      7,
+      null,
+    )
+    expect(fallback).toEqual({
+      summary: 'Merge in progress',
+      expected: { shown: [], more: null },
+      waits: { shown: [], more: null },
+      refusal: null,
+    })
+  })
+
+  it('follows summary status priorities: refusal over cancelling, cancelling, preparing, and fallback', () => {
+    const refusalAndCancelling: HilosAccountMergeProgress = {
+      ...baseMerge,
+      stage: 'cancelling',
+      refusal: { code: 'occupied', reason: 'Target account is occupied' },
+    }
+    expect(
+      hilosUsersMergeCaption(bar(null), 7, refusalAndCancelling)?.summary,
+    ).toBe('Merge refused')
+
+    const cancelling: HilosAccountMergeProgress = {
+      ...baseMerge,
+      stage: 'cancelling',
+      refusal: null,
+    }
+    expect(hilosUsersMergeCaption(bar(null), 7, cancelling)?.summary).toBe(
+      'Cancelling merge preparation',
+    )
+
+    const preparing: HilosAccountMergeProgress = {
+      ...baseMerge,
+      stage: 'preparing',
+      refusal: null,
+    }
+    expect(hilosUsersMergeCaption(bar(null), 7, preparing)?.summary).toBe(
+      'Preparing merge',
+    )
+
+    const inProgress: HilosAccountMergeProgress = {
+      ...baseMerge,
+      stage: 'go',
+      refusal: null,
+    }
+    expect(hilosUsersMergeCaption(bar(null), 7, inProgress)?.summary).toBe(
+      'Merge in progress',
+    )
+
+    const endedActive: HilosAccountMergeProgress = {
+      ...baseMerge,
+      state: 'end',
+      stage: 'go',
+      refusal: null,
+    }
+    expect(hilosUsersMergeCaption(bar(null), 7, endedActive)?.summary).toBe(
+      'Merge in progress',
+    )
+  })
+
+  it('adds parts done to summary when total is present and omits count when total is null', () => {
+    const caption = hilosUsersMergeCaption(
+      bar(5, HILOS_USERS_MERGE_PROGRESS_KEY, 3),
+      7,
+      baseMerge,
+    )
+    expect(caption?.summary).toBe('Merge in progress · 3 of 5 parts done')
+    expect(caption?.summary).not.toContain('started')
+
+    const completeCount = hilosUsersMergeCaption(
+      bar(5, HILOS_USERS_MERGE_PROGRESS_KEY, 5),
+      7,
+      baseMerge,
+    )
+    expect(completeCount?.summary).toBe('Merge in progress · 5 of 5 parts done')
+
+    const noTotal = hilosUsersMergeCaption(bar(null), 7, baseMerge)
+    expect(noTotal?.summary).toBe('Merge in progress')
+  })
+
+  it('filters completed parts, limits shown items to 3 with +N more, keeps reader order, and populates account only for foreign userIds', () => {
+    const parts = [
+      { participant: 'p0', owner: 'u', userId: 7, done: true },
+      { participant: 'p1', owner: 'u', userId: 7, done: false },
+      { participant: 'p2', owner: 'u', userId: 74, done: false },
+      { participant: 'p3', owner: 'u', userId: null, done: false },
+      { participant: 'p4', owner: 'u', userId: 99, done: false },
+      { participant: 'p5', owner: 'u', userId: 100, done: false },
+    ]
+    const merge: HilosAccountMergeProgress = { ...baseMerge, parts }
+    const caption = hilosUsersMergeCaption(bar(null), 7, merge)
+
+    expect(HILOS_USERS_MERGE_LIMIT).toBe(3)
+    expect(HILOS_USERS_MERGE_COPY.more).toBe('+{count} more')
+    expect(HILOS_USERS_MERGE_COPY.expected).toBe('Expected')
+    expect(HILOS_USERS_MERGE_COPY.waits).toBe('Waiting for an owner')
+    expect(caption?.expected.shown).toEqual([
+      { key: JSON.stringify(['p1', 'u', 7]), participant: 'p1', account: null },
+      { key: JSON.stringify(['p2', 'u', 74]), participant: 'p2', account: 74 },
+      {
+        key: JSON.stringify(['p3', 'u', null]),
+        participant: 'p3',
+        account: null,
+      },
+    ])
+    expect(caption?.expected.more).toBe('+2 more')
+  })
+
+  it('limits waits to 3 with +N more, preserves reader order, and populates account only for foreign userIds', () => {
+    const waits = [
+      { participant: 'w1', userId: 7 },
+      { participant: 'w2', userId: 74 },
+      { participant: 'w3', userId: null },
+      { participant: 'w4', userId: 88 },
+    ]
+    const merge: HilosAccountMergeProgress = { ...baseMerge, waits }
+    const caption = hilosUsersMergeCaption(bar(null), 7, merge)
+
+    expect(caption?.waits.shown).toEqual([
+      { key: JSON.stringify(['w1', 7]), participant: 'w1', account: null },
+      { key: JSON.stringify(['w2', 74]), participant: 'w2', account: 74 },
+      { key: JSON.stringify(['w3', null]), participant: 'w3', account: null },
+    ])
+    expect(caption?.waits.more).toBe('+1 more')
+  })
+
+  it('presents server refusal reason and keeps refusal null when reason is absent or null', () => {
+    const withReason: HilosAccountMergeProgress = {
+      ...baseMerge,
+      refusal: { code: 'occupied', reason: 'Account occupied' },
+    }
+    const cap1 = hilosUsersMergeCaption(bar(null), 7, withReason)
+    expect(cap1?.summary).toBe('Merge refused')
+    expect(cap1?.refusal).toBe('Account occupied')
+
+    const nullReason: HilosAccountMergeProgress = {
+      ...baseMerge,
+      refusal: { code: 'occupied', reason: null as unknown as string },
+    }
+    const cap2 = hilosUsersMergeCaption(bar(null), 7, nullReason)
+    expect(cap2?.summary).toBe('Merge refused')
+    expect(cap2?.refusal).toBeNull()
+  })
+})
+
 describe('account erasure on the user card (HIL-1954)', () => {
   const erasure: HilosAccountErasure = {
     startedAt: 1_800_000_000_000,
@@ -3788,6 +3979,105 @@ describe('createHilosUsersTable', () => {
       ended: true,
     })
     expect(table.erasures.get().size).toBe(0)
+  })
+
+  it('captions the merge bars of its rows reactively, isolates erasure and ignores other work', () => {
+    const { table } = usersTable({})
+    const controller = table.controller
+    const mergeDetail = {
+      operationId: 10,
+      survivorUserId: 7,
+      loserUserId: 74,
+      state: 'wait',
+      stage: 'go',
+      outcome: null,
+      given: true,
+      received: false,
+      choice: null,
+      refusal: null,
+      parts: [{ participant: 'chat', owner: 'room', userId: 7, done: false }],
+      waits: [],
+    }
+    const erasureDetail = {
+      startedAt: 1_800_000_000_000,
+      parts: [
+        { participant: 'profile', owner: 'user', userId: 8, done: false },
+      ],
+      waits: [],
+    }
+
+    expect(table.mergeCaptions.get().size).toBe(0)
+    expect(table.erasures.get().size).toBe(0)
+
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: HILOS_USERS_MERGE_PROGRESS_KEY,
+      rowKey: '7',
+      current: 1,
+      total: 2,
+      detail: mergeDetail,
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: 'other-work',
+      rowKey: '9',
+      current: 1,
+      total: 2,
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: HILOS_USERS_ERASURE_PROGRESS_KEY,
+      rowKey: '8',
+      current: 0,
+      total: 1,
+      detail: erasureDetail,
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: HILOS_USERS_MERGE_PROGRESS_KEY,
+      rowKey: 'not-an-id',
+      current: 1,
+      total: 2,
+      detail: mergeDetail,
+    })
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: HILOS_USERS_MERGE_PROGRESS_KEY,
+      rowKey: '0',
+      current: 1,
+      total: 2,
+      detail: mergeDetail,
+    })
+
+    expect([...table.mergeCaptions.get().keys()]).toEqual(['7'])
+    expect(table.mergeCaptions.get().get('7')?.summary).toBe(
+      'Merge in progress · 1 of 2 parts done',
+    )
+    expect(table.mergeCaptions.get().get('7')?.expected.shown).toEqual([
+      {
+        key: JSON.stringify(['chat', 'room', 7]),
+        participant: 'chat',
+        account: null,
+      },
+    ])
+    expect([...table.erasures.get().keys()]).toEqual(['8'])
+    expect(table.mergeCaptions.get().has('8')).toBe(false)
+    expect(table.mergeCaptions.get().has('9')).toBe(false)
+    expect(table.mergeCaptions.get().has('not-an-id')).toBe(false)
+    expect(table.mergeCaptions.get().has('0')).toBe(false)
+
+    controller.ingestProgress({
+      scope: 'row',
+      progressKey: HILOS_USERS_MERGE_PROGRESS_KEY,
+      rowKey: '7',
+      current: 2,
+      total: 2,
+      ended: true,
+    })
+    expect(table.mergeCaptions.get().size).toBe(0)
+    expect(table.erasures.get().has('8')).toBe(true)
+
+    table.dispose()
   })
 
   it.each([undefined, { idInName: true }])(
