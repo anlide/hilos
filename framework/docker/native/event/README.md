@@ -108,14 +108,17 @@ local to that consumer; do not duplicate the patch or fetch an unpublished one.
    `NativeHttpBorrowedBufferEventTest` keeps a real HTTP request open, installs
    borrowed callbacks, releases ordinary PHP references and collects cycles
    before later native input. Its lifetime assertion stops before a dangling
-   callback could be polled on an unrepaired module; native memory diagnostics
-   exercise that late callback separately.
+   callback could be polled on an unrepaired module. Only a native memory
+   checker exercises that late callback itself; this repository ships no such
+   diagnostics (see below).
 
 Rebuild every consumer after changing these assets. The getter capability check
 cannot identify the lifetime repair: verify the patch checksum, actual build
-inputs and loaded module provenance as well as native lifetime tests. Native
-shutdown diagnostics must keep the original retained-owner cases unchanged and
-require zero invalid accesses and zero live or lost allocations for them.
+inputs and loaded module provenance as well as native lifetime tests. This
+repository ships no native memory diagnostics, so a patch change needs a
+separate Valgrind pass of its own. That pass keeps the original retained-owner
+cases unchanged and requires zero invalid accesses and zero live or lost
+allocations for them.
 
 The supplementary SSL-filter control has a separate known limitation in
 libevent 2.1.13 with OpenSSL 3.5.7: its cached `BIO_s_bufferevent` method table
