@@ -158,6 +158,7 @@ use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Demo\EcommerceShop\Tables\Product\ProductsTable;
+use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
@@ -1252,6 +1253,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testTheProductsTableIsRegistered(): void
     {
         self::assertSame(ProductsTable::class, Hilos::TABLES[EcommerceShopTableContext::products]);
+    }
+
+    /** The stock table of one product is registered under its key, for the page that binds it. */
+    public function testTheProductStockTableIsRegistered(): void
+    {
+        self::assertSame(ProductStockTable::class, Hilos::TABLES[EcommerceShopTableContext::productStock]);
     }
 
     public function testTheClusterProbesAreListedAsTheFrameworkWroteThem(): void
