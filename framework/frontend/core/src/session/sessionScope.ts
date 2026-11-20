@@ -508,6 +508,19 @@ export const SESSION_ACK_PASSWORD_CHANGED = 'auth_password_changed'
 export const SESSION_ACK_SIGNED_IN = 'auth_signed_in'
 
 /**
+ * `handshake_response` is a scope payload that must name `data.accessLossReason`.
+ *
+ * The value stays unchecked: null, a string and a wrong type all pass.
+ * Normalization turns anything but the five live reasons into null before
+ * identity is ingested. Other scopes keep {@link scopePayloadSchema}.
+ */
+const handshakeResponseSchema = scopePayloadSchema.refine(
+  (payload) =>
+    payload.data !== undefined &&
+    Object.hasOwn(payload.data, ACCESS_LOSS_REASON_KEY),
+)
+
+/**
  * The handshake-response payload keyed for a connection's `projectSchemas`, so
  * the parse boundary validates what {@link bindSessionScope} ingests.
  * {@link createHilosConnection} merges it in, so a project never restates the
@@ -523,20 +536,6 @@ export const SESSION_ACK_SIGNED_IN = 'auth_signed_in'
  * The profile windows' list rides here for the same reason (HIL-1182), and so
  * does the frame of the identity confirmations the session has (HIL-1330).
  */
-
-/**
- * `handshake_response` is a scope payload that must name `data.accessLossReason`.
- *
- * The value stays unchecked: null, a string and a wrong type all pass.
- * Normalization turns anything but the five live reasons into null before
- * identity is ingested. Other scopes keep {@link scopePayloadSchema}.
- */
-const handshakeResponseSchema = scopePayloadSchema.refine(
-  (payload) =>
-    payload.data !== undefined &&
-    Object.hasOwn(payload.data, ACCESS_LOSS_REASON_KEY),
-)
-
 export const SESSION_SIGNAL_SCHEMAS = {
   [SIGNAL_HANDSHAKE_RESPONSE]: handshakeResponseSchema,
   [SIGNAL_SESSION_TOASTS]: sessionToastsSchema,
