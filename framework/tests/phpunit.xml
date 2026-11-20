@@ -22,8 +22,9 @@
         </testsuite>
     </testsuites>
     <php>
-        <!-- The value was set when unit and integration ran in one process (the shared goal
-             was removed in HIL-2097). A manual run that names no test suite still runs that way. -->
+        <!-- The unit suite runs in one process and outgrew 512M: the code style guard's source
+             index ran out of memory in a full run (2026-11-20). A manual run that names no test
+             suite runs unit and integration together under this limit. -->
         <ini name="memory_limit" value="1G"/>
         <env name="APP_ENV" value="test"/>
     </php>
