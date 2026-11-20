@@ -560,12 +560,32 @@ final class BackupRestorer
     }
 
     /**
-     * Prepares connection for running migrations after import.
+     * Prepares one restored database for the migrations the code expects, after its import.
+     *
+     * The caller skips the journal connection: the primary track moves its schema through
+     * {{change_log_database}}. Calling initialize() there would create four service tables,
+     * and a FULL archive with no migration rows would replay the whole track (P-495).
+     *
+     * Opens the link when the process has not already, the way the create path does before
+     * reading the same table: the import before this one talks to the database through the
+     * mysql client, so a connection the caller never needed in PHP is still closed here.
+     *
+     * A schema archive arrives with a level to declare first: it imported an empty `migration`
+     * table, so `migrateUp` would otherwise read level 0 and replay the whole history over the
+     * finished schema it just imported. A FULL archive brings the rows themselves and declares
+     * nothing.
+     *
+     * The rollout claim table is emptied before the level is declared and the migrations run: a
+     * FULL archive carries the claim row a process held at the moment of the backup, and
+     * `migrateUp` would wait for that process forever (HIL-1228). Nothing live is lost: the
+     * import has already replaced the target's table whole.
      *
      * @param BackupConnectionMeta $connection Restored connection to prepare
      * @param ?int $level Migration level to record before migrating; null when the archive
      *     imported the `migration` rows itself
-     * @throws RestoreFailedException When connection preparation fails
+     * @throws RestoreFailedException When the connection is not configured or cannot be opened,
+     *     or the claim table or the level cannot be written; the data is already imported at this
+     *     point, so the run ends partially restored (HIL-436)
      */
     private function prepareConnectionMigrations(BackupConnectionMeta $connection, ?int $level): void
     {
@@ -590,10 +610,18 @@ final class BackupRestorer
     }
 
     /**
-     * Executes pending migrations on the prepared connection.
+     * Brings one prepared database up to the migration level the code expects.
+     *
+     * Unconditional, including when the levels already match: `migrateUp` applies nothing
+     * then, and the alternative - deciding here whether to call it - would put a second
+     * copy of the gate's arithmetic in the engine. The archive can only be at or below the
+     * code level; anything ahead was refused before the first import.
      *
      * @param BackupConnectionMeta $connection Restored connection to migrate
-     * @throws RestoreFailedException When running migrations fails
+     * @throws RestoreFailedException When a migration fails; the data is already imported at this
+     *     point, so the run ends partially restored (HIL-436); also when the rollout claim's
+     *     holder name cannot read CLUSTER_NODE_ID, so that failure too is told as one after the
+     *     import
      */
     private function runConnectionMigrateUp(BackupConnectionMeta $connection): void
     {
@@ -610,7 +638,9 @@ final class BackupRestorer
     }
 
     /**
-     * Prepares and migrates a connection without snapshot rechecks (SCHEMA mode).
+     * Prepares and migrates a connection in that order, without FULL's session rechecks (SCHEMA mode).
+     *
+     * Why each half does what it does: {@see self::prepareConnectionMigrations()}, {@see self::runConnectionMigrateUp()}.
      *
      * @param BackupConnectionMeta $connection Restored connection to migrate
      * @param ?int $level Migration level to record before migrating; null when the archive
