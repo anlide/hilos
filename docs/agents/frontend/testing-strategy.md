@@ -899,7 +899,9 @@ Use **one line per file**. No line means the framework's spec; never write
   even when the scenario passes through the product. Chat's moderator judges
   a profile photo, but the photo is a framework feature, so `profile-photo`
   carries no line. The Moderation section is the framework's too: its
-  `moderation.spec.ts` carries no line in any kit.
+  `moderation.spec.ts` carries no line in any kit. A cluster browser proof is
+  the framework's as well: the stand's shape — its masters, Galera — picks the
+  demo that carries it, not the line.
 - **stand:** the spec holds an emulator of the stand to its contract, with no
   product taking part.
 
