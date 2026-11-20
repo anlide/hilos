@@ -116,7 +116,8 @@ final class WorkerManagerEmptyTickTest extends TestCase
      * @param bool $hasOwnTick Whether the worker overrides onTick()
      */
     #[DataProvider('workerHookImplementations')]
-    public function testWorkerHookDetectionDoesNotExecuteHooksAndSurvivesParentCalls(string $workerClass, bool $hasOwnTick): void {
+    public function testWorkerHookDetectionDoesNotExecuteHooksAndSurvivesParentCalls(string $workerClass, bool $hasOwnTick): void
+    {
         $worker = new $workerClass();
         for ($pass = 0; $pass < 2; $pass++) {
             $this->assertSame($hasOwnTick, $worker->detectOwnTick());
