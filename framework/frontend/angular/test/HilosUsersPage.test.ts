@@ -811,3 +811,227 @@ describe('HilosUsersPage erasure (HIL-1962)', () => {
     ).toBe('Being deleted')
   })
 })
+
+describe('HilosUsersPage merge (HIL-2011)', () => {
+  const alice: UserSeed = {
+    id: 1,
+    name: 'Alice',
+    lastActivity: null,
+    presence: 'offline',
+    onlineSessionCount: 0,
+    block: false,
+  }
+  const bob: UserSeed = { ...alice, id: 2, name: 'Bob' }
+  const mergeDetail = {
+    operationId: 10,
+    survivorUserId: 1,
+    loserUserId: 2,
+    state: 'preparing',
+    stage: 'preparing',
+    outcome: null,
+    given: true,
+    received: false,
+    choice: null,
+    refusal: null,
+    parts: [
+      { participant: 'profile', owner: 'user', userId: 1, done: true },
+      { participant: 'chat', owner: 'room', userId: 1, done: false },
+      { participant: 'files', owner: 'user', userId: 2, done: false },
+    ],
+    waits: [
+      { participant: 'sessions', userId: 2 },
+      { participant: 'delivery', userId: null },
+    ],
+  }
+
+  /**
+   * The merge bar of one row as the server sends it.
+   *
+   * @param rowKey The account the row shows.
+   * @param fields What differs from a running bar one of three parts along.
+   */
+  function mergeBar(
+    rowKey: string,
+    fields: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      scope: 'row',
+      progressKey: 'hilos-account-merge',
+      rowKey,
+      current: 1,
+      total: 3,
+      detail: mergeDetail,
+      ...fields,
+    }
+  }
+
+  /**
+   * Mount the list over Alice and Bob with merge caption selectors ready.
+   *
+   * @param seeds The people of the first window.
+   */
+  async function mountCircle(seeds: UserSeed[] = [alice, bob]) {
+    const live = liveUsers(seeds)
+    live.context.scopes.session.data.set('currentUser', {
+      type: USER_ENTITY_TYPE,
+      id: 1,
+    })
+    const fixture = await mountList(live.context)
+    const host = fixture.nativeElement as HTMLElement
+    const change = async (fn: () => void): Promise<void> => {
+      fn()
+      await Promise.resolve()
+      fixture.detectChanges()
+      await fixture.whenStable()
+      fixture.detectChanges()
+    }
+    const row = (id: number): Element | null =>
+      host.querySelector(`[data-id="hilos-table-row-${id}"]`)
+    const progressRow = (id: number): Element | null =>
+      host.querySelector(`[data-id="hilos-table-progress-row-${id}"]`)
+    const caption = (id: number, line: string): Element | null =>
+      progressRow(id)?.querySelector(`[data-id="hilos-users-merge-${line}"]`) ??
+      null
+    const erasureCaption = (id: number, line: string): Element | null =>
+      progressRow(id)?.querySelector(
+        `[data-id="hilos-users-erasure-${line}"]`,
+      ) ?? null
+
+    return {
+      live,
+      fixture,
+      host,
+      change,
+      row,
+      progressRow,
+      caption,
+      erasureCaption,
+    }
+  }
+
+  it('captions the bar with summary, expected parts and waits when it arrives live', async () => {
+    const { live, change, progressRow, caption } = await mountCircle()
+
+    await change(() => live.progress(mergeBar('1')))
+
+    expect(progressRow(1)).not.toBeNull()
+    expect(caption(1, 'summary')?.textContent?.trim()).toBe(
+      'Preparing merge · 1 of 3 parts done',
+    )
+    expect(caption(1, 'expected')?.textContent?.trim()).toBe(
+      'Expected: chat; files · #2',
+    )
+    expect(caption(1, 'expected')?.querySelectorAll('code')).toHaveLength(2)
+    expect(caption(1, 'waits')?.textContent?.trim()).toBe(
+      'Waiting for an owner: sessions · #2; delivery',
+    )
+    expect(caption(1, 'waits')?.querySelectorAll('code')).toHaveLength(2)
+    expect(caption(1, 'refusal')).toBeNull()
+  })
+
+  it('shows refusal summary and literal reason when merge is refused', async () => {
+    const { live, change, caption } = await mountCircle()
+
+    await change(() =>
+      live.progress(
+        mergeBar('1', {
+          detail: {
+            ...mergeDetail,
+            refusal: {
+              code: 'occupied',
+              reason: 'Another merge already active on candidate',
+              permanent: false,
+            },
+          },
+        }),
+      ),
+    )
+
+    expect(caption(1, 'summary')?.textContent?.trim()).toBe(
+      'Merge refused · 1 of 3 parts done',
+    )
+    expect(caption(1, 'refusal')?.textContent?.trim()).toBe(
+      'Another merge already active on candidate',
+    )
+  })
+
+  it('keeps Merged badge beside the name while continuing caption above the bar', async () => {
+    const { live, change, row, caption } = await mountCircle([
+      alice,
+      { ...bob, merged: true },
+    ])
+
+    const row2 = row(2)
+    const mergedBadge = row2?.querySelector('[data-id="hilos-users-merged"]')
+    expect(mergedBadge).not.toBeNull()
+    expect(mergedBadge?.textContent?.trim()).toBe('Merged')
+
+    await change(() =>
+      live.progress(
+        mergeBar('2', {
+          current: 2,
+          detail: {
+            ...mergeDetail,
+            loserUserId: 2,
+            stage: 'go',
+            state: 'wait',
+          },
+        }),
+      ),
+    )
+
+    expect(
+      row(2)
+        ?.querySelector('[data-id="hilos-users-merged"]')
+        ?.textContent?.trim(),
+    ).toBe('Merged')
+    expect(caption(2, 'summary')?.textContent?.trim()).toBe(
+      'Merge in progress · 2 of 3 parts done',
+    )
+    expect(caption(2, 'expected')?.textContent?.trim()).toBe(
+      'Expected: chat · #1; files',
+    )
+  })
+
+  it('removes caption when merge ends', async () => {
+    const { live, change, progressRow, caption } = await mountCircle()
+
+    await change(() => live.progress(mergeBar('1')))
+    expect(progressRow(1)).not.toBeNull()
+    expect(caption(1, 'summary')).not.toBeNull()
+
+    await change(() =>
+      live.progress(mergeBar('1', { current: 3, total: 3, ended: true })),
+    )
+    expect(progressRow(1)).toBeNull()
+    expect(caption(1, 'summary')).toBeNull()
+  })
+
+  it('gives erasure caption priority over merge caption on a row with erasure', async () => {
+    const { live, change, progressRow, caption, erasureCaption } =
+      await mountCircle()
+
+    const erasureDetail = {
+      startedAt: 1_800_000_000_000,
+      parts: [
+        { participant: 'profile', owner: 'user', userId: 1, done: false },
+      ],
+      waits: [],
+      refusals: [],
+    }
+    await change(() =>
+      live.progress({
+        scope: 'row',
+        progressKey: 'hilos-account-erasure',
+        rowKey: '1',
+        current: 1,
+        total: 2,
+        detail: erasureDetail,
+      }),
+    )
+
+    expect(progressRow(1)).not.toBeNull()
+    expect(erasureCaption(1, 'summary')).not.toBeNull()
+    expect(caption(1, 'summary')).toBeNull()
+  })
+})

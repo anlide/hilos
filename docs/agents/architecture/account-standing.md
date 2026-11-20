@@ -426,7 +426,10 @@ Merge progress in the users list is drawn by Vue's list (HIL-2005) through
 a parts counter `{done} of {total} parts done`, unfinished expected parts,
 awaited owners, and the server refusal reason, limiting items to 3 per line
 and "+N more" past them. The "Merged" badge remains a fact of absorption and
-does not mean the ongoing operation has ended.
+does not mean the ongoing operation has ended. Angular's card (without the
+shared header yet) places the merge section below the merged/erasing row with
+"View merge" below it; Angular's list captions the merge bar; erasure takes
+precedence (HIL-2011).
 
 - **Deletion strip** (`hilosDeletionStrip`) — the standing the session acts as
   is `deletion_scheduled` with a known `deletionEffectiveAt`. It is shown during

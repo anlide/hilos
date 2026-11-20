@@ -16,7 +16,9 @@
 // wears "Being deleted" beside its name (a merged one stays Merged), and every
 // account of its circle carries a caption above its row bar: the summary, then
 // the parts not done, the owners awaited, and the refusals, three entries a
-// line and "+N more" (hilosUsersErasureCaption, HIL-1962). A bar about other
+// line and "+N more" (hilosUsersErasureCaption, HIL-1962). A running merge also
+// carries a caption above its row bar with summary, expected parts, waits and
+// refusal (HIL-2011); erasure takes priority over merge. A bar about other
 // work gets no caption. Bootstrap classes only (styling-rules.md).
 import { NgTemplateOutlet } from '@angular/common'
 import {
@@ -34,6 +36,7 @@ import { HilosPages } from '@hilos/core/base'
 import {
   HILOS_PRESENCE_WIDEST_LABEL,
   HILOS_USER_ERASURE_COPY,
+  HILOS_USERS_MERGE_COPY,
   createHilosUsersTable,
   hilosPresenceBadge,
   hilosStandingBadge,
@@ -42,6 +45,7 @@ import type {
   HilosUserRow,
   HilosUsersContext,
   HilosUsersErasureCaption,
+  HilosUsersMergeCaption,
 } from '@hilos/core/admin/users'
 
 import {
@@ -204,6 +208,59 @@ export interface UsersRowActionsContext {
                 }
               </div>
             }
+          } @else if (mergeOf(rowKey); as caption) {
+            <div data-id="hilos-users-merge-summary">
+              {{ caption.summary }}
+            </div>
+            @if (caption.expected.shown.length > 0) {
+              <div data-id="hilos-users-merge-expected">
+                {{ mergeCopy.expected }}:
+                @for (
+                  part of caption.expected.shown;
+                  track part.key;
+                  let index = $index
+                ) {
+                  <ng-container
+                    >{{ index > 0 ? '; ' : ''
+                    }}<code>{{ part.participant }}</code
+                    >{{
+                      part.account !== null ? ' · #' + part.account : ''
+                    }}</ng-container
+                  >
+                }
+                @if (caption.expected.more !== null) {
+                  <ng-container>{{
+                    '; ' + caption.expected.more
+                  }}</ng-container>
+                }
+              </div>
+            }
+            @if (caption.waits.shown.length > 0) {
+              <div data-id="hilos-users-merge-waits">
+                {{ mergeCopy.waits }}:
+                @for (
+                  wait of caption.waits.shown;
+                  track wait.key;
+                  let index = $index
+                ) {
+                  <ng-container
+                    >{{ index > 0 ? '; ' : ''
+                    }}<code>{{ wait.participant }}</code
+                    >{{
+                      wait.account !== null ? ' · #' + wait.account : ''
+                    }}</ng-container
+                  >
+                }
+                @if (caption.waits.more !== null) {
+                  <ng-container>{{ '; ' + caption.waits.more }}</ng-container>
+                }
+              </div>
+            }
+            @if (caption.refusal !== null) {
+              <div data-id="hilos-users-merge-refusal">
+                {{ caption.refusal }}
+              </div>
+            }
           }
         </ng-template>
       </hilos-viewport-table>
@@ -223,6 +280,10 @@ export class HilosUsersPage {
   protected readonly erasureCopy = HILOS_USER_ERASURE_COPY
   protected readonly erasures = signal<
     ReadonlyMap<string, HilosUsersErasureCaption>
+  >(new Map())
+  protected readonly mergeCopy = HILOS_USERS_MERGE_COPY
+  protected readonly mergeCaptions = signal<
+    ReadonlyMap<string, HilosUsersMergeCaption>
   >(new Map())
   // The presence badge: the word and tone of a row's presence, drawn over an
   // invisible twin of the widest word.
@@ -244,6 +305,12 @@ export class HilosUsersPage {
     return this.erasures().get(String(rowKey))
   }
 
+  protected mergeOf(
+    rowKey: string | number,
+  ): HilosUsersMergeCaption | undefined {
+    return this.mergeCaptions().get(String(rowKey))
+  }
+
   constructor() {
     // Bind the server-windowed table to the connection and request the first
     // window once the context input is bound; unbind on destroy or context swap.
@@ -251,6 +318,7 @@ export class HilosUsersPage {
       const users = this.users()
       users.start()
       onCleanup(mirrorHilosSignal(users.erasures, this.erasures))
+      onCleanup(mirrorHilosSignal(users.mergeCaptions, this.mergeCaptions))
       onCleanup(() => users.dispose())
     })
   }

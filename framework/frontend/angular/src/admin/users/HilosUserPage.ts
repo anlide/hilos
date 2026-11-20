@@ -37,6 +37,13 @@
 // account is being deleted." notice, and the progress section instead — its
 // parts, the owners it waits for and the refused finals; when the erasure ends,
 // the card ends in the common 404 of a deleted page.
+// A merge in progress is its own section (hilosUserMergeSection): the status,
+// the unfinished duties, the waits and the refusal, read from the standing the
+// card already holds. The section stays up while no merge stands. An administrator
+// can open the observation window ("View merge") to track the operation's real-time
+// state, pair of accounts, and choices without opening a new draft; a begun merge
+// can be canceled with immediate cleanup, and server refusals appear in the
+// backend's exact words (HIL-2011).
 // Bootstrap classes only (styling-rules.md).
 import {
   afterRenderEffect,
@@ -58,6 +65,7 @@ import {
   HILOS_STEP_UP_COPY,
   HilosPages,
   hiddenAsWord,
+  hilosAdminAccess,
   hilosRowEditIdle,
   isHiddenValue,
   sessionUserId,
@@ -94,13 +102,19 @@ import {
   type HilosUserLifecyclePrompt,
   type HilosUserLifecycleSection,
   createHilosAccountMerge,
+  createHilosAccountMergeCancel,
+  createHilosAccountMergeWindow,
   createHilosMergeCandidates,
   createHilosUserDetail,
   createHilosUserPhoto,
   createHilosUserRename,
   createHilosUserRenameEdit,
+  HILOS_ACCOUNT_MERGE_CANCEL_COPY,
   HILOS_ACCOUNT_MERGE_PASSWORD_COPY,
   HILOS_ACCOUNT_MERGE_SECOND_FACTOR_COPY,
+  HILOS_ACCOUNT_MERGE_WINDOW_COPY,
+  HILOS_USER_MERGE_COPY,
+  hilosUserMergeSection,
   hilosSecondFactorFateChoices,
   type HilosSecondFactorFate,
   hilosPasswordFateChoices,
@@ -108,9 +122,10 @@ import {
   HILOS_USER_NAME_MIN,
 } from '@hilos/core/admin/users'
 import type {
-  HilosUserRenameEdit,
-  HilosUserRenameEditFields,
   HilosAccountMerge,
+  HilosAccountMergeCancel,
+  HilosAccountMergeWindow,
+  HilosAccountMergeWindowView,
   HilosMergeCandidateIdentity,
   HilosMergeCandidateRow,
   HilosMergeCandidates,
@@ -120,7 +135,10 @@ import type {
   HilosUserErasureSection,
   HilosUserImpersonationSection,
   HilosUserImpersonationSettings,
+  HilosUserMergeSection as HilosUserMergeSectionState,
   HilosUserRename,
+  HilosUserRenameEdit,
+  HilosUserRenameEditFields,
   HilosUsersContext,
 } from '@hilos/core/admin/users'
 import type {
@@ -150,7 +168,9 @@ import {
   HILOS_ROUTER,
   mirrorHilosSignal,
   createHilosTrackedAction,
+  hilosSignal,
 } from '@hilos/angular/base'
+import { HilosUserMergeSection } from './HilosUserMergeSection.js'
 
 /**
  * Move the focus into a window whose step changed under it; the modal itself
@@ -180,6 +200,7 @@ function focusWindow(body: HTMLElement | undefined): void {
     HilosModal,
     HilosStepUpStep,
     HilosTableCell,
+    HilosUserMergeSection,
     HilosViewportTable,
     LoadingButton,
     ConflictActions,
@@ -289,6 +310,22 @@ function focusWindow(body: HTMLElement | undefined): void {
             data-id="hilos-user-erasing"
           >
             {{ notice }}
+          </div>
+        }
+        <!-- The card's merge section and View merge button stand for the
+        merged, the erasing and in a project without merge dispatch
+        (HIL-2006, HIL-2007, HIL-2011). -->
+        <hilos-user-merge-section [section]="mergeSection()" />
+        @if (mergeSection() !== null) {
+          <div class="mb-4">
+            <button
+              type="button"
+              class="btn btn-outline-secondary"
+              data-id="hilos-user-merge-view"
+              (click)="openMergeView()"
+            >
+              {{ mergeWindowCopy.view }}
+            </button>
           </div>
         }
         @for (section of lifecycleSections(); track section.key) {
@@ -765,17 +802,21 @@ function focusWindow(body: HTMLElement | undefined): void {
       </hilos-modal>
 
       <hilos-modal
-        [open]="mergeOpen()"
+        [open]="mergeOpen() || mergeWindowOpen()"
         (openChange)="onMergeOpenChange($event)"
         [title]="
-          mergeProof() !== 'skip'
-            ? stepUpCopy.title
-            : detail()
-              ? 'Merge an account into ' + hiddenAsWord(detail()!.name)
-              : 'Merge an account'
+          mergeView() !== null
+            ? mergeCopy.title
+            : mergeProof() !== 'skip'
+              ? stepUpCopy.title
+              : detail()
+                ? 'Merge an account into ' + hiddenAsWord(detail()!.name)
+                : 'Merge an account'
         "
-        [confirmOnClose]="selectedCandidateId() !== null"
-        [busy]="mergeAction.busy()"
+        [confirmOnClose]="
+          mergeView() === null && selectedCandidateId() !== null
+        "
+        [busy]="mergeView() === null && mergeAction.busy()"
         initialFocus="inner"
         size="wide"
       >
@@ -785,15 +826,137 @@ function focusWindow(body: HTMLElement | undefined): void {
           role="alert"
           aria-live="assertive"
         >
-          {{
-            mergeProof() === 'skip' ? mergeAction.error() : mergeStepUpRefusal()
-          }}
+          {{ mergeObservationAssertive() }}
+        </div>
+        <div
+          class="visually-hidden"
+          role="status"
+          aria-live="polite"
+          data-id="hilos-user-merge-observation-status"
+        >
+          {{ mergeObservationStatus() }}
         </div>
         <hilos-action-error
           [action]="mergeAction"
+          [suppressed]="mergeView() !== null || mergeStartNotice() !== null"
           detailsTitle="Couldn't merge the accounts"
         />
-        @if (mergeProof() !== 'skip') {
+        @if (mergeView(); as view) {
+          @if (view.kind === 'progress') {
+            <hilos-form-error
+              [message]="view.reason"
+              dataId="hilos-user-merge-operation-refusal"
+              [detailsTitle]="mergeCopy.refusalDetails"
+            />
+            <div data-id="hilos-user-merge-cancel-refusal">
+              <hilos-action-error
+                [action]="cancelAction"
+                detailsTitle="Couldn't cancel the merge"
+              />
+            </div>
+            <p>{{ view.status }}</p>
+            <dl>
+              <dt>{{ mergeWindowCopy.survivor }}</dt>
+              <dd>
+                @if (view.progress.survivorUserId !== null) {
+                  #{{ view.progress.survivorUserId }}
+                } @else {
+                  <hilos-hidden-mark />
+                }
+              </dd>
+              <dt>{{ mergeWindowCopy.loser }}</dt>
+              <dd>
+                @if (view.progress.loserUserId !== null) {
+                  #{{ view.progress.loserUserId }}
+                } @else {
+                  <hilos-hidden-mark />
+                }
+              </dd>
+            </dl>
+            @if (
+              view.progress.choice?.passwordFate !== null &&
+              view.progress.choice?.passwordFate !== undefined
+            ) {
+              <p>
+                {{ passwordCopy[view.progress.choice!.passwordFate!] }}
+              </p>
+            }
+            <section>
+              <h3 class="h6">
+                {{ secondFactorCopy.legend }}
+              </h3>
+              <p>
+                {{ secondFactorCopy.survivor }}
+                @if (
+                  view.progress.choice?.expectedSurvivorHasSecondFactor === true
+                ) {
+                  Yes
+                } @else if (
+                  view.progress.choice?.expectedSurvivorHasSecondFactor ===
+                  false
+                ) {
+                  No
+                } @else {
+                  <hilos-hidden-mark />
+                }
+                .
+                {{ secondFactorCopy.loser }}
+                @if (
+                  view.progress.choice?.expectedLoserHasSecondFactor === true
+                ) {
+                  Yes
+                } @else if (
+                  view.progress.choice?.expectedLoserHasSecondFactor === false
+                ) {
+                  No
+                } @else {
+                  <hilos-hidden-mark />
+                }
+                .
+              </p>
+              @for (choice of observedProtectionChoices(); track choice.value) {
+                <div>
+                  <p class="mb-1">{{ choice.label }}</p>
+                  <p>{{ choice.consequence }}</p>
+                </div>
+              }
+            </section>
+            @if (view.pendingParts.length > 0) {
+              <section>
+                <h3 class="h6">{{ mergeCopy.parts }}</h3>
+                <ul>
+                  @for (part of view.pendingParts; track part.key) {
+                    <li>
+                      {{ part.participant }}
+                      @if (part.account !== null) {
+                        · #{{ part.account }}
+                      }
+                    </li>
+                  }
+                </ul>
+              </section>
+            }
+            @if (view.waits.length > 0) {
+              <section>
+                <h3 class="h6">{{ mergeCopy.waits }}</h3>
+                <ul>
+                  @for (wait of view.waits; track wait.key) {
+                    <li>
+                      {{ wait.participant }}
+                      @if (wait.account !== null) {
+                        · #{{ wait.account }}
+                      }
+                    </li>
+                  }
+                </ul>
+              </section>
+            }
+          } @else if (view.kind === 'pending') {
+            <p>{{ view.status }}</p>
+          } @else {
+            <p>{{ view.message }}</p>
+          }
+        } @else if (mergeProof() !== 'skip') {
           <form
             id="hilos-user-merge-proof"
             data-id="hilos-user-merge-step-up"
@@ -819,7 +982,10 @@ function focusWindow(body: HTMLElement | undefined): void {
                     "
                     [attr.data-id]="'hilos-user-merge-row-' + row.id"
                     [checked]="selectedCandidateId() === row.id"
-                    [disabled]="row.id === currentUserId()"
+                    [disabled]="
+                      row.id === currentUserId() ||
+                      !mergeSelectable().has(row.id)
+                    "
                     (change)="chooseCandidate(row)"
                   />
                 </ng-template>
@@ -864,6 +1030,11 @@ function focusWindow(body: HTMLElement | undefined): void {
             }
           </div>
         } @else if (mergeSummaryCandidate(); as candidate) {
+          @if (mergeStartNotice()) {
+            <div class="alert alert-info" role="status">
+              {{ mergeStartNotice() }}
+            </div>
+          }
           <p data-id="hilos-user-merge-summary">
             <strong
               ><hilos-hideable [value]="candidate.name" /> (#{{
@@ -1013,58 +1184,80 @@ function focusWindow(body: HTMLElement | undefined): void {
           }
         }
         <ng-template #modalActions let-requestClose="requestClose">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            [disabled]="mergeAction.busy()"
-            data-id="hilos-user-merge-cancel"
-            (click)="requestClose()"
-          >
-            Cancel
-          </button>
-          @if (mergeProof() === 'ask') {
-            <button
-              hilosLoadingButton
-              class="btn-primary"
-              type="submit"
-              form="hilos-user-merge-proof"
-              [loading]="mergeStepUpBusy()"
-              data-id="hilos-user-merge-step-up-confirm"
-            >
-              {{ stepUpCopy.confirm }}
-            </button>
-          } @else if (mergeProof() === 'refused') {
-            <!-- A refused step offers Cancel alone. -->
-          } @else if (mergeStep() === 1) {
+          @if (mergeView() !== null) {
             <button
               type="button"
-              class="btn btn-primary"
-              [disabled]="selectedCandidate() === null"
-              data-id="hilos-user-merge-next"
-              (click)="nextMergeStep()"
+              class="btn btn-secondary"
+              data-id="hilos-user-merge-close"
+              (click)="requestClose()"
             >
-              Next
+              {{ mergeWindowCopy.close }}
             </button>
+            @if (cancelAvailable() || cancelPending()) {
+              <button
+                hilosLoadingButton
+                class="btn-outline-danger"
+                [loading]="cancelPending()"
+                data-id="hilos-user-merge-operation-cancel"
+                (click)="cancelMerge()"
+              >
+                {{ cancelCopy.cancel }}
+              </button>
+            }
           } @else {
             <button
               type="button"
               class="btn btn-secondary"
               [disabled]="mergeAction.busy()"
-              data-id="hilos-user-merge-back"
-              (click)="previousMergeStep()"
+              data-id="hilos-user-merge-cancel"
+              (click)="requestClose()"
             >
-              Back
+              Cancel
             </button>
-            <button
-              hilosLoadingButton
-              class="btn-danger"
-              [loading]="mergeAction.busy()"
-              [disabled]="mergeDisabled()"
-              data-id="hilos-user-merge-confirm"
-              (click)="submitMerge()"
-            >
-              Merge
-            </button>
+            @if (mergeProof() === 'ask') {
+              <button
+                hilosLoadingButton
+                class="btn-primary"
+                type="submit"
+                form="hilos-user-merge-proof"
+                [loading]="mergeStepUpBusy()"
+                data-id="hilos-user-merge-step-up-confirm"
+              >
+                {{ stepUpCopy.confirm }}
+              </button>
+            } @else if (mergeProof() === 'refused') {
+              <!-- A refused step offers Cancel alone. -->
+            } @else if (mergeStep() === 1) {
+              <button
+                type="button"
+                class="btn btn-primary"
+                [disabled]="selectedCandidate() === null"
+                data-id="hilos-user-merge-next"
+                (click)="nextMergeStep()"
+              >
+                Next
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-secondary"
+                [disabled]="mergeAction.busy()"
+                data-id="hilos-user-merge-back"
+                (click)="previousMergeStep()"
+              >
+                Back
+              </button>
+              <button
+                hilosLoadingButton
+                class="btn-danger"
+                [loading]="mergeAction.busy()"
+                [disabled]="mergeDisabled()"
+                data-id="hilos-user-merge-confirm"
+                (click)="submitMerge()"
+              >
+                Merge
+              </button>
+            }
           }
         </ng-template>
       </hilos-modal>
@@ -1217,6 +1410,25 @@ export class HilosUserPage {
   private rename: HilosUserRename | undefined
   private mergeCandidates: HilosMergeCandidates | undefined
   private accountMerge: HilosAccountMerge | undefined
+  private mergeWindow?: HilosAccountMergeWindow
+  private mergeCancel?: HilosAccountMergeCancel
+
+  protected readonly mergeSection = signal<HilosUserMergeSectionState | null>(
+    null,
+  )
+  protected readonly mergeView = signal<HilosAccountMergeWindowView | null>(
+    null,
+  )
+  protected readonly mergeWindowOpen = signal(false)
+  protected readonly mergeStartNotice = signal<string | null>(null)
+  protected readonly cancelAvailable = signal(false)
+  protected readonly cancelPending = signal(false)
+  protected readonly mergeSelectable = signal<ReadonlySet<number>>(new Set())
+  protected readonly cancelAction = createHilosTrackedAction({ toast: false })
+  protected readonly mergeCopy = HILOS_USER_MERGE_COPY
+  protected readonly mergeWindowCopy = HILOS_ACCOUNT_MERGE_WINDOW_COPY
+  protected readonly cancelCopy = HILOS_ACCOUNT_MERGE_CANCEL_COPY
+  protected readonly adminAccess = hilosSignal(hilosAdminAccess)
 
   protected readonly mergeCandidatesController = signal<
     TableViewportController<HilosMergeCandidateRow> | undefined
@@ -1250,7 +1462,7 @@ export class HilosUserPage {
   protected readonly mergeProof = signal<HilosStepUpOpenOutcome>('skip')
   protected readonly mergeOpening = signal(false)
   private readonly mergeBody = viewChild<ElementRef<HTMLElement>>('mergeBody')
-  protected readonly selectedCandidate = computed(() => {
+  protected readonly selectedCandidateRow = computed(() => {
     const selected = this.mergeRows().find(
       (entry) => entry.row?.id === this.selectedCandidateId(),
     )
@@ -1259,19 +1471,63 @@ export class HilosUserPage {
       ? null
       : (selected?.row ?? null)
   })
+  protected readonly selectedCandidate = computed(() => {
+    const id = this.selectedCandidateId()
+    if (id === null || !this.mergeSelectable().has(id)) {
+      return null
+    }
+
+    return this.selectedCandidateRow()
+  })
   protected readonly mergeSummaryCandidate = computed(
-    () => this.selectedCandidate() ?? this.selectedSnapshot(),
+    () => this.selectedCandidateRow() ?? this.selectedSnapshot(),
   )
+  protected readonly mergeObservation = computed(() => {
+    const view = this.mergeView()
+    return view?.kind === 'progress' ? view : null
+  })
+  protected readonly mergeObservationStatus = computed(() => {
+    const view = this.mergeView()
+    if (!view) {
+      return ''
+    }
+    if (view.kind === 'progress' || view.kind === 'pending') {
+      return view.status
+    }
+    return view.message
+  })
+  protected readonly mergeObservationAssertive = computed(() => {
+    if (this.mergeView() !== null) {
+      return [this.mergeObservation()?.reason, this.cancelAction.error()]
+        .filter(Boolean)
+        .join('\n')
+    }
+    return this.mergeProof() === 'skip'
+      ? this.mergeAction.error()
+      : this.mergeStepUpRefusal()
+  })
+  protected readonly observedProtectionChoices = computed(() => {
+    const choice = this.mergeObservation()?.progress.choice
+    if (
+      typeof choice?.expectedSurvivorHasSecondFactor !== 'boolean' ||
+      typeof choice.expectedLoserHasSecondFactor !== 'boolean'
+    )
+      return []
+    return hilosSecondFactorFateChoices(
+      { hasSecondFactor: choice.expectedSurvivorHasSecondFactor },
+      { hasSecondFactor: choice.expectedLoserHasSecondFactor },
+    ).filter((entry) => entry.value === choice.secondFactorFate)
+  })
   protected readonly passwordChoiceRequired = computed(
     () =>
       this.detail()?.hasPassword === true &&
-      this.selectedCandidate()?.hasPassword === true,
+      this.mergeSummaryCandidate()?.hasPassword === true,
   )
   protected readonly passwordChoices = computed(() =>
-    hilosPasswordFateChoices(this.detail(), this.selectedCandidate()),
+    hilosPasswordFateChoices(this.detail(), this.mergeSummaryCandidate()),
   )
   protected readonly secondFactorChoices = computed(() =>
-    hilosSecondFactorFateChoices(this.detail(), this.selectedCandidate()),
+    hilosSecondFactorFateChoices(this.detail(), this.mergeSummaryCandidate()),
   )
   protected readonly mergeGone = computed(
     () => this.mergeStep() === 2 && this.selectedCandidate() === null,
@@ -1403,7 +1659,8 @@ export class HilosUserPage {
         mirrorHilosSignal(editor.saveAvailable, this.saveAvailable),
       ]
       this.mergeCandidates = mergeCandidates
-      this.accountMerge = createHilosAccountMerge(context)
+      const accountMerge = createHilosAccountMerge(context)
+      this.accountMerge = accountMerge
       const lifecycle = createHilosUserLifecycle(context)
       this.lifecycle = lifecycle
       this.graceDays.set(lifecycle.graceDays.get())
@@ -1411,6 +1668,16 @@ export class HilosUserPage {
       const userStanding = createHilosUserStanding(context)
       userStanding.start()
       this.standing.set(userStanding.standing.get())
+      const shownUserId = computedSignal(() => detailSignal.get()?.id)
+      this.mergeWindow = createHilosAccountMergeWindow(
+        userStanding.merge,
+        shownUserId,
+      )
+      this.mergeCancel = createHilosAccountMergeCancel(
+        context,
+        this.mergeWindow,
+        accountMerge,
+      )
       this.mergeCandidatesController.set(mergeCandidates.controller)
       this.detail.set(detailSignal.get())
       this.photo.set(photoSignal.get())
@@ -1463,6 +1730,23 @@ export class HilosUserPage {
           ),
           this.erasure,
         ),
+        // The standing reader's merge progress into the card's section.
+        // Angular computed does not see core signals.
+        mirrorHilosSignal(
+          computedSignal(() =>
+            hilosUserMergeSection(
+              userStanding.merge.get(),
+              detailSignal.get()?.id,
+            ),
+          ),
+          this.mergeSection,
+        ),
+        mirrorHilosSignal(this.mergeWindow.opened, this.mergeWindowOpen),
+        mirrorHilosSignal(this.mergeWindow.view, this.mergeView),
+        mirrorHilosSignal(this.mergeWindow.startNotice, this.mergeStartNotice),
+        mirrorHilosSignal(this.mergeCancel.available, this.cancelAvailable),
+        mirrorHilosSignal(this.mergeCancel.pending, this.cancelPending),
+        mirrorHilosSignal(mergeCandidates.selectableIds, this.mergeSelectable),
       ]
       const tick = setInterval(
         () => this.lifecycleNow.set(Date.now()),
@@ -1477,6 +1761,8 @@ export class HilosUserPage {
         for (const unsubscribe of subscriptions) {
           unsubscribe()
         }
+        this.mergeCancel?.dispose()
+        this.mergeWindow?.dispose()
         userStanding.dispose()
       })
     })
@@ -1538,18 +1824,49 @@ export class HilosUserPage {
         untracked(() => this.secondFactorFate.set(null))
       }
     })
+    let previousSurvivorPassword: boolean | undefined
+    let previousLoserPassword: boolean | undefined
+    let previousSurvivorUnverified: string | null | undefined
+    let previousLoserUnverified: string | null | undefined
     effect(() => {
-      const rows = this.mergeRows()
+      const survivorPassword = this.detail()?.hasPassword
+      const loserPassword = this.selectedCandidate()?.hasPassword
+      const survivorUnverified = this.detail()?.unverifiedPasswordAddress
+      const loserUnverified =
+        this.selectedCandidate()?.unverifiedPasswordAddress
+      if (
+        survivorPassword !== previousSurvivorPassword ||
+        loserPassword !== previousLoserPassword ||
+        survivorUnverified !== previousSurvivorUnverified ||
+        loserUnverified !== previousLoserUnverified
+      ) {
+        previousSurvivorPassword = survivorPassword
+        previousLoserPassword = loserPassword
+        previousSurvivorUnverified = survivorUnverified
+        previousLoserUnverified = loserUnverified
+        untracked(() => this.passwordFate.set(null))
+      }
+    })
+    let previousAdminAccess = this.adminAccess()
+    effect(() => {
+      const access = this.adminAccess()
+      if (previousAdminAccess === 'full' && access !== 'full') {
+        untracked(() => {
+          this.selectedSnapshot.set(null)
+          this.passwordFate.set(null)
+          this.secondFactorFate.set(null)
+        })
+      }
+      previousAdminAccess = access
+    })
+    effect(() => {
+      const selectable = this.mergeSelectable()
+      const candidateId = this.selectedCandidateId()
       untracked(() => {
         if (
           this.mergeStep() === 1 &&
-          this.selectedCandidateId() !== null &&
-          !rows.some(
-            (entry) =>
-              entry.row?.id === this.selectedCandidateId() &&
-              entry.pending !== 'remove' &&
-              !entry.placeholder,
-          )
+          candidateId !== null &&
+          !selectable.has(candidateId)
         ) {
           this.selectedCandidateId.set(null)
         }
@@ -1559,14 +1876,16 @@ export class HilosUserPage {
     // A merge (HIL-1292) or a begun erasure (HIL-1962) that lands under an open
     // window closes it: there is nothing left to do over the account. A window
     // whose action is in flight stays, and the server's answer comes as usual -
-    // a refusal.
+    // a refusal. An observation window stays too (HIL-2011).
     effect(() => {
       if (this.offersActions()) {
         return
       }
       untracked(() => {
         if (!this.loading()) this.onEditOpenChange(false)
-        if (!this.mergeAction.busy()) this.onMergeOpenChange(false)
+        if (!this.mergeAction.busy() && this.mergeView() === null) {
+          this.onMergeOpenChange(false)
+        }
         if (!this.lifecycleAction.busy()) this.lifecyclePrompt.set(null)
         if (!this.impersonateAction.busy()) this.impersonateTarget.set(null)
       })
@@ -1697,10 +2016,29 @@ export class HilosUserPage {
     return identity.provider ?? identity.type
   }
 
+  protected openMergeView(): void {
+    this.mergeAction.clearError()
+    this.cancelAction.clearError()
+    this.mergeWindow?.open()
+  }
+
+  protected cancelMerge(): void {
+    const handle = this.mergeCancel?.cancel()
+    if (handle) {
+      void this.cancelAction.run(handle)
+    }
+  }
+
   protected async openMerge(): Promise<void> {
     const survivor = this.detail()
     const mergeCandidates = this.mergeCandidates
-    if (!survivor || !mergeCandidates || this.mergeOpening()) {
+    if (
+      !survivor ||
+      !mergeCandidates ||
+      this.mergeOpening() ||
+      this.mergeWindowOpen() ||
+      (this.mergeSection() !== null && this.mergeSection()!.status !== '')
+    ) {
       return
     }
     mergeCandidates.dispose()
@@ -1739,11 +2077,16 @@ export class HilosUserPage {
     this.mergeOpen.set(open)
     if (!open) {
       this.mergeCandidates?.dispose()
+      this.mergeWindow?.close()
+      this.cancelAction.clearError()
     }
   }
 
   protected chooseCandidate(row: HilosMergeCandidateRow): void {
-    if (row.id === this.currentUserId()) {
+    if (
+      row.id === this.currentUserId() ||
+      !this.mergeSelectable().has(row.id)
+    ) {
       return
     }
     this.selectedCandidateId.set(row.id)
@@ -1787,18 +2130,27 @@ export class HilosUserPage {
     const fate = this.passwordChoiceRequired()
       ? (this.passwordFate() ?? undefined)
       : undefined
-    if (
-      await this.mergeAction.run(
-        this.accountMerge.merge(
-          survivor.id,
-          loser.id,
-          fate,
-          this.secondFactorFate() ?? undefined,
-          survivor.hasSecondFactor,
-          loser.hasSecondFactor,
-        ),
-      )
-    ) {
+    const handle = this.accountMerge.merge(
+      survivor.id,
+      loser.id,
+      fate,
+      this.secondFactorFate() ?? undefined,
+      survivor.hasSecondFactor,
+      loser.hasSecondFactor,
+    )
+    const [outcome] = await Promise.all([
+      this.mergeWindow?.track(handle, {
+        survivorUserId: survivor.id,
+        loserUserId: loser.id,
+        passwordFate: fate ?? null,
+        secondFactorFate: this.secondFactorFate() ?? null,
+        expectedSurvivorHasSecondFactor: survivor.hasSecondFactor,
+        expectedLoserHasSecondFactor: loser.hasSecondFactor,
+      }) ?? Promise.resolve('legacy'),
+      this.mergeAction.run(handle),
+    ])
+    // SCAFFOLD: legacy synchronous producer until HIL-1999
+    if (outcome === 'legacy') {
       this.onMergeOpenChange(false)
     }
   }
