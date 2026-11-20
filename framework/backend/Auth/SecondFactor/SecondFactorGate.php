@@ -47,7 +47,8 @@ final class SecondFactorGate
      * @throws DatabaseException When an authenticator or trust lookup fails
      * @throws InvalidArgumentException When a lookup query is malformed
      * @throws LogicException When a collection class constant is not configured
-     * @throws HilosException When the project cannot say who its administrators are
+     * @throws HilosException When the project cannot say who its administrators are, or when the stored trust
+     *     restrictions cannot be read (HIL-1900)
      */
     public static function verdict(int $sessionId, int $userId, SecondFactorPolicy $policy): string
     {
