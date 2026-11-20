@@ -745,9 +745,7 @@ at are the sign-ins of the person and of the administrator, because
 solar-system-model and preferans declare no actions of their own. PMD and
 Preferans sign in on the main page, so the actions stand on `main`; Solar signs
 in on `/hilos`, where its sign-in form opens in place, so they stand on
-`hilos`. Their framework journeys carry
-no `spec-owner` line (HIL-1422); PMD retains the approved demo owner line for its
-moved Vue screen journeys (HIL-2016).
+`hilos`. Their journeys carry no `spec-owner` line (HIL-1422).
 
 online-testing additionally carries a cluster browser proof for Analytics over
 the stand's three masters: three sequential source/viewer pairs and the shared
