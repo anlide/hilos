@@ -3,7 +3,7 @@
 // from @hilos/core, so this file only declares the demo's own pages;
 // `createAppPageRouter` mounts the `hilos_*` admin pages under them.
 //
-// The shop's own admin screen answers under /hilos/app/: warehouses and categories. The `app`
+// The shop's own admin screen answers under /hilos/app/: warehouses, categories and products. The `app`
 // segment says "application screen, not framework screen", so a Hilos page
 // added later cannot collide with it by construction. Its page key does not
 // change with the address — a key is identity on the wire, a path is not.
@@ -14,6 +14,7 @@ import {
 
 import {
   PAGE_ADMIN_CATEGORIES,
+  PAGE_ADMIN_PRODUCTS,
   PAGE_ADMIN_WAREHOUSES,
   PAGE_MAIN,
 } from './keys.js'
@@ -35,6 +36,11 @@ const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
     path: '/hilos/app/categories',
     admin: true,
     icon: 'bi-tags',
+  },
+  [PAGE_ADMIN_PRODUCTS]: {
+    path: '/hilos/app/products',
+    admin: true,
+    icon: 'bi-box-seam',
   },
 }
 

@@ -25,6 +25,7 @@ use Demo\EcommerceShop\Auth\EcommerceShopAccountDataOwnerDirectory;
 use Demo\EcommerceShop\Auth\EcommerceShopAuthMethodDirectory;
 use Demo\EcommerceShop\Backup\BackupCatalog;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
+use Demo\EcommerceShop\Browser\List\AdminProductCategoriesBrowserList;
 use Demo\EcommerceShop\Core\Agent\Daemon\CategoriesLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\GuestCartsLibraryAgentDaemon;
@@ -51,6 +52,7 @@ use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
 use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
+use Demo\EcommerceShop\Pages\AdminProductsPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
@@ -370,6 +372,7 @@ final class Hilos extends HilosFacade
         UserPage::PAGE => UserPage::class,
         AdminWarehousesPage::PAGE => AdminWarehousesPage::class,
         AdminCategoriesPage::PAGE => AdminCategoriesPage::class,
+        AdminProductsPage::PAGE => AdminProductsPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -625,6 +628,7 @@ final class Hilos extends HilosFacade
 
     public const array BROWSER_LISTS = [
         HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
+        AdminProductCategoriesBrowserList::LIST => AdminProductCategoriesBrowserList::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -632,6 +636,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_LISTS = [
+        AdminProductsPage::PAGE => [
+            AdminProductCategoriesBrowserList::LIST => [],
+        ],
         ProfilePage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
         ],
@@ -727,6 +734,9 @@ final class Hilos extends HilosFacade
         ],
         AdminCategoriesPage::PAGE => [
             EcommerceShopTableContext::categories => [],
+        ],
+        AdminProductsPage::PAGE => [
+            EcommerceShopTableContext::products => [],
         ],
         LanguagesListPage::PAGE => [
             EcommerceShopTableContext::hilosI18nLanguages => [],

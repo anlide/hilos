@@ -138,6 +138,8 @@ use Hilos\Pages\Maintenance\DTO\MaintenanceEnableActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleRemoveActionDTO;
 use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
+use Demo\EcommerceShop\Browser\EcommerceShopBrowserList;
+use Demo\EcommerceShop\Browser\List\AdminProductCategoriesBrowserList;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileDataPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
@@ -150,6 +152,7 @@ use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
+use Demo\EcommerceShop\Pages\AdminProductsPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Hilos\Database\Pages\PageCatalogConstants;
@@ -822,6 +825,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             UserPage::PAGE => UserPage::class,
             AdminWarehousesPage::PAGE => AdminWarehousesPage::class,
             AdminCategoriesPage::PAGE => AdminCategoriesPage::class,
+            AdminProductsPage::PAGE => AdminProductsPage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
@@ -1214,7 +1218,11 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             [
                 PageCatalogConstants::SECTION_TITLE => 'Shop administration',
                 PageCatalogConstants::SECTION_DESCRIPTION => 'Warehouses and the catalog.',
-                PageCatalogConstants::SECTION_ITEMS => [PageConstants::ADMIN_WAREHOUSES, PageConstants::ADMIN_CATEGORIES],
+                PageCatalogConstants::SECTION_ITEMS => [
+                    PageConstants::ADMIN_WAREHOUSES,
+                    PageConstants::ADMIN_CATEGORIES,
+                    PageConstants::ADMIN_PRODUCTS,
+                ],
             ],
         ], PageCatalog::dashboardSections());
     }
@@ -1253,6 +1261,44 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testTheProductsTableIsRegistered(): void
     {
         self::assertSame(ProductsTable::class, Hilos::TABLES[EcommerceShopTableContext::products]);
+    }
+
+    /**
+     * The products admin page is served by the products library, binds its table and live
+     * category filter options, and is reached from the dashboard's shop group.
+     */
+    public function testTheProductsAdminPageIsServedByTheLibraryAndHangsOffTheDashboard(): void
+    {
+        self::assertSame('admin_products', AdminProductsPage::PAGE);
+        self::assertSame(PageReach::ROUTE, AdminProductsPage::REACH);
+        self::assertSame(PageAccessLevel::ADMIN, AdminProductsPage::ACCESS_LEVEL);
+        self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getPageRoutes()[AdminProductsPage::PAGE]);
+        self::assertSame([EcommerceShopTableContext::products => []], Hilos::PAGE_TABLES[AdminProductsPage::PAGE]);
+        self::assertSame(
+            [BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_PRODUCTS],
+            AdminProductsPage::BROWSER,
+        );
+        self::assertSame('subscription_page_admin_products', EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_PRODUCTS);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Products',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Products, prices, and stock by warehouse.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Products',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], PageCatalog::pages()[PageConstants::ADMIN_PRODUCTS]);
+        self::assertSame('adminProductCategories', EcommerceShopBrowserList::ADMIN_PRODUCT_CATEGORIES);
+        self::assertSame(
+            AdminProductCategoriesBrowserList::class,
+            Hilos::BROWSER_LISTS[AdminProductCategoriesBrowserList::LIST],
+        );
+        self::assertSame(
+            [AdminProductCategoriesBrowserList::LIST => []],
+            Hilos::PAGE_LISTS[AdminProductsPage::PAGE],
+        );
+
+        $browser = new EcommerceShopBrowserContext();
+        $browser->bindHilosFacade(Hilos::class);
+        self::assertContains(EcommerceShopDbContext::categories, $browser->dbSourceKeysOfPage('admin_products'));
     }
 
     /** The stock table of one product is registered under its key, for the page that binds it. */

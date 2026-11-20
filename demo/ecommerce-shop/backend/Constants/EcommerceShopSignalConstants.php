@@ -19,4 +19,7 @@ final class EcommerceShopSignalConstants
 
     /** @var string Subscription page admin categories signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_CATEGORIES = 'subscription_page_admin_categories';
+
+    /** @var string Subscription page admin products signal name */
+    public const string SUBSCRIPTION_PAGE_ADMIN_PRODUCTS = 'subscription_page_admin_products';
 }

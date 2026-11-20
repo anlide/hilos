@@ -26,8 +26,11 @@ The empty shell of the shop, and the smallest complete Hilos project on React
   it keeps, and the numbers change by themselves as stock moves. Its
   **Categories** page lists the categories in catalog order, each with its
   picture, its description and how many products it holds, and that number
-  changes by itself too. Only administrators see it; the shop's other admin
-  pages arrive with their own leaves.
+  changes by itself too. Its **Products** page lists every product, recently
+  changed first, with its category, kind, price, stock and availability; it
+  filters by category, kind and availability, and the rows change by themselves.
+  Only administrators see it; the shop's other admin pages arrive with their
+  own leaves.
 - **Notifications**: the bell in the header for a signed-in person, with
   delivery by email.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.

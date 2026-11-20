@@ -28,6 +28,7 @@ import { connection } from './bootstrap/connection.js'
 import { currentUserName } from './bootstrap/session.js'
 import {
   PAGE_ADMIN_CATEGORIES,
+  PAGE_ADMIN_PRODUCTS,
   PAGE_ADMIN_WAREHOUSES,
   PAGE_MAIN,
 } from './pages/keys.js'
@@ -54,12 +55,15 @@ const pages: Record<string, PageView<ComponentType>> = {
   // recopied per project (page-module-structure.md).
   ...hilosAdminViews(),
   // The shop's own admin pages, in their own dashboard group (views/AdminWarehouses,
-  // views/AdminCategories).
+  // views/AdminCategories, views/AdminProducts).
   [PAGE_ADMIN_WAREHOUSES]: lazyPage(() =>
     import('./views/AdminWarehouses/AdminWarehouses.js').then((m) => m.default),
   ),
   [PAGE_ADMIN_CATEGORIES]: lazyPage(() =>
     import('./views/AdminCategories/AdminCategories.js').then((m) => m.default),
+  ),
+  [PAGE_ADMIN_PRODUCTS]: lazyPage(() =>
+    import('./views/AdminProducts/AdminProducts.js').then((m) => m.default),
   ),
   // The framework Change Log section: the framework owns the feed, the tables
   // viewport, the history and the receipt reader; the project binds its
