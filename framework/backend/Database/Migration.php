@@ -41,7 +41,7 @@ class Migration
      * Keyed by connection index, host, port and database to avoid cache leakage between
      * re-pointed connections with the same index.
      *
-     * @var array<string|int, bool> Connection index or target key => migration table ensured
+     * @var array<string, bool> Target key "index@host:port/database" => migration table ensured
      */
     private static array $initialized = [];
 
@@ -109,7 +109,7 @@ class Migration
     }
 
     /**
-     * Resets the initialization cache for a connection index or for all connections.
+     * Resets the initialization cache for a connection index (every endpoint it was pointed at) or for all.
      *
      * @param ?int $index Connection index to reset, or null to reset all connections
      */
@@ -120,7 +120,6 @@ class Migration
             return;
         }
 
-        unset(self::$initialized[$index]);
         $prefix = $index . '@';
         foreach (array_keys(self::$initialized) as $key) {
             if (is_string($key) && str_starts_with($key, $prefix)) {
