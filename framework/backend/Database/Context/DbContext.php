@@ -314,18 +314,50 @@ abstract class DbContext
      */
     public function forgetLoadedDataForTest(): void
     {
-        if (!NonProductionGate::admitted()) {
-            throw OrmForgetRefusedException::forEnvironment();
-        }
-        if (Database::hasOpenTransactions()) {
-            throw OrmForgetRefusedException::forOpenTransaction();
-        }
+        $this->requireTestForgetAdmitted();
 
         foreach ($this->_objectCollections as $objectCollection) {
             $objectCollection->forgetLoadedDataForTest();
         }
         foreach ($this->_dbItemCollections as $dbItemCollection) {
             $dbItemCollection->clearCache();
+        }
+    }
+
+    /**
+     * Ends this process's holding of the named sets for tests, without SQL or announcements:
+     * the cold reset of {@see self::forgetLoadedDataForTest()}, which also returns each
+     * collection to its mount state, so one loaded whole no longer promises to read whole.
+     * Every key is resolved before anything changes, and a repeated key is not a refusal.
+     * Without keys every View item cache is cleared too. Truth-source claims are untouched;
+     * previously handed-out rows stay detached.
+     *
+     * @param string ...$collectionKeys Keys of mounted object collections; none means every mounted collection
+     * @throws OrmForgetRefusedException When the environment is not admitted or any transaction is open
+     * @throws ObjectCollectionNotFoundException When a named key is not a mounted object collection
+     */
+    public function forgetHoldingForTest(string ...$collectionKeys): void
+    {
+        $this->requireTestForgetAdmitted();
+
+        if ($collectionKeys === []) {
+            foreach ($this->_objectCollections as $objectCollection) {
+                $objectCollection->forgetHoldingForTest();
+            }
+            foreach ($this->_dbItemCollections as $dbItemCollection) {
+                $dbItemCollection->clearCache();
+            }
+            return;
+        }
+
+        $named = [];
+        foreach ($collectionKeys as $key) {
+            $named[$key] = $this->_objectCollections[$key]
+                ?? throw new ObjectCollectionNotFoundException("Object collection [{$key}] is not mounted");
+        }
+        foreach ($named as $key => $objectCollection) {
+            $objectCollection->forgetHoldingForTest();
+            ($this->_dbItemCollections[$key] ?? null)?->clearCache();
         }
     }
 
@@ -518,6 +550,21 @@ abstract class DbContext
         Logger::error("Database read refused: {$reason}");
 
         throw new DbCollectionNotReadableException($reason);
+    }
+
+    /**
+     * The two guards every test-only forget entrance passes before it changes anything.
+     *
+     * @throws OrmForgetRefusedException When the environment is not admitted or any transaction is open
+     */
+    private function requireTestForgetAdmitted(): void
+    {
+        if (!NonProductionGate::admitted()) {
+            throw OrmForgetRefusedException::forEnvironment();
+        }
+        if (Database::hasOpenTransactions()) {
+            throw OrmForgetRefusedException::forOpenTransaction();
+        }
     }
 
     /**

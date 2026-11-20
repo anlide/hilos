@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Closure;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Source\SourceChangeBus;
 use Hilos\Core\Source\SourceChangeProvenance;
@@ -17,7 +18,9 @@ use Hilos\Database\DatabaseConnectionDefaults;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Exception\CollectionNotFullyLoadedException;
 use Hilos\Database\Exception\OrmForgetRefusedException;
+use Hilos\Database\Exception\View\ObjectCollectionNotFoundException;
 use Hilos\Database\Object\Item\Object_;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\View\Collection\DbCollection;
@@ -163,23 +166,134 @@ final class OrmForgetIntegrationTest extends FrameworkIntegrationTestCase
     }
 
     /**
-     * @return iterable<string, array{int, bool}> Transaction index and whether it commits
+     * @throws HilosException When a fixture read or reset fails
+     */
+    public function testForgettingOneHoldingReturnsOnlyTheNamedCollectionToItsMount(): void
+    {
+        $objects = $this->context->getObjectCollection(OrmForgetObjects::COLLECTION_KEY);
+        $storeOnly = $this->context->getObjectCollection(OrmForgetContext::STORE_ONLY);
+        $objects->preloadAll();
+        $storeOnly->preloadAll();
+        $held = $this->context->rows[1];
+        $storeOnlyHeld = $storeOnly[1];
+        Database::sqlRun("UPDATE `orm_forget_test` SET `label` = 'after' WHERE `id` = 1");
+        self::assertTrue($objects->isAllLoaded());
+        self::assertSame('before', $this->context->rows[1]->label());
+        $queries = self::questions();
+
+        Hilos::$db->forgetHoldingForTest(OrmForgetObjects::COLLECTION_KEY);
+
+        self::assertSame($queries + 1, self::questions(), 'Only the measurement itself may issue SQL');
+        self::assertSame([], $this->changes->seen);
+        self::assertSame($objects, $this->context->getObjectCollection(OrmForgetObjects::COLLECTION_KEY));
+        self::assertFalse($objects->isAllLoaded());
+        self::assertFalse(isset($objects[1]));
+        try {
+            iterator_to_array($objects);
+            self::fail('A collection that no longer holds the set must refuse a walk');
+        } catch (CollectionNotFullyLoadedException) {
+            self::assertFalse($objects->isAllLoaded());
+        }
+        $fresh = $this->context->rows[1];
+        self::assertNotSame($held, $fresh);
+        self::assertSame('after', $fresh->label());
+        self::assertSame('before', $held->label(), 'Old external references are not rebound');
+        self::assertFalse($objects->isAllLoaded(), 'A read by key does not make the set whole');
+        self::assertSame($storeOnly, $this->context->getObjectCollection(OrmForgetContext::STORE_ONLY));
+        self::assertTrue($storeOnly->isAllLoaded());
+        self::assertSame($storeOnlyHeld, $storeOnly[1]);
+
+        Hilos::$db->forgetHoldingForTest(OrmForgetObjects::COLLECTION_KEY, OrmForgetObjects::COLLECTION_KEY);
+
+        self::assertFalse($objects->isAllLoaded(), 'A repeated key and a repeated call end in the same state');
+        self::assertFalse(isset($objects[1]));
+        self::assertTrue($storeOnly->isAllLoaded());
+        self::assertSame($storeOnlyHeld, $storeOnly[1]);
+    }
+
+    /**
+     * @throws HilosException When a fixture read or reset fails
+     */
+    public function testForgettingEveryHoldingReturnsTheWholeContextToItsMount(): void
+    {
+        $objects = $this->context->getObjectCollection(OrmForgetObjects::COLLECTION_KEY);
+        $storeOnly = $this->context->getObjectCollection(OrmForgetContext::STORE_ONLY);
+        $objects->preloadAll();
+        $storeOnly->preloadAll();
+        $held = $this->context->rows[1];
+        $viewOnlyHeld = $this->context->viewOnly[1];
+        $queries = self::questions();
+
+        Hilos::$db->forgetHoldingForTest();
+
+        self::assertSame($queries + 1, self::questions(), 'Only the measurement itself may issue SQL');
+        self::assertSame([], $this->changes->seen);
+        foreach ([$objects, $storeOnly] as $collection) {
+            self::assertFalse($collection->isAllLoaded());
+            self::assertFalse(isset($collection[1]));
+            try {
+                iterator_to_array($collection);
+                self::fail('Every mounted collection must be partial again');
+            } catch (CollectionNotFullyLoadedException) {
+                self::assertFalse($collection->isAllLoaded());
+            }
+        }
+        self::assertNotSame($held, $this->context->rows[1]);
+        self::assertNotSame($viewOnlyHeld, $this->context->viewOnly[1], 'A view-only registry entry loses its cached wrapper');
+    }
+
+    /**
+     * @throws HilosException When a fixture read or reset fails
+     */
+    public function testAnUnmountedKeyRefusesBeforeAnyNamedCollectionChanges(): void
+    {
+        $objects = $this->context->getObjectCollection(OrmForgetObjects::COLLECTION_KEY);
+        $objects->preloadAll();
+        $held = $this->context->rows[1];
+        $heldObject = $objects[1];
+
+        try {
+            Hilos::$db->forgetHoldingForTest(OrmForgetObjects::COLLECTION_KEY, 'missing');
+            self::fail('An unmounted key must refuse the whole call');
+        } catch (ObjectCollectionNotFoundException $failure) {
+            self::assertSame('Object collection [missing] is not mounted', $failure->getMessage());
+        }
+
+        self::assertTrue($objects->isAllLoaded());
+        self::assertSame($heldObject, $objects[1]);
+        self::assertSame($held, $this->context->rows[1]);
+    }
+
+    /**
+     * @return iterable<string, array{Closure(DbContext): void}> Both test-only forget entrances of the context
+     */
+    public static function contextEntrances(): iterable
+    {
+        yield 'loaded data' => [static fn (DbContext $db) => $db->forgetLoadedDataForTest()];
+        yield 'holding' => [static fn (DbContext $db) => $db->forgetHoldingForTest()];
+    }
+
+    /**
+     * @return iterable<string, array{int, bool, Closure(DbContext): void}> Transaction index, whether it commits, and the entrance
      */
     public static function transactionCases(): iterable
     {
-        yield 'current rollback' => [DatabaseConnectionDefaults::PRIMARY_INDEX, false];
-        yield 'current commit' => [DatabaseConnectionDefaults::PRIMARY_INDEX, true];
-        yield 'other rollback' => [self::OTHER_INDEX, false];
-        yield 'other commit' => [self::OTHER_INDEX, true];
+        foreach (self::contextEntrances() as $entrance => [$forget]) {
+            yield 'current rollback, ' . $entrance => [DatabaseConnectionDefaults::PRIMARY_INDEX, false, $forget];
+            yield 'current commit, ' . $entrance => [DatabaseConnectionDefaults::PRIMARY_INDEX, true, $forget];
+            yield 'other rollback, ' . $entrance => [self::OTHER_INDEX, false, $forget];
+            yield 'other commit, ' . $entrance => [self::OTHER_INDEX, true, $forget];
+        }
     }
 
     /**
      * @param int $index Connection holding the transaction
      * @param bool $commit Whether the transaction commits after the refused reset
+     * @param Closure(DbContext): void $forget Entrance under test
      * @throws HilosException When transaction or fixture access fails
      */
     #[DataProvider('transactionCases')]
-    public function testAnyOpenTransactionRefusesBeforeClearingAnything(int $index, bool $commit): void
+    public function testAnyOpenTransactionRefusesBeforeClearingAnything(int $index, bool $commit, Closure $forget): void
     {
         $view = $this->context->rows;
         $held = $view[1];
@@ -206,7 +320,7 @@ final class OrmForgetIntegrationTest extends FrameworkIntegrationTestCase
         self::assertTrue(Database::hasOpenTransactions());
         $queries = self::questions();
         try {
-            Hilos::$db->forgetLoadedDataForTest();
+            $forget(Hilos::$db);
             self::fail('A transaction on any index must refuse the reset');
         } catch (OrmForgetRefusedException $failure) {
             self::assertStringContainsString('transaction is open', $failure->getMessage());
@@ -232,16 +346,18 @@ final class OrmForgetIntegrationTest extends FrameworkIntegrationTestCase
         self::assertSame($commit ? 1 : 0, $announced);
         self::assertSame($commit ? 0 : 1, $undone);
         $queries = self::questions();
-        Hilos::$db->forgetLoadedDataForTest();
+        $forget(Hilos::$db);
         self::assertSame($queries + 1, self::questions());
         self::assertSame($commit ? 'transaction' : 'before', $view[1]->label());
         self::assertNotSame($held, $view[1]);
     }
 
     /**
+     * @param Closure(DbContext): void $forget Entrance under test
      * @throws HilosException When reading a fixture fails
      */
-    public function testContextRefusesAnUnreadableEnvironmentBeforeClearingAnyRegistry(): void
+    #[DataProvider('contextEntrances')]
+    public function testContextRefusesAnUnreadableEnvironmentBeforeClearingAnyRegistry(Closure $forget): void
     {
         $held = $this->context->rows[1];
         $storeOnly = $this->context->getObjectCollection(OrmForgetContext::STORE_ONLY);
@@ -250,7 +366,7 @@ final class OrmForgetIntegrationTest extends FrameworkIntegrationTestCase
         Hilos::$env = null;
         $queries = self::questions();
         try {
-            Hilos::$db->forgetLoadedDataForTest();
+            $forget(Hilos::$db);
             self::fail('An unreadable environment must refuse the reset');
         } catch (OrmForgetRefusedException $failure) {
             self::assertStringContainsString('non-production environment', $failure->getMessage());

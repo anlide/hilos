@@ -30,12 +30,14 @@ use Hilos\Utils\Helpers\RandomHelper;
  * the rollback scope proves reads of written rows, not commit.
  *
  * Warehouses and products are rows written straight into their tables before the case reads any of them,
- * and the stock is written by its library under its frame, as the stock library's own test does. Each
- * fact is built in the shape the ORM announces it: a sync from another process names the stored columns,
- * a write of this process and a deletion name the fields of the row's Object.
+ * and the stock is written by its library under its frame, as the stock library's own test does. The window
+ * is built in the connection's process, which does not hold the stock, so the product's stock is read by SQL
+ * on the product column; a walk of the stock would be refused. Each fact is built in the shape the ORM
+ * announces it: a sync from another process names the stored columns, a write of this process and a
+ * deletion name the fields of the row's Object.
  */
 #[IntegrationTest]
-final class ProductStockTableTest extends StockLibraryEnvironment
+final class ProductStockTableTest extends ProductStockTableEnvironment
 {
     /** The window of a stock item carries every warehouse by name with the units it keeps, zero where it keeps none. */
     public function testTheWindowOfAStockItemCarriesEveryWarehouseByName(): void
@@ -49,6 +51,7 @@ final class ProductStockTableTest extends StockLibraryEnvironment
         Hilos::$db->productWarehouseStocks->actions->setUnits($bulbs, $kyiv, 12);
         Hilos::$db->productWarehouseStocks->actions->setUnits($bulbs, $lviv, 3);
         Hilos::$db->productWarehouseStocks->actions->setUnits($seeds, $odesa, 5);
+        self::assertFalse(Hilos::$db->productWarehouseStocks->getObjectCollection()?->isAllLoaded());
 
         $table = new ProductStockTable();
 
@@ -58,6 +61,7 @@ final class ProductStockTableTest extends StockLibraryEnvironment
             self::row($odesa, "{$tag} Odesa", 0),
         ], self::payloads($table->getPage(self::window($bulbs, $tag, $table->defaultSort()))->rows));
         self::assertSame(self::storedWarehouseCount(), $table->getPage(self::window($bulbs))->totalCount);
+        self::assertFalse(Hilos::$db->productWarehouseStocks->getObjectCollection()?->isAllLoaded());
     }
 
     /** A unique piece, a product that is not there, and a window that names no product are each an empty set. */

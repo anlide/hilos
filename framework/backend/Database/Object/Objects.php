@@ -108,7 +108,9 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * A flag of its own and not the strategy, because LAZY_STRATEGY_NONE is what the strategy
      * property holds by default: a collection built by initEmpty() and a FilteredCollection are
      * in exactly that state, and neither has a table to read. initDB() under that strategy
-     * makes the promise; a test reset also retains it for a collection previously loaded whole.
+     * makes the promise; the plain test reset forgetLoadedDataForTest() also retains it for a
+     * collection previously loaded whole, and forgetHoldingForTest() takes that retained promise
+     * away again, leaving only the one the mount made.
      *
      * @var bool
      */
@@ -148,20 +150,11 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
 
         $self = new static();
         $self->databaseBacked = true;
-
-        if ($strategy === self::LAZY_STRATEGY_NONE) {
-            // Eager by promise, not by load: the collection reads the table whole on its own
-            // first read - by key, a count, a walk, first()/last() - whichever entrance handed it
-            // out (HIL-1144). Nothing is read here.
-            $self->_allowLazyLoading = false;
-            $self->_lazyStrategy = self::LAZY_STRATEGY_NONE;
-            $self->_allLoaded = false;
-            $self->_loadsWholeOnFirstRead = true;
-        } else {
-            $self->_allowLazyLoading = true;
-            $self->_lazyStrategy = $strategy;
-            $self->_allLoaded = false;
-        }
+        $self->_lazyStrategy = $strategy;
+        // LAZY_STRATEGY_NONE is eager by promise, not by load: the collection reads the table
+        // whole on its own first read - by key, a count, a walk, first()/last() - whichever
+        // entrance handed it out (HIL-1144). Nothing is read here.
+        $self->restoreMountState();
 
         return $self;
     }
@@ -281,6 +274,8 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      * a {@see FilteredCollection} are in exactly that state, and neither has a table to read.
      * {@see self::initDB()} under that strategy makes the promise, and
      * {@see self::forgetLoadedDataForTest()} preserves it for a previously full collection too.
+     * {@see self::forgetHoldingForTest()} takes the preserved promise away: after it only the
+     * promise of the mount is left.
      *
      * The read fills in what memory does not hold rather than clearing and re-reading, so a row
      * already held - put there by a lookup by key or by a write on this node - keeps its instance
@@ -1363,17 +1358,29 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
      */
     public function forgetLoadedDataForTest(): void
     {
-        if (!NonProductionGate::admitted()) {
-            throw OrmForgetRefusedException::forEnvironment();
-        }
-        if (Database::hasOpenTransactions()) {
-            throw OrmForgetRefusedException::forOpenTransaction();
-        }
+        $this->requireTestForgetAdmitted();
 
         $this->_loadsWholeOnFirstRead = $this->_loadsWholeOnFirstRead || $this->_allLoaded;
         $this->objects = [];
         $this->_allLoaded = false;
         $this->_allowLazyLoading = $this->_lazyStrategy !== self::LAZY_STRATEGY_NONE;
+    }
+
+    /**
+     * Ends this process's holding of the set for tests: drops loaded rows and restores the mount
+     * state, without reading the table or publishing a source change. A collection loaded whole
+     * loses the promise {@see self::forgetLoadedDataForTest()} would keep; only the one initDB()
+     * made under LAZY_STRATEGY_NONE stays. Truth-source claims are untouched, and existing row
+     * references stay detached.
+     *
+     * @throws OrmForgetRefusedException When the environment is not admitted or any transaction is open
+     */
+    public function forgetHoldingForTest(): void
+    {
+        $this->requireTestForgetAdmitted();
+
+        $this->objects = [];
+        $this->restoreMountState();
     }
 
     /**
@@ -1508,6 +1515,35 @@ abstract class Objects implements IteratorAggregate, ArrayAccess, Countable
     {
         if (!$this->cachesRows()) {
             throw new UnboundedCollectionReadException($this->getCollectionKey());
+        }
+    }
+
+    /**
+     * Sets the completeness flags to what a mount under the current strategy starts with.
+     *
+     * Only a collection attached by initDB() under LAZY_STRATEGY_NONE promises the whole table:
+     * that strategy is also the default of a collection built by initEmpty() and of a
+     * FilteredCollection, and neither has a table to read.
+     */
+    private function restoreMountState(): void
+    {
+        $this->_allLoaded = false;
+        $this->_allowLazyLoading = $this->_lazyStrategy !== self::LAZY_STRATEGY_NONE;
+        $this->_loadsWholeOnFirstRead = $this->databaseBacked && $this->_lazyStrategy === self::LAZY_STRATEGY_NONE;
+    }
+
+    /**
+     * The two guards every test-only forget entrance passes before it changes anything.
+     *
+     * @throws OrmForgetRefusedException When the environment is not admitted or any transaction is open
+     */
+    private function requireTestForgetAdmitted(): void
+    {
+        if (!NonProductionGate::admitted()) {
+            throw OrmForgetRefusedException::forEnvironment();
+        }
+        if (Database::hasOpenTransactions()) {
+            throw OrmForgetRefusedException::forOpenTransaction();
         }
     }
 

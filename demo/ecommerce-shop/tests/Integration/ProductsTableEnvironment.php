@@ -7,6 +7,7 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Database;
+use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -17,21 +18,23 @@ use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Starts the stock library and the products library as their workers do, then forgets what both starts loaded.
+ * Starts the stock library and the products library as their workers do, then stands in for the products
+ * page's process, which is the products library's own and does not hold the stock.
  *
  * Both keep their claims. The stock library's frame stays the current one, so the cases write the
  * stock as it does; a product is written under the products library's frame, through
- * {@see asProductsLibrary()}. The collections keep their promise to read whole, so a case writes
- * its rows past the libraries first and then has the products library declare its set again; the
- * rollback forgets those reads with the rows.
+ * {@see asProductsLibrary()}. The products are held by the products library and keep their promise
+ * to read whole, so a case writes its rows past the libraries first and then has the products
+ * library declare its set again. The stock is not held, as in the page's process, so it is read by
+ * SQL on the product column. The rollback forgets those reads with the rows.
  */
 abstract class ProductsTableEnvironment extends StockLibraryEnvironment
 {
     private ?ProductsLibraryAgent $products = null;
 
     /**
-     * The stock library starts first, then the products library runs its start under its own frame,
-     * and what both loaded is forgotten before the first case writes a row.
+     * The stock library starts first, then the products library runs its start under its own frame;
+     * what both loaded is forgotten, and the holding of the stock with it, before the first case writes a row.
      */
     protected function prepareIntegrationEnvironment(): void
     {
@@ -40,6 +43,7 @@ abstract class ProductsTableEnvironment extends StockLibraryEnvironment
         OwnershipDeclaration::claimAll($this->products);
         $this->asProductsLibrary($this->products->onStart(...));
         Hilos::$db->forgetLoadedDataForTest();
+        Hilos::$db->forgetHoldingForTest(EcommerceShopDbContext::productWarehouseStocks);
     }
 
     /** Releases the products library's claim, then the stock library's claim and frame. */

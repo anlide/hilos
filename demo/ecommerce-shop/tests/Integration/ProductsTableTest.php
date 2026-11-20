@@ -7,6 +7,7 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Demo\EcommerceShop\Constants\ProductAvailability;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Database;
+use Demo\EcommerceShop\Database\DTO\ProductStockTotals;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\Category as EntityCategory;
 use Demo\EcommerceShop\Database\Entity\Item\Product as EntityProduct;
@@ -39,8 +40,8 @@ use Hilos\Utils\Helpers\RandomHelper;
  * Categories, warehouses and pictures are rows written straight into their tables. Products are rows
  * written the same way, each with the moment of its last edit given, and then the products library
  * declares its set again; a case that edits or creates a product does it through that library under
- * its frame, and the stock is written through its own. Every case reads in the process that holds both sets; the
- * process that holds the products and not their stock is {@see ProductsTableQueryPathTest}'s.
+ * its frame, and the stock is written through its own. Every case reads in the products page's process: the
+ * products are held, the stock is not.
  * A stock fact comes in both shapes the ORM announces it in: a sync from another process names the
  * stored columns, a write of this process and a deletion name the fields of the row's Object.
  */
@@ -240,6 +241,40 @@ final class ProductsTableTest extends ProductsTableEnvironment
             self::row($placed, "{$tag} Roses", 1, "{$tag} Lviv", ProductAvailability::FREE),
             $table->findRow($placed)?->toArray(),
         );
+    }
+
+    /** The totals are found by a query on the products, not read whole, and the table shows them as the holder of the stock would. */
+    public function testTheTotalsComeFromAQueryWhereTheStockIsNotHeld(): void
+    {
+        $tag = RandomHelper::hex(8);
+        $roses = self::category("{$tag} Roses");
+        $kyiv = self::warehouse("{$tag} Kyiv");
+        $lviv = self::warehouse("{$tag} Lviv");
+        $bulbs = self::productIn($roses, ProductKind::STOCK, "{$tag} Tulip bulbs", 12_000, 1_000);
+        $vase = self::productIn($roses, ProductKind::UNIQUE, "{$tag} Blue vase", 450_000, 2_000);
+        $seeds = self::productIn($roses, ProductKind::STOCK, "{$tag} Seeds", 3_000, 3_000);
+        self::holdCatalog();
+        Database::sql(
+            'INSERT INTO product_warehouse_stock (product_id, warehouse_id, units) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)',
+            [$bulbs, $kyiv, 4, $bulbs, $lviv, 3, $vase, $lviv, 1],
+        );
+        $stock = Hilos::$db->productWarehouseStocks->getObjectCollection();
+        self::assertNotNull($stock);
+        self::assertFalse($stock->isAllLoaded());
+
+        $totals = Hilos::$db->productWarehouseStocks->totalsOfProducts($bulbs, $vase, $seeds);
+
+        self::assertFalse($stock->isAllLoaded());
+        self::assertCount(3, $totals);
+        self::assertEquals(new ProductStockTotals(7, null), $totals->of($bulbs));
+        self::assertEquals(new ProductStockTotals(1, $lviv), $totals->of($vase));
+        self::assertEquals(new ProductStockTotals(0, null), $totals->of($seeds));
+        self::assertCount(0, Hilos::$db->productWarehouseStocks->totalsOfProducts());
+
+        $table = new ProductsTable();
+
+        self::assertSame(self::row($bulbs, "{$tag} Roses", 7, null, ProductAvailability::IN_STOCK), $table->findRow($bulbs)?->toArray());
+        self::assertSame(self::row($vase, "{$tag} Roses", 1, "{$tag} Lviv", ProductAvailability::FREE), $table->findRow($vase)?->toArray());
     }
 
     /** Units put in, changed and taken away to zero each redraw their product with its units and availability. */

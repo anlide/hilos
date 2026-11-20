@@ -30,15 +30,13 @@ use Hilos\Utils\Helpers\RandomHelper;
  * scope proves reads of written rows, not commit.
  *
  * Categories are written by their library. Products and pictures are rows written straight into their
- * tables, and products are never read through the ORM here, only counted, and every case counts only
- * after its last product write. Which way a count goes depends on what the process did before the case:
- * by SQL on the category column, the page process's way, or, once a products library earlier in the
- * process promised the products whole, from the whole table read back inside the case. Neither way is
- * pinned here; the cases hold for both.
+ * tables, and products are never read through the ORM here, only counted. The products are not held, as
+ * in the categories page's process, so a count goes by SQL on the category column; a walk of the products
+ * would be refused.
  * Each fact is built in the shape the ORM announces.
  */
 #[IntegrationTest]
-final class CategoriesTableTest extends CategoriesLibraryEnvironment
+final class CategoriesTableTest extends CategoriesTableEnvironment
 {
     /** Every category is in the window with its small picture and its count, in catalog order rather than by id or name. */
     public function testTheWindowCarriesEveryCategoryInCatalogOrderWithItsPictureAndCount(): void
@@ -75,11 +73,13 @@ final class CategoriesTableTest extends CategoriesLibraryEnvironment
         self::product(ProductKind::UNIQUE, $roses);
         self::product(ProductKind::STOCK, $roses);
         self::product(ProductKind::STOCK, $tulips);
+        self::assertFalse(Hilos::$db->products->getObjectCollection()?->isAllLoaded());
 
         $table = new CategoriesTable();
 
         self::assertSame(0, $table->rowFromCategory(Hilos::$db->categories[$empty])->productCount);
         self::assertSame(2, $table->rowFromCategory(Hilos::$db->categories[$roses])->productCount);
+        self::assertFalse(Hilos::$db->products->getObjectCollection()?->isAllLoaded());
     }
 
     /** A search keeps the categories whose name holds the term, a word only the description holds finds none, and the set answers the same way. */

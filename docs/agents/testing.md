@@ -1847,8 +1847,9 @@ memory without changing database rows.
 
 Outside tests, agents must neither use nor propose this operation for approval. Use outside tests only when the owner explicitly asks for it.
 
-This rule covers `test:orm:forget`, the direct `forgetLoadedDataForTest()` API,
-and indirect use of the same operation through a helper or another command.
+This rule covers `test:orm:forget`, the direct `forgetLoadedDataForTest()` and
+`forgetHoldingForTest()` APIs, and indirect use of the same operation through a
+helper or another command.
 An explicit owner request does not authorize changing `APP_ENV` to gain
 admission or bypassing the environment gate. Ordinary restore and `reHydrate()`
 remain governed by their own contracts; this restriction is on the test-only
@@ -1926,6 +1927,45 @@ for this cold reset: rehydration immediately reloads a collection that was
 already loaded whole, executing SQL during the operation. Forgetting leaves
 it cold until the next read. Ordinary restore/rehydration and `clearInMemory()`
 keep their existing behavior.
+
+**Forget the holding too when the test stands in for a process that does not
+hold the set.** The cold reset keeps a collection that was loaded whole
+promised whole, so a holder that started earlier in this PHP process — a
+library's `onStart()` calling `preloadAll()`, in this test or in any test
+before it — leaves the set read whole on its next read. A reader that a
+non-holder answers by SQL (`whereColumnIs()`, `whereColumnIn()`,
+`countByColumn()`) is then never reached, and the same reader rewritten as a
+walk passes here and refuses in production.
+`Hilos::$db->forgetHoldingForTest(<collection key>, ...)` does the cold reset
+for the named collections and returns each to the state its mount gave it: a
+lazy collection is partial again and a column read goes to SQL; a walk of a
+`KEY` or `FULL_ON_ACCESS` collection refuses with
+`CollectionNotFullyLoadedException`, and a `BATCH` one reads the table whole on
+a walk, as right after its mount. A `FULL_ON_ACCESS` collection stays partial
+only until its first read by key, which reads the table whole, as right after
+its mount. A `NONE` collection keeps its whole-table promise, because every
+process reads it whole. Without keys it does this for every mounted collection
+and clears every View item cache. An unmounted key refuses with
+`ObjectCollectionNotFoundException` before anything changes; admission and open
+transactions refuse exactly as for the cold reset. Truth-source claims are
+untouched: a library that keeps its claim still writes through its actions.
+
+**Choose by the process the surface lives in.** A test of a table or a page
+that production serves from a process not holding another library's set calls
+it in `prepareIntegrationEnvironment()`, after the last start that preloads
+that set and before the rollback scope, naming that set; its cases then run the
+production read, and one case asserts `isAllLoaded()` is false before and after
+the read. A holder's own test does not call it and does not clean up after
+itself: a test that needs a non-holder asks for it in its own preparation. A
+test that only needs fresh reads uses the cold reset.
+
+```php
+protected function prepareIntegrationEnvironment(): void
+{
+    parent::prepareIntegrationEnvironment();
+    Hilos::$db->forgetHoldingForTest(EcommerceShopDbContext::productWarehouseStocks);
+}
+```
 
 ---
 

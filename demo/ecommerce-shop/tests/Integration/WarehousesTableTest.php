@@ -26,9 +26,8 @@ use Hilos\Utils\Helpers\RandomHelper;
  * a fact of a warehouse or of its stock redraws; the rollback scope proves reads of written rows, not commit.
  *
  * Warehouses and products are rows written straight into their tables, and the stock is written by
- * its library, as the stock library's own test does. The case forgets what the library's start loaded,
- * so every case reads the stock from the database again; the library's whole-load promise stays,
- * so the page process's own read, by SQL on the warehouse column, is not proved here.
+ * its library, as the stock library's own test does. The stock is not held, as in the warehouses page's
+ * process, so the totals go by SQL on the warehouse column; a walk of the stock would be refused.
  * Each stock fact is built in the shape the ORM announces.
  */
 #[IntegrationTest]
@@ -231,10 +230,12 @@ final class WarehousesTableTest extends WarehousesTableEnvironment
             'INSERT INTO product_warehouse_stock (product_id, warehouse_id, units) VALUES (?, ?, ?), (?, ?, ?)',
             [$bulbs, $kyiv, 9, $seeds, $kyiv, 2],
         );
+        self::assertFalse(Hilos::$db->productWarehouseStocks->getObjectCollection()?->isAllLoaded());
 
         $table = new WarehousesTable();
         $window = $table->getPage(new TableQueryDTO(search: $tag, sort: $table->defaultSort()));
 
+        self::assertFalse(Hilos::$db->productWarehouseStocks->getObjectCollection()?->isAllLoaded());
         self::assertSame([self::row($kyiv, "{$tag} Kyiv", 2, 11)], array_map(
             static fn (AbstractTableRow $row): array => $row->toArray(),
             $window->rows,

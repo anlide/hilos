@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
 use Hilos\Database\Database;
 use Hilos\Database\Entity\Collection\EntityCollection;
 use Hilos\Database\Entity\Item\Entity;
@@ -20,7 +21,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
-/** A test reset is cold, but cannot revoke a collection's promise to answer for the whole table. */
+/**
+ * A test reset is cold, but cannot revoke a collection's promise to answer for the whole table;
+ * forgetting the holding is the entrance that does, back to what the mount promised.
+ */
 final class ObjectsForgetLoadedDataTest extends TestCase
 {
     private ?EnvAccessor $previousEnv = null;
@@ -161,6 +165,111 @@ final class ObjectsForgetLoadedDataTest extends TestCase
     }
 
     /**
+     * @param int $strategy Strategy the collection was mounted with
+     * @throws HilosException When a collection read or reset refuses
+     */
+    #[DataProvider('strategies')]
+    public function testForgettingTheHoldingReturnsEachStrategyToItsMount(int $strategy): void
+    {
+        $objects = ForgetTestObjects::initDB($strategy);
+        $strategy === Objects::LAZY_STRATEGY_NONE ? $objects->first() : $objects->preloadAll();
+        $held = $objects[2];
+        self::assertTrue($objects->isAllLoaded());
+        self::assertSame(1, ForgetTestEntities::$wholeReads);
+        ForgetTestEntities::$ids = [2, 3];
+
+        $objects->forgetHoldingForTest();
+        $objects->forgetHoldingForTest();
+
+        self::assertFalse($objects->isAllLoaded());
+        self::assertSame(1, ForgetTestEntities::$wholeReads, 'Neither call may read the table');
+        self::assertSame(0, $objects->keyReads);
+        self::assertSame(0, $objects->countReads);
+        self::assertSame($strategy, $objects->getLazyStrategy());
+        self::assertSame($strategy !== Objects::LAZY_STRATEGY_NONE, $objects->allowLazyLoading);
+
+        if ($strategy === Objects::LAZY_STRATEGY_NONE) {
+            self::assertSame('3', $objects[3]?->getIdString());
+            self::assertTrue($objects->isAllLoaded(), 'The promise of the mount itself stays');
+            self::assertSame(2, ForgetTestEntities::$wholeReads);
+            self::assertSame(0, $objects->keyReads);
+            self::assertNotSame($held, $objects[2]);
+            return;
+        }
+        if ($strategy === Objects::LAZY_STRATEGY_BATCH) {
+            self::assertSame([2, 3], array_keys(iterator_to_array($objects)));
+            self::assertTrue($objects->isAllLoaded());
+            self::assertSame(2, ForgetTestEntities::$wholeReads);
+            self::assertNotSame($held, $objects[2]);
+            return;
+        }
+
+        try {
+            iterator_to_array($objects);
+            self::fail('A collection that no longer holds the set must refuse a walk');
+        } catch (CollectionNotFullyLoadedException) {
+            self::assertFalse($objects->isAllLoaded());
+            self::assertSame(1, ForgetTestEntities::$wholeReads);
+        }
+        self::assertNotSame($held, $objects[2]);
+        if ($strategy === Objects::LAZY_STRATEGY_KEY) {
+            self::assertFalse($objects->isAllLoaded());
+            self::assertSame(1, $objects->keyReads);
+            self::assertSame(1, ForgetTestEntities::$wholeReads);
+            return;
+        }
+        // FULL_ON_ACCESS answers its first key read the way its mount does: by reading whole.
+        self::assertTrue($objects->isAllLoaded());
+        self::assertSame(0, $objects->keyReads);
+        self::assertSame(2, ForgetTestEntities::$wholeReads);
+    }
+
+    /**
+     * @throws HilosException When a collection read or reset refuses
+     */
+    public function testForgettingTheHoldingDropsThePromiseAPlainResetKept(): void
+    {
+        $objects = ForgetTestObjects::initDB(Objects::LAZY_STRATEGY_KEY);
+        $objects->preloadAll();
+        $objects->forgetLoadedDataForTest();
+
+        $objects->forgetHoldingForTest();
+
+        try {
+            iterator_to_array($objects);
+            self::fail('The promise kept by the plain reset must not survive');
+        } catch (CollectionNotFullyLoadedException) {
+            self::assertFalse($objects->isAllLoaded());
+        }
+        self::assertSame(1, ForgetTestEntities::$wholeReads);
+    }
+
+    /**
+     * @throws HilosException When a collection read or reset refuses
+     */
+    public function testForgettingTheHoldingGivesEmptyAndDetachedCollectionsNoPromise(): void
+    {
+        $empty = ForgetTestObjects::initEmpty();
+        $empty->forgetHoldingForTest();
+        self::assertSame(0, $empty->count());
+        self::assertSame([], $empty->keys());
+        self::assertNull($empty[1]);
+        self::assertFalse($empty->allowLazyLoading);
+        self::assertSame(0, ForgetTestEntities::$wholeReads);
+
+        $source = ForgetTestObjects::initDB(Objects::LAZY_STRATEGY_NONE);
+        $held = $source[1];
+        $selection = new FilteredCollection($source, [1 => $held]);
+        $selection->forgetHoldingForTest();
+        $source->forgetHoldingForTest();
+        self::assertSame($held, $selection[1]);
+        self::assertSame(1, $selection->count());
+        self::assertSame([1], $selection->keys());
+        self::assertNull($selection[null]);
+        self::assertSame(1, ForgetTestEntities::$wholeReads);
+    }
+
+    /**
      * @throws HilosException When a collection read or reset refuses
      */
     public function testEmptyAndDetachedCollectionsAcquireNoWholeTablePromise(): void
@@ -183,22 +292,34 @@ final class ObjectsForgetLoadedDataTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{?string}> Refused environments, including no accessor
+     * @return iterable<string, array{Closure(Objects): void}> Both direct test-only forget entrances
+     */
+    public static function directEntrances(): iterable
+    {
+        yield 'loaded data' => [static fn (Objects $objects) => $objects->forgetLoadedDataForTest()];
+        yield 'holding' => [static fn (Objects $objects) => $objects->forgetHoldingForTest()];
+    }
+
+    /**
+     * @return iterable<string, array{?string, Closure(Objects): void}> Refused environments, including no accessor, per entrance
      */
     public static function refusedEnvironments(): iterable
     {
-        yield 'production' => ['prod'];
-        yield 'staging' => ['staging'];
-        yield 'unknown' => ['unrecognized'];
-        yield 'uninitialized' => [null];
+        foreach (self::directEntrances() as $entrance => [$forget]) {
+            yield 'production, ' . $entrance => ['prod', $forget];
+            yield 'staging, ' . $entrance => ['staging', $forget];
+            yield 'unknown, ' . $entrance => ['unrecognized', $forget];
+            yield 'uninitialized, ' . $entrance => [null, $forget];
+        }
     }
 
     /**
      * @param ?string $environment Environment to refuse
+     * @param Closure(Objects): void $forget Entrance under test
      * @throws HilosException When a collection read refuses
      */
     #[DataProvider('refusedEnvironments')]
-    public function testDirectResetCannotBypassTheEnvironmentGate(?string $environment): void
+    public function testDirectResetCannotBypassTheEnvironmentGate(?string $environment, Closure $forget): void
     {
         $objects = ForgetTestObjects::initDB(Objects::LAZY_STRATEGY_NONE);
         $held = $objects[1];
@@ -210,7 +331,7 @@ final class ObjectsForgetLoadedDataTest extends TestCase
         }
 
         try {
-            $objects->forgetLoadedDataForTest();
+            $forget($objects);
             self::fail('The environment must refuse a direct reset');
         } catch (OrmForgetRefusedException $failure) {
             self::assertStringContainsString('non-production environment', $failure->getMessage());
@@ -221,9 +342,11 @@ final class ObjectsForgetLoadedDataTest extends TestCase
     }
 
     /**
+     * @param Closure(Objects): void $forget Entrance under test
      * @throws HilosException When the transaction or collection refuses
      */
-    public function testFailedTransactionLevelStillRefusesTheDirectReset(): void
+    #[DataProvider('directEntrances')]
+    public function testFailedTransactionLevelStillRefusesTheDirectReset(Closure $forget): void
     {
         $objects = ForgetTestObjects::initDB(Objects::LAZY_STRATEGY_NONE);
         $held = $objects[1];
@@ -236,7 +359,7 @@ final class ObjectsForgetLoadedDataTest extends TestCase
 
         self::assertTrue(Database::hasOpenTransactions());
         try {
-            $objects->forgetLoadedDataForTest();
+            $forget($objects);
             self::fail('Even a failed transaction level must refuse the reset');
         } catch (OrmForgetRefusedException $failure) {
             self::assertStringContainsString('transaction is open', $failure->getMessage());
@@ -249,7 +372,7 @@ final class ObjectsForgetLoadedDataTest extends TestCase
 
         Database::transactionRollback();
         self::assertFalse(Database::hasOpenTransactions());
-        $objects->forgetLoadedDataForTest();
+        $forget($objects);
         self::assertFalse(isset($objects[1]));
     }
 }
