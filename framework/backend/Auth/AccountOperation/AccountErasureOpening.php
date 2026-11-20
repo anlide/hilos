@@ -23,9 +23,10 @@ use Throwable;
 final class AccountErasureOpening
 {
     /**
-     * A repeat for the same request records nothing new unless the census grew. An account of the
-     * circle in another open erasure, or named by an open merge, defers the opening without writing
-     * anything.
+     * A repeat for the same request records nothing new unless the census grew. A repeat for a
+     * request whose operation has finished returns it as it stands, without reconciling its
+     * composition. An account of the circle in another open erasure, or named by an open merge,
+     * defers the opening without writing anything.
      *
      * @param AccountDeletion $request Deletion request the erasure answers
      * @param AccountErasureParticipantCatalog $catalog Participants of the installation
@@ -43,6 +44,10 @@ final class AccountErasureOpening
         return Database::transaction(DatabaseNames::PRIMARY, static function () use ($request, $catalog, $expireGrace): AccountErasureOpeningResult {
             $existing = Hilos::$db->accountOperations->byRequest($request->id);
             if ($existing !== null) {
+                if ($existing->finishedAt !== null) {
+                    return new AccountErasureOpeningResult($existing, null, []);
+                }
+
                 return new AccountErasureOpeningResult(
                     $existing,
                     null,

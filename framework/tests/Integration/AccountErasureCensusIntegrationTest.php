@@ -461,6 +461,25 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
         self::assertSame($stored, self::storedRows());
     }
 
+    /** A repeat for a request whose erasure finished returns that operation as it stands, though the census grew. */
+    public function testRepeatedOpenAfterTheErasureFinishedReturnsItWithoutReconciling(): void
+    {
+        AccountErasureCensusHilos::initBrowser();
+        $request = self::requestDeletion(self::ROOT_ID);
+        $operation = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework())->operation;
+        self::assertNotNull($operation);
+        self::assertTrue($operation->actions->finish($operation->stage, AccountOperationOutcome::NotStarted));
+        self::raise('hilos_data_export', 'hilos_access_log');
+        $stored = self::storedRows();
+
+        $repeat = AccountErasureOpening::open($request, AccountErasureParticipantCatalog::framework());
+
+        self::assertSame($operation->id, $repeat->operation?->id);
+        self::assertNull($repeat->deferredByOperationId);
+        self::assertSame([], $repeat->recorded);
+        self::assertSame($stored, self::storedRows());
+    }
+
     /** The forced mode is durable before delivery, and neither entry mode can replace an existing intention. */
     public function testOpeningSavesTheStartModeBeforeDeliveryAndRepeatsKeepIt(): void
     {
