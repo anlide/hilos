@@ -41,8 +41,6 @@ import {
   type ClusterView,
 } from '../../helpers/cluster.js'
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 interface ReceiptRead {
   master: string
   status: 'notRun' | 'reading' | 'passed'

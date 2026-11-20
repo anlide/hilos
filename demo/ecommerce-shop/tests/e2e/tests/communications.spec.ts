@@ -33,8 +33,6 @@ import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMa
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 test.describe.configure({ mode: 'default' })
 
-// spec-owner: demo — carries Ecommerce Shop's React browser journeys for these pages
-
 test('the communications section displays email channel, sends a test notification and records delivery', async ({
   page,
 }) => {

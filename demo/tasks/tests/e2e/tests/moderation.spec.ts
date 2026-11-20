@@ -43,8 +43,6 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
-// spec-owner: demo — carries Tasks' React browser journeys for these shared pages
-
 // The Moderation section on React. Tests 1–5 carry the same titles and steps as
 // chat (Vue) and polls (Angular); the checks the three share are one copy in
 // framework/frontend/e2e/moderation.ts, and this file keeps the scenario, its

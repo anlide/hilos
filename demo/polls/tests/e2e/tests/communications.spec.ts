@@ -36,8 +36,6 @@ import { inspectNotification } from '../../../../../framework/frontend/scripts/n
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 test.describe.configure({ mode: 'default' })
 
-// spec-owner: demo — carries Polls' Angular browser journeys for these shared pages
-
 test('email delivery preserves keyboard navigation and sends the administrator a test letter', async ({
   page,
   cleanup,

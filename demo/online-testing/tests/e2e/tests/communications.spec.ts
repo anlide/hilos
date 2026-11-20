@@ -33,8 +33,6 @@ import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMa
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 test.describe.configure({ mode: 'default' })
 
-// spec-owner: demo — carries Online Testing's Angular cluster browser journeys
-
 test('the communications section configures email, sends a test and records delivery', async ({
   page,
 }) => {

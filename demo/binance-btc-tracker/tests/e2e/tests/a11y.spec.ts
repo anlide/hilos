@@ -73,8 +73,6 @@ import {
   openProtectedModeIfAny,
 } from '../../../../../framework/frontend/scripts/protectedMode.mjs'
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 const statusExpect = expect.configure({ timeout: STATUS_EXPECT_TIMEOUT_MS })
 const pausedExpect = statusExpect.configure({
   timeout: Math.min(STATUS_EXPECT_TIMEOUT_MS, RESTART_MARK_TIMEOUT_MS),

@@ -13,8 +13,6 @@ import {
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-// spec-owner: demo — carries Tasks' React browser journeys for these shared pages
-
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
 test('channel reset applies the env value shown in Back to', async ({

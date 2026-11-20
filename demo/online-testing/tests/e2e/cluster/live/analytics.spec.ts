@@ -33,8 +33,6 @@ import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGran
 import { seedTestUser } from '../../../../../../framework/frontend/scripts/testUser.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../../framework/frontend/core/src/auth/authProtocol.js'
 
-// spec-owner: demo — carries Online Testing's Angular cluster browser journeys
-
 const stand = readClusterBrowserStand()
 const sendCommand = clusterCommandChannel(stand, stand.follower)
 const journals = Object.keys(stand.nodeLogs)

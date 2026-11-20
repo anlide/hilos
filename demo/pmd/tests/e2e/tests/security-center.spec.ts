@@ -24,8 +24,6 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
-// spec-owner: demo — carries this demo's Vue browser journeys for these shared pages
-
 // Real Vue Security pages through the built PMD artifact and the live daemon.
 // Each first response belongs to the subscription bookmarked before navigation;
 // raw physical packets and all their batch inners are retained in attachments.

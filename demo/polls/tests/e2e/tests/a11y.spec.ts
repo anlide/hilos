@@ -65,8 +65,6 @@ import { createStandCommandChannel } from '../../../../../framework/frontend/scr
 import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/auth/authProtocol.js'
 
-// spec-owner: demo — carries Polls' Angular browser journeys for these shared pages
-
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
 // table exposes a correct accessibility tree over the live socket: an accessible

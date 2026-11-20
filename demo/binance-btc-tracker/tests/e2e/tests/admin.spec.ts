@@ -16,8 +16,6 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { FOLLOWED_STREAM } from '../helpers/logs.js'
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 /** Wire key of the framework users table, the one table of the `/hilos/users` page. */
 const HILOS_USERS_TABLE = 'hilosUsers'
 

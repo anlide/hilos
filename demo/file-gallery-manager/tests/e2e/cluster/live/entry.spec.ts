@@ -17,8 +17,6 @@ import {
 import { setAdmin } from '../../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { seedTestUser } from '../../../../../../framework/frontend/scripts/testUser.mjs'
 
-// spec-owner: demo — carries File Gallery Manager's React cluster sign-in
-
 const stand = readClusterBrowserStand()
 const sendCommand = clusterCommandChannel(stand, stand.follower)
 

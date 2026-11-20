@@ -42,8 +42,6 @@ import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/au
 import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
 import { resolveHilosPath } from '../../../../../framework/frontend/core/src/routing/hilosAdmin.js'
 
-// spec-owner: demo — carries this demo's React browser journeys for these shared pages
-
 const sendCommand = createStandCommandChannel({ timeoutMs: 5_000 })
 
 test.use({ timezoneId: 'Asia/Kathmandu' })

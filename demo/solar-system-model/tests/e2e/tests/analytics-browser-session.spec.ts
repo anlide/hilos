@@ -31,8 +31,6 @@ import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/au
 import { HilosPages } from '../../../../../framework/frontend/core/src/routing/hilosPages.js'
 import { resolveHilosPath } from '../../../../../framework/frontend/core/src/routing/hilosAdmin.js'
 
-// spec-owner: demo — carries this demo's React browser journeys for these shared pages
-
 // What the Analytics section proves, the same on every kit: a person's card leads
 // to their browser sessions, a session lists its actions in source order, and no
 // action body — a sign-in address or password — reaches the screen or frames.

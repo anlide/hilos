@@ -27,8 +27,6 @@ import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
 import { AUTH_ACTION_LOGIN } from '../../../../../framework/frontend/core/src/auth/authProtocol.js'
 
-// spec-owner: demo — carries this demo's Vue browser journeys for these shared pages
-
 // What the Analytics section proves, the same on every kit: a person's card leads
 // to their browser sessions, a session lists its actions in source order, and no
 // action body — a sign-in address or password — reaches the screen or frames.

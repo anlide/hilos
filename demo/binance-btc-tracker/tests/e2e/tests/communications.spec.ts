@@ -34,8 +34,6 @@ import { setAdminViewMode } from '../../../../../framework/frontend/scripts/admi
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 test.describe.configure({ mode: 'default' })
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 test('communications channel navigation keeps single-page windows and real channel names', async ({
   page,
 }) => {

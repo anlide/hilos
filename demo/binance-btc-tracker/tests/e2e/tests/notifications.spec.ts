@@ -25,8 +25,6 @@ import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMa
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 // Notification-center e2e (HIL-558), moved here from chat with the communications
 // section it drives (HIL-1224); chat keeps only the product half, a mention and a
 // rename raising a notification. A notification is emitted through the live

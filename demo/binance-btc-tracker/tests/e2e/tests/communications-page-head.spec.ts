@@ -18,8 +18,6 @@ import {
   sessionToken,
 } from '../../../../../framework/frontend/e2e/index.js'
 
-// spec-owner: demo — carries Binance's Vue admin and cluster browser journeys
-
 const OVERVIEW = 'hilos_communications_channel'
 const CONFIGURATION = 'hilos_communications_channel_configuration'
 const DELIVERIES = 'hilos_communications_deliveries'

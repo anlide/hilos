@@ -40,8 +40,6 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
-// spec-owner: demo — carries Polls' Angular browser journeys for these shared pages
-
 // The Moderation section on Angular. Tests 1–5 carry the same titles and steps
 // as chat (Vue) and tasks (React); the checks the three share are one copy in
 // framework/frontend/e2e/moderation.ts, and this file keeps the scenario, its
