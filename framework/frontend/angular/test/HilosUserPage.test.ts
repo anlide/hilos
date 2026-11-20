@@ -2531,7 +2531,7 @@ describe('HilosUserPage erasing account (HIL-1962)', () => {
     ).map((line) => (line.textContent ?? '').replace(/\s+/g, ' ').trim())
   }
 
-  it('draws Being deleted, the erasure notice and section, hides actions and tracks time zone', async () => {
+  it('shows the erasure in progress and offers nothing to press', async () => {
     const timeZone = bindTestTimeZone('UTC')
     try {
       timeZone.receive('UTC')
@@ -2565,11 +2565,15 @@ describe('HilosUserPage erasing account (HIL-1962)', () => {
 
       const badge = find('user-standing-badge')
       expect(badge?.textContent?.trim()).toBe('Being deleted')
-      expect(badge?.classList.contains('text-bg-danger')).toBe(true)
+      expect(badge?.querySelector('i')?.getAttribute('aria-hidden')).toBe(
+        'true',
+      )
 
       const notice = find('hilos-user-erasing')
       expect(notice).not.toBeNull()
+      expect(notice?.getAttribute('role')).toBe('status')
       expect(notice?.textContent).toContain('This account is being deleted.')
+      expect(find('hilos-user-sessions')).not.toBeNull()
 
       expect(find('hilos-user-edit')).toBeNull()
       expect(find('hilos-user-rights')).toBeNull()
@@ -2581,6 +2585,12 @@ describe('HilosUserPage erasing account (HIL-1962)', () => {
       expect(section).not.toBeNull()
       expect(section?.querySelector('h2')?.textContent).toBe('Account erasure')
       expect(section?.textContent).toContain('Erasure in progress')
+      expect(
+        Array.from(section?.querySelectorAll('h3') ?? []).map((h) =>
+          h.textContent?.trim(),
+        ),
+      ).toEqual(['Parts', 'Waiting for an owner'])
+      expect(section?.querySelector('button')).toBeNull()
       expect(find('hilos-user-erasure-started')?.textContent?.trim()).toBe(
         `Started ${String(formatMoment(startedAt, { kind: 'dateTime' }))} — it cannot be canceled`,
       )
