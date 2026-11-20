@@ -281,7 +281,7 @@ What later phases bring is not on the cart page until then — the cart does
 not pass itself off as a purchase:
 
 - **With payment**: "Checkout", the delivery line, and "Sold — someone paid
-  first" on a line whose unique piece somebody else bought;
+  first" on a line whose unique piece somebody else bought.
 
 ### Vouchers
 
