@@ -97,125 +97,131 @@ function totalOf(text: string | null): number {
   return Number(/ of (\d+)/.exec(text ?? '')?.[1] ?? Number.NaN)
 }
 
-test("windows and searches users, then opens its own person's card without a reload", async ({
-  page,
-}) => {
-  let fullLoads = 0
-  page.on('load', () => {
-    fullLoads += 1
-  })
+// FIXME(F-119, 2026-11-20): the own row's open button is not visible 5 s after the
+// table search on the first attempt; the retry passes.
+test(
+  "windows and searches users, then opens its own person's card without a reload",
+  { tag: '@quarantine:F-119' },
+  async ({ page }) => {
+    let fullLoads = 0
+    page.on('load', () => {
+      fullLoads += 1
+    })
 
-  const userId = await createTestAdmin(expect, page, {
-    email: `hil2128-pmd-list-${uniqueEmail()}`,
-  })
-  const name = await page.getByTestId('nav-profile').getAttribute('title')
-  expect(name).toBeTruthy()
-  await gotoPage(expect, page, '/hilos/users')
-  await expect(page.getByTestId('conn-state')).toHaveText('connected')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Users')
-  await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
-  const loadsAfterColdLoad = fullLoads
+    const userId = await createTestAdmin(expect, page, {
+      email: `hil2128-pmd-list-${uniqueEmail()}`,
+    })
+    const name = await page.getByTestId('nav-profile').getAttribute('title')
+    expect(name).toBeTruthy()
+    await gotoPage(expect, page, '/hilos/users')
+    await expect(page.getByTestId('conn-state')).toHaveText('connected')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Users')
+    await expect(page.getByTestId('hilos-viewport-table')).toBeVisible()
+    const loadsAfterColdLoad = fullLoads
 
-  // HIL-327: the /hilos/users viewport table on volume. `test:user:seed` seeds 25
-  // deterministic `seed-###` users on stand bring-up, so window paging and server search
-  // run against more than one page — the case a single registered user can never reach.
-  await test.step('windows, paginates, and searches the seeded users', async () => {
-    // The window holds exactly one page of rows regardless of how large the table is.
-    const rows = page.locator('[data-id^="hilos-table-row-"]')
-    await expect(rows).toHaveCount(10)
+    // HIL-327: the /hilos/users viewport table on volume. `test:user:seed` seeds 25
+    // deterministic `seed-###` users on stand bring-up, so window paging and server search
+    // run against more than one page — the case a single registered user can never reach.
+    await test.step('windows, paginates, and searches the seeded users', async () => {
+      // The window holds exactly one page of rows regardless of how large the table is.
+      const rows = page.locator('[data-id^="hilos-table-row-"]')
+      await expect(rows).toHaveCount(10)
 
-    // The count reflects the whole selection (>= 25 seeded + this test's own user), so it
-    // is asserted by shape and lower bound, not an exact number on the shared database.
-    const count = page.getByTestId('hilos-table-count')
-    await expect(count).toHaveText(countOf(1, 10))
-    const total = totalOf(await count.textContent())
-    expect(total).toBeGreaterThanOrEqual(26)
+      // The count reflects the whole selection (>= 25 seeded + this test's own user), so it
+      // is asserted by shape and lower bound, not an exact number on the shared database.
+      const count = page.getByTestId('hilos-table-count')
+      await expect(count).toHaveText(countOf(1, 10))
+      const total = totalOf(await count.textContent())
+      expect(total).toBeGreaterThanOrEqual(26)
 
-    // An exact count draws the page numbers, and the page on screen is the one that
-    // says so.
-    const pageOne = page.getByTestId('hilos-table-page-1')
-    const pageTwo = page.getByTestId('hilos-table-page-2')
-    await expect(pageOne).toHaveAttribute('aria-current', 'page')
+      // An exact count draws the page numbers, and the page on screen is the one that
+      // says so.
+      const pageOne = page.getByTestId('hilos-table-page-1')
+      const pageTwo = page.getByTestId('hilos-table-page-2')
+      await expect(pageOne).toHaveAttribute('aria-current', 'page')
 
-    // Next advances the window to a different set of rows; prev restores it. The range
-    // and the number move the moment the control is pressed, so the rows are what says
-    // the window arrived.
-    const rowKeys = async () =>
-      rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-id')))
-    const firstKeys = JSON.stringify(await rowKeys())
-    await page.getByTestId('hilos-table-next').click()
-    await expect(pageTwo).toHaveAttribute('aria-current', 'page')
-    await expect(count).toHaveText(countOf(11, 20))
-    await expect
-      .poll(async () => JSON.stringify(await rowKeys()))
-      .not.toBe(firstKeys)
-    const secondKeys = JSON.stringify(await rowKeys())
-    await page.getByTestId('hilos-table-prev').click()
-    await expect(pageOne).toHaveAttribute('aria-current', 'page')
-    await expect(count).toHaveText(countOf(1, 10))
-    await expect
-      .poll(async () => JSON.stringify(await rowKeys()))
-      .not.toBe(secondKeys)
+      // Next advances the window to a different set of rows; prev restores it. The range
+      // and the number move the moment the control is pressed, so the rows are what says
+      // the window arrived.
+      const rowKeys = async () =>
+        rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-id')))
+      const firstKeys = JSON.stringify(await rowKeys())
+      await page.getByTestId('hilos-table-next').click()
+      await expect(pageTwo).toHaveAttribute('aria-current', 'page')
+      await expect(count).toHaveText(countOf(11, 20))
+      await expect
+        .poll(async () => JSON.stringify(await rowKeys()))
+        .not.toBe(firstKeys)
+      const secondKeys = JSON.stringify(await rowKeys())
+      await page.getByTestId('hilos-table-prev').click()
+      await expect(pageOne).toHaveAttribute('aria-current', 'page')
+      await expect(count).toHaveText(countOf(1, 10))
+      await expect
+        .poll(async () => JSON.stringify(await rowKeys()))
+        .not.toBe(secondKeys)
 
-    // Server search filters the whole selection, not just the loaded window: the shared
-    // `seed-` prefix matches the 25 deterministically seeded users, so the filtered total
-    // is well over one page yet strictly below the unfiltered selection.
-    //
-    // It is asserted by shape, narrowing, and lower bound — never an exact number. On a
-    // freshly brought-up shared stand the viewport count can settle one short as the burst
-    // of window responses from typing lands over the socket (a stable "24 total" on some
-    // runs, "25 total" on others), and the display can briefly stay at the unfiltered count
-    // before the filter settles. Polling for a value below the unfiltered total waits out
-    // that transient and proves the server actually narrowed the selection; the lower bound
-    // then proves search reached the whole seeded fixture across pages. The exact-count
-    // assertion was dropped by owner decision (HIL-327, 2026-08-02) as it raced 24/25.
-    const search = page.getByTestId('hilos-table-search')
-    await typeInto(search, 'seed-')
-    await expect(count).toHaveText(countOf(1, 10))
-    await expect
-      .poll(async () => totalOf(await count.textContent()), {
-        timeout: 15000,
-      })
-      .toBeLessThan(total)
-    const seededTotal = totalOf(await count.textContent())
-    expect(seededTotal).toBeGreaterThanOrEqual(20)
-    await expect(rows).toHaveCount(10)
-  })
+      // Server search filters the whole selection, not just the loaded window: the shared
+      // `seed-` prefix matches the 25 deterministically seeded users, so the filtered total
+      // is well over one page yet strictly below the unfiltered selection.
+      //
+      // It is asserted by shape, narrowing, and lower bound — never an exact number. On a
+      // freshly brought-up shared stand the viewport count can settle one short as the burst
+      // of window responses from typing lands over the socket (a stable "24 total" on some
+      // runs, "25 total" on others), and the display can briefly stay at the unfiltered count
+      // before the filter settles. Polling for a value below the unfiltered total waits out
+      // that transient and proves the server actually narrowed the selection; the lower bound
+      // then proves search reached the whole seeded fixture across pages. The exact-count
+      // assertion was dropped by owner decision (HIL-327, 2026-08-02) as it raced 24/25.
+      const search = page.getByTestId('hilos-table-search')
+      await typeInto(search, 'seed-')
+      await expect(count).toHaveText(countOf(1, 10))
+      await expect
+        .poll(async () => totalOf(await count.textContent()), {
+          timeout: 15000,
+        })
+        .toBeLessThan(total)
+      const seededTotal = totalOf(await count.textContent())
+      expect(seededTotal).toBeGreaterThanOrEqual(20)
+      await expect(rows).toHaveCount(10)
+    })
 
-  await test.step('filters the users table from the search box', async () => {
-    await expect(
-      page.locator('[data-id^="hilos-users-open-"]').first(),
-    ).toBeVisible()
+    await test.step('filters the users table from the search box', async () => {
+      await expect(
+        page.locator('[data-id^="hilos-users-open-"]').first(),
+      ).toBeVisible()
 
-    // A query no name matches empties the viewport; clearing it restores rows.
-    const search = page.getByTestId('hilos-table-search')
-    await typeInto(search, 'zzz-no-such-user-zzz')
-    await expect(page.locator('[data-id^="hilos-users-open-"]')).toHaveCount(0)
-    await search.fill('')
-    await expect(
-      page.locator('[data-id^="hilos-users-open-"]').first(),
-    ).toBeVisible()
-  })
+      // A query no name matches empties the viewport; clearing it restores rows.
+      const search = page.getByTestId('hilos-table-search')
+      await typeInto(search, 'zzz-no-such-user-zzz')
+      await expect(page.locator('[data-id^="hilos-users-open-"]')).toHaveCount(
+        0,
+      )
+      await search.fill('')
+      await expect(
+        page.locator('[data-id^="hilos-users-open-"]').first(),
+      ).toBeVisible()
+    })
 
-  await test.step('lists users in the framework table and opens a detail page', async () => {
-    await typeInto(page.getByTestId('hilos-table-search'), name!)
-    const ownOpen = page
-      .getByTestId(`hilos-users-open-${userId}`)
-      .filter({ visible: true })
-    await expect(ownOpen).toBeVisible()
+    await test.step('lists users in the framework table and opens a detail page', async () => {
+      await typeInto(page.getByTestId('hilos-table-search'), name!)
+      const ownOpen = page
+        .getByTestId(`hilos-users-open-${userId}`)
+        .filter({ visible: true })
+      await expect(ownOpen).toBeVisible()
 
-    // Open this scenario's person over the live socket, without a document reload.
-    await ownOpen.click()
-    await expect(page).toHaveURL(new RegExp(`/hilos/user/${userId}$`))
-    await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
-    await expect(page.getByTestId('hilos-page-head-title')).toBeVisible()
-    await expect(page.getByTestId('hilos-page-head-title')).toHaveText(name!)
-    await expect(page.getByTestId('hilos-page-head-block')).toContainText(
-      `#${userId}`,
-    )
-    expect(fullLoads).toBe(loadsAfterColdLoad)
-  })
-})
+      // Open this scenario's person over the live socket, without a document reload.
+      await ownOpen.click()
+      await expect(page).toHaveURL(new RegExp(`/hilos/user/${userId}$`))
+      await expect(page.getByTestId('hilos-user-detail')).toBeVisible()
+      await expect(page.getByTestId('hilos-page-head-title')).toBeVisible()
+      await expect(page.getByTestId('hilos-page-head-title')).toHaveText(name!)
+      await expect(page.getByTestId('hilos-page-head-block')).toContainText(
+        `#${userId}`,
+      )
+      expect(fullLoads).toBe(loadsAfterColdLoad)
+    })
+  },
+)
 
 test('reads its own Overview, opens rename from the keyboard and sees the live session', async ({
   page,

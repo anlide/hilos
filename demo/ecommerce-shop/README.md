@@ -269,6 +269,64 @@ not pass itself off as a purchase:
   first" on a line whose unique piece somebody else bought;
 - **With vouchers**: a voucher in the cart and its discount line.
 
+## Money
+
+Money is whole kopecks (a hundredth of a hryvnia) in the database, on the
+wire and in memory. A price of ₴250.50 is the number 25050 everywhere except
+on a screen and in a field a person types in.
+
+Only one module per side counts and prints it: `backend/Money/` and
+`frontend/src/money/money.ts`. They count a price, a line's total, "Items", a
+voucher's discount and "Total", and the text of an amount comes only from
+there. No other file adds, multiplies, rounds or formats money.
+
+An amount reads as ₴250, ₴2,525, ₴252.50, and a deduction as −₴250: kopecks
+show only when there are some, and then always as two digits.
+
+A discount is a percent of "Items", rounded to the kopeck, half up. This is
+the one place in the shop where anything is rounded: a line's total, "Items"
+and "Total" are exact whole-number arithmetic. "Total" is "Items" minus the
+discount, and the same rule gives the same number on the screen and at the
+moment of purchase. A rounded figure is never stored before the purchase: the
+discount and "Total" are counted again each time they are shown.
+
+A price typed into a field goes to the server as typed, and the backend
+module reads it: digits, spaces between thousands, a point or a comma, and at
+most two digits of kopecks — "410", "2 100", "2 100.50", "99,90". Anything
+else is refused in the server's own words. A comma is a decimal sign, not a
+thousands mark, so "2,100" is refused rather than read as 2.10.
+
+Two guards keep the rest of the shop out of money. On the backend it is the
+unit test `tests/Unit/MoneyGuardTest.php`; on the frontend, a lint rule in
+`frontend/eslint.config.mjs`. The backend guard judges every `.php` file under
+`backend/` except `backend/Money/`; the frontend guard judges `frontend/src/`
+except `frontend/src/money/`. Tests, SQL seeds, this README and comments are
+not judged. Both find:
+
+- the sign "₴" in text;
+- a number printed with a format: `number_format`, `NumberFormatter` or a
+  float `printf` format on the backend; `toFixed`, `toPrecision` or
+  `Intl.NumberFormat` on the frontend;
+- rounding: `round`, `floor`, `ceil`, `intdiv` and the like;
+- the literal 100 as an operand of `*`, `/` or `%`;
+- a money value in arithmetic: `+`, `-`, `*`, `/`, `%`, `**`, their
+  assignment forms, `++`, `--` and unary minus;
+- a money value printed raw: concatenated or put inside a string or template,
+  turned into text by `String()`, `toString()` or `toLocaleString()`, or, on
+  the frontend, put as a JSX child (`<td>{row.price}</td>`).
+
+Comparisons, assignment, passing a value as an argument and keeping it under
+an array key are allowed.
+
+The guards know money by its name: a name with price, discount, kopecks or
+money in it. Name a money value for what it is. A share in percent carries
+the word percent (`discountPercent`) and is not money. A green guard is not
+proof: money under another name, such as `total`, is not seen. An exception
+is an address with its reason written in the guard itself; there are none
+today.
+
+Both sides are checked by one table of examples, `tests/money-cases.json`.
+
 ## Change Log
 
 The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
@@ -388,7 +446,7 @@ the container `env_file`.
 | Command | What it does |
 |---|---|
 | `composer run test:install-deps` | install the locked PHP dependencies in the test CLI container |
-| `composer run test:unit` | run the unit suite (topology registry guard) |
+| `composer run test:unit` | run the unit suite (topology registry guard, money guard) |
 | `composer run test:phpunit` | run the whole PHPUnit suite |
 
 ## End-to-end tests
@@ -401,7 +459,7 @@ pointed at a subset.
 
 | Command | What it does |
 |---|---|
-| `composer run test:check` | install + typecheck, lint and format-check the frontend app; lint and format-check the e2e suite (test toolchain) |
+| `composer run test:check` | install + typecheck, unit-test, lint and format-check the frontend app; lint and format-check the e2e suite (test toolchain) |
 | `composer run test:e2e-build` | install + build the frontend for the test stack |
 | `composer run test:e2e-install` | install the Playwright deps |
 | `composer run test:e2e-check` | typecheck the e2e test code (in the runner) |

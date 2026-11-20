@@ -14,6 +14,7 @@
     "preview": "vite preview",
     "precheck": "node ../../../framework/frontend/scripts/generate-license-inventory.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -36,6 +37,7 @@
     "sass-embedded": "^1.107.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.1",
-    "vite": "^7.3.7"
+    "vite": "^7.3.7",
+    "vitest": "^4.1.12"
   }
 }

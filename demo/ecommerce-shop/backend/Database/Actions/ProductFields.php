@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Database\Actions;
 
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Money\Money;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -80,6 +81,7 @@ final class ProductFields
      * @param int $value Price in kopecks
      * @return int The same price
      * @throws ValidationException When the price is not above zero or above the ceiling
+     * @throws LogicException When the ceiling cannot be printed
      */
     public static function price(int $value): int
     {
@@ -87,7 +89,7 @@ final class ProductFields
             throw new ValidationException('Price must be greater than zero');
         }
         if ($value > self::PRICE_MAX) {
-            throw new ValidationException('Price cannot be more than ₴999,999.99');
+            throw new ValidationException('Price cannot be more than ' . Money::format(self::PRICE_MAX));
         }
 
         return $value;

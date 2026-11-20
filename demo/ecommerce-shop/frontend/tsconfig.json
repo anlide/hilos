@@ -10,7 +10,8 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   },
-  "include": ["src", "env.d.ts"]
+  "include": ["src", "test", "env.d.ts"]
 }
