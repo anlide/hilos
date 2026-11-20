@@ -50,7 +50,7 @@ out the other end. Mail is the precedent that already holds — Mailpit on the
 stand, `SmtpMailTransport` speaking real SMTP to it (the daemon's
 `MAIL_SMTP_HOST` / `MAIL_SMTP_PORT` point at it, port 1025 inside the compose
 network, `MAIL_SMTP_SECURITY=none`), the letter read back by
-`demo/chat/tests/e2e/helpers/mail.ts` — and SMS and Telegram codes are the two
+`framework/frontend/scripts/mail.mjs` — and SMS and Telegram codes are the two
 residents that followed it into the gateway.
 
 **Transport is proved on the stand, against an emulator.** A stub does not prove
@@ -301,7 +301,7 @@ place.
   stack Mailpit publishes no host port, on purpose; every runner that reaches
   the stand names it in `MAILPIT_URL` in its `docker-compose.test.yml`. The
   stand's letters are read by `framework/frontend/scripts/standMailbox.mjs`, the
-  product's letters by subject in `demo/*/tests/e2e/helpers/mail.ts`, and a
+  product's letters by subject in `framework/frontend/scripts/mail.mjs`, and a
   person reads on the local or dev stack, where the UI is published on a host
   port each demo's README lists.
 

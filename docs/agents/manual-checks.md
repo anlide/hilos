@@ -139,7 +139,7 @@ Keep these numbers stable: hand-overs refer to them. These items have not been c
 
 ## Other surfaces — one line each until a change reaches them
 
-- Mail (Mailpit, real SMTP; `framework/backend/Mail/SmtpMailTransport.php`): how the HTML letter renders in a real mail client — specs read only the text part (`demo/chat/tests/e2e/helpers/mail.ts`); that the magic link points at the right host — specs keep only its path; deliverability (SPF/DKIM, the spam folder); the link opened on another device.
+- Mail (Mailpit, real SMTP; `framework/backend/Mail/SmtpMailTransport.php`): how the HTML letter renders in a real mail client — specs read only the text part (`framework/frontend/scripts/mail.mjs`); that the magic link points at the right host — specs keep only its path; deliverability (SPF/DKIM, the spam folder); the link opened on another device.
 - SMS (stand gateway `/sms/send`; `framework/backend/Sms/HttpSmsProvider.php`): a real vendor driver, the sender name, delivery to a real number in its country's format.
 - Telegram codes (stand gateway `/telegram`; `framework/backend/Auth/CodeChannel/TelegramCodeChannel.php`): delivery into the Telegram app on a phone.
 - OAuth (stand gateway `/oauth`; `framework/backend/Auth/OAuth/HttpOAuthProvider.php`): the real provider's account chooser and consent screen; the redirect URI registered at the provider.
