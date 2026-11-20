@@ -4,19 +4,31 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Database\Pages;
 
+use Demo\EcommerceShop\Constants\PageConstants;
 use Hilos\Constants\HilosPageConstants;
 use Hilos\Database\Pages\HilosPageCatalog;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Hilos\Database\Pages\PageCatalogProviderInterface;
 
-/** Page-head adoption for the ecommerce-shop demo. */
+/**
+ * PageCatalog - the shop's own admin pages, its dashboard group, and adopted framework heads.
+ *
+ * Besides the framework owners whose shared head the demo adopts, the catalog carries the
+ * screens the framework does not know about — the shop's administration, starting with the
+ * warehouses. They hang off the dashboard, so they reach the panel as cards of their own group.
+ *
+ * The captions live here rather than on the frontend for the reason the whole catalog does: a
+ * heading is text in the visitor's language, and only the backend knows the language.
+ *
+ * @see PageCatalogProviderInterface
+ */
 final class PageCatalog implements PageCatalogProviderInterface
 {
     /**
      * @return array<string, array{
      *     label: string, lead: string, parent?: string,
      *     breadcrumb?: string, entity?: bool, pageHead?: bool
-     * }> Complete framework entries with head adoption enabled
+     * }> The shop's admin pages and the framework entries whose head the demo adopts
      */
     public static function pages(): array
     {
@@ -49,12 +61,29 @@ final class PageCatalog implements PageCatalogProviderInterface
                 HilosPageCatalog::CATALOG[HilosPageConstants::HILOS_BACKUP],
                 [PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true],
             ),
+            PageConstants::ADMIN_WAREHOUSES => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Warehouses',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Where the stock is kept.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Warehouses',
+                PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+            ],
         ];
     }
 
-    /** @return list<array{title: string, description: string, items: list<string>}> No additional dashboard sections */
+    /**
+     * @return list<array{title: string, description: string, items: list<string>}> The shop's administration group
+     */
     public static function dashboardSections(): array
     {
-        return [];
+        return [
+            [
+                PageCatalogConstants::SECTION_TITLE => 'Shop administration',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'Warehouses and the catalog.',
+                PageCatalogConstants::SECTION_ITEMS => [
+                    PageConstants::ADMIN_WAREHOUSES,
+                ],
+            ],
+        ];
     }
 }

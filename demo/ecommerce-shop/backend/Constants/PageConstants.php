@@ -25,6 +25,9 @@ final class PageConstants
 
     public const string HILOS_CHANGE_LOG_TABLE = HilosPageConstants::HILOS_CHANGE_LOG_TABLE;
 
+    /** @var string Shop administration: the warehouses table */
+    public const string ADMIN_WAREHOUSES = 'admin_warehouses';
+
     /** @var string EcommerceShop main page */
     public const string MAIN = 'main';
 }

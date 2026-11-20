@@ -33,6 +33,7 @@ const OPERATIONS_SCREENS = [
   '/hilos/maintenance',
   '/hilos/maintenance/circle',
   '/hilos/maintenance/words',
+  '/hilos/app/warehouses',
 ]
 
 test.afterEach(() => setAdminViewMode(false))

@@ -26,7 +26,7 @@ import type { ComponentType } from 'react'
 import AuthSurface from './auth/AuthSurface.js'
 import { connection } from './bootstrap/connection.js'
 import { currentUserName } from './bootstrap/session.js'
-import { PAGE_MAIN } from './pages/keys.js'
+import { PAGE_ADMIN_WAREHOUSES, PAGE_MAIN } from './pages/keys.js'
 import About from './views/About/About.js'
 import License from './views/License/License.js'
 import LicenseDependencies from './views/LicenseDependencies/LicenseDependencies.js'
@@ -49,6 +49,10 @@ const pages: Record<string, PageView<ComponentType>> = {
   // the pages it implements itself; the rest render the framework default, never
   // recopied per project (page-module-structure.md).
   ...hilosAdminViews(),
+  // The shop's own admin page, in its own dashboard group (views/AdminWarehouses).
+  [PAGE_ADMIN_WAREHOUSES]: lazyPage(() =>
+    import('./views/AdminWarehouses/AdminWarehouses.js').then((m) => m.default),
+  ),
   // The framework Change Log section: the framework owns the feed, the tables
   // viewport, the history and the receipt reader; the project binds its
   // connection, page scope and action lifecycle (views/Hilos/ChangeLog).

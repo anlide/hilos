@@ -13,4 +13,7 @@ final class EcommerceShopSignalConstants
 {
     /** @var string Handshake response signal name */
     public const string HANDSHAKE_RESPONSE = 'handshake_response';
+
+    /** @var string Subscription page admin warehouses signal name */
+    public const string SUBSCRIPTION_PAGE_ADMIN_WAREHOUSES = 'subscription_page_admin_warehouses';
 }

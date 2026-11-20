@@ -46,6 +46,7 @@ use Demo\EcommerceShop\Fs\EcommerceShopFsContext;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
 use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
+use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
@@ -358,6 +359,7 @@ final class Hilos extends HilosFacade
         CountryNamesPage::PAGE => CountryNamesPage::class,
         UsersPage::PAGE => UsersPage::class,
         UserPage::PAGE => UserPage::class,
+        AdminWarehousesPage::PAGE => AdminWarehousesPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -695,6 +697,9 @@ final class Hilos extends HilosFacade
         ],
         UserPage::PAGE => [
             HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::BINDING,
+        ],
+        AdminWarehousesPage::PAGE => [
+            EcommerceShopTableContext::warehouses => [],
         ],
         LanguagesListPage::PAGE => [
             EcommerceShopTableContext::hilosI18nLanguages => [],

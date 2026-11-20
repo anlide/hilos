@@ -6,3 +6,4 @@
 // backend page keys — they are the subscription wire identity.
 
 export const PAGE_MAIN = 'main'
+export const PAGE_ADMIN_WAREHOUSES = 'admin_warehouses'
