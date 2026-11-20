@@ -712,8 +712,8 @@ window are an e2e of the account demo of each kit
 `demo/polls/tests/e2e/tests/admin-view-mode.spec.ts`); the strip on the
 operations screens is an e2e of its operations demo
 (`demo/ecommerce-shop/tests/e2e/tests/admin-view-mode.spec.ts`,
-`demo/online-testing/tests/e2e/tests/admin-view-mode.spec.ts`). Each of the four
-copies the lever into its own `tests/e2e/helpers/adminViewMode.ts`.
+`demo/online-testing/tests/e2e/tests/admin-view-mode.spec.ts`). All four pull the
+lever through the shared `framework/frontend/scripts/adminViewMode.mjs`.
 
 The log takeouts carry their viewer case as a unit of the rotations page
 (`framework/frontend/vue/src/admin/logs/HilosLogsRotationsPage.test.ts`) and not

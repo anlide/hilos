@@ -28,7 +28,7 @@ const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 // Notification-center e2e (HIL-558), moved here from chat with the communications
 // section it drives (HIL-1224); chat keeps only the product half, a mention and a
 // rename raising a notification. A notification is emitted through the live
-// daemon over its command channel (helpers/notifications.ts), so the row is
+// daemon over its command channel (framework/frontend/scripts/notifications.mjs), so the row is
 // written, the in-app signal is fanned, and the channels are dispatched exactly as
 // a product caller's emit would do it — the browser is then asserted on what the
 // server actually sent, never on a fixture the test planted.

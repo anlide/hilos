@@ -318,7 +318,7 @@ services:
       HOME: /tmp
       BASE_URL: https://file-gallery-manager-nginx-test
       # The admin-gated /hilos specs take the grant over the daemon command
-      # channel before they navigate (helpers/adminGrant.ts).
+      # channel before they navigate (framework/frontend/scripts/adminGrant.mjs).
       COMMAND_HOST: file-gallery-manager-daemon-test
       COMMAND_PORT: "8094"
       CI: "1"

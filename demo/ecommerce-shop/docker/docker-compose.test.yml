@@ -308,8 +308,8 @@ services:
       BASE_URL: https://ecommerce-shop-nginx-test
       # The admin-gated /hilos specs take the grant, the protected-mode spec
       # drives the freeze, and the notification specs emit, over the daemon
-      # command channel (helpers/adminGrant.ts, helpers/protectedMode.ts,
-      # helpers/notifications.ts).
+      # command channel (adminGrant.mjs, protectedMode.mjs and notifications.mjs
+      # in framework/frontend/scripts).
       COMMAND_HOST: ecommerce-shop-daemon-test
       COMMAND_PORT: "8094"
       CI: "1"

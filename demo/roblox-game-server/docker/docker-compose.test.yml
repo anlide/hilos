@@ -358,7 +358,7 @@ services:
       HOME: /tmp
       BASE_URL: https://roblox-game-server-nginx-test
       # The admin-gated /hilos specs take the grant over the daemon command
-      # channel before they navigate (helpers/adminGrant.ts).
+      # channel before they navigate (framework/frontend/scripts/adminGrant.mjs).
       COMMAND_HOST: roblox-game-server-daemon-test
       COMMAND_PORT: "8094"
       CI: "1"

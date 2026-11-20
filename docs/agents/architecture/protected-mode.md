@@ -171,8 +171,8 @@ Two properties are worth keeping when this code is touched:
   it is one number with two executors. All three are declared together in
   `Hilos\Constants\CommandChannelWindows`, where the innermost is COMPUTED from
   the middle less a margin for the refusal to travel — the order cannot be got
-  wrong by editing one file. The e2e client's copy of the middle number is in each
-  demo's `tests/e2e/helpers/protectedMode.ts` and has to be carried by hand.
+  wrong by editing one file. The e2e client keeps hand-carried copies of the middle
+  number; that class's docblock lists them, and a change has to be carried to each.
   Nothing here scales with the load of the run, unlike Playwright's own ceilings;
   the reasoning, and the route not taken, are in that class's docblock.
 

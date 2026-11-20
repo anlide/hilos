@@ -25,7 +25,7 @@ const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 // Notification-center e2e for this demo (HIL-558), the React half of the
 // same center coverage binance-btc-tracker and online-testing carry. A notification
 // is emitted through the live daemon over its command channel
-// (helpers/notifications.ts), so the row is written and the in-app signal is
+// (framework/frontend/scripts/notifications.mjs), so the row is written and the in-app signal is
 // fanned exactly as a product caller's emit
 // would do it — the browser is then asserted on what the server actually sent,
 // never on a fixture the test planted.
