@@ -52,114 +52,96 @@ for (const [index, sourceNode] of stand.masters.entries()) {
   const authorNode = stand.masters[(index + 1) % stand.masters.length]
   const observerNode = stand.masters[(index + 2) % stand.masters.length]
 
-  // FIXME(F-060, 2026-11-04): Rules returns 401 after login on m3 · свой · попытка 2 · HIL-1818
-  // FIXME(F-101, 2026-11-14): Through m3 the profile name still shows the old name after the rename modal closes · свой · попытка 3 · HIL-2035
-  // FIXME(F-107, 2026-11-15): After login through m4 nav-admin never appears and the test times out · чужой · попытка 1 · HIL-1959
-  // FIXME(F-108, 2026-11-15): Rules through m4 hangs loading and admin:grant gets no reply behind an InnoDB lock wait on the login time-zone write · свой · попытка 5 · HIL-1817
-  // FIXME(F-116, 2026-11-17): Add rule dialog remains visible after Save for m3/m2/m4 · чужой · попытка 1 · HIL-1993
-  test(
-    `a rule saved through ${authorNode} governs a name checked through ${sourceNode}, and ${observerNode} shows the rule live`,
-    index === 0
-      ? { tag: '@quarantine:F-060' }
-      : index === 1
-        ? { tag: '@quarantine:F-116' }
-        : index === 2
-          ? { tag: '@quarantine:F-101' }
-          : index === 3
-            ? { tag: '@quarantine:F-107' }
-            : index === 4
-              ? { tag: '@quarantine:F-108' }
-              : {},
-    async ({ browser, cleanup }) => {
-      expect(new Set([sourceNode, authorNode, observerNode]).size).toBe(3)
-      const before = (await sendCommand(
-        'test:cluster:inspect',
-        {},
-      )) as unknown as ClusterInspection
-      await expectClusterLeaderUnchanged(expect, stand, before)
-      await expectClusterSingleAgents(expect, stand, SINGLE_AGENTS)
+  test(`a rule saved through ${authorNode} governs a name checked through ${sourceNode}, and ${observerNode} shows the rule live`, async ({
+    browser,
+    cleanup,
+  }) => {
+    expect(new Set([sourceNode, authorNode, observerNode]).size).toBe(3)
+    const before = (await sendCommand(
+      'test:cluster:inspect',
+      {},
+    )) as unknown as ClusterInspection
+    await expectClusterLeaderUnchanged(expect, stand, before)
+    await expectClusterSingleAgents(expect, stand, SINGLE_AGENTS)
 
-      const participants = []
-      for (const node of [sourceNode, authorNode, observerNode]) {
-        const page = await newClusterMasterPage(browser, stand, node)
-        cleanup.defer(() => page.context().close())
-        const upgrades = await watchClusterMasterUpgrades(
-          expect,
-          page,
-          stand,
-          node,
-        )
-        cleanup.defer(() => upgrades.stop())
-        participants.push({ page, upgrades })
-      }
-      const [source, author, observer] = participants
-      const key = modelKey()
-      cleanup.defer(() => forgetModelKey(key))
-      const rule = `Allow ordinary names. Cluster policy marker ${key}.`
+    const participants = []
+    for (const node of [sourceNode, authorNode, observerNode]) {
+      const page = await newClusterMasterPage(browser, stand, node)
+      cleanup.defer(() => page.context().close())
+      const upgrades = await watchClusterMasterUpgrades(
+        expect,
+        page,
+        stand,
+        node,
+      )
+      cleanup.defer(() => upgrades.stop())
+      participants.push({ page, upgrades })
+    }
+    const [source, author, observer] = participants
+    const key = modelKey()
+    cleanup.defer(() => forgetModelKey(key))
+    const rule = `Allow ordinary names. Cluster policy marker ${key}.`
 
-      await test.step('the administrator opens Rules through two different masters', async () => {
-        const admin = await seedTestUser({ email: uniqueEmail() })
-        await setAdmin(admin.userId, true)
-        for (const page of [author.page, observer.page]) {
-          await gotoPage(expect, page, '/')
-          await openSignIn(expect, page)
-          await expectSessionRotation(expect, page, async () => {
-            await login(expect, page, admin.email, PASSWORD)
-            await expect(page.getByTestId('nav-admin')).toHaveAttribute(
-              'data-access',
-              'full',
-            )
-          })
-          await gotoPage(expect, page, RULES_PATH, PAGE_READY)
-        }
-      })
-
-      reserveModerationRules(expect, author.page, cleanup, NAME, [rule])
-      const ruleId =
-        await test.step('the saved rule reaches the observer without a reload', async () => {
-          const id = await addModerationRule(expect, author.page, NAME, rule)
-          await expectModerationRuleShown(expect, observer.page, rule, true)
-          return id
+    await test.step('the administrator opens Rules through two different masters', async () => {
+      const admin = await seedTestUser({ email: uniqueEmail() })
+      await setAdmin(admin.userId, true)
+      for (const page of [author.page, observer.page]) {
+        await gotoPage(expect, page, '/')
+        await openSignIn(expect, page)
+        await expectSessionRotation(expect, page, async () => {
+          await login(expect, page, admin.email, PASSWORD)
+          await expect(page.getByTestId('nav-admin')).toHaveAttribute(
+            'data-access',
+            'full',
+          )
         })
+        await gotoPage(expect, page, RULES_PATH, PAGE_READY)
+      }
+    })
 
-      await test.step('the rule governs a name submitted through the third master', async () => {
-        await dictateModerationVerdict(key, true, 'ok')
-        const user = await seedTestUser({ email: uniqueEmail() })
-        await gotoPage(expect, source.page, '/')
-        await openSignIn(expect, source.page)
-        await expectSessionRotation(expect, source.page, () =>
-          login(expect, source.page, user.email, PASSWORD),
-        )
-        await gotoPage(expect, source.page, '/profile')
-        // Only the rule carries the model key: this name cannot select its answer.
-        const name = `Ordinary person ${sourceNode}`
-        await changeOwnName(expect, source.page, name)
-        await expect(source.page.getByTestId('modal')).toBeHidden()
-        await expect(source.page.getByTestId('profile-name')).toHaveText(name)
-        await expect(
-          source.page.getByTestId('nav-profile-name'),
-        ).toHaveAccessibleName(name)
-        expect(await readModelRequests(key)).toEqual([
-          { ordinal: 1, key, imageHashes: [] },
-        ])
+    reserveModerationRules(expect, author.page, cleanup, NAME, [rule])
+    const ruleId =
+      await test.step('the saved rule reaches the observer without a reload', async () => {
+        const id = await addModerationRule(expect, author.page, NAME, rule)
+        await expectModerationRuleShown(expect, observer.page, rule, true)
+        return id
       })
 
-      await test.step('the observer deletes the rule and it leaves the author without a reload', async () => {
-        await deleteModerationRule(expect, observer.page, ruleId, rule)
-        await expect(
-          shownByTestId(author.page, `hilos-table-pending-remove-${ruleId}`),
-        ).toBeVisible()
-        await expectModerationRuleShown(expect, author.page, rule, true)
-        await clickSubmit(expect, author.page.getByTestId('hilos-table-apply'))
-        await expect(author.page.getByTestId('hilos-table-apply')).toHaveCount(
-          0,
-        )
-        await expectModerationRuleShown(expect, author.page, rule, false)
-      })
+    await test.step('the rule governs a name submitted through the third master', async () => {
+      await dictateModerationVerdict(key, true, 'ok')
+      const user = await seedTestUser({ email: uniqueEmail() })
+      await gotoPage(expect, source.page, '/')
+      await openSignIn(expect, source.page)
+      await expectSessionRotation(expect, source.page, () =>
+        login(expect, source.page, user.email, PASSWORD),
+      )
+      await gotoPage(expect, source.page, '/profile')
+      // Only the rule carries the model key: this name cannot select its answer.
+      const name = `Ordinary person ${sourceNode}`
+      await changeOwnName(expect, source.page, name)
+      await expect(source.page.getByTestId('modal')).toBeHidden()
+      await expect(source.page.getByTestId('profile-name')).toHaveText(name)
+      await expect(
+        source.page.getByTestId('nav-profile-name'),
+      ).toHaveAccessibleName(name)
+      expect(await readModelRequests(key)).toEqual([
+        { ordinal: 1, key, imageHashes: [] },
+      ])
+    })
 
-      for (const { upgrades } of participants) await upgrades.assert()
-      await expectClusterSingleAgents(expect, stand, SINGLE_AGENTS)
-      await expectClusterLeaderUnchanged(expect, stand, before)
-    },
-  )
+    await test.step('the observer deletes the rule and it leaves the author without a reload', async () => {
+      await deleteModerationRule(expect, observer.page, ruleId, rule)
+      await expect(
+        shownByTestId(author.page, `hilos-table-pending-remove-${ruleId}`),
+      ).toBeVisible()
+      await expectModerationRuleShown(expect, author.page, rule, true)
+      await clickSubmit(expect, author.page.getByTestId('hilos-table-apply'))
+      await expect(author.page.getByTestId('hilos-table-apply')).toHaveCount(0)
+      await expectModerationRuleShown(expect, author.page, rule, false)
+    })
+
+    for (const { upgrades } of participants) await upgrades.assert()
+    await expectClusterSingleAgents(expect, stand, SINGLE_AGENTS)
+    await expectClusterLeaderUnchanged(expect, stand, before)
+  })
 }

@@ -1760,10 +1760,7 @@ view before A applies it.
 Like online-testing, this stand has only a live phase: no fault request, no
 after-loss phase, no `e2e.capabilities` and no slaves. The entry serves
 Angular's `dist/index.csr.html`; global setup waits for the shell and for every
-master's WebSocket through the entry, then clears Mailpit. Rotation 0 — S on
-m1, A on m2, O on m3, the variant online-testing carried before — keeps
-`@quarantine:F-060` and runs in the quarantine tail after the main rotations,
-without changing the verdict.
+master's WebSocket through the entry, then clears Mailpit.
 
 The graph runs this step after `concert-tickets-e2e`, which builds the
 `frontend/dist` the entry serves; it shares the `concert-tickets-cluster` group

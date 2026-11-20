@@ -611,7 +611,7 @@ Here `donor/live/{a,b}` means
 |---|---|---|
 | `roblox-game-server` / Vue | **Daemon:** `binance-btc-tracker/daemon/daemon`, `binance-btc-tracker/live/{daemon-clock,daemon-env-mismatch,daemon-env-orphans,daemon-section}`. | HIL-2030 |
 | `roblox-game-server` / Vue | **Sessions, theme, protected mode:** `binance-btc-tracker/live/{sessions,theme,protected-mode}`. | HIL-2031 |
-| `concert-tickets` / Angular | **Moderation:** `online-testing/live/moderation`, with five rotations of three distinct roles instead of three; F-060 stays on its identified variant. | HIL-2033 |
+| `concert-tickets` / Angular | **Moderation:** `online-testing/live/moderation`, with five rotations of three distinct roles instead of three. | HIL-2033 |
 
 Binance keeps `live/{backup,logs,change-log}` and `after-loss/{backup,logs}`:
 these need an archive holder and journal writer on a slave, which Roblox's
