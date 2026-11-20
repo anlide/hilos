@@ -7895,7 +7895,7 @@ SCENARIOS = [
     # and each returns it before the next scenario begins.
     Scenario("27 database member dies under load", scenario_27_database_member_dies_under_load,
              Need(database_members=2, database_votes=3)),
-    # Beside 27, and like them only once every shared-database scenario has read the intact
+    # Beside 27, and like it only once every shared-database scenario has read the intact
     # stand: 53 takes the arbitrator away and returns it, 54 cuts a data member off the others and
     # mends it, each before the next scenario begins.
     Scenario("53 database arbitrator lost and back", scenario_53_database_arbitrator_lost_and_back,
