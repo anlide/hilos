@@ -292,11 +292,18 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
 <template>
   <HilosLayout :connection="connection">
     <template #brand>
-      <i class="bi bi-currency-bitcoin" aria-hidden="true"></i>
-      <!-- The name folds down to the icon on a narrow screen and stays the
-      link's accessible name there (mockups/framework/layout, "На узком экране"). -->
-      <span class="d-none d-md-inline ms-1">BTC Tracker</span>
-      <span class="visually-hidden d-md-none">BTC Tracker</span>
+      <span class="d-inline-flex align-items-center gap-2">
+        <img
+          src="/binance-btc-tracker-medium.svg"
+          width="32"
+          height="32"
+          alt=""
+        />
+        <!-- The name folds down to the sign on a narrow screen and stays the
+          link's accessible name there (mockups/framework/layout, "На узком экране"). -->
+        <span class="d-none d-md-inline">BTC Tracker</span>
+        <span class="visually-hidden d-md-none">BTC Tracker</span>
+      </span>
     </template>
     <template #user>
       <HilosNotificationBell v-if="userName" :connection="connection" />

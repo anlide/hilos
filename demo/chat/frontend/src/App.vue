@@ -421,9 +421,11 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
 <template>
   <HilosLayout :connection="connection">
     <template #brand>
-      <i class="bi bi-chat-dots" aria-hidden="true"></i>
-      <span class="d-none d-md-inline ms-1">Hilos Chat</span>
-      <span class="visually-hidden d-md-none">Hilos Chat</span>
+      <span class="d-inline-flex align-items-center gap-2">
+        <img src="/chat-medium.svg" width="32" height="32" alt="" />
+        <span class="d-none d-md-inline">Hilos Chat</span>
+        <span class="visually-hidden d-md-none">Hilos Chat</span>
+      </span>
     </template>
     <template #nav>
       <HilosLink

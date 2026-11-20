@@ -255,11 +255,18 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
 <template>
   <HilosLayout :connection="connection">
     <template #brand>
-      <i class="bi bi-controller" aria-hidden="true"></i>
-      <!-- The name folds down to the icon on a narrow screen and stays the
-      link's accessible name there (mockups/framework/layout, "На узком экране"). -->
-      <span class="d-none d-md-inline ms-1">Roblox Game Server</span>
-      <span class="visually-hidden d-md-none">Roblox Game Server</span>
+      <span class="d-inline-flex align-items-center gap-2">
+        <img
+          src="/roblox-game-server-medium.svg"
+          width="32"
+          height="32"
+          alt=""
+        />
+        <!-- The name folds down to the sign on a narrow screen and stays the
+        link's accessible name there (mockups/framework/layout, "На узком экране"). -->
+        <span class="d-none d-md-inline">Roblox Game Server</span>
+        <span class="visually-hidden d-md-none">Roblox Game Server</span>
+      </span>
     </template>
     <template #user>
       <HilosNotificationBell v-if="userName" :connection="connection" />

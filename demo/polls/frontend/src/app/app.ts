@@ -73,9 +73,9 @@ import { TermsHistory } from './views/terms-history/terms-history.js'
   // Angular trap. ngProjectAs names the slot explicitly and the branches live
   // safely inside it.
   template: `<hilos-layout [connection]="connection">
-    <span brand>
-      <i class="bi bi-bar-chart" aria-hidden="true"></i>
-      <span class="d-none d-md-inline ms-1">Hilos Polls</span>
+    <span brand class="d-inline-flex align-items-center gap-2">
+      <img src="/polls-medium.svg" width="32" height="32" alt="" />
+      <span class="d-none d-md-inline">Hilos Polls</span>
       <span class="visually-hidden d-md-none">Hilos Polls</span>
     </span>
     <ng-container ngProjectAs="[user]">

@@ -318,6 +318,9 @@ frontend comes to life, and any further demo the same way:
    its sources to "Source provenance and license", its signs and its phone tile
    to [preview.html](preview.html), and its name to the list in
    [export.cjs](export.cjs).
+7. Copy the installed set into `demo/<demo>/frontend/public/`, add the three
+   icon links to `index.html` and show `-medium.svg` in the header's brand slot,
+   following the twelve demos in "Installed copies".
 
 ## Palette and contrast
 
@@ -415,10 +418,35 @@ Chromium, Firefox, iOS and Android: a headless browser draws neither, so the
 observations in "Viewing criteria and observed limits" are of the files
 themselves.
 
+## Installed copies
+
+| Destination | Copy from |
+|---|---|
+| `demo/binance-btc-tracker/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, binance-btc-tracker-medium.svg}` | `sources/binance-btc-tracker-small.svg`, `binance-btc-tracker.ico`, `binance-btc-tracker-touch-180.png`, `sources/binance-btc-tracker-medium.svg` |
+| `demo/chat/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, chat-medium.svg}` | `sources/chat-small.svg`, `chat.ico`, `chat-touch-180.png`, `sources/chat-medium.svg` |
+| `demo/pmd/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, pmd-medium.svg}` | `sources/pmd-small.svg`, `pmd.ico`, `pmd-touch-180.png`, `sources/pmd-medium.svg` |
+| `demo/roblox-game-server/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, roblox-game-server-medium.svg}` | `sources/roblox-game-server-small.svg`, `roblox-game-server.ico`, `roblox-game-server-touch-180.png`, `sources/roblox-game-server-medium.svg` |
+| `demo/ecommerce-shop/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, ecommerce-shop-medium.svg}` | `sources/ecommerce-shop-small.svg`, `ecommerce-shop.ico`, `ecommerce-shop-touch-180.png`, `sources/ecommerce-shop-medium.svg` |
+| `demo/file-gallery-manager/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, file-gallery-manager-medium.svg}` | `sources/file-gallery-manager-small.svg`, `file-gallery-manager.ico`, `file-gallery-manager-touch-180.png`, `sources/file-gallery-manager-medium.svg` |
+| `demo/solar-system-model/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, solar-system-model-medium.svg}` | `sources/solar-system-model-small.svg`, `solar-system-model.ico`, `solar-system-model-touch-180.png`, `sources/solar-system-model-medium.svg` |
+| `demo/tasks/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, tasks-medium.svg}` | `sources/tasks-small.svg`, `tasks.ico`, `tasks-touch-180.png`, `sources/tasks-medium.svg` |
+| `demo/concert-tickets/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, concert-tickets-medium.svg}` | `sources/concert-tickets-small.svg`, `concert-tickets.ico`, `concert-tickets-touch-180.png`, `sources/concert-tickets-medium.svg` |
+| `demo/online-testing/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, online-testing-medium.svg}` | `sources/online-testing-small.svg`, `online-testing.ico`, `online-testing-touch-180.png`, `sources/online-testing-medium.svg` |
+| `demo/polls/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, polls-medium.svg}` | `sources/polls-small.svg`, `polls.ico`, `polls-touch-180.png`, `sources/polls-medium.svg` |
+| `demo/preferans/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, preferans-medium.svg}` | `sources/preferans-small.svg`, `preferans.ico`, `preferans-touch-180.png`, `sources/preferans-medium.svg` |
+| `framework/frontend/brand/{favicon.svg, favicon.ico, apple-touch-icon.png, hilos-medium.svg}` | `sources/hilos-small.svg`, `hilos.ico`, `hilos-touch-180.png`, `sources/hilos-medium.svg` |
+
+Installed copies are not edited by hand. When a master changes, export the files
+again with `export.cjs` and copy the set again. These installations do not use a
+web app manifest: as decided for HIL-2152 on 2026-11-19, installing the demos as
+apps is not in scope. The 192 and 512 pixel exports can be generated when they
+are needed.
+
 ## Source choice and export
 
 The SVG files in `sources/` are the masters; PNG and ICO files are exports, are
-not kept in the repository and are never edited. For an SVG consumer, copy the
+not kept in this folder and are never edited; the copies a page serves are
+listed in "Installed copies". For an SVG consumer, copy the
 source unchanged and set its rendered width and height to the required equal
 size. For example, in a header with the demo name next to it, an `<img>` can use
 `width="32" height="32" alt=""`; the adjacent name provides the accessible

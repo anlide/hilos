@@ -72,11 +72,11 @@ import { TermsHistory } from './views/terms-history/terms-history.js'
   // Angular trap. ngProjectAs names the slot explicitly and the branches live
   // safely inside it.
   template: `<hilos-layout [connection]="connection">
-    <span brand>
-      <i class="bi bi-ticket-perforated-fill" aria-hidden="true"></i>
-      <!-- The name folds down to the icon on a narrow screen and stays the
+    <span brand class="d-inline-flex align-items-center gap-2">
+      <img src="/concert-tickets-medium.svg" width="32" height="32" alt="" />
+      <!-- The name folds down to the sign on a narrow screen and stays the
       link's accessible name there. -->
-      <span class="d-none d-md-inline ms-1">Hilos Concert Tickets</span>
+      <span class="d-none d-md-inline">Hilos Concert Tickets</span>
       <span class="visually-hidden d-md-none">Hilos Concert Tickets</span>
     </span>
     <ng-container ngProjectAs="[user]">

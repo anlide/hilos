@@ -195,7 +195,13 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
 
 <template>
   <HilosLayout :connection="connection">
-    <template #brand>PMD</template>
+    <template #brand>
+      <span class="d-inline-flex align-items-center gap-2">
+        <img src="/pmd-medium.svg" width="32" height="32" alt="" />
+        <span class="d-none d-md-inline">PMD</span>
+        <span class="visually-hidden d-md-none">PMD</span>
+      </span>
+    </template>
     <template #user>
       <HilosNotificationBell v-if="userName" :connection="connection" />
       <HilosLink

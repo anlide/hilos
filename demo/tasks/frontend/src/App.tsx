@@ -417,11 +417,11 @@ export default function App({ authGate }: AppProps) {
     <HilosLayout
       connection={connection}
       brand={
-        <>
-          <i className="bi bi-check2-square" aria-hidden="true" />
-          <span className="d-none d-md-inline ms-1">Hilos Tasks</span>
+        <span className="d-inline-flex align-items-center gap-2">
+          <img src="/tasks-medium.svg" width={32} height={32} alt="" />
+          <span className="d-none d-md-inline">Hilos Tasks</span>
           <span className="visually-hidden d-md-none">Hilos Tasks</span>
-        </>
+        </span>
       }
       user={
         userName ? (

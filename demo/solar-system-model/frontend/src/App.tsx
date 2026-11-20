@@ -160,13 +160,18 @@ export default function App({ authGate }: AppProps) {
     <HilosLayout
       connection={connection}
       brand={
-        <>
-          <i className="bi bi-sun-fill" aria-hidden="true" />
-          {/* The name folds down to the icon on a narrow screen and stays the
+        <span className="d-inline-flex align-items-center gap-2">
+          <img
+            src="/solar-system-model-medium.svg"
+            width={32}
+            height={32}
+            alt=""
+          />
+          {/* The name folds down to the sign on a narrow screen and stays the
               link's accessible name there. */}
-          <span className="d-none d-md-inline ms-1">Hilos Solar System</span>
+          <span className="d-none d-md-inline">Hilos Solar System</span>
           <span className="visually-hidden d-md-none">Hilos Solar System</span>
-        </>
+        </span>
       }
       user={
         userName ? (
