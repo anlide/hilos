@@ -66,7 +66,9 @@ final class MagicLinkService
      * link means "sign in" for a known address and "finish registering" for a free
      * one. The hold is skipped for an address that already belongs to somebody
      * ({@see ObjectIdentities::findAccountIdByEmail()}, the one definition of that since
-     * HIL-608), since there is nothing left to register.
+     * HIL-608), since there is nothing left to register. In a project that registers
+     * nobody (HIL-2185) the hold refuses a free address, so no link goes out to it: the
+     * letter that would register is never issued, and a member still gets theirs.
      *
      * The session is asked for rather than looked up because the hold is OWNED: the
      * link this send mails may only finish the registration of the browser that asked
@@ -90,7 +92,8 @@ final class MagicLinkService
      *   left no hold to answer with
      * @throws EnvException When a reservation or verification env key is missing, outside the
      *   catalog, or of the wrong type
-     * @throws ValidationException When the link cannot be delivered to the address
+     * @throws ValidationException When the address is free and the project registers nobody, or the link cannot be
+     *   delivered to the address
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      * @throws DbCollectionNotReadableException When nothing here reads the identities, reservations or verifications collection, or its readiness is
      *   on its way

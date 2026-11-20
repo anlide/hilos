@@ -309,7 +309,7 @@ final class StandDataRootGuardTest extends TestCase
     {
         $problems = array_values(array_filter($this->standVerdicts(true)));
         $this->assertSame([], $problems, implode(PHP_EOL, $problems));
-        $this->assertCount(12, array_unique(array_column($this->demoStands(), 'cwd')));
+        $this->assertCount(13, array_unique(array_column($this->demoStands(), 'cwd')));
 
         foreach (['framework' => 'hilos-deps-test', 'frontend' => 'hilos-frontend-cli'] as $id => $writer) {
             $stand = standById($this->repositoryRoot(), $id);

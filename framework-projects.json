@@ -11,6 +11,7 @@
         {"root": "demo/concert-tickets", "facade": "Demo\\ConcertTickets\\Hilos"},
         {"root": "demo/solar-system-model", "facade": "Demo\\SolarSystemModel\\Hilos"},
         {"root": "demo/roblox-game-server", "facade": "Demo\\RobloxGameServer\\Hilos"},
-        {"root": "demo/file-gallery-manager", "facade": "Demo\\FileGalleryManager\\Hilos"}
+        {"root": "demo/file-gallery-manager", "facade": "Demo\\FileGalleryManager\\Hilos"},
+        {"root": "demo/hilos-website", "facade": "Demo\\HilosWebsite\\Hilos"}
     ]
 }

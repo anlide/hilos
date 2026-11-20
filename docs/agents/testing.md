@@ -740,6 +740,13 @@ merely because a directory or README exists.
 | Angular | `preferans` | Active |
 | Angular | `concert-tickets` | Active |
 
+`hilos-website` is not an ordinary demo but the official site (HIL-2147): thin
+on purpose and left out of every "in every demo" rollout. It is registered in
+`framework-projects.json` and in the runner, but has no e2e step — the runner
+gives it deps, check and php, and what a person sees there the owner accepts by
+hand (HIL-2185, 18.11.2026: the fixed part of an e2e step costs 150–450 s per
+stand, while the site's own tests would take about 40 s).
+
 Each activation in this table covers its complete obligation: an
 application shell with an empty home page, AUTH/sign-in, working Analytics in
 the administrative section, ordinary local/test stands, the command interface

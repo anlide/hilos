@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\Detection;
 
 use Hilos\Auth\AuthMethodKey;
+use Hilos\Auth\Method\AuthMethodDirectory;
 use Hilos\Auth\Method\EnabledAuthMethods;
 use Hilos\Auth\PhoneNumber;
 use Hilos\Auth\Registration\RegistrationReservationService;
@@ -321,6 +322,10 @@ final class IdentifierDetector
     /**
      * Lists the enabled methods a free identifier can be registered with.
      *
+     * Empty in a project that registers nobody ({@see AuthMethodDirectory::opensRegistration()},
+     * HIL-2185), whatever it enabled: its methods are ways into accounts it hands out, not
+     * ways to open one.
+     *
      * Intersected with what this installation can actually deliver to (HIL-830): every
      * registration on this path proves the identifier by a code before the account
      * exists, so a method whose code has nowhere to go does not create an account - it
@@ -333,7 +338,7 @@ final class IdentifierDetector
      */
     private function registerableMethods(string $kind, CodeDeliveryAvailability $delivery): array
     {
-        if (!$delivery->canDeliverTo($kind)) {
+        if (!Hilos::authMethodDirectoryClass()::opensRegistration() || !$delivery->canDeliverTo($kind)) {
             return [];
         }
 
@@ -343,13 +348,15 @@ final class IdentifierDetector
     /**
      * Says why registration is not offered for a free identifier, or that it is.
      *
-     * Closed WINS when both are true. A project that enabled no way to register made a
-     * decision; missing delivery is a circumstance, and explaining a deliberately
-     * locked door by the circumstance names the wrong cause to whoever reads the
-     * sentence.
+     * Closed is a decision of the project, taken in one of two ways: it enabled no way to
+     * register this kind, or it declared that it registers nobody
+     * ({@see AuthMethodDirectory::opensRegistration()}, HIL-2185). Closed WINS when it and
+     * missing delivery are both true. Missing delivery is a circumstance, and explaining a
+     * deliberately locked door by the circumstance names the wrong cause to whoever reads
+     * the sentence.
      *
-     * The delivery answer is not asked again: an empty list under a kind the project
-     * DID enable something for can have been emptied by nothing else.
+     * The delivery answer is not asked again: an empty list in a project that registers,
+     * under a kind it DID enable something for, can have been emptied by nothing else.
      *
      * @param string $kind Classification (see IdentifierDetection::KIND_*)
      * @param list<string> $registerable What registration is open with after both intersections
@@ -361,7 +368,7 @@ final class IdentifierDetector
             return null;
         }
 
-        return $this->enabledMethodsFor($kind) === []
+        return !Hilos::authMethodDirectoryClass()::opensRegistration() || $this->enabledMethodsFor($kind) === []
             ? IdentifierDetection::BLOCK_CLOSED
             : IdentifierDetection::BLOCK_NO_CHANNEL;
     }

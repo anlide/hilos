@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgentDaemon;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgentDaemon;
+use Hilos\Auth\Method\AuthMethodDirectory;
+use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Feature\Definition\AuthFeature;
@@ -20,11 +23,30 @@ use Hilos\DataExport\DataExportAgentDaemon;
 use Hilos\Hilos as HilosFacade;
 use Hilos\Pages\AbstractHilosProfileDataPage;
 use Hilos\Pages\AbstractHilosProfilePage;
+use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestClosedDirectory;
+use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestProviderDirectory;
 use PHPUnit\Framework\TestCase;
 
-/** Pins the real Auth feature definition and its startup refusal contract. */
+/**
+ * Pins the real Auth feature definition and its startup refusal contract.
+ *
+ * Among the refusals, a closed registration beside a method whose sign-in opens an account by
+ * itself (HIL-2185): the directories are read through the captured project facade, so each
+ * such case mounts its facade and the tear-down puts the base one back.
+ */
 final class AuthFeatureActivationTest extends TestCase
 {
+    /**
+     * Restores the base facade so a later test sees the process as it found it.
+     */
+    protected function tearDown(): void
+    {
+        HilosFacade::initBrowser();
+        HilosFacade::resetBrowser();
+
+        parent::tearDown();
+    }
+
     public function testDefinitionRequiresProfileAndProfileDataPages(): void
     {
         $definition = (new FeatureRegistry())->definition(HilosFeature::AUTH);
@@ -66,6 +88,40 @@ final class AuthFeatureActivationTest extends TestCase
     public function testCompleteAuthFeaturePassesStartupValidation(): void
     {
         AuthFeatureCompleteHilos::validateFeatureActivation();
+
+        $this->addToAssertionCount(1);
+    }
+
+    /** An SMS code opens the account of a number it does not find, which a closed registration does not cover. */
+    public function testClosedRegistrationWithSmsRefusesStartup(): void
+    {
+        AuthFeatureClosedWithSmsHilos::initBrowser();
+
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('Registration is closed, but the method directory wires ' . AuthMethodKey::SMS
+            . ', whose sign-in opens an account by itself');
+
+        AuthFeatureClosedWithSmsHilos::checkClosedRegistration();
+    }
+
+    /** A provider sign-in opens the account of a person it does not find, just as an SMS code does. */
+    public function testClosedRegistrationWithAProviderRefusesStartup(): void
+    {
+        AuthFeatureClosedWithProviderHilos::initBrowser();
+
+        $this->expectException(IncompleteFeatureActivationException::class);
+        $this->expectExceptionMessage('Registration is closed, but the method directory wires ' . OAuthProviderPreset::GITHUB->value
+            . ', whose sign-in opens an account by itself');
+
+        AuthFeatureClosedWithProviderHilos::checkClosedRegistration();
+    }
+
+    /** A password opens no account by itself; providers the project declares and does not wire do not count. */
+    public function testClosedRegistrationWithAPasswordAlonePassesStartup(): void
+    {
+        AuthFeatureClosedWithPasswordHilos::initBrowser();
+
+        AuthFeatureClosedWithPasswordHilos::checkClosedRegistration();
 
         $this->addToAssertionCount(1);
     }
@@ -160,4 +216,70 @@ final class AuthFeatureMissingProfileDataPageHilos extends AuthFeatureCompleteHi
     public const array PAGES = [
         AuthFeatureTestProfilePage::PAGE => AuthFeatureTestProfilePage::class,
     ];
+}
+
+/** Opens the start check of a closed registration to the fixtures below. */
+abstract class AuthFeatureClosedRegistrationHilos extends HilosFacade
+{
+    protected const array FEATURES = [HilosFeature::AUTH];
+
+    protected const string OAUTH_PROVIDER_DIRECTORY = AuthMethodTestProviderDirectory::class;
+
+    /**
+     * @throws IncompleteFeatureActivationException When the fixture closes registration and wires SMS or a provider
+     */
+    public static function checkClosedRegistration(): void
+    {
+        static::refuseClosedRegistrationWithSelfRegisteringMethods();
+    }
+}
+
+/** Closed registration with a password and an SMS code. */
+abstract class AuthFeatureClosedWithSmsHilos extends AuthFeatureClosedRegistrationHilos
+{
+    protected const string AUTH_METHOD_DIRECTORY = AuthFeatureClosedWithSmsDirectory::class;
+}
+
+/** Closed registration with a password and the GitHub provider. */
+abstract class AuthFeatureClosedWithProviderHilos extends AuthFeatureClosedRegistrationHilos
+{
+    protected const string AUTH_METHOD_DIRECTORY = AuthFeatureClosedWithProviderDirectory::class;
+}
+
+/** Closed registration with a password alone. */
+abstract class AuthFeatureClosedWithPasswordHilos extends AuthFeatureClosedRegistrationHilos
+{
+    protected const string AUTH_METHOD_DIRECTORY = AuthMethodTestClosedDirectory::class;
+}
+
+/** Registers nobody, and wires an SMS code beside the password. */
+final class AuthFeatureClosedWithSmsDirectory extends AuthMethodDirectory
+{
+    /** @return list<string> Method keys in button order */
+    protected static function methods(): array
+    {
+        return [...parent::methods(), AuthMethodKey::PASSWORD, AuthMethodKey::SMS];
+    }
+
+    /** @return bool Always false: this project registers nobody */
+    protected static function registers(): bool
+    {
+        return false;
+    }
+}
+
+/** Registers nobody, and wires one declared provider beside the password. */
+final class AuthFeatureClosedWithProviderDirectory extends AuthMethodDirectory
+{
+    /** @return list<string> Method keys in button order */
+    protected static function methods(): array
+    {
+        return [...parent::methods(), AuthMethodKey::PASSWORD, OAuthProviderPreset::GITHUB->value];
+    }
+
+    /** @return bool Always false: this project registers nobody */
+    protected static function registers(): bool
+    {
+        return false;
+    }
 }

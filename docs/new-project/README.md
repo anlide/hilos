@@ -17,7 +17,7 @@ running in project-owned docker stacks. The demos, each with what it carries:
 | [demo/preferans](../../demo/preferans) | minimal | Angular | an active Angular carrier with password sign-in, an empty home, profile, settings, i18n, Appearance and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
 | [demo/concert-tickets](../../demo/concert-tickets) | minimal | Angular | an active Angular carrier with sign-in (password, passkey, SMS, GitHub), an empty home, profile, and admin Daemon, Logs, Change Log and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
-| [demo/hilos-website](../../demo/hilos-website) | not built yet | Vue | the official Hilos site at hilos-dev.org — not a shape to copy: kept thin on purpose and left out of every-demo feature rollouts |
+| [demo/hilos-website](../../demo/hilos-website) | minimal | Vue | the official Hilos site at hilos-dev.org — not a shape to copy: kept thin on purpose and left out of every-demo feature rollouts; empty public home, sign-in at `/hilos` with registration closed, admin Analytics and the email delivery journal, `/media/` from the installation data |
 
 The frontend specifics are split per view framework:
 [frontend-vue.md](frontend-vue.md) · [frontend-react.md](frontend-react.md) ·
@@ -302,6 +302,8 @@ registry of taken host ports:
 | concert-tickets local | 33083 | 8270/8271/8272 | 8280 | https 8276 | 5184 | 10.209 |
 | concert-tickets test | 33084 | 8273/8274/8275 | — | http 8277 / https 8278 | — | 10.219 |
 | concert-tickets cluster | — | — | — | — | — | 10.229 |
+| hilos-website local | 33085 | 8290/8291/8292 | 8300 | https 8296 | 5185 | 10.200 |
+| hilos-website test | 33086 | 8293/8294/8295 | — | — | — | 10.210 |
 | retired five-node stand — 10.185 stays unassigned (HIL-1218) | — | — | — | — | — | 10.185 |
 
 Every number comes from the stack's own compose file — the `${…:-N}` defaults
@@ -317,9 +319,9 @@ A demo from binance-btc-tracker on takes a block of twenty host ports in the
 block: +0/+1/+2 the local daemon status/comm/ws, +3/+4/+5 the test daemon, +6
 the local nginx https, +7/+8 the test nginx http/https, +10 the local Mailpit;
 +9 and +11…+19 are kept for the demo's later stacks. mysql and FE dev keep
-their own rows. Six blocks, 8170–8289, mysql 33073–33084 and FE dev 5179–5184,
-are reserved by the rows above; the next project takes 8290–8309, 33085/33086
-and 5185. A block, because the rows of the first three demos have no room
+their own rows. Seven blocks, 8170–8309, mysql 33073–33086 and FE dev 5179–5185,
+are reserved by the rows above; the next project takes 8310–8329, 33087/33088
+and 5186. A block, because the rows of the first three demos have no room
 left: the next test http port would be 8089, and 8090 is already the chat
 daemon; and the `443+n` scheme for local https is dead on Windows, where SMB
 holds 445 — which is why polls sits on 8445.
@@ -336,10 +338,12 @@ demo takes one column across three rows — `10.20x` local+dev, `10.21x`
 test, `10.22x` the cluster stand — and the column is the demo: 1
 binance-btc-tracker, 2 ecommerce-shop, 3 online-testing, 4 pmd, 5
 roblox-game-server, 6 solar-system-model, 7 file-gallery-manager, 8 preferans,
-9 concert-tickets. Columns 1–9 are taken (twelve ordinary demos are approved);
-the tenth project needs a new rule for the rows. Column 10 (`10.210` /
-`10.220` / `10.230`) is not promised: it breaks the `10.20x` / `10.21x` /
-`10.22x` notation. A stand instance moves its test network off its default
+9 concert-tickets, and column 0 is hilos-website: `10.200` local, `10.210`
+test, and no cluster stand, so `10.220` stays free. Columns 0–9 are taken
+(twelve ordinary demos are approved); the next project still needs a new rule
+for the rows. Column 10 (`10.210` / `10.220` / `10.230`) is not promised: it
+breaks the `10.20x` / `10.21x` / `10.22x` notation, and its `10.210` is
+column 0's test row. A stand instance moves its test network off its default
 onto the octet of its own block
 ([Stand instances](../agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)).
 Production installations sit outside these rows, in `10.240.0.0/16` (see

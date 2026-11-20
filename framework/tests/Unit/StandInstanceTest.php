@@ -31,7 +31,7 @@ final class StandInstanceTest extends TestCase
                 $defaults[] = $octet;
             }
         }
-        $this->assertSame(19, count($variables));
+        $this->assertSame(20, count($variables));
         $this->assertSame($variables, array_values(array_unique($variables)));
         $this->assertSame($defaults, array_values(array_unique($defaults)));
 
@@ -106,6 +106,14 @@ final class StandInstanceTest extends TestCase
         $instance9 = standInstanceEnvironment(9);
         $this->assertSame('27', $instance9['HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER']);
         $this->assertSame('29', $instance9['HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER']);
+    }
+
+    /** The test stack of the official site opens the fourth block alone: octets 174 to 182. */
+    public function testTheSiteTakesTheFourthBlock(): void
+    {
+        $this->assertSame('174', standInstanceEnvironment(1)['HILOS_STAND_NET_HILOS_WEBSITE']);
+        $this->assertSame('175', standInstanceEnvironment(2)['HILOS_STAND_NET_HILOS_WEBSITE']);
+        $this->assertSame('182', standInstanceEnvironment(9)['HILOS_STAND_NET_HILOS_WEBSITE']);
     }
 
     /**

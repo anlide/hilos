@@ -387,6 +387,115 @@ a stand that wants to read its SMS configures a gateway endpoint. The `.eml` of
 the paragraph above is not an exception to this: mail is the one channel that
 writes what it sends, and only where an installation asked it to.
 
+## A Project Without Registration
+
+A project whose accounts are only ever handed out declares that it registers
+nobody, in its method directory, beside the methods those accounts sign in with
+(HIL-2185):
+
+```php
+final class SiteAuthMethodDirectory extends AuthMethodDirectory
+{
+    protected static function methods(): array
+    {
+        return [...parent::methods(), AuthMethodKey::PASSWORD];
+    }
+
+    protected static function registers(): bool
+    {
+        return false;
+    }
+}
+```
+
+`AuthMethodDirectory::opensRegistration()` is how the framework reads that
+answer. The default is `true`, and no setting changes it: an administrator
+switches methods off, not registration.
+
+**What it closes: every road of registration, in four places.**
+
+- The identifier lookup (`IdentifierDetector`) answers a free address or number
+  with nothing to register with and the block `closed` — "No account for this,
+  and registration is closed." — whether or not mail works. The surface already
+  draws that answer and offers no create button; the wire is the one a project
+  that enabled no way to register already had.
+- The lock in front of the users library (`AuthMethodGate::assertActionOpen()`)
+  refuses seven actions with the ordinary action error `Registration is closed`
+  (`AuthMessages::REGISTRATION_CLOSED`), before anything is written — no address
+  is held and no code is sent: `hilos_register`,
+  `hilos_request_register_confirm`, `hilos_confirm_register`,
+  `hilos_complete_registration`, `hilos_complete_registration_passwordless`,
+  `hilos_registration_passkey_options`, `hilos_complete_registration_passkey`.
+  They are refused even when the project never wired their method: an unwired
+  action is left to answer as it did only by the administrator's lock, and a
+  registration answering as it did would open an account in a project that
+  declared it opens none.
+- The hold of a free identifier (`RegistrationReservationService::hold()`)
+  refuses with the same `Registration is closed`, before the hold is written
+  and before a code or a link is issued. This is what closes the magic link
+  (`hilos_request_magic_link`) and the phone code (`hilos_request_phone_code`):
+  one letter of theirs both signs a member in and registers a free address or
+  number, so their actions stay off the list above, and the refusal falls on
+  the registration half alone — a member is still sent a link or a code. Every
+  road reaches it wired or not; only free identifiers are ever held, so nothing
+  that serves an existing account passes through it. A magic link hears the
+  ordinary action error; a phone code's hold is made after the action was
+  answered, so its send ends as failed with no code issued.
+- The two endings that mint an account refuse with the same `Registration is
+  closed`, before they read or write anything. The landing every proof ends in
+  (`AbstractLibraryCommands::landRegistration()`) is the backstop for a proof
+  standing on a hold made before the project closed registration. The ending
+  without a hold (`AbstractLibraryCommands::landAccountWithoutHold()`) is what
+  closes a provider's first sign-in (`hilos_oauth_create_account`): it holds
+  nothing and is on no list of the lock, so a provider the project declared
+  without wiring it — which the start lets pass, below — is refused here. It is
+  reached only by a provider account that belongs to nobody yet, so a member is
+  still signed in. The passkey road without a code ends here too, already
+  refused by the lock.
+
+**What it leaves open.** Signing in to an account that exists, a password reset,
+a password added on the profile (`profile_add_password_request`,
+`profile_add_password_confirm`), and canceling a registration
+(`hilos_cancel_registration`). The first three serve an account that already
+exists; the last only takes back what was begun. Do not add any of them to the
+closed list: none of them opens an account.
+
+**What the start refuses.** An SMS code and a provider sign-in create the
+account of a person they do not find, and neither passes through the seven
+actions. An `AUTH` project that closes registration and wires `sms` or a key of
+its provider directory fails its start with `IncompleteFeatureActivationException`
+(`Hilos::refuseClosedRegistrationWithSelfRegisteringMethods()`): a project
+without registration takes such a method out of its method directory. The start
+is the early word, not the guard: the hold above refuses a free number on the
+phone code's road, and the ending without a hold refuses a provider's first
+sign-in, wired or not. Only wired keys count at the start — a provider left in
+the provider directory and out of the method directory passes it, and its first
+sign-in is refused at the ending.
+
+**How the first person gets in.** Not by registering. `admin:create
+<sessionToken>` makes a browser session an administrator and mints its user
+([cli/commands.md](../cli/commands.md)) past both endings above, so the
+refusals do not reach it; on the profile that person adds a
+password on an address — a code to the address, then the password — and signs
+in with it from then on. That form lives in the profile's sign-in section
+(`AbstractHilosProfileSignInPage`, page `hilos_profile_sign_in`, route
+`/profile/sign-in`, the tab "Ways to sign in"), so a project without
+registration declares it: a page bound to the framework's, its entries in
+`PAGES` and `PAGE_LISTS`, and the route in its frontend, as `demo/hilos-website`
+does with `Pages/Hilos/ProfileSignInPage.php`. The `AUTH` feature requires only
+the profile and its data section, so the start passes without it — and the
+first person then has nowhere to add a password.
+
+`AuthMethodGateTest` pins the seven refusals, an unwired method's among them,
+and the actions left open; `IdentifierDetectorTest` pins the lookup's answer on a
+free address with working mail; `AuthFeatureActivationTest` pins the start
+refused with SMS and with a provider, and passing with a password alone;
+`ClosedRegistrationTest` pins the refusal at the hold, on every road, at the
+landing, and at the ending without a hold. In `demo/hilos-website`,
+`ClosedRegistrationMagicLinkTest` asks an unwired magic link for a free address
+with the current documents accepted — refused, with no hold, no link, no letter
+and no account — and for a member's address, which is still sent its link.
+
 ## A Registration Without a Code: the Passkey Policy
 
 Every registration spends a code before the account exists: the endings of

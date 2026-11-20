@@ -209,6 +209,15 @@ final class AuthMessages
     public const string METHOD_TURNED_OFF = 'This sign-in method is turned off';
 
     /**
+     * Refusal of an action that opens an account in a project that registers nobody (HIL-2185).
+     *
+     * An ordinary action error, for the same reason as {@see METHOD_TURNED_OFF}: the surface of
+     * such a project offers no way to register, so only a submit sent by hand hears this. It is
+     * said before anything is written - no address is held and no code is sent.
+     */
+    public const string REGISTRATION_CLOSED = 'Registration is closed';
+
+    /**
      * Refusal of a password change whose current password is missing or wrong (HIL-1137).
      *
      * Asked BEFORE the password policy, and the order is the security property (HIL-654): the

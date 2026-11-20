@@ -6,6 +6,8 @@ namespace Hilos\Auth\Registration;
 
 use Hilos\Auth\Detection\IdentifierDetection;
 use Hilos\Auth\Detection\IdentifierDetector;
+use Hilos\Auth\Library\Command\AuthMessages;
+use Hilos\Auth\Method\AuthMethodDirectory;
 use Hilos\Auth\Verification\VerificationSendOutcome;
 use Hilos\Auth\Verification\VerificationService;
 use Hilos\Constants\EnvConstants;
@@ -140,11 +142,19 @@ final class RegistrationReservationService
      * the race is settled by whoever finishes the registration first - by saving a
      * password on the address (HIL-825) - not by who submitted or proved it first.
      *
+     * Every caller holds a FREE identifier for a registration it is starting, so a project
+     * that registers nobody ({@see AuthMethodDirectory::opensRegistration()}, HIL-2185) is
+     * refused here, before the hold is written and before any code or link is issued. This
+     * is the one place the roads that register and sign in with one letter - the magic link
+     * and the phone code - can be closed: their actions also sign existing accounts in, so
+     * the lock in front of the library leaves them open.
+     *
      * @param string $type Reserving method (see IdentityType)
      * @param string $sessionToken Session cookie token of the browser leading this registration
      * @param string $identifier Normalized identifier (lowercased email)
      * @param ?array<string, string> $acceptedRevisions Accepted boundary map, or null to retain this browser's live acceptance
      * @return ObjectRegistrationReservation This browser's hold on the identifier
+     * @throws ValidationException When the project registers nobody
      * @throws EmptyValueException When identifier or session token is empty
      * @throws DatabaseException When a reservation query fails
      * @throws LogicException When the reservations object collection is unavailable, or a racing
@@ -162,6 +172,9 @@ final class RegistrationReservationService
         string $identifier,
         ?array $acceptedRevisions = null,
     ): ObjectRegistrationReservation {
+        if (!Hilos::authMethodDirectoryClass()::opensRegistration()) {
+            throw new ValidationException(AuthMessages::REGISTRATION_CLOSED);
+        }
         if ($identifier === '') {
             throw new EmptyValueException('Reservation identifier is required');
         }
@@ -206,7 +219,7 @@ final class RegistrationReservationService
      *   or a racing insert left no hold to answer with
      * @throws EnvException When a reservation or verification env key is missing, outside the
      *   catalog, or of the wrong type
-     * @throws ValidationException When the confirmation code cannot be delivered to the identifier
+     * @throws ValidationException When the project registers nobody, or the confirmation code cannot be delivered to the identifier
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      * @throws DbCollectionNotReadableException When nothing here reads the reservations or verifications collection, or its readiness is on its way
      * @throws SourceChangeSubscriberException When a reservation change subscriber fails

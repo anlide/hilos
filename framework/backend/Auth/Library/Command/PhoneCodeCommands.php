@@ -129,6 +129,10 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      * The code agent has already probed; delivery starts only after this order reaches it,
      * so the order remains probe → mint → send.
      *
+     * A free number in a project that registers nobody (HIL-2185) is refused by the hold
+     * before it is written, and the send ends as failed with no code issued: the action
+     * was answered when the order left, so the refusal has no action error to become.
+     *
      * @param AuthCodeMintSignalData $mint Request whose channel proved reachable
      * @throws InvalidArgumentException When the minted order cannot be named or queued
      * @throws InvalidFormatException When the order carries inconsistent outcomes
@@ -222,7 +226,8 @@ final class PhoneCodeCommands extends AbstractLibraryCommands
      * @param ConfirmPhoneCodeActionDTO $dto Parsed confirm payload (phone, code)
      * @return ?AuthFlowOutcome The rollback to the identifier step, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
-     * @throws ValidationException When the phone, code or theme choice is invalid
+     * @throws ValidationException When the number is free and the project registers nobody, or the phone, code or
+     *     theme choice is invalid
      * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws InvalidFormatException When the proven number is not a valid identifier
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued

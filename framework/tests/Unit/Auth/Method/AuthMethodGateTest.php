@@ -10,6 +10,8 @@ use Hilos\Auth\Method\AuthMethodGate;
 use Hilos\Auth\OAuth\OAuthProviderPreset;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestClosedDirectory;
+use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestClosedHilos;
 use Hilos\Tests\Unit\Auth\Method\Fixtures\AuthMethodTestHilos;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -19,6 +21,9 @@ use PHPUnit\Framework\TestCase;
  *
  * Every row of the lock's map is asked from both sides: open while its method is on,
  * refused with the ordinary action error once it is off.
+ *
+ * A project that registers nobody (HIL-2185) is asked separately: every action that opens an
+ * account is refused, whatever its method, and the ways into an existing account stay open.
  */
 final class AuthMethodGateTest extends TestCase
 {
@@ -72,6 +77,36 @@ final class AuthMethodGateTest extends TestCase
         return [
             [HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM],
             [HilosSignalConstants::HILOS_CONFIRM_REGISTER],
+        ];
+    }
+
+    /**
+     * @return list<array{string}> Every action that opens an account
+     */
+    public static function registrationActions(): array
+    {
+        return [
+            [HilosSignalConstants::HILOS_REGISTER],
+            [HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM],
+            [HilosSignalConstants::HILOS_CONFIRM_REGISTER],
+            [HilosSignalConstants::HILOS_COMPLETE_REGISTRATION],
+            [HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS],
+            [HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS],
+            [HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSKEY],
+        ];
+    }
+
+    /**
+     * @return list<array{string}> Signing in, the three steps of a password reset, and canceling a registration
+     */
+    public static function actionsAClosedRegistrationLeavesOpen(): array
+    {
+        return [
+            [HilosSignalConstants::HILOS_LOGIN],
+            [HilosSignalConstants::HILOS_REQUEST_PASSWORD_RESET],
+            [HilosSignalConstants::HILOS_CONFIRM_PASSWORD_RESET],
+            [HilosSignalConstants::HILOS_COMPLETE_PASSWORD_RESET],
+            [HilosSignalConstants::HILOS_CANCEL_REGISTRATION],
         ];
     }
 
@@ -140,6 +175,45 @@ final class AuthMethodGateTest extends TestCase
         AuthMethodGate::assertActionOpen(HilosSignalConstants::HILOS_CANCEL_REGISTRATION);
 
         $this->addToAssertionCount(2);
+    }
+
+    /**
+     * A project that registers nobody refuses every action that opens an account, with the ordinary action error.
+     */
+    #[DataProvider('registrationActions')]
+    public function testAClosedRegistrationRefusesEveryActionThatOpensAnAccount(string $action): void
+    {
+        AuthMethodTestClosedHilos::mount(null);
+
+        $this->expectExceptionObject(new ValidationException(AuthMessages::REGISTRATION_CLOSED));
+
+        AuthMethodGate::assertActionOpen($action);
+    }
+
+    /**
+     * The refusal does not wait for the method to be wired: a passkey registration is refused in a project with no passkey.
+     */
+    public function testAClosedRegistrationRefusesTheRegistrationOfAMethodItNeverWired(): void
+    {
+        AuthMethodTestClosedHilos::mount(null);
+        self::assertFalse(AuthMethodTestClosedDirectory::has(AuthMethodKey::PASSKEY));
+
+        $this->expectExceptionObject(new ValidationException(AuthMessages::REGISTRATION_CLOSED));
+
+        AuthMethodGate::assertActionOpen(HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSKEY);
+    }
+
+    /**
+     * Signing in, a password reset and canceling a registration open no account, so a closed registration leaves them open.
+     */
+    #[DataProvider('actionsAClosedRegistrationLeavesOpen')]
+    public function testAClosedRegistrationLeavesTheWaysIntoAnExistingAccountOpen(string $action): void
+    {
+        AuthMethodTestClosedHilos::mount(null);
+
+        AuthMethodGate::assertActionOpen($action);
+
+        $this->addToAssertionCount(1);
     }
 
     /**

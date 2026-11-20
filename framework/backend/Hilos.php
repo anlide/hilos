@@ -6,8 +6,11 @@ namespace Hilos;
 
 use Hilos\Auth\AccessLog\AccessLogPolicy;
 use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
+use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\CodeChannel\CodeChannelRegistry;
+use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Auth\Method\AuthMethodDirectory;
+use Hilos\Auth\Method\AuthMethodGate;
 use Hilos\Auth\OAuth\OAuthProviderDirectory;
 use Hilos\Auth\StepUp\StepUpOperationDirectory;
 use Hilos\Cluster\ClusterContext;
@@ -1331,6 +1334,7 @@ abstract class Hilos implements TruthSourceOwner
         static::refuseAccessLogWithoutSessionAddress();
         static::refuseAnalyticsWithoutPrivacyDeclaration();
         static::refuseAnalyticsWithoutJournalDirectory();
+        static::refuseClosedRegistrationWithSelfRegisteringMethods();
         static::refuseMisdeclaredDirectories();
 
         SourceChangeBus::reset();
@@ -1620,6 +1624,45 @@ abstract class Hilos implements TruthSourceOwner
         throw IncompleteFeatureActivationException::forErrors(
             static::class,
             ['HilosFeature::ANALYTICS keeps the node journal in the analytics_journal directory, but the FS context registers none'],
+        );
+    }
+
+    /**
+     * Refuses an AUTH project that closes registration and wires a method whose sign-in opens an account (HIL-2185).
+     *
+     * An SMS code and a provider sign-in create the account of a person they do not find, and
+     * neither passes through an action that opens an account, so the lock that closes those
+     * ({@see AuthMethodGate}) never sees them. A project that declares it registers nobody
+     * ({@see AuthMethodDirectory::opensRegistration()}) and wires one of them contradicts itself.
+     * The stranger's account is refused further in all the same - a free number at its hold, a
+     * provider's first sign-in where its account is minted without one
+     * ({@see AbstractLibraryCommands::landAccountWithoutHold()}) - so this is the early word: the
+     * project hears of it at start rather than from a stranger's refused sign-in.
+     *
+     * @throws IncompleteFeatureActivationException When registration is closed and the method directory wires SMS or a provider
+     */
+    protected static function refuseClosedRegistrationWithSelfRegisteringMethods(): void
+    {
+        if (!in_array(HilosFeature::AUTH, static::FEATURES, true)
+            || static::authMethodDirectoryClass()::opensRegistration()
+        ) {
+            return;
+        }
+
+        $selfRegistering = array_intersect(
+            static::authMethodDirectoryClass()::keys(),
+            [AuthMethodKey::SMS, ...array_keys(static::oauthProviderDirectoryClass()::all())],
+        );
+        if ($selfRegistering === []) {
+            return;
+        }
+
+        throw IncompleteFeatureActivationException::forErrors(
+            static::class,
+            [
+                'Registration is closed, but the method directory wires ' . implode(', ', $selfRegistering)
+                    . ', whose sign-in opens an account by itself',
+            ],
         );
     }
 

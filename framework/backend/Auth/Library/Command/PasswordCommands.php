@@ -472,7 +472,7 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @throws ValueTooShortException When the password is too short
      * @throws FsException When the framework password list cannot be read
      * @throws EmptyValueException When the display name the new account is created with is empty
-     * @throws ValidationException When the theme choice is outside the theme catalog
+     * @throws ValidationException When the project registers nobody, or the theme choice is outside the theme catalog
      * @throws InvalidFormatException When the proved address is not a valid identifier
      * @throws InvalidArgumentException When the landing frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails
@@ -554,7 +554,7 @@ final class PasswordCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome Where the surface goes next, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws EmptyValueException When the display name the new account is created with is empty
-     * @throws ValidationException When the theme choice is outside the theme catalog
+     * @throws ValidationException When the project registers nobody, or the theme choice is outside the theme catalog
      * @throws InvalidFormatException When the proved address is not a valid identifier
      * @throws InvalidArgumentException When the landing frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails

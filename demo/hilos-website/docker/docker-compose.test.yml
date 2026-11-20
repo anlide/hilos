@@ -1,0 +1,226 @@
+# Docker Compose configuration for the PHP tests (unit and integration) and the
+# frontend check. Isolated from the local stack (different ports, volumes, network).
+#
+# The site has no e2e: the stack carries what the PHP and check steps need and
+# nothing else - the database, the daemon, a cli service and the frontend
+# toolchain. No nginx, no Playwright runner and no mail interceptor stand here;
+# the daemon writes its letters to files under the stand's own data root instead
+# of mailing them.
+
+name: hilos-hilos-website-test${HILOS_STAND_SUFFIX:-}
+
+services:
+  hilos-website-mysql-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620
+    container_name: hilos-website-mysql-test${HILOS_STAND_SUFFIX:-}
+    # How the runner's artifact collector finds this container: the demos spell
+    # their database service differently, so it is asked for by role rather than
+    # guessed at by name (HIL-841).
+    labels:
+      hilos.role: database
+    ports:
+      # Host-side of every publish binds to loopback by default; set
+      # HILOS_BIND_HOST in docker/.env to expose this stack to a LAN/tailnet.
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${MYSQL_TEST_HOST_PORT:-33086}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-hilos_root_pass}
+      MYSQL_DATABASE: ${MYSQL_TEST_DATABASE:-hilos-demo-hilos-website-test}
+      MYSQL_USER: ${MYSQL_USER:-hilos}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hilos_pass}
+      TZ: UTC
+    # The test database lives in memory and goes with its container (HIL-1327).
+    tmpfs:
+      - /var/lib/mysql
+    volumes:
+      - ../../../framework/docker/mysql/test-stand.cnf:/etc/mysql/conf.d/zz-hilos-test-stand.cnf:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    # --connect alone: it waits for the TCP listener the init-time server never opens and
+    # does not test the login, so neither the image's random healthcheck password (misread
+    # when it starts and ends with a double quote) nor the age of the data directory can
+    # keep this service unhealthy.
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - hilos-hilos-website-test-network
+
+  hilos-website-daemon-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
+    env_file:
+      - path: ../tests/.env
+        required: false
+    container_name: hilos-website-daemon-test${HILOS_STAND_SUFFIX:-}
+    # Found by role for the same reason the database is (HIL-841): the collector runs
+    # this demo's own db:migration:status inside a container that is ALREADY up, never
+    # starting one, because a stand it raised is no longer the stand that failed.
+    labels:
+      hilos.role: app
+    volumes:
+      - ..:/app
+      # The stand's own data root: exports, the analytics journal and letters never share the local installation's data/ (docs/agents/testing.md).
+      - ../data/test:/app/data
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs-test:/var/log/hilos
+    working_dir: /app
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    environment:
+      - HILOS_TEST_OWNER_ROOT=/app
+      - HILOS_TEST_WRITE_DIRS=/app/data /var/log/hilos /app/vendor /app/tests/.phpunit.cache /app/data/data_export /app/data/mail
+      - HOME=/tmp
+      - APP_ENV=test
+      # The nightly rotation carries daemon.log away under a run; a test that needs a rotation calls it itself.
+      - LOG_ROTATION_CRON=0 3 29 2 *
+      - DB_HOST=hilos-website-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-hilos-website-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+      - HTTP_STATUS_HOST=0.0.0.0
+      - HTTP_STATUS_PORT=8090
+      - WORKER_COMM_HOST=0.0.0.0
+      - WORKER_COMM_PORT=8091
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT=8092
+      # The CLI command channel, the socket admin:create / admin:grant /
+      # admin:revoke speak. Reached from inside the stack only - the cli
+      # container, or `docker exec` into this one - so no host port is published.
+      - COMMAND_HOST=0.0.0.0
+      - COMMAND_PORT=8094
+      # The daemon addresses itself, so an operator command run with `docker exec`
+      # in this container (admin:create / admin:grant / admin:revoke) reaches the
+      # command channel over loopback.
+      - HILOS_DAEMON_HOST=127.0.0.1
+      - CLUSTER_NODE_NAME=Main node
+      # Mail: no relay stands here, so the transport is declared as the file one rather
+      # than left to auto-selection - the declared test mode writes each letter, the code
+      # of a password reset included, as an .eml into the stand's own data root, where a
+      # person can read it. A sender identity is mandatory: without it a message cannot
+      # be encoded at all.
+      - MAIL_TRANSPORT=file
+      - MAIL_FILE_DIR=/app/data/mail
+      - MAIL_FROM_ADDRESS=notifications@hilos-website.test
+      - MAIL_FROM_NAME=Hilos
+    command: ["php", "backend/Bootstrap/docker.php"]
+    depends_on:
+      hilos-website-mysql-test:
+        condition: service_healthy
+    # Published for a manual look only; a stand instance clears these ports.
+    ports:
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${HTTP_TEST_PORT:-8293}:8090"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WORKER_TEST_PORT:-8294}:8091"
+      - "${HILOS_BIND_HOST:-127.0.0.1}:${WEBSOCKET_TEST_PORT:-8295}:8092"
+    networks:
+      - hilos-hilos-website-test-network
+
+  hilos-website-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    build:
+      context: .
+      additional_contexts:
+        hilos-event: ../../../framework/docker/native/event
+    env_file:
+      - path: ../tests/.env
+        required: false
+    container_name: hilos-website-cli-test${HILOS_STAND_SUFFIX:-}
+    volumes:
+      - ..:/app
+      # The stand's own data root: exports, the analytics journal and letters never share the local installation's data/ (docs/agents/testing.md).
+      - ../data/test:/app/data
+      - ../../../composer.json:/hilos/composer.json:ro
+      - ../../../composer.lock:/hilos/composer.lock:ro
+      - ../../../framework:/hilos/framework:ro
+      - ../data/logs-test:/var/log/hilos
+    working_dir: /app
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: ["php", "backend/Bootstrap/docker.php"]
+    environment:
+      - HILOS_TEST_OWNER_ROOT=/app
+      - HILOS_TEST_WRITE_DIRS=/app/data /var/log/hilos /app/vendor /app/tests/.phpunit.cache /app/data/data_export /app/data/mail
+      - HOME=/tmp
+      - APP_ENV=test
+      # Where the daemon answers, so a command that writes state the daemon owns can ask
+      # whether one is running before it starts (HIL-728). The check is fail-closed: without
+      # this pair the CLI refuses such a command rather than risk a second writer, so
+      # test:db-prepare needs it even though it runs before the daemon exists.
+      - HILOS_DAEMON_HOST=hilos-website-daemon-test
+      - COMMAND_HOST=127.0.0.1
+      - COMMAND_PORT=8094
+      - DB_HOST=hilos-website-mysql-test
+      - DB_PORT=3306
+      - DB_DATABASE=${MYSQL_TEST_DATABASE:-hilos-demo-hilos-website-test}
+      - DB_USERNAME=${MYSQL_USER:-hilos}
+      - DB_PASSWORD=${MYSQL_PASSWORD:-hilos_pass}
+    profiles:
+      - cli
+    depends_on:
+      hilos-website-mysql-test:
+        condition: service_healthy
+    networks:
+      - hilos-hilos-website-test-network
+
+  # On-demand Node toolchain for the hilos-website frontend (npm install /
+  # build / check). Mounts the whole repo at /hilos so the @hilos/vue `file:`
+  # dependency into framework/frontend resolves. Used by `composer run
+  # test:check`; no nginx stands here, so nothing serves the dist a build in
+  # this container writes.
+  hilos-website-frontend-cli-test:
+    cpu_shares: ${HILOS_STAND_CPU_SHARES:-0}
+    image: node:26.13.0-bookworm-slim@sha256:bc0a2afd3b74ce12222fc8bab99271e66257f021078f5f4a5d687a77d280c1d9
+    container_name: hilos-website-frontend-cli-test${HILOS_STAND_SUFFIX:-}
+    volumes:
+      - ../../..:/hilos
+    working_dir: /hilos/demo/hilos-website/frontend
+    entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
+    command: ["node"]
+    environment:
+      HILOS_TEST_OWNER_ROOT: /hilos
+      HILOS_TEST_WRITE_DIRS: >-
+        /hilos/demo/hilos-website/frontend/node_modules /hilos/demo/hilos-website/frontend/dist
+        /hilos/demo/hilos-website/frontend/dist-prerender /hilos/demo/hilos-website/frontend/.vite
+        /hilos/demo/hilos-website/frontend/src/generated /hilos/framework/frontend/node_modules
+        /hilos/framework/frontend/.vite /hilos/framework/frontend/.angular
+        /hilos/framework/frontend/dist-pack /hilos/framework/frontend/core/node_modules
+        /hilos/framework/frontend/core/dist /hilos/framework/frontend/core/.vite
+        /hilos/framework/frontend/core/.angular /hilos/framework/frontend/vue/node_modules
+        /hilos/framework/frontend/vue/dist /hilos/framework/frontend/vue/.vite
+        /hilos/framework/frontend/vue/.angular /hilos/framework/frontend/react/node_modules
+        /hilos/framework/frontend/react/dist /hilos/framework/frontend/react/.vite
+        /hilos/framework/frontend/react/.angular /hilos/framework/frontend/angular/node_modules
+        /hilos/framework/frontend/angular/dist /hilos/framework/frontend/angular/.vite
+        /hilos/framework/frontend/angular/.angular /hilos/framework/frontend/prerender/node_modules
+        /hilos/framework/frontend/prerender/dist /hilos/framework/frontend/prerender/.vite
+        /hilos/framework/frontend/prerender/.angular
+      HOME: /tmp
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      NODE_OPTIONS: "--no-experimental-webstorage"
+    profiles:
+      - cli
+    # The stand's claimed network: without one, compose makes a <project>_default
+    # from Docker's default pools on every run, and the stands exhaust them.
+    networks:
+      - hilos-hilos-website-test-network
+
+networks:
+  hilos-hilos-website-test-network:
+    driver: bridge
+    ipam:
+      config:
+        # Deliberately outside 172.16.0.0/12 and 192.168.0.0/16 - Docker's default
+        # address pools. The cli reaches the daemon over this network, so the subnet
+        # is claimed rather than assigned: inside a default pool that claim loses a
+        # race, and the stand fails to start with "Pool overlaps with other one on this
+        # address space". 10.0.0.0/8 is never auto-assigned; this site takes 10.210
+        # for its test stack and has no cluster stand (docs/new-project/README.md).
+        - subnet: ${DOCKER_TEST_NETWORK_SUBNET:-10.${HILOS_STAND_NET_HILOS_WEBSITE:-210}.0.0/16}

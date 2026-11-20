@@ -6,8 +6,10 @@ namespace Hilos\Auth\Method;
 
 use Hilos\Auth\AuthMethodKey;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Library\Command\AbstractLibraryCommands;
 use Hilos\Auth\Library\Command\AuthMessages;
 use Hilos\Auth\Library\Command\OAuthCommands;
+use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Database\DatabaseException;
@@ -38,9 +40,34 @@ use Hilos\Pages\AbstractHilosProfileSignInPage;
  * methods the project wired is left to answer as it did before the set existed - a project
  * that never declared a directory ({@see AuthMethodDirectory}) has nothing to switch, and a
  * provider it never declared is refused by its command as unknown, not as turned off.
+ *
+ * One more lock stands in front of it, and it is the project's, not an administrator's: a
+ * project that registers nobody ({@see AuthMethodDirectory::opensRegistration()}, HIL-2185)
+ * has every action that only opens an account refused, before anything is written and whether
+ * or not it wired the action's method - leaving an unwired registration to answer as it did
+ * would open an account in a project that declared it opens none. Signing in, a password reset
+ * and canceling a registration stay open: the first two serve an account that exists, the last
+ * only closes what was begun.
+ *
+ * The magic link and the phone code are not on that list, because one letter of theirs both
+ * signs a member in and registers a free address or number. Their registration is refused
+ * further in, where the free identifier would be held
+ * ({@see RegistrationReservationService::hold()}), and again where an account would be minted
+ * ({@see AbstractLibraryCommands::landRegistration()}).
  */
 final class AuthMethodGate
 {
+    /** The actions that open an account, all refused while the project registers nobody. */
+    private const array REGISTRATION_ACTIONS = [
+        HilosSignalConstants::HILOS_REGISTER,
+        HilosSignalConstants::HILOS_REQUEST_REGISTER_CONFIRM,
+        HilosSignalConstants::HILOS_CONFIRM_REGISTER,
+        HilosSignalConstants::HILOS_COMPLETE_REGISTRATION,
+        HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSWORDLESS,
+        HilosSignalConstants::HILOS_REGISTRATION_PASSKEY_OPTIONS,
+        HilosSignalConstants::HILOS_COMPLETE_REGISTRATION_PASSKEY,
+    ];
+
     /** Each gated action and the methods any of which keeps it open. */
     private const array ACTION_METHODS = [
         HilosSignalConstants::HILOS_LOGIN => [AuthMethodKey::PASSWORD],
@@ -66,19 +93,25 @@ final class AuthMethodGate
     ];
 
     /**
-     * Refuses a sign-in action whose every wired method is switched off.
+     * Refuses a registration in a project that registers nobody, and a sign-in action whose every wired method is switched off.
      *
-     * An action the map does not name passes: it is either in no method or a provider
-     * login, which its command checks by provider. So does an action none of whose methods
-     * the project wired.
+     * A registration is asked first, and by the project's word alone: closed registration
+     * refuses it even when the project never wired its method. Otherwise an action the map
+     * does not name passes: it is either in no method or a provider login, which its command
+     * checks by provider. So does an action none of whose methods the project wired.
      *
      * @param string $action Action name a sign-in surface submitted (see {@see AbstractUsersLibraryAgent})
-     * @throws ValidationException When every method that opens the action is switched off
+     * @throws ValidationException When the action opens an account and the project registers nobody,
+     *     or every method that opens the action is switched off
      * @throws DatabaseException When the stored method setting cannot be read
      * @throws SettingException When the method setting's catalog entry or stored value is invalid
      */
     public static function assertActionOpen(string $action): void
     {
+        if (in_array($action, self::REGISTRATION_ACTIONS, true) && !Hilos::authMethodDirectoryClass()::opensRegistration()) {
+            throw new ValidationException(AuthMessages::REGISTRATION_CLOSED);
+        }
+
         $methods = self::ACTION_METHODS[$action] ?? null;
         if ($methods === null) {
             return;

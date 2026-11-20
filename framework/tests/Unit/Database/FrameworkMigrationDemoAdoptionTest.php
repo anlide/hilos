@@ -81,6 +81,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
             'Demo\\SolarSystemModel\\Hilos',
             'Demo\\RobloxGameServer\\Hilos',
             'Demo\\FileGalleryManager\\Hilos',
+            'Demo\\HilosWebsite\\Hilos',
         ], array_column($projects, 'facade'));
         $indices = [97, 53, 53, 43, 42, 42];
         $browserTimeZoneIndices = [99, 59, 59, 45, 45, 45];
@@ -1015,7 +1016,7 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         }
         $this->assertLaterSecondFactorMomentTracks($projects, $catalog, $schema);
         $plans = new FrameworkMigrationInstaller()->plan(...$projects);
-        self::assertSame([[], [], [], [], [], [], [], [], [], [], [], []], array_column($plans, 'publications'));
+        self::assertSame([[], [], [], [], [], [], [], [], [], [], [], [], []], array_column($plans, 'publications'));
     }
 
     public function testEveryAuthDemoCarriesTheNewCopyInstallWithoutRewritingItsHistory(): void
@@ -1023,10 +1024,11 @@ final class FrameworkMigrationDemoAdoptionTest extends TestCase
         $schema = new FrameworkSchemaCatalog();
         $catalog = new FrameworkMigrationCatalog($schema);
         $projects = FrameworkMigrationProjectRegistry::load(dirname(__DIR__, 4) . '/framework-projects.json');
+        // The projects registered before the copy install shipped; a later one is born with it in its baseline.
         $numbers = [173, 130, 130, 111, 111, 113, 26, 28, 16, 19, 16, 14];
-        foreach ($projects as $index => $project) {
-            $this->copyInstallPair($project->root, $numbers[$index], $catalog, $schema);
-            $this->fenceInstallPair($project->root, $numbers[$index] + 1, $catalog, $schema);
+        foreach ($numbers as $index => $number) {
+            $this->copyInstallPair($projects[$index]->root, $number, $catalog, $schema);
+            $this->fenceInstallPair($projects[$index]->root, $number + 1, $catalog, $schema);
         }
     }
 

@@ -52,6 +52,8 @@ final class AccountOperationStorageIntegrationTest extends FrameworkIntegrationT
     private const string FOREIGN_ID = 'erasure-storage-participant';
     private const string STUB_PATH = __DIR__ . '/../../backend/Database/Migration/Stub/';
     private const int PEER_INDEX = 1;
+    /** Projects whose baseline was taken after the loser index change, so no generated upgrade of theirs adds it */
+    private const array BORN_WITH_LOSER_INDEX = ['Demo\\HilosWebsite\\Hilos'];
 
     private ?HilosDbContext $previousDb;
     private int $frameToken;
@@ -823,11 +825,23 @@ final class AccountOperationStorageIntegrationTest extends FrameworkIntegrationT
         self::assertSame($first->id, Hilos::$db->accountOperations->latestMergeNaming(7)->id);
     }
 
-    /** @return iterable<string, array{string}> Every source target declared by the repository */
+    /** @return iterable<string, array{string}> Every source target declared by the repository with a historical track */
     public static function migrationProjects(): iterable
     {
         foreach (FrameworkMigrationProjectRegistry::load(dirname(__DIR__, 3) . '/framework-projects.json') as $project) {
-            yield $project->facade => [$project->root];
+            if (!in_array($project->facade, self::BORN_WITH_LOSER_INDEX, true)) {
+                yield $project->facade => [$project->root];
+            }
+        }
+    }
+
+    /** @return iterable<string, array{string}> Every declared source target whose baseline was taken after the loser index */
+    public static function bornWithLoserIndexProjects(): iterable
+    {
+        foreach (FrameworkMigrationProjectRegistry::load(dirname(__DIR__, 3) . '/framework-projects.json') as $project) {
+            if (in_array($project->facade, self::BORN_WITH_LOSER_INDEX, true)) {
+                yield $project->facade => [$project->root];
+            }
         }
     }
 
@@ -854,13 +868,7 @@ final class AccountOperationStorageIntegrationTest extends FrameworkIntegrationT
                 $matches[] = [$up, $down, $origin];
                 continue;
             }
-            // A composite baseline also carries unrelated tables; this fixture installs only the operation unit.
-            foreach (MigrationSqlReader::statements($up) as $statement) {
-                if (preg_match('/^(?:CREATE TABLE(?: IF NOT EXISTS)?|ALTER TABLE|DROP TABLE(?: IF EXISTS)?) '
-                    . '`hilos_account_(?:erasure_)?operation`/', $statement) === 1) {
-                    Database::sqlRun($statement);
-                }
-            }
+            $this->runOperationStatements($up);
         }
         self::assertCount(1, $matches);
         [$up, $down, $origin] = $matches[0];
@@ -887,6 +895,44 @@ final class AccountOperationStorageIntegrationTest extends FrameworkIntegrationT
         Database::sqlRun($down);
         self::assertSame($before, $this->operationIndexes());
         self::assertSame($saved, Database::sql('SELECT * FROM `hilos_account_operation` ORDER BY `id`')->rows());
+    }
+
+    /** @param string $root Track born on today's schema: its one baseline already covers the loser index change */
+    #[DataProvider('bornWithLoserIndexProjects')]
+    public function testBaselineTakenAfterTheChangeCarriesTheLoserIndexAndDownDropsItWithTheTable(string $root): void
+    {
+        $this->stubs(down: true);
+        $catalog = new FrameworkMigrationCatalog(new FrameworkSchemaCatalog());
+        $catalog->verifyCurrentStubs(['account_erasure_operation', 'account_erasure_assignment', 'account_erasure_result']);
+        $pairs = [];
+        foreach (glob($root . '/*_framework_*.sql') as $path) {
+            if (str_ends_with($path, '_down.sql')) {
+                continue;
+            }
+            $up = file_get_contents($path);
+            $down = file_get_contents(substr($path, 0, -4) . '_down.sql');
+            $origin = $catalog->verifyPair($up, $down);
+            if (in_array('account_erasure_operation', $origin->units, true)) {
+                $pairs[basename($path)] = [$up, $down, $origin];
+            }
+        }
+        self::assertSame(['001_framework_baseline.sql'], array_keys($pairs));
+        [$up, $down, $origin] = $pairs['001_framework_baseline.sql'];
+        self::assertSame(FrameworkMigrationOrigin::BASELINE, $origin->kind);
+        $change = $catalog->part('20261118115802572623_HIL-2003_merge_observation_index', 'account_erasure_operation');
+        $digests = [];
+        foreach ($origin->parts as $part) {
+            $digests[$part->key()] = [$part->upSha256, $part->downSha256];
+        }
+        self::assertArrayHasKey($change->key(), $digests);
+        self::assertSame([$change->upSha256, $change->downSha256], $digests[$change->key()]);
+        self::assertSame([], $this->operationIndexes());
+        $this->runOperationStatements($up);
+        self::assertSame([], EntitySchemaAudit::audit([EntityAccountOperation::class]));
+        $this->assertLoserIndex();
+        $this->runOperationStatements($down);
+        // No index row is left at all, the primary key included: the table went with it.
+        self::assertSame([], $this->operationIndexes());
     }
 
     /** A fresh current stub has the same Entity schema and ascending loser index as the upgrade. */
@@ -1133,6 +1179,21 @@ final class AccountOperationStorageIntegrationTest extends FrameworkIntegrationT
     {
         return Database::sql('SELECT INDEX_NAME, COLUMN_NAME, COLLATION, NON_UNIQUE FROM information_schema.STATISTICS '
             . "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'hilos_account_operation' ORDER BY INDEX_NAME, SEQ_IN_INDEX")->rows();
+    }
+
+    /**
+     * A composite baseline also carries unrelated tables; this fixture installs only the operation unit.
+     *
+     * @param string $sql One direction of a generated pair
+     */
+    private function runOperationStatements(string $sql): void
+    {
+        foreach (MigrationSqlReader::statements($sql) as $statement) {
+            if (preg_match('/^(?:CREATE TABLE(?: IF NOT EXISTS)?|ALTER TABLE|DROP TABLE(?: IF EXISTS)?) '
+                . '`hilos_account_(?:erasure_)?operation`/', $statement) === 1) {
+                Database::sqlRun($statement);
+            }
+        }
     }
 
     /** Both fresh and upgraded schemas expose the same ordered lookup. */

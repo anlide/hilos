@@ -102,8 +102,8 @@ The admin analytics section comes with this same case, with no case of its own;
 see [The Admin Section](#the-admin-section). The section opens in Vue, React and
 Angular.
 The demos with accounts that declare it are chat, binance-btc-tracker, pmd,
-ecommerce-shop, tasks, solar-system-model, online-testing, polls and
-preferans. The owner, 04.10.2026: «Аналитику включить во всех 6 demo» —
+ecommerce-shop, tasks, solar-system-model, online-testing, polls, preferans
+and hilos-website. The owner, 04.10.2026: «Аналитику включить во всех 6 demo» —
 "Turn analytics on in all six demos".
 
 ## The Directory

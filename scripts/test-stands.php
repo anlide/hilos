@@ -123,6 +123,16 @@ return [
         'holdsDatabase' => true,
     ],
     [
+        'id' => 'hilos-website',
+        'cwd' => 'demo/hilos-website',
+        'composeFile' => 'docker/docker-compose.test.yml',
+        'project' => 'hilos-hilos-website-test' . standInstanceSuffix(),
+        'mode' => 'project',
+        'profiles' => [],
+        'networks' => [],
+        'holdsDatabase' => true,
+    ],
+    [
         'id' => 'file-gallery-manager-cluster',
         'cwd' => 'demo/file-gallery-manager',
         'composeFile' => 'docker/docker-compose.cluster.yml',

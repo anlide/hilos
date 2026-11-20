@@ -116,9 +116,12 @@ require_once __DIR__ . '/framework-pieces.php';
  */
 
 /**
- * Demos carrying a tests/e2e suite, with rough per-step durations for the launch order
+ * Demos the full run covers, with rough per-step durations for the launch order
  * (`seconds` above) — not the load that places a new spec. Each is the median of green
  * full runs 2345…2377 on the test box, 2026-11-12 (HIL-2023).
+ *
+ * A demo without an e2e duration has no e2e step (hilos-website: accepted by hand,
+ * HIL-2185); its durations are a rough estimate until runs give a median.
  *
  * A demo with a `build` duration builds its frontend in a step of its own, `<demo>-build`,
  * and its e2e step serves that build instead of making one (`test:e2e-prebuilt`). Only
@@ -138,6 +141,7 @@ $demos = [
     'concert-tickets' => ['check' => 45, 'php' => 25, 'e2e' => 430],
     'solar-system-model' => ['check' => 30, 'php' => 30, 'e2e' => 515],
     'file-gallery-manager' => ['check' => 30, 'php' => 35, 'e2e' => 455],
+    'hilos-website' => ['check' => 30, 'php' => 25],
 ];
 
 $steps = [
@@ -584,6 +588,11 @@ foreach ($demos as $demo => $seconds) {
         'tags' => ['backend', 'demo'],
         'seconds' => $seconds['php'],
     ];
+    // A demo without an e2e duration is accepted by hand: it has neither a build step nor
+    // an e2e step (the head of $demos).
+    if (!isset($seconds['e2e'])) {
+        continue;
+    }
     $ownBuild = isset($seconds['build']);
     if ($ownBuild) {
         // The demo's frontend build, made once for its e2e and its cluster browser; in

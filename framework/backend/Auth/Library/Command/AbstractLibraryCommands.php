@@ -16,6 +16,7 @@ use Hilos\Auth\Flow\AuthFlowIntent;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
+use Hilos\Auth\Method\AuthMethodGate;
 use Hilos\Auth\Registration\RegistrationReservationService;
 use Hilos\Auth\Session\SessionAck;
 use Hilos\Auth\StepUp\StepUpGate;
@@ -488,6 +489,12 @@ abstract class AbstractLibraryCommands
      * the session holder ({@see AbstractUsersLibraryAgent::announceRegistrationLanded()}):
      * the library has no session to raise and no parked socket to reach.
      *
+     * A project that registers nobody (HIL-2185) is refused first, before anything is read
+     * or written. The hold of each road already refuses a free identifier there
+     * ({@see RegistrationReservationService::hold()}); this is the backstop for a proof that
+     * reaches the landing all the same - one standing on a hold made before the project
+     * closed registration.
+     *
      * @param ActingSession $acting Browser the proof arrived on
      * @param string $identifier Normalized identifier the proof just settled (lowercased email or E.164)
      * @param string $displayName Name the new account is created with
@@ -497,7 +504,7 @@ abstract class AbstractLibraryCommands
      * @param ?Closure(int): void $withAccount What else the new account is written with, given its user id, or null for nothing
      * @return ?AuthFlowOutcome Missing-consent or taken-address refusal, or null when the holder answers
      * @throws EmptyValueException When the display name is empty
-     * @throws ValidationException When the theme choice is outside the theme catalog
+     * @throws ValidationException When the project registers nobody, or the theme choice is outside the theme catalog
      * @throws InvalidFormatException When the proven identifier is neither an address nor a number
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails,
@@ -512,6 +519,10 @@ abstract class AbstractLibraryCommands
         ?string $landAs = null,
         ?Closure $withAccount = null,
     ): ?AuthFlowOutcome {
+        if (!Hilos::authMethodDirectoryClass()::opensRegistration()) {
+            throw new ValidationException(AuthMessages::REGISTRATION_CLOSED);
+        }
+
         $acceptance = new RegistrationReservationService()->acceptanceForLanding($acting->sessionToken, $identifier);
         if ($acceptance === null || $acceptance === []) {
             return AuthFlowOutcome::rejectTo(
@@ -575,6 +586,13 @@ abstract class AbstractLibraryCommands
      * The sign-in is a grant rather than a landing: there is no address for the holder to settle
      * and no loser to tell. It carries the same registered mark and done outcome as the landing.
      *
+     * A project that registers nobody (HIL-2185) is refused first, before anything is read or
+     * written, as the landing refuses it. Here it is no backstop: a provider's first sign-in
+     * holds nothing and passes no action the lock refuses, so this is the one place that closes
+     * a provider the project declared without wiring it - the start refuses only a wired one
+     * ({@see Hilos::refuseClosedRegistrationWithSelfRegisteringMethods()}). The passkey road
+     * without a code is refused earlier, by the lock ({@see AuthMethodGate}).
+     *
      * @param ActingSession $acting Browser that asked for the account
      * @param string $identifier Sign-in method identifier, handed to the project's new-member bookkeeping
      * @param string $displayName Name the new account is created with
@@ -582,7 +600,7 @@ abstract class AbstractLibraryCommands
      * @param Closure(int): void $withAccount The way in the new account is written with, given its user id
      * @param array<string, string> $acceptedRevisions Accepted boundary map from the final passkey action
      * @throws EmptyValueException When the display name is empty
-     * @throws ValidationException When the theme choice is outside the theme catalog
+     * @throws ValidationException When the project registers nobody, or the theme choice is outside the theme catalog
      * @throws InvalidArgumentException When the grant frame cannot be named or queued
      * @throws HilosException When the account, project bookkeeping, or reservation write fails, or whatever
      *     `$withAccount` throws
@@ -596,6 +614,10 @@ abstract class AbstractLibraryCommands
         Closure $withAccount,
         array $acceptedRevisions,
     ): void {
+        if (!Hilos::authMethodDirectoryClass()::opensRegistration()) {
+            throw new ValidationException(AuthMessages::REGISTRATION_CLOSED);
+        }
+
         Database::transactionStart();
         try {
             $userId = $this->library->createUser($displayName, $themePick);

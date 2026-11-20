@@ -50,13 +50,16 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * Consent refusals name the registration step before any hold or send is made.
      * The identifier lookup already reveals whether the address is free; the send
      * keeps that boundary and reports real cooldown and cap outcomes on either road.
+     * A free address in a project that registers nobody (HIL-2185) is refused by the
+     * hold with the ordinary action error, before the hold is written or a link issued.
      *
      * @param string $acceptKey Accept key the action arrived on
      * @param RequestMagicLinkActionDTO $dto Parsed request payload (email)
      * @return AuthFlowOutcome Send moments, a cap refusal, or a return to registration consent
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws EmptyValueException When the submitted address is empty
-     * @throws ValidationException When the link cannot be delivered to the address
+     * @throws ValidationException When the address is free and the project registers nobody, or the link cannot be
+     *     delivered to the address
      * @throws InvalidArgumentException When the transport's send signal cannot be named or queued
      * @throws RandomException When the platform CSPRNG cannot produce a token
      * @throws HilosException When identity lookup, the hold, or token issuing fails
@@ -114,7 +117,8 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome The rollback to the address field, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws EmptyValueException When the display name the new account is created with is empty
-     * @throws ValidationException When the theme choice is outside the theme catalog
+     * @throws ValidationException When the address is free and the project registers nobody, or the theme choice is
+     *     outside the theme catalog
      * @throws InvalidFormatException When the proven address is not a valid identifier
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When verification, the account, identity, or reservation write fails
@@ -156,7 +160,8 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome The refusal in place, or null when the session holder answers
      * @throws ItemNotFoundForUpdateException When the acting connection has no session
      * @throws EmptyValueException When the display name the new account is created with is empty
-     * @throws ValidationException When the theme choice is outside the theme catalog
+     * @throws ValidationException When the address is free and the project registers nobody, or the theme choice is
+     *     outside the theme catalog
      * @throws InvalidFormatException When the proven address is not a valid identifier
      * @throws InvalidArgumentException When the hand-off frame cannot be named or queued
      * @throws HilosException When verification, the account, identity, or reservation write fails
@@ -228,7 +233,8 @@ final class MagicLinkCommands extends AbstractLibraryCommands
      * @return ?AuthFlowOutcome The taken-address rollback of a lost landing, or null when the holder or the agent answers
      * @throws EmptyValueException When the display name the new account is created with is empty
      * @throws InvalidFormatException When the proven address is not a valid identifier
-     * @throws ValidationException When the account's person cannot be addressed or the theme choice is invalid
+     * @throws ValidationException When the address is free and the project registers nobody, the account's person
+     *     cannot be addressed, or the theme choice is invalid
      * @throws InvalidArgumentException When the hand-off or the ask frame cannot be named or queued
      * @throws HilosException When the account, identity, project bookkeeping, or reservation write fails
      * @throws JsonException When a saved merge result cannot be decoded

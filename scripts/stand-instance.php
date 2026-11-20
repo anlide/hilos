@@ -53,13 +53,14 @@ const STAND_INSTANCE_MAX = 9;
  *
  * A new set of stands opens its own block, on octets no instance of another block covers and
  * below the smallest default (186), outside the pools docker assigns from. Free are 1-2 and
- * 174-184, and 185 is left. A block takes nine octets per stand in a row, so there is room for
- * exactly one more stand (174-182). Past that, drop the rule that a block stays below 186, or
- * narrow the networks.
+ * 183-184, and 185 is left. A block takes nine octets per stand in a row, so there is no room
+ * for another stand: to add one, drop the rule that a block stays below 186, or narrow the
+ * networks.
  *
  * The second block holds six ordinary demos, whose compose files arrive with their activation
  * leaves. Until then nobody reads their variables. The third block holds three cluster stands,
  * whose compose files arrive with their own leaves, and until then nobody reads theirs either.
+ * The fourth block holds the test stack of the official site, which has no cluster stand.
  */
 const STAND_INSTANCE_BLOCKS = [
     30 => [
@@ -86,6 +87,9 @@ const STAND_INSTANCE_BLOCKS = [
         'HILOS_STAND_NET_ROBLOX_GAME_SERVER_CLUSTER' => 225,
         'HILOS_STAND_NET_FILE_GALLERY_MANAGER_CLUSTER' => 227,
         'HILOS_STAND_NET_CONCERT_TICKETS_CLUSTER' => 229,
+    ],
+    174 => [
+        'HILOS_STAND_NET_HILOS_WEBSITE' => 210,
     ],
 ];
 

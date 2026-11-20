@@ -290,10 +290,15 @@ final class OAuthCommands extends AbstractLibraryCommands
     /**
      * Completes a first provider sign-in only after the current legal revisions are accepted.
      *
+     * A provider account that belongs to no member yet, in a project that registers nobody
+     * (HIL-2185), is refused where its account would be minted
+     * ({@see AbstractLibraryCommands::landAccountWithoutHold()}); a member is still signed in.
+     *
      * @param string $acceptKey Connection submitting consent
      * @param OAuthCreateAccountActionDTO $dto Signed provider proof and accepted revisions
      * @return ?AuthFlowOutcome Refusal, or null when the holder answers the sign-in
-     * @throws ValidationException When the theme choice is outside the theme catalog
+     * @throws ValidationException When the account is new and the project registers nobody, or the theme choice is
+     *     outside the theme catalog
      * @throws HilosException When the identity, account, or acceptance write fails
      * @throws JsonException When a saved merge result cannot be decoded
      */

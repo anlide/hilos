@@ -28,7 +28,9 @@ use PHPUnit\Framework\TestCase;
  * (HIL-1249): the demos are shown with it on, and a production node that starts with it off
  * closes it on that installation for good. So the line is not a preference a stack may drop -
  * the first start without it would take the mode away from the demo forever, and a new demo
- * with a production stack cannot land without saying it.
+ * with a production stack cannot land without saying it. One stack is named apart: the
+ * official site is not a demo shown to visitors, its admin is its owner's alone, and its
+ * production leaves the mode at its default, off (HIL-2185) - held by a test of its own.
  *
  * A production file names no container and keeps no default for its network. Two
  * environments of one demo stand on one host: a container named in the file can
@@ -68,6 +70,12 @@ final class DemoStackComposeGuardTest extends TestCase
 
     /** Path ending of a demo's production compose file. */
     private const string PRODUCTION_COMPOSE = '/docker/docker-compose.prod.yml';
+
+    /**
+     * The production stack that leaves the admin view mode off: the official site, not a demo
+     * shown to visitors, whose admin is its owner's alone (HIL-2185).
+     */
+    private const string VIEW_MODE_OFF_PRODUCTION = 'demo/hilos-website/docker/docker-compose.prod.yml';
 
     /** Network values a production stack takes from the installation, with no default. */
     private const array INSTALLATION_NETWORK_VALUES = ['DOCKER_NETWORK_SUBNET', 'DOCKER_MYSQL_IP', 'DOCKER_DAEMON_IP', 'DOCKER_NGINX_IP'];
@@ -208,7 +216,8 @@ final class DemoStackComposeGuardTest extends TestCase
      *
      * Production, not every stack: the mode is what the demos are shown with, and production is
      * the one place where a start without it is irreversible - a stand decides from the variable
-     * again on every start and has the test lever besides.
+     * again on every start and has the test lever besides. The official site is no demo and is
+     * held to the opposite below.
      *
      * @return void
      */
@@ -217,7 +226,7 @@ final class DemoStackComposeGuardTest extends TestCase
         $daemons = 0;
 
         foreach ($this->composeFiles() as $relativePath => $path) {
-            if (!str_ends_with($relativePath, self::PRODUCTION_COMPOSE)) {
+            if (!str_ends_with($relativePath, self::PRODUCTION_COMPOSE) || $relativePath === self::VIEW_MODE_OFF_PRODUCTION) {
                 continue;
             }
 
@@ -236,6 +245,39 @@ final class DemoStackComposeGuardTest extends TestCase
         }
 
         $this->assertGreaterThan(0, $daemons, 'no production daemon service was found at all - the reader stopped seeing them');
+    }
+
+    /**
+     * The official site's production daemon does not set the admin view mode at all (HIL-2185).
+     *
+     * Not set rather than set to false: the mode is off by default, and the site's admin is its
+     * owner's alone, so the stack has nothing to say about it - a line here could only open it.
+     *
+     * @return void
+     */
+    public function testTheSiteProductionDaemonLeavesTheAdminViewModeOff(): void
+    {
+        $daemons = 0;
+
+        foreach ($this->composeFiles() as $relativePath => $path) {
+            if ($relativePath !== self::VIEW_MODE_OFF_PRODUCTION) {
+                continue;
+            }
+
+            foreach ($this->servicesOf($path) as $service => $lines) {
+                if (!$this->isDaemon($lines)) {
+                    continue;
+                }
+
+                $daemons++;
+                $this->assertNull(
+                    $this->valueOf($lines, self::ADMIN_VIEW_MODE),
+                    "{$relativePath}: the daemon service {$service} sets " . self::ADMIN_VIEW_MODE
+                );
+            }
+        }
+
+        $this->assertGreaterThan(0, $daemons, self::VIEW_MODE_OFF_PRODUCTION . ': no production daemon service was found');
     }
 
     /**
