@@ -658,7 +658,7 @@ polls (Angular) → online-testing (Angular).
 | Step-up, session rotation, passkey | tasks: step-up, session-rotation, passkey | tasks | HIL-1324 |
 | Profile on the server — password, address, other browsers' sessions, the GitHub link | concert-tickets: profile | concert-tickets | HIL-1325, HIL-2021 |
 | Second factor | polls: second-factor | polls | HIL-1325 |
-| Legal | polls: legal-admin, legal-reconsent, legal-terms, legal-consent, legal-agreements | polls | HIL-1325 |
+| Legal | polls: legal-admin, legal-reconsent, legal-terms, legal-consent | polls | HIL-1325 |
 | Data and privacy | polls: data-export, privacy-erase, impersonation-settings | polls | HIL-1325 |
 | Languages and countries — each kit | the 25 i18n-* areas across binance-btc-tracker, file-gallery-manager, polls and preferans; Preferans and File Gallery Manager carry the six transferred lifecycle specs | binance-btc-tracker (Vue), file-gallery-manager (React), polls and preferans (Angular) | HIL-1504 |
 
