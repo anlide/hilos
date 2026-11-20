@@ -930,8 +930,12 @@ a pointed re-run; follow [Re-running tests and state between runs](../testing.md
 Within a suite, tests share the database and daemon. There is no full reset
 before every test and no per-test transaction rollback around the live daemon.
 Each test owns its created preconditions and their cleanup, and must work
-without a neighboring test having passed. Use the fixture operations below;
-neither an implicit global reset nor direct SQL substitutes for that ownership.
+without a neighboring test having passed. People are the one exception: the
+people a scenario makes, what it does around them and the admin rights it
+grants live until the clean cycle — see
+[People and administrators as preconditions](#people-and-administrators-as-preconditions).
+Use the fixture operations below; neither an implicit global reset nor direct
+SQL substitutes for that ownership.
 
 ## Selectors — stable action hooks and semantic headings
 
@@ -1095,7 +1099,10 @@ test-scoped fixture or `finally`, so setup failures, failed assertions and test
 timeouts still run teardown. Await it: remove dependents before roots, attempt
 every registered cleanup, and report cleanup errors without losing the original
 failure. Do not delete foreign, built-in or default data. Restore borrowed state
-to what the test found instead of clearing its row.
+to what the test found instead of clearing its row. A person the scenario makes
+is not such a resource;
+[People and administrators as preconditions](#people-and-administrators-as-preconditions)
+declares how long it lives.
 
 `framework/frontend/scripts/i18nFixtures.mjs` is the existing example over
 `i18n.mjs`: `createI18nFixtureScope` registers cleanup after successful command
@@ -1212,14 +1219,35 @@ When the scenario needs a verified account, use
 `createTestUser(expect, page, options)`; for a verified administrator use
 `createTestAdmin(expect, page, options)`. All three are exported from
 `framework/frontend/e2e/index.ts`. The account helpers use the existing
-`testUser.mjs` create/bind operations; preserve their declared account/session
-lifetime and do not infer a global session or `storageState` policy from them.
+`testUser.mjs` create/bind operations; do not infer a global session or
+`storageState` policy from them.
 
 Keep UI sign-up when registration, consent or identity creation is the subject,
 including an event whose production depends on that real registration. Likewise,
 do not replace a sign-in or session transition the scenario is proving with a
 command bind. Independent people and independent sessions keep their own browser
 contexts; a fixture must not collapse the isolation the scenario tests.
+
+**A test's people live until the clean cycle between runs.** A person the
+scenario makes under a unique address — with `seedTestUser`, `createTestUser` or
+`createTestAdmin`, as the account `grantAdminToSelf` makes for its visitor, or
+through a sign-up the scenario proves in the UI — lives until the clean cycle,
+and so does everything the scenario did around that person: sessions, a merge
+and its operation history, a deletion request, notifications. So do the admin
+rights `grantAdminToSelf` and `createTestAdmin` grant. The test does not owe
+their cleanup: no command removes a person, the unique address already keeps one
+test's people apart from another's, and removing them in every spec would pay a
+command and a teardown for the order the clean cycle restores anyway. Touch only
+your own people, and do not rely on people an earlier test left behind. Do not
+assert an exact number of people in the system, or that a person shows on the
+first page of a list without a search: the people of other tests share the
+database until the clean cycle. Assert a count by shape and lower bound, and
+bring your person into view with the list's server search. Cleanup the toolbox
+already arms around a person stays — the owned notifications of
+`ownedTestState.ts`; the lifetime lifts the duty, it does not remove that
+cleanup. Every other precondition — i18n rows, a borrowed setting, an OAuth
+provider — keeps its owned cleanup under
+[Preconditions — test commands with owned cleanup](#preconditions--test-commands-with-owned-cleanup).
 
 ### Other shared network operations
 

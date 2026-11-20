@@ -54,7 +54,7 @@ use `$hilos-testing-cli`.
 - A scenario meets a timer — the feature command, setups without clock waiting,
   the temporary e2e real-wait exception and approval boundaries:
   [Time — a command brings the moment to now](../../docs/agents/frontend/testing-strategy.md#time--a-command-brings-the-moment-to-now).
-- Test-owned setup/cleanup and account preparation:
+- Test-owned setup/cleanup, account preparation and how long a test's people live:
   `docs/agents/frontend/testing-strategy.md`, "Preconditions — test commands with
   owned cleanup" and "People and administrators as preconditions".
 - Clean cycles between runs, with shared DB/daemon inside a suite:
@@ -180,6 +180,9 @@ use `$hilos-testing-cli`.
 - Use available test-command preconditions and owned cleanup; UI creation or
   sign-up stays when it is the subject. Prepare the admin/account once per
   scenario with the existing toolbox, without sharing away session isolation.
+  The people a scenario makes, what it does around them and the admin rights it
+  grants live until the clean cycle between runs: the test does not owe their
+  cleanup, touches only its own people and does not rely on another test's.
 - Run every test in the light theme at the desktop width: do not narrow the
   viewport and never repeat or check a screen in the dark theme. Only the theme
   feature's own specs choose dark, to prove the pick; only a component's
