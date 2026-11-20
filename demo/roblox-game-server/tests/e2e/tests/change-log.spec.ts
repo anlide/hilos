@@ -218,59 +218,54 @@ for (const section of [SECTION[1], SECTION[3]]) {
   })
 }
 
-// FIXME(F-024, 2026-10-24): окно чека не открывается после Enter · чужой · попытка 1 · HIL-1661
-test(
-  'opens a block receipt with old and new values and returns keyboard focus',
-  { tag: '@quarantine:F-024' },
-  async ({ browser, page }) => {
-    const { baseURL, ignoreHTTPSErrors } = test.info().project.use
-    const personContext = await browser.newContext({
-      baseURL,
-      ignoreHTTPSErrors,
-    })
-    const personPage = await personContext.newPage()
-    try {
-      const adminId = await createTestAdmin(expect, page)
-      const person = await createTestUser(expect, personPage)
-      await gotoPage(expect, page, `/hilos/user/${person.userId}`)
-      await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
-      await expect(page.getByTestId('modal')).toBeVisible()
-      await clickSubmit(
-        expect,
-        page.getByTestId('hilos-user-lifecycle-confirm'),
-      )
-      await expect(page.getByTestId('modal')).toBeHidden()
-      await dismissToasts(page)
+test('opens a block receipt with old and new values and returns keyboard focus', async ({
+  browser,
+  page,
+}) => {
+  const { baseURL, ignoreHTTPSErrors } = test.info().project.use
+  const personContext = await browser.newContext({
+    baseURL,
+    ignoreHTTPSErrors,
+  })
+  const personPage = await personContext.newPage()
+  try {
+    const adminId = await createTestAdmin(expect, page)
+    const person = await createTestUser(expect, personPage)
+    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
+    await clickSubmit(expect, page.getByTestId('hilos-user-block-open'))
+    await expect(page.getByTestId('modal')).toBeVisible()
+    await clickSubmit(expect, page.getByTestId('hilos-user-lifecycle-confirm'))
+    await expect(page.getByTestId('modal')).toBeHidden()
+    await dismissToasts(page)
 
-      await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
-      await chooseChangeLogFeedTable(page, 'hilos_user')
-      await typeInto(page.getByTestId('hilos-table-search'), `#${adminId}`)
-      const { rowKey, receiptId } = await expectChangeLogFeedRow(
-        expect,
-        page,
-        `hilos_user #${person.userId} · updated`,
-        CHANGE_LOG_BLOCK_ACTION,
-      )
+    await gotoPage(expect, page, CHANGE_LOG_FEED_PATH)
+    await chooseChangeLogFeedTable(page, 'hilos_user')
+    await typeInto(page.getByTestId('hilos-table-search'), `#${adminId}`)
+    const { rowKey, receiptId } = await expectChangeLogFeedRow(
+      expect,
+      page,
+      `hilos_user #${person.userId} · updated`,
+      CHANGE_LOG_BLOCK_ACTION,
+    )
 
-      const opener = shownByTestId(page, `hilos-change-log-open-${rowKey}`)
-      await expect(opener).toHaveAccessibleName(`View receipt #${receiptId}`)
-      await opener.focus()
-      await page.keyboard.press('Enter')
-      await expectChangeLogReceiptOpen(expect, page, receiptId)
-      const modal = page.getByTestId('modal')
-      await expect(modal).toBeFocused()
-      const detail = page.getByTestId('hilos-change-log-detail')
-      await expect(detail).toContainText(`hilos_user #${person.userId}`)
-      await expect(detail).toContainText(CHANGE_LOG_BLOCK_ACTION)
-      await expectChangeLogValues(expect, page, 'block', '0', '1')
-      await page.keyboard.press('Escape')
-      await expect(modal).toHaveCount(0)
-      await expect(opener).toBeFocused()
-    } finally {
-      await personContext.close()
-    }
-  },
-)
+    const opener = shownByTestId(page, `hilos-change-log-open-${rowKey}`)
+    await expect(opener).toHaveAccessibleName(`View receipt #${receiptId}`)
+    await opener.focus()
+    await page.keyboard.press('Enter')
+    await expectChangeLogReceiptOpen(expect, page, receiptId)
+    const modal = page.getByTestId('modal')
+    await expect(modal).toBeFocused()
+    const detail = page.getByTestId('hilos-change-log-detail')
+    await expect(detail).toContainText(`hilos_user #${person.userId}`)
+    await expect(detail).toContainText(CHANGE_LOG_BLOCK_ACTION)
+    await expectChangeLogValues(expect, page, 'block', '0', '1')
+    await page.keyboard.press('Escape')
+    await expect(modal).toHaveCount(0)
+    await expect(opener).toBeFocused()
+  } finally {
+    await personContext.close()
+  }
+})
 
 test('its registration receipt shows person and identity creation as facts without personal values', async ({
   page,
