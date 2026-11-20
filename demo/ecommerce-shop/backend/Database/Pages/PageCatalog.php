@@ -14,8 +14,8 @@ use Hilos\Database\Pages\PageCatalogProviderInterface;
  * PageCatalog - the shop's own admin pages, its dashboard group, and adopted framework heads.
  *
  * Besides the framework owners whose shared head the demo adopts, the catalog carries the
- * screens the framework does not know about — the shop's administration, starting with the
- * warehouses. They hang off the dashboard, so they reach the panel as cards of their own group.
+ * screens the framework does not know about — the shop's administration: the warehouses and the
+ * categories. They hang off the dashboard, so they reach the panel as cards of their own group.
  *
  * The captions live here rather than on the frontend for the reason the whole catalog does: a
  * heading is text in the visitor's language, and only the backend knows the language.
@@ -68,6 +68,13 @@ final class PageCatalog implements PageCatalogProviderInterface
                 PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Warehouses',
                 PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
             ],
+            PageConstants::ADMIN_CATEGORIES => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Categories',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'How the catalog is grouped on the shop front.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Categories',
+                PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+            ],
         ];
     }
 
@@ -82,6 +89,7 @@ final class PageCatalog implements PageCatalogProviderInterface
                 PageCatalogConstants::SECTION_DESCRIPTION => 'Warehouses and the catalog.',
                 PageCatalogConstants::SECTION_ITEMS => [
                     PageConstants::ADMIN_WAREHOUSES,
+                    PageConstants::ADMIN_CATEGORIES,
                 ],
             ],
         ];

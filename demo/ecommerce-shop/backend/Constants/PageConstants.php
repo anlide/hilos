@@ -28,6 +28,9 @@ final class PageConstants
     /** @var string Shop administration: the warehouses table */
     public const string ADMIN_WAREHOUSES = 'admin_warehouses';
 
+    /** @var string Shop administration: the categories table */
+    public const string ADMIN_CATEGORIES = 'admin_categories';
+
     /** @var string EcommerceShop main page */
     public const string MAIN = 'main';
 

@@ -147,6 +147,7 @@ use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Pages\ProductPage;
+use Demo\EcommerceShop\Pages\AdminCategoriesPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Hilos\Database\Pages\PageCatalogConstants;
@@ -816,6 +817,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             UsersPage::PAGE => UsersPage::class,
             UserPage::PAGE => UserPage::class,
             AdminWarehousesPage::PAGE => AdminWarehousesPage::class,
+            AdminCategoriesPage::PAGE => AdminCategoriesPage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
@@ -1173,11 +1175,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Warehouses',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], PageCatalog::pages()[PageConstants::ADMIN_WAREHOUSES]);
+    }
+
+    /** The dashboard's shop group lists the shop's admin pages in the order their cards stand. */
+    public function testTheShopAdministrationSectionListsItsPagesInOrder(): void
+    {
         self::assertSame([
             [
                 PageCatalogConstants::SECTION_TITLE => 'Shop administration',
                 PageCatalogConstants::SECTION_DESCRIPTION => 'Warehouses and the catalog.',
-                PageCatalogConstants::SECTION_ITEMS => [PageConstants::ADMIN_WAREHOUSES],
+                PageCatalogConstants::SECTION_ITEMS => [PageConstants::ADMIN_WAREHOUSES, PageConstants::ADMIN_CATEGORIES],
             ],
         ], PageCatalog::dashboardSections());
     }
@@ -1186,6 +1193,30 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testTheCategoriesTableIsRegistered(): void
     {
         self::assertSame(CategoriesTable::class, Hilos::TABLES[EcommerceShopTableContext::categories]);
+    }
+
+    /**
+     * The categories admin page: an admin-level route served by the categories library, binding the
+     * categories table, answering on its own signal, and reached from the dashboard's shop group.
+     */
+    public function testTheCategoriesAdminPageIsServedByTheLibraryAndHangsOffTheDashboard(): void
+    {
+        self::assertSame('admin_categories', AdminCategoriesPage::PAGE);
+        self::assertSame(PageAccessLevel::ADMIN, AdminCategoriesPage::ACCESS_LEVEL);
+        self::assertSame(AgentType::CATEGORIES_LIBRARY, Hilos::getPageRoutes()[AdminCategoriesPage::PAGE]);
+        self::assertSame([EcommerceShopTableContext::categories => []], Hilos::PAGE_TABLES[AdminCategoriesPage::PAGE]);
+        self::assertSame(
+            [BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_CATEGORIES],
+            AdminCategoriesPage::BROWSER,
+        );
+        self::assertSame('subscription_page_admin_categories', EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_CATEGORIES);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Categories',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'How the catalog is grouped on the shop front.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Categories',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], PageCatalog::pages()[PageConstants::ADMIN_CATEGORIES]);
     }
 
     /** The products table is registered under its key, for the page that binds it. */

@@ -23,9 +23,11 @@ The empty shell of the shop, and the smallest complete Hilos project on React
   sections arrive with the leaves that bring them.
 - **Shop administration**: a section of its own on the dashboard. Its
   **Warehouses** page lists every warehouse with how many products and units
-  it keeps, and the numbers change by themselves as stock moves. Only
-  administrators see it; the shop's other admin pages arrive with their own
-  leaves.
+  it keeps, and the numbers change by themselves as stock moves. Its
+  **Categories** page lists the categories in catalog order, each with its
+  picture, its description and how many products it holds, and that number
+  changes by itself too. Only administrators see it; the shop's other admin
+  pages arrive with their own leaves.
 - **Notifications**: the bell in the header for a signed-in person, with
   delivery by email.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
