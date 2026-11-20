@@ -253,48 +253,45 @@ function expectNoActions(wire: DeliveryFrameLog) {
   ).toEqual([])
 }
 
-// FIXME(F-074, 2026-11-08): первый Overview 0/1 отстал от живого экрана 1/1 · чужой · попытка 2 · HIL-1969
-test(
-  'Dashboard, cold entry and F5 at each Status address show this project from its first answer',
-  { tag: '@quarantine:F-074' },
-  async ({ page }) => {
-    await grantAdminToSelf(expect, page)
-    const status = watchStatusFrames(page)
-    const wire = watchDeliveryFrames(page)
-    try {
-      await test.step('the Dashboard card opens the Overview', async () => {
-        await gotoPage(expect, page, '/hilos', PAGE_READY)
-        const since = mark(wire, status)
-        await page.getByTestId('dashboard-card-hilos_status').click()
+test('Dashboard, cold entry and F5 at each Status address show this project from its first answer', async ({
+  page,
+}) => {
+  await grantAdminToSelf(expect, page)
+  const status = watchStatusFrames(page)
+  const wire = watchDeliveryFrames(page)
+  try {
+    await test.step('the Dashboard card opens the Overview', async () => {
+      await gotoPage(expect, page, '/hilos', PAGE_READY)
+      const since = mark(wire, status)
+      await page.getByTestId('dashboard-card-hilos_status').click()
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(new RegExp(`${STATUS_PATH}$`))
+      await expectAnswerShown(page, wire, status, OVERVIEW_PAGE, since)
+    })
+    for (const [path, pageKey] of ADDRESSES) {
+      await test.step(`${path} on a cold document and after F5`, async () => {
+        const cold = mark(wire, status)
+        await gotoPage(expect, page, path, PAGE_READY)
+        await expectAnswerShown(page, wire, status, pageKey, cold)
+        const sockets = wire.connections.length
+        const reloaded = mark(wire, status)
+        await page.reload()
         await expectPageReady(expect, page)
-        await expect(page).toHaveURL(new RegExp(`${STATUS_PATH}$`))
-        await expectAnswerShown(page, wire, status, OVERVIEW_PAGE, since)
+        await expect(page).toHaveURL(new RegExp(`${path}$`))
+        await expectAnswerShown(page, wire, status, pageKey, reloaded)
+        expect(wire.connections.length).toBeGreaterThan(sockets)
       })
-      for (const [path, pageKey] of ADDRESSES) {
-        await test.step(`${path} on a cold document and after F5`, async () => {
-          const cold = mark(wire, status)
-          await gotoPage(expect, page, path, PAGE_READY)
-          await expectAnswerShown(page, wire, status, pageKey, cold)
-          const sockets = wire.connections.length
-          const reloaded = mark(wire, status)
-          await page.reload()
-          await expectPageReady(expect, page)
-          await expect(page).toHaveURL(new RegExp(`${path}$`))
-          await expectAnswerShown(page, wire, status, pageKey, reloaded)
-          expect(wire.connections.length).toBeGreaterThan(sockets)
-        })
-      }
-      expectNoActions(wire)
-    } finally {
-      await test.info().attach('status-addresses-wire', {
-        body: JSON.stringify(wire),
-        contentType: 'application/json',
-      })
-      status.stop()
-      wire.stop()
     }
-  },
-)
+    expectNoActions(wire)
+  } finally {
+    await test.info().attach('status-addresses-wire', {
+      body: JSON.stringify(wire),
+      contentType: 'application/json',
+    })
+    status.stop()
+    wire.stop()
+  }
+})
 
 // FIXME(F-081, 2026-11-08): строка сервиса не появилась после смены фильтра · чужой · указание владельца 08.11 · HIL-2080
 test(

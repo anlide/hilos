@@ -127,54 +127,51 @@ test(
   },
 )
 
-// FIXME(F-052, 2026-10-29): slave live tail badge does not appear · чужой · попытка 1 · HIL-1754
-test(
-  'a slave live file followed from a follower master receives a line appended on that slave',
-  { tag: '@quarantine:F-052' },
-  async ({ browser }) => {
-    const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
-    const frames = watchLogFrames(page)
-    try {
-      // The command round trip and remote artifact delivery outlive the base cap.
-      test.slow()
-      const slave = CLUSTER_SLAVES[0]
-      await grantAdminToSelf(expect, page)
-      await gotoPage(
-        expect,
-        page,
-        `/hilos/logs/view/${slave}/live/${FOLLOWED_STREAM}`,
-        PAGE_READY,
-      )
-      await expect(page.getByTestId('hilos-log-tail-badge')).toBeVisible()
+test('a slave live file followed from a follower master receives a line appended on that slave', async ({
+  browser,
+}) => {
+  const page = await newMasterPage(browser, CLUSTER_FOLLOWER)
+  const frames = watchLogFrames(page)
+  try {
+    // The command round trip and remote artifact delivery outlive the base cap.
+    test.slow()
+    const slave = CLUSTER_SLAVES[0]
+    await grantAdminToSelf(expect, page)
+    await gotoPage(
+      expect,
+      page,
+      `/hilos/logs/view/${slave}/live/${FOLLOWED_STREAM}`,
+      PAGE_READY,
+    )
+    await expect(page.getByTestId('hilos-log-tail-badge')).toBeVisible()
 
-      const marker = logMarker('cluster-follow')
-      expect(await appendLogLines(marker, 1, nodeHost(slave))).toBe(1)
-      await expect(
-        page.getByTestId('hilos-log-entry').filter({ hasText: `${marker} #1` }),
-      ).toBeVisible({
-        timeout: TAIL_ARRIVAL_TIMEOUT_MS,
-      })
-      const timeZone = await page.evaluate(
-        () => Intl.DateTimeFormat().resolvedOptions().timeZone,
-      )
-      await expectLogLineClock(
-        expect,
-        page,
-        frames,
-        marker,
-        'logs_lines_appended',
-        timeZone,
-      )
-    } finally {
-      frames.stop()
-      await test.info().attach('slave-follow-time-frames', {
-        body: JSON.stringify({ packets: frames.packets, sent: frames.sent }),
-        contentType: 'application/json',
-      })
-      await page.context().close()
-    }
-  },
-)
+    const marker = logMarker('cluster-follow')
+    expect(await appendLogLines(marker, 1, nodeHost(slave))).toBe(1)
+    await expect(
+      page.getByTestId('hilos-log-entry').filter({ hasText: `${marker} #1` }),
+    ).toBeVisible({
+      timeout: TAIL_ARRIVAL_TIMEOUT_MS,
+    })
+    const timeZone = await page.evaluate(
+      () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    )
+    await expectLogLineClock(
+      expect,
+      page,
+      frames,
+      marker,
+      'logs_lines_appended',
+      timeZone,
+    )
+  } finally {
+    frames.stop()
+    await test.info().attach('slave-follow-time-frames', {
+      body: JSON.stringify({ packets: frames.packets, sent: frames.sent }),
+      contentType: 'application/json',
+    })
+    await page.context().close()
+  }
+})
 
 /**
  * Wait for the complete sorted node list before trusting its indexed data ids.
