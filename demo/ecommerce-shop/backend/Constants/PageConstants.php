@@ -30,4 +30,7 @@ final class PageConstants
 
     /** @var string EcommerceShop main page */
     public const string MAIN = 'main';
+
+    /** @var string EcommerceShop product page, addressed by the product's slug */
+    public const string PRODUCT = 'product';
 }

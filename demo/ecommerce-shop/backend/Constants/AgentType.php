@@ -35,6 +35,9 @@ final class AgentType
     /** @var string Stock library agent type (monopolistic; the one writer of the stock) */
     public const string STOCK_LIBRARY = 'stock_library';
 
+    /** @var string Agent of one product page address (indexed by the address; reads the product and its stock, writes nothing) */
+    public const string PRODUCT = 'product';
+
     /** @var string Hilos index agent type (dashboard the shell gear links to) */
     public const string HILOS_INDEX = HilosAgentType::HILOS_INDEX;
 

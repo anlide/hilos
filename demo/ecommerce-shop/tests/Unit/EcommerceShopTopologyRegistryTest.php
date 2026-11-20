@@ -53,6 +53,7 @@ use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
+use Demo\EcommerceShop\Agents\ProductAgent;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Agents\StockLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
@@ -66,6 +67,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\WarehousesLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\CategoriesLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\ProductAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\ProductsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\StockLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
@@ -144,6 +146,7 @@ use Demo\EcommerceShop\Pages\Hilos\TermsPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\MainPage;
+use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Hilos\Database\Pages\PageCatalogConstants;
@@ -761,6 +764,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             MainPage::PAGE => MainPage::class,
+            ProductPage::PAGE => ProductPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
             BrowserSessionsPage::PAGE => BrowserSessionsPage::class,
@@ -956,11 +960,17 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(array_keys(Hilos::PAGES), array_keys(Hilos::getPageRoutes()));
     }
 
-    /** The Daemon environment page names the node whose replica serves it. */
-    public function testOnlyDaemonEnvironmentPageUsesNodeAddressedSubscription(): void
+    /**
+     * The product page is served by the agent its slug names, the Daemon environment pages by the
+     * replica of the node they name.
+     */
+    public function testProductPageIsAddressedBySlugAndDaemonEnvironmentPagesByNode(): void
     {
         $routes = Hilos::getPageAgentIndexRoutes();
-        $this->assertSame([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
+        $this->assertSame([ProductPage::PAGE, DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
+        $this->assertSame('param', $routes[ProductPage::PAGE]->source->value);
+        $this->assertSame('slug', $routes[ProductPage::PAGE]->param);
+        $this->assertSame(AgentType::ECOMMERCE_SHOP, $routes[ProductPage::PAGE]->fallbackAgentType);
         foreach ([DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE] as $page) {
             $this->assertSame('node_param', $routes[$page]->source->value);
             $this->assertSame('nodeId', $routes[$page]->param);
@@ -991,6 +1001,32 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertFalse($daemon->requiresMonopolisticProcess());
     }
 
+    /** The agent of a product page address is addressed by it, reads its three collections, owns nothing. */
+    public function testProductAgentHasTheIndexedPolicyRegistryEntryAndOwnsNothing(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::PRODUCT];
+
+        $this->assertSame(ProductAgent::class, AgentRegistry::workerClass($entry));
+        $this->assertSame(ProductAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        $this->assertTrue(AgentRegistry::requiresIndex($entry));
+        $this->assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        $this->assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        $this->assertSame(AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC, AgentRegistry::idleTimeout($entry));
+        $daemon = new ProductAgentDaemon('morning-meadow');
+        $this->assertSame('morning-meadow', $daemon->getIndex());
+        $this->assertFalse($daemon->requiresMonopolisticProcess());
+        $this->assertSame([
+            EcommerceShopDbContext::products,
+            EcommerceShopDbContext::productSlugs,
+            EcommerceShopDbContext::productWarehouseStocks,
+        ], ProductAgent::READS_DB);
+        $this->assertSame([], ProductAgent::OWNS_DB);
+        $this->assertSame([], ProductAgent::OWNS_DB_ROWS);
+        $this->assertSame([], ProductAgent::OWNS_DB_SET);
+        $this->assertSame([], ProductAgent::OWNS_RT);
+        $this->assertSame([], ProductAgent::OWNS_RT_ROWS);
+    }
+
     public function testAgentRegistryEntriesAreConcreteAndConsistent(): void
     {
         foreach (Hilos::AGENTS as $agentType => $registryEntry) {
@@ -1014,6 +1050,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AgentType::CATEGORIES_LIBRARY,
             AgentType::PRODUCTS_LIBRARY,
             AgentType::STOCK_LIBRARY,
+            AgentType::PRODUCT,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_ANALYTICS,
             AgentType::HILOS_CHANGE_LOG,

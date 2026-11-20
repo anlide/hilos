@@ -39,7 +39,11 @@ warehouses, the categories with every address a category has had, the
 products with every address a product has had, and the stock — the units of
 each product in each warehouse. Each is held whole by its own library — the
 warehouses library, the categories library, the products library, the stock
-library — one for the whole cluster, on the node the cluster picks. People,
+library — one for the whole cluster, on the node the cluster picks. Every
+address of the product page has an agent of its own: it comes up with the
+first visitor of that address and goes to sleep after the last one has left;
+it reads the product and its stock and writes nothing. The product page of
+the shop front that it serves arrives with a change of its own. People,
 sessions, the tables of signing in and the registry of files stay the
 framework's.
 

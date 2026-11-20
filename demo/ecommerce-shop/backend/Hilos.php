@@ -16,6 +16,7 @@ use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
+use Demo\EcommerceShop\Agents\ProductAgent;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Agents\StockLibraryAgent;
 use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
@@ -34,6 +35,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\NotificationsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\SessionsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UserAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\ProductAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\ProductsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\StockLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\WarehousesLibraryAgentDaemon;
@@ -116,6 +118,7 @@ use Demo\EcommerceShop\Pages\Hilos\TermsHistoryPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
 use Demo\EcommerceShop\Pages\MainPage;
+use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
@@ -310,6 +313,7 @@ final class Hilos extends HilosFacade
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
+        ProductPage::PAGE => ProductPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionsPage::PAGE => BrowserSessionsPage::class,
@@ -403,6 +407,13 @@ final class Hilos extends HilosFacade
             AgentRegistryKey::WORKER => StockLibraryAgent::class,
             AgentRegistryKey::DAEMON => StockLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        ProductAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => ProductAgent::class,
+            AgentRegistryKey::DAEMON => ProductAgentDaemon::class,
+            AgentRegistryKey::INDEXED => true,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+            AgentRegistryKey::IDLE_TIMEOUT => AgentRegistry::DEFAULT_IDLE_TIMEOUT_SEC,
         ],
         DemoHilosAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => DemoHilosAgent::class,

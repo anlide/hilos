@@ -48,8 +48,10 @@ use PHPUnit\Framework\TestCase;
  * the agent the subscribe picked - including the unsubscribe, which carries no params at all
  * and so has nothing of its own to resolve from.
  *
- * The fixture topology is the carrier on purpose: no demo page is per-instance yet, and the
- * page that moves first belongs to another leaf.
+ * The fixture topology is the carrier on purpose. The first demo page of one instance is the
+ * shop's product page, served by the agent of its address, and it takes its index from a
+ * route param only; the fixture stays the carrier because it holds all three sources of the
+ * index.
  */
 final class SignalRouterPerInstancePageRoutingTest extends TestCase
 {
