@@ -102,15 +102,16 @@ abstract class StockLibraryEnvironment extends RollbackIntegrationTestCase
     /**
      * Writes a category row a product may be put in, with its own picture, past the categories library.
      *
+     * @param ?string $name Name of the category, or null for its address
      * @return int Id of the new category
      */
-    private static function category(): int
+    protected static function category(?string $name = null): int
     {
         $slug = 'category-' . RandomHelper::hex(8);
         $position = (int)Database::sql('SELECT COALESCE(MAX(position), 0) + 1 AS next FROM category')->field('next');
         Database::sql(
             'INSERT INTO category (name, description, slug, position, picture_file_id) VALUES (?, ?, ?, ?, ?)',
-            [$slug, 'Flowers of the case', $slug, $position, self::pictureFile()],
+            [$name ?? $slug, 'Flowers of the case', $slug, $position, self::pictureFile()],
         );
 
         return Database::lastInsertId();
@@ -121,7 +122,7 @@ abstract class StockLibraryEnvironment extends RollbackIntegrationTestCase
      *
      * @return int Id of the new registry row
      */
-    private static function pictureFile(): int
+    protected static function pictureFile(): int
     {
         $storedName = RandomHelper::hex(16) . '.webp';
         Database::sql(

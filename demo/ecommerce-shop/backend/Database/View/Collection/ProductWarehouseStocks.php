@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Database\View\Collection;
 
 use Demo\EcommerceShop\Database\Actions\Collection\ProductWarehouseStocksActions;
+use Demo\EcommerceShop\Database\DTO\ProductStockTotals;
+use Demo\EcommerceShop\Database\DTO\ProductStockTotalsCollection;
 use Demo\EcommerceShop\Database\DTO\WarehouseStockTotals;
 use Demo\EcommerceShop\Database\Object\Collection\ProductWarehouseStocks as ObjectProductWarehouseStocks;
 use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProductWarehouseStock;
@@ -58,5 +60,41 @@ final class ProductWarehouseStocks extends DbCollection
         }
 
         return new WarehouseStockTotals($productCount, $unitCount);
+    }
+
+    /**
+     * Sums the units of each of several products and names the warehouse of a product kept in one.
+     *
+     * The stock library holds the whole set and answers from memory; any other process finds the
+     * products' rows by one SQL query on the product index, and a row it already holds is read as
+     * the last sync left it. No ids ask nothing and read nothing.
+     *
+     * @param int ...$productIds Ids of the products
+     * @return ProductStockTotalsCollection Totals by product id, one for every id asked about; zero
+     *     units and no warehouse for a product no warehouse keeps; empty for no ids
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded object does not match the collection
+     * @throws DatabaseException When the rows cannot be read
+     * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
+     * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
+     */
+    public function totalsOfProducts(int ...$productIds): ProductStockTotalsCollection
+    {
+        $unitCounts = array_fill_keys($productIds, 0);
+        $warehouseIds = array_fill_keys($productIds, []);
+        foreach ($this->whereColumnIn(ObjectProductWarehouseStock::productId, ...$productIds) as $stock) {
+            $unitCounts[$stock->productId] += $stock->units;
+            $warehouseIds[$stock->productId][] = $stock->warehouseId;
+        }
+
+        $totals = [];
+        foreach ($unitCounts as $productId => $unitCount) {
+            $totals[$productId] = new ProductStockTotals(
+                $unitCount,
+                count($warehouseIds[$productId]) === 1 ? $warehouseIds[$productId][0] : null,
+            );
+        }
+
+        return new ProductStockTotalsCollection($totals);
     }
 }
