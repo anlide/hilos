@@ -9,9 +9,12 @@ A document (`terms` or `privacy`) declares revisions in order. Each revision
 adopts one version of that document's Hilos standard set and may replace its
 clauses with project deviations. Composition preserves the adopted set's order
 and keeps the standard beside each deviation. Published revisions and their
-text files remain available: a stored acceptance names exactly one of them.
-`LegalCatalogResolver` validates the entire catalog on first access; an absent
-catalog publishes no documents.
+text files remain available: a stored acceptance names exactly one of them. A
+new project starts each document with one revision dated the day it is
+launched, carrying every deviation that holds from that day. It does not copy
+the revisions of the project it was modeled on: a history older than the
+project publishes promises it never kept. `LegalCatalogResolver` validates the
+entire catalog on first access; an absent catalog publishes no documents.
 
 A deviation is also a switch of the framework's own recording: a current privacy
 revision deviating from `standard.access_log` or `standard.session_data` turns
