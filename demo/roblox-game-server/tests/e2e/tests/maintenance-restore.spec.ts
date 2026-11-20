@@ -63,6 +63,7 @@ const FREEZE_MS = 90_000
 const REPLAY_MS = 180_000
 
 const OPERATOR_OPEN = 'protected-mode:open'
+// The caller's wait: a hand-kept copy of CommandChannelWindows::CALLER_WAIT_SECONDS.
 const REPLY_TIMEOUT_MS = 15_000
 
 const sendOperatorOpen = createStandCommandChannel({

@@ -2,6 +2,7 @@
 import { createStandCommandChannel } from './standCommand.mjs'
 
 const CLOCK_SHIFT_COMMAND = 'test:cluster:clock:shift'
+// The caller's wait: a hand-kept copy of CommandChannelWindows::CALLER_WAIT_SECONDS.
 const REPLY_TIMEOUT_MS = 15_000
 
 /**

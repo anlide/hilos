@@ -1,5 +1,6 @@
 import { createStandCommandChannel } from './standCommand.mjs'
 
+// The caller's wait: a hand-kept copy of CommandChannelWindows::CALLER_WAIT_SECONDS.
 const REPLY_TIMEOUT_MS = 15_000
 const sendCommand = createStandCommandChannel({ timeoutMs: REPLY_TIMEOUT_MS })
 

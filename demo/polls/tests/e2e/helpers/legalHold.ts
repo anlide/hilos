@@ -11,6 +11,7 @@ const COMMAND_PORT = Number(process.env.COMMAND_PORT ?? 8094)
 
 // Unlike the admin view mode, the reply waits for the personal owner's removal,
 // then the users library checks the final rows and publishes the result.
+// The caller's wait: a hand-kept copy of CommandChannelWindows::CALLER_WAIT_SECONDS.
 const REPLY_TIMEOUT_MS = 15_000
 
 const LEGAL_HOLD_COMMAND = 'test:legal:hold'
