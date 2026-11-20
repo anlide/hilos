@@ -1,5 +1,5 @@
-// Pins the public surface: everything an Angular consumer may import from
-// '@hilos/angular' is exported here. Behavior is covered by the module tests.
+// Pins the public surface of the owning entries this file imports. Behavior is
+// covered by the module tests.
 import { HilosPages } from '@hilos/core/base'
 import { expect, it } from 'vitest'
 import {

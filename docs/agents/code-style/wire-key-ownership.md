@@ -19,9 +19,10 @@ behind it (`actions`) stays a literal.
 A column's `reads` names row-payload keys as well — the fields a cell draws from
 beyond its own key — and takes the same constants on the same condition.
 
-Export the constant from the owning module, and re-export it from
-`core/src/index.ts`, only when a view names it as a column key. A key that only
-the resolver reads stays module-private.
+Export the constant from the owning module, and re-export it from the public
+entry that owns it (`core/src/base/index.ts`, or the section's `index.ts`), only
+when a view names it as a column key. A key that only the resolver reads stays
+module-private.
 
 Type a page's column list by the row it renders,
 `HilosTableColumnOf<ItsRow>[]`, so a typo or a renamed view-model field fails

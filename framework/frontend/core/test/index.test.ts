@@ -1,5 +1,5 @@
-// Pins the public surface: everything an adapter or demo may import from
-// '@hilos/core' is exported here. Behavior is covered by the module tests.
+// Pins the public surface of the owning entries this file imports. Behavior is
+// covered by the module tests.
 import { expect, it } from 'vitest'
 import {
   HilosConnection,

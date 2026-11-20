@@ -283,8 +283,8 @@ Existing busy and impersonation guards remain in place. The Vue and React
 shells release the public `/status` reader's page region through this opt-out.
 Angular also builds the page, route and mail subscription; its layout gives the
 reader its own interaction state while preserving the caller's shell policy
-([status-page.md](../architecture/status-page.md)). These APIs are re-exported
-from `@hilos/core/base` and the explicit core root barrel.
+([status-page.md](../architecture/status-page.md)). These APIs are exported
+from `@hilos/core/base`.
 The context readers are safe to import without a browser; each shell state and
 DOM binding is disposed with its owning shell or root.
 See [core-and-connection.md](core-and-connection.md#disconnect-behavior) for the

@@ -860,8 +860,7 @@ stay with their marked leaves:
    lazy wrappers, using the framework's Profile name and Profile photo kinds;
    Add, Edit and Delete remain internal to the Rules page. The public
    `@hilos/react/admin/moderation` entry exports those three pages and their
-   `Props` types, while the compatibility root exports only
-   `HilosModerationPage` from moderation.
+   `Props` types.
    Angular/polls and Angular/concert-tickets mount the root, kind and rules
    pages through lazy wrappers in `views/hilos/moderation/`; all three use the
    shared `hilosModerationContext`, and `app.ts` maps their routes to those

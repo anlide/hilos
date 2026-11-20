@@ -1,5 +1,5 @@
-// Pins the public surface: everything a React consumer may import from
-// '@hilos/react' is exported here. Behavior is covered by the module tests.
+// Pins the public surface of the owning entries this file imports. Behavior is
+// covered by the module tests.
 import { expect, expectTypeOf, it } from 'vitest'
 import { HilosPages } from '@hilos/core/base'
 import type {

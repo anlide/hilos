@@ -1,5 +1,5 @@
-// Pins the public surface: everything a Vue consumer may import from
-// '@hilos/vue' is exported here. Behavior is covered by the module tests.
+// Pins the public surface of the owning entries this file imports. Behavior is
+// covered by the module tests.
 import { expect, it } from 'vitest'
 import {
   HilosLayout,

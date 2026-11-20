@@ -66,7 +66,7 @@ assert.ok(modules(base).includes('src/base/index.ts'))
 assert.ok(!modules(base).some((id) => id.startsWith('src/admin/')))
 assert.ok(!modules(base).includes('src/index.ts'))
 // The shared page head is a common primitive: it ships in that same clean base
-// closure, not in an admin section or in the compatibility root.
+// closure, not in an admin section.
 assert.ok(modules(base).includes('src/HilosPageHead.tsx'))
 assert.ok(modules(base).includes('src/HilosDateTimePicker.tsx'))
 // So is the live instance name hook the page modules bind their name through.

@@ -70,7 +70,7 @@ assert.ok(
 )
 assert.ok(!modules(base).includes('src/index.ts'))
 // The shared page head is a common primitive: it ships in that same clean base
-// closure, not in an admin section or in the compatibility root.
+// closure, not in an admin section.
 assert.ok(modules(base).some((id) => id.startsWith('src/HilosPageHead.vue')))
 assert.ok(
   modules(base).some((id) => id.startsWith('src/HilosDateTimePicker.vue')),

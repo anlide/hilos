@@ -701,13 +701,12 @@ passes its existing `actions` singleton through `hilosModerationContext`. The
 Add and Edit APIs are exported from the lazy core moderation section, and Vue's
 `HilosModerationKindRulesPage` from the lazy Vue moderation section; the edit
 modal has no separate public Vue export. The core Add/Edit APIs and the Vue
-page remain out of compatibility-root and base exports. React's lazy
-`/admin/moderation` section exports three page components and their `Props`
-types; its Add, Edit and Delete forms remain internal to the Rules page. React's
-compatibility root exports only `HilosModerationPage` from moderation. The Vue
-kind Overview continues to receive the project's base context through Chat's
-lazy `ModerationKind.vue` wrapper. The Rules view receives the extended context
-through Chat's lazy `Rules.vue` wrapper.
+page remain out of base exports. React's lazy `/admin/moderation` section
+exports three page components and their `Props` types; its Add, Edit and Delete
+forms remain internal to the Rules page. The Vue kind Overview continues to
+receive the project's base context through Chat's lazy `ModerationKind.vue`
+wrapper. The Rules view receives the extended context through Chat's lazy
+`Rules.vue` wrapper.
 
 Delete is available from the Rules row action and opens one confirmation dialog
 for the selected rule. The dialog keeps the displayed rule text as its
