@@ -44,7 +44,9 @@ function carriesFiles(event: DragEvent): boolean {
       (drop)="dropped($event)"
       (paste)="pasted($event)"
     >
-      <!-- input group поднимает фокусное поле до z-index 5; обёртка z-0 замыкает его в своём контексте, и оверлей z-1 лежит поверх всего слота (проба аудита E3). -->
+      <!-- An input group lifts its focused control to z-index 5; the z-0 wrapper
+      keeps that inside its own stacking context, so the z-1 overlay covers the
+      whole slot (HIL-1802 audit, probe E3). -->
       <div class="position-relative z-0"><ng-content /></div>
       @if (dragging()) {
         <div [class]="overlayClass" [attr.data-id]="dataId() + '-overlay'">
