@@ -363,3 +363,53 @@ test.describe('home links', () => {
     }
   })
 })
+
+// The home page's own heading and presence row: one level-one heading names
+// Conversations, a participant says online in text, and its row is a link
+// that Enter follows.
+test.describe('home page accessibility', () => {
+  test.use({ viewport: { width: 1440, height: 1000 }, colorScheme: 'light' })
+
+  test('the home page exposes a heading and presence as text', async ({
+    page,
+  }) => {
+    // Presence is a signed-in property; the fixture binds the self user on '/'.
+    const user = await createTestUser(expect, page)
+
+    // Exactly one top-level heading names the page (visually hidden here).
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'Conversations',
+    )
+
+    // A participant exposes presence as text for assistive tech, not the colored
+    // dot alone — the connected self user is online.
+    await expect(page.getByTestId('self-user')).toHaveText(user.name)
+    await expect(
+      page.getByTestId('participant').filter({ hasText: user.name }),
+    ).toContainText('online')
+
+    // The same row is a real link. Its accessible name carries the person and
+    // the presence, and Enter follows the address the href already names.
+    const selfUserId = Number(
+      await page.getByTestId('self-user-id').textContent(),
+    )
+    expect(selfUserId).toBe(user.userId)
+    const link = page.getByTestId(`participant-link-${selfUserId}`)
+    await expect(link).toHaveAccessibleName(`${user.name} online`)
+    await expect(link).toHaveAttribute('href', `/user/${selfUserId}`)
+    await expect(link).toHaveJSProperty('tagName', 'A')
+    await link.focus()
+    await expect(link).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expectPageReady(expect, page)
+    expect(new URL(page.url()).pathname).toBe(`/user/${selfUserId}`)
+    await expect(page.getByTestId('user-name')).toHaveText(user.name)
+
+    await page.getByTestId('nav-conversations').click()
+    await expectPageReady(expect, page)
+    expect(new URL(page.url()).pathname).toBe('/')
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+      'Conversations',
+    )
+  })
+})

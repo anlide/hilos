@@ -118,8 +118,6 @@ import {
 } from '../../../../../framework/frontend/scripts/standModel.mjs'
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
-// spec-owner: demo — carries Chat's Vue browser journeys for these shared pages
-
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
 // docs/agents/testing.md "Selective testing"). Asserts the framework viewport
 // table exposes a correct accessibility tree over the live socket: an accessible
@@ -614,49 +612,6 @@ test('the admin shell keeps navigation accessible and announces page changes', a
       'Conversations · Hilos Chat',
     )
   })
-})
-
-test('the home page exposes a heading and presence as text', async ({
-  page,
-}) => {
-  // Presence is a signed-in property; the fixture binds the self user on '/'.
-  const user = await createTestUser(expect, page)
-
-  // Exactly one top-level heading names the page (visually hidden here).
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-    'Conversations',
-  )
-
-  // A participant exposes presence as text for assistive tech, not the colored
-  // dot alone — the connected self user is online.
-  await expect(page.getByTestId('self-user')).toHaveText(user.name)
-  await expect(
-    page.getByTestId('participant').filter({ hasText: user.name }),
-  ).toContainText('online')
-
-  // The same row is a real link. Its accessible name carries the person and
-  // the presence, and Enter follows the address the href already names.
-  const selfUserId = Number(
-    await page.getByTestId('self-user-id').textContent(),
-  )
-  expect(selfUserId).toBe(user.userId)
-  const link = page.getByTestId(`participant-link-${selfUserId}`)
-  await expect(link).toHaveAccessibleName(`${user.name} online`)
-  await expect(link).toHaveAttribute('href', `/user/${selfUserId}`)
-  await expect(link).toHaveJSProperty('tagName', 'A')
-  await link.focus()
-  await expect(link).toBeFocused()
-  await page.keyboard.press('Enter')
-  await expectPageReady(expect, page)
-  expect(new URL(page.url()).pathname).toBe(`/user/${selfUserId}`)
-  await expect(page.getByTestId('user-name')).toHaveText(user.name)
-
-  await page.getByTestId('nav-conversations').click()
-  await expectPageReady(expect, page)
-  expect(new URL(page.url()).pathname).toBe('/')
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
-    'Conversations',
-  )
 })
 
 test('the user Overview exposes a shared heading, named navigation and keyboard rename', async ({
