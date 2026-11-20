@@ -64,7 +64,7 @@ change the body of that question, not the mode around it.
 - It works in production, and the code says so outright — in the variable's
   PHPDoc and in `AdminViewModeStartupVerdict`, whose production branch with the
   variable on and no latch turns the mode on: the mode is made for demos, and
-  the demos live in production.
+  the demos run with the production environment.
 - The production compose of every demo — the ones that exist and the ones to
   come — has it `true` in the daemon service, and `DemoStackComposeGuardTest`
   refuses a demo whose `docker/docker-compose.prod.yml` lacks it. The owner's

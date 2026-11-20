@@ -9,10 +9,10 @@ use Hilos\Environment\NonProductionGate;
 /**
  * AdminViewModeStartupVerdict - whether the admin view mode is on for a node that is starting (HIL-1249).
  *
- * The mode works in production. It was made for the demos, and the demos live in production, so
- * a production node started with the variable on and no latch has the mode on - that is the
- * branch below where it opens. What production adds is the latch: a production node that starts
- * with the mode off closes it for good, and from then on the variable is overruled.
+ * The mode works in production. It was made for the demos, and the demos run with the production
+ * environment, so a production node started with the variable on and no latch has the mode on -
+ * that is the branch below where it opens. What production adds is the latch: a production node
+ * that starts with the mode off closes it for good, and from then on the variable is overruled.
  *
  * - A stand ({@see NonProductionGate} admits it) has the mode the variable says, and the latch is
  *   neither read nor written there.

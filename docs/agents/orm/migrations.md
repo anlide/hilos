@@ -219,7 +219,7 @@ section exists so that the question stops reaching the owner (2026-11-12).
 
 - **A branch's own data and stand data** — test people, messages, settings, history, the test
   databases a branch built — are recreated, never carried over; a migration number only one branch
-  had follows *The cure is in code* above.
+  had follows *That SQL is owed to the databases the merged track built* above.
 - **A backup archive taken by older code** may be refused by newer code. Today's restore migrates an
   archive taken behind the code forward and refuses one taken before the journal database existed
   (`framework/backend/Backup/RestoreMigrationGuard.php`); both are properties of the restore, not a
@@ -492,9 +492,11 @@ php cli.php db:seed:apply 001
 
 ## Important rules
 
-- Never modify a migration file the merged track carries — create a new one
-  instead. A file only this branch has is still the branch's: change or renumber
-  it and reset the branch's test databases (*The cure is in code* above)
+- Do not modify a migration file the merged track carries — create a new one
+  instead. The one change such a file takes is the renumbering a refused hole
+  requires (*The cure is in code* above). A file only this branch has is still
+  the branch's: change or renumber it and reset the branch's test databases
+  (*That SQL is owed to the databases the merged track built* above)
 - Migration runs in transaction where possible
 - Test migrations in test environment before applying to production
 - A foreign key onto a table that already holds rows cleans the rows it would
