@@ -191,6 +191,7 @@ final class AccountErasureProjectParticipantIntegrationTest extends FrameworkInt
         return [
             'not in the agents' => [AccountErasureProjectUnlistedHilos::class],
             'indexed per person' => [AccountErasureProjectIndexedHilos::class],
+            'kept per person, registered as one' => [AccountErasureProjectPerPersonUnindexedHilos::class],
             'worker without the owner interface' => [AccountErasureProjectPlainWorkerHilos::class],
         ];
     }
@@ -592,11 +593,18 @@ abstract class AccountErasureProjectPlainWorkerHilos extends AccountErasureProje
     ];
 }
 
+/** Project B, fourth mistake: the keeper is kept per person, but registered as one agent for everybody. */
+abstract class AccountErasureProjectPerPersonUnindexedHilos extends AccountErasureProjectHilos
+{
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = AccountErasureProjectPerPersonDirectory::class;
+}
+
 /** The project's one owner, its notes keeper, and one collection it leaves out. */
 abstract class AccountErasureProjectDirectory extends AccountDataOwnerDirectory
 {
     public const string NOTES = 'erasure_notes';
     public const string TEMPLATES = 'erasureProjectTemplates';
+    protected const bool PER_PERSON = false;
 
     /** @return list<AccountDataOwner> The notes keeper, one agent for everybody */
     protected static function owners(): array
@@ -605,7 +613,7 @@ abstract class AccountErasureProjectDirectory extends AccountDataOwnerDirectory
             self::NOTES,
             [AccountErasureProjectNotes::COLLECTION_KEY],
             AccountErasureProjectNoteKeeper::AGENT_TYPE,
-            false,
+            static::PER_PERSON,
             self::hasNotes(...),
         )];
     }
@@ -626,6 +634,12 @@ abstract class AccountErasureProjectDirectory extends AccountDataOwnerDirectory
 
         return $notes !== null && $notes->countByColumn(AccountErasureProjectNote::user_id, $userId) > 0;
     }
+}
+
+/** The notes keeper is kept per person instead of one agent for everybody. */
+abstract class AccountErasureProjectPerPersonDirectory extends AccountErasureProjectDirectory
+{
+    protected const bool PER_PERSON = true;
 }
 
 /** The notes keeper: deletes an account's notes through its collection and names the files they pointed at. */

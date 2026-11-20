@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\AccountOperation;
 
+use Hilos\Auth\AccountDeletion\ForcePurgeReply;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
@@ -18,13 +19,12 @@ use Hilos\HilosException;
  * The participants of an installation's account erasure, each collection covered by exactly one of
  * them or exempt by a stated reason.
  *
- * The framework's own participants come from {@see framework()}. A project declares the owners
- * of its collections and the collections it leaves out in its {@see AccountDataOwnerDirectory}, and
- * {@see installation()} takes them after the framework's own; {@see with()} adds a participant
- * that is not an owner from the directory.
- * The erasure opening and the startup coverage gate read {@see installation()}, and the census asks its
- * participants the row questions. SCAFFOLD: {@see framework()} and {@see with()} have no production caller
- * (no leaf yet).
+ * The framework's own participants come from {@see framework()}, which is a test-only entry.
+ * A project declares the owners of its collections and the collections it leaves out in its
+ * {@see AccountDataOwnerDirectory}, and {@see installation()} takes them after the framework's own;
+ * a project adds erasure participants only through its directory.
+ * The erasure opening and coordinator in the sessions library, {@see ForcePurgeReply}, and the startup
+ * coverage gate read {@see installation()}, and the census asks its participants the row questions.
  */
 final class AccountErasureParticipantCatalog
 {
@@ -118,6 +118,7 @@ final class AccountErasureParticipantCatalog
     }
 
     /**
+     * @internal Test-only entry: the framework's own participants without the project's directory; production code reads {@see installation()}.
      * @return self The framework's own participants, in census order
      * @throws InvalidTopologyException When the framework's participants overlap each other or the exemptions
      */
@@ -148,16 +149,6 @@ final class AccountErasureParticipantCatalog
             ],
             $directory::declaredExemptions(),
         );
-    }
-
-    /**
-     * @param AccountErasureParticipant ...$participants Project participants, asked after these
-     * @return self New catalog with the same exemptions; this one is left unchanged
-     * @throws InvalidTopologyException When a key or a collection is declared twice, or a covered collection is exempt
-     */
-    public function with(AccountErasureParticipant ...$participants): self
-    {
-        return new self([...$this->participants, ...array_values($participants)], $this->projectExempt);
     }
 
     /** @return list<AccountErasureParticipant> Participants in census order */

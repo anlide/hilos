@@ -9,7 +9,6 @@ use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Auth\AccountOperation\AccountErasureCensus;
 use Hilos\Auth\AccountOperation\AccountOperationActivation;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
-use Hilos\Auth\AccountOperation\AccountErasureFixedOwner;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
 use Hilos\Auth\AccountOperation\AccountErasureStart;
 use Hilos\Auth\AccountOperation\AccountErasureStartPayload;
@@ -40,13 +39,9 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Item\AccountOperation as EntityAccountOperation;
-use Hilos\Database\Entity\Item\Entity;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Identity\IdentityType;
 use Hilos\Database\Identity\PasswordFate;
-use Hilos\Database\Object\Item\Object_;
-use Hilos\Database\Object\Objects;
-use Hilos\Database\PhpType;
 use Hilos\Database\Schema\Schema;
 use Hilos\Database\Verification\VerificationType;
 use Hilos\Database\View\Item\AccountDeletion;
@@ -305,46 +300,6 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
             ['wait:personal:44'],
             self::assignmentKeys(AccountErasureCensus::of(Hilos::$db->userMerges->erasureCircleOf(self::OUTSIDER_ID), $catalog)),
         );
-    }
-
-    /** A project participant joins after the framework's; an owner registered without the index it needs is no owner. */
-    public function testProjectParticipantJoinsTheCensusThroughWith(): void
-    {
-        self::raiseNoteTable();
-        $catalog = AccountErasureParticipantCatalog::framework()->with(new AccountErasureFixedOwner(
-            'census_notes',
-            [AccountErasureCensusNotes::COLLECTION_KEY],
-            AccountErasureCensusOwnerAgent::NOTE_KEEPER,
-            true,
-            static fn (int $userId): bool => $userId === self::ROOT_ID,
-        ));
-        $root = Hilos::$db->userMerges->erasureCircleOf(self::ROOT_ID);
-        $outsider = Hilos::$db->userMerges->erasureCircleOf(self::OUTSIDER_ID);
-
-        AccountErasureCensusHilos::initBrowser();
-        self::assertSame(
-            [
-                'expect:personal:hilos_user:43:43',
-                'expect:users_library:hilos_users_library:43',
-                'expect:census_notes:census_note_keeper:43:43',
-            ],
-            self::assignmentKeys(AccountErasureCensus::of($root, $catalog)),
-        );
-        self::assertSame(
-            [
-                'expect:personal:hilos_user:44:44',
-                'expect:users_library:hilos_users_library:44',
-                'expect:census_notes:census_note_keeper:44:44',
-            ],
-            self::assignmentKeys(AccountErasureCensus::of($outsider, $catalog)),
-        );
-
-        AccountErasureCensusOwnerlessHilos::initBrowser();
-        self::assertSame(['wait:personal:43', 'wait:census_notes:43'], self::assignmentKeys(AccountErasureCensus::of($root, $catalog)));
-        self::assertSame(['wait:personal:44'], self::assignmentKeys(AccountErasureCensus::of($outsider, $catalog)));
-
-        AccountErasureCensusUnindexedKeeperHilos::initBrowser();
-        self::assertSame(['wait:personal:43', 'wait:census_notes:43'], self::assignmentKeys(AccountErasureCensus::of($root, $catalog)));
     }
 
     /** A trust restriction is the installation's rule, so its rows bring no participant into the census. */
@@ -874,18 +829,9 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
         Schema::initialize();
     }
 
-    /** Raises the project table behind the census notes collection. */
-    private static function raiseNoteTable(): void
-    {
-        Database::sqlRun('CREATE TABLE `' . AccountErasureCensusNote::_table . '` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT, PRIMARY KEY (`id`))');
-        Schema::reset();
-        Schema::initialize();
-    }
-
     /** Drops whatever a case raised, before the census tables it may point at. */
     private static function dropCaseTables(): void
     {
-        Database::sqlRun('DROP TABLE IF EXISTS `' . AccountErasureCensusNote::_table . '`');
         foreach (array_reverse(self::CASE_TABLES) as $table) {
             Database::sqlRun((string)file_get_contents(self::stubPath($table, '_down')));
         }
@@ -943,15 +889,9 @@ final class AccountErasureCensusIntegrationTest extends FrameworkIntegrationTest
     }
 }
 
-/** The framework's collections and one project collection a project participant covers. */
+/** The framework's collections and nothing else. */
 final class AccountErasureCensusContext extends HilosDbContext
 {
-    /** Mounts the framework's collections, then the project's census notes. */
-    public function configure(): void
-    {
-        parent::configure();
-        $this->mountObjectCollection(AccountErasureCensusNotes::class, Objects::LAZY_STRATEGY_KEY);
-    }
 }
 
 /** The session holder: the census readers are asked by the erasure coordinator it carries. */
@@ -959,7 +899,7 @@ final class AccountErasureCensusCoordinator extends AbstractSessionsLibraryAgent
 {
 }
 
-/** Every owner the framework catalog names, a project keeper per person and two pooled channel senders. */
+/** Every owner the framework catalog names and two pooled channel senders. */
 abstract class AccountErasureCensusHilos extends Hilos
 {
     protected const string NOTIFICATION_CHANNEL_REGISTRY = AccountErasureCensusChannels::class;
@@ -970,10 +910,6 @@ abstract class AccountErasureCensusHilos extends Hilos
         HilosAgentType::HILOS_SESSIONS_LIBRARY => [AgentRegistryKey::WORKER => AccountErasureCensusOwnerAgent::class],
         HilosAgentType::HILOS_DATA_EXPORT => [AgentRegistryKey::WORKER => AccountErasureCensusOwnerAgent::class],
         HilosAgentType::HILOS_LEGAL => [AgentRegistryKey::WORKER => AccountErasureCensusOwnerAgent::class],
-        AccountErasureCensusOwnerAgent::NOTE_KEEPER => [
-            AgentRegistryKey::WORKER => AccountErasureCensusOwnerAgent::class,
-            AgentRegistryKey::INDEXED => true,
-        ],
         AccountErasureCensusLetterAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => AccountErasureCensusLetterAgent::class,
             AgentRegistryKey::INDEXED => true,
@@ -989,14 +925,6 @@ abstract class AccountErasureCensusHilos extends Hilos
 abstract class AccountErasureCensusOwnerlessHilos extends AccountErasureCensusHilos
 {
     public const array AGENTS = [];
-}
-
-/** The project keeper registered as a single agent although its participant is kept per person. */
-abstract class AccountErasureCensusUnindexedKeeperHilos extends AccountErasureCensusHilos
-{
-    public const array AGENTS = [
-        AccountErasureCensusOwnerAgent::NOTE_KEEPER => [AgentRegistryKey::WORKER => AccountErasureCensusOwnerAgent::class],
-    ];
 }
 
 /** Two pooled channels; `census_pigeon` deliveries are saved but no descriptor knows the channel. */
@@ -1066,8 +994,6 @@ final class AccountErasureCensusChannel extends AbstractDeliveryChannel
 /** A registered owner with no signals: the census only asks whether its type is registered. */
 final class AccountErasureCensusOwnerAgent extends AbstractAgent
 {
-    public const string NOTE_KEEPER = 'census_note_keeper';
-
     /** Nothing to release. */
     public function onStop(): void
     {
@@ -1102,34 +1028,6 @@ final class AccountErasureCensusTextAgent extends AbstractAgent
     public function onStop(): void
     {
     }
-}
-
-/** A project row the census notes participant covers; only its table's presence matters here. */
-final class AccountErasureCensusNote extends Entity
-{
-    public const string id = 'id';
-
-    public const string _table = 'hilos_fw_test_census_note';
-    public const string _primary = self::id;
-    public const array _columns = [self::id];
-    public const array _types = [self::id => PhpType::INTEGER->value];
-
-    public ?int $id = null;
-}
-
-/** Stored census note. */
-final class AccountErasureCensusNoteObject extends Object_
-{
-    public const string ENTITY_CLASS = AccountErasureCensusNote::class;
-}
-
-/**
- * @extends Objects<AccountErasureCensusNoteObject>
- */
-final class AccountErasureCensusNotes extends Objects
-{
-    public const string OBJECT_CLASS = AccountErasureCensusNoteObject::class;
-    public const string COLLECTION_KEY = 'censusNotes';
 }
 
 /** Canceling a request belongs to the same personal owner as it does on a live node. */

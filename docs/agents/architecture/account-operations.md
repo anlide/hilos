@@ -629,14 +629,15 @@ with no owner and rows the person has, it expects a wait; otherwise nothing.
 `AccountErasureDeliveryParticipant` reads the person's delivery rows, resolves
 the owner of each through `DeliveryOwnerResolver::forDelivery()` (HIL-1893) and
 expects `delivery:<channel>` owners, and rows with no owner become one wait per
-channel. `AccountErasureParticipantCatalog::framework()` holds `personal` (its
-sixteen collections, the `HILOS_USER` owner, one per person), `users_library`
-(`verifications`, `HILOS_USERS_LIBRARY`), `sessions_holder` (`sessions` and
-`accessLogEntries`, `HILOS_SESSIONS_LIBRARY`), `delivery`
-(`notificationDeliveries`), `data_export` (`dataExports`, `HILOS_DATA_EXPORT`)
-and `legal_export` (`legalAcceptanceExports`, `HILOS_LEGAL`). `with(...)`
-returns a new catalog with more participants; a repeated key or collection, or
-a collection that is also in `EXEMPT`, is an `InvalidTopologyException`.
+channel. `AccountErasureParticipantCatalog::framework()` is a test-only entry
+holding the framework's own participants (production code reads
+`installation()`): `personal` (its sixteen collections, the `HILOS_USER` owner,
+one per person), `users_library` (`verifications`, `HILOS_USERS_LIBRARY`),
+`sessions_holder` (`sessions` and `accessLogEntries`, `HILOS_SESSIONS_LIBRARY`),
+`delivery` (`notificationDeliveries`), `data_export` (`dataExports`,
+`HILOS_DATA_EXPORT`) and `legal_export` (`legalAcceptanceExports`,
+`HILOS_LEGAL`). A repeated key or collection, or a covered collection that is
+also in `EXEMPT`, is an `InvalidTopologyException`.
 `EXEMPT` names each mounted framework collection that owes no participant and
 the reason (`AccountErasureExemption`): `accountDeletions` is a `Trace`;
 `accountOperations`, `accountOperationAssignments` and
@@ -727,14 +728,14 @@ as registered when the application registers its agent type with the indexing
 the owner declares and the registered class implements
 `AccountErasureProjectOwner`: then the census expects the owner for every
 account; otherwise it waits for an account with rows and expects nothing for
-one without. `with(...)` still adds a participant that is not an owner from
-the directory. The daemon refuses to start over a mounted collection that no
-participant covers and no exemption names, and over a collection the directory
-names that this installation does not mount (`AccountErasureCoverageGuard`,
-right after the set ownership gate); it is silent without `AUTH`. That gate is
-the only live caller of `installation()`: the census over a project's owners
-is live in the HIL-1952 erasure path. The census adds no
-claim, table, migration, signal, route or runtime state.
+one without. A project adds erasure participants only through its directory.
+The daemon refuses to start over a mounted collection that no participant covers
+and no exemption names, and over a collection the directory names that this
+installation does not mount (`AccountErasureCoverageGuard`, right after the set
+ownership gate); it is silent without `AUTH`. The erasure opening and coordinator
+in the sessions library, `ForcePurgeReply`, and that startup coverage gate read
+`installation()`. The census adds no claim, table, migration, signal, route or
+runtime state.
 
 The merge reads the same directory for the project's part of a merge. An owner
 is registered for the merge when it is declared one for everybody, the
