@@ -396,7 +396,7 @@ $steps = array_merge($steps, [
     ],
     // The file-gallery-manager fleet: two masters without capacity and three slave workers,
     // on a MariaDB primary with a read-only replica. Scenario 52 loses the leader of the two
-    // masters and returns it, Scenario 55 loses the primary and then the replica and returns both,
+    // masters and returns it, scenario 55 loses the primary and then the replica and returns both,
     // 50 holds the primary and the replica to one journal, and 31 checks the replica.
     // The stand group keeps a browser step from running beneath the scenario matrix; takes
     // its stand down at any outcome, for the reason binance-btc-tracker-cluster does.
