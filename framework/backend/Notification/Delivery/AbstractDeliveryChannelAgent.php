@@ -114,6 +114,10 @@ abstract class AbstractDeliveryChannelAgent extends AbstractAgent
      * The per-item partition proof constrains both operations to the saved owner coordinates,
      * the reset of a row an admin retries included; the library holds no Update beside it.
      *
+     * Claiming them here rather than routing every attempt's bookkeeping through the library is the
+     * shape the dispatcher was written for: delivery must not queue behind a single owner, and one
+     * signal per attempt per channel would put that latency back.
+     *
      * @var array<string, list<TruthSourceOperation>>
      */
     public const array OWNS_DB = [HilosDbContext::notificationDeliveries => TruthSourceOperation::BY_KIND];
