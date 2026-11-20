@@ -276,7 +276,79 @@ not pass itself off as a purchase:
 
 - **With payment**: "Checkout", the delivery line, and "Sold — someone paid
   first" on a line whose unique piece somebody else bought;
-- **With vouchers**: a voucher in the cart and its discount line.
+
+### Vouchers
+
+The vouchers that are being built on the cart above. It is a plan, not the
+running demo: what already works is listed under "Today" above.
+
+- **A voucher** is a code and a discount. The code is letters and digits and
+  is unique whatever the case: "spring10" and "SPRING10" are one code, and a
+  buyer may type either. The discount is a whole percent, from 1 to 100.
+- **On or off**: a switched-off code is refused in the cart. A voucher is
+  never deleted — a switched-off one stays in the list, because orders will
+  refer to it.
+
+Vouchers are kept by the vouchers library — one per cluster, and the cluster
+picks its node, like the catalog's libraries above; a voucher is created,
+changed, and switched on and off only through it. The voucher applied to a
+cart is remembered by that cart's own owner — the guest carts library for a
+guest's cart, the person's agent for an account's cart (the owners are the
+cart's above) — and the rules are the same for both.
+
+A cart holds one voucher at most. A code is applied in any case; a new one
+replaces the one already applied; an unknown or switched-off code is refused,
+in the server's own words. Removing the voucher takes it off the cart.
+
+The cart holds the voucher itself, not the text that was typed, and follows
+it by itself in every open cart, wherever in the cluster that cart is kept: a
+discount changed in shop administration changes the cart; a renamed code
+shows under its new name; a code switched off after it was applied stays in
+the cart, grayed out, and gives no discount — switched on again, the discount
+comes back by itself. A voucher applied, replaced or removed in one tab shows
+at once in every tab and on every device that has the same cart.
+
+When a guest signs in, the guest's voucher, if there is one, replaces the
+account's — the last one applied wins; without one, the account keeps its
+own. Signing out leaves the browser a guest without a voucher; the account's
+voucher stays with the account. When two accounts are merged, the same rule
+holds: the voucher of the account merged away, if it has one, replaces the
+voucher of the account it is merged into. A voucher goes with its cart:
+erasing an account erases its voucher, and a guest's goes when the framework
+clears the ended session away.
+
+The discount is a percent of the lines counted in the total — a line that can
+no longer be had is not one of them (the cart's above). It is rounded to two
+decimals by one rule — [the shop's money](#money) — the same on the screen
+and at the moment of purchase: "Total" on the screen is always "Items" less
+the discount.
+
+What people see:
+
+- **The cart page**: under "Items", a line "Voucher" with the code, a "✕" and
+  the discount taken off, and "Total" lower by it; the line of a switched-off
+  voucher grays out and is not counted. "✕" removes the voucher, without a
+  window. "Apply voucher" — "Apply another voucher" once one is applied —
+  opens a window with "Voucher code", "Codes are not case-sensitive." and "One
+  voucher per order. A new one replaces the one already applied."; the window
+  closes on the server's answer, and a refused code stays in the field with
+  the server's words above it.
+- **Shop administration**: `/hilos/app/vouchers` — "Vouchers", entered from
+  its card in the "Shop administration" section, "Discount codes buyers enter
+  in the cart."; administrators only. A live table of "Code", "Discount" and
+  "Active", searched by code ("Search codes"), filtered by "Active", in the
+  order of "Code"; with no voucher yet it says "No vouchers yet" and "Add a
+  code to give buyers a discount in the cart.". "Add voucher" and a row's
+  pencil open one window — "Code" ("Buyers type it in the cart. Letters and
+  digits; case does not matter."), "Discount, %" and "Active" ("A switched-off
+  code is refused in the cart."); a code already taken in any case, or a
+  discount out of bounds, is refused in the server's words and the window
+  stays open. "Active" in a row switches a code off and on, without a window.
+  There is no deleting.
+
+Orders bring the rest: "Used" in the Vouchers table — how many paid orders
+went through with the code — and the voucher in an order, with its percent.
+Until then neither is on any page.
 
 ## Money
 
