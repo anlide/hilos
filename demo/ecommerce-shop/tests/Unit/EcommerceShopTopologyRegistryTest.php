@@ -56,6 +56,7 @@ use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
 use Demo\EcommerceShop\Agents\ProductAgent;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Agents\StockLibraryAgent;
+use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
@@ -70,6 +71,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\CategoriesLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\ProductAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\ProductsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\StockLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\GuestCartsLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
@@ -158,6 +160,7 @@ use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Demo\EcommerceShop\Tables\Product\ProductsTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
+use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Throttle\AuthThrottleSettings;
 use Hilos\Core\Analytics\AnalyticsSettingsCatalog;
 use Hilos\ProtectedMode\ProtectedModeSettingsCatalog;
@@ -1052,6 +1055,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AgentType::CATEGORIES_LIBRARY,
             AgentType::PRODUCTS_LIBRARY,
             AgentType::STOCK_LIBRARY,
+            AgentType::GUEST_CARTS_LIBRARY,
             AgentType::PRODUCT,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_ANALYTICS,
@@ -1145,6 +1149,31 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([EcommerceShopDbContext::productWarehouseStocks], array_keys($claims));
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::productWarehouseStocks]->asList());
         self::assertSame([EcommerceShopDbContext::products, EcommerceShopDbContext::warehouses], StockLibraryAgent::readDbCollections());
+    }
+
+    /**
+     * The guest carts library runs once on the policy-selected node, in a worker of its own, owns the guests' carts
+     * whole, reads the products and the stock, and is the one addressee of the sessions sweep.
+     */
+    public function testGuestCartsLibraryIsPolicyPlacedMonopolisticOwnsTheCartsReadsProductsAndStockAndTakesTheSweep(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::GUEST_CARTS_LIBRARY];
+        self::assertSame(GuestCartsLibraryAgent::class, AgentRegistry::workerClass($entry));
+        self::assertSame(GuestCartsLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        self::assertTrue((new GuestCartsLibraryAgentDaemon())->requiresMonopolisticProcess());
+        $claims = OwnershipDeclaration::dbCollectionsOf(GuestCartsLibraryAgent::class);
+        self::assertSame([EcommerceShopDbContext::sessionProductCarts], array_keys($claims));
+        self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::sessionProductCarts]->asList());
+        self::assertSame(
+            [EcommerceShopDbContext::products, EcommerceShopDbContext::productWarehouseStocks],
+            GuestCartsLibraryAgent::readDbCollections(),
+        );
+        self::assertSame(
+            [HilosSignalConstants::HILOS_SESSIONS_SWEPT => SessionsSweptSignalData::class],
+            GuestCartsLibraryAgent::AGENT_SIGNALS,
+        );
     }
 
     /** The warehouses table is registered under its key, for the page that binds it. */
@@ -1363,8 +1392,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         //
         // The one frame the worker is addressed by is not its surface but the seam the sessions
         // moved behind (HIL-710): the library says what a session became, and this agent updates
-        // the connection rows that belong to the project. The sweep frame is not declared, so the
-        // library does not send it.
+        // the connection rows that belong to the project. The sweep frame is the guest carts
+        // library's, pinned above: the guest's cart is what of the project hangs on a session row.
         $this->assertSame([NotificationsGroup::GROUP => NotificationsGroup::class], Hilos::GROUPS);
         $this->assertSame([HilosUserDetailBrowserTable::TABLE => HilosUserDetailBrowserTable::class], Hilos::BROWSER_TABLES);
         $this->assertSame([], MainPage::ACTIONS);
@@ -1384,6 +1413,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::ECOMMERCE_SHOP,
+                HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::GUEST_CARTS_LIBRARY,
                 HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => HilosAgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_AGENT_PASS => HilosAgentType::HILOS_INDEX,

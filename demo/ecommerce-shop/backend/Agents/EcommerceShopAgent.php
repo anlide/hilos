@@ -33,8 +33,9 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
  * Session identity is the framework's, and a library's too: the cookie is resolved by
  * {@see SessionsLibraryAgent}, which says what the session is in one frame, and this agent
  * tracks the socket as a runtime connection of that session. A visitor without an account is
- * an anonymous session and stays nameless - the demo keeps no guest table and sends no guest
- * identity; an account is created by signing up or minted by {@see CliCommands::ADMIN_CREATE}.
+ * an anonymous session and stays nameless - the demo sends no guest identity, and the one thing
+ * of its own on a session row is the guest's cart, held by {@see GuestCartsLibraryAgent}; an
+ * account is created by signing up or minted by {@see CliCommands::ADMIN_CREATE}.
  * The name the home page shows is the session's own, so this agent holds no person rows.
  */
 final class EcommerceShopAgent extends AbstractAgent
@@ -46,9 +47,9 @@ final class EcommerceShopAgent extends AbstractAgent
 
     // The session frame is declared HERE and not in the library, which is what routes it to
     // this agent: a destination is taken from whoever names a signal, and the library naming
-    // its own outgoing frame would send it back to itself. The sweep frame is not declared:
-    // nothing of this demo's own hangs on a session row, and a frame nobody routes is one the
-    // library does not send.
+    // its own outgoing frame would send it back to itself. The sweep frame is not declared
+    // here: the one thing of this demo's own on a session row is the guest's cart, so the guest
+    // carts library declares it, and the carts of swept sessions go there.
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class,
     ];

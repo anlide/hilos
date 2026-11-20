@@ -2773,10 +2773,11 @@ final class HilosSignalConstants
     /**
      * Sessions library → project agent: these browser session rows were swept.
      *
-     * Carries the tokens of rows removed after their cookie lifetime ended or after an
-     * anonymous browser never returned ({@see SessionsSweptSignalData}). A project agent
-     * declares this frame when it stores data by browser token; when nobody declares it,
-     * the library sends nothing.
+     * Carries the tokens and the row ids of the same rows, removed after their cookie lifetime
+     * ended or after an anonymous browser never returned ({@see SessionsSweptSignalData}). A
+     * project agent declares this frame when it stores data per browser - by token, or by the
+     * session row id, which survives a rotation of the token; when nobody declares it, the
+     * library sends nothing.
      */
     public const string HILOS_SESSIONS_SWEPT = 'hilos_sessions_swept';
 

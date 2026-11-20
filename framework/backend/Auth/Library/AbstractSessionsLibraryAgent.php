@@ -1292,7 +1292,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                         $neverReturnedCount++;
                     }
                 } finally {
-                    $this->announceSweptSessions($deletedSessionTokens);
+                    $this->announceSweptSessions($deletedSessionTokens, array_keys($deletedSessionIds));
                 }
 
                 $deletedCount = $expiredCount + $neverReturnedCount;
@@ -1351,12 +1351,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Tells a project that declares the cleanup frame which browser tokens went away.
+     * Tells a project that declares the cleanup frame which browser sessions went away, by token and
+     * by row id.
      *
      * @param list<string> $sessionTokens Removed session tokens
+     * @param list<int> $sessionIds Ids of the same removed rows, in the order of the tokens
      * @throws InvalidArgumentException When the signal name cannot be queued
      */
-    private function announceSweptSessions(array $sessionTokens): void
+    private function announceSweptSessions(array $sessionTokens, array $sessionIds): void
     {
         if ($sessionTokens === []
             || !isset(Hilos::appClass()::getAgentSignalRoutes()[HilosSignalConstants::HILOS_SESSIONS_SWEPT])
@@ -1366,7 +1368,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
         $this->sendToAgent(
             HilosSignalConstants::HILOS_SESSIONS_SWEPT,
-            new SessionsSweptSignalData($sessionTokens),
+            new SessionsSweptSignalData($sessionTokens, $sessionIds),
         );
     }
 

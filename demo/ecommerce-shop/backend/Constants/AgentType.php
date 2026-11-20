@@ -35,6 +35,9 @@ final class AgentType
     /** @var string Stock library agent type (monopolistic; the one writer of the stock) */
     public const string STOCK_LIBRARY = 'stock_library';
 
+    /** @var string Guest carts library agent type (monopolistic; the one writer of guests' carts) */
+    public const string GUEST_CARTS_LIBRARY = 'guest_carts_library';
+
     /** @var string Agent of one product page address (indexed by the address; reads the product and its stock, writes nothing) */
     public const string PRODUCT = 'product';
 

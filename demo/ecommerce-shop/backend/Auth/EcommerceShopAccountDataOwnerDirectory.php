@@ -13,12 +13,17 @@ use Hilos\Auth\AccountOperation\AccountErasureExemption;
  *
  * The warehouses are the shop's premises, the categories and the products with their
  * addresses are its catalog, and the stock is how many units of each product each warehouse
- * keeps: nobody's personal data, so they stay out of the erasure. No collection of the shop
- * holds a person's rows yet, so there is no owner to name.
+ * keeps: nobody's personal data, so they stay out of the erasure. The guest carts belong to
+ * browser sessions without an account and have no column pointing at a person, so the erasure
+ * leaves them alone too. No collection of the shop holds a person's rows yet, so there is no
+ * owner to name.
  */
 final class EcommerceShopAccountDataOwnerDirectory extends AccountDataOwnerDirectory
 {
-    /** @return array<string, AccountErasureExemption> The warehouses, the catalog and the stock, which carry nothing personal */
+    /**
+     * @return array<string, AccountErasureExemption> The warehouses, the catalog and the stock, which carry nothing
+     *     personal, and the guest carts, held apart from any account
+     */
     protected static function exempt(): array
     {
         return [
@@ -28,6 +33,7 @@ final class EcommerceShopAccountDataOwnerDirectory extends AccountDataOwnerDirec
             EcommerceShopDbContext::products => AccountErasureExemption::NotPersonal,
             EcommerceShopDbContext::productSlugs => AccountErasureExemption::NotPersonal,
             EcommerceShopDbContext::productWarehouseStocks => AccountErasureExemption::NotPersonal,
+            EcommerceShopDbContext::sessionProductCarts => AccountErasureExemption::OutsideAccount,
         ];
     }
 }

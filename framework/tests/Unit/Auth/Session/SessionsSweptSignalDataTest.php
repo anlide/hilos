@@ -13,16 +13,20 @@ use PHPUnit\Framework\TestCase;
  */
 final class SessionsSweptSignalDataTest extends TestCase
 {
-    public function testRoundtripPreservesSessionTokens(): void
+    public function testRoundtripPreservesSessionTokensAndIds(): void
     {
-        $payload = new SessionsSweptSignalData([
-            '0123456789abcdef0123456789abcdef',
-            'fedcba9876543210fedcba9876543210',
-        ]);
+        $payload = new SessionsSweptSignalData(
+            [
+                '0123456789abcdef0123456789abcdef',
+                'fedcba9876543210fedcba9876543210',
+            ],
+            [41, 7],
+        );
 
         $roundtrip = SessionsSweptSignalData::fromArray($payload->toArray());
 
         self::assertSame($payload->sessionTokens, $roundtrip->sessionTokens);
+        self::assertSame($payload->sessionIds, $roundtrip->sessionIds);
         self::assertSame($payload->toArray(), $roundtrip->toArray());
     }
 
@@ -30,6 +34,23 @@ final class SessionsSweptSignalDataTest extends TestCase
     {
         $this->expectException(InvalidFormatException::class);
 
-        SessionsSweptSignalData::fromArray([]);
+        SessionsSweptSignalData::fromArray([SessionsSweptSignalData::sessionIds => [41]]);
+    }
+
+    public function testPayloadWithoutSessionIdListIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        SessionsSweptSignalData::fromArray([SessionsSweptSignalData::sessionTokens => ['0123456789abcdef0123456789abcdef']]);
+    }
+
+    public function testPayloadWithANonIntegerSessionIdIsRefused(): void
+    {
+        $this->expectException(InvalidFormatException::class);
+
+        SessionsSweptSignalData::fromArray([
+            SessionsSweptSignalData::sessionTokens => ['0123456789abcdef0123456789abcdef'],
+            SessionsSweptSignalData::sessionIds => [41, '7'],
+        ]);
     }
 }

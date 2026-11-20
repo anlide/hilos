@@ -38,16 +38,17 @@ Settings, Users and the footer pages, the settings library, the notifications
 library, the backup agent, the files library with the uploads and image-copy
 agents, and the framework sign-in libraries. It keeps tables of its own: the
 warehouses, the categories with every address a category has had, the
-products with every address a product has had, and the stock — the units of
-each product in each warehouse. Each is held whole by its own library — the
-warehouses library, the categories library, the products library, the stock
-library — one for the whole cluster, on the node the cluster picks. Every
-address of the product page has an agent of its own: it comes up with the
-first visitor of that address and goes to sleep after the last one has left;
-it reads the product and its stock and writes nothing. The product page of
-the shop front that it serves arrives with a change of its own. People,
-sessions, the tables of signing in and the registry of files stay the
-framework's.
+products with every address a product has had, the stock — the units of each
+product in each warehouse — and the guests' carts — the products a browser
+session without an account has put in its cart. Each is held whole by its own
+library — the warehouses library, the categories library, the products
+library, the stock library, the guest carts library — one for the whole
+cluster, on the node the cluster picks. Every address of the product page has
+an agent of its own: it comes up with the first visitor of that address and
+goes to sleep after the last one has left; it reads the product and its stock
+and writes nothing. The product page of the shop front that it serves arrives
+with a change of its own. People, sessions, the tables of signing in and the
+registry of files stay the framework's.
 
 ### What it is going to show
 

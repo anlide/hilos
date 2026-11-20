@@ -9,6 +9,7 @@ use Demo\EcommerceShop\Database\Actions\Collection\CategorySlugsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\ProductsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\ProductSlugsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\ProductWarehouseStocksActions;
+use Demo\EcommerceShop\Database\Actions\Collection\SessionProductCartsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\WarehousesActions;
 use Demo\EcommerceShop\Database\Actions\Item\CategoryActions;
 use Demo\EcommerceShop\Database\Actions\Item\ProductActions;
@@ -18,12 +19,14 @@ use Demo\EcommerceShop\Database\Object\Collection\CategorySlugs as ObjectCategor
 use Demo\EcommerceShop\Database\Object\Collection\Products as ObjectProducts;
 use Demo\EcommerceShop\Database\Object\Collection\ProductSlugs as ObjectProductSlugs;
 use Demo\EcommerceShop\Database\Object\Collection\ProductWarehouseStocks as ObjectProductWarehouseStocks;
+use Demo\EcommerceShop\Database\Object\Collection\SessionProductCarts as ObjectSessionProductCarts;
 use Demo\EcommerceShop\Database\Object\Collection\Warehouses as ObjectWarehouses;
 use Demo\EcommerceShop\Database\View\Collection\Categories;
 use Demo\EcommerceShop\Database\View\Collection\CategorySlugs;
 use Demo\EcommerceShop\Database\View\Collection\Products;
 use Demo\EcommerceShop\Database\View\Collection\ProductSlugs;
 use Demo\EcommerceShop\Database\View\Collection\ProductWarehouseStocks;
+use Demo\EcommerceShop\Database\View\Collection\SessionProductCarts;
 use Demo\EcommerceShop\Database\View\Collection\Warehouses;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
@@ -46,7 +49,9 @@ use Hilos\Database\Object\Objects;
  * the stock with it, so the products, their addresses and the stock load lazily by key: the
  * products library holds the products and their addresses whole, the stock library the stock,
  * and a walk over any of them anywhere else is refused. A visitor without an account stays
- * nameless, so there is no guest table.
+ * nameless, and the one thing the shop keeps for one is the cart of its browser session: the
+ * guest carts grow with the visitors, so they load lazily by key too, and the guest carts
+ * library holds them whole.
  *
  * @extends HilosDbContext
  * @property-read Warehouses $warehouses
@@ -55,6 +60,7 @@ use Hilos\Database\Object\Objects;
  * @property-read Products $products
  * @property-read ProductSlugs $productSlugs
  * @property-read ProductWarehouseStocks $productWarehouseStocks
+ * @property-read SessionProductCarts $sessionProductCarts
  */
 final class EcommerceShopDbContext extends HilosDbContext
 {
@@ -64,6 +70,7 @@ final class EcommerceShopDbContext extends HilosDbContext
     public const string products = 'products';
     public const string productSlugs = 'productSlugs';
     public const string productWarehouseStocks = 'productWarehouseStocks';
+    public const string sessionProductCarts = 'sessionProductCarts';
 
     /**
      * Configures database context with object collections and view representations.
@@ -85,6 +92,7 @@ final class EcommerceShopDbContext extends HilosDbContext
         $this->mountObjectCollection(ObjectProducts::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectProductSlugs::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectProductWarehouseStocks::class, Objects::LAZY_STRATEGY_KEY);
+        $this->mountObjectCollection(ObjectSessionProductCarts::class, Objects::LAZY_STRATEGY_KEY);
 
         $this->setRepresent(self::warehouses, Warehouses::class, WarehousesActions::class, WarehouseActions::class);
         $this->setRepresent(self::categories, Categories::class, CategoriesActions::class, CategoryActions::class);
@@ -92,5 +100,6 @@ final class EcommerceShopDbContext extends HilosDbContext
         $this->setRepresent(self::products, Products::class, ProductsActions::class, ProductActions::class);
         $this->setRepresent(self::productSlugs, ProductSlugs::class, ProductSlugsActions::class);
         $this->setRepresent(self::productWarehouseStocks, ProductWarehouseStocks::class, ProductWarehouseStocksActions::class);
+        $this->setRepresent(self::sessionProductCarts, SessionProductCarts::class, SessionProductCartsActions::class);
     }
 }

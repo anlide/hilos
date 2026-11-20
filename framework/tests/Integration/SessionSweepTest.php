@@ -111,12 +111,18 @@ final class SessionSweepTest extends HilosSessionIntegrationTestCase
         self::seedSession(self::EXPIRED_AUTHENTICATED, 7, self::daysAgo(2), self::daysAgo(1));
         self::seedSession(self::EXPIRED_ANONYMOUS, null, self::daysAgo(2), self::daysAgo(1));
         self::seedSession(self::OPEN_ENDED, 8, self::daysAgo(20), null);
+        $expectedFrame = self::sweepFrame(
+            [self::EXPIRED_AUTHENTICATED, self::EXPIRED_ANONYMOUS],
+            [self::sessionId(self::EXPIRED_AUTHENTICATED), self::sessionId(self::EXPIRED_ANONYMOUS)],
+        );
+        $this->drainSignals();
 
         $this->runSweep();
 
         self::assertNull(self::sessionRow(self::EXPIRED_AUTHENTICATED));
         self::assertNull(self::sessionRow(self::EXPIRED_ANONYMOUS));
         self::assertNotNull(self::sessionRow(self::OPEN_ENDED));
+        self::assertSame($expectedFrame, $this->sweptFrame());
     }
 
     /**
@@ -207,16 +213,17 @@ final class SessionSweepTest extends HilosSessionIntegrationTestCase
     {
         self::seedSession(self::EXPIRED_ANONYMOUS, null, self::daysAgo(9), self::daysAgo(1));
         self::seedSession(self::EXPIRED_AUTHENTICATED, 11, self::daysAgo(2), self::daysAgo(1));
+        $expectedFrame = self::sweepFrame(
+            [self::EXPIRED_ANONYMOUS, self::EXPIRED_AUTHENTICATED],
+            [self::sessionId(self::EXPIRED_ANONYMOUS), self::sessionId(self::EXPIRED_AUTHENTICATED)],
+        );
         $this->drainSignals();
 
         $this->runSweep();
 
         self::assertNull(self::sessionRow(self::EXPIRED_ANONYMOUS));
         self::assertNull(self::sessionRow(self::EXPIRED_AUTHENTICATED));
-        self::assertSame(
-            [self::EXPIRED_ANONYMOUS, self::EXPIRED_AUTHENTICATED],
-            $this->sweptTokens(),
-        );
+        self::assertSame($expectedFrame, $this->sweptFrame());
     }
 
     /**
@@ -266,7 +273,7 @@ final class SessionSweepTest extends HilosSessionIntegrationTestCase
 
         $this->runSweep();
 
-        self::assertSame([], $this->sweptTokens());
+        self::assertSame([], $this->sweptFrame());
     }
 
     /**
@@ -421,13 +428,44 @@ final class SessionSweepTest extends HilosSessionIntegrationTestCase
     }
 
     /**
-     * Drains the signal queue and returns tokens from the last sweep frame in it.
+     * Names the payload a sweep frame carries for rows removed in this order.
      *
-     * @return list<string> Removed session tokens, empty when no frame was queued
+     * @param list<string> $sessionTokens Tokens of the removed rows
+     * @param list<int> $sessionIds Ids of the same rows, in the order of the tokens
+     * @return array{sessionTokens: list<string>, sessionIds: list<int>} Frame payload
      */
-    private function sweptTokens(): array
+    private static function sweepFrame(array $sessionTokens, array $sessionIds): array
     {
-        $sessionTokens = [];
+        return [
+            SessionsSweptSignalData::sessionTokens => $sessionTokens,
+            SessionsSweptSignalData::sessionIds => $sessionIds,
+        ];
+    }
+
+    /**
+     * Reads the id a seeded row was given, before the sweep removes it.
+     *
+     * @param string $token Session token of the seeded row
+     * @return int Id of the row
+     * @throws DatabaseException When the lookup fails
+     */
+    private static function sessionId(string $token): int
+    {
+        $id = Hilos::$db->sessions->findByToken($token)?->id;
+        self::assertNotNull($id);
+
+        return $id;
+    }
+
+    /**
+     * Drains the signal queue and returns the payload of the last sweep frame in it.
+     *
+     * @return array{sessionTokens: list<string>, sessionIds: list<int>}|array{} Removed session tokens and
+     *     row ids, empty when no frame was queued
+     */
+    private function sweptFrame(): array
+    {
+        $frame = [];
         while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
             if ($signal->signalType->getType() !== SignalTypeConstants::AGENT_SIGNAL
                 || $signal->signalName->getName() !== HilosSignalConstants::HILOS_SESSIONS_SWEPT
@@ -437,10 +475,10 @@ final class SessionSweepTest extends HilosSessionIntegrationTestCase
 
             self::assertInstanceOf(AgentSignalData::class, $signal->data);
             self::assertInstanceOf(SessionsSweptSignalData::class, $signal->data->data);
-            $sessionTokens = $signal->data->data->sessionTokens;
+            $frame = $signal->data->data->toArray();
         }
 
-        return $sessionTokens;
+        return $frame;
     }
 
     /** Empties the signal queue before an assertion about the next operation. */

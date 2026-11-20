@@ -6,6 +6,7 @@ namespace Demo\EcommerceShop;
 
 use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
+use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\DataExportAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAgent;
 use Demo\EcommerceShop\Agents\Hilos\DemoHilosAnalyticsAgent;
@@ -26,6 +27,7 @@ use Demo\EcommerceShop\Backup\BackupCatalog;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
 use Demo\EcommerceShop\Core\Agent\Daemon\CategoriesLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\GuestCartsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAnalyticsAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosChangeLogAgentDaemon;
@@ -408,6 +410,11 @@ final class Hilos extends HilosFacade
         StockLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => StockLibraryAgent::class,
             AgentRegistryKey::DAEMON => StockLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        GuestCartsLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => GuestCartsLibraryAgent::class,
+            AgentRegistryKey::DAEMON => GuestCartsLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         ProductAgent::AGENT_TYPE => [

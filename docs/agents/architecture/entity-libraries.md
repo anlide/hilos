@@ -853,11 +853,11 @@ Answer `SUBSCRIPTION_PAGE_ERROR`. An empty list is a claim about the data.
   this library's sweep (`hilos_sessions_expire`, every 15 minutes): a row whose
   expiry passed - the cookie slides with the row on every handshake and dies with
   it - and an anonymous row that never came back, seven days after its only
-  handshake. A row with a live connection is never deleted. The deleted tokens go
-  to the project in `hilos_sessions_swept`, sent only where an agent declares it,
-  so a project can drop what it keeps per browser. Whose set the session is in,
-  who writes it and whether it gets an agent of its own are decided in
-  [Session Ownership](#session-ownership).
+  handshake. A row with a live connection is never deleted. The deleted tokens
+  and row ids go to the project in `hilos_sessions_swept`, sent only where an
+  agent declares it, so a project can drop what it keeps per browser. Whose set
+  the session is in, who writes it and whether it gets an agent of its own are
+  decided in [Session Ownership](#session-ownership).
 - `framework/backend/Notification/Library/AbstractNotificationsLibraryAgent.php` —
   the third (HIL-771): the notifications library, which creates notification
   and delivery rows and holds only `Add` on the deliveries — an admin retry is
