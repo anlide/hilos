@@ -14,7 +14,6 @@ use LogicException;
 
 /**
  * @internal Ordered traversal with an arena-owned suspended path.
- * SCAFFOLD: production snapshot export will use this cursor after activation.
  */
 final class RtIndexCursor
 {

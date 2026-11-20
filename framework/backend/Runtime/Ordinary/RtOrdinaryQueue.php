@@ -19,7 +19,8 @@ use SplQueue;
  * The source owner outlives queued work; advance() retires fixed cells individually.
  * No wire credit or snapshot generation controls this queue.
  * The framework write doors admit onto it ({@see RtOrdinaryAdmission}).
- * SCAFFOLD: the transport consumer that drains it is deliberately separate.
+ * The process's stream sender drains it through {@see RtOrdinaryAdmission::consumeBy()} and
+ * {@see RtOrdinaryAdmission::handOnCommitted()}.
  */
 final class RtOrdinaryQueue
 {

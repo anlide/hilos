@@ -15,7 +15,6 @@ use LogicException;
 /**
  * @internal Persistent binary Patricia index over fixed-size hashes or ordinals.
  * Paths are arena pages too: cancel never drops a native traversal graph.
- * SCAFFOLD: used by the isolated committed version store, not live collections yet.
  */
 final readonly class RtPersistentIndex
 {

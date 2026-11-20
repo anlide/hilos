@@ -15,7 +15,6 @@ use LogicException;
 
 /**
  * @internal Immutable segmented id and optional set identity, with streamed hashes.
- * SCAFFOLD: production rows do not use this identity binding yet.
  */
 final readonly class RtPreparedIdentity
 {

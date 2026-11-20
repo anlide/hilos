@@ -15,8 +15,6 @@ use LogicException;
 
 /**
  * Captured immutable values and baseline, with no mutable RtState retained.
- * SCAFFOLD: prepared records are consumed by the isolated version store until
- * all collection readers and write bridges can be mounted together.
  */
 final readonly class RtFrozenRow
 {
