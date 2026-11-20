@@ -16,18 +16,12 @@ use Hilos\Legal\StandardSetCatalog;
  * RobloxGameServerLegalCatalog - The Roblox Game Server demo's legal documents.
  *
  * The Terms document follows the framework standard. Current Privacy declares the analytics exception to
- * account erasure. Earlier revisions remain available to people who accepted them.
+ * account erasure.
  */
 final class RobloxGameServerLegalCatalog implements LegalCatalogProviderInterface
 {
-    /** @var string First terms revision, named by its publication date */
-    private const string TERMS_FIRST_REVISION = '2026-09-29';
-
-    /** @var string First privacy revision, named by its publication date */
-    private const string PRIVACY_FIRST_REVISION = '2026-09-29';
-
-    /** Current Privacy revision declaring the analytics exception. */
-    private const string PRIVACY_ANALYTICS_REVISION = '2026-10-09';
+    /** First publication date of this project's legal documents. */
+    private const string FIRST_REVISION = '2026-11-11';
 
     /** Directory of this project's legal deviation text files. */
     private const string TEXT_DIRECTORY = __DIR__ . '/Text';
@@ -43,37 +37,28 @@ final class RobloxGameServerLegalCatalog implements LegalCatalogProviderInterfac
             LegalDocument::TERMS->value => [
                 new LegalRevision(
                     document: LegalDocument::TERMS,
-                    id: self::TERMS_FIRST_REVISION,
-                    publishedOn: self::TERMS_FIRST_REVISION,
+                    id: self::FIRST_REVISION,
+                    publishedOn: self::FIRST_REVISION,
                     setVersion: 1,
                     significance: LegalSignificance::SUBSTANTIAL,
-                    effectiveOn: '2026-09-29',
+                    effectiveOn: self::FIRST_REVISION,
                     deviations: [],
                 ),
             ],
             LegalDocument::PRIVACY->value => [
                 new LegalRevision(
                     document: LegalDocument::PRIVACY,
-                    id: self::PRIVACY_FIRST_REVISION,
-                    publishedOn: self::PRIVACY_FIRST_REVISION,
+                    id: self::FIRST_REVISION,
+                    publishedOn: self::FIRST_REVISION,
                     setVersion: 1,
                     significance: LegalSignificance::SUBSTANTIAL,
-                    effectiveOn: '2026-09-29',
-                    deviations: [],
-                ),
-                new LegalRevision(
-                    document: LegalDocument::PRIVACY,
-                    id: self::PRIVACY_ANALYTICS_REVISION,
-                    publishedOn: self::PRIVACY_ANALYTICS_REVISION,
-                    setVersion: 1,
-                    significance: LegalSignificance::SUBSTANTIAL,
-                    effectiveOn: self::PRIVACY_ANALYTICS_REVISION,
+                    effectiveOn: self::FIRST_REVISION,
                     deviations: [
                         new Deviation(
                             clauseKey: StandardSetCatalog::CLAUSE_DELETION,
                             direction: DeviationDirection::STRICTER,
                             statement: 'Account deletion leaves numbered analytics events and network addresses',
-                            textFile: self::TEXT_DIRECTORY . '/privacy/standard.deletion.2026-10-09.txt',
+                            textFile: self::TEXT_DIRECTORY . '/privacy/standard.deletion.2026-11-11.txt',
                         ),
                     ],
                 ),
