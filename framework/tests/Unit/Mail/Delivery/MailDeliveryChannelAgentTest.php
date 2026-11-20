@@ -414,9 +414,9 @@ final class MailDeliveryChannelAgentTest extends TestCase
     public function testTransientFailureRetriesUpToTheCeilingThenDrops(): void
     {
         $transports = [
-            new ScriptedMailTransport(1, MailSendOutcome::failed('temporary greylist', false)),
-            new ScriptedMailTransport(1, MailSendOutcome::failed('temporary greylist', false)),
-            new ScriptedMailTransport(1, MailSendOutcome::failed('temporary greylist', false)),
+            new ScriptedMailTransport(1, MailSendOutcome::failed('temporary graylist', false)),
+            new ScriptedMailTransport(1, MailSendOutcome::failed('temporary graylist', false)),
+            new ScriptedMailTransport(1, MailSendOutcome::failed('temporary graylist', false)),
         ];
         $agent = new TestableMailAgent($transports);
 
@@ -643,7 +643,7 @@ final class MailDeliveryChannelAgentTest extends TestCase
     public function testARetryableRefusalPutsTheLineBackInTheQueue(): void
     {
         $transports = [
-            new ScriptedMailTransport(1, MailSendOutcome::failed('temporary greylist', false)),
+            new ScriptedMailTransport(1, MailSendOutcome::failed('temporary graylist', false)),
             new ScriptedMailTransport(1, MailSendOutcome::delivered()),
         ];
         $agent = new TestableMailAgent($transports);

@@ -847,7 +847,7 @@ export class HilosLayout {
   // an admin route — the framework's and a project's alike, the dashboard
   // included — is told once that the screen may be looked at and not changed.
   // Its text carries the id every control the mode disables names in
-  // aria-describedby (HIL-1261), so the reason is said in one place. It is grey
+  // aria-describedby (HIL-1261), so the reason is said in one place. It is gray
   // because yellow, blue and red already mean "not well", frozen and blocked in
   // this region, and it is last of the framework's strips: it is about the
   // screen one stands on, so it sits nearest to it. A grant takes it down live

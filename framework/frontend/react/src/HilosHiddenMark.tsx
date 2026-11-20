@@ -1,5 +1,5 @@
 // HilosHiddenMark — the one mark of a value the server keeps from a viewer of
-// the admin view mode (HIL-1250): a soft pill badge, grey on grey, a struck-out
+// the admin view mode (HIL-1250): a soft pill badge, gray on gray, a struck-out
 // eye and the word "Hidden" (HILOS_VIEW_MODE_COPY.hidden). One mark for every
 // place a hidden value stands — a table cell, the text of a card, the body of a
 // modal, a line inside a cell — so a viewer learns it once; the look is variant

@@ -2180,7 +2180,7 @@ describe('HilosViewportTable drawing a row as a card', () => {
     expect(placeholderCard.classList.contains('border-success')).toBe(false)
   })
 
-  it('keeps an expanded refused card border-danger without grey, and an expanded unrefused card borderless', () => {
+  it('keeps an expanded refused card border-danger without gray, and an expanded unrefused card borderless', () => {
     const controller = makeController(CARD_FRAME, {
       refused: (row) => row.name === 'refused',
     })

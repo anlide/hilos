@@ -7,7 +7,7 @@ keys, routes, visible UI copy, comments, and PHPDoc/TSDoc.
 
 Use American English spelling everywhere.
 
-Checked automatically: `SPELLING` — the six pairs of the table below, each
+Checked automatically: `SPELLING` — the seven pairs of the table below, each
 together with its own word forms, on both sides of the PHP↔TypeScript boundary
 (see [automated-checks.md](automated-checks.md)). A form counts only when it
 keeps the whole British word and adds letters after it: `serialises` is caught,
@@ -19,6 +19,7 @@ pass unseen, and so does anything outside `.php`, `.ts`, `.tsx`, `.vue` and
 license   not  licence       color     not  colour
 behavior  not  behaviour      serialize not  serialise
 organize  not  organise       canceled  not  cancelled
+gray      not  grey
 ```
 
 This holds across every layer — class and constant names, variable names,

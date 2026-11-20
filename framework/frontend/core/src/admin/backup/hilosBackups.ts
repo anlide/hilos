@@ -1033,7 +1033,7 @@ const BACKUPS_COLUMNS: HilosTableColumnOf<HilosBackupRow>[] = [
     label: 'Date',
     sortable: true,
     cellClass: 'text-nowrap',
-    // The node holding an archive out of reach is named here; every other cell greys
+    // The node holding an archive out of reach is named here; every other cell grays
     // out by the same field, and one column naming it is what the comparison needs.
     reads: [BACKUP_HOLDER_NODE_FIELD, BACKUP_HOLDER_NODE_NAME_FIELD],
   },

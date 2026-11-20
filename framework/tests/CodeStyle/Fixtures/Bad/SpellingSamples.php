@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Tests\CodeStyle\Fixtures\Bad;
 
 /**
- * Deliberately broken sample: every British form below is one of the six words of
+ * Deliberately broken sample: every British form below is one of the seven words of
  * spelling.md, standing where a PHP file writes English — a doc block, a line
  * comment, a string literal, a constant name behind an underscore, a variable name
  * behind a camelCase hump, and two word forms whose tail the matcher takes in.
@@ -32,5 +32,16 @@ final class SpellingSamples
         $localColour = $behaviour . ' serialises to ' . self::BADGE_COLOUR;
 
         return $localColour;
+    }
+
+    /** A grey pill — bare stem and its forms: greys, greyed, greying, greyish. */
+    public const string PILL_GREY = 'Grey';
+
+    /**
+     * @return bool Whether the control is disabled
+     */
+    public function isGreyed(): bool
+    {
+        return true;
     }
 }

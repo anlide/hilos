@@ -1,5 +1,5 @@
 <!-- HilosSkeleton — the frame a data block draws while its data has not arrived:
-grey bars at the size and place of the content to come, not a blank and not a
+gray bars at the size and place of the content to come, not a blank and not a
 spinner over everything (the mockup's «The connection went away» screen). Stock
 Bootstrap placeholders, no CSS of its own (styling-rules.md).
 

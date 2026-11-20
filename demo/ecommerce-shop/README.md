@@ -250,7 +250,7 @@ Putting a product in a cart sets nothing aside — the stock stays as it was,
 and another buyer can still take the last unit; with payment, whoever pays
 first gets it. A cart line follows the catalog by itself: a price or
 availability changed in shop administration changes it in every open cart,
-and a line that can no longer be had greys out, is not counted in the total,
+and a line that can no longer be had grays out, is not counted in the total,
 and "Remove" takes it out.
 
 What a buyer sees:
@@ -260,14 +260,14 @@ What a buyer sees:
   device, and leads to the cart page.
 - **A product**: "Add to cart" puts one unit in, without a window — "Adds
   one. Change the quantity in the cart."; a unique piece already in the cart
-  shows "In your cart — go to cart" instead; what cannot be had is greyed
+  shows "In your cart — go to cart" instead; what cannot be had is grayed
   out. Next to who is looking, "In N carts" or "In nobody's cart yet" — how
   many buyers, guests and accounts alike, have it in their cart now; the
   administrators' product page shows the same number on its "On the shop
   front" line.
 - **A category**: "Add" in a row, in "Table" and in "Tiles", puts one unit
   in; a unique piece already in the cart says "In cart" and leads to the
-  cart; for a sold unique piece and a stock item at zero it is greyed out.
+  cart; for a sold unique piece and a stock item at zero it is grayed out.
 - **The cart page**, `/cart`, open to everyone: a line per product — picture,
   name leading to the product, price each and the line's total — then "Items"
   and "Total". "−" and "+" change a quantity by one, without a window; the

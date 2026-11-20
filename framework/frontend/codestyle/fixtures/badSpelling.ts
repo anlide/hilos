@@ -1,4 +1,4 @@
-// Deliberately broken sample: every British form below is one of the six words of
+// Deliberately broken sample: every British form below is one of the seven words of
 // spelling.md, standing where a TypeScript file writes English — a TSDoc block, a
 // line comment, a string literal, a constant name behind an underscore, a variable
 // behind a camelCase hump, and two word forms whose tail the matcher takes in.
@@ -22,4 +22,14 @@ export function serialiseBehaviour(behaviour: string): string {
   const localColour = `${behaviour} serialises to ${BADGE_COLOUR}`
 
   return localColour
+}
+
+/** A grey pill — bare stem and its forms: greys, greyed, greying, greyish. */
+export const PILL_GREY = 'Grey'
+
+/**
+ * @returns Whether the control is disabled
+ */
+export function isGreyed(): boolean {
+  return true
 }

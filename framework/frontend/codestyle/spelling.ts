@@ -21,8 +21,8 @@ export const SPELLING_RULE_ID = 'SPELLING'
 const DOC = 'docs/agents/code-style/spelling.md'
 
 /**
- * The six pairs of spelling.md, British keyed to American, in the order the table
- * writes them. The table is the source and this constant its reading: a seventh
+ * The seven pairs of spelling.md, British keyed to American, in the order the table
+ * writes them. The table is the source and this constant its reading: an eighth
  * pair is added to the document first.
  */
 const AMERICAN_BY_BRITISH: Readonly<Record<string, string>> = {
@@ -32,6 +32,7 @@ const AMERICAN_BY_BRITISH: Readonly<Record<string, string>> = {
   serialise: 'serialize',
   organise: 'organize',
   cancelled: 'canceled',
+  grey: 'gray',
 }
 
 /** The SDK workspace, walked whole: sources, tests and the checkers alike. */
@@ -98,7 +99,7 @@ const CLOSE = '[a-z]*'
 
 /**
  * The matcher, assembled from the table so that the table stays the only list:
- * `open`, then one of the six words in any case, then `close`. The word is spelled
+ * `open`, then one of the seven words in any case, then `close`. The word is spelled
  * out letter by letter in both cases because the flag that would do it (`i`) would
  * also blur the hump, which has to stay case-sensitive.
  */

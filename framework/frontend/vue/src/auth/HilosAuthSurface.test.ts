@@ -2108,7 +2108,7 @@ describe('HilosAuthSurface', () => {
     expect(wrapper.find('[data-id="auth-error"]').text()).toBe(
       'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.',
     )
-    // One fact, one voice: the grey line does not repeat it.
+    // One fact, one voice: the gray line does not repeat it.
     expect(wrapper.find('[data-id="auth-identifier-hint"]').exists()).toBe(
       false,
     )

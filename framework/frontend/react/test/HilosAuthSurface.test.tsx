@@ -1673,7 +1673,7 @@ describe('HilosAuthSurface', () => {
     expect(byId('auth-error')?.textContent).toBe(
       'This account signs in by a mailed link, and this installation has nothing to send it with. Whoever runs it can set that up.',
     )
-    // One fact, one voice: the grey line does not repeat it.
+    // One fact, one voice: the gray line does not repeat it.
     expect(byId('auth-identifier-hint')).toBeNull()
     expect(byId('auth-password')).toBeNull()
     expect(byId('auth-icon-magic-link')).toBeNull()

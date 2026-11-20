@@ -8,7 +8,7 @@ afterEach(() => {
 })
 
 describe('HilosHiddenMark', () => {
-  it('draws a soft grey pill with a decorative struck-out eye and the word', () => {
+  it('draws a soft gray pill with a decorative struck-out eye and the word', () => {
     const { container } = render(<HilosHiddenMark />)
     const mark = container.querySelector('[data-id="hilos-hidden"]')!
 

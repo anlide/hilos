@@ -58,6 +58,14 @@ it('reports exactly the British forms the bad fixture seeds', () => {
     `SPELLING ${FIXTURES}/badSpelling.ts:22 — write "serializes", not "serialises"${DOC}`,
     `SPELLING ${FIXTURES}/badSpelling.ts:22 — write "COLOR", not "COLOUR"${DOC}`,
     `SPELLING ${FIXTURES}/badSpelling.ts:24 — write "Color", not "Colour"${DOC}`,
+    `SPELLING ${FIXTURES}/badSpelling.ts:27 — write "gray", not "grey"${DOC}`,
+    `SPELLING ${FIXTURES}/badSpelling.ts:27 — write "grays", not "greys"${DOC}`,
+    `SPELLING ${FIXTURES}/badSpelling.ts:27 — write "grayed", not "greyed"${DOC}`,
+    `SPELLING ${FIXTURES}/badSpelling.ts:27 — write "graying", not "greying"${DOC}`,
+    `SPELLING ${FIXTURES}/badSpelling.ts:27 — write "grayish", not "greyish"${DOC}`,
+    `SPELLING ${FIXTURES}/badSpelling.ts:28 — write "GRAY", not "GREY"${DOC}`,
+    `SPELLING ${FIXTURES}/badSpelling.ts:28 — write "Gray", not "Grey"${DOC}`,
+    `SPELLING ${FIXTURES}/badSpelling.ts:33 — write "Grayed", not "Greyed"${DOC}`,
   ])
 })
 

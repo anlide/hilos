@@ -11,8 +11,8 @@ use Hilos\Tests\CodeStyle\Violation;
  * Enforces the dialect of spelling.md: American English in every piece of English a
  * file carries — a name, a string, a comment, a doc block.
  *
- * The word list is the table of that document and nothing else: six pairs, read off
- * the table in the order it writes them, with no seventh pair and no rule of endings
+ * The word list is the table of that document and nothing else: seven pairs, read off
+ * the table in the order it writes them, with no eighth pair and no rule of endings
  * behind them. A word is matched together with its own forms — `behavioural` and
  * `colours` are hits because the table names a word rather than its singular — and
  * `neighbor/neighbour` is not in the table, so the rule is silent on that word by
@@ -42,8 +42,8 @@ final class SpellingRule implements CodeStyleRule
     private const string DOC = 'docs/agents/code-style/spelling.md';
 
     /**
-     * The six pairs of spelling.md, British keyed to American, in the order the table
-     * writes them. The table is the source and this constant its reading: a seventh
+     * The seven pairs of spelling.md, British keyed to American, in the order the table
+     * writes them. The table is the source and this constant its reading: an eighth
      * pair is added to the document first.
      *
      * @var array<string, string>
@@ -55,6 +55,7 @@ final class SpellingRule implements CodeStyleRule
         'serialise' => 'serialize',
         'organise' => 'organize',
         'cancelled' => 'canceled',
+        'grey' => 'gray',
     ];
 
     /**
@@ -151,7 +152,7 @@ final class SpellingRule implements CodeStyleRule
 
     /**
      * The matcher, assembled from the table so that the table stays the only list:
-     * `open`, then one of the six words in any case, then `close`.
+     * `open`, then one of the seven words in any case, then `close`.
      *
      * @return string PCRE pattern with the British stem as its first group
      */

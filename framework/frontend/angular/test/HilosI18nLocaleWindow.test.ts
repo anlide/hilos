@@ -893,7 +893,7 @@ describe('HilosI18nLocaleWindow — in flight', () => {
     vi.useRealTimers()
   })
 
-  it('locks Add at once and greys it only with its spinner at 300 ms', async () => {
+  it('locks Add at once and grays it only with its spinner at 300 ms', async () => {
     const h = flight()
     h.open('19:145', 'add')
     expect(h.state('i18n-locale-submit')).toEqual(RESTING)

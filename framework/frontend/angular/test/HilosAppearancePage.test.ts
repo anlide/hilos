@@ -610,7 +610,7 @@ describe('HilosAppearancePage Save in flight', () => {
     vi.useRealTimers()
   })
 
-  it('locks Save at once on the first send and greys it only with its spinner at 300 ms', async () => {
+  it('locks Save at once on the first send and grays it only with its spinner at 300 ms', async () => {
     const h = harness()
     openSwitching(h)
     click(switchingInput())

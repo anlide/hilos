@@ -804,7 +804,7 @@ describe('React locale window in flight', () => {
     vi.useRealTimers()
   })
 
-  it('locks Add at once and greys it only with its spinner at 300 ms', async () => {
+  it('locks Add at once and grays it only with its spinner at 300 ms', async () => {
     const h = setup(absentLocale)
     expect(buttonState('i18n-locale-submit')).toEqual(RESTING)
 

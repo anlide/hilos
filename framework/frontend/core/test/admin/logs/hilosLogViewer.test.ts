@@ -1808,7 +1808,7 @@ describe('the live tail', () => {
     expect(connection.sent).toEqual([])
   })
 
-  it('stops the tail and greys the switch out on an archived batch', () => {
+  it('stops the tail and grays the switch out on an archived batch', () => {
     const { view, connection } = following()
     connection.sendCatalog(catalog())
 

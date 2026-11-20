@@ -16,7 +16,7 @@ use Hilos\Utils\Logger;
  *
  * A shorter request than {@see LogsReadLinesActionDTO} by three fields, and each absence is a
  * statement. There is no source and no batch stamp because a rotated batch has no tail - nobody
- * writes into it any more, which is why the mockup greys the switch out for one. There is no
+ * writes into it any more, which is why the mockup grays the switch out for one. There is no
  * cursor because the starting position is the end of the file at the moment the owner takes it,
  * and only the owner can see that moment (HIL-389).
  */

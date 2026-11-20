@@ -91,7 +91,7 @@ describe('HilosI18nCountryAdd in flight', () => {
     vi.useRealTimers()
   })
 
-  it('locks Add at once for a known code and greys it only with its spinner at 300 ms', async () => {
+  it('locks Add at once for a known code and grays it only with its spinner at 300 ms', async () => {
     const h = setup()
     h.fill('us')
     expect(buttonState(h.button('i18n-country-add-submit'))).toEqual(RESTING)

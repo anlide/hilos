@@ -671,6 +671,22 @@ final class RuleFixtureTest extends TestCase
                     . ' (see docs/agents/code-style/spelling.md)',
                 'SPELLING Bad/SpellingSamples.php:34 — write "Color", not "Colour"'
                     . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:37 — write "gray", not "grey"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:37 — write "grays", not "greys"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:37 — write "grayed", not "greyed"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:37 — write "graying", not "greying"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:37 — write "grayish", not "greyish"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:38 — write "GRAY", not "GREY"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:38 — write "Gray", not "Grey"'
+                    . ' (see docs/agents/code-style/spelling.md)',
+                'SPELLING Bad/SpellingSamples.php:43 — write "Grayed", not "Greyed"'
+                    . ' (see docs/agents/code-style/spelling.md)',
                 'EMPTY-STRING-SENTINEL Bad/Tables/EmptySentinel.php:20 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',

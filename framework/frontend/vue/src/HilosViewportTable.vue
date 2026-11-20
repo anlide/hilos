@@ -342,10 +342,10 @@ const progressCells = computed<readonly ProgressCell[]>(() => {
 // because it is the one of the two the reader still has to act on. Red marks a
 // record that stands refused — a failed backup or an unacknowledged write that
 // refused to apply; it sits behind a fresh highlight so the reader first sees that
-// a change arrived, but outranks the opened row's grey because refusal is a state
-// of the record itself rather than the reader's view over it. Grey comes last of
+// a change arrived, but outranks the opened row's gray because refusal is a state
+// of the record itself rather than the reader's view over it. Gray comes last of
 // them: amber, green, and red speak of something that happened to the record and
-// the reader has yet to take in, while grey says only that the reader opened this
+// the reader has yet to take in, while gray says only that the reader opened this
 // one themselves. Bootstrap's contextual row fills stay light in dark mode, with
 // their own dark text keeping them readable. Keep the stock Bootstrap colors
 // intentionally: Hilos has no palette (HIL-1295).
@@ -433,7 +433,7 @@ function ariaSort(
 // control carries, or — on a column that was never sortable — the plain statement
 // that its source is behind. The control stays and the warning rides inside it,
 // keeping HIL-809's argument about disabled controls as the reason the button is
-// not greyed: a disabled button drops out of the focus order, and a warning
+// not grayed: a disabled button drops out of the focus order, and a warning
 // hung on it would never be read to the one reader who needs it most.
 function staleColumnText(column: HilosTableColumn): string {
   return column.sortable === true

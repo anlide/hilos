@@ -1084,7 +1084,7 @@ describe('HilosSettingsPage Save in flight', () => {
     })
   }
 
-  it('locks Save at once on the first send and greys it only with its spinner at 300 ms', async () => {
+  it('locks Save at once on the first send and grays it only with its spinner at 300 ms', async () => {
     const { context, sent, answer } = seededContext([OWN])
     openAndType(context, 'Mine')
     expect(saveState()).toEqual(SAVE_RESTING)

@@ -14,7 +14,7 @@
 // What stands in the page's place while it waits is a skeleton, not white
 // (HIL-983): the one the project declared for that page key in `pageSkeletons`,
 // or the default HilosSkeleton. It rises only once the wait has outlasted
-// DEFAULT_SKELETON_DELAY_MS, so a page that answers quickly never flashes grey
+// DEFAULT_SKELETON_DELAY_MS, so a page that answers quickly never flashes gray
 // bars, and the outlet announces it once for the whole page — the bars inside are
 // decorative. The frame takes the page's full height, so a project skeleton can
 // lay out the way its page does. Only the FIRST answer is waited for: a

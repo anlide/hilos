@@ -1264,8 +1264,8 @@ describe('HilosLogsViewPage', () => {
     expect(byId(container, 'hilos-log-search-pending')).toBeNull()
   })
 
-  it('greys the Follow switch out on an archived batch and says why', () => {
-    // Greyed out says "not applicable here", not "you turned it off": the switch
+  it('grays the Follow switch out on an archived batch and says why', () => {
+    // Grayed out says "not applicable here", not "you turned it off": the switch
     // keeps its own position, so coming back to the live journal resumes the tail
     // without a click nobody made.
     const { connection, pushCatalog } = makeConnection()

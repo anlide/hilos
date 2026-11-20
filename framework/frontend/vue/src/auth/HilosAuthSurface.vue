@@ -675,7 +675,7 @@ const identifierHint = computed(() => {
   }
 
   // An account refused a way in is told so in the refusal row; the same fact in
-  // grey here would read as a second problem (HIL-973).
+  // gray here would read as a second problem (HIL-973).
   if (signInRefusal.value !== null) {
     return null
   }
@@ -1710,7 +1710,7 @@ onUnmounted(() => {
             />
             <!-- One room under the field for the whole conversation with it: the
         reveal when the reply is an account that signs in with a password, the
-        grey line otherwise, and nothing while the first lookup runs. The reveal
+        gray line otherwise, and nothing while the first lookup runs. The reveal
         is the tallest of the three, so an invisible twin of it holds the room
         and the line lies over that twin — the content it covers is the twin and
         nothing else (styling-rules.md, "The room a live message takes").

@@ -4,7 +4,7 @@
 
 /**
  * The delay before a page skeleton appears, in milliseconds. A page that answers
- * sooner never shows one, so a quick navigation does not flash grey bars.
+ * sooner never shows one, so a quick navigation does not flash gray bars.
  *
  * Equal to `DEFAULT_SPINNER_DELAY_MS` today, but a different quantity: the two
  * are kept apart so that moving one does not silently move the other.

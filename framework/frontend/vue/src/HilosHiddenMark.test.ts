@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import HilosHiddenMark from './HilosHiddenMark.vue'
 
 describe('HilosHiddenMark', () => {
-  it('draws a soft grey pill with a decorative struck-out eye and the word', () => {
+  it('draws a soft gray pill with a decorative struck-out eye and the word', () => {
     const wrapper = mount(HilosHiddenMark)
 
     expect(wrapper.attributes('data-id')).toBe('hilos-hidden')

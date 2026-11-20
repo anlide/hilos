@@ -200,7 +200,7 @@ test('keeps the identifier response stable and refuses only a known password', a
   await expect(page.getByTestId('auth-surface')).toBeVisible()
 
   await test.step('keeps the main button still while the field answers', async () => {
-    // A free address: the grey line under the field and nothing else.
+    // A free address: the gray line under the field and nothing else.
     await typeInto(page.getByTestId('auth-identifier'), free)
     await expect(page.getByTestId('auth-identifier-hint')).toHaveText(
       'No account yet — this creates one.',

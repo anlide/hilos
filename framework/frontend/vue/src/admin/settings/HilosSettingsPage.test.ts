@@ -813,7 +813,7 @@ describe('HilosSettingsPage', () => {
   // The production LoadingButton and ActionLifecycle together: the button's
   // own 300 ms timer is the only delay, so the spinner never waits for the
   // lifecycle's deferred loading on top of it.
-  it('locks Save at once on the first send and greys it only with its spinner at 300 ms', async () => {
+  it('locks Save at once on the first send and grays it only with its spinner at 300 ms', async () => {
     vi.useFakeTimers()
     const { context, sent, answer } = seededContext([
       slot({

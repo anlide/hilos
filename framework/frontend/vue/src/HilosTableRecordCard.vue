@@ -51,7 +51,7 @@ function hasCell(column: HilosTableColumn | null): boolean {
 // on the record, green for the couple of seconds after a value landed, red when
 // the record stands refused, and nothing otherwise. It is worn as a border
 // rather than a fill — Bootstrap's contextual row classes are built for the
-// cells of a table — and an expanded card takes no grey: the row wears grey to
+// cells of a table — and an expanded card takes no gray: the row wears gray to
 // tie itself to a panel drawn under it, while a card holds its panel inside its
 // own body (Flow F5).
 function cardClass(view: TableViewportRow<R>): string | undefined {

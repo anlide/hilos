@@ -535,13 +535,13 @@ nobody is asked*).
   Dashboard included — in the shell's banner strip (`data-id="view-mode-banner"`),
   for a viewer (`hilosAdminAccess` is `view`) on an admin route and not under
   maintenance: after the session's strips (replacement, deletion), before the
-  project's slot, grey (`alert-secondary` — yellow, blue and red already mean
+  project's slot, gray (`alert-secondary` — yellow, blue and red already mean
   "not well", frozen and blocked there), with an eye. A grant takes it down live
   and a revoke brings it back. The words of the banner are the core's —
   `HILOS_VIEW_MODE_COPY.mark` and `.explanation` (HIL-1261), one set for the
   three frontends — and its text carries the id `HILOS_VIEW_MODE_STRIP_TEXT_ID`.
 - The hidden mark looks the same on every screen and in every cell — one
-  component, `HilosHiddenMark`: a soft grey pill with a struck-out eye and the
+  component, `HilosHiddenMark`: a soft gray pill with a struck-out eye and the
   word `HILOS_VIEW_MODE_COPY.hidden` ("Hidden"; variant B, agreed by the owner
   on 30.09.2026). A value that may be hidden is drawn through `HilosHideable`,
   which hands a value to its slot narrowed and draws the mark for the hidden

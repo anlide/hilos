@@ -360,7 +360,7 @@ always `false` for placeholders). All three view layers apply a consistent
 contextual priority: on a wide row, `table-warning` (pending) > `table-success`
 (highlighted) > `table-danger` (refused) > `table-active` (expanded); on a card,
 `border-warning` > `border-success` > `border-danger` (expanded cards take no
-grey border). A fresh update highlights green for 2 seconds before returning to
+gray border). A fresh update highlights green for 2 seconds before returning to
 red refusal, clearing the refusal removes the danger tint, and pending changes
 outrank both.
 
