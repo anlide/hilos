@@ -48,7 +48,7 @@ the recipe before generating code.
    section — activation is registering its thin page and the verifier circle
    table in the topology and mounting its SDK view, with no line in `FEATURES`),
    or Analytics (the feature, journal directory, catalog, three agent pairs and
-   thin backend page). Its browser tables and SDK views arrive on separate leaves.
+   thin backend page; its browser tables and SDK views are in the same recipe).
    Moderation has a kind directory, framework rules and a moderator agent pair;
    follow its recipe and leaf markers before generating against that contract.
    Read the available base class; generate what it leaves abstract.

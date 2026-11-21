@@ -109,14 +109,14 @@ For what the backend reads and the later pages show,
 see [analytics.md](analytics.md#the-admin-section), *The Admin Section*.
 
 Status is another Mode-1 feature: the project declares activation and public
-components, while the framework owns the outage machine, three admin pages and
-two tables: the read-only Components table and the Subscribers viewport.
-`StatusFeature` validates all three pages, both tables, the Components and
-Subscribers page-table bindings, and the existing agent, catalog, database and
-feature dependencies. The Overview owns the shared Status head; Components
-and Subscribers are its child tabs. All six demo backends activate it with thin
-page and table bindings. Read [status-page.md](status-page.md) before binding
-it.
+components, while the framework owns the outage machine, the admin pages and
+their tables. `StatusFeature::requirements()` names what activation needs: the
+pages, tables and page-table bindings, the agents, the catalog fragment, the
+database tables and the features Status is built on. Startup validates all of
+it but the database tables, which the project's topology test checks. The
+Overview owns the shared Status head; every other Status page is its child
+tab. All six demo backends activate it with thin page and table bindings. Read
+[status-page.md](status-page.md) before binding it.
 
 The Overview keeps its three incident writes on the `ADMIN` page and forwards
 them to the Status owner through the existing gatekeeper handover; Components

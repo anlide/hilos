@@ -563,14 +563,13 @@ For the section's rules and activation details, read [languages-and-countries.md
 ### daemon — the Daemon section
 
 Configure-only: the framework owns the node agent, the collector, the abstract page agent and the section's pages.
-The project lists the feature in `Hilos::FEATURES` and registers the three agents in `Hilos::AGENTS`, the page agent as an empty subclass.
-It registers the section's eight thin pages; six node child addresses require a node ID, while the root and Env mismatch do not.
+The project lists the feature in `Hilos::FEATURES` and registers every agent type in `DaemonFeature::requirements()->requiredAgents` in `Hilos::AGENTS`, the page agent as an empty subclass.
+It registers a thin subclass of every page base class in `requiredPages` in `Hilos::PAGES`, every framework table in `requiredTables` in `Hilos::TABLES` and every page-table pair in `requiredPageTables` in `Hilos::PAGE_TABLES`; which of these pages carry a node ID in their address is the framework's, in [daemon-section.md](daemon-section.md).
 The environment child page inherits its node-agent subscription route from the framework; its project subclass declares no page-agent owner.
 Startup refuses a partially activated feature.
-In Vue, React and Angular projects, mount the seven built pages — root, Workers, Agents, Cron, HTTP,
-Environment and Env mismatch — through thin wrappers with the project's `connection` and `scopes`
+In Vue, React and Angular projects, mount every page the `admin/daemon` entry of `@hilos/vue`, `@hilos/react` or `@hilos/angular` exports through thin wrappers with the project's `connection` and `scopes`
 context, as for the Logs pages; Agents also receives the project's action lifecycle.
-Tasks supplies these React mounts and polls supplies the Angular mounts. The context-required SDK pages stay outside the default admin view map.
+None of these pages is in the context-free default admin view map.
 For the section's rules, read [daemon-section.md](daemon-section.md), *Switching The Section On*.
 
 ### status — Status section
@@ -583,50 +582,40 @@ handling or table implementation. Follow
 contract.
 
 1. Declare `HilosFeature::STATUS` in the project `FEATURES` and merge
-   `StatusSettingsCatalog` into its settings catalog. Status requires `DAEMON`,
-   `NOTIFICATION_DELIVERY` and `AUTH_THROTTLE`, the shared
-   `MailDeliveryChannelAgent`, the Status agent pair, the catalog fragment, the
-   Status database tables, three pages and two page-table bindings. Startup
-   validates these obligations.
-2. Run `db:framework:pull` and apply the generated project migrations for the
-   existing `status_incident`, `status_incident_update` and `status_subscriber`
-   schema units. The same immutable change generates the separate `auth_block`
-   scope upgrade pair that adds `email` to its existing enum. The framework
-   migration catalog already carries these generated pairs; use the ordinary
-   migration path rather than writing a project schema.
+   `StatusSettingsCatalog` into its settings catalog. What Status requires —
+   the features it is built on, its agents and shared agents, the catalog
+   fragment, its pages, tables and page-table bindings, and its database
+   tables — is `StatusFeature::requirements()`. Startup validates all of it
+   but the database tables, which the project's topology test checks.
+2. Run `db:framework:pull` and apply the generated project migrations: it
+   selects the schema unit of every table in `requiredDbTables`. The Status
+   subscribers change also generates the separate `auth_block` scope upgrade
+   pair that adds `email` to its existing enum. The framework migration catalog
+   already carries these generated pairs; use the ordinary migration path
+   rather than writing a project schema.
 3. Register `StatusAgent` and `StatusAgentDaemon` in `AGENTS` with cluster
    scope and policy placement. The owner remains the writer of incident,
    timeline and subscriber rows and the host of the guest subscription actions.
-4. Register the thin Overview, Components and Subscribers pages in `PAGES`.
-   Each uses the project's existing `HILOS_INDEX` as
+4. Register a thin subclass of every page base class in `requiredPages` in
+   `PAGES`. Each uses the project's existing `HILOS_INDEX` as
    `SUBSCRIPTION_AGENT_TYPE`; no new page-serving agent is needed. The framework
-   page catalog places Components and Subscribers under the shared Status head.
-5. Register `HilosStatusComponentsTable` and
-   `HilosStatusSubscribersTable` in `TABLES`. Bind the Components table to the
-   Components page and the Subscribers table to the Subscribers page in
-   `PAGE_TABLES`; Overview receives its data in the existing `page_response`
-   and has no table binding. The current framework tables read their sources
-   through `Hilos::$db` and `Hilos::$rt`, so they need no new project
-   `TableContext` property.
+   page catalog places every page but the Overview under the shared Status head.
+5. Register every framework table in `requiredTables` in `TABLES` and bind
+   every page-table pair in `requiredPageTables` in `PAGE_TABLES`; Overview
+   receives its data in the existing `page_response` and has no table binding.
+   The framework tables read their sources through `Hilos::$db` and
+   `Hilos::$rt`, so they need no new project `TableContext` property.
 6. Set `HILOS_STATUS_URL` to an absolute public HTTP or HTTPS `/status` address.
    The root `.env.example` leaves it blank; each demo environment example names
    its own local address, and each test compose file points at that demo's
    frontend `/status`.
-7. In Chat and Binance BTC Tracker, mount the public Vue reader from
-   `@hilos/vue/status` with `{connection, actions}` and mount the three admin
-   pages from `@hilos/vue/admin/status` through thin wrappers carrying the
-   existing Status context. Core keys `HilosPages.STATUS`,
-   `HilosPages.STATUS_COMPONENTS` and `HilosPages.STATUS_SUBSCRIBERS` map to
-   `/hilos/status`, `/hilos/status/components` and
-   `/hilos/status/subscribers`; `HilosPages.PUBLIC_STATUS` is the separate
-   `/status` file-reader route. In Tasks and Ecommerce Shop, mount the public
-   React reader from `@hilos/react/status` with `{connection, actions}` and the
-   admin pages from `@hilos/react/admin/status` through thin wrappers carrying
-   the same Status context, each as a lazy page entry in `App.tsx`. In Polls
-   and OnlineTesting, mount the public Angular reader from
-   `@hilos/angular/status` with `{connection, actions}` and all five admin pages
-   from `@hilos/angular/admin/status` through thin wrappers carrying
-   `HilosStatusContext`, each as one of the six lazy page entries in `app.ts`.
+7. Mount the public reader from the `status` entry of `@hilos/vue`,
+   `@hilos/react` or `@hilos/angular` with `{connection, actions}` under
+   `HilosPages.PUBLIC_STATUS`, the separate `/status` file-reader route. Mount
+   every page the same package's `admin/status` entry exports through thin
+   wrappers carrying the project's `HilosStatusContext`; none of these pages is
+   in the context-free default admin view map, and the core `HilosPages` key of
+   each maps to its address under `/hilos/status`.
 
 The shared framework tables and the existing project `TableContext` remain the
 only table binding path. Do not generate a second subscription table, a project
@@ -746,10 +735,11 @@ For its data and privacy boundaries, read
    keep their older valid-from headers. Generate the complete set before
    starting a daemon.
 6. Register a thin `AbstractHilosChangeLogAgent` subclass and a monopolistic
-   daemon under `HilosAgentType::HILOS_CHANGE_LOG`. Register thin subclasses of
-   `AbstractHilosChangeLogDashboardPage`, `AbstractHilosChangeLogTablesPage` and
-   `AbstractHilosChangeLogTablePage`. Bind the framework feed, tables and history
-   tables respectively in `TABLES`, the project `TableContext` and `PAGE_TABLES`.
+   daemon under `HilosAgentType::HILOS_CHANGE_LOG`. Register a thin subclass of
+   every page base class in `ChangeLogFeature::requirements()->requiredPages`
+   in `PAGES`. Register every framework table in `requiredTables` in `TABLES`
+   and the project `TableContext`, and bind every page-table pair in
+   `requiredPageTables` in `PAGE_TABLES`.
    The journal's six typed collection chains mount under `CHANGE_LOG`; the serving
    agent declares reads of the five trigger-written collections and receipt update
    ownership. Feed windows/counts and receipt/entry reads use the typed
@@ -765,12 +755,10 @@ For its data and privacy boundaries, read
    the leader lifecycle to start the `CLUSTER` + `LEADER` agent directly. Do not
    add it to the project's `INITIAL_AGENTS_START` list; this feature-specific
    hook is not a general auto-start registry.
-7. In a Vue, React or Angular project, mount the section's three pages —
-   `HilosChangeLogPage`, `HilosChangeLogTablesPage` and
-   `HilosChangeLogTablePage` — from `@hilos/vue`, `@hilos/react` or
-   `@hilos/angular` through thin wrappers carrying the project's connection,
-   scopes and tracked actions; none of them is in the context-free default admin
-   view map.
+7. In a Vue, React or Angular project, mount every page the `admin/change-log`
+   entry of `@hilos/vue`, `@hilos/react` or `@hilos/angular` exports through
+   thin wrappers carrying the project's connection, scopes and tracked actions;
+   none of them is in the context-free default admin view map.
 
 The schema, receipt, trigger and restore contracts live in
 [change-log.md](change-log.md). Which tables a demo journals follows the rule

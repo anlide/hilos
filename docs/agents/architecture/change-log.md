@@ -86,17 +86,16 @@ Messages, events, attachments, guests and rename histories stay outside the
 journal. Quotes and votes are streams, not decisions.
 The column mode for a custom trigger belongs to phase 2, HIL-1413.
 
-`HilosFeature::CHANGE_LOG` requires five pages: Overview (`hilos_change_log`),
-Feed (`hilos_change_log_feed`), Tracked tables (`hilos_change_log_tables`),
-Noisy columns (`hilos_change_log_noisy`), and the separate Table entity
-(`hilos_change_log_table`). Its four browser table bindings are Feed →
-`hilosChangeLogFeed`, Tracked tables → `hilosChangeLogTables`, Noisy columns →
-`hilosChangeLogNoisyColumns`, and Table → `hilosChangeLogHistory`; Overview has
-no table binding. It also requires the `hilos_change_log` section agent and the
-`db:change-log:generate` CLI command. It mounts no runtime state and depends on
-no Backup feature. Its derived schema follows the primary migration track; the
-six journal tables are checked against the real second database, rather than
-listed as primary-table migration requirements.
+What `HilosFeature::CHANGE_LOG` requires — its pages, browser tables and
+page-table bindings, the section agent, its CLI command and the journal's
+schema unit — is `ChangeLogFeature::requirements()`. Startup refuses a missing
+page, table, binding or agent; the project's topology test checks the command
+and the schema unit. The activation steps are *change_log — the Change Log
+section* in [admin-feature-scaffold.md](admin-feature-scaffold.md). It mounts
+no runtime state and depends on no Backup feature. Its derived schema follows
+the primary migration track; the six journal tables are checked against the
+real second database, rather than listed as primary-table migration
+requirements.
 
 ## What A Trigger Writes
 
@@ -958,10 +957,12 @@ binary logging on and refuses `CREATE TRIGGER` to a user without SUPER (error
 user.
 
 Scenario 40 in `framework/docker/cluster/scenarios.py`, carried by online-testing,
-checks the exact live trigger set against the project's 12 SQL trigger files:
-names, tables, events, `AFTER` timing and the derived journal address. On the
-fresh stand, global DDL counters require 12 `CREATE TRIGGER` statements and no
-`DROP TRIGGER`, and the rollout claim is empty. An ordinary kill/start of an
+checks the exact live trigger set against the project's active SQL trigger
+files: names, tables, events, `AFTER` timing and the derived journal address.
+On the fresh stand, global DDL counters require one `CREATE TRIGGER` statement
+per active trigger file and exactly as many `DROP TRIGGER` statements as the
+historical migration of the online-testing track that the scenario counts, and
+the rollout claim is empty. An ordinary kill/start of an
 existing non-leader container must leave the full trigger catalog, including
 bodies, and both counters unchanged, with no claim left behind. This proves the
 DDL outcome and startup idempotence; it does not force a scheduler race or prove
