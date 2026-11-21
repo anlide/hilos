@@ -1775,7 +1775,9 @@ protocol to the live administrator and `account:merge` paths at the
    forbids one — refuses in today's words when the check fails, and otherwise
    conditionally records its own reservation. A changed flag still says
    "Second-factor protection changed. Review the accounts and choose again."
-   Competing merge and erasure cannot share the account. Preparation captures
+   Competing merge and erasure cannot share the account: an erasure whose
+   circle names an account of an open merge is not opened until that merge
+   finishes (`AccountErasureOpening::open()` defers it, HIL-1988). Preparation captures
    enough identity of its previous password and factor, or their absence, to
    apply the chosen fate later. It changes no business row and demotes no
    password before the fact. The owner step checks its own rows and records its
