@@ -122,9 +122,10 @@ final class AdminProductsPageTest extends AdminProductsPageEnvironment
     private int $productId;
     private string $productName;
 
-    /** One stock product without stock, and a guest, a person without admin rights and an administrator connected. */
+    /** On an empty catalog, one stock product without stock, and a guest, a person without admin rights and an administrator connected. */
     protected function setUpInTransaction(): void
     {
+        parent::setUpInTransaction();
         $this->categoryId = self::category();
         $category = Database::sql('SELECT * FROM category WHERE id = ?', [$this->categoryId])->rows()[0];
         $this->categoryName = $category['name'];

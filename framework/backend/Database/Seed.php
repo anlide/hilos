@@ -6,13 +6,20 @@ namespace Hilos\Database;
 
 use Hilos\Constants\AppEnv;
 use Hilos\Constants\EnvConstants;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Feature\HilosFeature;
+use Hilos\Database\Entity\Item\File;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\Files\ContentHash;
+use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 use Hilos\Hilos;
+use Hilos\HilosException;
 
 /**
- * Idempotent SQL seed runner blocked when APP_ENV is PROD or STAGING.
+ * Idempotent seed runner — the SQL of a seed and the files it carries — blocked when APP_ENV
+ * is PROD or STAGING.
  */
 class Seed
 {
@@ -113,8 +120,9 @@ class Seed
      *
      * @param string $seedId Seed identifier (numeric prefix or basename)
      * @return bool Whether seed was applied
-     * @throws DatabaseException When production-like env, seed not found, read fails, or SQL fails
+     * @throws DatabaseException When production-like env, seed not found, read fails, SQL fails, or its files are refused
      * @throws EnvException When the environment refuses to answer for APP_ENV
+     * @throws HilosException When the seed carries files and the files registry door cannot be opened
      */
     public static function applyOne(string $seedId): bool
     {
@@ -154,14 +162,16 @@ class Seed
         }
 
         self::runSqlWithDelimiter($content);
+        self::storeFiles($targetFile);
 
         return true;
     }
 
     /**
      * @return int Number of seed files applied
-     * @throws DatabaseException When production-like env, read fails, or SQL fails
+     * @throws DatabaseException When production-like env, read fails, SQL fails, or a seed's files are refused
      * @throws EnvException When the environment refuses to answer for APP_ENV
+     * @throws HilosException When a seed carries files and the files registry door cannot be opened
      */
     public static function apply(): int
     {
@@ -180,10 +190,108 @@ class Seed
             }
 
             self::runSqlWithDelimiter($content);
+            self::storeFiles($file);
             $applied++;
         }
 
         return $applied;
+    }
+
+    /**
+     * Puts the files a seed carries into the files storage, after its SQL wrote their registry rows.
+     *
+     * The files lie in a directory beside the SQL file, named like it without `.sql`
+     * (`Seed/001_catalog.sql`, `Seed/001_catalog/`); a seed without the directory carries none
+     * and this does nothing. Only the plain files right in the directory are carried, in name
+     * order: a name starting with a dot is skipped, a symbolic link is skipped, and a
+     * subdirectory is not read. Each file is kept under its own name, which is the
+     * `stored_name` of its row; a file already kept under that name is replaced, so the seed
+     * can be run again.
+     *
+     * The bytes take the way of the files registry door — a temporary file handed to its
+     * storage — rather than a copy into a directory, so a project that keeps its files elsewhere
+     * gets the seed's there too. The door is opened here because `test:db:reset` never passes
+     * the full init. Seeds run only while the daemon is down, so nothing races the files library
+     * for the storage.
+     *
+     * @param string $seedFile Path of the seed's SQL file
+     * @throws DatabaseException When the project does not declare FILES, a file has no row of its name or disagrees with
+     *     its size or hash, or a file cannot be read or kept
+     * @throws HilosException When the files registry door cannot be opened
+     */
+    private static function storeFiles(string $seedFile): void
+    {
+        $seed = pathinfo($seedFile, PATHINFO_FILENAME);
+        $directory = dirname($seedFile) . DIRECTORY_SEPARATOR . $seed;
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        if (!Hilos::hasFeature(HilosFeature::FILES)) {
+            throw new DatabaseException("Seed {$seed} carries files, but the project does not declare FILES");
+        }
+
+        Hilos::appClass()::initFiles();
+        try {
+            $names = FsPath::entries($directory);
+        } catch (FsException $failure) {
+            throw new DatabaseException("Failed to read seed directory: {$directory}", 0, $failure);
+        }
+
+        foreach ($names as $name) {
+            $path = $directory . DIRECTORY_SEPARATOR . $name;
+            if (!str_starts_with($name, '.') && !is_link($path) && is_file($path)) {
+                self::storeFile($seed, $name, $path);
+            }
+        }
+    }
+
+    /**
+     * Checks one carried file against its registry row, then keeps it in the files storage.
+     *
+     * @param string $seed Seed name, the SQL file's name without `.sql`
+     * @param string $name File name, the stored name of its row
+     * @param string $path Path of the file in the seed's directory
+     * @throws DatabaseException When the file has no row, disagrees with it, or cannot be read or kept
+     * @throws LogicException When the files registry door is not created
+     */
+    private static function storeFile(string $seed, string $name, string $path): void
+    {
+        $row = Database::sql(
+            'SELECT `' . File::size . '`, `' . File::content_hash . '` FROM `' . File::_table . '` WHERE `' . File::stored_name
+                . '` = ? LIMIT 1',
+            [$name],
+        )->firstRow();
+        if ($row === null) {
+            throw new DatabaseException("Seed {$seed} carries {$name}, but no hilos_file row is stored under that name");
+        }
+
+        try {
+            $size = FsPath::size($path);
+            if ($size !== (int)$row[File::size]) {
+                throw new DatabaseException("Seed {$seed} carries {$name} of {$size} bytes, but its hilos_file row says {$row[File::size]}");
+            }
+
+            $hash = ContentHash::ofFile($path);
+            if ($hash !== $row[File::content_hash]) {
+                throw new DatabaseException(
+                    "Seed {$seed} carries {$name} with sha256 {$hash}, but its hilos_file row says {$row[File::content_hash]}",
+                );
+            }
+
+            $bytes = FsPath::read($path);
+        } catch (FsException $failure) {
+            throw new DatabaseException("Failed to read seed file: {$path}", 0, $failure);
+        }
+
+        try {
+            $tmp = (Hilos::$fs ?? throw new DirectoryNotFoundException('FS context is not configured'))->getTmp();
+            $index = $tmp->create();
+            $tmp[$index]->append($bytes);
+            (Hilos::$files ?? throw new LogicException('The files door is not created'))->storage->storeFromTmp($name, $index);
+        } catch (FsException $failure) {
+            throw new DatabaseException("Seed {$seed} cannot put {$name} into the files storage", 0, $failure);
+        }
     }
 
     /**

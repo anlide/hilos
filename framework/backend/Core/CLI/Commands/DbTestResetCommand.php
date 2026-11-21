@@ -93,7 +93,8 @@ class DbTestResetCommand extends TestOnlyCommand implements DatabaseFreeCommand
 Command: test:db:reset
 
 Description:
-  Drops the database, recreates it, runs migrations, and applies all seeds.
+  Drops the database, recreates it, runs migrations, and applies all seeds
+  with the files they carry.
   With ANALYTICS, first empties the registered journal scope for this environment
   and node. Git markers, other environments and nodes, and cluster directories stay.
   A missing FS registration or failed cleanup refuses before the database is dropped.
@@ -119,7 +120,8 @@ HELP;
      * @throws CantConnectToMysqlServerException When MySQL is unreachable
      * @throws DatabaseRuntimeException When SET NAMES query fails
      * @throws DatabaseException When migration or seed execution fails
-     * @throws HilosException When the filesystem cannot initialize or resolve its node scope, or the migration receipt fails
+     * @throws HilosException When the filesystem cannot initialize or resolve its node scope, a seed carries files and the
+     *     files registry door cannot be opened, or the migration receipt fails
      */
     protected function run(array $options, array $args): int
     {

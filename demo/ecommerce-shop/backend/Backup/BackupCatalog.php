@@ -4,9 +4,16 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Backup;
 
+use Demo\EcommerceShop\Database\Object\Collection\Categories;
+use Demo\EcommerceShop\Database\Object\Collection\CategorySlugs;
+use Demo\EcommerceShop\Database\Object\Collection\Products;
+use Demo\EcommerceShop\Database\Object\Collection\ProductSlugs;
+use Demo\EcommerceShop\Database\Object\Collection\ProductWarehouseStocks;
+use Demo\EcommerceShop\Database\Object\Collection\Warehouses;
 use Hilos\Backup\BackupConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Database\Entity\Item\Entity;
+use Hilos\Database\Object\Collection\Files;
 
 /**
  * BackupCatalog - this demo's backup catalog.
@@ -17,10 +24,13 @@ use Hilos\Database\Entity\Item\Entity;
  * the framework default (one daily full backup at 03:00 on the agent mechanism); a project
  * overrides it by adding {@see BackupConstants::CATALOG_SCHEDULE} entries here.
  *
- * The reference registry lists the reference/seed collections per connection index, and
- * this demo seeds nothing and keeps no table of its own: every table in its database is the
- * framework's, written by the people using it. So the single connection index 0 names an
- * empty list - schema-seed then captures the schema alone.
+ * The reference registry lists the reference/seed collections per connection index. The
+ * shop's catalog tables - warehouses, categories, products, their addresses and stock - are
+ * its own, and Migration/Seed/001_hilos_flowers.sql seeds them; categories and products name
+ * their pictures by the number of a files registry row, so the registry rides with them. On
+ * connection index 0 these tables are the reference ones schema-seed keeps rows of; the carts
+ * of the visitors are not, the seed writes none. The bytes of the pictures are not in the
+ * archive: a backup carries the database only (files-registry.md, "What Is Not Here").
  *
  * What a restore into a lesser environment must rewrite is declared on each table's own
  * Entity ({@see Entity::META_PII} and {@see Entity::META_PII_NOT_PERSONAL}).
@@ -34,7 +44,15 @@ final class BackupCatalog implements CatalogProviderInterface
     {
         return [
             BackupConstants::CATALOG_REFERENCES => [
-                0 => [],
+                0 => [
+                    Warehouses::class,
+                    Categories::class,
+                    CategorySlugs::class,
+                    Products::class,
+                    ProductSlugs::class,
+                    ProductWarehouseStocks::class,
+                    Files::class,
+                ],
             ],
         ];
     }

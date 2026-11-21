@@ -30,12 +30,18 @@ abstract class ProductAgentEnvironment extends StockLibraryEnvironment
 {
     private ?ProductsLibraryAgent $products = null;
 
-    /** Starts the stock library, then the products library under its own frame. */
+    /** Claims the products for their library beside the stock library. */
     protected function prepareIntegrationEnvironment(): void
     {
         parent::prepareIntegrationEnvironment();
         $this->products = new ProductsLibraryAgent();
         OwnershipDeclaration::claimAll($this->products);
+    }
+
+    /** Starts the stock library on an empty catalog, then the products library under its own frame. */
+    protected function setUpInTransaction(): void
+    {
+        parent::setUpInTransaction();
         $this->asProductsLibrary(fn () => $this->products?->onStart());
     }
 

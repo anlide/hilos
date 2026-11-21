@@ -18,16 +18,30 @@ use Hilos\Testing\RollbackIntegrationTestCase;
 /** Mounts the shop before the managed rollback scope and writes categories as their library does. */
 abstract class CategoriesLibraryEnvironment extends RollbackIntegrationTestCase
 {
+    use EmptyCatalog;
+
     private ?CategoriesLibraryAgent $library = null;
     private ?int $executionToken = null;
 
-    /** Uses the migrated test database without taking over an already mounted project context. */
+    /**
+     * Uses the migrated test database without taking over an already mounted project context.
+     *
+     * What the ORM loaded earlier in the process holds the seeded catalog, so it is forgotten here,
+     * before the scope: forgetting refuses inside an open transaction.
+     */
     protected function prepareIntegrationEnvironment(): void
     {
         Database::initialize(initHilos: Hilos::$db === null);
+        Hilos::$db->forgetLoadedDataForTest();
         $this->library = new CategoriesLibraryAgent();
         OwnershipDeclaration::claimAll($this->library);
         $this->executionToken = ExecutionContext::push(new ExecutionFrame(agentId: $this->library->getId()));
+    }
+
+    /** Starts the case from an empty catalog; the rollback brings the seed back. */
+    protected function setUpInTransaction(): void
+    {
+        self::emptyCatalog();
     }
 
     /** Releases the library's claim and restores the caller after the harness rolls back. */

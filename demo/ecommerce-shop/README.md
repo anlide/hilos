@@ -34,6 +34,9 @@ The empty shell of the shop, and the smallest complete Hilos project on React
 - **Notifications**: the bell in the header for a signed-in person, with
   delivery by email.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
+- **Example catalog**: after a database reset the shop holds Hilos Flowers —
+  3 warehouses, 6 categories and 30 products with their pictures and stock.
+  The storefront has no catalog pages yet; the shop administration shows it.
 
 The backend is the base set: one app agent owning the connections and the
 home page, the Hilos index agent with the dashboard, Maintenance, Backup,
@@ -527,6 +530,7 @@ the container `env_file`.
 | `composer run db:migration:down` | roll back the last migration |
 | `composer run db:migration:status` | migration status |
 | `composer run db:schema:status` | compare schema against entities |
+| `composer run db:seed:apply -- 001` | fill the local database with the Hilos Flowers catalog; the daemon stopped (beside a running one the command refuses) |
 
 ## PHP tests
 

@@ -18,21 +18,36 @@ use Hilos\Testing\RollbackIntegrationTestCase;
 /** Mounts the shop before the managed rollback scope and starts the products library the way its worker does. */
 abstract class ProductsLibraryEnvironment extends RollbackIntegrationTestCase
 {
+    use EmptyCatalog;
+
     private ?ProductsLibraryAgent $library = null;
     private ?int $executionToken = null;
 
     /**
      * Uses the migrated test database without taking over an already mounted project context.
      *
-     * The library claims what it owns and runs its start under its own frame, so the products
-     * and their addresses are declared complete before the first case writes one.
+     * What the ORM loaded earlier in the process holds the seeded catalog, so it is forgotten here,
+     * before the scope: forgetting refuses inside an open transaction. Then the library claims what
+     * it owns and pushes its own frame.
      */
     protected function prepareIntegrationEnvironment(): void
     {
         Database::initialize(initHilos: Hilos::$db === null);
+        Hilos::$db->forgetLoadedDataForTest();
         $this->library = new ProductsLibraryAgent();
         OwnershipDeclaration::claimAll($this->library);
         $this->executionToken = ExecutionContext::push(new ExecutionFrame(agentId: $this->library->getId()));
+    }
+
+    /**
+     * Starts the case from an empty catalog, then runs the library's start under its frame, so the
+     * products and their addresses are declared complete before the case writes one; the rollback
+     * brings the seed back and forgets that read with the rows.
+     */
+    protected function setUpInTransaction(): void
+    {
+        self::emptyCatalog();
+        self::assertNotNull($this->library);
         $this->library->onStart();
     }
 

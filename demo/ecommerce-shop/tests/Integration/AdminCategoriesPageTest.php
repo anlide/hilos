@@ -130,9 +130,10 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
     private string $categoryName;
     private int $pictureFileId;
 
-    /** One category of the case, and a guest, a person without admin rights and an administrator connected. */
+    /** On an empty catalog, one category of the case, and a guest, a person without admin rights and an administrator connected. */
     protected function setUpInTransaction(): void
     {
+        parent::setUpInTransaction();
         $this->pictureFileId = self::pictureFile();
         $this->categoryName = 'Category ' . RandomHelper::hex(8);
         $category = Hilos::$db->categories->actions->create($this->categoryName, 'Flowers of the case', $this->pictureFileId);

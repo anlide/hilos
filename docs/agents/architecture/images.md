@@ -204,7 +204,9 @@ cropped profile photo; its upload and row are in [profile-photo.md](profile-phot
   fallbacks. The HTTP source-type gate currently admits only JPEG, PNG, WEBP
   and GIF, even with a replaced engine.
 - Pre-generation, user-driven editing, a general publication door for files
-  created outside uploads, or dimensions stored on the registry row.
+  created outside uploads — a seed carries its own files
+  ([../orm/migrations.md](../orm/migrations.md), "Seeds") — or dimensions stored
+  on the registry row.
 - Cleanup of temporary files from lost result frames. They remain in tmp as
   lost upload-publication files do; there is no framework tmp janitor yet.
 

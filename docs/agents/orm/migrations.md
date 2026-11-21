@@ -486,6 +486,18 @@ Seeds populate initial data. Located in `backend/Database/Migration/Seed/`.
 php cli.php db:seed:apply 001
 ```
 
+A seed may carry files: a directory beside its SQL file, named like it without
+`.sql` (`Seed/001_catalog.sql`, `Seed/001_catalog/`). The SQL writes each file's
+`hilos_file` row — `stored_name` the file's name, `size` and `content_hash`
+(sha256, lowercase hex) of its bytes; after the SQL the seed puts every file of
+the directory into the files storage under that name — the plain files right in
+the directory; a symbolic link, a subdirectory and a name starting with a dot
+are skipped. A file with no row of that
+name, or whose size or hash disagrees with the row, refuses the seed, and so does
+a directory in a project without `FILES`. Image copies are not seeded: they are
+drawn on their first request. Seeds run only while the daemon is down, never on
+PROD or STAGING.
+
 ## Schema check
 
 `DbSchemaStatusCommand` (`db:schema:status`) checks if the DB schema matches expected structure.

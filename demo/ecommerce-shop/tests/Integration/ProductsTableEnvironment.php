@@ -33,8 +33,8 @@ abstract class ProductsTableEnvironment extends StockLibraryEnvironment
     private ?ProductsLibraryAgent $products = null;
 
     /**
-     * The stock library starts first, then the products library runs its start under its own frame;
-     * what both loaded is forgotten, and the holding of the stock with it, before the first case writes a row.
+     * The products library runs its start under its own frame; what it loaded is forgotten, and the
+     * holding of the stock with it, before the first case writes a row.
      */
     protected function prepareIntegrationEnvironment(): void
     {
@@ -44,6 +44,15 @@ abstract class ProductsTableEnvironment extends StockLibraryEnvironment
         $this->asProductsLibrary($this->products->onStart(...));
         Hilos::$db->forgetLoadedDataForTest();
         Hilos::$db->forgetHoldingForTest(EcommerceShopDbContext::productWarehouseStocks);
+    }
+
+    /**
+     * Starts the case from an empty catalog without the stock library's start, so the stock stays not held;
+     * the case's rows go in past the libraries, and {@see self::holdCatalog()} reads the products whole again.
+     */
+    protected function setUpInTransaction(): void
+    {
+        self::emptyCatalog();
     }
 
     /** Releases the products library's claim, then the stock library's claim and frame. */

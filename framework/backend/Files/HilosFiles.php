@@ -46,6 +46,8 @@ class HilosFiles
     /**
      * @param FilesStorageInterface $storage Where the registry's files are kept. It lives on the door so that
      *     every process reaching the registry sees the same storage; only {@see AbstractFilesLibraryAgent} writes it.
+     *     The one exception is a seed: while the daemon is down it puts the files of its directory in, after its
+     *     SQL wrote their registry rows.
      */
     public function __construct(public readonly FilesStorageInterface $storage)
     {

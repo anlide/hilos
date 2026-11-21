@@ -49,7 +49,7 @@ abstract class AdminWarehousesPageEnvironment extends WarehousesTableEnvironment
     private ?SignalRouter $previousRouter = null;
     private bool $claimed = false;
 
-    /** Starts the stock library beneath, then the browser, the router, the connections claim and the view mode. */
+    /** Claims the stock for its library beneath, without its start, then the browser, the router, the connections claim and the view mode. */
     protected function prepareIntegrationEnvironment(): void
     {
         $this->previousRouter = Hilos::$sr;
@@ -117,9 +117,10 @@ final class AdminWarehousesPageTest extends AdminWarehousesPageEnvironment
     private int $warehouseId;
     private string $warehouseName;
 
-    /** One warehouse of the case, and a guest, a person without admin rights and an administrator connected. */
+    /** On an empty catalog, one warehouse of the case, and a guest, a person without admin rights and an administrator connected. */
     protected function setUpInTransaction(): void
     {
+        parent::setUpInTransaction();
         $this->warehouseName = 'Warehouse ' . RandomHelper::hex(8);
         $this->warehouseId = self::warehouse($this->warehouseName);
         $visitorId = self::person('Warehouses visitor', false);

@@ -1755,6 +1755,22 @@ abstract class Hilos implements TruthSourceOwner
     }
 
     /**
+     * Initializes the filesystem context and the files registry door, each only when missing.
+     *
+     * For a process that never passes init() and still puts files into the files storage: a
+     * seed that carries files, run by `test:db:reset`, whose command skips the full init. The
+     * door is created through createFiles(), so a project that keeps its files elsewhere gets
+     * them in its own storage.
+     *
+     * @throws HilosException When the filesystem factory or configuration cannot initialize its context
+     */
+    public static function initFiles(): void
+    {
+        static::initFs();
+        static::$files ??= static::createFiles();
+    }
+
+    /**
      * Initializes the environment accessor before storage and daemon layers.
      *
      * @param ?string $rootPath Directory that contains .env and .env.example

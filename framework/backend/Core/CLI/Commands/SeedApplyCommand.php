@@ -10,6 +10,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Seed;
 use Hilos\Environment\Exception\EnvException;
+use Hilos\HilosException;
 
 /**
  * Seed Apply Command.
@@ -68,6 +69,7 @@ Command: db:seed:apply
 
 Description:
   Apply a specific seed file. Without <seed> argument, lists available seeds only.
+  A seed's files (Migration/Seed/<seed>/) are put into the files storage after its SQL.
   Seeds are idempotent and safe to run multiple times.
   Disabled when APP_ENV is PROD or STAGING (see AppEnv constants).
 
@@ -96,6 +98,7 @@ HELP;
      * @return int Exit code (0 = success)
      * @throws DatabaseException If database connection or seed execution fails
      * @throws EnvException When the environment refuses to answer for APP_ENV
+     * @throws HilosException When the seed carries files and the files registry door cannot be opened
      */
     public function execute(array $options, array $args): int
     {

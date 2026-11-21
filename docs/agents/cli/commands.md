@@ -63,13 +63,13 @@ offline path. No presence address is needed to generate these source files.
 
 | Command | Site | Description |
 |---|---|---|
-| `db:seed:apply <n>` | `cli-offline-write` | Apply seed number N |
+| `db:seed:apply <n>` | `cli-offline-write` | Apply seed number N and the files it carries |
 
 ## DB utility commands
 
 | Command | Site | Description |
 |---|---|---|
-| `test:db:reset` | `cli-offline-write` | DROP and recreate the database → migrate → seed (test env only); for ANALYTICS, first clears this environment and node's journal scope — runs before the database exists, but needs the server up |
+| `test:db:reset` | `cli-offline-write` | DROP and recreate the database → migrate → seed with its files (test env only); for ANALYTICS, first clears this environment and node's journal scope — runs before the database exists, but needs the server up |
 | `test:orm:forget daemon` / `test:orm:forget worker <workerId>` | `daemon` | Forget loaded ORM state in one live process; test-only use and owner restriction: [Forgetting loaded ORM state](../testing.md#forgetting-loaded-orm-state) |
 | `db:wait` | `cli-read` | Wait until MySQL is accepting connections — runs while the server is still down |
 

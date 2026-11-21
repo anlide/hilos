@@ -19,13 +19,16 @@ use Hilos\Testing\RollbackIntegrationTestCase;
 use Hilos\Utils\Helpers\RandomHelper;
 
 /**
- * Mounts the shop before the managed rollback scope and starts the stock library the way its worker does.
+ * Mounts the shop and claims the stock for its library before the managed rollback scope, then starts the library
+ * inside the scope the way its worker does.
  *
  * It also writes the rows the stock stands on — warehouses and products with their categories and
  * pictures — straight into their tables past their libraries, with no file on disk.
  */
 abstract class StockLibraryEnvironment extends RollbackIntegrationTestCase
 {
+    use EmptyCatalog;
+
     protected const string WAREHOUSE_ADDRESS = 'Volodymyrska St, 1';
 
     private ?StockLibraryAgent $library = null;
@@ -34,12 +37,12 @@ abstract class StockLibraryEnvironment extends RollbackIntegrationTestCase
     /**
      * Uses the migrated test database without taking over an already mounted project context.
      *
-     * The products of a case go in past the ORM, so the loaded memory is forgotten first: a
+     * The products of a case go in past the ORM, and the database carries the seeded catalog, so
+     * the loaded memory is forgotten first, before the scope, where forgetting is allowed: a
      * products library started earlier in this process declared the products whole, and a
      * product written after that would be read as absent. Forgotten, they are read again inside
      * the case, and the rollback forgets that read with the rows.
-     * Then the library claims what it owns and runs its start under its own frame, so the stock
-     * is declared complete before the first case writes a row.
+     * Then the library claims what it owns and pushes its own frame.
      */
     protected function prepareIntegrationEnvironment(): void
     {
@@ -48,6 +51,17 @@ abstract class StockLibraryEnvironment extends RollbackIntegrationTestCase
         $this->library = new StockLibraryAgent();
         OwnershipDeclaration::claimAll($this->library);
         $this->executionToken = ExecutionContext::push(new ExecutionFrame(agentId: $this->library->getId()));
+    }
+
+    /**
+     * Starts the case from an empty catalog, then runs the library's start under its frame, so the
+     * stock is declared complete before the case writes a row; the rollback brings the seed back
+     * and forgets that read with the rows.
+     */
+    protected function setUpInTransaction(): void
+    {
+        self::emptyCatalog();
+        self::assertNotNull($this->library);
         $this->library->onStart();
     }
 

@@ -14,7 +14,10 @@ A published file has one row in `hilos_file` and one file of the same name
 directory. The table has one writer, the files library
 (`AbstractFilesLibraryAgent`, `hilos_files_library`), which claims it outright:
 it creates rows, marks them bound, and removes them, and it alone puts files
-into the storage and takes them out. Nothing else writes either.
+into the storage and takes them out. Nothing else writes either. The one
+exception is a seed: while the daemon is down it writes registry rows in its SQL
+and puts their files into the storage
+([../orm/migrations.md](../orm/migrations.md), "Seeds").
 
 A row is born **unbound**. The project owes the registry one call once its own
 link to the file is written — a chat attachment, a gallery entry:
