@@ -26,6 +26,8 @@ use Demo\EcommerceShop\Auth\EcommerceShopAuthMethodDirectory;
 use Demo\EcommerceShop\Backup\BackupCatalog;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
 use Demo\EcommerceShop\Browser\List\AdminProductCategoriesBrowserList;
+use Demo\EcommerceShop\Browser\List\MainCategoriesBrowserList;
+use Demo\EcommerceShop\Browser\List\MainProductsBrowserList;
 use Demo\EcommerceShop\Core\Agent\Daemon\CategoriesLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\GuestCartsLibraryAgentDaemon;
@@ -615,6 +617,8 @@ final class Hilos extends HilosFacade
     ];
 
     public const array BROWSER_LISTS = [
+        MainCategoriesBrowserList::LIST => MainCategoriesBrowserList::class,
+        MainProductsBrowserList::LIST => MainProductsBrowserList::class,
         HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
         AdminProductCategoriesBrowserList::LIST => AdminProductCategoriesBrowserList::class,
     ];
@@ -624,6 +628,10 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_LISTS = [
+        MainPage::PAGE => [
+            MainCategoriesBrowserList::LIST => [],
+            MainProductsBrowserList::LIST => [],
+        ],
         AdminProductsPage::PAGE => [
             AdminProductCategoriesBrowserList::LIST => [],
         ],

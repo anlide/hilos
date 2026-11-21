@@ -144,6 +144,8 @@ use Hilos\Pages\Maintenance\DTO\MaintenanceCircleAddActionDTO;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserList;
 use Demo\EcommerceShop\Browser\List\AdminProductCategoriesBrowserList;
+use Demo\EcommerceShop\Browser\List\MainCategoriesBrowserList;
+use Demo\EcommerceShop\Browser\List\MainProductsBrowserList;
 use Demo\EcommerceShop\Pages\Hilos\PrivacyPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileDataPage;
 use Demo\EcommerceShop\Pages\Hilos\ProfileNotificationsPage;
@@ -1453,6 +1455,30 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(EcommerceShopAgentDaemon::class, AgentRegistry::daemonClass($entry));
         $this->assertFalse(AgentRegistry::requiresIndex($entry));
         $this->assertTrue((new EcommerceShopAgentDaemon())->requiresMonopolisticProcess());
+    }
+
+    public function testTheHomeBindsItsTwoListsAndReadsTheCatalog(): void
+    {
+        self::assertSame(
+            [BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_MAIN],
+            MainPage::BROWSER,
+        );
+        self::assertSame('subscription_page_main', EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_MAIN);
+        self::assertSame('mainCategories', EcommerceShopBrowserList::MAIN_CATEGORIES);
+        self::assertSame('mainProducts', EcommerceShopBrowserList::MAIN_PRODUCTS);
+        self::assertSame(MainCategoriesBrowserList::class, Hilos::BROWSER_LISTS[MainCategoriesBrowserList::LIST]);
+        self::assertSame(MainProductsBrowserList::class, Hilos::BROWSER_LISTS[MainProductsBrowserList::LIST]);
+        self::assertSame(
+            [MainCategoriesBrowserList::LIST => [], MainProductsBrowserList::LIST => []],
+            Hilos::PAGE_LISTS[MainPage::PAGE],
+        );
+
+        $browser = new EcommerceShopBrowserContext();
+        $browser->bindHilosFacade(Hilos::class);
+        $dbSources = $browser->dbSourceKeysOfPage('main');
+        self::assertContains(EcommerceShopDbContext::categories, $dbSources);
+        self::assertContains(EcommerceShopDbContext::products, $dbSources);
+        self::assertContains(EcommerceShopDbContext::productWarehouseStocks, $dbSources);
     }
 
     public function testHilosPagesAreOwnedByTheIndexAgent(): void

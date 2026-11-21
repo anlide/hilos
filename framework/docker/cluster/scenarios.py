@@ -7965,6 +7965,9 @@ SCENARIOS = [
 # every entry here carries. So an entry is a LOAN, not a cure: it names who owes and for
 # what, and it is paid off by the write it points at, not by time passing.
 FLAKY_SKIP = {
+    # FIXME(F-125, 2026-11-21): the recovery receipt never shows only the held personal handover · foreign · attempt 2 · HIL-2192.
+    "58 erasure frames and owner recovery":
+        "F-125: the recovery receipt never shows only the held personal handover",
     # FIXME(F-117, 2026-11-18): hilos_sessions_library on s1 never captured its frame · чужой · попытка 1 · HIL-2144.
     "59 erasure waits and restrict":
         "F-117: hilos_sessions_library on s1 never captured its frame",

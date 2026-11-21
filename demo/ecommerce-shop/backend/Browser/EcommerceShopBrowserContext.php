@@ -4,21 +4,99 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Browser;
 
+use Demo\EcommerceShop\Browser\List\MainCategoriesBrowserList;
+use Demo\EcommerceShop\Browser\List\MainProductsBrowserList;
+use Demo\EcommerceShop\Constants\ProductAvailability;
+use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Browser\Context\ConnectionIdentity;
+use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\CollectionNotManualException;
+use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
+use Hilos\Files\HilosFiles;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
 
 /**
  * EcommerceShopBrowserContext - Browser-facing context ($browser layer) for ecommerce-shop.
  *
- * Says who is behind a socket - the admin pages ask it through the page access gate. It
- * computes no field of its own: a person's presence and session count, the password fields
+ * Says who is behind a socket - the admin pages ask it through the page access gate - and
+ * computes the two fields of the home page: the address of a category's tile picture and whether
+ * a product is on the shop front. A person's presence and session count, the password fields
  * and the scheduled deletion's date are the framework's, computed for its card of one person
  * (HIL-1254), and the other admin tables go out through the framework self-snapshot path.
  */
 final class EcommerceShopBrowserContext extends BrowserContext
 {
+    /**
+     * Computes the home page's browser fields and hands every other name to the framework.
+     *
+     * The item is built from a live row of its anchor, so the category or the product is read by
+     * its key without a check that it is there.
+     *
+     * @param string $browserKey Browser list or table key
+     * @param string $field Computed field name from the mirrored browser config
+     * @param int|string $rowKey Logical browser row key
+     * @param string $acceptKey Subscriber accept key
+     * @param array<string, string> $pageParams Current page subscription params
+     * @param array<string, mixed> $browserParams Resolved params for this page subscription
+     * @param array<string, mixed> $sources Source fragments already built for the row
+     * @return mixed Computed browser field value, or null when the field is unknown
+     * @throws PageInternalErrorException When a computed field cannot be resolved
+     * @throws RtActionsStateCollectionNullException When a project's runtime field source is unavailable
+     */
+    protected function computeBrowserField(
+        string $browserKey,
+        string $field,
+        int|string $rowKey,
+        string $acceptKey,
+        array $pageParams,
+        array $browserParams,
+        array $sources,
+    ): mixed {
+        if ($field === MainCategoriesBrowserList::TILE_PICTURE) {
+            try {
+                return HilosFiles::downloadPath(
+                    Hilos::$db->categories[(int) $rowKey]->pictureFileId,
+                    CatalogPictureUploadTarget::VARIANT_TILE,
+                );
+            } catch (DatabaseException|InvalidArgumentException|LogicException $exception) {
+                throw new PageInternalErrorException('Category tile picture could not be resolved', $exception);
+            }
+        }
+
+        if ($field === MainProductsBrowserList::ON_SHOP_FRONT) {
+            try {
+                $product = Hilos::$db->products[(int) $rowKey];
+                $units = Hilos::$db->productWarehouseStocks->totalsOfProducts($product->id)->of($product->id)->unitCount;
+
+                return ProductAvailability::of($product->kind, $units) !== ProductAvailability::NOT_PLACED;
+            } catch (
+                DatabaseException
+                | InvalidArgumentException
+                | LogicException
+                | ObjectGetIdStringNotImplementedException
+                | CollectionNotManualException $exception
+            ) {
+                throw new PageInternalErrorException('Product shop front state could not be resolved', $exception);
+            }
+        }
+
+        return parent::computeBrowserField(
+            $browserKey,
+            $field,
+            $rowKey,
+            $acceptKey,
+            $pageParams,
+            $browserParams,
+            $sources,
+        );
+    }
+
     /**
      * Resolves who is behind an accept key from the demo's runtime connection
      * registry, where the handshake records the acceptKey -> user mapping. Lets the

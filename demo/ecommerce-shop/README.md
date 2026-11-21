@@ -14,8 +14,10 @@ The empty shell of the shop, and the smallest complete Hilos project on React
 
 - **Sign-in** by password, on the framework surface; registration and recovery
   confirm the address with a code sent by mail.
-- **Home page** that says who is looking: "Browsing anonymously" for a visitor,
-  "Signed in as …" with an account.
+- **Home page**: the shop's categories as tiles in the administrators' order,
+  each with its picture, description and how many products it has; tiles and
+  numbers change by themselves, and with no category yet the page says the
+  shop is being set up.
 - **Admin dashboard** at `/hilos` with **Settings** (the three example keys
   and the file and upload limits), **Users** (the list and a person's card:
   rename, takeover and rights; no account merge), **Backup** (database
