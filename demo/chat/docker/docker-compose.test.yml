@@ -351,7 +351,7 @@ services:
       - ../data/logs-test:/var/log/hilos
     working_dir: /app
     entrypoint: [sh, /hilos/framework/docker/test-writer-entrypoint.sh]
-    command: ["php", "src/Bootstrap/docker.php"]
+    command: ["php", "backend/Bootstrap/docker.php"]
     environment:
       - HILOS_TEST_OWNER_ROOT=/app
       - HILOS_TEST_WRITE_DIRS=/app/data /var/log/hilos /app/vendor /app/tests/.phpunit.cache /app/data/data_export /app/data/status /app/data/legal_export /app/data/chat_attachments/published
@@ -365,6 +365,7 @@ services:
       # this pair the CLI refuses such a command rather than risk a second writer, so
       # test:db-prepare needs it even though it runs before the daemon exists.
       - HILOS_DAEMON_HOST=chat-test
+      - COMMAND_HOST=127.0.0.1
       - COMMAND_PORT=8094
       - DB_HOST=mysql-test
       - DB_PORT=3306
