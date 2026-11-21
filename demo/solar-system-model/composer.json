@@ -76,10 +76,10 @@
         "test:cli-image": "docker compose -f docker/docker-compose.test.yml --profile cli build solar-system-model-cli-test",
         "test:db-reset": [
             "@test:cli-image",
-            "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php backend/Bootstrap/cli.php test:db:reset"
+            "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php backend/Bootstrap/cli.php test:stand:reset"
         ],
         "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php backend/Bootstrap/cli.php db:wait",
-        "test:db-prepare": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test sh -c \"php backend/Bootstrap/cli.php db:wait && php backend/Bootstrap/cli.php test:db:reset\"",
+        "test:db-prepare": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test sh -c \"php backend/Bootstrap/cli.php db:wait && php backend/Bootstrap/cli.php test:stand:reset\"",
         "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm solar-system-model-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",

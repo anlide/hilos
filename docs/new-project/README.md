@@ -425,7 +425,7 @@ container to avoid the env_file chicken-and-egg), `install-deps`,
 `db:seed:apply`, `db:schema:status`, `frontend:*`, and the test lane:
 `test:up/down/down-volumes/db-wait/db-reset/unit/phpunit/install-deps`,
 `test:check`, `test:e2e-build/install/check/up/(run)/down/full`.
-`test:e2e-up` = mysql up → `db:wait` → `test:db:reset` → daemon + nginx up.
+`test:e2e-up` = mysql up → `db:wait` → `test:stand:reset` → daemon + nginx up.
 Every link of `test:e2e-full` but `@test:e2e` carries ` @no_additional_args` —
 that is what lets the cycle be pointed (`composer run test:e2e-full -- <spec>`),
 and `E2eFullPointingTest` in the framework unit suite checks the chain of every

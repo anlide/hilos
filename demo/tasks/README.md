@@ -57,8 +57,8 @@ docker compose -f docker/docker-compose.local.yml exec tasks-mysql-local \
 This only creates a missing database and grants access; it does not reset or
 remove existing data. Fresh local and test databases run the same provisioning
 from the MariaDB init directory. Local keeps its volume; test keeps its tmpfs.
-The framework's shared `test:db:reset`, invoked by
-`composer run test:db-reset`, recreates both test databases because the demo
+The framework's shared `test:db:reset`, invoked through
+`test:stand:reset` by `composer run test:db-reset`, recreates both test databases because the demo
 declares `CHANGE_LOG`. To regenerate triggers
 on the test stand after migrations, use `composer run test:change-log:generate`;
 repeating it leaves matching files untouched. Commit the complete generated set

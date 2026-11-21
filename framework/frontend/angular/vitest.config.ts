@@ -211,7 +211,7 @@ export default defineConfig({
     // component test fails on something that names none of the three.
     setupFiles: ['./vitest.setup.ts'],
     // The first case of a file compiles its components in JIT; on a loaded host
-    // (a full run on seven lanes beside e2e) that alone can pass the default 5 s.
-    testTimeout: 15_000,
+    // (a full run on seven lanes beside e2e) that alone can pass 15 s.
+    testTimeout: 30_000,
   },
 })

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Fs\ClusterDirectoryMarker;
 use Hilos\Fs\Exception\DirectoryNotFoundException;
 use Hilos\Fs\Exception\FileReadException;
+use Hilos\Fs\FsDirectory;
 use Hilos\Fs\FsException;
 use Hilos\Fs\FsPath;
 
@@ -13,11 +15,12 @@ use Hilos\Fs\FsPath;
  * Removes files and directory trees for the test-only reset commands, and remembers what it
  * could not remove.
  *
- * One object rather than a helper in each command because the two commands that need it -
- * {@see LogsTestResetCommand} and {@see BackupTestResetCommand} - want the same two things from
- * a sweep and the same report out of it: how many paths went, and which ones stayed. The tally
- * lives here for the same reason the walk does; a caller that had to add up its own counts would
- * be the walk written twice.
+ * One object rather than a helper in each command because the commands that need it —
+ * {@see LogsTestResetCommand}, {@see BackupTestResetCommand}, {@see FilesTestResetCommand}, and the
+ * Analytics journal reset in {@see DbTestResetCommand} — want the same two things from a sweep and
+ * the same report out of it: how many paths went, and which ones stayed. The tally lives here for
+ * the same reason the walk does; a caller that had to add up its own counts would be the walk
+ * written twice.
  *
  * It does not suppress a failed removal. A stand whose preparation could not empty a directory
  * is a stand that will run on somebody else's leftovers, and the run after it would be judged on
@@ -34,8 +37,12 @@ final class TestPathSweeper
      * sweep that took them would delete a tracked file and leave the next checkout without the
      * directory the stand writes into. Found the plain way - the first run of the backup reset
      * took `demo/chat/data/backup/.gitignore` with it.
+     *
+     * The cluster directory marker ({@see ClusterDirectoryMarker::FILE_NAME}) belongs to the
+     * framework and marks a shared directory across nodes (such as the FILES directory). Framework
+     * sweeps never remove it ({@see FsDirectory::entries()}, {@see ClusterDirectoryMarker}).
      */
-    private const array KEPT_NAMES = ['.gitignore', '.gitkeep'];
+    private const array KEPT_NAMES = ['.gitignore', '.gitkeep', ClusterDirectoryMarker::FILE_NAME];
 
     /** @var int Paths removed so far, directories counted as one each */
     private int $removed = 0;

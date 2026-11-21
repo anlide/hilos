@@ -70,19 +70,18 @@
         "test:up": [
             "rm -f data/logs-test/protected-mode.state.json*",
             "@test:cli-image",
-            "docker compose -f docker/docker-compose.test.yml up -d roblox-game-server-mysql-test",
-            "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test sh -c \"php backend/Bootstrap/cli.php test:logs:reset && php backend/Bootstrap/cli.php test:backup:reset\""
+            "docker compose -f docker/docker-compose.test.yml up -d roblox-game-server-mysql-test"
         ],
         "test:down": "@php ../../scripts/down-stands.php roblox-game-server",
         "test:down-volumes": "docker compose -f docker/docker-compose.test.yml --profile \"*\" down -v",
         "test:cli-image": "docker compose -f docker/docker-compose.test.yml --profile cli build roblox-game-server-cli-test",
         "test:db-reset": [
             "@test:cli-image",
-            "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test php backend/Bootstrap/cli.php test:db:reset"
+            "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test php backend/Bootstrap/cli.php test:stand:reset"
         ],
         "test:change-log:generate": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test php backend/Bootstrap/cli.php db:change-log:generate",
         "test:db-wait": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test php backend/Bootstrap/cli.php db:wait",
-        "test:db-prepare": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test sh -c \"php backend/Bootstrap/cli.php db:wait && php backend/Bootstrap/cli.php test:db:reset && php backend/Bootstrap/cli.php test:user:seed 25\"",
+        "test:db-prepare": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test sh -c \"php backend/Bootstrap/cli.php db:wait && php backend/Bootstrap/cli.php test:stand:reset && php backend/Bootstrap/cli.php test:user:seed 25\"",
         "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm roblox-game-server-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",

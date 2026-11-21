@@ -13,7 +13,9 @@ use Hilos\Core\CLI\Commands\CommandInterface;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Core\CLI\Commands\DbTestResetCommand;
 use Hilos\Core\CLI\Commands\DbWaitCommand;
+use Hilos\Core\CLI\Commands\FilesTestResetCommand;
 use Hilos\Core\CLI\Commands\HelpCommand;
+use Hilos\Core\CLI\Commands\StandTestResetCommand;
 use PHPUnit\Framework\TestCase;
 use Hilos\Core\CLI\Commands\OrmTestForgetCommand;
 use Hilos\Core\CLI\Commands\CommandChannelResult;
@@ -52,6 +54,8 @@ final class CliManagerDatabaseGateTest extends TestCase
         $this->assertFalse($this->manager->requiresDatabase(CliCommands::ORM_TEST_FORGET));
         $this->assertFalse($this->manager->requiresDatabase(CliCommands::DB_WAIT));
         $this->assertFalse($this->manager->requiresDatabase(CliCommands::DB_TEST_RESET));
+        $this->assertFalse($this->manager->requiresDatabase(CliCommands::FILES_TEST_RESET));
+        $this->assertFalse($this->manager->requiresDatabase(CliCommands::STAND_TEST_RESET));
         $this->assertFalse($this->manager->requiresDatabase(CliCommands::CLUSTER_TEST_INSPECT));
         $this->assertFalse($this->manager->requiresDatabase(CliCommands::HELP));
     }
@@ -146,6 +150,8 @@ final class CliManagerDatabaseGateTest extends TestCase
     {
         $this->assertInstanceOf(DatabaseFreeCommand::class, new DbWaitCommand());
         $this->assertInstanceOf(DatabaseFreeCommand::class, new DbTestResetCommand());
+        $this->assertInstanceOf(DatabaseFreeCommand::class, new FilesTestResetCommand());
+        $this->assertInstanceOf(DatabaseFreeCommand::class, new StandTestResetCommand([]));
         $this->assertInstanceOf(DatabaseFreeCommand::class, new ClusterTestInspectCommand());
         $this->assertInstanceOf(DatabaseFreeCommand::class, new HelpCommand());
     }

@@ -738,10 +738,11 @@ function logDirectoryListing(string $logDir): array
 // ------------------------------------------------------------------ the stand
 
 /**
- * Drop whatever stands, then raise the database and reset the log directory and the database.
+ * Drop whatever stands, then raise the database and reset the stand (logs, backups, files, DB).
  *
- * `test:up` is the demo's own preparation and is used as such: it removes the freeze state file,
- * raises the database and empties the log tree through the cli container.
+ * `test:up` is the demo's own preparation and is used as such: it removes the freeze state file
+ * and raises the database. `test:db-prepare` then clears the log root, backups and published files
+ * and recreates the database through `test:stand:reset`.
  *
  * @param array{root: string, cwd: string, compose: string, logDir: string} $box Where things are.
  * @return string|null What went wrong, or null.

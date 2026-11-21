@@ -107,7 +107,7 @@ Composer scripts live in `demo/chat/composer.json`. Run from `demo/chat/`:
 |---|---|
 | `composer run test:up` | Start `mysql-test`. |
 | `composer run test:db-wait` | Wait until the test DB is reachable. |
-| `composer run test:db-reset` | Drop + recreate the test schema (`cli.php test:db:reset`). |
+| `composer run test:db-reset` | Reset the whole test stand (`cli.php test:stand:reset`: logs → backups → published files → database). |
 | `composer run test:unit` | Run unit tests (`tests/Unit`). No DB needed. |
 | `composer run test:integration` | Run integration tests (`tests/Integration`). Requires DB. |
 | `composer run test:phpunit` | Run both PHPUnit suites. |
@@ -521,7 +521,7 @@ storage by their own database — an export agent deletes, at start and every ho
 each file of its directory without a ready row (`expireCopies()` of
 `AbstractDataExportAgent`, `expire()` of `LegalAcceptancesExports`) — and a test
 database after `db-reset` is empty, so a stand without its own root would delete the
-local installation's exports, empty its backups (`test:backup:reset` on `test:up`),
+local installation's exports, empty its backups (the `test:backup:reset` step of `test:stand:reset`),
 overwrite its Status with the stand's publication, and write its own files among the
 local ones. On an ordinary stack the test nginx reads exports, Status and files from
 the subdirectories of `data/test/`, an e2e runner, which sees the repository at
@@ -529,8 +529,8 @@ the subdirectories of `data/test/`, an e2e runner, which sees the repository at
 and the stand does not set `BACKUP_DIR`: where a demo declares a default (chat,
 tasks, binance-btc-tracker and ecommerce-shop: `data/backup`), it lies under `data/`
 and so in the root; polls, pmd, preferans, concert-tickets and online-testing keep the framework's
-empty default and have no backup storage on their stand, so `test:backup:reset` on
-the `test:up` of polls finds nothing to empty. A cluster stand's export and
+empty default and have no backup storage on their stand, so the `test:backup:reset`
+step of `test:stand:reset` on polls finds nothing to empty. A cluster stand's export and
 Status volumes stay separate volumes over its root, because an entry reads them at
 its own `/data_export` and `/status` and its part is shared with a standalone
 deployment; the harness clears every volume of the stand each run.
@@ -1824,6 +1824,9 @@ ticket for the entries that are genuinely foreign.
   `test:e2e-full`, pointed or not, resets for you, and so does `test:all`. **Do not treat a
   failure on a repeated run *without* a reset as a bug** — reset is the contract;
   re-running against a dirty database is not a supported scenario.
+- The stand's log root, backups, and published files are cleared by the same
+  `test:db-reset` (`test:stand:reset`) — published files because their database
+  rows no longer exist.
 - `test:e2e-full` **tears the stack down before it starts**, so it never inherits a
   daemon from an earlier run. It has to own that itself rather than trust its
   caller: `up -d` is idempotent, so a container left running is *kept* running, and

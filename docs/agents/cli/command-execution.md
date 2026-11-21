@@ -137,6 +137,7 @@ nothing the installation owns is read or written, and where the file goes is the
 to decide — one reason, declared once on `ClusterTlsCaCommand::EXECUTION_REASON`, HIL-1034).
 
 **`cli-offline-write`** — `db:migration:up` / `:down` / `:retry` / `:release`, `db:seed:apply`,
+`test:stand:reset`, `test:files:reset`, `test:logs:reset`, `test:backup:reset`,
 `test:db:reset`, `test:user:seed`, `test:verification:expire`, `test:session:expire`,
 `test:orphan:create` / `:delete` and `test:setting-override:create` / `:delete`. All of them
 prepare the schema and the fixtures the daemon later boots on, from the container

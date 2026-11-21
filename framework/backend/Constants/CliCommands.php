@@ -145,6 +145,12 @@ final class CliCommands
     /** @var string Command: Empty the log root - rotation archive, staging and live files (test-only) */
     public const string LOGS_TEST_RESET = 'test:logs:reset';
 
+    /** @var string Command: Empty the stand's published files directory, so stored bytes do not outlive their rows (test-only) */
+    public const string FILES_TEST_RESET = 'test:files:reset';
+
+    /** @var string Command: Reset the whole test stand - logs, backups, published files, then the database (test-only) */
+    public const string STAND_TEST_RESET = 'test:stand:reset';
+
     /** @var string Command: Expire an active auth verification challenge (test-only) */
     public const string VERIFICATION_TEST_EXPIRE = 'test:verification:expire';
 

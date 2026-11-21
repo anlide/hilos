@@ -113,10 +113,11 @@ has no entry. The registrations are in
 `BACKUP_DIR` is no `$fs` name (see below), but a test stand keeps it apart the
 same way: where a demo declares a default (chat, tasks, binance-btc-tracker and
 ecommerce-shop: `data/backup`), it lies under `data/` and so in the stand's data
-root, and a test stand does not set its own — `test:backup:reset` on `test:up`
-empties the stand's backups, not the local installation's. polls, pmd, preferans
-and online-testing keep the framework's empty default and have no backup storage
-on their stand.
+root, and a test stand does not set its own — the `test:backup:reset` step of
+`test:stand:reset` in `test:db-prepare` empties the stand's backups, not the
+local installation's. Published files of the stand are cleared by its
+`test:files:reset` step. polls, pmd, preferans and online-testing keep the
+framework's empty default and have no backup storage on their stand.
 
 A temporary file is handed to another agent twice: the assembled upload
 (`hilos_file_publish`, field `tmpIndex`) and the drawn image copy

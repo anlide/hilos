@@ -66,6 +66,17 @@ final class TestPathSweeperTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->root . '/archive/batch-1');
     }
 
+    public function testItNeverTakesTheClusterDirectoryMarker(): void
+    {
+        file_put_contents($this->root . '/' . ClusterDirectoryMarker::FILE_NAME, '{}');
+        file_put_contents($this->root . '/archive/batch-1/daemon.log', 'x');
+
+        new TestPathSweeper()->emptyDirectory($this->root);
+
+        $this->assertFileExists($this->root . '/' . ClusterDirectoryMarker::FILE_NAME);
+        $this->assertDirectoryDoesNotExist($this->root . '/archive/batch-1');
+    }
+
     public function testAGlobSweepSpareThemToo(): void
     {
         file_put_contents($this->root . '/.gitkeep', '');

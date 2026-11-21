@@ -80,6 +80,8 @@ final class CommandExecutionRoleTest extends TestCase
         // Run in the container of a node waiting on a dead holder's claim, before its daemon exists.
         $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::MIGRATION_RELEASE]->site);
         $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::DB_TEST_RESET]->site);
+        $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::FILES_TEST_RESET]->site);
+        $this->assertSame(CommandExecutionSite::CLI_OFFLINE_WRITE, $executions[CliCommands::STAND_TEST_RESET]->site);
         // The five fixtures HIL-729 brought over from chat. They write from the CLI for the same
         // reason their neighbours above do - composer test:db-prepare runs them before the
         // stand's daemon exists - so they are pinned here rather than trusted to stay put.

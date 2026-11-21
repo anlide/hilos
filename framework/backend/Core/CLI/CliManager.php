@@ -62,6 +62,7 @@ use Hilos\Core\CLI\Commands\DaemonTestNodeReportCommand;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
 use Hilos\Core\CLI\Commands\DbSchemaStatusCommand;
 use Hilos\Core\CLI\Commands\BackupTestResetCommand;
+use Hilos\Core\CLI\Commands\FilesTestResetCommand;
 use Hilos\Core\CLI\Commands\DbTestResetCommand;
 use Hilos\Core\CLI\Commands\LogsTestResetCommand;
 use Hilos\Core\CLI\Commands\LogsTestRotateCommand;
@@ -70,6 +71,7 @@ use Hilos\Core\CLI\Commands\DbWaitCommand;
 use Hilos\Core\CLI\Commands\FrameworkMigrationBaselineCommand;
 use Hilos\Core\CLI\Commands\FrameworkMigrationPullCommand;
 use Hilos\Core\CLI\Commands\HelpCommand;
+use Hilos\Core\CLI\Commands\StandTestResetCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStartCommand;
 use Hilos\Core\CLI\Commands\ImpersonateStopCommand;
 use Hilos\Core\CLI\Commands\I18nTestCountryCreateCommand;
@@ -246,6 +248,7 @@ class CliManager
         $this->commands[CliCommands::DB_TEST_RESET] = new DbTestResetCommand();
         $this->commands[CliCommands::LOGS_TEST_RESET] = new LogsTestResetCommand();
         $this->commands[CliCommands::BACKUP_TEST_RESET] = new BackupTestResetCommand();
+        $this->commands[CliCommands::FILES_TEST_RESET] = new FilesTestResetCommand();
         $this->commands[CliCommands::VERIFICATION_TEST_EXPIRE] = new VerificationTestExpireCommand();
         $this->commands[CliCommands::VERIFICATION_TEST_SWEEP] = new VerificationTestSweepCommand();
         $this->commands[CliCommands::VERIFICATION_TEST_END_PAUSE] = new VerificationTestEndPauseCommand();
@@ -350,6 +353,7 @@ class CliManager
 
         $this->registerProjectCommands();
 
+        $this->commands[CliCommands::STAND_TEST_RESET] = new StandTestResetCommand($this->commands);
         $this->commands[CliCommands::HELP] = new HelpCommand($this->commands);
     }
 
