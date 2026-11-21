@@ -1722,8 +1722,10 @@ The following behavior is live on that path:
   open erasure operation, from preparation on (owner's decision 2026-11-12,
   HIL-1938); this prepares no new merge, transfer right or receipt protocol
   (`AbstractSessionsLibraryAgent::assertMergeable()`, HIL-1960).
-- React carries the corresponding states and actions (Vue: HIL-1956 (list),
-  HIL-1957 (card); React: HIL-1961; Angular: HIL-1962). Angular is built: its
+- React's list and card show what Vue's do (HIL-1961): the badge, the caption
+  above the bar, the notice under the card and the progress section, with no
+  action to press; a window open when `erasing` arrives closes, and one whose
+  action is in flight stays and shows the server's refusal. Angular is built: its
   list and card show the same states as Vue (HIL-1956, HIL-1957), and modals
   show server refusals as they are; live from HIL-1952. Their interviews
   choose the appearance of missing states; this document declares no design.

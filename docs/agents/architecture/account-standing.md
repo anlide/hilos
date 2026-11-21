@@ -413,8 +413,8 @@ a line and "+N more" past them (`hilosUsersErasureCaption`, read through
 `HilosUsersTable.erasures`). React's list puts "Being deleted" beside the name
 (Blocked and You are not on React's list) and the same caption above the bar;
 React's card draws the "Being deleted" badge, the "This account is being deleted."
-notice, the progress section, and closes its modals ("React account deletion in
-progress", HIL-1961). Angular's card (without the shared header yet) puts the
+notice, the progress section, and closes its modals (HIL-1961). Angular's card
+(without the shared header yet) puts the
 erasure row in place of the merged row, draws the "Being deleted" badge, the
 progress section, and closes its modals; Angular's list puts "Being deleted"
 beside the name and the same caption above the bar (`hilosUsersErasureCaption`).
