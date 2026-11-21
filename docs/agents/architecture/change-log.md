@@ -75,13 +75,13 @@ and `hilos_second_factor` is purged whole. Its key still identifies a row, while
 every non-key, non-secret, non-noisy column is journaled only as a fact.
 
 In a demo, journal what a person changes by a decision, not the stream.
-Seven demos declare `HilosFeature::CHANGE_LOG`. Chat journals six tables:
-the five framework tables above and its own `bot`. Tasks, polls and
-concert-tickets each journal all five framework tables after declaring
-`MODERATION`. Binance-btc-tracker and online-testing each journal the other
-four framework tables; none has `hilos_moderation_rule` until it declares
-`MODERATION`. Ecommerce-shop journals those same four framework tables and its
-own `warehouse`, `category` and `product`.
+A demo that declares `HilosFeature::CHANGE_LOG` journals every framework table
+above that its database holds — `hilos_moderation_rule` arrives only with
+`MODERATION` — and each of its own tables whose Entity sets
+`_journaled = true`, such as chat's `bot`. The demo's README describes which
+tables it journals. `JOURNALED_TABLES` in its
+`ChangeLogActivationIntegrationTest`, where the demo has one, holds the same
+list. This document keeps no per-demo inventory.
 Messages, events, attachments, guests and rename histories stay outside the
 journal. Quotes and votes are streams, not decisions.
 The column mode for a custom trigger belongs to phase 2, HIL-1413.
@@ -476,10 +476,9 @@ docker compose -f demo/chat/docker/docker-compose.local.yml exec mysql-local \
 ```
 
 For each other demo, use `demo/<demo>/docker/docker-compose.local.yml` and its
-actual service key, `<demo>-mysql-local`: `binance-btc-tracker-mysql-local`,
-`ecommerce-shop-mysql-local`, `tasks-mysql-local`, `online-testing-mysql-local`
-or `polls-mysql-local`. Local volumes stay in place; the test database remains
-tmpfs. Dev compose with an external database adds no MariaDB service.
+service key, `<demo>-mysql-local`. Local volumes stay in place; the test
+database remains tmpfs. Dev compose with an external database adds no MariaDB
+service.
 
 The binance-btc-tracker, ecommerce-shop and online-testing cluster compose
 files mount the same pair of scripts at
@@ -721,9 +720,8 @@ The Tracked tables page opens with its `hilosChangeLogTables` viewport and the
 column-mode reference. It does not include noisy-column data. Vue, React and
 Angular mount `HilosChangeLogTablesPage` with the project's
 `HilosChangeLogContext`, outside the context-free default admin view map. Each
-demo binds it through its own Change Log context: chat in Vue, ecommerce-shop
-and tasks in React, and online-testing and polls in Angular. The page draws the
-viewport and the core's column-mode reference. Viewport filters do not narrow
+demo binds it through its own Change Log context on its own frontend. The page
+draws the viewport and the core's column-mode reference. Viewport filters do not narrow
 the reference list. An untracked table carries its explicit no-label note and
 dashes for journal facts.
 `Open` appears only for a journaled table whose detail route resolves through
@@ -851,12 +849,11 @@ headers, alone. It does not install SQL in the database.
 
 Every demo that declares the journal configures the journal connection and uses
 `DockerApplication`'s same startup sequence before starting a daemon, worker or
-socket. Chat commits 21 generated triggers for its seven journaled tables.
-Tasks, polls and concert-tickets each commit 15 generated triggers for their
-five framework tables; ecommerce-shop commits 21: 12 for its four framework
-tables, 3 for `warehouse`, 3 for `category` and 3 for `product`. Each of the two remaining demos
-commits 12 for its four framework tables. Generation runs through the existing
-test CLI after migrations, and a repeat leaves matching files untouched.
+socket. It commits three generated triggers for each journaled table — insert,
+update and delete, named as above — under its
+`backend/Database/Migration/Triggers`.
+Generation runs through the existing test CLI after migrations, and a repeat
+leaves matching files untouched.
 
 Startup then follows these steps:
 

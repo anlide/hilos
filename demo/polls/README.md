@@ -50,8 +50,9 @@ override mechanism, unlike the Vite demos.
 ## Change Log
 
 The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
-`hilos_second_factor` and `hilos_setting`. The journal is the primary database name
-plus `-change-log`, on the same MariaDB server with the same host, port, user,
+`hilos_second_factor`, `hilos_setting` and `hilos_moderation_rule`. The journal
+is the primary database name plus `-change-log`, on the same MariaDB server
+with the same host, port, user,
 password and charset. No additional environment keys are needed. The primary
 migration track creates its six tables; connection 1 runs no separate migrator.
 This demo does not activate Backup.
