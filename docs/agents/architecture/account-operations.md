@@ -564,7 +564,7 @@ An equal saved result or a duplicate insert encountered while recording may
 return a peer's winner, only after that transaction and its work roll back.
 The mechanism has typed refusals for a missing participant, unknown or foreign assignment, and closed
 stage, all exposed as a `ValidationException`. It adds no signal or route;
-answer correlation remains HIL-1950. HIL-1952 wired the generic step into the live production erasure path: its
+the erasure coordinator correlates the answers (HIL-1950). HIL-1952 wired the generic step into the live production erasure path: its
 production participants — the person's agent, the sessions holder, the data
 export agent, the legal agent, the users library and the delivery channels —
 have live callers from HIL-1952 (see *The erasure start* below); the due sweep
