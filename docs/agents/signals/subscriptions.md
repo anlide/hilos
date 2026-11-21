@@ -88,7 +88,11 @@ re-answered for the new person). The membership of the "Access closed" card's da
 export joins AFTER the leave, in `AbstractAgent::sendHandshakeResponse()`, and ends
 with the card. The rule hangs on the change of person, not on a group — a group
 addressed by nobody is covered just the same, and a new group addressed by the person
-gets it without a line of its own.
+gets it without a line of its own. A group the server joins a connection to is joined
+by `GroupMembership::join()` — the same pair of writes a client join makes, with no
+class in `Hilos::GROUPS`, so no browser can name it. The change of person ends it as
+well, and the connection is let back in by whoever joined it (the shop's cart: the
+connections agent, on every session-state frame).
 
 ## One subscription answers everything the page renders
 

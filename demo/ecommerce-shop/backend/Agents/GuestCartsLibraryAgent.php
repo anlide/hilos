@@ -6,17 +6,25 @@ namespace Demo\EcommerceShop\Agents;
 
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Core\Router\DTO\CartStateSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\GuestCartSendSignalData;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\Object\Item\SessionProductCart;
+use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
+use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Object\Objects;
 use Hilos\HilosException;
@@ -31,7 +39,8 @@ use Hilos\HilosException;
  * chooses its node. The library alone holds the carts whole; everybody else reads one row by
  * key or queries the database (docs/agents/architecture/entity-libraries.md). The carts grow
  * with the visitors and are bounded by the sweep of the sessions: when the sessions library
- * removes ended sessions, it tells this library which, and their carts go.
+ * removes ended sessions, it tells this library which, and their carts go. It also tells every
+ * tab of a session its cart ({@see CartGroup}).
  */
 final class GuestCartsLibraryAgent extends AbstractAgent
 {
@@ -59,6 +68,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     // library does not send.
     public const array AGENT_SIGNALS = [
         HilosSignalConstants::HILOS_SESSIONS_SWEPT => SessionsSweptSignalData::class,
+        EcommerceShopSignalConstants::GUEST_CART_SEND => GuestCartSendSignalData::class,
     ];
 
     /** Cart actions and the sweep arrive in frames; there is no periodic work. */
@@ -88,15 +98,16 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Removes the carts of the sessions the sessions library swept.
+     * Removes the carts of the sessions the sessions library swept, and tells a session's tabs its cart when asked.
      *
      * @param AgentSignalData $data Agent signal wrapper with the inner payload to dispatch
      * @param string $sender Sender in full - source, then agent type, then index, as {@see SignalSource::describe()} spells it
-     *     (unused: only {@see SessionsLibraryAgent} sends the frame)
+     *     (unused: only {@see SessionsLibraryAgent} sends the sweep, and only {@see EcommerceShopAgent} asks for a cart)
      * @param string $name Agent signal name
      * @throws AgentUnknownSignalException When signal name is not supported by this agent
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
-     * @throws HilosException When the right, the database or the collection refuses the delete
+     * @throws InvalidArgumentException When the cart frame cannot be named or queued outside a transaction
+     * @throws HilosException When the right, the database or the collection refuses the delete or the read
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -111,8 +122,43 @@ final class GuestCartsLibraryAgent extends AbstractAgent
 
                 return;
 
+            case EcommerceShopSignalConstants::GUEST_CART_SEND:
+                $send = $data->data;
+                if (!$send instanceof GuestCartSendSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, GuestCartSendSignalData::class, $send);
+                }
+
+                $this->publishCart($send->sessionId);
+
+                return;
+
             default:
                 throw new AgentUnknownSignalException($name);
         }
+    }
+
+    /**
+     * Sends the whole cart of one session to every tab of it.
+     *
+     * Every write of this library to a guest's cart ends with this call, and so does a tab put in
+     * the session's group. The lines are read now, in the order they were put in, and leave after
+     * the commit, as {@see AbstractSessionsLibraryAgent} sends a session's toasts. The sweep does
+     * not call it: no browser presents a swept session again
+     * ({@see AbstractSessionsLibraryAgent::sweepEndedSessions()}).
+     *
+     * @param int $sessionId Row of the session whose cart is told
+     * @throws InvalidArgumentException When the frame cannot be named or queued outside a transaction
+     * @throws HilosException When the collection refuses the read
+     */
+    private function publishCart(int $sessionId): void
+    {
+        $lines = [];
+        foreach (Hilos::$db->sessionProductCarts->whereColumnIs(SessionProductCart::sessionId, $sessionId) as $line) {
+            $lines[$line->id] = [CartStateSignalData::PRODUCT_ID => $line->productId, CartStateSignalData::QUANTITY => $line->quantity];
+        }
+        ksort($lines);
+
+        $frame = new CartStateSignalData(null, array_values($lines));
+        Database::afterCommit(fn () => $this->sendToGroup(EcommerceShopSignalConstants::CART_STATE, CartGroup::forSession($sessionId), $frame));
     }
 }

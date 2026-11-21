@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
 use Demo\EcommerceShop\Database\Database;
@@ -259,6 +260,18 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         } catch (InvalidAgentSignalPayloadException) {
             self::assertSame($stored, self::storedLines(101));
         }
+    }
+
+    /** A cart ask carrying another payload is a contract fault: the library does not guess the session. */
+    public function testACartAskWithAnotherPayloadIsRefused(): void
+    {
+        $this->expectException(InvalidAgentSignalPayloadException::class);
+
+        $this->carts()->onSignalAgent(
+            new AgentSignalData(new SessionRotateSignalData('rotate-ticket')),
+            '',
+            EcommerceShopSignalConstants::GUEST_CART_SEND,
+        );
     }
 
     /** No cart action writes the stock. */

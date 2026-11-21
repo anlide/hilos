@@ -16,8 +16,13 @@ import App from '../App.js'
 import { pageEntityTypes } from '../pages/entityTypes.js'
 import { appName, pageTitles } from '../pages/pageTitles.js'
 import { router } from '../pages/routes.js'
+import { bindCart } from './cart.js'
 import { actions, connection } from './connection.js'
 import { currentUserId, pendingAck, scopes } from './session.js'
+
+// Before bootHilos, which opens the socket: the cart message can arrive as soon
+// as the socket is open, so a listener attached after the boot could miss it.
+bindCart(connection)
 
 const hilosRouter = bootHilos({
   viewLayer: HILOS_VIEW_LAYER,

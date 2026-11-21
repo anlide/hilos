@@ -31,4 +31,13 @@ final class EcommerceShopSignalConstants
 
     /** @var string Subscription page admin products signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_PRODUCTS = 'subscription_page_admin_products';
+
+    /** @var string Server → client, WS_GROUP: the whole cart of one guest session or one person, sent by its owner */
+    public const string CART_STATE = 'cart_state';
+
+    /** @var string Shop connections agent → guest carts library: tell every tab of a session its cart */
+    public const string GUEST_CART_SEND = 'guest_cart_send';
+
+    /** @var string Shop connections agent → the person's agent: tell every tab and device of the person the cart */
+    public const string ACCOUNT_CART_SEND = 'account_cart_send';
 }

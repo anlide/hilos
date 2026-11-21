@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Core\Router\DTO\CartStateSignalData;
 use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Database;
+use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Auth\AccountOperation\AccountErasureCapture;
 use Hilos\Auth\AccountOperation\AccountErasureCoverageGuard;
 use Hilos\Auth\AccountOperation\AccountErasureOpening;
 use Hilos\Auth\AccountOperation\AccountErasureParticipantCatalog;
+use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
+use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Database\View\Item\AccountOperation;
 use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
@@ -56,7 +61,10 @@ final class AccountCartErasureTest extends IntegrationTestCase
         }
     }
 
-    /** The part erases the person's two cart lines and none of another person's, and commits exactly that result. */
+    /**
+     * The part erases the person's two cart lines and none of another person's, commits exactly that result, and tells the
+     * person's group the cart is empty once it commits.
+     */
     public function testThePartErasesThePersonsCartAndCommitsTheExactResult(): void
     {
         [$roses, $tulips] = self::seededProducts();
@@ -75,9 +83,10 @@ final class AccountCartErasureTest extends IntegrationTestCase
         self::assertPayload($result, ['rows' => ['user_product_cart' => 2], 'files' => []]);
         self::assertSame([], self::storedLines($personId));
         self::assertSame($kept, self::storedLines($otherId));
+        self::assertSame([[CartGroup::forUser($personId), ['userId' => $personId, 'lines' => []]]], $this->cartStates());
     }
 
-    /** A person without a cart gets a part that names no family and erases nothing. */
+    /** A person without a cart gets a part that names no family, erases nothing and tells no cart. */
     public function testAPersonWithoutACartGetsAnEmptyResult(): void
     {
         [$roses] = self::seededProducts();
@@ -93,6 +102,7 @@ final class AccountCartErasureTest extends IntegrationTestCase
 
         self::assertPayload($result, ['rows' => [], 'files' => []]);
         self::assertSame($kept, self::storedLines($otherId));
+        self::assertSame([], $this->cartStates());
     }
 
     /** The shop's installation answers for every collection it mounts, the cart included. */
@@ -182,6 +192,28 @@ final class AccountCartErasureTest extends IntegrationTestCase
         self::assertCount(1, $assignments, $key);
 
         return $assignments[0];
+    }
+
+    /**
+     * Drains the queue and returns every cart frame sent to a group, in order.
+     *
+     * @return list<array{string, array<string, mixed>}> Each frame's group and its payload as the wire carries it
+     */
+    private function cartStates(): array
+    {
+        $states = [];
+        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() !== EcommerceShopSignalConstants::CART_STATE) {
+                continue;
+            }
+            self::assertSame(SignalTypeConstants::WS_GROUP, $signal->signalType->getType());
+            $data = $signal->data;
+            self::assertInstanceOf(WebSocketSignalData::class, $data);
+            self::assertInstanceOf(CartStateSignalData::class, $data->data);
+            $states[] = [$data->targetGroup, $data->data->toArray()];
+        }
+
+        return $states;
     }
 
     /**

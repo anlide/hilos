@@ -7,6 +7,9 @@ namespace Demo\EcommerceShop\Agents;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\GuestCartSendSignalData;
+use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
@@ -17,6 +20,7 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\AgentUnknownSignalException;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Group\GroupMembership;
 use LogicException as NativeLogicException;
 use Hilos\Core\Page\PageAccessReassessment;
 use Hilos\Core\Router\AgentSignalData;
@@ -36,7 +40,8 @@ use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
  * an anonymous session and stays nameless - the demo sends no guest identity, and the one thing
  * of its own on a session row is the guest's cart, held by {@see GuestCartsLibraryAgent}; an
  * account is created by signing up or minted by {@see CliCommands::ADMIN_CREATE}.
- * The name the home page shows is the session's own, so this agent holds no person rows.
+ * The name the home page shows is the session's own, so this agent holds no person rows,
+ * and it puts each socket in its cart's group ({@see CartGroup}).
  */
 final class EcommerceShopAgent extends AbstractAgent
 {
@@ -66,8 +71,11 @@ final class EcommerceShopAgent extends AbstractAgent
      *
      * THE ORDER IS THE MECHANISM: the connection rows are written first, so that everything
      * read against them - the page re-decision above all - sees who the socket belongs to
-     * now; the identity follows, stamped by the framework with the server clock; and the
-     * action that was waiting is answered last, behind the identity it announces (HIL-622).
+     * now; the identity follows, stamped by the framework with the server clock; each socket
+     * is then put in the group of the cart it holds now - after the row, whose change of
+     * person ends every group it held - and the cart's owner is asked to tell the group the
+     * cart, behind every join; and the action that was waiting is answered last, behind the
+     * identity it announces (HIL-622).
      *
      * @param SessionStateSignalData $frame What the session is now, and whom to answer
      * @throws InvalidArgumentException When a signal of the answer cannot be named
@@ -85,10 +93,14 @@ final class EcommerceShopAgent extends AbstractAgent
         // it is about - the ones it names and the rest of the session's, which only this
         // register knows of yet.
         $identity = $this->handshakeIdentity($frame);
+        $cartGroup = CartGroup::of($frame);
 
         foreach ($acceptKeys as $acceptKey) {
             $this->settleConnection($acceptKey, $frame);
             $this->sendHandshakeResponse(EcommerceShopSignalConstants::HANDSHAKE_RESPONSE, $acceptKey, $identity, $frame);
+            if ($cartGroup !== null) {
+                GroupMembership::join($acceptKey, $cartGroup, $this->getAgentSignalSource());
+            }
         }
 
         $this->handOverRotationTicket($frame);
@@ -103,6 +115,7 @@ final class EcommerceShopAgent extends AbstractAgent
             PageAccessReassessment::forConnections($frame->acceptKeys);
         }
 
+        $this->askForCart($frame);
         $this->answerLibraryAction($frame);
     }
 
@@ -167,6 +180,29 @@ final class EcommerceShopAgent extends AbstractAgent
             $acceptKey,
             new SessionRotateSignalData($ticket),
         );
+    }
+
+    /**
+     * Asks the owner of the cart the session holds now to tell its group the whole cart.
+     *
+     * The owner sends it, not this agent: the owner is the one writer of the cart's rows, and a
+     * snapshot sent from here would not be ordered against the ones it sends after each change.
+     * The person's agent answers for a signed-in session, the guest carts library for any
+     * other; a frame naming neither a person nor a session row asks nobody.
+     *
+     * @param SessionStateSignalData $frame What the session is now
+     * @throws InvalidArgumentException When the request signal cannot be named
+     */
+    private function askForCart(SessionStateSignalData $frame): void
+    {
+        if ($frame->userId !== null) {
+            $this->sendToAgent(EcommerceShopSignalConstants::ACCOUNT_CART_SEND, new AccountCartSendSignalData($frame->userId));
+
+            return;
+        }
+        if ($frame->sessionId !== null) {
+            $this->sendToAgent(EcommerceShopSignalConstants::GUEST_CART_SEND, new GuestCartSendSignalData($frame->sessionId));
+        }
     }
 
     /**

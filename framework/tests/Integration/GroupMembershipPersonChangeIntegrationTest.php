@@ -15,6 +15,7 @@ use Hilos\Core\Catalog\CatalogProviderInterface;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Group\DTO\GroupJoinSignalData;
 use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
+use Hilos\Core\Group\GroupMembership;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\Destination\WebSocketDestination;
 use Hilos\Core\Router\SignalData;
@@ -61,7 +62,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
  *
  * The "Access closed" card is walked last: its export membership is the one a tab holds for a
  * person who is not behind it, and it has to join AFTER the change of person and leave with
- * the card.
+ * the card. A group the server joins a connection to by name ({@see GroupMembership::join()})
+ * is walked on its own, through the same two registries.
  */
 final class GroupMembershipPersonChangeIntegrationTest extends HilosSessionIntegrationTestCase
 {
@@ -71,6 +73,8 @@ final class GroupMembershipPersonChangeIntegrationTest extends HilosSessionInteg
     private const string SESSION_TOKEN = '00112233445566778899aabbccddeeff';
     private const int FIRST = 7;
     private const int SECOND = 8;
+    private const string SERVER_GROUP = 'group_membership_test_server';
+    private const string SERVER_GROUP_OF_TAB = self::SERVER_GROUP . ':guest-17';
 
     private GroupMembershipTestAgent $agent;
 
@@ -207,6 +211,46 @@ final class GroupMembershipPersonChangeIntegrationTest extends HilosSessionInteg
         }
     }
 
+    public function testAServerJoinPutsTheConnectionInTheMirrorAndTellsTheMasterOnce(): void
+    {
+        GroupMembership::join(self::TAB, self::SERVER_GROUP_OF_TAB, $this->agent->getAgentSignalSource());
+
+        $this->assertSame(self::SERVER_GROUP_OF_TAB, Hilos::$sr->groupSubscriptionName(self::TAB, self::SERVER_GROUP));
+        $joins = $this->drainJoins();
+        $this->assertCount(1, $joins);
+        $this->assertSame(self::SERVER_GROUP_OF_TAB, $joins[0]->group);
+        $this->assertSame(self::TAB, $joins[0]->acceptKey);
+    }
+
+    public function testARepeatedServerJoinKeepsOneMembership(): void
+    {
+        GroupMembership::join(self::TAB, self::SERVER_GROUP_OF_TAB, $this->agent->getAgentSignalSource());
+        GroupMembership::join(self::TAB, self::SERVER_GROUP_OF_TAB, $this->agent->getAgentSignalSource());
+        $this->replay();
+
+        $this->assertSame([self::TAB], $this->mirrorRecipients(self::SERVER_GROUP_OF_TAB));
+        $this->assertSame([self::TAB], $this->master->acceptKeysForGroup(self::SERVER_GROUP_OF_TAB));
+    }
+
+    public function testLeavingEveryGroupEndsAServerJoin(): void
+    {
+        GroupMembership::join(self::TAB, self::SERVER_GROUP_OF_TAB, $this->agent->getAgentSignalSource());
+        GroupMembership::leaveAll(self::TAB);
+        $this->replay();
+
+        $this->assertNull(Hilos::$sr->groupSubscriptionName(self::TAB, self::SERVER_GROUP));
+        $this->assertSame([], $this->mirrorRecipients(self::SERVER_GROUP_OF_TAB));
+        $this->assertSame([], $this->master->acceptKeysForGroup(self::SERVER_GROUP_OF_TAB));
+    }
+
+    public function testAServerJoinWithoutAConnectionWritesNothing(): void
+    {
+        GroupMembership::join('', self::SERVER_GROUP_OF_TAB, $this->agent->getAgentSignalSource());
+
+        $this->assertSame([], $this->mirrorRecipients(self::SERVER_GROUP_OF_TAB));
+        $this->assertSame([], $this->drainJoins());
+    }
+
     /**
      * Opens a tab of a person: the connection row a handshake writes.
      *
@@ -293,6 +337,25 @@ final class GroupMembershipPersonChangeIntegrationTest extends HilosSessionInteg
                     break;
             }
         }
+    }
+
+    /**
+     * Drains what this process queued and keeps the group joins, in order.
+     *
+     * @return list<GroupJoinSignalData> Join words this process queued for the master
+     */
+    private function drainJoins(): array
+    {
+        $joins = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) instanceof SignalDTO) {
+            if ($signal->signalType->getType() !== SignalTypeConstants::GROUP_JOIN) {
+                continue;
+            }
+            $this->assertInstanceOf(GroupJoinSignalData::class, $signal->data);
+            $joins[] = $signal->data;
+        }
+
+        return $joins;
     }
 
     /**

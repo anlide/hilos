@@ -240,6 +240,12 @@ quantity is never above the stock — above it, the server refuses in its own
 words; a unique piece that is "Not in a warehouse yet" cannot be added (the
 shop front above does not show it either).
 
+Every open tab knows its cart: when it opens, and after each change made from
+any tab or device, the cart's owner tells it the whole cart. At sign-in and
+sign-out a tab is told the cart of whoever it belongs to now — the account's
+cart, shared by all of the person's tabs and devices, or the cart of the
+browser session.
+
 When a guest signs in, their cart joins the account's cart — the quantities
 of a stock item add up, a unique piece already there is not doubled, and the
 guest's cart is gone. A sum above the stock is kept as it is: the cart holds

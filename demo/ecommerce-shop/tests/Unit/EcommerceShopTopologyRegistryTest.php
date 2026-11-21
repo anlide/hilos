@@ -78,6 +78,9 @@ use Demo\EcommerceShop\Core\Agent\Daemon\StockLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\GuestCartsLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
+use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
+use Demo\EcommerceShop\Core\Router\DTO\GuestCartSendSignalData;
+use Demo\EcommerceShop\Groups\CartGroup;
 use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\Hilos\Status\StatusPage;
@@ -322,6 +325,19 @@ use Hilos\Status\StatusSettingsCatalog;
  */
 final class EcommerceShopTopologyRegistryTest extends TestCase
 {
+    /**
+     * The asks for a cart reach its owners: a session's to the guest carts library, a person's to that person's agent.
+     * The cart's group is the server's alone: no browser can name it.
+     */
+    public function testTheCartAsksReachTheCartsOwnersAndTheCartGroupIsTheServers(): void
+    {
+        self::assertSame(GuestCartSendSignalData::class, Hilos::getAgentSignalDtoRoutes()[EcommerceShopSignalConstants::GUEST_CART_SEND]);
+        self::assertArrayNotHasKey(EcommerceShopSignalConstants::GUEST_CART_SEND, Hilos::getAgentSignalIndexFields());
+        self::assertSame(AccountCartSendSignalData::userId, Hilos::getAgentSignalIndexFields()[EcommerceShopSignalConstants::ACCOUNT_CART_SEND]);
+        self::assertSame(AccountCartSendSignalData::class, Hilos::getAgentSignalDtoRoutes()[EcommerceShopSignalConstants::ACCOUNT_CART_SEND]);
+        self::assertArrayNotHasKey(CartGroup::NAME, Hilos::GROUPS);
+    }
+
     public function testIdentityAdditionIsDeliveredToTheDeclaredOwnerAndCaller(): void
     {
         self::assertSame(HilosAgentType::HILOS_USER, Hilos::getAgentSignalRoutes()[HilosSignalConstants::HILOS_USER_IDENTITY_ADD]);
@@ -1209,7 +1225,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             GuestCartsLibraryAgent::readDbCollections(),
         );
         self::assertSame(
-            [HilosSignalConstants::HILOS_SESSIONS_SWEPT => SessionsSweptSignalData::class],
+            [
+                HilosSignalConstants::HILOS_SESSIONS_SWEPT => SessionsSweptSignalData::class,
+                EcommerceShopSignalConstants::GUEST_CART_SEND => GuestCartSendSignalData::class,
+            ],
             GuestCartsLibraryAgent::AGENT_SIGNALS,
         );
     }
@@ -1544,6 +1563,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::ECOMMERCE_SHOP,
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::GUEST_CARTS_LIBRARY,
+                EcommerceShopSignalConstants::GUEST_CART_SEND => AgentType::GUEST_CARTS_LIBRARY,
                 HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_AGENT_DISABLE => HilosAgentType::HILOS_INDEX,
                 HilosSignalConstants::MAINTENANCE_AGENT_PASS => HilosAgentType::HILOS_INDEX,
@@ -1654,6 +1674,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 HilosSignalConstants::HILOS_USER_PUSH_REMOVE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PUSH_ENDPOINT_GONE => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USER_PUSH_RELEASE => HilosAgentType::HILOS_USER,
+                EcommerceShopSignalConstants::ACCOUNT_CART_SEND => HilosAgentType::HILOS_USER,
                 HilosSignalConstants::HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_PROFILE_NAME_CONTINUE => HilosAgentType::HILOS_USERS_LIBRARY,
                 HilosSignalConstants::HILOS_AUTH_CODE_MINT => HilosAgentType::HILOS_USERS_LIBRARY,

@@ -13,11 +13,15 @@
 // `actionErrors` is the action-error store the same connection fills: the
 // profile's rename binding reads its refusal there.
 //
-// No projectSchemas: the demo declares no inbound signal of its own. The sign-in
-// ones it is answered by are the framework's and are merged by
+// The one inbound signal the demo declares of its own is the cart (HIL-2206),
+// merged through projectSchemas so it parses at the boundary. The sign-in ones
+// the demo is answered by are the framework's and are merged by
 // createHilosConnection itself, like every other framework signal.
 import { createHilosConnection } from '@hilos/core/base'
 
+import { CART_SIGNAL_SCHEMAS } from './cart.js'
+
 export const { connection, actions, actionErrors } = createHilosConnection({
   url: import.meta.env.VITE_WS_URL,
+  projectSchemas: { ...CART_SIGNAL_SCHEMAS },
 })
