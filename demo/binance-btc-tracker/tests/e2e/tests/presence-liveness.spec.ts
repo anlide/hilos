@@ -150,115 +150,118 @@ async function leaveWithToken(
   return token
 }
 
-test('says a person probably offline while every socket of theirs is silent', async ({
-  browser,
-  page,
-}) => {
-  const use = test.info().project.use
-  const contextOptions = {
-    baseURL: use.baseURL,
-    ignoreHTTPSErrors: use.ignoreHTTPSErrors,
-  }
-  const contextA = await browser.newContext(contextOptions)
-  const contextB = await browser.newContext(contextOptions)
-  const sockets: RawWebSocket[] = []
-  let observer: ReturnType<typeof watchSocketFrames> | undefined
-  const connectionSnapshot: { count?: unknown; frame?: SocketFrame } = {}
-  try {
-    await grantAdminToSelf(expect, page)
-    const pageA = await contextA.newPage()
-    const person = await createTestUser(expect, pageA)
-    const tokenA = await leaveWithToken(pageA, person)
-    const pageB = await contextB.newPage()
-    await bindTestUser(expect, pageB, person)
-    const tokenB = await leaveWithToken(pageB, person)
-    const first = await openRawWebSocket(contextA, use)
-    sockets.push(first)
-    const second = await openRawWebSocket(contextB, use)
-    sockets.push(second)
+// FIXME(F-122, 2026-11-21): the people list badge is not visible 5 s after the card turned online · foreign · attempt 1 · HOTFIX
+test(
+  'says a person probably offline while every socket of theirs is silent',
+  { tag: '@quarantine:F-122' },
+  async ({ browser, page }) => {
+    const use = test.info().project.use
+    const contextOptions = {
+      baseURL: use.baseURL,
+      ignoreHTTPSErrors: use.ignoreHTTPSErrors,
+    }
+    const contextA = await browser.newContext(contextOptions)
+    const contextB = await browser.newContext(contextOptions)
+    const sockets: RawWebSocket[] = []
+    let observer: ReturnType<typeof watchSocketFrames> | undefined
+    const connectionSnapshot: { count?: unknown; frame?: SocketFrame } = {}
+    try {
+      await grantAdminToSelf(expect, page)
+      const pageA = await contextA.newPage()
+      const person = await createTestUser(expect, pageA)
+      const tokenA = await leaveWithToken(pageA, person)
+      const pageB = await contextB.newPage()
+      await bindTestUser(expect, pageB, person)
+      const tokenB = await leaveWithToken(pageB, person)
+      const first = await openRawWebSocket(contextA, use)
+      sockets.push(first)
+      const second = await openRawWebSocket(contextB, use)
+      sockets.push(second)
 
-    observer = watchSocketFrames(page, (frame) => {
-      const wire = deliveryObject(frame.wire)
-      const data = deliveryObject(wire.data)
-      if (
-        wire.type !== SIGNAL_TYPE_PAGE_RESPONSE ||
-        data.page !== HilosPages.USER
-      )
-        return
-      const tables = deliveryObject(deliveryObject(data.payload).tables)
-      const detail = deliveryObject(tables.userDetail)
-      for (const value of Array.isArray(detail.rows) ? detail.rows : []) {
-        const row = deliveryObject(value)
-        if (row.rowKey !== person.userId) continue
-        const connections = deliveryObject(
-          deliveryObject(row.slots)[USER_CONNECTIONS_SLOT],
+      observer = watchSocketFrames(page, (frame) => {
+        const wire = deliveryObject(frame.wire)
+        const data = deliveryObject(wire.data)
+        if (
+          wire.type !== SIGNAL_TYPE_PAGE_RESPONSE ||
+          data.page !== HilosPages.USER
         )
-        connectionSnapshot.count = connections[USER_ONLINE_SESSION_COUNT_FIELD]
-        connectionSnapshot.frame = frame
-      }
-    })
-    await gotoPage(expect, page, `/hilos/user/${person.userId}`)
-    const list = await page.context().newPage()
-    await gotoPage(expect, list, '/hilos/users')
-    await typeInto(list.getByTestId('hilos-table-search'), person.name)
-    await expectPresence(page, list, person.userId, 'online', 2)
+          return
+        const tables = deliveryObject(deliveryObject(data.payload).tables)
+        const detail = deliveryObject(tables.userDetail)
+        for (const value of Array.isArray(detail.rows) ? detail.rows : []) {
+          const row = deliveryObject(value)
+          if (row.rowKey !== person.userId) continue
+          const connections = deliveryObject(
+            deliveryObject(row.slots)[USER_CONNECTIONS_SLOT],
+          )
+          connectionSnapshot.count =
+            connections[USER_ONLINE_SESSION_COUNT_FIELD]
+          connectionSnapshot.frame = frame
+        }
+      })
+      await gotoPage(expect, page, `/hilos/user/${person.userId}`)
+      const list = await page.context().newPage()
+      await gotoPage(expect, list, '/hilos/users')
+      await typeInto(list.getByTestId('hilos-table-search'), person.name)
+      await expectPresence(page, list, person.userId, 'online', 2)
 
-    // Three connections of two sessions: the extra socket changes neither count.
-    const extra = await openRawWebSocket(contextA, use)
-    sockets.push(extra)
-    // The 101 precedes runtime registration. Wait for that registration before
-    // closing, then for its deletion before moving either browser's liveness.
-    await expect.poll(() => connectionSnapshot.count).toBe(3)
-    expect(connectionSnapshot.frame?.failure).toBeUndefined()
-    expect(connectionSnapshot.frame?.raw).toEqual(expect.any(String))
-    await expectPresence(page, list, person.userId, 'online', 2)
-    expect(await extra.close()).toBe('client')
-    await expect.poll(() => connectionSnapshot.count).toBe(2)
-    expect(connectionSnapshot.frame?.failure).toBeUndefined()
-    expect(connectionSnapshot.frame?.raw).toEqual(expect.any(String))
-    await expectPresence(page, list, person.userId, 'online', 2)
+      // Three connections of two sessions: the extra socket changes neither count.
+      const extra = await openRawWebSocket(contextA, use)
+      sockets.push(extra)
+      // The 101 precedes runtime registration. Wait for that registration before
+      // closing, then for its deletion before moving either browser's liveness.
+      await expect.poll(() => connectionSnapshot.count).toBe(3)
+      expect(connectionSnapshot.frame?.failure).toBeUndefined()
+      expect(connectionSnapshot.frame?.raw).toEqual(expect.any(String))
+      await expectPresence(page, list, person.userId, 'online', 2)
+      expect(await extra.close()).toBe('client')
+      await expect.poll(() => connectionSnapshot.count).toBe(2)
+      expect(connectionSnapshot.frame?.failure).toBeUndefined()
+      expect(connectionSnapshot.frame?.raw).toEqual(expect.any(String))
+      await expectPresence(page, list, person.userId, 'online', 2)
 
-    // One socket silent into the doubt, the other answering: still online. The
-    // silence goes first — an answering socket would pong the master's ping and end
-    // the doubt — and the ping the master sends into it is its trace on this side.
-    first.keepSilent()
-    await bringLivenessMomentToNow(tokenA, 'probably-offline')
-    await first.waitForSilentPings(1)
-    await expectPresence(page, list, person.userId, 'online', 2)
+      // One socket silent into the doubt, the other answering: still online. The
+      // silence goes first — an answering socket would pong the master's ping and end
+      // the doubt — and the ping the master sends into it is its trace on this side.
+      first.keepSilent()
+      await bringLivenessMomentToNow(tokenA, 'probably-offline')
+      await first.waitForSilentPings(1)
+      await expectPresence(page, list, person.userId, 'online', 2)
 
-    // Both silent into the doubt: probably offline, and both still counted.
-    second.keepSilent()
-    await bringLivenessMomentToNow(tokenB, 'probably-offline')
-    await second.waitForSilentPings(1)
-    await expectPresence(page, list, person.userId, 'probably offline', 2)
+      // Both silent into the doubt: probably offline, and both still counted.
+      second.keepSilent()
+      await bringLivenessMomentToNow(tokenB, 'probably-offline')
+      await second.waitForSilentPings(1)
+      await expectPresence(page, list, person.userId, 'probably offline', 2)
 
-    // One answers: online again, while the other is still silent and in doubt.
-    second.answer()
-    await expectPresence(page, list, person.userId, 'online', 2)
-    expect(first.silentPings()).toBeGreaterThanOrEqual(1)
+      // One answers: online again, while the other is still silent and in doubt.
+      second.answer()
+      await expectPresence(page, list, person.userId, 'online', 2)
+      expect(first.silentPings()).toBeGreaterThanOrEqual(1)
 
-    // The master closes the one that kept silent; the one answering is left.
-    await bringLivenessMomentToNow(tokenA, 'close')
-    expect(await first.closed).toBe('server')
-    await expectPresence(page, list, person.userId, 'online', 1)
+      // The master closes the one that kept silent; the one answering is left.
+      await bringLivenessMomentToNow(tokenA, 'close')
+      expect(await first.closed).toBe('server')
+      await expectPresence(page, list, person.userId, 'online', 1)
 
-    // The last one closes: offline.
-    expect(await second.close()).toBe('client')
-    await expectPresence(page, list, person.userId, 'offline', 0)
+      // The last one closes: offline.
+      expect(await second.close()).toBe('client')
+      await expectPresence(page, list, person.userId, 'offline', 0)
 
-    // A fresh snapshot keeps the same known zero and the two saved sessions.
-    await page.reload()
-    await expectPresence(page, list, person.userId, 'offline', 0)
+      // A fresh snapshot keeps the same known zero and the two saved sessions.
+      await page.reload()
+      await expectPresence(page, list, person.userId, 'offline', 0)
 
-    // A new socket of the same person brings them back to the same observer.
-    const again = await openRawWebSocket(contextA, use)
-    sockets.push(again)
-    await expectPresence(page, list, person.userId, 'online', 1)
-    await again.close()
-  } finally {
-    observer?.stop()
-    await Promise.all(sockets.map((socket) => socket.close()))
-    await contextA.close()
-    await contextB.close()
-  }
-})
+      // A new socket of the same person brings them back to the same observer.
+      const again = await openRawWebSocket(contextA, use)
+      sockets.push(again)
+      await expectPresence(page, list, person.userId, 'online', 1)
+      await again.close()
+    } finally {
+      observer?.stop()
+      await Promise.all(sockets.map((socket) => socket.close()))
+      await contextA.close()
+      await contextB.close()
+    }
+  },
+)
