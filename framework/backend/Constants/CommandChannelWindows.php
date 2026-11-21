@@ -61,8 +61,9 @@ use Hilos\Socket\Client\CommandClient;
  * e2e client is Node reaching the command port over TCP - Playwright has no PHP to run, so
  * nothing there can read a PHP constant. The copies live in `framework/frontend/scripts/protectedMode.mjs`,
  * `framework/frontend/scripts/adminGrant.mjs`, `framework/frontend/scripts/daemonMoments.mjs`,
- * `framework/frontend/scripts/accountDeletion.mjs`, `framework/frontend/scripts/i18n.mjs`,
- * `framework/frontend/scripts/clusterClock.mjs`, `demo/ecommerce-shop/tests/e2e/helpers/throttle.ts`,
+ * `framework/frontend/scripts/accountDeletion.mjs`, `framework/frontend/scripts/accountMerge.mjs`,
+ * `framework/frontend/scripts/i18n.mjs`, `framework/frontend/scripts/clusterClock.mjs`,
+ * `demo/ecommerce-shop/tests/e2e/helpers/throttle.ts`,
  * `demo/polls/tests/e2e/helpers/legalHold.ts` and
  * `demo/roblox-game-server/tests/e2e/tests/maintenance-restore.spec.ts`, each as `REPLY_TIMEOUT_MS`
  * naming this class in its comment; a change to {@see self::CALLER_WAIT_SECONDS} has to be carried

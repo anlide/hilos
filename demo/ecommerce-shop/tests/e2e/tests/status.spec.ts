@@ -6,6 +6,7 @@ import {
   STATUS_COMPONENTS_PATH,
   STATUS_HISTORY_PAGE,
   STATUS_HISTORY_PATH,
+  STATUS_HISTORY_TABLE,
   STATUS_PATH,
   STATUS_SUBSCRIBERS_PATH,
   STATUS_WORKS_PATH,
@@ -27,9 +28,9 @@ import {
   typeInto,
   watchDeliveryFrames,
   watchPublicStatus,
-  watchStatusFrames,
   type DeliveryFrameLog,
 } from '../../../../../framework/frontend/e2e/index.js'
+import { statusOverviewSchema } from '../../../../../framework/frontend/core/src/admin/status/index.js'
 import { beatStatusHeartbeat } from '../../../../../framework/frontend/scripts/statusMoments.mjs'
 
 // spec-owner: demo — proves this project serves its Status section and public status page.
@@ -89,33 +90,25 @@ const ADDRESSES = [
   [STATUS_HISTORY_PATH, STATUS_HISTORY_PAGE],
 ] as const
 
-type StatusLog = ReturnType<typeof watchStatusFrames>
-
-/** Where an answer is awaited from: packet and Overview counts before the move. */
-interface Mark {
-  packets: number
-  overviews: number
-}
-
-function mark(wire: DeliveryFrameLog, status: StatusLog): Mark {
-  return { packets: wire.packets.length, overviews: status.overviews.length }
-}
-
-/** The payload of the first answer to this page after the mark. */
-function pageAnswer(
+/** Page answers on this document's socket, in delivery order after the move. */
+function pageAnswers(
   wire: DeliveryFrameLog,
   pageKey: string,
   since: number,
-): Record<string, unknown> | undefined {
-  for (const packet of wire.packets.slice(since)) {
-    for (const { wire: frame } of packet.frames) {
-      const envelope = deliveryObject(frame)
-      const data = deliveryObject(envelope.data)
-      if (envelope.type === 'page_response' && data.page === pageKey)
-        return deliveryObject(data.payload)
-    }
-  }
-  return undefined
+  socket: number,
+) {
+  return wire.packets
+    .slice(since)
+    .filter((packet) => packet.socket === socket)
+    .flatMap((packet) =>
+      packet.frames.flatMap((frame) => {
+        const envelope = deliveryObject(frame.wire)
+        const data = deliveryObject(envelope.data)
+        return envelope.type === 'page_response' && data.page === pageKey
+          ? [{ packet, frame, payload: deliveryObject(data.payload) }]
+          : []
+      }),
+    )
 }
 
 /** The named first window inside a page answer: no companion request draws it. */
@@ -140,47 +133,80 @@ async function expectTableShows(page: Page, tableId: string, total: number) {
 }
 
 /**
- * Wait for this page's first answer after the mark and check that the screen
- * shows its data: the right lazy view, fed by the right project's reply.
+ * Check the first answer supplies the page's data and the screen renders the
+ * delivered state. Overview health can change while React is mounting.
  */
 async function expectAnswerShown(
   page: Page,
   wire: DeliveryFrameLog,
-  status: StatusLog,
   pageKey: string,
-  since: Mark,
+  since: number,
 ): Promise<Record<string, unknown>> {
-  await expect
-    .poll(() => pageAnswer(wire, pageKey, since.packets) !== undefined)
-    .toBe(true)
-  const payload = pageAnswer(wire, pageKey, since.packets)!
+  const socket = wire.connections.at(-1)!.socket
+  const answers = () => pageAnswers(wire, pageKey, since, socket)
+  await expect.poll(() => answers().length).toBeGreaterThan(0)
+  const [first] = answers()
+  const { payload } = first
   const data = deliveryObject(payload.data)
   if (pageKey === OVERVIEW_PAGE) {
-    await expect
-      .poll(() => status.overviews.length)
-      .toBeGreaterThan(since.overviews)
-    const overview = status.overviews[since.overviews]
+    const overview = statusOverviewSchema.parse(data.status)
     expect(overview.components.totalCount).toBe(1)
-    await expect(
-      page.getByTestId('hilos-status-components-link'),
-    ).toContainText(`${overview.components.operationalCount} / 1 operational`)
     expect(overview.subscribers).not.toBeNull()
-    await expectStatusSubscriberCounts(
-      expect,
-      page,
-      wire,
-      overview.subscribers!.confirmedCount,
-      overview.subscribers!.pendingCount,
-      true,
-    )
     expect(overview.historyCount).not.toBeNull()
-    await expect(page.getByTestId('hilos-status-history-count')).toHaveText(
-      String(overview.historyCount),
-    )
     expect(overview.scheduledWorks).not.toBeNull()
-    await expect(page.getByTestId('hilos-status-works-count')).toHaveText(
-      String(overview.scheduledWorks!.count),
-    )
+
+    await expect
+      .poll(
+        async () => {
+          const latest = answers().at(-1)!
+          const { components, subscribers, historyCount, scheduledWorks } =
+            statusOverviewSchema.parse(
+              deliveryObject(latest.payload.data).status,
+            )
+          const { operationalCount, totalCount } = components
+          const counters = [
+            [
+              'hilos-status-components-link',
+              new RegExp(`^${operationalCount} / ${totalCount} operational\\b`),
+            ],
+            [
+              'hilos-status-subscribers-tile-confirmed',
+              String(subscribers?.confirmedCount ?? '—'),
+            ],
+            [
+              'hilos-status-subscribers-tile-pending',
+              String(subscribers?.pendingCount ?? '—'),
+            ],
+            ['hilos-status-history-count', String(historyCount ?? '—')],
+            ['hilos-status-works-count', String(scheduledWorks?.count ?? '—')],
+          ] as const
+          const mismatches = await Promise.all(
+            counters.map(async ([testId, expected]) => {
+              const [count, visibleTexts] = await Promise.all([
+                page.getByTestId(testId).count(),
+                shownByTestId(page, testId).allInnerTexts(),
+              ])
+              const text = visibleTexts[0]?.trim()
+              const matches =
+                typeof expected === 'string'
+                  ? text === expected
+                  : text !== undefined && expected.test(text)
+              return count === 1 && visibleTexts.length === 1 && matches
+                ? null
+                : { testId, expected, count, visibleTexts }
+            }),
+          )
+          // A new delivery invalidates the whole comparison, even if its
+          // arrival did not change the counter that was just read.
+          return latest.frame === answers().at(-1)?.frame
+            ? mismatches.filter((mismatch) => mismatch !== null)
+            : ['Overview answer changed while reading its counters']
+        },
+        {
+          message: 'Overview shows all counters from its latest answer',
+        },
+      )
+      .toEqual([])
   }
   if (pageKey === WORKS_PAGE) {
     expect(deliveryObject(data.statusWorks).components).toEqual(CATALOG)
@@ -234,9 +260,12 @@ async function expectAnswerShown(
     )
   }
   if (pageKey === STATUS_HISTORY_PAGE) {
-    const [history] = statusHistoryDeliveries(wire, since.packets)
+    const [history] = statusHistoryDeliveries({
+      ...wire,
+      packets: [{ ...first.packet, frames: [first.frame] }],
+    })
     expect(history.catalog).toEqual({ components: CATALOG })
-    const { total } = firstWindow(payload, 'hilosStatusHistory')
+    const { total } = firstWindow(payload, STATUS_HISTORY_TABLE)
     await expectTableShows(page, 'hilos-status-history-table', total)
     for (const fact of history.rows)
       await expectStatusHistoryFact(expect, page, fact)
@@ -257,29 +286,28 @@ test('Dashboard, cold entry and F5 at each Status address show this project from
   page,
 }) => {
   await grantAdminToSelf(expect, page)
-  const status = watchStatusFrames(page)
   const wire = watchDeliveryFrames(page)
   try {
     await test.step('the Dashboard card opens the Overview', async () => {
       await gotoPage(expect, page, '/hilos', PAGE_READY)
-      const since = mark(wire, status)
+      const since = wire.packets.length
       await page.getByTestId('dashboard-card-hilos_status').click()
       await expectPageReady(expect, page)
       await expect(page).toHaveURL(new RegExp(`${STATUS_PATH}$`))
-      await expectAnswerShown(page, wire, status, OVERVIEW_PAGE, since)
+      await expectAnswerShown(page, wire, OVERVIEW_PAGE, since)
     })
     for (const [path, pageKey] of ADDRESSES) {
       await test.step(`${path} on a cold document and after F5`, async () => {
-        const cold = mark(wire, status)
+        const cold = wire.packets.length
         await gotoPage(expect, page, path, PAGE_READY)
-        await expectAnswerShown(page, wire, status, pageKey, cold)
+        await expectAnswerShown(page, wire, pageKey, cold)
         const sockets = wire.connections.length
-        const reloaded = mark(wire, status)
+        const reloaded = wire.packets.length
         await page.reload()
         await expectPageReady(expect, page)
         await expect(page).toHaveURL(new RegExp(`${path}$`))
-        await expectAnswerShown(page, wire, status, pageKey, reloaded)
         expect(wire.connections.length).toBeGreaterThan(sockets)
+        await expectAnswerShown(page, wire, pageKey, reloaded)
       })
     }
     expectNoActions(wire)
@@ -288,7 +316,6 @@ test('Dashboard, cold entry and F5 at each Status address show this project from
       body: JSON.stringify(wire),
       contentType: 'application/json',
     })
-    status.stop()
     wire.stop()
   }
 })
@@ -299,14 +326,10 @@ test(
   { tag: '@quarantine:F-081' },
   async ({ page }) => {
     await grantAdminToSelf(expect, page)
-    const status = watchStatusFrames(page)
     const wire = watchDeliveryFrames(page)
     try {
       await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
-      await expectAnswerShown(page, wire, status, OVERVIEW_PAGE, {
-        packets: 0,
-        overviews: 0,
-      })
+      await expectAnswerShown(page, wire, OVERVIEW_PAGE, 0)
       expect(wire.connections).toHaveLength(1)
       const [{ socket: opened }] = wire.connections
       await markDocument(page)
@@ -318,11 +341,11 @@ test(
         path: string,
         pageKey: string,
       ) => {
-        const since = mark(wire, status)
+        const since = wire.packets.length
         await move()
         await expectPageReady(expect, page)
         await expect(page).toHaveURL(new RegExp(`${path}$`))
-        return expectAnswerShown(page, wire, status, pageKey, since)
+        return expectAnswerShown(page, wire, pageKey, since)
       }
 
       const components = await visit(
@@ -433,7 +456,6 @@ test(
         body: JSON.stringify(wire),
         contentType: 'application/json',
       })
-      status.stop()
       wire.stop()
     }
   },

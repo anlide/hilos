@@ -4,6 +4,7 @@ import {
   cleanupFixtures,
   createTestUser,
   dismissToasts,
+  expectDocumentUnchanged,
   expectHilosUserBlockSettled,
   leaveSecondAdmin,
   shownByTestId,
@@ -12,14 +13,20 @@ import {
   clickSubmit,
   typeInto,
   gotoPage,
+  markDocument,
   PAGE_REFUSED,
   grantAdminToSelf,
   uniqueEmail,
   type SignedInUser,
   type TestCleanup,
 } from '../../../../../framework/frontend/e2e/index.js'
-import { HilosPages } from '../../../../../framework/frontend/core/src/base/index.js'
+import {
+  HilosPages,
+  resolveHilosPath,
+} from '../../../../../framework/frontend/core/src/base/index.js'
+import { mergeAccounts } from '../../../../../framework/frontend/scripts/accountMerge.mjs'
 import { setAdmin } from '../../../../../framework/frontend/scripts/adminGrant.mjs'
+import { seedTestUser } from '../../../../../framework/frontend/scripts/testUser.mjs'
 
 const usersTest = test.extend<{
   usersCleanup: TestCleanup
@@ -374,6 +381,60 @@ test('takes a person over from the framework card that is not your own', async (
   await clickSubmit(expect, page.getByTestId('hilos-user-impersonate-confirm'))
 
   await expect(page.getByTestId('impersonation-banner')).toBeVisible()
+})
+
+// The Vue chat merge spec proves the shared server path
+// (demo/chat/tests/e2e/tests/account-merge-chat.spec.ts). This case proves that
+// the Angular SDK cards receive the outcome live from the server. Before HIL-1999,
+// this project refused the merge as “not wired”. Here merges start through
+// the account:merge command.
+test('shows a merge started from account:merge on the framework card without a reload', async ({
+  page,
+}) => {
+  await grantAdminToSelf(expect, page)
+  const survivor = await seedTestUser({
+    email: `merge-survivor-${uniqueEmail()}`,
+  })
+  const loser = await seedTestUser({ email: `merge-loser-${uniqueEmail()}` })
+
+  await gotoPage(
+    expect,
+    page,
+    resolveHilosPath(HilosPages.USER, { userId: String(survivor.userId) }),
+  )
+  await expect(page.getByTestId('hilos-user-name')).toHaveText(survivor.name)
+
+  const loserCard = await page.context().newPage()
+  try {
+    await gotoPage(
+      expect,
+      loserCard,
+      resolveHilosPath(HilosPages.USER, { userId: String(loser.userId) }),
+    )
+    await expect(loserCard.getByTestId('hilos-user-name')).toHaveText(
+      loser.name,
+    )
+    await Promise.all([page, loserCard].map(markDocument))
+
+    await mergeAccounts({
+      survivorUserId: survivor.userId,
+      loserUserId: loser.userId,
+    })
+
+    await expect(page.getByTestId('hilos-user-merge-status')).toHaveText(
+      'Merge completed',
+    )
+    await expect(loserCard.getByTestId('hilos-user-merged')).toContainText(
+      survivor.name,
+    )
+    await expect(
+      loserCard.getByTestId('hilos-user-merged-link'),
+    ).toHaveAttribute('href', `/hilos/user/${survivor.userId}`)
+    await expectDocumentUnchanged(expect, page)
+    await expectDocumentUnchanged(expect, loserCard)
+  } finally {
+    await loserCard.close()
+  }
 })
 
 test('closes an idle block confirmation when another tab changes the block', async ({

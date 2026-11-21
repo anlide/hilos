@@ -2512,9 +2512,10 @@ The live entrances and observations are:
   A request refusal stays in the window beside the live progress. Closing the
   window is not cancellation. The browser cancellation route is live through
   the sessions holder.
-- React and Angular SDK views carry the corresponding states and actions. Their
-  demo activation remains HIL-2012; this canon declares no design for the
-  appearance of missing states.
+- React and Angular SDK views carry the corresponding states and actions.
+  File Gallery Manager and Online Testing verify live card updates after
+  `account:merge` (HIL-2012). Browser-initiated merges are disabled in both
+  demos. This canon declares no design for the appearance of missing states.
 
 ### Merge observation data
 
@@ -2572,7 +2573,7 @@ Real multi-node and backup evidence remains HIL-2013.
 applicator integration and component states, without new clocks or real-time
 waits. Each carries its own business checks; HIL-1999 connected the live
 administrator and CLI paths. Applicable behavioral e2e is aligned after the
-switch (not in the code yet — HIL-2012). Cluster and backup evidence covers
+switch. Cluster and backup evidence covers
 death after commit, lost receipt, duplicate/old frames, sleeping or moved
 owners and the absence of a second effect
 (not in the code yet — HIL-2013). Neither evidence leaf inherits another
