@@ -190,6 +190,15 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   whole (owner's decision, 2026-10-10, HIL-1409). A deletion request is a member
   of a set of many — the history of a person's requests — so the users library
   still creates it.
+- A project keeps a set of its own on the person's agent through its subclass of
+  that agent: the subclass extends the parent's maps, `OWNS_DB_SET` and
+  `READS_DB`, through `...parent::OWNS_DB_SET` and `...parent::READS_DB`, the
+  project's `AccountDataOwnerDirectory` names the collection in `personal()`, and
+  the subclass deletes it in `eraseProjectChildren()` inside the person's part of
+  the erasure ([account-operations.md](account-operations.md#current-implementation),
+  *The person's agent's claims*). A set whose rows are born only by the person's
+  own choice is claimed whole, creation included, as the notification
+  preferences are. The first such set is the shop's account cart.
 
 Raising the instance owner is cheap enough to use as the write path. Do not
 bypass the hop by writing one person's content from the library to avoid

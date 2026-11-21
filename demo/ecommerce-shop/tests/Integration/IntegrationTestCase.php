@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
+use Demo\EcommerceShop\Agents\Hilos\UserAgent;
+use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Agents\EcommerceShopAgent;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Hilos;
@@ -20,6 +22,8 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
@@ -45,6 +49,12 @@ abstract class IntegrationTestCase extends TestCase
 
     /** @var ?SessionsLibraryAgent Library the sessions themselves live in, built on first use */
     private ?SessionsLibraryAgent $sessionsLibrary = null;
+
+    /** @var ?UsersLibraryAgent Library the people and their deletion requests live in, built on first use */
+    private ?UsersLibraryAgent $usersLibrary = null;
+
+    /** @var array<int, UserAgent> Agents of the people a case's frames reached, by person */
+    private array $personAgents = [];
 
     /**
      * Initializes the database once and registers test truth-source ownership.
@@ -92,6 +102,43 @@ abstract class IntegrationTestCase extends TestCase
         }
 
         return $this->sessionsLibrary;
+    }
+
+    /**
+     * Builds the users library the people live in, once per case.
+     *
+     * Started on first use the way a node starts it - its claims first, among them adding a
+     * request to delete an account, then its start - because a case that opens an erasure asks
+     * it for that request.
+     *
+     * @return UsersLibraryAgent Library under test, started
+     * @throws HilosException When the library's own startup fails
+     */
+    protected function usersLibrary(): UsersLibraryAgent
+    {
+        if ($this->usersLibrary === null) {
+            $this->usersLibrary = new UsersLibraryAgent();
+            $this->startAgent($this->usersLibrary);
+        }
+
+        return $this->usersLibrary;
+    }
+
+    /**
+     * Raises the agent of one person the way a node does on the first frame to it.
+     *
+     * @param int $userId Person the frame is addressed to
+     * @return UserAgent The person's agent, started
+     * @throws HilosException When the agent's own startup fails
+     */
+    protected function personAgent(int $userId): UserAgent
+    {
+        if (!isset($this->personAgents[$userId])) {
+            $this->personAgents[$userId] = new UserAgent((string)$userId);
+            $this->startAgent($this->personAgents[$userId]);
+        }
+
+        return $this->personAgents[$userId];
     }
 
     /**
@@ -212,9 +259,10 @@ abstract class IntegrationTestCase extends TestCase
      * a running node never does, and which the guard of HIL-716 made visible. The previous id
      * is put back because a case is usually inside one when it calls here.
      *
-     * Used on the LIBRARY dispatches only. The holder's own handlers keep running under the
-     * harness id, because that is who holds this project's runtime claims in a case; moving
-     * them onto the holder's id is a change to the runtime half and belongs with it.
+     * Used on the library dispatches and on the steps of a person's agent. The holder's own
+     * handlers keep running under the harness id, because that is who holds this project's
+     * runtime claims in a case; moving them onto the holder's id is a change to the runtime
+     * half and belongs with it.
      *
      * @template TReturn
      * @param AgentInterface $agent Agent the dispatch is addressed to
@@ -222,7 +270,7 @@ abstract class IntegrationTestCase extends TestCase
      * @return TReturn Whatever the handler returned
      * @throws HilosException When the handler fails
      */
-    private function underAgent(AgentInterface $agent, callable $dispatch): mixed
+    protected function underAgent(AgentInterface $agent, callable $dispatch): mixed
     {
         $previous = ExecutionContext::currentAgentId();
         ExecutionContext::setCurrentAgentId($agent->getId());
@@ -234,14 +282,31 @@ abstract class IntegrationTestCase extends TestCase
     }
 
     /**
-     * Ends the case's handler and unregisters test truth-source ownership.
+     * Stops the users library and the people's agents a case raised, ends the case's handler and
+     * unregisters test truth-source ownership.
      *
+     * Each agent is stopped under its own id and its claims go even when the stop fails, so a
+     * later case raising the same person claims the set afresh.
      * The case fails for what it owes at its end: a failed announcement of its commits, and a
      * transaction it left open - left on the connection, that one would refuse every later case
      * its start.
      */
     protected function tearDown(): void
     {
+        foreach ([$this->usersLibrary, ...$this->personAgents] as $agent) {
+            if ($agent === null) {
+                continue;
+            }
+            try {
+                $this->underAgent($agent, static fn () => $agent->onStop());
+            } finally {
+                TruthSourceRegistry::unregisterAgent($agent->getId());
+                RtTruthSourceRegistry::unregisterAgent($agent->getId());
+                SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agent->getId()));
+            }
+        }
+        $this->usersLibrary = null;
+        $this->personAgents = [];
         $owed = Database::handlerEnd();
         TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
         RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);

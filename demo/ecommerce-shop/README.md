@@ -49,10 +49,13 @@ product in each warehouse — and the guests' carts — the products a browser
 session without an account has put in its cart. Each is held whole by its own
 library — the warehouses library, the categories library, the products
 library, the stock library, the guest carts library — one for the whole
-cluster, on the node the cluster picks. Every address of the product page has
-an agent of its own: it comes up with the first visitor of that address and
-goes to sleep after the last one has left; it reads the product and its stock
-and writes nothing. The product page of the shop front that it serves arrives
+cluster, on the node the cluster picks. The carts of the people with an
+account — the products a person who signed in has put in their cart — are
+the one table held not by a library but by the agent of each person: one
+agent per person writes that person's cart and erases it with the account.
+Every address of the product page has an agent of its own: it comes up with
+the first visitor of that address and goes to sleep after the last one has
+left; it reads the product and its stock and writes nothing. The product page of the shop front that it serves arrives
 with a change of its own. People, sessions, the tables of signing in and the
 registry of files stay the framework's.
 

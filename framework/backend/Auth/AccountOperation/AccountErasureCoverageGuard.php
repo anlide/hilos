@@ -17,8 +17,9 @@ use Hilos\Hilos;
  * Every mounted collection owes an answer: a participant of the account erasure covers it, or the
  * erasure leaves it alone for a stated reason. The framework answers for its own collections in
  * {@see AccountErasureParticipantCatalog}; a project answers for its own in its
- * {@see AccountDataOwnerDirectory}, and every collection that directory names has to be one this
- * installation mounts, or the answer is about a table that is not there. All of it is constants
+ * {@see AccountDataOwnerDirectory}, and every collection that directory names - an owner's, one its
+ * person's agent holds, or an exempt one - has to be one this installation mounts, or the answer is
+ * about a table that is not there. All of it is constants
  * and the map of mounted collections, so the whole question is answered without a single query.
  *
  * It refuses the STARTUP rather than the erasure that would have missed the table, because the
@@ -77,9 +78,10 @@ final class AccountErasureCoverageGuard
     }
 
     /**
-     * Names the collections the project's directory speaks for: its owners' and its exemptions.
+     * Names the collections the project's directory speaks for: its owners', those of its person's
+     * agent, and its exemptions.
      *
-     * @return list<string> Collection keys in directory order, the owners' first
+     * @return list<string> Collection keys in directory order, the owners' first, then the person's agent's
      * @throws InvalidTopologyException When the directory is malformed
      */
     private static function projectCollections(): array
@@ -90,6 +92,6 @@ final class AccountErasureCoverageGuard
             array_push($collections, ...$owner->collections);
         }
 
-        return [...$collections, ...array_keys($directory::declaredExemptions())];
+        return [...$collections, ...$directory::declaredPersonal(), ...array_keys($directory::declaredExemptions())];
     }
 }

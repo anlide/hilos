@@ -514,7 +514,16 @@ deletes, HIL-1942; see *The participant result claim*). `READS_DB`
 names the stored trust restrictions, the account operations and their
 assignments, and the notification deliveries, which its erasure part reads to
 see every delivery captured. Under these claims the agent deletes its child sets
-as its part of the erasure, `eraseAccountPersonalPart()` (live in the HIL-1952 erasure path). Its final uses the personal agent's production `Remove` claims to delete its
+as its part of the erasure, `eraseAccountPersonalPart()` (live in the HIL-1952
+erasure path). A project that keeps sets of its own on the person's agent extends both maps in
+its subclass through `...parent::OWNS_DB_SET` and `...parent::READS_DB`, names
+those collections in its directory's `personal()` (see the directory below), and
+deletes them in `eraseProjectChildren(int $userId): AccountErasure`: after the
+framework's sets, inside the same part's transaction, opening none of its own.
+A throw there rolls the whole part back, the framework's sets with it, and the
+part's result names the project's rows per family and their registry files beside
+the photo's (`AccountErasure::plus()`). Its final uses the personal agent's
+production `Remove` claims to delete its
 `users` row, rename journal and merge row; HIL-1952 removed the holder's borrowed
 erasure rights. `renamePerson()` is the real atomic example
 the target follows: the name and its journal row in one transaction of one
@@ -631,7 +640,9 @@ expects `delivery:<channel>` owners, and rows with no owner become one wait per
 channel. `AccountErasureParticipantCatalog::framework()` is a test-only entry
 holding the framework's own participants (production code reads
 `installation()`): `personal` (its sixteen collections, the `HILOS_USER` owner,
-one per person), `users_library` (`verifications`, `HILOS_USERS_LIBRARY`),
+one per person; in `installation()` the collections the project's directory
+names in `personal()` follow the sixteen), `users_library` (`verifications`,
+`HILOS_USERS_LIBRARY`),
 `sessions_holder` (`sessions` and `accessLogEntries`, `HILOS_SESSIONS_LIBRARY`),
 `delivery` (`notificationDeliveries`), `data_export` (`dataExports`,
 `HILOS_DATA_EXPORT`) and `legal_export` (`legalAcceptanceExports`,
@@ -717,22 +728,37 @@ facade points `ACCOUNT_DATA_OWNER_DIRECTORY` at a subclass of
 (the key, the collections, the owner's agent type, one per person or one for
 everybody, and whether an account still has rows) and whose `exempt()` names
 the project collections the erasure leaves alone, each with its
-`AccountErasureExemption`. The default directory declares nothing.
-`AccountErasureParticipantCatalog::installation()` takes the framework's
-participants, then each owner as an `AccountErasureProjectParticipant` in
-directory order, with the project's exemptions; a malformed directory, or an
-owner or exemption overlapping the framework or each other, is an
-`InvalidTopologyException` naming every mistake. A project participant counts
-as registered when the application registers its agent type with the indexing
-the owner declares and the registered class implements
+`AccountErasureExemption`. Its third answer, `personal()`, lists the project
+collections its person's agent holds. They are no owner: that agent's type is the
+framework's `HILOS_USER`, which no project owner may take. They are a part of
+the `personal` participant, which the agent deletes as above. The default
+directory declares nothing. `AccountErasureParticipantCatalog::installation()`
+takes the framework's participants, the `personal` one ending with the
+collections of `personal()`, then each owner as an
+`AccountErasureProjectParticipant` in directory order, with the project's
+exemptions. The whole directory is checked before any of its three answers is
+given (`declaredOwners()`, `declaredExemptions()`, `declaredPersonal()`): a
+malformed directory, `personal()` included (not a list, an element that is not a
+collection key, a collection named twice), or an owner, an exemption or a
+collection of the person's agent overlapping the framework or each other, is an
+`InvalidTopologyException` naming every mistake. Naming a collection in
+`personal()` and not deleting it in `eraseProjectChildren()` is the project's
+mistake, and no startup gate catches it: telling whether a subclass overrides a
+method would take Reflection, which production code does not use
+([../code-style/reflection.md](../code-style/reflection.md)). The person's row
+catches it instead: the final deletes that row last, and a row left behind that
+holds the person under `RESTRICT` refuses the final (*The erasure final*).
+A project participant counts as registered when the application registers its
+agent type with the indexing the owner declares and the registered class implements
 `AccountErasureProjectOwner`: then the census expects the owner for every
 account; otherwise it waits for an account with rows and expects nothing for
 one without. A project adds erasure participants only through its directory.
 The daemon refuses to start over a mounted collection that no participant covers
-and no exemption names, and over a collection the directory names that this
-installation does not mount (`AccountErasureCoverageGuard`, right after the set
-ownership gate); it is silent without `AUTH`. The erasure opening and coordinator
-in the sessions library, `ForcePurgeReply`, and that startup coverage gate read
+and no exemption names, and over a collection the directory names (an owner's,
+one of the person's agent or an exempt one) that this installation does not
+mount (`AccountErasureCoverageGuard`, right after the set ownership gate); it is
+silent without `AUTH`. The erasure opening and coordinator in the sessions
+library, `ForcePurgeReply`, and that startup coverage gate read
 `installation()`. The census adds no claim, table, migration, signal, route or
 runtime state.
 
@@ -750,7 +776,9 @@ directory order, about the loser alone, through an
 no index (so the agent id is the bare type), rows or not; an owner that is not registered is waited for,
 `wait:<key>:<loserUserId>`, while the loser still has rows, and nothing is
 written once it has none. The survivor is never asked, and a malformed
-directory is the census's `InvalidTopologyException` as it is.
+directory is the census's `InvalidTopologyException` as it is. The census asks
+the owners alone and does not read `personal()`: until HIL-2203 a merge leaves
+the loser's rows of the person's agent's project sets on the loser.
 `AccountMergeOpening::open()` writes that composition after the two
 preparations, in the same transaction, so a failing census rolls back the
 operation and its preparations with it; a repeat writes only what is missing.

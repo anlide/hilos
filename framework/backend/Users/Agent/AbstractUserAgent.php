@@ -9,6 +9,7 @@ use Hilos\Utils\Logger;
 use Hilos\Constants\TimeConstants;
 use Hilos\Auth\SecondFactor\SecondFactorPolicy;
 use Closure;
+use Hilos\Auth\AccountOperation\AccountDataOwnerDirectory;
 use Hilos\Auth\AccountOperation\AccountErasureCapture;
 use Hilos\Auth\AccountOperation\AccountErasureDeliveryCapture;
 use Hilos\Auth\AccountOperation\AccountErasureFinal;
@@ -249,11 +250,12 @@ use Throwable;
  * released to another person ({@see HilosSignalConstants::HILOS_USER_PUSH_RELEASE}). Once the
  * account has closed, the agent captures the person's addresses and whatever the project asks for
  * before the ways in are deleted ({@see captureForErasure()}, HIL-1940). After the capture the
- * agent deletes its own child sets as its part of the erasure ({@see eraseAccountPersonalPart()},
- * HIL-1941). Once every required part of the account has its result, the agent's final deletes its
- * merge row, its rename journal, its capture and its own row, completes the deletion request, and
- * the agent stops after this last write ({@see finishAccountErasure()}, HIL-1942), holding the
- * right to delete the person's row, journal and merge row (HIL-1952).
+ * agent deletes its own child sets, then the project's sets of the person, as its part of the
+ * erasure ({@see eraseAccountPersonalPart()}, HIL-1941, HIL-2202). Once every required part of the
+ * account has its result, the agent's final deletes its merge row, its rename journal, its capture
+ * and its own row, completes the deletion request, and the agent stops after this last write
+ * ({@see finishAccountErasure()}, HIL-1942), holding the right to delete the person's row, journal
+ * and merge row (HIL-1952).
  * The agent also checks its own side of a merge and records a reservation or refusal
  * ({@see prepareForMerge()}, HIL-1988).
  */
@@ -632,10 +634,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * any work the assignment must be an erasure's, the person's own expected part, and name this
      * agent's account; the person's addresses must be captured, and so must every delivery of the
      * person's notifications. Each refusal writes nothing. Inside the step's transaction the agent
-     * deletes its child sets ({@see erasePersonalChildren()}), and what it erased is recorded as the
-     * result in the same transaction, so a failure rolls back both. The photo's registry file leaves
-     * for the files library only once that transaction commits ({@see HilosFiles::remove()}); a failed
-     * removal is logged and not repeated.
+     * deletes its child sets ({@see erasePersonalChildren()}), then the project's sets of the person
+     * ({@see eraseProjectChildren()}), and what both erased is recorded as the result in the same
+     * transaction, so a failure of either rolls back all of it. The registry files the result names -
+     * the photo's and the project's - leave for the files library only once that transaction commits
+     * ({@see HilosFiles::remove()}); a failed removal is logged and not repeated.
      *
      * @param int $assignmentId The person's expected part the coordinator gave this agent
      * @return AccountOperationResult Committed result or the saved outcome of an earlier attempt
@@ -669,7 +672,7 @@ abstract class AbstractUserAgent extends AbstractAgent
                 if ($assignment->operation->rootUserId !== $this->userId) {
                     AccountErasureStart::startOwnRequest($this->userId);
                 }
-                $erasure = $this->erasePersonalChildren($this->userId);
+                $erasure = $this->erasePersonalChildren($this->userId)->plus($this->eraseProjectChildren($this->userId));
                 if ($erasure->fileIds !== [] && Hilos::hasFeature(HilosFeature::FILES)) {
                     Database::afterCommit(function () use ($erasure): void {
                         try {
@@ -2392,6 +2395,26 @@ abstract class AbstractUserAgent extends AbstractAgent
     protected function erasureCaptureProjectPart(int $userId): array
     {
         return [];
+    }
+
+    /**
+     * Deletes the project's sets of the person inside the erasure part's transaction, after the
+     * framework's own ({@see erasePersonalChildren()}).
+     *
+     * The sets are the collections the project's directory names for the person's agent
+     * ({@see AccountDataOwnerDirectory::personal()}); the project's subclass claims them in
+     * `OWNS_DB_SET` and deletes them here, documenting what its deletes raise. Called inside the
+     * part's transaction; it opens none of its own. A throw rolls the whole part back: the
+     * framework's sets come back with it, and no result is recorded. The registry files the deleted
+     * rows pointed at are named, not removed: they leave with the photo's once the part commits.
+     *
+     * @param int $userId Person whose account is being erased
+     * @return AccountErasure Rows deleted per family the project names, and their registry files; nothing by default
+     * @throws HilosException Whatever the project's deletes raise
+     */
+    protected function eraseProjectChildren(int $userId): AccountErasure
+    {
+        return new AccountErasure([], []);
     }
 
     /**

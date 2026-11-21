@@ -248,6 +248,18 @@ commit. The person's agent deletes the rename journal and the person row in its
 final, after the required results
 ([*The erasure final*](account-operations.md#current-implementation)).
 
+A project's rows that the person's own agent holds have no owner in the
+directory: that agent's type is the framework's, and no project owner may take
+it. The directory names their collections in `personal()`, which makes them a
+part of the `personal` participant, and the project's subclass of the person's
+agent deletes them in `eraseProjectChildren()`, after the framework's sets and in
+the same transaction of the person's part; the part's result names their rows
+and their files beside the photo's. A collection named there and not deleted is
+the project's mistake that only the final catches: a row left behind holds the
+person under `RESTRICT` and refuses the final. The shop's account cart is the
+worked example; the claims and the hook are in
+[*The person's agent's claims*](account-operations.md#current-implementation).
+
 Under the [participant boundary](account-operations.md#erasure), a table never
 activated owes no participant; existing rows with no owner remain visible
 unfinished work, with no fallback writer. The daemon refuses to start over a

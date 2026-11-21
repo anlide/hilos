@@ -433,9 +433,11 @@ For the root of a new set tree, ask whether it needs an agent per instance:
 
 A new project table answers one more question when it is mounted: when a person
 erases their account, who deletes their rows of it. Either an owner in the
-project's `AccountDataOwnerDirectory` covers its collection, or the directory
-leaves it out with a reason (`AccountErasureExemption`). A table that does
-neither keeps the node from starting (`AccountErasureCoverageGuard`), and so
+project's `AccountDataOwnerDirectory` covers its collection, the directory
+names it in `personal()` as a set the person's own agent holds and deletes in
+the person's part, or the directory leaves it out with a reason
+(`AccountErasureExemption`). A table that does none of the three keeps the node
+from starting (`AccountErasureCoverageGuard`), and so
 does a directory naming a collection the installation does not mount — the gap
 is born with the table, not on the day somebody asks to be forgotten. The
 framework answers for its own tables. What an owner does and when:

@@ -31,9 +31,10 @@ final readonly class AccountErasure
     }
 
     /**
-     * Combines the project's answers for two erased accounts.
+     * Combines two answers: those for two erased accounts, or the framework's and the project's
+     * sets of one account in the person's part of its erasure.
      *
-     * @param AccountErasure $other Another account's answer
+     * @param AccountErasure $other Another account's answer, or another share of the same account
      * @return self Sum of each row family and all registry files in erasure order
      */
     public function plus(AccountErasure $other): self

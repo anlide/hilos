@@ -59,6 +59,18 @@ final class AccountDataOwnerDirectoryTest extends TestCase
             AccountDataOwnerForeignExemptionDirectory::class,
             AccountDataOwnerForeignExemptionDirectory::class . ' exempts [chatReports] for string, not an ' . AccountErasureExemption::class,
         ];
+        yield 'collections of the person\'s agent not a list' => [
+            AccountDataOwnerPersonalMapDirectory::class,
+            AccountDataOwnerPersonalMapDirectory::class . ' must declare the collections of the person\'s agent as a list',
+        ];
+        yield 'a collection of the person\'s agent of a foreign type' => [
+            AccountDataOwnerPersonalForeignElementDirectory::class,
+            AccountDataOwnerPersonalForeignElementDirectory::class . ' declares a collection of the person\'s agent at position 1 that is int',
+        ];
+        yield 'a collection of the person\'s agent twice' => [
+            AccountDataOwnerPersonalTwiceDirectory::class,
+            'Collection [userCarts] of the person\'s agent is declared twice',
+        ];
     }
 
     public function testAProjectOwnerCannotTakeADeliveryChannelOwnerType(): void
@@ -79,9 +91,10 @@ final class AccountDataOwnerDirectoryTest extends TestCase
     {
         self::assertSame([], AccountDataOwnerDirectory::declaredOwners());
         self::assertSame([], AccountDataOwnerDirectory::declaredExemptions());
+        self::assertSame([], AccountDataOwnerDirectory::declaredPersonal());
     }
 
-    public function testDeclaredOwnersAndExemptionsComeBackAsDeclared(): void
+    public function testDeclaredOwnersExemptionsAndCollectionsOfThePersonsAgentComeBackAsDeclared(): void
     {
         $owners = AccountDataOwnerDeclaredDirectory::declaredOwners();
 
@@ -95,6 +108,7 @@ final class AccountDataOwnerDirectoryTest extends TestCase
             ['chatReports' => AccountErasureExemption::Trace, 'pollTemplates' => AccountErasureExemption::NotPersonal],
             AccountDataOwnerDeclaredDirectory::declaredExemptions(),
         );
+        self::assertSame(['userCarts', 'userWishes'], AccountDataOwnerDeclaredDirectory::declaredPersonal());
     }
 
     /**
@@ -119,7 +133,8 @@ final class AccountDataOwnerDirectoryTest extends TestCase
             . "- Account data owner [chat:rooms] names the framework owner type [hilos_users_library]\n"
             . "- Account data owner [chat:rooms] covers no collection\n"
             . '- ' . AccountDataOwnerManyMistakesDirectory::class . ' exempts [chatReports] for null, not an '
-            . AccountErasureExemption::class,
+            . AccountErasureExemption::class . "\n"
+            . "- Collection [userCarts] of the person's agent is declared twice",
         );
 
         AccountDataOwnerManyMistakesDirectory::declaredExemptions();
@@ -141,7 +156,7 @@ abstract class AccountDataOwnerFixtureDirectory extends AccountDataOwnerDirector
     }
 }
 
-/** Two owners, one per person, and two exempt collections. */
+/** Two owners, one per person, two exempt collections, and two collections of the person's agent. */
 abstract class AccountDataOwnerDeclaredDirectory extends AccountDataOwnerFixtureDirectory
 {
     protected static function owners(): array
@@ -155,6 +170,11 @@ abstract class AccountDataOwnerDeclaredDirectory extends AccountDataOwnerFixture
     protected static function exempt(): array
     {
         return ['chatReports' => AccountErasureExemption::Trace, 'pollTemplates' => AccountErasureExemption::NotPersonal];
+    }
+
+    protected static function personal(): array
+    {
+        return ['userCarts', 'userWishes'];
     }
 }
 
@@ -239,7 +259,34 @@ abstract class AccountDataOwnerForeignExemptionDirectory extends AccountDataOwne
     }
 }
 
-/** Three mistakes in one owner and one in the exemptions. */
+/** Collections of the person's agent keyed by name instead of listed. */
+abstract class AccountDataOwnerPersonalMapDirectory extends AccountDataOwnerFixtureDirectory
+{
+    protected static function personal(): array
+    {
+        return ['carts' => 'userCarts'];
+    }
+}
+
+/** A number where a collection of the person's agent should be. */
+abstract class AccountDataOwnerPersonalForeignElementDirectory extends AccountDataOwnerFixtureDirectory
+{
+    protected static function personal(): array
+    {
+        return ['userCarts', 7];
+    }
+}
+
+/** One collection of the person's agent named twice. */
+abstract class AccountDataOwnerPersonalTwiceDirectory extends AccountDataOwnerFixtureDirectory
+{
+    protected static function personal(): array
+    {
+        return ['userCarts', 'userWishes', 'userCarts'];
+    }
+}
+
+/** Three mistakes in one owner, one in the exemptions and one in the collections of the person's agent. */
 abstract class AccountDataOwnerManyMistakesDirectory extends AccountDataOwnerFixtureDirectory
 {
     protected static function owners(): array
@@ -250,6 +297,11 @@ abstract class AccountDataOwnerManyMistakesDirectory extends AccountDataOwnerFix
     protected static function exempt(): array
     {
         return ['chatReports' => null];
+    }
+
+    protected static function personal(): array
+    {
+        return ['userCarts', 'userCarts'];
     }
 }
 

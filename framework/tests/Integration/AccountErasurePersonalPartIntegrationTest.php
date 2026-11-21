@@ -147,6 +147,15 @@ final class AccountErasurePersonalPartIntegrationTest extends HilosSessionIntegr
     /** What the test stand raises right after the child sets are deleted, or null for nothing. */
     private ?LogicException $failure = null;
 
+    /** What the project's sets of the person yield, or null for the framework's default hook. */
+    private ?AccountErasure $projectErasure = null;
+
+    /** What the project's part raises, or null for nothing. */
+    private ?LogicException $projectFailure = null;
+
+    /** @var list<array{int, int, bool}> Each project part asked for: its person, the child erasures before it, an open transaction */
+    private array $projectCalls = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -379,6 +388,68 @@ final class AccountErasurePersonalPartIntegrationTest extends HilosSessionIntegr
     }
 
     /**
+     * The project's part runs after the framework's sets, inside the part's transaction: its rows
+     * join the photo's in the one committed result, and the photo's file still leaves after the commit.
+     */
+    public function testTheProjectsSetsOfThePersonJoinThePartsResult(): void
+    {
+        $userId = $this->seedPerson();
+        $fileId = self::seedSets($userId, photo: true);
+        $erasure = $this->openCaptured($userId);
+        $assignmentId = self::personalPart($erasure, $userId);
+        self::removedFiles();
+        $this->projectErasure = new AccountErasure(['project_rows' => 2], []);
+
+        $result = $this->runPart($userId, $assignmentId);
+
+        $payload = "{\"rows\":{\"hilos_user_photo\":1,\"project_rows\":2},\"files\":[{$fileId}]}";
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame($payload, $result->payloadJson);
+        self::assertSame([[$assignmentId, HilosAgentType::HILOS_USER . ':' . $userId, $payload]], self::storedPartResults());
+        self::assertSame(array_fill_keys(self::PERSONAL_SETS, 0), self::setsOf($userId));
+        self::assertSame([[$fileId]], self::removedFiles());
+        self::assertSame([[$userId, 1, true]], $this->projectCalls);
+    }
+
+    /**
+     * The project's part fails after the framework's sets: every row of the person is back, and
+     * neither a result nor a file frame is left. The repeat without the failure commits once.
+     */
+    public function testAFailureOfTheProjectsSetsRollsThePartBackAndTheRepeatCommitsOnce(): void
+    {
+        $userId = $this->seedPerson();
+        $fileId = self::seedSets($userId, photo: true);
+        $erasure = $this->openCaptured($userId);
+        $assignmentId = self::personalPart($erasure, $userId);
+        self::removedFiles();
+        $sets = self::setsOf($userId);
+        $this->projectErasure = new AccountErasure(['project_rows' => 2], []);
+        $this->projectFailure = new LogicException('The project\'s sets of the person failed.');
+
+        try {
+            $this->runPart($userId, $assignmentId);
+            self::fail('The part did not fail');
+        } catch (LogicException $caught) {
+            self::assertSame($this->projectFailure, $caught);
+        }
+
+        self::assertFalse(Database::hasOpenTransactions());
+        self::assertSame($sets, self::setsOf($userId));
+        self::assertNotContains(0, $sets);
+        self::assertSame([], self::storedPartResults());
+        self::assertSame([], self::removedFiles());
+
+        $this->projectFailure = null;
+        $result = $this->runPart($userId, $assignmentId);
+
+        self::assertSame("{\"rows\":{\"hilos_user_photo\":1,\"project_rows\":2},\"files\":[{$fileId}]}", $result->payloadJson);
+        self::assertCount(1, self::storedPartResults());
+        self::assertSame([[$fileId]], self::removedFiles());
+        self::assertSame(array_fill_keys(self::PERSONAL_SETS, 0), self::setsOf($userId));
+        self::assertSame([[$userId, 1, true], [$userId, 2, true]], $this->projectCalls);
+    }
+
+    /**
      * A new agent on the same assignment after the deletions answers the saved result: it deletes
      * nothing written since, and sends no second frame.
      */
@@ -504,19 +575,31 @@ final class AccountErasurePersonalPartIntegrationTest extends HilosSessionIntegr
     }
 
     /**
-     * The person's agent, whose child sets the case counts and can make fail right after them.
+     * The person's agent, whose child sets the case counts and can make fail right after them, and
+     * whose project part the case gives and can make fail.
      *
      * @param string $userId Person id as the agent address carries it
      * @return AbstractUserAgent The agent, not yet claimed
      */
     protected function newPersonAgent(string $userId): AbstractUserAgent
     {
-        return new ErasurePersonalPartTestUserAgent($userId, function (): void {
-            $this->childErasures++;
-            if ($this->failure !== null) {
-                throw $this->failure;
-            }
-        });
+        return new ErasurePersonalPartTestUserAgent(
+            $userId,
+            function (): void {
+                $this->childErasures++;
+                if ($this->failure !== null) {
+                    throw $this->failure;
+                }
+            },
+            function (int $erasedId): ?AccountErasure {
+                $this->projectCalls[] = [$erasedId, $this->childErasures, Database::hasOpenTransactions()];
+                if ($this->projectFailure !== null) {
+                    throw $this->projectFailure;
+                }
+
+                return $this->projectErasure;
+            },
+        );
     }
 
     /**
@@ -951,16 +1034,33 @@ final class ErasurePersonalPartTestSessionsHolder extends AbstractSessionsLibrar
 {
 }
 
-/** The person's agent, telling the case each time it has deleted its child sets. */
+/**
+ * The person's agent, telling the case each time it has deleted its child sets, and erasing the
+ * project's sets of the person as the case says.
+ */
 final class ErasurePersonalPartTestUserAgent extends AbstractUserAgent
 {
     /**
      * @param string $agentIndex Person id from the agent address
      * @param Closure(): void $afterChildren Called right after the child sets are deleted; may throw
+     * @param Closure(int): ?AccountErasure $projectChildren What the project's sets of the person yield, or null for
+     *     the framework's default; may throw
      */
-    public function __construct(string $agentIndex, private readonly Closure $afterChildren)
-    {
+    public function __construct(
+        string $agentIndex,
+        private readonly Closure $afterChildren,
+        private readonly Closure $projectChildren,
+    ) {
         parent::__construct($agentIndex);
+    }
+
+    /**
+     * @param int $userId Person whose account is being erased
+     * @return AccountErasure What the case's project part erased, or nothing as the framework's default
+     */
+    protected function eraseProjectChildren(int $userId): AccountErasure
+    {
+        return ($this->projectChildren)($userId) ?? parent::eraseProjectChildren($userId);
     }
 
     /**

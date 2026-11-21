@@ -50,6 +50,8 @@ use Demo\EcommerceShop\Agents\Hilos\DemoHilosDaemonAgent;
 use Demo\EcommerceShop\Agents\Hilos\NotificationsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
+use Demo\EcommerceShop\Auth\EcommerceShopAccountDataOwnerDirectory;
+use Hilos\Users\Agent\AbstractUserAgent;
 use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
@@ -1009,6 +1011,26 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $daemon = new UserAgentDaemon('42');
         $this->assertSame('42', $daemon->getIndex());
         $this->assertFalse($daemon->requiresMonopolisticProcess());
+    }
+
+    /**
+     * The person agent owns its person's cart whole beside the framework's sets, reads the products and the stock
+     * a cart line is checked against, and the directory names the cart as the person's.
+     */
+    public function testPersonAgentOwnsTheCartReadsProductsAndStockAndTheDirectoryNamesTheCart(): void
+    {
+        self::assertSame(
+            [...AbstractUserAgent::OWNS_DB_SET, EcommerceShopDbContext::userProductCarts => TruthSourceOperation::ALL],
+            UserAgent::OWNS_DB_SET,
+        );
+        self::assertSame(
+            [...AbstractUserAgent::READS_DB, EcommerceShopDbContext::products, EcommerceShopDbContext::productWarehouseStocks],
+            UserAgent::READS_DB,
+        );
+        self::assertSame(
+            [EcommerceShopDbContext::userProductCarts],
+            EcommerceShopAccountDataOwnerDirectory::declaredPersonal(),
+        );
     }
 
     /** The agent of a product page address is addressed by it, reads its three collections, owns nothing. */

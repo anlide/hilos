@@ -67,6 +67,15 @@ final class AccountErasureCoverageGuardTest extends TestCase
         AccountErasureCoverageGuard::assertMountedCollectionsCovered();
     }
 
+    public function testAMountedCollectionNamedOnlyForThePersonsAgentPasses(): void
+    {
+        $this->expectNotToPerformAssertions();
+        CoverageGuardPersonalHilos::initBrowser();
+        $this->mount([CoverageGuardCarts::class]);
+
+        AccountErasureCoverageGuard::assertMountedCollectionsCovered();
+    }
+
     public function testAMountedProjectCollectionWithNoOwnerAndNoExemptionIsRefused(): void
     {
         CoverageGuardHilos::initBrowser();
@@ -86,6 +95,19 @@ final class AccountErasureCoverageGuardTest extends TestCase
         $this->expectException(InvalidTopologyException::class);
         $this->expectExceptionMessage(
             'Account data owner directory names collection [coverageTemplates] that this installation does not mount',
+        );
+
+        AccountErasureCoverageGuard::assertMountedCollectionsCovered();
+    }
+
+    public function testACollectionOfThePersonsAgentThatIsNotMountedIsRefused(): void
+    {
+        CoverageGuardPersonalHilos::initBrowser();
+        $this->mount([]);
+
+        $this->expectException(InvalidTopologyException::class);
+        $this->expectExceptionMessage(
+            'Account data owner directory names collection [coverageCarts] that this installation does not mount',
         );
 
         AccountErasureCoverageGuard::assertMountedCollectionsCovered();
@@ -130,6 +152,13 @@ abstract class CoverageGuardWithoutAccountsHilos extends Hilos
     protected const string ACCOUNT_DATA_OWNER_DIRECTORY = CoverageGuardDirectory::class;
 }
 
+/** A project with accounts, whose person's agent holds the carts. */
+abstract class CoverageGuardPersonalHilos extends Hilos
+{
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = CoverageGuardPersonalDirectory::class;
+    protected const array FEATURES = [HilosFeature::AUTH];
+}
+
 /** The notes kept by one agent for everybody, and the templates left out. */
 abstract class CoverageGuardDirectory extends AccountDataOwnerDirectory
 {
@@ -147,6 +176,15 @@ abstract class CoverageGuardDirectory extends AccountDataOwnerDirectory
     protected static function exempt(): array
     {
         return [CoverageGuardTemplates::COLLECTION_KEY => AccountErasureExemption::NotPersonal];
+    }
+}
+
+/** The carts, held by the person's agent and named nowhere else. */
+abstract class CoverageGuardPersonalDirectory extends AccountDataOwnerDirectory
+{
+    protected static function personal(): array
+    {
+        return [CoverageGuardCarts::COLLECTION_KEY];
     }
 }
 
@@ -212,6 +250,17 @@ final class CoverageGuardTemplates extends Objects
 {
     public const string OBJECT_CLASS = CoverageGuardRowObject::class;
     public const string COLLECTION_KEY = 'coverageTemplates';
+}
+
+/**
+ * Held by the person's agent.
+ *
+ * @extends Objects<CoverageGuardRowObject>
+ */
+final class CoverageGuardCarts extends Objects
+{
+    public const string OBJECT_CLASS = CoverageGuardRowObject::class;
+    public const string COLLECTION_KEY = 'coverageCarts';
 }
 
 /**

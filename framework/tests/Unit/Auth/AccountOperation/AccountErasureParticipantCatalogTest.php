@@ -58,6 +58,14 @@ final class AccountErasureParticipantCatalogTest extends TestCase
             AccountErasureCatalogCoveredExemptHilos::class,
             'Collection [chatMessages] is covered by participant [chat] and exempt as trace',
         ];
+        yield 'a collection of the person\'s agent kept by an owner too' => [
+            AccountErasureCatalogPersonalOwnedHilos::class,
+            'Collection [userCarts] is covered by both [personal] and [carts]',
+        ];
+        yield 'a collection of the person\'s agent exempted' => [
+            AccountErasureCatalogPersonalExemptHilos::class,
+            'Collection [userCarts] is covered by participant [personal] and exempt as trace',
+        ];
     }
 
     /** Remembers the running application, which some cases replace. */
@@ -142,6 +150,21 @@ final class AccountErasureParticipantCatalogTest extends TestCase
             'pollTemplates' => AccountErasureExemption::NotPersonal,
         ];
         self::assertSame($exempt, $installation->exempt());
+    }
+
+    public function testTheInstallationEndsThePersonalPartWithTheCollectionsOfThePersonsAgent(): void
+    {
+        AccountErasureCatalogPersonalHilos::initBrowser();
+
+        $installation = AccountErasureParticipantCatalog::installation();
+
+        self::assertSame(self::FRAMEWORK_KEYS, self::keys($installation));
+        self::assertSame(
+            [...AccountErasureParticipantCatalog::framework()->participants()[0]->collections(), 'userCarts', 'userWishes'],
+            $installation->participants()[0]->collections(),
+        );
+        self::assertCount(18, $installation->participants()[0]->collections());
+        self::assertSame(AccountErasureParticipantCatalog::EXEMPT, $installation->exempt());
     }
 
     /**
@@ -245,6 +268,24 @@ abstract class AccountErasureCatalogProjectCollectionTwiceHilos extends Hilos
 abstract class AccountErasureCatalogExemptCollectionHilos extends Hilos
 {
     protected const string ACCOUNT_DATA_OWNER_DIRECTORY = AccountErasureCatalogExemptCollectionDirectory::class;
+}
+
+/** A project whose person's agent holds two collections of its own. */
+abstract class AccountErasureCatalogPersonalHilos extends Hilos
+{
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = AccountErasureCatalogPersonalDirectory::class;
+}
+
+/** A project whose person's agent holds a collection an owner keeps too. */
+abstract class AccountErasureCatalogPersonalOwnedHilos extends Hilos
+{
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = AccountErasureCatalogPersonalOwnedDirectory::class;
+}
+
+/** A project whose person's agent holds a collection the project leaves out. */
+abstract class AccountErasureCatalogPersonalExemptHilos extends Hilos
+{
+    protected const string ACCOUNT_DATA_OWNER_DIRECTORY = AccountErasureCatalogPersonalExemptDirectory::class;
 }
 
 /** A chat kept by one agent, polls kept per person, and two collections left out. */
@@ -359,5 +400,42 @@ abstract class AccountErasureCatalogExemptCollectionDirectory extends AccountDat
                 static fn (int $userId): bool => false,
             ),
         ];
+    }
+}
+
+/** The carts and the wishes of a person, held by the person's agent. */
+abstract class AccountErasureCatalogPersonalDirectory extends AccountDataOwnerDirectory
+{
+    protected static function personal(): array
+    {
+        return ['userCarts', 'userWishes'];
+    }
+}
+
+/** The carts held by the person's agent and kept by a project owner at once. */
+abstract class AccountErasureCatalogPersonalOwnedDirectory extends AccountDataOwnerDirectory
+{
+    protected static function owners(): array
+    {
+        return [new AccountDataOwner('carts', ['userCarts'], 'carts_keeper', false, static fn (int $userId): bool => false)];
+    }
+
+    protected static function personal(): array
+    {
+        return ['userCarts'];
+    }
+}
+
+/** The carts held by the person's agent and left out at once. */
+abstract class AccountErasureCatalogPersonalExemptDirectory extends AccountDataOwnerDirectory
+{
+    protected static function exempt(): array
+    {
+        return ['userCarts' => AccountErasureExemption::Trace];
+    }
+
+    protected static function personal(): array
+    {
+        return ['userCarts'];
     }
 }

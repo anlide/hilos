@@ -8,22 +8,28 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Topology\Exception\InvalidTopologyException;
 use Hilos\Hilos;
 use Hilos\Notification\Delivery\DeliveryOwnerResolver;
+use Hilos\Users\Agent\AbstractUserAgent;
 
 /**
- * The one place a project says whose its collections are, and which of them the account erasure
- * leaves alone.
+ * The one place a project says whose its collections are, which of them its person's agent holds,
+ * and which of them the account erasure leaves alone.
  *
  * A project points {@see Hilos::ACCOUNT_DATA_OWNER_DIRECTORY} at a subclass and overrides
- * {@see owners()} and {@see exempt()}; the framework's own collections are not declared here.
- * Both account operations read it: {@see AccountErasureParticipantCatalog::installation()} takes
- * the owners after the framework's participants, and {@see AccountMergeProjectCensus::of()} asks
- * them about the loser of a merge, each in the order of this directory.
+ * {@see owners()}, {@see personal()} and {@see exempt()}; the framework's own collections are not
+ * declared here. Both account operations read it: {@see AccountErasureParticipantCatalog::installation()}
+ * takes the owners after the framework's participants, and {@see AccountMergeProjectCensus::of()}
+ * asks them about the loser of a merge, each in the order of this directory.
+ *
+ * The collections of the person's agent are no owner: that agent's type is the framework's
+ * ({@see HilosAgentType::HILOS_USER}), which no project owner may take. They are a part of the
+ * person's own share of the erasure, which the agent deletes after the framework's sets and in the
+ * same transaction; the merge census asks only the owners.
  *
  * The owners are a list, not a map, so a key typed twice reaches the check instead of silently
  * replacing the first entry. A key is lower snake case with no colon, because the colon separates
  * the parts of an assignment key. One agent type owns for one entry at most, and a framework
  * owner's type owns for none: the type alone names the owner's part of an operation. The whole
- * declaration is checked before either half is answered, and every mistake is named at once.
+ * declaration is checked before any of its three answers is given, and every mistake is named at once.
  */
 abstract class AccountDataOwnerDirectory
 {
@@ -41,26 +47,38 @@ abstract class AccountDataOwnerDirectory
 
     /**
      * @return list<AccountDataOwner> Declared owners in directory order
-     * @throws InvalidTopologyException When the owners or the exemptions are malformed
+     * @throws InvalidTopologyException When the owners, the exemptions or the collections of the person's agent are malformed
      */
     final public static function declaredOwners(): array
     {
         $owners = static::owners();
-        self::refuseMalformed($owners, static::exempt());
+        self::refuseMalformed($owners, static::exempt(), static::personal());
 
         return $owners;
     }
 
     /**
      * @return array<string, AccountErasureExemption> Project collections the erasure leaves alone, by collection key
-     * @throws InvalidTopologyException When the owners or the exemptions are malformed
+     * @throws InvalidTopologyException When the owners, the exemptions or the collections of the person's agent are malformed
      */
     final public static function declaredExemptions(): array
     {
         $exempt = static::exempt();
-        self::refuseMalformed(static::owners(), $exempt);
+        self::refuseMalformed(static::owners(), $exempt, static::personal());
 
         return $exempt;
+    }
+
+    /**
+     * @return list<string> Project collections the person's agent holds, in directory order
+     * @throws InvalidTopologyException When the owners, the exemptions or the collections of the person's agent are malformed
+     */
+    final public static function declaredPersonal(): array
+    {
+        $personal = static::personal();
+        self::refuseMalformed(static::owners(), static::exempt(), $personal);
+
+        return $personal;
     }
 
     /**
@@ -87,13 +105,37 @@ abstract class AccountDataOwnerDirectory
     }
 
     /**
+     * A project overrides this to name the collections its person's agent holds - the subclass of
+     * {@see AbstractUserAgent} claims them in `OWNS_DB_SET` and deletes them in
+     * {@see AbstractUserAgent::eraseProjectChildren()}:
+     *
+     * ```php
+     * protected static function personal(): array
+     * {
+     *     return ['userProductCarts'];
+     * }
+     * ```
+     *
+     * Naming a collection here and not deleting it there is the project's mistake, and nothing
+     * checks it at startup: the person's row is the last the erasure deletes, and a row that still
+     * restricts it stops the erasure's final.
+     *
+     * @return list<string> Collection keys the person's agent holds; none by default
+     */
+    protected static function personal(): array
+    {
+        return [];
+    }
+
+    /**
      * @param array<mixed> $owners Owners as declared
      * @param array<mixed> $exempt Exemptions as declared
+     * @param array<mixed> $personal Collections of the person's agent as declared
      * @throws InvalidTopologyException When the declaration has a mistake, naming every one
      */
-    private static function refuseMalformed(array $owners, array $exempt): void
+    private static function refuseMalformed(array $owners, array $exempt, array $personal): void
     {
-        $errors = [...self::ownerErrors($owners), ...self::exemptionErrors($exempt)];
+        $errors = [...self::ownerErrors($owners), ...self::exemptionErrors($exempt), ...self::personalErrors($personal)];
         if ($errors !== []) {
             throw InvalidTopologyException::forErrors(Hilos::appClass(), $errors);
         }
@@ -157,6 +199,32 @@ abstract class AccountDataOwnerDirectory
                 $errors[] = static::class . " exempts [{$collection}] for " . get_debug_type($reason)
                     . ', not an ' . AccountErasureExemption::class;
             }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * @param array<mixed> $personal Collections of the person's agent as declared
+     * @return list<string> What is wrong with them
+     */
+    private static function personalErrors(array $personal): array
+    {
+        $errors = [];
+        if (!array_is_list($personal)) {
+            $errors[] = static::class . ' must declare the collections of the person\'s agent as a list';
+        }
+        $declared = [];
+        foreach ($personal as $position => $collection) {
+            if (!is_string($collection)) {
+                $errors[] = static::class . " declares a collection of the person's agent at position {$position} that is "
+                    . get_debug_type($collection);
+                continue;
+            }
+            if (isset($declared[$collection])) {
+                $errors[] = "Collection [{$collection}] of the person's agent is declared twice";
+            }
+            $declared[$collection] = true;
         }
 
         return $errors;

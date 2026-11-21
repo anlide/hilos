@@ -129,11 +129,13 @@ final class AccountErasureParticipantCatalog
 
     /**
      * The installation's catalog: the framework's participants, then the owners of the project's
-     * {@see AccountDataOwnerDirectory} in its order, with the project's exemptions.
+     * {@see AccountDataOwnerDirectory} in its order, with the project's exemptions. The collections
+     * the directory names for the person's agent join the personal participant after the framework's
+     * own sets, as the agent deletes them in its part.
      *
      * @return self The participants and exemptions of the running application
-     * @throws InvalidTopologyException When the project's directory is malformed, or its owners or exemptions overlap
-     *     the framework's participants, the exemptions or each other
+     * @throws InvalidTopologyException When the project's directory is malformed, or its owners, the collections of the
+     *     person's agent or its exemptions overlap the framework's participants, the exemptions or each other
      */
     public static function installation(): self
     {
@@ -141,7 +143,7 @@ final class AccountErasureParticipantCatalog
 
         return new self(
             [
-                ...self::frameworkParticipants(),
+                ...self::frameworkParticipants($directory::declaredPersonal()),
                 ...array_map(
                     static fn (AccountDataOwner $owner): AccountErasureParticipant => new AccountErasureProjectParticipant($owner),
                     $directory::declaredOwners(),
@@ -163,8 +165,11 @@ final class AccountErasureParticipantCatalog
         return [...self::EXEMPT, ...$this->projectExempt];
     }
 
-    /** @return list<AccountErasureParticipant> The framework's own participants, in census order */
-    private static function frameworkParticipants(): array
+    /**
+     * @param list<string> $projectPersonal Project collections the person's agent holds, after its own sets
+     * @return list<AccountErasureParticipant> The framework's own participants, in census order
+     */
+    private static function frameworkParticipants(array $projectPersonal = []): array
     {
         return [
             new AccountErasureFixedOwner(
@@ -186,6 +191,7 @@ final class AccountErasureParticipantCatalog
                     HilosDbContext::notifications,
                     HilosDbContext::notificationPreferences,
                     HilosDbContext::pushSubscriptions,
+                    ...$projectPersonal,
                 ],
                 HilosAgentType::HILOS_USER,
                 true,
