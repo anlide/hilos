@@ -1537,81 +1537,79 @@ function readFirstFrameWatch(page: Page): Promise<BootWatch | null> {
 test.describe('the maintenance section in the admin view mode', () => {
   test.afterEach(() => setAdminViewMode(false))
 
-  // FIXME(F-026, 2026-10-24): navigation aborts · чужой · попытка 1 · HIL-1667
-  test(
-    'a guest opens both circle dialogs and has nothing to send from either',
-    { tag: '@quarantine:F-026' },
-    async ({ page, browser }) => {
-      await grantAdminToSelf(expect, page)
-      await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH)
-      await expect(
-        page.getByTestId('hilos-maintenance-circle-table'),
-      ).toBeVisible()
-      await clearMaintenanceCircle(page)
+  test('a guest opens both circle dialogs and has nothing to send from either', async ({
+    page,
+    browser,
+  }) => {
+    await grantAdminToSelf(expect, page)
+    await gotoPage(expect, page, MAINTENANCE_CIRCLE_PATH)
+    await expect(
+      page.getByTestId('hilos-maintenance-circle-table'),
+    ).toBeVisible()
+    await clearMaintenanceCircle(page)
 
-      const memberContext = await browser.newContext()
-      const member = await memberContext.newPage()
-      const memberEmail = (await createTestUser(expect, member)).email
-      await addToMaintenanceCircle(page, memberEmail)
-      await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
+    const memberContext = await browser.newContext()
+    const member = await memberContext.newPage()
+    const memberEmail = (await createTestUser(expect, member)).email
+    await addToMaintenanceCircle(page, memberEmail)
+    await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
 
-      await setAdminViewMode(true)
+    await setAdminViewMode(true)
 
-      const guestContext = await browser.newContext()
-      const guest = await guestContext.newPage()
-      await gotoPage(expect, guest, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
-      await expect(
-        guest.getByTestId('hilos-maintenance-circle-table'),
-      ).toBeVisible()
-      await expect(guest.getByTestId('page-error')).toHaveCount(0)
+    const guestContext = await browser.newContext()
+    const guest = await guestContext.newPage()
+    await gotoPage(expect, guest, MAINTENANCE_CIRCLE_PATH, PAGE_READY)
+    await expect(
+      guest.getByTestId('hilos-maintenance-circle-table'),
+    ).toBeVisible()
+    await expect(guest.getByTestId('page-error')).toHaveCount(0)
 
-      const add = shownByTestId(
-        guest.getByTestId('hilos-maintenance-circle-table'),
-        'hilos-table-main-action',
-      )
-      await expect(add).toBeEnabled()
-      await add.click()
-      const field = guest.getByTestId('hilos-maintenance-circle-add-field')
-      await expect(field).toBeEnabled()
-      await typeInto(field, 'someone@example.test')
-      const confirm = guest.getByTestId('hilos-maintenance-circle-add-confirm')
-      await expect(confirm).toBeDisabled()
-      await expect(confirm).toHaveAttribute(
-        'aria-describedby',
-        /(^| )hilos-view-mode-strip-text( |$)/,
-      )
-      await expect(
-        guest.getByTestId('hilos-maintenance-circle-add-cancel'),
-      ).toBeEnabled()
-      await guest.getByTestId('hilos-maintenance-circle-add-cancel').click()
-      await expect(field).toBeHidden()
+    const add = shownByTestId(
+      guest.getByTestId('hilos-maintenance-circle-table'),
+      'hilos-table-main-action',
+    )
+    await expect(add).toBeEnabled()
+    await add.click()
+    const field = guest.getByTestId('hilos-maintenance-circle-add-field')
+    await expect(field).toBeEnabled()
+    await typeInto(field, 'someone@example.test')
+    const confirm = guest.getByTestId('hilos-maintenance-circle-add-confirm')
+    await expect(confirm).toBeDisabled()
+    await expect(confirm).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+    await expect(
+      guest.getByTestId('hilos-maintenance-circle-add-cancel'),
+    ).toBeEnabled()
+    await guest.getByTestId('hilos-maintenance-circle-add-cancel').click()
+    await expect(field).toBeHidden()
 
-      const table = guest.getByTestId('hilos-maintenance-circle-table')
-      await shownByTestId(table, 'hilos-table-loading').waitFor({
-        state: 'hidden',
-      })
-      const removeButton = shownByTestId(
-        table,
-        /^hilos-maintenance-circle-remove-/,
-      )
-      await expect(removeButton).toBeEnabled()
-      await removeButton.click()
-      const removeConfirm = guest.getByTestId(
-        'hilos-maintenance-circle-remove-confirm',
-      )
-      await expect(removeConfirm).toBeDisabled()
-      await expect(removeConfirm).toHaveAttribute(
-        'aria-describedby',
-        /(^| )hilos-view-mode-strip-text( |$)/,
-      )
-      await guest.getByTestId('hilos-maintenance-circle-remove-cancel').click()
-      await expect(removeConfirm).toBeHidden()
+    const table = guest.getByTestId('hilos-maintenance-circle-table')
+    await shownByTestId(table, 'hilos-table-loading').waitFor({
+      state: 'hidden',
+    })
+    const removeButton = shownByTestId(
+      table,
+      /^hilos-maintenance-circle-remove-/,
+    )
+    await expect(removeButton).toBeEnabled()
+    await removeButton.click()
+    const removeConfirm = guest.getByTestId(
+      'hilos-maintenance-circle-remove-confirm',
+    )
+    await expect(removeConfirm).toBeDisabled()
+    await expect(removeConfirm).toHaveAttribute(
+      'aria-describedby',
+      /(^| )hilos-view-mode-strip-text( |$)/,
+    )
+    await guest.getByTestId('hilos-maintenance-circle-remove-cancel').click()
+    await expect(removeConfirm).toBeHidden()
 
-      await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
+    await expect(maintenanceCircleRow(page, memberEmail)).toBeVisible()
 
-      await clearMaintenanceCircle(page)
-      await memberContext.close()
-      await guestContext.close()
-    },
-  )
+    await clearMaintenanceCircle(page)
+    await memberContext.close()
+    await guestContext.close()
+  })
 })
