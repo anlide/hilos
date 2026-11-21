@@ -60,7 +60,7 @@ import { TermsHistory } from './views/terms-history/terms-history.js'
     <span brand class="d-inline-flex align-items-center gap-2">
       <img src="/online-testing-medium.svg" width="32" height="32" alt="" />
       <!-- The name folds down to the sign on a narrow screen and stays the
-      link's accessible name there (mockups/framework/layout, "На узком экране"). -->
+      link's accessible name there, as shown in the narrow-screen section of the approved layout mockup. -->
       <span class="d-none d-md-inline">Hilos Testing</span>
       <span class="visually-hidden d-md-none">Hilos Testing</span>
     </span>

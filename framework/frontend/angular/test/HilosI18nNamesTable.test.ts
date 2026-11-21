@@ -69,7 +69,7 @@ function nameRow(row: HilosI18nNameRow): TableRow {
 }
 
 /**
- * The names table of Українська with English, Spanish and French rows.
+ * The names table for Ukrainian with English, Spanish and French rows.
  *
  * @param target Which of the two names tables.
  * @param withActions Whether the host hands its action templates.

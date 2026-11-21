@@ -5,8 +5,7 @@
 -- Renaming a person is the framework's now: the users library writes the name and one row of
 -- hilos_user_rename in one transaction. The demo's own user_rename rows are carried over under
 -- their ids. They never recorded who did the rename, so renamed_by_user_id is NULL on every
--- one of them - the owner's word on 2026-09-28: "Пофиг на старые строки" (never mind the
--- old rows).
+-- one of them. In the owner's words on 2026-09-28, "never mind the old rows."
 
 CREATE TABLE `hilos_user_rename` (
     `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,

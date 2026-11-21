@@ -6,6 +6,7 @@ keys, routes, visible UI copy, comments, and PHPDoc/TSDoc.
 ## Rule
 
 Use American English spelling everywhere.
+For the language of comments, see [comment-language.md](comment-language.md).
 
 Checked automatically: `SPELLING` — the seven pairs of the table below, each
 together with its own word forms, on both sides of the PHP↔TypeScript boundary

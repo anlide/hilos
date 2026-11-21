@@ -1,0 +1,59 @@
+<p>
+  <!-- Первая строка
+  вторая строка -->
+</p>
+<script data-hint=' lang="ts" ' lang="tsx">
+  const view = <p>// Текст JSX</p>
+  // Комментарий скрипта
+</script>
+<p title="<!-- FIXME(F-1, 2026-11-20)"><!-- Комментарий после атрибута --></p>
+<!-- <script> "FIXME(F-1, 2026-11-20)" // Подсказка
+</script> -->
+<script-preview>// Подсказка</script-preview>
+<!-- prettier-ignore -->
+<script
+  lang=jsx>
+  const preview = <p>// Данные
+  </p>
+  // Комментарий после примера
+</script>
+<script data-lang="tsx" title=' lang="jsx" '>
+  const count = <number>// Уточнение типа
+    value
+</script>
+<template>
+  <svg>
+    <title><!-- Название рисунка -->Рисунок</title>
+    <text><![CDATA[<!-- Подпись -->]]></text>
+  </svg>
+  <title><!-- Подпись --></title><!-- После заголовка -->
+</template>
+<iframe>
+  <section>
+    <!-- Подпись -->
+  </section>
+</iframe>
+<!-- После фрейма -->
+<svg>
+  <script xml:lang="ts" lang="ts&#120;">
+    //<![CDATA[
+    const view = <p>// Текст JSX
+    </p>
+    // Комментарий TSX
+    //]]>
+  </script>
+  <script xml:lang="tsx">
+    //<![CDATA[
+    const count = <number>// Уточнение типа
+      value
+    //]]>
+  </script>
+</svg>
+<math>
+  <script xml:lang="ts" lang="tsx">
+    //<![CDATA[
+    const view = <p>// Данные JSX</p>
+    // Комментарий в MathML
+    //]]>
+  </script>
+</math>

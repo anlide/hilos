@@ -15,6 +15,7 @@ use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionSqlReadRule;
+use Hilos\Tests\CodeStyle\Rule\CommentLanguageRule;
 use Hilos\Tests\CodeStyle\Rule\CronNamespaceRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
@@ -43,6 +44,7 @@ use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
 use Hilos\Tests\CodeStyle\ScannedRoots;
 use Hilos\Tests\CodeStyle\SourceScanner;
+use Hilos\Tests\CodeStyle\SqlTextRule;
 use Hilos\Tests\CodeStyle\Throws\CrossFileRule;
 use Hilos\Tests\CodeStyle\Throws\SourceIndex;
 use Hilos\Tests\CodeStyle\Throws\ThrowsOrphanRule;
@@ -228,6 +230,17 @@ final class CodeStyleGuardTest extends TestCase
                 }
             }
         }
+        $sqlRules = array_filter($rules, static fn(CodeStyleRule $rule): bool => $rule instanceof SqlTextRule);
+        foreach ($scanner->files('sql') as $file) {
+            $relativePath = $scanner->relativePath($file);
+            $text = (string)file_get_contents($file->getPathname());
+            foreach ($sqlRules as $rule) {
+                foreach ($rule->checkSql($relativePath, $text) as $violation) {
+                    $reported[$rule->id() . ' ' . $root . '/' . $relativePath][]
+                        = $violation->withPathPrefix($root)->describe($rule->doc());
+                }
+            }
+        }
 
         return $reported;
     }
@@ -352,6 +365,7 @@ final class CodeStyleGuardTest extends TestCase
             new LineLengthRule(),
             new MemberIndentRule(),
             new SpellingRule(),
+            new CommentLanguageRule(),
         ];
     }
 

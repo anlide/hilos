@@ -218,7 +218,7 @@ final class IdentifierDetector
      * kind is a shape of identifier and not a particular one.
      *
      * Kind gates two of the keys, and both gates come from the sign-in design: a
-     * number never carries a password ("телефон — только код"), and a sign-in link is
+     * number never carries a password ("a phone gets a code only"), and a sign-in link is
      * mailed, so it is offered for an address only. Naming either under a phone would
      * reveal an affordance whose submit the backend then refuses.
      *

@@ -300,7 +300,7 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
           alt=""
         />
         <!-- The name folds down to the sign on a narrow screen and stays the
-          link's accessible name there (mockups/framework/layout, "На узком экране"). -->
+          link's accessible name there, as shown in the narrow-screen section of the approved layout mockup. -->
         <span class="d-none d-md-inline">BTC Tracker</span>
         <span class="visually-hidden d-md-none">BTC Tracker</span>
       </span>

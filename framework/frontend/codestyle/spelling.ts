@@ -11,8 +11,10 @@
 // parser to narrow — and the parser reads neither a .vue template nor an .html
 // file, both of which carry the English this rule judges. The canon says so beside
 // the sentence this half departs from.
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { scannedFiles } from './textRoots.js'
 
 /** Rule id, shared with the PHP half and listed once in automated-checks.md. */
 export const SPELLING_RULE_ID = 'SPELLING'
@@ -34,47 +36,6 @@ const AMERICAN_BY_BRITISH: Readonly<Record<string, string>> = {
   cancelled: 'canceled',
   grey: 'gray',
 }
-
-/** The SDK workspace, walked whole: sources, tests and the checkers alike. */
-const FRAMEWORK_ROOT = 'framework/frontend'
-
-/** Where the demos live; each one's two English-bearing roots are scanned as well. */
-const DEMO_DIRECTORY = 'demo'
-
-/** Roots inside a demo, appended to that demo's own directory. */
-const DEMO_ROOTS = ['frontend/src', 'tests/e2e']
-
-/** The source forms this rule reads: the two the compiler parses, and the two it does not. */
-const READ_EXTENSIONS = ['.ts', '.mts', '.tsx', '.vue', '.html']
-
-/**
- * Never walked: a dependency tree is not this repository's code, and a build
- * artifact is a copy of code that was already judged at its source. Three names
- * more than the other checkers skip, because this one reads words rather than
- * code shapes. Playwright writes its report and its results under an e2e root on
- * every machine that has run the suite, and this is the first checker to read
- * `.html` there. A demo's `src/generated` holds the license inventory its build
- * writes on every start, whole third-party license texts included, which the
- * rule leaves alone by its first exception; the file is git-ignored, but this
- * walk reads the disk, not the index.
- */
-const SKIPPED_DIRECTORIES = [
-  'node_modules',
-  'dist',
-  'dist-pack',
-  'dist-prerender',
-  '.angular',
-  'playwright-report',
-  'test-results',
-  'generated',
-]
-
-/**
- * Left out of a scanned root by exact path rather than by directory name, the
- * way the PHP guard leaves out its own. The checkers' fixtures are broken on
- * purpose and are judged by the fixture tests instead.
- */
-const EXCLUDED_PATHS = ['framework/frontend/codestyle/fixtures']
 
 /**
  * The files that write the British forms on purpose, each with its reason: this
@@ -188,55 +149,4 @@ function anyCase(word: string): string {
   return [...word]
     .map((letter) => `[${letter.toUpperCase()}${letter}]`)
     .join('')
-}
-
-/**
- * @param repositoryRoot Absolute path of the repository root
- * @returns Paths of every read file below the scanned roots, relative to it, sorted
- */
-function scannedFiles(repositoryRoot: string): string[] {
-  const demoDirectory = join(repositoryRoot, DEMO_DIRECTORY)
-  const demos = existsSync(demoDirectory)
-    ? readdirSync(demoDirectory, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .flatMap((entry) =>
-          DEMO_ROOTS.map((root) => `${DEMO_DIRECTORY}/${entry.name}/${root}`),
-        )
-    : []
-  const roots = [FRAMEWORK_ROOT, ...demos].filter((root) =>
-    existsSync(join(repositoryRoot, root)),
-  )
-
-  return roots
-    .flatMap((root) => readFiles(join(repositoryRoot, root), repositoryRoot))
-    .sort()
-}
-
-/**
- * @param directory Absolute path of the directory to walk
- * @param repositoryRoot Absolute path of the repository root, which the paths are made relative to
- * @returns Paths of the read files below the directory, relative to the repository root
- */
-function readFiles(directory: string, repositoryRoot: string): string[] {
-  const files: string[] = []
-
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    if (entry.isDirectory() && SKIPPED_DIRECTORIES.includes(entry.name)) {
-      continue
-    }
-    const full = join(directory, entry.name)
-    const relativePath = relative(repositoryRoot, full).split(sep).join('/')
-    if (EXCLUDED_PATHS.includes(relativePath)) {
-      continue
-    }
-    if (entry.isDirectory()) {
-      files.push(...readFiles(full, repositoryRoot))
-    } else if (
-      READ_EXTENSIONS.some((extension) => entry.name.endsWith(extension))
-    ) {
-      files.push(relativePath)
-    }
-  }
-
-  return files
 }

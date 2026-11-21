@@ -44,6 +44,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/automated-checks.md` | a style guard failed, a rule should stop depending on memory, or the known-debt baseline needs a record |
 | `docs/agents/code-style/cross-layer-field-names.md` | naming a data field that crosses DB → PHP → wire → TypeScript |
 | `docs/agents/code-style/spelling.md` | writing an English identifier, string key, UI copy, comment, or PHPDoc |
+| `docs/agents/code-style/comment-language.md` | writing a comment, a doc block or a parking label — in English |
 | `docs/agents/code-style/scaffold-markers.md` | leaving code wired but intentionally uncalled |
 | `docs/code-style.md` | the baseline: PSR-12, `declare(strict_types=1)`, LF endings |
 | `docs/quality.md` | judging application quality beyond the local code shape |

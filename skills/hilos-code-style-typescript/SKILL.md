@@ -28,6 +28,7 @@ This wrapper only routes. When it disagrees with a rule file, the canon in
 | `docs/agents/code-style/warnings-and-ide.md` | silencing a toolchain or IDE warning, or writing a TSDoc block |
 | `docs/agents/code-style/cross-layer-field-names.md` | naming a data field that crosses DB → PHP → wire → TypeScript |
 | `docs/agents/code-style/spelling.md` | writing an English identifier, string key, route, UI copy, comment, or TSDoc |
+| `docs/agents/code-style/comment-language.md` | writing a comment, a doc block or a parking label — in English |
 | `docs/agents/code-style/scaffold-markers.md` | leaving code wired but intentionally uncalled |
 | `docs/agents/code-style/magic-values.md` | writing or reviewing literals in TS unit/component/e2e tests or shared helpers — read Tests, the limited PHP/TS test rule; it does not extend to production TS |
 | `docs/agents/frontend/testing-strategy.md` | creating, changing or reviewing unit/component tests — "Unit and component assertions — behavior, accessibility and semantics"; tests of shared SDK behavior — "Shared behavior across view frameworks" and its rollout; creating or moving their files — "Where a unit test file lives" |

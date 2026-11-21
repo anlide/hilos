@@ -317,7 +317,7 @@ export default function App({ authGate }: AppProps) {
         <span className="d-inline-flex align-items-center gap-2">
           <img src="/ecommerce-shop-medium.svg" width={32} height={32} alt="" />
           {/* The name folds down to the sign on a narrow screen and stays the
-              link's accessible name there (mockups/framework/layout, "На узком экране"). */}
+              link's accessible name there, as shown in the narrow-screen section of the approved layout mockup. */}
           <span className="d-none d-md-inline">Hilos Flowers</span>
           <span className="visually-hidden d-md-none">Hilos Flowers</span>
         </span>

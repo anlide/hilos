@@ -11,7 +11,7 @@ use RecursiveIteratorIterator;
 use SplFileInfo;
 
 /**
- * Walks one source root and yields the PHP files a code-style rule should read.
+ * Walks one source root and yields the files a code-style rule should read.
  *
  * A missing root is skipped silently: the framework ships as a package without
  * the demos, so their roots are optional rather than a configuration error.
@@ -53,9 +53,10 @@ final class SourceScanner
     }
 
     /**
-     * @return iterable<SplFileInfo> Every PHP file under the root, excluded directories pruned
+     * @param string $extension File extension to scan, without the leading dot
+     * @return iterable<SplFileInfo> Every matching file under the root, excluded directories pruned
      */
-    public function files(): iterable
+    public function files(string $extension = 'php'): iterable
     {
         if (!is_dir($this->root)) {
             return;
@@ -65,7 +66,7 @@ final class SourceScanner
             new RecursiveDirectoryIterator($this->root, FilesystemIterator::SKIP_DOTS),
             fn(SplFileInfo $current): bool => $current->isDir()
                 ? $this->isScannable($current)
-                : $current->getExtension() === 'php',
+                : $current->getExtension() === $extension,
         );
 
         foreach (new RecursiveIteratorIterator($filtered) as $file) {

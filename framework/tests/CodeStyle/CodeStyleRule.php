@@ -20,7 +20,8 @@ interface CodeStyleRule
     public function doc(): string;
 
     /**
-     * Reports every occurrence in the file, not every offending line.
+     * Reports findings in the unit each rule defines: one per occurrence by
+     * default, or one per physical comment line for COMMENT-LANGUAGE.
      *
      * @param string $relativePath File path relative to the scanned root
      * @param array<int, string|array{0: int, 1: string, 2: int}> $tokens Raw token_get_all() output

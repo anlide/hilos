@@ -12,6 +12,7 @@ use Hilos\Tests\CodeStyle\Rule\CodeFqnRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionItemNarrowingRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionObjectListRule;
 use Hilos\Tests\CodeStyle\Rule\CollectionSqlReadRule;
+use Hilos\Tests\CodeStyle\Rule\CommentLanguageRule;
 use Hilos\Tests\CodeStyle\Rule\CronNamespaceRule;
 use Hilos\Tests\CodeStyle\Rule\EmptyStringSentinelRule;
 use Hilos\Tests\CodeStyle\Rule\ErrorSuppressionRule;
@@ -38,6 +39,7 @@ use Hilos\Tests\CodeStyle\Rule\WireKeyCaseRule;
 use Hilos\Tests\CodeStyle\Rule\WiringRefusalSwallowedRule;
 use Hilos\Tests\CodeStyle\RootKind;
 use Hilos\Tests\CodeStyle\SourceScanner;
+use Hilos\Tests\CodeStyle\SqlTextRule;
 use Hilos\Tests\CodeStyle\Violation;
 use PHPUnit\Framework\TestCase;
 
@@ -194,6 +196,34 @@ final class RuleFixtureTest extends TestCase
                     . '(see docs/agents/code-style/qualified-names.md)',
                 'CODE-FQN Bad/CodeFqnUnresolved.php:21 — JsonException resolves to no class; '
                     . 'the import is missing (see docs/agents/code-style/qualified-names.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:9 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:10 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:12 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:13 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:17 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:18 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:20 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:25 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:26 — write this parking label in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:28 — write this parking label in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:29 — write this parking label in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.php:30 — write this parking label in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.sql:1 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
+                'COMMENT-LANGUAGE Bad/CommentLanguageSamples.sql:2 — write this comment in English'
+                    . ' (see docs/agents/code-style/comment-language.md)',
                 'EMPTY-STRING-SENTINEL Bad/Core/CLI/EmptySentinel.php:19 — ?? \'\' turns a missing value '
                     . 'into an empty string; keep it null or make the field required '
                     . '(see docs/agents/code-style/method-contracts.md)',
@@ -1418,16 +1448,25 @@ final class RuleFixtureTest extends TestCase
     private function reportRoot(SourceScanner $scanner, array $rules, ?string $prefix = null): array
     {
         $sources = [];
-        foreach ($scanner->files() as $file) {
-            $sources[$scanner->relativePath($file)] = (string)file_get_contents($file->getPathname());
+        foreach (['php', 'sql'] as $extension) {
+            foreach ($scanner->files($extension) as $file) {
+                $sources[$scanner->relativePath($file)] = (string)file_get_contents($file->getPathname());
+            }
         }
         ksort($sources);
 
         $lines = [];
         foreach ($sources as $relativePath => $contents) {
-            $tokens = token_get_all($contents);
+            $tokens = str_ends_with($relativePath, '.php') ? token_get_all($contents) : null;
             foreach ($rules as $rule) {
-                foreach ($rule->check($relativePath, $tokens) as $violation) {
+                if ($tokens !== null) {
+                    $violations = $rule->check($relativePath, $tokens);
+                } elseif ($rule instanceof SqlTextRule) {
+                    $violations = $rule->checkSql($relativePath, $contents);
+                } else {
+                    continue;
+                }
+                foreach ($violations as $violation) {
                     $reported = $prefix === null ? $violation : $violation->withPathPrefix($prefix);
                     $lines[] = $reported->describe($rule->doc());
                 }
@@ -1481,6 +1520,7 @@ final class RuleFixtureTest extends TestCase
             new LineLengthRule(),
             new MemberIndentRule(),
             new SpellingRule(),
+            new CommentLanguageRule(),
         ];
     }
 

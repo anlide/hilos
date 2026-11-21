@@ -43,6 +43,7 @@ layer's specifics on top.
 | [php-language-level.md](php-language-level.md) | PHP | choosing between an old and a new PHP syntax form, or wondering whether an 8.4-only construct is allowed |
 | [local-variables.md](local-variables.md) | PHP | introducing temporary/local variables or reviewing noisy one-use variables |
 | [spelling.md](spelling.md) | both | writing English identifiers, string keys, UI copy, comments, or docs — which dialect to use |
+| [comment-language.md](comment-language.md) | both | writing a comment, a doc block, a markup comment or a parking label — which language it is written in |
 | [scaffold-markers.md](scaffold-markers.md) | both | leaving code/config wired but intentionally unused — marking a scaffold or a deliberate keep so a dead-code sweep does not cull it — or marking a test stub as a sunset the stand's emulated services will replace |
 | [angular-select-options.md](angular-select-options.md) | frontend | writing a native Angular select or option, including late catalog choices and controlled empty options |
 | [vue-template-refs.md](vue-template-refs.md) | frontend | reading a prop or a composable's value inside a Vue `<template>` — why a ref held as a field stays a ref there, and how it is unwrapped |

@@ -82,7 +82,7 @@ export const languageCard: HilosI18nLanguageCard = {
   },
 }
 
-/** How the names of Українська are written in English: a base with three corrections. */
+/** The English name for Ukrainian has a base form and three corrections. */
 export const englishName: HilosI18nNameRow = {
   inLanguageId: 11,
   nameId: 301,

@@ -216,7 +216,7 @@ function focusWindow(body: HTMLElement | null): void {
   })
 }
 
-// One session (Flow: ОДНА СЕССИЯ). The window holds the person and the session
+// One session (Flow: ONE SESSION). The window holds the person and the session
 // of the row it was opened on, and the session as it was then, for its words
 // once the row is gone.
 const endAction = useTrackedAction()
@@ -332,7 +332,7 @@ async function submitEnd(): Promise<void> {
   endSubmitted.value = false
 }
 
-// All sessions (Flow: ВСЕ СЕССИИ). The window holds the person; its number is
+// All sessions (Flow: ALL SESSIONS). The window holds the person; its number is
 // the live list's.
 const allAction = useTrackedAction()
 const allTarget = ref<{ userId: number } | null>(null)
