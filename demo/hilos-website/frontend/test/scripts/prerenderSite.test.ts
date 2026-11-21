@@ -72,6 +72,37 @@ describe('renderSite', () => {
         ?.getAttribute('content'),
     ).toBe('https://hilos-dev.org/')
     expect(
+      document
+        .querySelector('meta[property="og:image"]')
+        ?.getAttribute('content'),
+    ).toBe('https://hilos-dev.org/hilos-preview-512.png')
+    expect(
+      document
+        .querySelector('meta[property="og:image:type"]')
+        ?.getAttribute('content'),
+    ).toBe('image/png')
+    expect(
+      document
+        .querySelector('meta[property="og:image:width"]')
+        ?.getAttribute('content'),
+    ).toBe('512')
+    expect(
+      document
+        .querySelector('meta[property="og:image:height"]')
+        ?.getAttribute('content'),
+    ).toBe('512')
+    expect(
+      document
+        .querySelector('meta[property="og:image:alt"]')
+        ?.getAttribute('content')
+        ?.trim(),
+    ).toBeTruthy()
+    expect(
+      document
+        .querySelector('meta[name="twitter:card"]')
+        ?.getAttribute('content'),
+    ).toBe('summary')
+    expect(
       document.querySelector('link[rel="canonical"]')?.getAttribute('href'),
     ).toBe('https://hilos-dev.org/')
     expect(files['robots.txt']).toBe(
@@ -100,6 +131,9 @@ describe('renderSite', () => {
     const files = await renderSite(TEMPLATE, `https://example.test/?a="<&'`)
     expect(files['home.html']).toContain(
       'href="https://example.test/?a=&quot;&lt;&amp;&#39;/"',
+    )
+    expect(files['home.html']).toContain(
+      'content="https://example.test/?a=&quot;&lt;&amp;&#39;/hilos-preview-512.png"',
     )
     expect(files['sitemap.xml']).toContain(
       '<loc>https://example.test/?a=&quot;&lt;&amp;&#39;/</loc>',

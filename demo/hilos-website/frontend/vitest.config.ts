@@ -2,7 +2,14 @@ import vue from '@vitejs/plugin-vue'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
-  plugins: [vue({ template: { compilerOptions: { comments: false } } })],
+  plugins: [
+    vue({
+      template: {
+        compilerOptions: { comments: false },
+        transformAssetUrls: { includeAbsolute: false },
+      },
+    }),
+  ],
   resolve: {
     conditions: ['development'],
     dedupe: ['vue', '@vue/reactivity'],

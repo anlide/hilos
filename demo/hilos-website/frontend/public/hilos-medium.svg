@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
+  <title id="title">Hilos</title>
+  <desc id="desc">A yellow lightning bolt with one bend in a blue circle.</desc>
+  <!-- HIL-2151: original geometry, the medium variant of the Hilos logo:
+       the bolt of the large variant with one bend. MIT; see ../README.md. -->
+  <circle id="hilos-circle" cx="16" cy="16" r="16" fill="#0288D1"/>
+  <path id="hilos-bolt" fill="#FFD500" d="M19.5 4L9 18.5H15.5L12.5 28L22.5 13.5Z"/>
+</svg>

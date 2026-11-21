@@ -15,8 +15,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">Chat</h4>
-              <span class="badge text-bg-success">Vue</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/chat-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">Chat</h4>
+                  <span class="badge text-bg-success">Vue</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 A live conversation over WebSocket, with conversational bots and
                 AI-assisted moderation.
@@ -37,8 +47,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">E-commerce shop</h4>
-              <span class="badge text-bg-info">React</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/ecommerce-shop-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">E-commerce shop</h4>
+                  <span class="badge text-bg-info">React</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 Explore shop administration with warehouses, categories,
                 products and stock counts that update across open windows. The
@@ -70,8 +90,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">BTC tracker</h4>
-              <span class="badge text-bg-success">Vue</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/binance-btc-tracker-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">BTC tracker</h4>
+                  <span class="badge text-bg-success">Vue</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 The framework shell for a future live BTC/USDT tracker; market
                 tracking is still to come.
@@ -93,8 +123,13 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">PMD</h4>
-              <span class="badge text-bg-success">Vue</span>
+              <div class="d-flex align-items-center gap-3">
+                <img src="/demos/pmd-large.svg" width="48" height="48" alt="" />
+                <div>
+                  <h4 class="h5 mb-1">PMD</h4>
+                  <span class="badge text-bg-success">Vue</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 A Vue application shell with a dedicated service database, ready
                 for its own product features.
@@ -113,8 +148,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">Roblox game server</h4>
-              <span class="badge text-bg-success">Vue</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/roblox-game-server-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">Roblox game server</h4>
+                  <span class="badge text-bg-success">Vue</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 The starting point for a team PvP arena with point capture. Game
                 rooms, scoring and rankings are planned.
@@ -136,8 +181,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">File gallery manager</h4>
-              <span class="badge text-bg-info">React</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/file-gallery-manager-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">File gallery manager</h4>
+                  <span class="badge text-bg-info">React</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 A framework shell for a future file gallery. Gallery browsing
                 and file management are still to come.
@@ -159,8 +214,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">Solar system model</h4>
-              <span class="badge text-bg-info">React</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/solar-system-model-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">Solar system model</h4>
+                  <span class="badge text-bg-info">React</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 A framework shell for a future interactive solar system. The 3D
                 model has not been built yet.
@@ -182,8 +247,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">Tasks</h4>
-              <span class="badge text-bg-info">React</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/tasks-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">Tasks</h4>
+                  <span class="badge text-bg-info">React</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 The starting point for a shared task list, with adding,
                 completing and deleting tasks planned.
@@ -204,8 +279,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">Concert tickets</h4>
-              <span class="badge text-bg-danger">Angular</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/concert-tickets-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">Concert tickets</h4>
+                  <span class="badge text-bg-danger">Angular</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 An application shell for concert ticket sales. The hall, seats
                 and booking are still to come.
@@ -225,8 +310,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">Online testing</h4>
-              <span class="badge text-bg-danger">Angular</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/online-testing-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">Online testing</h4>
+                  <span class="badge text-bg-danger">Angular</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 The framework shell for a testing room. Tests, attempts and
                 verdicts have not been built yet.
@@ -248,8 +343,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">Polls</h4>
-              <span class="badge text-bg-danger">Angular</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/polls-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">Polls</h4>
+                  <span class="badge text-bg-danger">Angular</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 The starting point for polls with answer options and live voting
                 results; the polling product is still to come.
@@ -270,8 +375,18 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
         <div class="col">
           <article class="card h-100">
             <div class="card-body">
-              <h4 class="h5">Preferans</h4>
-              <span class="badge text-bg-danger">Angular</span>
+              <div class="d-flex align-items-center gap-3">
+                <img
+                  src="/demos/preferans-large.svg"
+                  width="48"
+                  height="48"
+                  alt=""
+                />
+                <div>
+                  <h4 class="h5 mb-1">Preferans</h4>
+                  <span class="badge text-bg-danger">Angular</span>
+                </div>
+              </div>
               <p class="card-text mt-3">
                 An application shell for Sochi preferans. The card game has not
                 been built yet.

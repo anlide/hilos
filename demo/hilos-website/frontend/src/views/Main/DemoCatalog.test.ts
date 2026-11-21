@@ -80,6 +80,11 @@ describe('DemoCatalog', () => {
         .find((item) => item.get('h4').text() === name)
       if (!card) throw new Error(`Missing demo: ${name}`)
 
+      const images = card.findAll('img')
+      expect(images).toHaveLength(1)
+      expect(images[0].attributes('alt')).toBe('')
+      expect(images[0].attributes('src')).toBe(`/demos/${folder}-large.svg`)
+
       const source = card.get(`a[href="${SOURCE_TREE}/demo/${folder}"]`)
       expect(source.text()).toContain(`Source of ${name} on GitHub`)
       expect(source.attributes('target')).toBeUndefined()

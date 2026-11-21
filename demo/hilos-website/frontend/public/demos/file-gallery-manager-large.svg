@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
+  <title id="title">File Gallery Manager — stacked images</title>
+  <desc id="desc">Teal stacked pictures. In the top-right corner, the Hilos logo, a blue circle with a yellow bolt with one bend.</desc>
+  <!-- HIL-2151: the large sign of the file-gallery-manager demo.
+       Symbol: bootstrap-icons 1.13.2, icons/images.svg, MIT.
+       Corner mark: the Hilos logo, original geometry. MIT; see ../README.md. -->
+  <mask id="hilos-mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+    <rect width="32" height="32" fill="#fff"/>
+    <circle cx="25" cy="7" r="9" fill="#000"/>
+  </mask>
+  <g id="demo-symbol" fill="#0CA678" mask="url(#hilos-mark-gap)">
+    <path transform="matrix(1.75 0 0 1.75 0 4)" d="M4.502 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/>
+    <path transform="matrix(1.75 0 0 1.75 0 4)" d="M14.002 13a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2V5A2 2 0 0 1 2 3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-1.998 2M14 2H4a1 1 0 0 0-1 1h9.002a2 2 0 0 1 2 2v7A1 1 0 0 0 15 11V3a1 1 0 0 0-1-1M2.002 4a1 1 0 0 0-1 1v8l2.646-2.354a.5.5 0 0 1 .63-.062l2.66 1.773 3.71-3.71a.5.5 0 0 1 .577-.094l1.777 1.947V5a1 1 0 0 0-1-1z"/>
+  </g>
+  <g id="hilos-mark">
+    <g transform="matrix(0.4375 0 0 0.4375 18 0)">
+      <circle cx="16" cy="16" r="16" fill="#0288D1"/>
+      <path fill="#FFD500" d="M19.5 4L9 18.5H15.5L12.5 28L22.5 13.5Z"/>
+    </g>
+  </g>
+</svg>

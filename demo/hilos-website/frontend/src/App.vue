@@ -114,8 +114,14 @@ const avatarMark = useSignal(hilosSessionAvatarMark)
 
 <template>
   <HilosLayout :connection="connection">
-    <!-- The name in text, with no mark beside it, on every screen width. -->
-    <template #brand>Hilos</template>
+    <!-- The logo beside the name; on a narrow screen the name is visually hidden so the mark stands alone while keeping the accessible link label. -->
+    <template #brand>
+      <span class="d-inline-flex align-items-center gap-2">
+        <img src="/hilos-medium.svg" width="32" height="32" alt="" />
+        <span class="d-none d-md-inline">Hilos</span>
+        <span class="visually-hidden d-md-none">Hilos</span>
+      </span>
+    </template>
     <template #user>
       <HilosLink
         v-if="userName"

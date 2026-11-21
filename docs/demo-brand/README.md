@@ -56,6 +56,7 @@ takes over below that.
 | Header | 32 px | `hilos-medium.svg` |
 | Larger brand surfaces | 64 px and up | `hilos-large.svg` |
 | Phone home-screen tile | 180 px | `hilos-large.svg` |
+| Link preview (Open Graph) | 512 px | `hilos-large.svg` |
 | Web app manifest | 192 and 512 px | `hilos-large.svg` |
 
 The same choice applies on a high-density screen: a 16 CSS px tab icon is
@@ -290,9 +291,9 @@ replaced.
 
 ## Adding another demo
 
-Eight demos have no frontend yet: `dkp-system`, `hilos-website`,
-`mail-monitor`, `personal-homepage`, `private-clinic`, `research-lab`,
-`small-airport` and `traivan-map-analyzer`. A demo gets its sign when its
+Seven demos have no frontend yet: `dkp-system`, `mail-monitor`,
+`personal-homepage`, `private-clinic`, `research-lab`, `small-airport`
+and `traivan-map-analyzer`. A demo gets its sign when its
 frontend comes to life, and any further demo the same way:
 
 1. Pick the subject: by default the icon the demo shows in its header. Shape
@@ -378,6 +379,7 @@ which puts the signs into the demos, and of HIL-2187, the site:
 | `/favicon.ico` | `<name>.ico`, written by [export.cjs](export.cjs) | `sources/<name>-small.svg` at 16 and 32 pixels, two PNG images in one ICO |
 | `/favicon.svg` | `sources/<name>-small.svg`, copied unchanged | — |
 | `/apple-touch-icon.png` | `<name>-touch-180.png`, written by export.cjs | `sources/<name>-large.svg` on an opaque `#FFFFFF` square, 180 × 180 |
+| og:image | `<name>-preview-512.png`, written by export.cjs | `sources/<name>-large.svg` on an opaque `#FFFFFF` square, 512 × 512, padding 57 |
 | Header image | `sources/<name>-medium.svg`, copied unchanged | — |
 | Web app manifest, 192 and 512 | `<name>-large-192.png` and `<name>-large-512.png`, written by export.cjs on request | `sources/<name>-large.svg` |
 
@@ -412,6 +414,13 @@ square lies 28 pixels from the center of that rounding, inside its 40-pixel
 radius, so nothing a symbol puts in a corner is cut. The mark on the tile is
 61.25 pixels across.
 
+The link preview tile (`og:image`) is 512 × 512 on an opaque `#FFFFFF` square
+with 57 pixels of padding (the phone tile's 20 of 180, scaled to 512). The
+raster is 512 because platforms such as Facebook reject preview images smaller
+than 200 × 200, and 512 produces a crisp square card on high-density screens.
+It is opaque because preview aggregators draw transparent areas over their own
+background colors, exactly as iOS does for the home-screen tile.
+
 The real browser tab and the real home-screen icon are checked by the owner
 when the ticket is ready and by HIL-2152 when the files go into the demos, in
 Chromium, Firefox, iOS and Android: a headless browser draws neither, so the
@@ -434,6 +443,8 @@ themselves.
 | `demo/online-testing/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, online-testing-medium.svg}` | `sources/online-testing-small.svg`, `online-testing.ico`, `online-testing-touch-180.png`, `sources/online-testing-medium.svg` |
 | `demo/polls/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, polls-medium.svg}` | `sources/polls-small.svg`, `polls.ico`, `polls-touch-180.png`, `sources/polls-medium.svg` |
 | `demo/preferans/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, preferans-medium.svg}` | `sources/preferans-small.svg`, `preferans.ico`, `preferans-touch-180.png`, `sources/preferans-medium.svg` |
+| `demo/hilos-website/frontend/public/{favicon.svg, favicon.ico, apple-touch-icon.png, hilos-medium.svg, hilos-preview-512.png}` | `sources/hilos-small.svg`, `hilos.ico`, `hilos-touch-180.png`, `sources/hilos-medium.svg`, `hilos-preview-512.png` |
+| `demo/hilos-website/frontend/public/demos/<demo>-large.svg` for the twelve demos in "Demo signs" | `sources/<demo>-large.svg` |
 | `framework/frontend/brand/{favicon.svg, favicon.ico, apple-touch-icon.png, hilos-medium.svg}` | `sources/hilos-small.svg`, `hilos.ico`, `hilos-touch-180.png`, `sources/hilos-medium.svg` |
 
 Installed copies are not edited by hand. When a master changes, export the files
@@ -494,18 +505,20 @@ writes to `/tmp/HIL-2151/png`:
   canvas at the requested pixel size with no background, padding or extra
   resampling pass;
 - `<name>-touch-180.png`, the phone tile described in "Files for integration";
+- `<name>-preview-512.png`, the link preview tile described there;
 - `<name>.ico`, the ICO described there. The script writes the ICO header
   itself; it needs no package beyond Playwright.
 
-The tile and the ICO are written whatever the size list. The script reports the
-renderer versions and checks every file before it writes it: each PNG has the
-requested dimensions; a transparent PNG has both fully transparent and painted
-pixels; the tile has no pixel that is not fully opaque; and the ICO is read
-back from its own header — two entries, 16 and 32, each pointing at a PNG of
-that size, the offsets and lengths adding up to the file's length. The
-2026-11-19 run wrote 182 files: 156 transparent PNGs (13 names × 3 variants ×
-the default sizes 16, 32, 64 and 180), 13 tiles of 5 to 13 KB and 13 ICO files
-of 1.2 to 2.1 KB. An independent reader, `file`, recognized each ICO as an icon
+The tile, the preview tile and the ICO are written whatever the size list. The
+script reports the renderer versions and checks every file before it writes it:
+each PNG has the requested dimensions; a transparent PNG has both fully
+transparent and painted pixels; the tile and preview tile have no pixel that is
+not fully opaque; and the ICO is read back from its own header — two entries, 16
+and 32, each pointing at a PNG of that size, the offsets and lengths adding up
+to the file's length. The 2026-11-21 run wrote 195 files: 156 transparent PNGs
+(13 names × 3 variants × the default sizes 16, 32, 64 and 180), 13 phone tiles
+180 of 5 to 13 KB, 13 preview tiles 512 of 18 to 41 KB and 13 ICO files of 1.2
+to 2.1 KB. An independent reader, `file`, recognized each ICO as an icon
 resource with two PNG images, 16 × 16 and 32 × 32.
 
 Give the sizes after the output directory to replace the default `16 32 64

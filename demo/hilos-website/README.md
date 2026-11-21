@@ -12,11 +12,15 @@ Hilos is, the WAWTech video and the catalog of the demos.
 A Vue site on Hilos:
 
 - **Home** at `/` explains Hilos and shows the WAWTech walkthrough video.
-  The header shows "Hilos" as text, with no sign-in button.
+  The browser tab and phone home-screen tile show the Hilos logo; the header
+  shows the logo and name (on a narrow screen, only the logo); catalog entries
+  show demo signs; and link previews of the home page carry the logo image.
+  There is no sign-in button. Static brand assets come from
+  `docs/demo-brand/README.md` (see "Installed copies").
 - **Demo catalog**: two groups — working demos (Chat and E-commerce shop),
-  followed by ten application starters. Each entry carries a description,
-  its frontend, a source link and, where available, an "Open demo" link.
-  Entries without a public address say so. The markup lives in
+  followed by ten application starters. Each entry carries its demo sign,
+  a description, its frontend, a source link and, where available, an "Open
+  demo" link. Entries without a public address say so. The markup lives in
   `frontend/src/views/Main/DemoCatalog.vue`; edit it and rebuild to change
   the catalog.
 - **Video**: put `hilos.mp4` in the installation's `media/` data directory

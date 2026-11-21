@@ -75,6 +75,7 @@ export async function renderSite(
   )
   const description =
     'Hilos is a real-time PHP framework that keeps connected applications in sync without page reloads.'
+  const PREVIEW_IMAGE = '/hilos-preview-512.png'
   const metadata = [
     `<meta name="description" content="${escapeAttribute(description)}">`,
     '<meta property="og:type" content="website">',
@@ -82,6 +83,12 @@ export async function renderSite(
     `<meta property="og:title" content="${escapeAttribute(title)}">`,
     `<meta property="og:description" content="${escapeAttribute(description)}">`,
     `<meta property="og:url" content="${escapeAttribute(origin + '/')}">`,
+    `<meta property="og:image" content="${escapeAttribute(origin + PREVIEW_IMAGE)}">`,
+    '<meta property="og:image:type" content="image/png">',
+    '<meta property="og:image:width" content="512">',
+    '<meta property="og:image:height" content="512">',
+    '<meta property="og:image:alt" content="Hilos logo: a blue circle with a yellow lightning bolt">',
+    '<meta name="twitter:card" content="summary">',
     `<link rel="canonical" href="${escapeAttribute(origin + '/')}">`,
   ].join('\n')
   files['home.html'] = template

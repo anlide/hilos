@@ -23,6 +23,8 @@ const variants = ['small', 'medium', 'large'];
 
 const TILE_SIZE = 180;
 const TILE_PADDING = 20;
+const PREVIEW_SIZE = 512;
+const PREVIEW_PADDING = 57; // the phone tile's 20 of 180, scaled to 512
 const TILE_BACKGROUND = '#FFFFFF';
 const ICO_SIZES = [16, 32];
 
@@ -67,6 +69,14 @@ async function main() {
       }
       checkDimensions(tile.png, TILE_SIZE, tileLabel);
       await write(`${tileLabel}.png`, tile.png, `${TILE_SIZE}×${TILE_SIZE} on ${TILE_BACKGROUND}, padding ${TILE_PADDING}, opaque=${tile.painted}`);
+
+      const preview = await rasterize(page, sources.large, PREVIEW_SIZE, { background: TILE_BACKGROUND, padding: PREVIEW_PADDING });
+      const previewLabel = `${name}-preview-${PREVIEW_SIZE}`;
+      if (preview.transparent || preview.partial) {
+        throw new Error(`Preview not opaque: ${previewLabel} transparent=${preview.transparent} partial=${preview.partial}`);
+      }
+      checkDimensions(preview.png, PREVIEW_SIZE, previewLabel);
+      await write(`${previewLabel}.png`, preview.png, `${PREVIEW_SIZE}×${PREVIEW_SIZE} on ${TILE_BACKGROUND}, padding ${PREVIEW_PADDING}, opaque=${preview.painted}`);
 
       const images = [];
       for (const size of ICO_SIZES) {

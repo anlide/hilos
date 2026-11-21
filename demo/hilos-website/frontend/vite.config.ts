@@ -34,7 +34,11 @@ export default defineConfig(({ mode, command, isSsrBuild }) => {
 
   return {
     plugins: [
-      vue(),
+      vue({
+        template: {
+          transformAssetUrls: { includeAbsolute: false },
+        },
+      }),
       buildTimestampPlugin(),
       command === 'build' &&
         !isSsrBuild &&
