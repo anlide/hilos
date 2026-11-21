@@ -61,6 +61,7 @@ use Demo\EcommerceShop\Agents\StockLibraryAgent;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
+use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
@@ -158,6 +159,8 @@ use Demo\EcommerceShop\Pages\AdminCategoriesPage;
 use Demo\EcommerceShop\Pages\AdminProductsPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
+use Demo\EcommerceShop\CLI\DTO\WarehouseDeleteCommandData;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
@@ -1125,6 +1128,11 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $claims = OwnershipDeclaration::dbCollectionsOf(WarehousesLibraryAgent::class);
         self::assertSame([EcommerceShopDbContext::warehouses], array_keys($claims));
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::warehouses]->asList());
+        self::assertSame(
+            [EcommerceShopCommandConstants::WAREHOUSE_TEST_DELETE => WarehouseDeleteCommandData::class],
+            WarehousesLibraryAgent::AGENT_COMMANDS,
+        );
+        self::assertSame('test:ecommerce-shop:warehouse-delete', EcommerceShopCommandConstants::WAREHOUSE_TEST_DELETE);
     }
 
     /** The categories library runs once on the policy-selected node, in a worker of its own, and owns the categories and their addresses whole. */
@@ -1232,6 +1240,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Warehouses',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], PageCatalog::pages()[PageConstants::ADMIN_WAREHOUSES]);
+        self::assertSame(
+            [EcommerceShopSignalConstants::WAREHOUSE_CREATE => WarehouseCreateActionDTO::class],
+            AdminWarehousesPage::ACTIONS,
+        );
+        self::assertSame('admin_warehouses', Hilos::getPageActionRoutes()[EcommerceShopSignalConstants::WAREHOUSE_CREATE]);
+        self::assertSame(
+            AgentType::WAREHOUSES_LIBRARY,
+            Hilos::getActionAgentRoutes()[EcommerceShopSignalConstants::WAREHOUSE_CREATE],
+        );
+        self::assertSame('warehouse_create', EcommerceShopSignalConstants::WAREHOUSE_CREATE);
     }
 
     /** The dashboard's shop group lists the shop's admin pages in the order their cards stand. */

@@ -1,12 +1,14 @@
 // The warehouses admin page selectors: the page-scoped warehouses table rows fed
 // into a server-windowed TableViewportController, each raw row resolved into its
-// WarehouseRow view-model. The backend warehouses table carries the whole row as
-// an inline record in the `warehouse` slot — the counts are recounted from stock
-// on the server, so the slot is a record, not an entity reference. The view
-// reads the controller, never a raw store.
+// WarehouseRow view-model. The backend warehouses table carries the whole row,
+// counts included, in the `warehouse` slot. The slot bears an `id`, so binding
+// the window files it in the page scope as the `warehouse` entity and leaves a
+// reference in the row: the row is read through that reference. The view reads
+// the controller, never a raw store.
 import {
   TableViewportController,
   bindTableViewport,
+  type EntityRef,
   type HilosTableColumnOf,
   type HilosTableFrame,
   type TableRow,
@@ -18,7 +20,8 @@ import { PAGE_ADMIN_WAREHOUSES } from '../../pages/keys.js'
 import { type WarehouseRow } from './types/tables/WarehouseRow.js'
 
 // Wire keys: the warehouses table (EcommerceShopTableContext::warehouses) and its
-// one row slot (WarehousesTable::ROW_SLOT), an inline WarehouseTableRow record.
+// one row slot (WarehousesTable::ROW_SLOT), a WarehouseTableRow record that is
+// also the slot's entity type in the page scope.
 const WAREHOUSES_TABLE = 'warehouses'
 const WAREHOUSE_SLOT = 'warehouse'
 
@@ -37,16 +40,9 @@ export const WAREHOUSE_PRODUCT_COUNT_FIELD = 'productCount'
 /** Row payload key of the number of units the warehouse keeps in all. */
 export const WAREHOUSE_UNIT_COUNT_FIELD = 'unitCount'
 
-/** Read a row slot as an inline record, or undefined when it is not one. */
-function recordSlot(slot: unknown): Record<string, unknown> | undefined {
-  return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
-    ? (slot as Record<string, unknown>)
-    : undefined
-}
-
 /** Read a record field as a string, or the empty string when it is not one. */
 function readString(
-  record: Record<string, unknown> | undefined,
+  record: Readonly<Record<string, unknown>> | undefined,
   field: string,
 ): string {
   const value = record?.[field]
@@ -56,7 +52,7 @@ function readString(
 
 /** Read a record field as a number, or zero when it is not one. */
 function readNumber(
-  record: Record<string, unknown> | undefined,
+  record: Readonly<Record<string, unknown>> | undefined,
   field: string,
 ): number {
   const value = record?.[field]
@@ -66,12 +62,14 @@ function readNumber(
 
 /**
  * Resolve one raw warehouses-table row into its view-model: the fields of the
- * inline `warehouse` record, the id falling back to the row key.
+ * `warehouse` entity its slot references, the id falling back to the row key.
+ * Reading through the scope keeps the row reactive to a later fragment.
  *
  * @param row The raw table row from the page-scoped table store.
  */
 export function resolveWarehouseRow(row: TableRow): WarehouseRow {
-  const warehouse = recordSlot(row.slots[WAREHOUSE_SLOT])
+  const ref = row.slots[WAREHOUSE_SLOT] as EntityRef | undefined
+  const warehouse = ref ? scopes.entitySignal(ref).get()?.fields : undefined
   const id = warehouse?.[WAREHOUSE_ID_FIELD]
 
   return {
@@ -117,15 +115,22 @@ const WAREHOUSES_COLUMNS: HilosTableColumnOf<WarehouseRow>[] = [
   },
 ]
 
-// No title: the section head names the table. No main action yet: adding a
-// warehouse is a leaf of its own.
-const WAREHOUSES_FRAME: HilosTableFrame = {
-  search: { placeholder: 'Search warehouses' },
-  columns: WAREHOUSES_COLUMNS,
-  empty: {
-    title: 'No warehouses yet',
-    hint: 'Add one before setting stock: stock always lives in a warehouse.',
-  },
+/**
+ * The warehouses table frame. No title: the section head names the table. The
+ * main action opens the Add warehouse dialog, which the view owns.
+ *
+ * @param addWarehouse Open the Add warehouse dialog.
+ */
+function warehousesFrame(addWarehouse: () => void): HilosTableFrame {
+  return {
+    search: { placeholder: 'Search warehouses' },
+    columns: WAREHOUSES_COLUMNS,
+    mainAction: { label: 'Add warehouse', press: addWarehouse },
+    empty: {
+      title: 'No warehouses yet',
+      hint: 'Add one before setting stock: stock always lives in a warehouse.',
+    },
+  }
 }
 
 /**
@@ -133,11 +138,15 @@ const WAREHOUSES_FRAME: HilosTableFrame = {
  * and paging change the viewport descriptor sent over the connection, and the
  * backend replies a window plus live deltas scoped to the table's (page,
  * tableKey) address. Rows resolve through {@link resolveWarehouseRow}.
+ *
+ * @param addWarehouse Open the Add warehouse dialog — the table's main action.
  */
-export function createWarehousesTable(): WarehousesTable {
+export function createWarehousesTable(
+  addWarehouse: () => void,
+): WarehousesTable {
   const controller = new TableViewportController<WarehouseRow>({
     resolve: resolveWarehouseRow,
-    frame: WAREHOUSES_FRAME,
+    frame: warehousesFrame(addWarehouse),
     sendViewport: (descriptor) =>
       connection.sendTableViewport(
         PAGE_ADMIN_WAREHOUSES,
@@ -162,7 +171,7 @@ export function createWarehousesTable(): WarehousesTable {
   return {
     controller,
     start() {
-      // The slot is an inline record, not an entity: no entity types to normalize.
+      // The slot's own key is its entity type: no entity-type override to declare.
       teardown.push(
         bindTableViewport(
           connection,
