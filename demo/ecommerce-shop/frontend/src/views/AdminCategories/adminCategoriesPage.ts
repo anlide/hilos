@@ -5,6 +5,7 @@
 // the server, so the slot is a record, not an entity reference. The view reads
 // the controller, never a raw store.
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   TableViewportController,
   bindTableViewport,
   type HilosTableColumnOf,
@@ -30,6 +31,9 @@ const CATEGORY_DESCRIPTION_FIELD = 'description'
 
 /** Row payload key of the category place in the catalog. */
 const CATEGORY_POSITION_FIELD = 'position'
+
+/** Row payload key of whether no category comes before it in the catalog. */
+export const CATEGORY_FIRST_FIELD = 'first'
 
 /** Row payload key of the category picture address. */
 export const CATEGORY_PICTURE_FIELD = 'picture'
@@ -67,6 +71,16 @@ function readNumber(
   return typeof value === 'number' ? value : 0
 }
 
+/** Read a record field as a boolean, or false when it is not one. */
+function readBoolean(
+  record: Record<string, unknown> | undefined,
+  field: string,
+): boolean {
+  const value = record?.[field]
+
+  return typeof value === 'boolean' ? value : false
+}
+
 /**
  * Resolve one raw categories-table row into its view-model: the fields of the
  * inline `category` record, the id falling back to the row key.
@@ -84,6 +98,7 @@ export function resolveCategoryRow(row: TableRow): CategoryRow {
     position: readNumber(category, CATEGORY_POSITION_FIELD),
     picture: readString(category, CATEGORY_PICTURE_FIELD),
     productCount: readNumber(category, CATEGORY_PRODUCT_COUNT_FIELD),
+    first: readBoolean(category, CATEGORY_FIRST_FIELD),
   }
 }
 
@@ -100,7 +115,8 @@ export interface CategoriesTable {
 // Nothing sorts: the one order is the place in the catalog. The name cell also
 // draws the description, so it reads that field too — an edit of the description
 // must reach the window. The picture has no label and no card of its own; the
-// count reads to the right, as numbers do.
+// count reads to the right, as numbers do. Actions sit in the trailing column,
+// hidden from narrow cards.
 const CATEGORIES_COLUMNS: HilosTableColumnOf<CategoryRow>[] = [
   { key: CATEGORY_PICTURE_FIELD, label: '', card: 'hidden' },
   {
@@ -114,6 +130,14 @@ const CATEGORIES_COLUMNS: HilosTableColumnOf<CategoryRow>[] = [
     label: 'Products',
     headerClass: 'text-end',
     cellClass: 'text-end',
+  },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+    card: 'hidden',
+    reads: [CATEGORY_NAME_FIELD, CATEGORY_FIRST_FIELD],
   },
 ]
 

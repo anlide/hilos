@@ -60,6 +60,7 @@ use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Agents\StockLibraryAgent;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
@@ -1277,6 +1278,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Categories',
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], PageCatalog::pages()[PageConstants::ADMIN_CATEGORIES]);
+        self::assertSame(
+            [EcommerceShopSignalConstants::CATEGORY_MOVE_UP => CategoryMoveUpActionDTO::class],
+            AdminCategoriesPage::ACTIONS,
+        );
+        self::assertSame('admin_categories', Hilos::getPageActionRoutes()[EcommerceShopSignalConstants::CATEGORY_MOVE_UP]);
+        self::assertSame(
+            AgentType::CATEGORIES_LIBRARY,
+            Hilos::getActionAgentRoutes()[EcommerceShopSignalConstants::CATEGORY_MOVE_UP],
+        );
+        self::assertSame('category_move_up', EcommerceShopSignalConstants::CATEGORY_MOVE_UP);
     }
 
     /** The products table is registered under its key, for the page that binds it. */

@@ -18,4 +18,6 @@ export interface CategoryRow {
   readonly picture: string
   /** Products the category holds. */
   readonly productCount: number
+  /** Whether no category comes before it in the catalog. */
+  readonly first: boolean
 }

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Database;
+use Demo\EcommerceShop\Database\Object\Item\Category as ObjectCategory;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
@@ -15,14 +17,23 @@ use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\Category\CategoryTableRow;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Hilos\AdminViewMode\HiddenValue;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageSignalRouter;
+use Hilos\Core\Router\SignalDataInterface;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
@@ -32,6 +43,7 @@ use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Testing\IntegrationTest;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -148,7 +160,7 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
         });
     }
 
-    /** A viewer receives the categories window in the first answer, and the case's category with all six fields shown. */
+    /** A viewer receives the categories window in the first answer, and the case's category with all seven fields shown. */
     public function testAViewerSeesTheCategoryWithEveryFieldShown(): void
     {
         foreach ([self::GUEST_KEY, self::VISITOR_KEY] as $acceptKey) {
@@ -169,6 +181,7 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
                 CategoryTableRow::position => $this->categoryPosition,
                 CategoryTableRow::picture => HilosFiles::downloadPath($this->pictureFileId, CatalogPictureUploadTarget::VARIANT_XS),
                 CategoryTableRow::productCount => 0,
+                CategoryTableRow::first => $this->categoryPosition === self::storedLowestPosition(),
             ], $slot);
             foreach ($slot as $field => $value) {
                 self::assertFalse(HiddenValue::isMark($value), "field {$field} is a mark for {$acceptKey}");
@@ -193,6 +206,90 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
         });
         $this->expectException(PageForbiddenException::class);
         PageAccessGate::assert(AdminCategoriesPage::class, self::VISITOR_KEY);
+    }
+
+    /** An administrator moves the second category up, swapping positions in database and receiving success acknowledgement. */
+    public function testAnAdminCanMoveACategoryUp(): void
+    {
+        $cat2Name = 'Category ' . RandomHelper::hex(8);
+        $cat2 = Hilos::$db->categories->actions->create($cat2Name, 'Second flowers of the case', self::pictureFile());
+        $cat2Id = $cat2->id;
+
+        $pos1Before = self::storedPosition($this->categoryId);
+        $pos2Before = self::storedPosition($cat2Id);
+        self::assertLessThan($pos2Before, $pos1Before);
+
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::CATEGORY_MOVE_UP, [
+            ObjectCategory::id => $cat2Id,
+        ], 'req-move-up-success');
+
+        $success = $this->acknowledgement(SignalConstants::ACTION_SUCCESS, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        self::assertSame('req-move-up-success', $success->requestId);
+        self::assertSame(EcommerceShopSignalConstants::CATEGORY_MOVE_UP, $success->action);
+        self::assertSame(sprintf('Category “%s” moved up.', $cat2Name), $success->message);
+
+        self::assertSame($pos2Before, self::storedPosition($this->categoryId));
+        self::assertSame($pos1Before, self::storedPosition($cat2Id));
+    }
+
+    /** Moving the first category in the catalog up produces an action error and leaves positions unchanged. */
+    public function testMovingTheFirstCategoryUpIsRefused(): void
+    {
+        $firstId = $this->categoryId;
+        while (true) {
+            try {
+                Hilos::$db->categories[$firstId]->actions->moveUp();
+            } catch (ValidationException) {
+                break;
+            }
+        }
+
+        $posBefore = self::storedPosition($firstId);
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::CATEGORY_MOVE_UP, [
+            ObjectCategory::id => $firstId,
+        ], 'req-move-up-first');
+
+        $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-move-up-first', $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::CATEGORY_MOVE_UP, $error->action);
+        self::assertSame('This category is already first', $error->reason);
+        self::assertSame($posBefore, self::storedPosition($firstId));
+    }
+
+    /** Moving a non-existent category up produces an action error stating it no longer exists. */
+    public function testMovingANonExistentCategoryUpIsRefused(): void
+    {
+        $nonExistentId = 999_999;
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::CATEGORY_MOVE_UP, [
+            ObjectCategory::id => $nonExistentId,
+        ], 'req-move-up-not-found');
+
+        $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-move-up-not-found', $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::CATEGORY_MOVE_UP, $error->action);
+        self::assertSame('This category no longer exists', $error->reason);
+    }
+
+    /** With the admin view mode on, move up action is refused to a guest and a non-admin viewer with ActionViewModeException. */
+    public function testAGuestAndANonAdminAreRefusedWhenTheViewModeIsOn(): void
+    {
+        $posBefore = self::storedPosition($this->categoryId);
+        foreach ([self::GUEST_KEY, self::VISITOR_KEY] as $acceptKey) {
+            try {
+                PageAccessGate::assertAction(
+                    AdminCategoriesPage::class,
+                    $acceptKey,
+                    EcommerceShopSignalConstants::CATEGORY_MOVE_UP,
+                );
+                self::fail("Expected ActionViewModeException for {$acceptKey}");
+            } catch (ActionViewModeException) {
+                // Expected
+            }
+        }
+        self::assertSame($posBefore, self::storedPosition($this->categoryId));
     }
 
     /**
@@ -271,5 +368,73 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
     private function window(array $payloads): array
     {
         return $payloads[0][PageResponseSignalData::payload][PagePayload::windows][EcommerceShopTableContext::categories];
+    }
+
+    /**
+     * Sends one action frame through the real page router under the library agent.
+     *
+     * @param string $acceptKey Acting connection
+     * @param string $action Action name
+     * @param array<string, mixed> $payload Action payload
+     * @param ?string $requestId Client-minted request id
+     */
+    private function dispatchAction(string $acceptKey, string $action, array $payload, ?string $requestId = null): void
+    {
+        while (Hilos::$sr->getNextQueuedSignal() !== null) {
+        }
+        $agent = new CategoriesLibraryAgent();
+        $router = new PageSignalRouter(
+            new HilosPageFactory($agent, Hilos::class),
+            new ActionRouteConfig(Hilos::getPageActionRoutes()),
+        );
+
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: $agent->getId(), acceptKey: $acceptKey),
+            static fn () => $router->dispatchAction(
+                new WebSocketActionSignalDTO($acceptKey, $action, $payload, $requestId),
+                'websocket',
+            ),
+        );
+    }
+
+    /**
+     * Reads one acknowledgement signal of the given name.
+     *
+     * @param string $name Expected signal name
+     * @param string $acceptKey Expected target accept key
+     * @return SignalDataInterface Signal payload data
+     */
+    private function acknowledgement(string $name, string $acceptKey): SignalDataInterface
+    {
+        $frames = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === $name) {
+                self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+                self::assertSame($acceptKey, $signal->data->targetAcceptKey);
+                $frames[] = $signal->data->data;
+            }
+        }
+        self::assertCount(1, $frames);
+
+        return $frames[0];
+    }
+
+    /**
+     * @param int $id Category id
+     * @return int The stored place of the category in the catalog, read past the ORM
+     */
+    private static function storedPosition(int $id): int
+    {
+        return (int)Database::sql('SELECT position FROM category WHERE id = ?', [$id])->field('position');
+    }
+
+    /**
+     * @return ?int The lowest stored position among all categories, read past the ORM
+     */
+    private static function storedLowestPosition(): ?int
+    {
+        $val = Database::sql('SELECT MIN(position) AS min_pos FROM category')->field('min_pos');
+
+        return $val === null ? null : (int)$val;
     }
 }

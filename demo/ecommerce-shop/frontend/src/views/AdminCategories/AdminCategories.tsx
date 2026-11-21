@@ -1,8 +1,9 @@
 // The shop's Categories admin page: every category in catalog order with its
-// picture, description and the number of products it holds, the count redrawn
-// live as products move. The table sits under the section head of its own
-// dashboard group. Read only for now. Bootstrap classes only (styling-rules.md).
+// picture, description, the number of products it holds, and category reorder
+// actions. The table sits under the section head of its own dashboard group.
+// Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo } from 'react'
+import { HILOS_TABLE_ACTIONS_KEY } from '@hilos/core/base'
 import { HilosAdminPage, HilosViewportTable } from '@hilos/react/base'
 
 import { PAGE_ADMIN_CATEGORIES } from '../../pages/keys.js'
@@ -12,8 +13,9 @@ import {
   CATEGORY_PRODUCT_COUNT_FIELD,
   createCategoriesTable,
 } from './adminCategoriesPage.js'
+import { CategoryMoveUpButton } from './CategoryMoveUpButton.js'
 
-/** The categories admin page, read only. */
+/** The categories admin page. */
 export default function AdminCategories() {
   const categories = useMemo(() => createCategoriesTable(), [])
 
@@ -52,6 +54,9 @@ export default function AdminCategories() {
             </>
           ),
           [CATEGORY_PRODUCT_COUNT_FIELD]: (row) => row.productCount,
+          [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+            <CategoryMoveUpButton row={row} />
+          ),
         }}
       />
     </HilosAdminPage>

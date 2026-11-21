@@ -11,8 +11,8 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 /**
  * Backend row payload for the categories table: one category of the shop and how many products it holds.
  *
- * {@see picture} is the address of the small copy of the category's picture, and {@see productCount}
- * is counted from the products, not stored.
+ * {@see picture} is the address of the small copy of the category's picture, {@see productCount}
+ * is counted from the products, not stored, and {@see first} marks whether no category comes before it.
  */
 final class CategoryTableRow extends AbstractTableRow
 {
@@ -22,6 +22,7 @@ final class CategoryTableRow extends AbstractTableRow
     public const string position = ObjectCategory::position;
     public const string picture = 'picture';
     public const string productCount = 'productCount';
+    public const string first = 'first';
 
     /**
      * @param int $id Persisted category id
@@ -30,6 +31,7 @@ final class CategoryTableRow extends AbstractTableRow
      * @param int $position Place of the category in the catalog
      * @param string $picture Address of the small copy of the category's picture
      * @param int $productCount Products of either kind in the category
+     * @param bool $first Whether no category comes before this one in the catalog
      */
     public function __construct(
         public int $id,
@@ -38,6 +40,7 @@ final class CategoryTableRow extends AbstractTableRow
         public int $position,
         public string $picture,
         public int $productCount,
+        public bool $first,
     ) {
     }
 
@@ -58,7 +61,7 @@ final class CategoryTableRow extends AbstractTableRow
     }
 
     /**
-     * @return array<string, int|string> Row payload
+     * @return array<string, int|string|bool> Row payload
      */
     public function toArray(): array
     {
@@ -69,6 +72,7 @@ final class CategoryTableRow extends AbstractTableRow
             self::position => $this->position,
             self::picture => $this->picture,
             self::productCount => $this->productCount,
+            self::first => $this->first,
         ];
     }
 
@@ -88,6 +92,7 @@ final class CategoryTableRow extends AbstractTableRow
             position: self::requireInt($data, self::position),
             picture: self::requireString($data, self::picture),
             productCount: self::requireInt($data, self::productCount),
+            first: self::requireBool($data, self::first),
         );
     }
 }

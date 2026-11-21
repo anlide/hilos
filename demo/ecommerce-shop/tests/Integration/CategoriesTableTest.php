@@ -14,6 +14,7 @@ use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\Category\CategoryTableRow;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\DTO\TableQueryDTO;
 use Hilos\Core\Table\DTO\TableRowMutationDTO;
@@ -260,6 +261,7 @@ final class CategoriesTableTest extends CategoriesTableEnvironment
         $tulips = self::category();
         $rosesPlace = self::storedPosition($roses);
         $tulipsPlace = self::storedPosition($tulips);
+        $rosesFirstBefore = self::storedRow($roses, 0)[CategoryTableRow::first];
         $table = new CategoriesTable();
 
         Hilos::$db->categories[$tulips]->actions->moveUp();
@@ -286,6 +288,8 @@ final class CategoriesTableTest extends CategoriesTableEnvironment
             $mutations[0]->row?->toArray()[CategoryTableRow::position],
             $mutations[1]->row?->toArray()[CategoryTableRow::position],
         ]);
+        self::assertSame($rosesFirstBefore, $mutations[1]->row?->toArray()[CategoryTableRow::first]);
+        self::assertFalse($mutations[0]->row?->toArray()[CategoryTableRow::first]);
     }
 
     /** A deleted empty category leaves the window by its key. */
@@ -304,13 +308,69 @@ final class CategoriesTableTest extends CategoriesTableEnvironment
         self::assertSame([[TableMutationType::Delete, $gone, null]], self::described($mutations));
     }
 
+    /** A search hiding the first category shows rows whose first flag is false. */
+    public function testASearchHidingTheFirstCategoryShowsRowsWithFirstFalse(): void
+    {
+        $tag = RandomHelper::hex(8);
+        $first = Hilos::$db->categories->actions->create("{$tag} First", 'First category', self::pictureFile())->id;
+        $second = Hilos::$db->categories->actions->create("{$tag} Second", 'Second category', self::pictureFile())->id;
+
+        $table = new CategoriesTable();
+        $query = new TableQueryDTO(search: "{$tag} Second", sort: $table->defaultSort());
+        $window = $table->getPage($query);
+
+        self::assertSame(1, $window->totalCount);
+        $row = $window->rows[0]->toArray();
+        self::assertSame($second, $row[CategoryTableRow::id]);
+        self::assertFalse($row[CategoryTableRow::first]);
+    }
+
+    /** Deleting the first category produces a delete mutation and an update mutation for the category that becomes first. */
+    public function testDeletingTheFirstCategoryUpdatesTheNewFirstCategory(): void
+    {
+        $first = self::category();
+        $second = self::category();
+        while (true) {
+            try {
+                Hilos::$db->categories[$first]->actions->moveUp();
+            } catch (ValidationException) {
+                break;
+            }
+        }
+        while (true) {
+            try {
+                Hilos::$db->categories[$second]->actions->moveUp();
+                if (Hilos::$db->categories[$second]->position < Hilos::$db->categories[$first]->position) {
+                    Hilos::$db->categories[$first]->actions->moveUp();
+                    break;
+                }
+            } catch (ValidationException) {
+                break;
+            }
+        }
+
+        $announced = Hilos::$db->categories[$first]->toArray();
+        Hilos::$db->categories[$first]->actions->delete();
+        $mutations = (new CategoriesTable())->buildMutationsForSourceEvent(SourceChange::dbDeleted(
+            EcommerceShopDbContext::categories,
+            (string)$first,
+            $announced,
+        ));
+
+        self::assertSame([
+            [TableMutationType::Delete, $first, null],
+            [TableMutationType::Update, $second, self::storedRow($second, 0)],
+        ], self::described($mutations));
+        self::assertTrue($mutations[1]->row?->toArray()[CategoryTableRow::first]);
+    }
+
     /**
      * @param int $id Category id
      * @param string $name Category name
      * @param string $description Category description
      * @param int $picture Registry file the category shows
      * @param int $productCount Products of the category
-     * @return array<string, int|string> The row payload the table should carry for the category, at its stored place
+     * @return array<string, int|string|bool> The row payload the table should carry for the category, at its stored place
      */
     private static function row(int $id, string $name, string $description, int $picture, int $productCount): array
     {
@@ -321,6 +381,7 @@ final class CategoriesTableTest extends CategoriesTableEnvironment
             CategoryTableRow::position => self::storedPosition($id),
             CategoryTableRow::picture => HilosFiles::downloadPath($picture, CatalogPictureUploadTarget::VARIANT_XS),
             CategoryTableRow::productCount => $productCount,
+            CategoryTableRow::first => self::storedPosition($id) === self::storedLowestPosition(),
         ];
     }
 
@@ -445,6 +506,16 @@ final class CategoriesTableTest extends CategoriesTableEnvironment
     private static function storedPosition(int $id): int
     {
         return (int)Database::sql('SELECT position FROM category WHERE id = ?', [$id])->field(EntityCategory::position);
+    }
+
+    /**
+     * @return ?int The lowest stored position among all categories, read past the ORM
+     */
+    private static function storedLowestPosition(): ?int
+    {
+        $val = Database::sql('SELECT MIN(position) AS min_pos FROM category')->field('min_pos');
+
+        return $val === null ? null : (int)$val;
     }
 
     /**

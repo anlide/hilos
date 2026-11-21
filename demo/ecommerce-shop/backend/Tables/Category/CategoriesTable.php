@@ -37,7 +37,8 @@ use Hilos\Database\DatabaseException;
 use Hilos\Files\HilosFiles;
 
 /**
- * The shop's categories in catalog order, each with the small copy of its picture and how many products it holds.
+ * The shop's categories in catalog order, each with the small copy of its picture, how many products it holds,
+ * and whether it is the first in the catalog.
  *
  * The categories are a few rows, so the table reads them whole and searches and orders them in
  * memory. The count is asked again whenever a product fact names a category; who may open the
@@ -70,6 +71,7 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
                 BrowserTableFieldKey::COMPUTED => [
                     CategoryTableRow::picture,
                     CategoryTableRow::productCount,
+                    CategoryTableRow::first,
                 ],
             ],
             [
@@ -102,6 +104,9 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
      * @throws DatabaseException When a category or the count of its products cannot be read
      * @throws LogicException When a collection is not configured
      * @throws InvalidArgumentException When a loaded item has the wrong type or the picture variant is undeclared
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     public function buildMutationForSourceEvent(SourceChange $change): ?TableRowMutationDTO
     {
@@ -134,6 +139,9 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
      * @throws DatabaseException When a category or the count of its products cannot be read
      * @throws LogicException When a collection is not configured
      * @throws InvalidArgumentException When a loaded item has the wrong type or the picture variant is undeclared
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     public function buildMutationsForSourceEvent(SourceChange $change): array
     {
@@ -142,8 +150,40 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
         }
         if ($change->sourceKey === EcommerceShopDbContext::categories) {
             $mutation = $this->buildMutationForSourceEvent($change);
+            if ($mutation === null) {
+                return [];
+            }
+            if ($change->mutationType !== TableMutationType::Delete) {
+                return [$mutation];
+            }
 
-            return $mutation === null ? [] : [$mutation];
+            $firstPosition = $this->firstPosition();
+            if ($firstPosition === null) {
+                return [$mutation];
+            }
+
+            $result = Hilos::$db->categories->queryPageItems(new TableQueryDTO());
+            /** @var list<Category> $rows */
+            $rows = $result[TableConstants::RESULT_KEY_ROWS];
+            $firstCategory = null;
+            foreach ($rows as $category) {
+                if ($category->position === $firstPosition) {
+                    $firstCategory = $category;
+                    break;
+                }
+            }
+            if ($firstCategory === null) {
+                return [$mutation];
+            }
+
+            return [
+                $mutation,
+                $this->mutation(
+                    TableMutationType::Update,
+                    $firstCategory->id,
+                    $this->rowFromCategory($firstCategory),
+                ),
+            ];
         }
         if ($change->sourceKey !== EcommerceShopDbContext::products) {
             return [];
@@ -202,6 +242,7 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
             CategoryTableRow::position => WireField::column(EcommerceShopDbContext::categories, ObjectCategory::position),
             CategoryTableRow::picture => WireField::column(EcommerceShopDbContext::categories, ObjectCategory::pictureFileId),
             CategoryTableRow::productCount => WireField::notPersonal(),
+            CategoryTableRow::first => WireField::notPersonal(),
         ];
     }
 
@@ -219,6 +260,7 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
      * @throws InvalidArgumentException When a loaded item has the wrong type or the picture variant is undeclared
      * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
      * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws ValidationException When a collection-specific window filter is malformed
      */
     public function containsRow(string|int $rowKey, TableQueryDTO $query): ?bool
     {
@@ -239,13 +281,45 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
     }
 
     /**
+     * Finds the lowest catalog position among all categories, or null when the catalog is empty.
+     *
+     * @return ?int Lowest catalog position, or null
+     * @throws DatabaseException When categories cannot be read
+     * @throws LogicException When the categories collection is not configured
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws ValidationException When a collection-specific window filter is malformed
+     */
+    private function firstPosition(): ?int
+    {
+        $result = Hilos::$db->categories->queryPageItems(new TableQueryDTO());
+        /** @var list<Category> $rows */
+        $rows = $result[TableConstants::RESULT_KEY_ROWS];
+        if ($rows === []) {
+            return null;
+        }
+
+        $minPosition = null;
+        foreach ($rows as $category) {
+            if ($minPosition === null || $category->position < $minPosition) {
+                $minPosition = $category->position;
+            }
+        }
+
+        return $minPosition;
+    }
+
+    /**
+     * Builds category row payload with the given lowest catalog position.
+     *
      * @param Category $category Category to project
-     * @return CategoryTableRow The category with the address of its small picture and the count of its products
+     * @param ?int $firstPosition Lowest catalog position among all categories, or null
+     * @return CategoryTableRow The category row with picture, product count, and first indicator
      * @throws DatabaseException When the count of its products cannot be read
      * @throws LogicException When the products collection is not configured
      * @throws InvalidArgumentException When the picture variant is undeclared or the count's column is invalid
      */
-    public function rowFromCategory(Category $category): CategoryTableRow
+    private function buildRow(Category $category, ?int $firstPosition): CategoryTableRow
     {
         return new CategoryTableRow(
             id: $category->id,
@@ -254,7 +328,23 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
             position: $category->position,
             picture: HilosFiles::downloadPath($category->pictureFileId, CatalogPictureUploadTarget::VARIANT_XS),
             productCount: Hilos::$db->products->countInCategory($category->id),
+            first: $firstPosition !== null && $category->position === $firstPosition,
         );
+    }
+
+    /**
+     * @param Category $category Category to project
+     * @return CategoryTableRow The category with the address of its small picture, count of its products, and first indicator
+     * @throws DatabaseException When the categories or the count of its products cannot be read
+     * @throws LogicException When the categories or products collection is not configured
+     * @throws InvalidArgumentException When the picture variant is undeclared or the count's column is invalid
+     * @throws TableSearchNotSupportedException When a term arrives and this table declares no searchable fields
+     * @throws TableSearchFieldUnknownException When a declared field is carried by no row of the set
+     * @throws ValidationException When a collection-specific window filter is malformed
+     */
+    public function rowFromCategory(Category $category): CategoryTableRow
+    {
+        return $this->buildRow($category, $this->firstPosition());
     }
 
     /**
@@ -272,11 +362,20 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
     protected function query(TableQueryDTO $query): TableSnapshotDTO
     {
         $result = Hilos::$db->categories->queryPageItems(new TableQueryDTO());
+        /** @var list<Category> $rows */
+        $rows = $result[TableConstants::RESULT_KEY_ROWS];
+
+        $firstPosition = null;
+        foreach ($rows as $category) {
+            if ($firstPosition === null || $category->position < $firstPosition) {
+                $firstPosition = $category->position;
+            }
+        }
 
         return $this->filterInMemory(
             array_map(
-                fn (Category $category): array => $this->rowFromCategory($category)->toArray(),
-                $result[TableConstants::RESULT_KEY_ROWS],
+                fn (Category $category): array => $this->buildRow($category, $firstPosition)->toArray(),
+                $rows,
             ),
             $query,
         );
