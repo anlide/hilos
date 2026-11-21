@@ -1,5 +1,8 @@
 // Pure selectors and table declarations for the shop's Products section.
-// The product and categories slots carry inline records, not entity references.
+// The product and categories slots carry records bearing an `id`, so the
+// normalizer stores each one as an entity of the page scope and leaves a
+// reference in the slot; the fields are read back through the resolver the
+// caller hands in, keeping this module free of the application bootstrap.
 import {
   readNumber,
   readString,
@@ -11,15 +14,19 @@ import {
   type TableRow,
 } from '@hilos/core/base'
 
+import {
+  slotFields,
+  type EntityFieldsResolver,
+} from '../../entityFields/entityFields.js'
 import { type ProductRow } from './types/tables/ProductRow.js'
 
 /** Table key declared by EcommerceShopTableContext::products. */
 export const PRODUCTS_TABLE = 'products'
-/** Inline row slot declared by ProductsTable::ROW_SLOT. */
+/** Entity row slot declared by ProductsTable::ROW_SLOT. */
 export const PRODUCT_SLOT = 'product'
 /** Page list carrying the Category filter's live options. */
 export const ADMIN_PRODUCT_CATEGORIES_LIST = 'adminProductCategories'
-/** Inline slot of the categories browser list. */
+/** Entity slot of the categories browser list. */
 const CATEGORY_SLOT = 'categories'
 /** Category filter key accepted by ProductsTable. */
 export const FILTER_CATEGORY = 'category'
@@ -58,23 +65,16 @@ const CATEGORY_NAME_FIELD = 'name'
 const CATEGORY_POSITION_FIELD = 'position'
 
 /**
- * Read an inline slot as a record, or an empty record when absent.
- *
- * @param slot The raw slot value.
- */
-function recordSlot(slot: unknown): Readonly<Record<string, unknown>> {
-  return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
-    ? (slot as Readonly<Record<string, unknown>>)
-    : {}
-}
-
-/**
- * Resolve an inline product record into the table's row view-model.
+ * Resolve a product entity row into the table's row view-model.
  *
  * @param row The raw row from the page-scoped table store.
+ * @param fieldsOf The resolver of a slot's reference to its fields.
  */
-export function resolveProductRow(row: TableRow): ProductRow {
-  const product = recordSlot(row.slots[PRODUCT_SLOT])
+export function resolveProductRow(
+  row: TableRow,
+  fieldsOf: EntityFieldsResolver,
+): ProductRow {
+  const product = slotFields(row.slots[PRODUCT_SLOT], fieldsOf)
   const id = product[PRODUCT_ID_FIELD]
 
   return {
@@ -181,12 +181,14 @@ export const AVAILABILITY_OPTIONS: readonly HilosTableFilterOption[] = [
  * Read the live Category choices in catalog order, keeping numeric ids.
  *
  * @param items The page-scoped categories list.
+ * @param fieldsOf The resolver of a slot's reference to its fields.
  */
 export function categoryOptions(
   items: readonly ListItem[],
+  fieldsOf: EntityFieldsResolver,
 ): HilosTableFilterOption[] {
   return items
-    .map((item) => recordSlot(item.slots[CATEGORY_SLOT]))
+    .map((item) => slotFields(item.slots[CATEGORY_SLOT], fieldsOf))
     .filter((category) => typeof category[CATEGORY_ID_FIELD] === 'number')
     .sort(
       (left, right) =>

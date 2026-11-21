@@ -1,8 +1,9 @@
 // The categories admin page selectors: the page-scoped categories table rows fed
 // into a server-windowed TableViewportController, each raw row resolved into its
-// CategoryRow view-model. The backend categories table carries the whole row as
-// an inline record in the `category` slot — the product count is recounted on
-// the server, so the slot is a record, not an entity reference. The view reads
+// CategoryRow view-model. The backend categories table carries the whole row,
+// counts included, in the `category` slot. The slot bears an `id`, so binding
+// the window files it in the page scope as the `category` entity and leaves a
+// reference in the row: the row is read through that reference. The view reads
 // the controller, never a raw store.
 import {
   HILOS_TABLE_ACTIONS_KEY,
@@ -15,11 +16,16 @@ import {
 
 import { connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
+import {
+  slotFields,
+  type EntityFieldsResolver,
+} from '../../entityFields/entityFields.js'
 import { PAGE_ADMIN_CATEGORIES } from '../../pages/keys.js'
 import { type CategoryRow } from './types/tables/CategoryRow.js'
 
 // Wire keys: the categories table (EcommerceShopTableContext::categories) and its
-// one row slot (CategoriesTable::ROW_SLOT), an inline CategoryTableRow record.
+// one row slot (CategoriesTable::ROW_SLOT), a CategoryTableRow record that is
+// also the slot's entity type in the page scope.
 const CATEGORIES_TABLE = 'categories'
 const CATEGORY_SLOT = 'category'
 
@@ -44,16 +50,12 @@ export const CATEGORY_NAME_FIELD = 'name'
 /** Row payload key of the number of products the category holds. */
 export const CATEGORY_PRODUCT_COUNT_FIELD = 'productCount'
 
-/** Read a row slot as an inline record, or undefined when it is not one. */
-function recordSlot(slot: unknown): Record<string, unknown> | undefined {
-  return typeof slot === 'object' && slot !== null && !Array.isArray(slot)
-    ? (slot as Record<string, unknown>)
-    : undefined
-}
+const fieldsOf: EntityFieldsResolver = (ref) =>
+  scopes.entitySignal(ref).get()?.fields
 
 /** Read a record field as a string, or the empty string when it is not one. */
 function readString(
-  record: Record<string, unknown> | undefined,
+  record: Readonly<Record<string, unknown>> | undefined,
   field: string,
 ): string {
   const value = record?.[field]
@@ -63,7 +65,7 @@ function readString(
 
 /** Read a record field as a number, or zero when it is not one. */
 function readNumber(
-  record: Record<string, unknown> | undefined,
+  record: Readonly<Record<string, unknown>> | undefined,
   field: string,
 ): number {
   const value = record?.[field]
@@ -73,7 +75,7 @@ function readNumber(
 
 /** Read a record field as a boolean, or false when it is not one. */
 function readBoolean(
-  record: Record<string, unknown> | undefined,
+  record: Readonly<Record<string, unknown>> | undefined,
   field: string,
 ): boolean {
   const value = record?.[field]
@@ -83,13 +85,17 @@ function readBoolean(
 
 /**
  * Resolve one raw categories-table row into its view-model: the fields of the
- * inline `category` record, the id falling back to the row key.
+ * referenced category entity, the id falling back to the row key.
  *
  * @param row The raw table row from the page-scoped table store.
+ * @param fieldsOf The resolver of a slot's reference to its fields.
  */
-export function resolveCategoryRow(row: TableRow): CategoryRow {
-  const category = recordSlot(row.slots[CATEGORY_SLOT])
-  const id = category?.[CATEGORY_ID_FIELD]
+export function resolveCategoryRow(
+  row: TableRow,
+  fieldsOf: EntityFieldsResolver,
+): CategoryRow {
+  const category = slotFields(row.slots[CATEGORY_SLOT], fieldsOf)
+  const id = category[CATEGORY_ID_FIELD]
 
   return {
     id: typeof id === 'number' ? id : Number(row.rowKey),
@@ -160,7 +166,7 @@ const CATEGORIES_FRAME: HilosTableFrame = {
  */
 export function createCategoriesTable(): CategoriesTable {
   const controller = new TableViewportController<CategoryRow>({
-    resolve: resolveCategoryRow,
+    resolve: (row) => resolveCategoryRow(row, fieldsOf),
     frame: CATEGORIES_FRAME,
     sendViewport: (descriptor) =>
       connection.sendTableViewport(
@@ -186,7 +192,7 @@ export function createCategoriesTable(): CategoriesTable {
   return {
     controller,
     start() {
-      // The slot is an inline record, not an entity: no entity types to normalize.
+      // The slot's own key is its entity type: no entity-type override to declare.
       teardown.push(
         bindTableViewport(
           connection,

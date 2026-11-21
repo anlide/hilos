@@ -8,10 +8,13 @@ import {
   readBoolean,
   readNumber,
   readString,
-  type EntityRef,
   type ListItem,
 } from '@hilos/core/base'
 
+import {
+  slotFields,
+  type EntityFieldsResolver,
+} from '../../entityFields/entityFields.js'
 import { type CategoryTileItem } from './types/lists/CategoryTileItem.js'
 
 /** Page list carrying every category of the shop. */
@@ -39,27 +42,6 @@ const CATEGORY_TILE_PICTURE_FIELD = 'tilePicture'
 const PRODUCT_CATEGORY_ID_FIELD = 'categoryId'
 /** Row payload key of whether the product stands on the shop front. */
 const PRODUCT_ON_SHOP_FRONT_FIELD = 'onShopFront'
-
-/** Resolve an entity reference to its committed fields, if the scope holds it. */
-export type EntityFieldsResolver = (
-  ref: EntityRef,
-) => Readonly<Record<string, unknown>> | undefined
-
-/**
- * Read a list item's entity slot as its fields, or an empty record when the
- * slot or the entity is absent.
- *
- * @param slot The raw slot value, a reference after normalization.
- * @param fieldsOf The resolver of a reference to its fields.
- */
-function slotFields(
-  slot: unknown,
-  fieldsOf: EntityFieldsResolver,
-): Readonly<Record<string, unknown>> {
-  const ref = slot as EntityRef | undefined
-
-  return (ref ? fieldsOf(ref) : undefined) ?? {}
-}
 
 /**
  * Build the home's tiles in the administrators' order, each with the number

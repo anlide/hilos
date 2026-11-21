@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SIGNAL_TYPE_PAGE_RESPONSE } from '@hilos/core/base'
+import {
+  SIGNAL_TYPE_PAGE_RESPONSE,
+  Scope,
+  ingest,
+  type EntityRef,
+} from '@hilos/core/base'
 
 import { scopes } from '../../../src/bootstrap/session.js'
 import { PAGE_ADMIN_WAREHOUSES } from '../../../src/pages/keys.js'
 import {
   createWarehousesTable,
+  resolveWarehouseRow,
   type WarehousesTable,
 } from '../../../src/views/AdminWarehouses/adminWarehousesPage.js'
+import { type WarehouseRow } from '../../../src/views/AdminWarehouses/types/tables/WarehouseRow.js'
 
 // EcommerceShopTableContext::warehouses and WarehousesTable::ROW_SLOT.
 const WAREHOUSES_TABLE = 'warehouses'
@@ -99,6 +106,22 @@ function firstWindow(): void {
   }
 }
 
+const podil: WarehouseRow = {
+  id: 1,
+  name: 'Kyiv · Podil',
+  address: 'Kyiv, 7 Kostiantynivska St',
+  productCount: 19,
+  unitCount: 546,
+}
+
+const lviv: WarehouseRow = {
+  id: 2,
+  name: 'Lviv · Market Square',
+  address: 'Lviv, 14 Rynok Sq',
+  productCount: 8,
+  unitCount: 120,
+}
+
 describe('Warehouses table rows', () => {
   // The slot bears an id, so binding files it as an entity and the row keeps
   // only a reference: a resolver reading the slot as a record drew blank cells.
@@ -107,13 +130,108 @@ describe('Warehouses table rows', () => {
     firstWindow()
 
     expect(table.controller.rows.get().map((shown) => shown.row)).toEqual([
-      {
-        id: 1,
-        name: 'Kyiv · Podil',
-        address: 'Kyiv, 7 Kostiantynivska St',
-        productCount: 19,
-        unitCount: 546,
-      },
+      podil,
     ])
+  })
+
+  it('resolves a snapshot of warehouse rows into every field of WarehouseRow', () => {
+    const scope = new Scope('page', PAGE_ADMIN_WAREHOUSES)
+    const fieldsOf = (ref: EntityRef) =>
+      scope.entities.signal(ref).get()?.fields
+    ingest(scope, {
+      tables: {
+        [WAREHOUSES_TABLE]: {
+          rows: [
+            {
+              rowKey: podil.id,
+              slots: { [WAREHOUSE_SLOT]: { ...podil } },
+            },
+            {
+              rowKey: lviv.id,
+              slots: { [WAREHOUSE_SLOT]: { ...lviv } },
+            },
+          ],
+        },
+      },
+    })
+
+    const rows = scope.tables
+      .signal(WAREHOUSES_TABLE)
+      .get()
+      .map((row) => resolveWarehouseRow(row, fieldsOf))
+
+    expect(rows).toEqual([podil, lviv])
+  })
+
+  it('follows an entity delta for the same warehouse row', () => {
+    const scope = new Scope('page', PAGE_ADMIN_WAREHOUSES)
+    const fieldsOf = (ref: EntityRef) =>
+      scope.entities.signal(ref).get()?.fields
+    ingest(scope, {
+      tables: {
+        [WAREHOUSES_TABLE]: {
+          rows: [
+            {
+              rowKey: podil.id,
+              slots: { [WAREHOUSE_SLOT]: { ...podil } },
+            },
+          ],
+        },
+      },
+    })
+    ingest(scope, {
+      tables: {
+        [WAREHOUSES_TABLE]: {
+          rows: [
+            {
+              rowKey: podil.id,
+              slots: {
+                [WAREHOUSE_SLOT]: {
+                  id: podil.id,
+                  name: 'Kyiv · Pechersk',
+                  address: 'Kyiv, 12 Mazepy St',
+                  productCount: 24,
+                  unitCount: 610,
+                },
+              },
+            },
+          ],
+        },
+      },
+    })
+    const [row] = scope.tables.signal(WAREHOUSES_TABLE).get()
+
+    expect(resolveWarehouseRow(row!, fieldsOf)).toEqual({
+      id: podil.id,
+      name: 'Kyiv · Pechersk',
+      address: 'Kyiv, 12 Mazepy St',
+      productCount: 24,
+      unitCount: 610,
+    })
+  })
+
+  it('uses the row key and empty fields without a warehouse slot', () => {
+    const scope = new Scope('page', PAGE_ADMIN_WAREHOUSES)
+    ingest(scope, {
+      tables: {
+        [WAREHOUSES_TABLE]: {
+          rows: [{ rowKey: 19, slots: {} }],
+        },
+      },
+    })
+    const [row] = scope.tables.signal(WAREHOUSES_TABLE).get()
+
+    expect(
+      resolveWarehouseRow(
+        row!,
+        (ref) => scope.entities.signal(ref).get()?.fields,
+      ),
+    ).toEqual({
+      id: 19,
+      name: '',
+      address: '',
+      productCount: 0,
+      unitCount: 0,
+    })
   })
 })

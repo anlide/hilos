@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { type ListItem } from '@hilos/core/base'
+import { Scope, ingest, type EntityRef } from '@hilos/core/base'
 
+import { PAGE_ADMIN_PRODUCTS } from '../../../src/pages/keys.js'
 import {
+  ADMIN_PRODUCT_CATEGORIES_LIST,
   PRODUCTS_COLUMNS,
+  PRODUCTS_TABLE,
+  PRODUCT_SLOT,
   availabilityText,
   availabilityTone,
   categoryOptions,
@@ -41,22 +45,102 @@ const stock: ProductRow = {
 }
 
 describe('products admin table', () => {
-  it.each([unique, stock])('resolves the inline product $name', (product) => {
+  it.each([unique, stock])('resolves the product entity $name', (product) => {
+    const scope = new Scope('page', PAGE_ADMIN_PRODUCTS)
+    ingest(scope, {
+      tables: {
+        [PRODUCTS_TABLE]: {
+          rows: [
+            {
+              rowKey: product.id,
+              slots: { [PRODUCT_SLOT]: { ...product } },
+            },
+          ],
+        },
+      },
+    })
+    const [row] = scope.tables.signal(PRODUCTS_TABLE).get()
+
     expect(
-      resolveProductRow({
-        rowKey: String(product.id),
-        slots: { product: { ...product } },
-      }),
+      resolveProductRow(
+        row!,
+        (ref) => scope.entities.signal(ref).get()?.fields,
+      ),
     ).toEqual(product)
   })
 
-  it('falls back to the row key when the product id is absent', () => {
+  it('follows an entity delta for the same product row', () => {
+    const scope = new Scope('page', PAGE_ADMIN_PRODUCTS)
+    const fieldsOf = (ref: EntityRef) =>
+      scope.entities.signal(ref).get()?.fields
+    ingest(scope, {
+      tables: {
+        [PRODUCTS_TABLE]: {
+          rows: [
+            {
+              rowKey: unique.id,
+              slots: { [PRODUCT_SLOT]: { ...unique } },
+            },
+          ],
+        },
+      },
+    })
+    ingest(scope, {
+      tables: {
+        [PRODUCTS_TABLE]: {
+          rows: [
+            {
+              rowKey: unique.id,
+              slots: {
+                [PRODUCT_SLOT]: {
+                  id: unique.id,
+                  name: 'Winter frost',
+                  price: 250000,
+                },
+              },
+            },
+          ],
+        },
+      },
+    })
+    const [row] = scope.tables.signal(PRODUCTS_TABLE).get()
+
+    expect(resolveProductRow(row!, fieldsOf)).toEqual({
+      ...unique,
+      name: 'Winter frost',
+      price: 250000,
+    })
+  })
+
+  it('uses the row key and empty fields without a product slot', () => {
+    const scope = new Scope('page', PAGE_ADMIN_PRODUCTS)
+    ingest(scope, {
+      tables: {
+        [PRODUCTS_TABLE]: {
+          rows: [{ rowKey: 19, slots: {} }],
+        },
+      },
+    })
+    const [row] = scope.tables.signal(PRODUCTS_TABLE).get()
+
     expect(
-      resolveProductRow({
-        rowKey: '19',
-        slots: { product: { ...unique, id: undefined } },
-      }).id,
-    ).toBe(19)
+      resolveProductRow(
+        row!,
+        (ref) => scope.entities.signal(ref).get()?.fields,
+      ),
+    ).toEqual({
+      id: 19,
+      name: '',
+      pictureUrl: '',
+      categoryId: 0,
+      categoryName: '',
+      kind: '',
+      price: 0,
+      units: 0,
+      warehouseName: null,
+      availability: '',
+      changedAt: 0,
+    })
   })
 
   it.each([
@@ -91,33 +175,97 @@ describe('products admin table', () => {
   )
 
   it('orders category options by position then id, keeping numeric values', () => {
-    const items: readonly ListItem[] = [
-      {
-        itemKey: '9',
-        slots: { categories: { id: 9, name: 'Pots', position: 2 } },
+    const scope = new Scope('page', PAGE_ADMIN_PRODUCTS)
+    ingest(scope, {
+      lists: {
+        [ADMIN_PRODUCT_CATEGORIES_LIST]: {
+          items: [
+            {
+              itemKey: 9,
+              slots: { categories: { id: 9, name: 'Pots', position: 2 } },
+            },
+            {
+              itemKey: 7,
+              slots: { categories: { id: 7, name: 'Wreaths', position: 1 } },
+            },
+            {
+              itemKey: 2,
+              slots: { categories: { id: 2, name: 'Bouquets', position: 1 } },
+            },
+            {
+              itemKey: 3,
+              slots: { categories: { name: 'Missing id', position: 0 } },
+            },
+            {
+              itemKey: 4,
+              slots: {
+                categories: { id: '4', name: 'String id', position: 0 },
+              },
+            },
+            { itemKey: 5, slots: {} },
+          ],
+        },
       },
-      {
-        itemKey: '7',
-        slots: { categories: { id: 7, name: 'Wreaths', position: 1 } },
-      },
-      {
-        itemKey: '2',
-        slots: { categories: { id: 2, name: 'Bouquets', position: 1 } },
-      },
-      {
-        itemKey: '3',
-        slots: { categories: { name: 'Missing id', position: 0 } },
-      },
-      {
-        itemKey: '4',
-        slots: { categories: { id: '4', name: 'String id', position: 0 } },
-      },
-      { itemKey: '5', slots: {} },
-    ]
-    expect(categoryOptions(items)).toEqual([
+    })
+
+    expect(
+      categoryOptions(
+        scope.lists.signal(ADMIN_PRODUCT_CATEGORIES_LIST).get(),
+        (ref) => scope.entities.signal(ref).get()?.fields,
+      ),
+    ).toEqual([
       { value: 2, label: 'Bouquets' },
       { value: 7, label: 'Wreaths' },
       { value: 9, label: 'Pots' },
+    ])
+  })
+
+  it('follows category entity updates and deletions', () => {
+    const scope = new Scope('page', PAGE_ADMIN_PRODUCTS)
+    const fieldsOf = (ref: EntityRef) =>
+      scope.entities.signal(ref).get()?.fields
+    ingest(scope, {
+      lists: {
+        [ADMIN_PRODUCT_CATEGORIES_LIST]: {
+          items: [
+            {
+              itemKey: 9,
+              slots: { categories: { id: 9, name: 'Pots', position: 2 } },
+            },
+            {
+              itemKey: 7,
+              slots: { categories: { id: 7, name: 'Wreaths', position: 1 } },
+            },
+            {
+              itemKey: 2,
+              slots: { categories: { id: 2, name: 'Bouquets', position: 1 } },
+            },
+          ],
+        },
+      },
+    })
+    ingest(scope, {
+      lists: {
+        [ADMIN_PRODUCT_CATEGORIES_LIST]: {
+          items: [
+            {
+              itemKey: 9,
+              slots: { categories: { id: 9, name: 'Vases', position: 0 } },
+            },
+          ],
+          deleted: [7],
+        },
+      },
+    })
+
+    expect(
+      categoryOptions(
+        scope.lists.signal(ADMIN_PRODUCT_CATEGORIES_LIST).get(),
+        fieldsOf,
+      ),
+    ).toEqual([
+      { value: 9, label: 'Vases' },
+      { value: 2, label: 'Bouquets' },
     ])
   })
 

@@ -8,7 +8,6 @@
 import {
   TableViewportController,
   bindTableViewport,
-  type EntityRef,
   type HilosTableColumnOf,
   type HilosTableFrame,
   type TableRow,
@@ -16,6 +15,10 @@ import {
 
 import { connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
+import {
+  slotFields,
+  type EntityFieldsResolver,
+} from '../../entityFields/entityFields.js'
 import { PAGE_ADMIN_WAREHOUSES } from '../../pages/keys.js'
 import { type WarehouseRow } from './types/tables/WarehouseRow.js'
 
@@ -40,6 +43,9 @@ export const WAREHOUSE_PRODUCT_COUNT_FIELD = 'productCount'
 /** Row payload key of the number of units the warehouse keeps in all. */
 export const WAREHOUSE_UNIT_COUNT_FIELD = 'unitCount'
 
+const fieldsOf: EntityFieldsResolver = (ref) =>
+  scopes.entitySignal(ref).get()?.fields
+
 /** Read a record field as a string, or the empty string when it is not one. */
 function readString(
   record: Readonly<Record<string, unknown>> | undefined,
@@ -62,15 +68,17 @@ function readNumber(
 
 /**
  * Resolve one raw warehouses-table row into its view-model: the fields of the
- * `warehouse` entity its slot references, the id falling back to the row key.
- * Reading through the scope keeps the row reactive to a later fragment.
+ * referenced warehouse entity, the id falling back to the row key.
  *
  * @param row The raw table row from the page-scoped table store.
+ * @param fieldsOf The resolver of a slot's reference to its fields.
  */
-export function resolveWarehouseRow(row: TableRow): WarehouseRow {
-  const ref = row.slots[WAREHOUSE_SLOT] as EntityRef | undefined
-  const warehouse = ref ? scopes.entitySignal(ref).get()?.fields : undefined
-  const id = warehouse?.[WAREHOUSE_ID_FIELD]
+export function resolveWarehouseRow(
+  row: TableRow,
+  fieldsOf: EntityFieldsResolver,
+): WarehouseRow {
+  const warehouse = slotFields(row.slots[WAREHOUSE_SLOT], fieldsOf)
+  const id = warehouse[WAREHOUSE_ID_FIELD]
 
   return {
     id: typeof id === 'number' ? id : Number(row.rowKey),
@@ -145,7 +153,7 @@ export function createWarehousesTable(
   addWarehouse: () => void,
 ): WarehousesTable {
   const controller = new TableViewportController<WarehouseRow>({
-    resolve: resolveWarehouseRow,
+    resolve: (row) => resolveWarehouseRow(row, fieldsOf),
     frame: warehousesFrame(addWarehouse),
     sendViewport: (descriptor) =>
       connection.sendTableViewport(

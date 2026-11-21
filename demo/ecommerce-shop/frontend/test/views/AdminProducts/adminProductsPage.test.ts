@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SIGNAL_TYPE_PAGE_RESPONSE } from '@hilos/core/base'
+import { SIGNAL_TYPE_PAGE_RESPONSE, ingest } from '@hilos/core/base'
 
 import { scopes } from '../../../src/bootstrap/session.js'
 import { PAGE_ADMIN_PRODUCTS } from '../../../src/pages/keys.js'
@@ -57,8 +57,12 @@ afterEach(() => {
 })
 
 function category(id: number, name: string, position: number): void {
-  scopes.page()!.lists.upsert(ADMIN_PRODUCT_CATEGORIES_LIST, id, {
-    categories: { id, name, position },
+  ingest(scopes.page()!, {
+    lists: {
+      [ADMIN_PRODUCT_CATEGORIES_LIST]: {
+        items: [{ itemKey: id, slots: { categories: { id, name, position } } }],
+      },
+    },
   })
 }
 
@@ -134,7 +138,15 @@ describe('Products table connection lifecycle', () => {
 
     wire.connection.sendTableFacets.mockClear()
     category(7, 'Vases', 2)
-    expect(wire.connection.sendTableFacets).toHaveBeenCalledExactlyOnceWith(
+    expect(wire.connection.sendTableFacets).toHaveBeenCalledTimes(2)
+    expect(wire.connection.sendTableFacets).toHaveBeenNthCalledWith(
+      1,
+      PAGE_ADMIN_PRODUCTS,
+      PRODUCTS_TABLE,
+      expect.objectContaining({ category: [2, 7] }),
+    )
+    expect(wire.connection.sendTableFacets).toHaveBeenNthCalledWith(
+      2,
       PAGE_ADMIN_PRODUCTS,
       PRODUCTS_TABLE,
       expect.objectContaining({ category: [2, 7] }),
@@ -143,6 +155,28 @@ describe('Products table connection lifecycle', () => {
       { value: 2, label: 'Bouquets' },
       { value: 7, label: 'Vases' },
     ])
+  })
+
+  it('drops deleted categories from choices and facets', () => {
+    category(7, 'Pots', 2)
+    const table = mount()
+    firstWindow()
+    wire.connection.sendTableFacets.mockClear()
+
+    ingest(scopes.page()!, {
+      lists: {
+        [ADMIN_PRODUCT_CATEGORIES_LIST]: {
+          deleted: [7],
+        },
+      },
+    })
+
+    expect(wire.connection.sendTableFacets).toHaveBeenCalledExactlyOnceWith(
+      PAGE_ADMIN_PRODUCTS,
+      PRODUCTS_TABLE,
+      expect.objectContaining({ category: [2] }),
+    )
+    expect(categoryChoices(table)).toEqual([{ value: 2, label: 'Bouquets' }])
   })
 
   it('stops on disposal and gives a replacement mount live subscriptions', () => {
@@ -167,7 +201,15 @@ describe('Products table connection lifecycle', () => {
     firstWindow()
     wire.connection.sendTableFacets.mockClear()
     category(7, 'Vases', 2)
-    expect(wire.connection.sendTableFacets).toHaveBeenCalledExactlyOnceWith(
+    expect(wire.connection.sendTableFacets).toHaveBeenCalledTimes(2)
+    expect(wire.connection.sendTableFacets).toHaveBeenNthCalledWith(
+      1,
+      PAGE_ADMIN_PRODUCTS,
+      PRODUCTS_TABLE,
+      expect.objectContaining({ category: [2, 7] }),
+    )
+    expect(wire.connection.sendTableFacets).toHaveBeenNthCalledWith(
+      2,
       PAGE_ADMIN_PRODUCTS,
       PRODUCTS_TABLE,
       expect.objectContaining({ category: [2, 7] }),

@@ -4,6 +4,7 @@ import { TableViewportController, bindTableViewport } from '@hilos/core/base'
 
 import { connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
+import { type EntityFieldsResolver } from '../../entityFields/entityFields.js'
 import { PAGE_ADMIN_PRODUCTS } from '../../pages/keys.js'
 import {
   ADMIN_PRODUCT_CATEGORIES_LIST,
@@ -15,6 +16,8 @@ import {
 import { type ProductRow } from './types/tables/ProductRow.js'
 
 const categoryItems = scopes.pageListSignal(ADMIN_PRODUCT_CATEGORIES_LIST)
+const fieldsOf: EntityFieldsResolver = (ref) =>
+  scopes.entitySignal(ref).get()?.fields
 
 /** The Products table controller and its mount lifecycle. */
 export interface ProductsTable {
@@ -29,8 +32,8 @@ export interface ProductsTable {
 /** Create the server-windowed Products table with reactive Category choices. */
 export function createProductsTable(): ProductsTable {
   const controller = new TableViewportController<ProductRow>({
-    resolve: resolveProductRow,
-    frame: productsFrame(() => categoryOptions(categoryItems.get())),
+    resolve: (row) => resolveProductRow(row, fieldsOf),
+    frame: productsFrame(() => categoryOptions(categoryItems.get(), fieldsOf)),
     sendViewport: (descriptor) =>
       connection.sendTableViewport(
         PAGE_ADMIN_PRODUCTS,
