@@ -8479,7 +8479,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * pass ends leaves the administrator unanswered.
      *
      * @param AuthSecondFactorTrustDaysApplySignalData $ask Restriction to wait on and the original handover address
-     * @throws InvalidArgumentException When the handover answer cannot be routed
      */
     private function applyTrustDays(AuthSecondFactorTrustDaysApplySignalData $ask): void
     {

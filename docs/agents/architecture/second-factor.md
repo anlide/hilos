@@ -176,7 +176,7 @@ different question and deliberately ignores trust ([step-up.md](step-up.md)).
 
 The gate checks the current trust term as well as the row: 0 never accepts an old
 trust, and a row ending later than now plus the current term waits on the code
-until the session holder applies a shorter term. A saved shorter term caps only
+until the person's agent applies a shorter term (HIL-1908). A saved shorter term caps only
 trusts that were live when it was saved, using that save moment; it never extends
 an earlier expiry. Saving 0 takes every trust away, including expired rows.
 Raising the term later does not recreate or lengthen a trust. The settings
@@ -357,8 +357,6 @@ switch-off calls for it, on the frame of the sweep that the switch-off asked for
 (HIL-1909). The saved-moment rule, no extension of an earlier expiry, current
 gate checks and browser outcomes above stay requirements. HIL-1952 retired the
 holder's erasure removals and HIL-1999 retired its merge terminal removals.
-The personal owners apply the saved cap, or remove their rows for a zero term,
-on the frame of the sweep that the term asked for.
 
 ## The delayed removal
 
