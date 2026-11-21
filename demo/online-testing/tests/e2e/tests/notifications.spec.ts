@@ -23,8 +23,6 @@ import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMa
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
-// spec-owner: demo — carries Online Testing's notification and account journeys
-
 // Notification-center e2e for the online-testing demo: the Angular half of the center
 // coverage binance-btc-tracker and ecommerce-shop carry. A notification is emitted
 // through the live daemon over its command channel (framework/frontend/scripts/notifications.mjs), so the

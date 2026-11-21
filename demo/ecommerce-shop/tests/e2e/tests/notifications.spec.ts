@@ -20,8 +20,6 @@ import { waitForMailTo } from '../../../../../framework/frontend/scripts/standMa
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
-// spec-owner: demo — carries Ecommerce's notification and account journeys
-
 // Notification-center e2e for this demo (HIL-558), the React half of the
 // same center coverage binance-btc-tracker and online-testing carry. A notification
 // is emitted through the live daemon over its command channel
