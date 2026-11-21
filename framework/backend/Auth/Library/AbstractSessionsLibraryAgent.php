@@ -6608,8 +6608,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         if ($survivorUserId === $loserUserId) {
             throw new ValidationException('The merge requires two different positive account ids.');
         }
-        $terminal = $this->savedTerminalMerge($survivorUserId, $loserUserId);
-        $this->answerAccountMergeCommand($data, $terminal ?? $this->openAccountMerge(
+        $completed = $this->savedCompletedMerge($survivorUserId, $loserUserId);
+        $this->answerAccountMergeCommand($data, $completed ?? $this->openAccountMerge(
             $survivorUserId,
             $loserUserId,
             new AccountMergeChoice($this->passwordFate($payload), $this->secondFactorFate($payload), null, null),
@@ -6753,7 +6753,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * @return ?AccountOperation Latest completed merge of this exact pair
      * @throws HilosException When the latest merge cannot be read
      */
-    private function savedTerminalMerge(int $survivorUserId, int $loserUserId): ?AccountOperation
+    private function savedCompletedMerge(int $survivorUserId, int $loserUserId): ?AccountOperation
     {
         $latest = Hilos::$db->accountOperations->latestMergeNaming($loserUserId);
         if ($latest === null || $latest->kind !== AccountOperationKind::Merge || $latest->survivorUserId !== $survivorUserId

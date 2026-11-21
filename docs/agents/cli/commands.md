@@ -148,7 +148,9 @@ fates, through the daemon channel. The command sends start or observe
 from the form that was typed, holds an open merge until the caller's deadline,
 and does not block the event loop. A channel disconnect is neither cancellation
 nor success: the outcome is unknown, and the merge is observed again. An open
-snapshot exits 6. Success means durable end. HIL-1999 connected this command
+snapshot exits 6. Success means durable end. A start of a pair whose latest
+merge completed answers that saved end; after not_started it opens a new
+operation. HIL-1999 connected this command
 to the live operation path; an open or unknown outcome remains observable by
 operation id.
 
