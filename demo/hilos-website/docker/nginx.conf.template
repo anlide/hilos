@@ -101,8 +101,10 @@ http {
             proxy_read_timeout 3600s;
         }
 
+        # / serves the prerendered home page; only deep links receive
+        # the index.html SPA shell.
         location = / {
-            try_files /index.html =404;
+            try_files /home.html =404;
         }
 
         # Hybrid SSG: a prerendered public page (<route>.html) is served as

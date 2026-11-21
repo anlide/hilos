@@ -15,7 +15,8 @@
     "lint": "eslint . --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@hilos/core": "file:../../../framework/frontend/core",
@@ -25,14 +26,17 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@vitejs/plugin-vue": "^6.0.10",
+    "@vue/test-utils": "^2.5.1",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.12.0",
+    "happy-dom": "^21.0.4",
     "prettier": "^3.9.10",
     "sass-embedded": "^1.107.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.1",
     "vite": "^7.3.7",
+    "vitest": "^4.1.12",
     "vue-tsc": "^3.3.14"
   }
 }

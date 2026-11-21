@@ -73,7 +73,7 @@
         "test:unit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm hilos-website-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite unit",
         "test:integration": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm hilos-website-cli-test php vendor/bin/phpunit -c tests/phpunit.xml --testsuite integration",
         "test:phpunit": "docker compose -f docker/docker-compose.test.yml --profile cli run --build --rm hilos-website-cli-test php vendor/bin/phpunit -c tests/phpunit.xml",
-        "test:check": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm hilos-website-frontend-cli-test sh -c \"set -e; node ../../../framework/frontend/scripts/npm-install-if-stale.mjs; echo '--- frontend: check'; npm run check; echo '--- frontend: lint'; npm run lint; echo '--- frontend: format-check'; npm run format:check\""
+        "test:check": "docker compose -f docker/docker-compose.test.yml --profile cli run --rm hilos-website-frontend-cli-test sh -c \"set -e; node ../../../framework/frontend/scripts/npm-install-if-stale.mjs; echo '--- frontend: check'; npm run check; echo '--- frontend: test'; npm run test; echo '--- frontend: lint'; npm run lint; echo '--- frontend: format-check'; npm run format:check\""
     },
     "config": {
         "process-timeout": 0,

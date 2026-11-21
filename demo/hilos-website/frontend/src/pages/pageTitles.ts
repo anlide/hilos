@@ -11,5 +11,5 @@ export const appName = 'Hilos'
 
 /** Page key → browser-tab title, for the demo's own pages. */
 export const pageTitles: Record<string, string> = {
-  [PAGE_MAIN]: 'Home',
+  [PAGE_MAIN]: 'Real-time PHP framework',
 }

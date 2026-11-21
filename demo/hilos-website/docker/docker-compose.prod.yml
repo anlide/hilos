@@ -124,6 +124,7 @@ services:
     environment:
       NPM_CONFIG_UPDATE_NOTIFIER: "false"
       NODE_OPTIONS: "--no-experimental-webstorage"
+      HILOS_SITE_ORIGIN: ${HILOS_SITE_ORIGIN:-https://hilos-dev.org}
     command: sh -c "npm install && npm run build"
     profiles:
       - build

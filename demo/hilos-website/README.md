@@ -9,11 +9,27 @@ Hilos is, the WAWTech video and the catalog of the demos.
 
 ### Today
 
-A thin Vue shell on Hilos:
+A Vue site on Hilos:
 
-- **Home** at `/` is empty for now: the title "Hilos" and a footer that opens
-  About, Terms, Privacy and License. The header shows "Hilos" as text, with no
-  sign-in button.
+- **Home** at `/` explains Hilos and shows the WAWTech walkthrough video.
+  The header shows "Hilos" as text, with no sign-in button.
+- **Demo catalog**: two groups — working demos (Chat and E-commerce shop),
+  followed by ten application starters. Each entry carries a description,
+  its frontend, a source link and, where available, an "Open demo" link.
+  Entries without a public address say so. The markup lives in
+  `frontend/src/views/Main/DemoCatalog.vue`; edit it and rebuild to change
+  the catalog.
+- **Video**: put `hilos.mp4` in the installation's `media/` data directory
+  (`demo/hilos-website/data/media/hilos.mp4` locally). nginx serves it
+  read-only at `/media/hilos.mp4`. The file stays out of git; when it is
+  missing, the player frame shows a placeholder.
+- **Search engines**: `/` is prerendered into `home.html`, with the story and
+  catalog available without JavaScript, a description, Open Graph metadata
+  and a canonical URL. About, Terms, Privacy and License are prerendered too;
+  Privacy explains visit recording. Deep links receive the `index.html` SPA
+  shell. `robots.txt`, `sitemap.xml` and home metadata use `HILOS_SITE_ORIGIN`
+  from the build environment: `https://localhost` by default and
+  `https://hilos-dev.org` in the production compose file.
 - **Sign-in only at `/hilos`**, and registration is closed: an address without
   an account is told so, and no account is created. The one account is issued
   by a command — `admin:create <sessionToken>` makes the browser session an
@@ -21,34 +37,9 @@ A thin Vue shell on Hilos:
   password, confirmed by a code sent by mail.
 - **Admin**: Analytics — the visits of the site — Settings, and the journal of
   the email deliveries.
-- **`/media/`**: nginx serves the `media/` directory of the installation's data
-  read-only, so a large file such as the video stays out of git.
 
-The site has no e2e: its PHP tests and the frontend check run in the test stack,
-and what a person sees the owner accepts by hand.
-
-### What it is going to show
-
-- **Home** at `/`: a short account of what Hilos is and what the demos show,
-  and the WAWTech video about Hilos.
-- **Demo catalog**: two groups — the filled demos (chat, ecommerce-shop) on
-  top, and the scaffolds apart below them: the other demos that have a
-  frontend. An entry carries the name, a short description, the frontend, a
-  link to the application and a link to the sources. A demo without a public
-  address says so on its own entry — a note, not a third group. A demo
-  directory without code is not shown.
-- **Catalog in code**: the HTML sits right in the code of the home page and
-  changes by editing the code and rebuilding. There is no CMS, no editor, no
-  editing of the catalog from the admin and no second language.
-- **The video file** is not in git: it lies in `media/` of the installation's
-  data and is served at `/media/`.
-- **Owner-only admin**: sign-in only at `/hilos`, with no sign-in button in the
-  header; there is no registration — the single account is issued by a
-  command; the admin carries the Analytics section — the visits of the site.
-- **Public pages** About, Terms, Privacy and License; Privacy says that the
-  site records visits.
-- **Open to search engines**: the home page is prerendered into the build — the
-  catalog is in the page source without JavaScript.
+The site has no e2e: its PHP tests and frontend checks and unit tests run in
+its test stack, and the owner accepts the visible result by hand.
 
 ## Run it locally
 
@@ -106,7 +97,7 @@ the container `env_file`.
 | `composer run test:install-deps` | install the locked PHP dependencies in the test CLI container |
 | `composer run test:db-reset` | reset the test database |
 | `composer run test:phpunit` | run the whole PHPUnit suite |
-| `composer run test:check` | frontend type-check, lint and format check |
+| `composer run test:check` | frontend type-check, unit tests, lint and format check |
 | `composer run test:down` | stop the test stack |
 
 ## Thin on purpose
