@@ -1234,10 +1234,13 @@ scenario makes under a unique address — with `seedTestUser`, `createTestUser` 
 through a sign-up the scenario proves in the UI — lives until the clean cycle,
 and so does everything the scenario did around that person: sessions, a merge
 and its operation history, a deletion request, notifications. So do the admin
-rights `grantAdminToSelf` and `createTestAdmin` grant. The test does not owe
-their cleanup: no command removes a person, the unique address already keeps one
-test's people apart from another's, and removing them in every spec would pay a
-command and a teardown for the order the clean cycle restores anyway. Touch only
+rights the scenario grants its own people — through `grantAdminToSelf`,
+`createTestAdmin` or a direct `setAdmin(userId, true)`. The test does not owe
+their cleanup: no cleanup command removes a person — `test:account:force-purge`
+is the erasure a scenario proves, and a spec does not take it into its teardown
+— the unique address already keeps one test's people apart from another's, and
+removing them in every spec would pay a command and a teardown for the order
+the clean cycle restores anyway. Touch only
 your own people, and do not rely on people an earlier test left behind. Do not
 assert an exact number of people in the system, or that a person shows on the
 first page of a list without a search: the people of other tests share the
@@ -1401,9 +1404,14 @@ and settles on its dropdown; `unreadBadge` is the unread count, matched at the f
 of its text because its label carries a visually-hidden suffix. `enableEmailChannel`
 turns the email channel on from the communications hub and expects the operator's
 page already on `/hilos/communications` — navigation is the demo's. It is
-idempotent: the channel's switch is a setting of the whole stand, so a channel
-another test switched on is left alone. The emit that makes a notification exist
-and the sign-in that makes its recipient are the demo's; so are the assertions.
+idempotent: the channel's switch is a setting of the whole stand, on by the demo
+catalog's default, so a channel already on is left alone. Being idempotent does
+not exempt it from cleanup: the switch is a borrowed setting like any other —
+call `borrowSetting(cleanup, 'notifications.channel.email.enabled')` before it,
+and teardown restores what the test found
+([Preconditions — test commands with owned cleanup](#preconditions--test-commands-with-owned-cleanup)).
+The emit that makes a notification exist and the sign-in that makes its
+recipient are the demo's; so are the assertions.
 
 ### `leaveSecondAdmin(browser, grantAdmin, contextOptions)` — an administrator to stay behind
 
