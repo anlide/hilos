@@ -299,16 +299,6 @@ describe('createHilosAccountMergeWindow', () => {
       },
     )
 
-    it('returns legacy without opening an observation window', async () => {
-      const { window, start, reply } = setup()
-      const { handle, done } = start()
-      reply(handle.requestId)
-      await expect(done).resolves.toBe('legacy')
-      expect(window.opened.get()).toBe(false)
-      expect(window.view.get()).toBeNull()
-      expect(window.startNotice.get()).toBeNull()
-    })
-
     it.each(['timeout', 'disconnected', 'invalid-reply'])(
       'notices %s and adopts the exact new operation',
       async (outcome) => {

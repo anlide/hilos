@@ -40,16 +40,16 @@ has a submit of its own in flight.
 
 ## What is stored, and who owns it
 
-These are current grants and calls, including the retained foreign writes.
-The transitions below do not make a future owner callable today.
+These are current grants and calls. HIL-1999 retired the sessions holder's
+borrowed merge writes; merge and erasure changes now run at the row owners.
 
 | Table | Writers and operations today | What |
 |---|---|---|
-| `hilos_second_factor` | person's agent `Add`/`Update`/`Remove`; holder `Update`/`Remove` for the legacy merge and `Remove` for erasure | apps: base32 secret, last accepted step, confirmed or not |
-| `hilos_second_factor_backup_code` | person's agent `Add`/`Update`/`Remove`; holder `Update`/`Remove` for the legacy merge and `Remove` for erasure | one row per code, spent by a conditional write |
-| `hilos_second_factor_reset` | person's agent `Add`/`Update`/`Remove`; holder `Remove` for the legacy merge and erasure | removals: when asked, when due, the cancel token, last notice |
-| `hilos_second_factor_setting` | person's agent `Add`/`Update`/`Remove` (`Remove` in its erasure part); holder `Add`/`Update`/`Remove` for the merge's wait upsert and merge/erasure deletion | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
-| `hilos_second_factor_trust` | person's agent `Add`/`Update`/`Remove` for grant-or-renew and personal policy; holder `Remove` for the legacy merge and erasure | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
+| `hilos_second_factor` | person's agent `Add`/`Update`/`Remove`, including merge transfer and erasure | apps: base32 secret, last accepted step, confirmed or not |
+| `hilos_second_factor_backup_code` | person's agent `Add`/`Update`/`Remove`, including merge transfer and erasure | one row per code, spent by a conditional write |
+| `hilos_second_factor_reset` | person's agent `Add`/`Update`/`Remove`, including merge and erasure | removals: when asked, when due, the cancel token, last notice |
+| `hilos_second_factor_setting` | person's agent `Add`/`Update`/`Remove`, including merge transfer and erasure | the person's removal wait and a shorter one not yet in force; the app-code miss count, its window, the lock step and its end |
+| `hilos_second_factor_trust` | person's agent `Add`/`Update`/`Remove` for grant-or-renew, merge and personal policy | a browser (session row) trusted for a person until a moment, and the moment it was last granted |
 | `hilos_second_factor_trust_restriction` | settings library `Add` in the transaction of the save that shortened the term or turned the factor off; no `Update` or `Remove`; the holder and the person's agent read it | one shortening: the save moment and a term of 0 to 365 days; trusts granted no later than the save live no longer than the save plus the term, and 0 takes them out |
 
 The personal edits moved in HIL-1406 are written by the person's agent
@@ -111,18 +111,15 @@ All five sets are locked without waiting before the transaction rereads them;
 a busy set refuses the operation. Browser requests also carry the two presence
 flags shown in the summary, and a mismatch refuses without writing.
 
-The holder currently claims settings with all three operations for that wait
-upsert and the terminal deletions. The person's own wait is created and edited
-by their agent (HIL-1406). The complete-only topology comparison does not catch
-this overlap; it is named terminal debt, not a permission for partial DB
-co-owners. HIL-1952 retired the holder's old erasure rights; old merge rights
-remain until their own
-(not in the code yet — HIL-1999). The detailed
+The sessions holder no longer claims these tables for merge or erasure writes.
+HIL-1952 retired its erasure rights and HIL-1999 retired its merge rights; the
+person's agent owns its rows, including the wait created and edited by that
+agent (HIL-1406). The detailed
 [erasure](account-operations.md#erasure) and [merge](account-operations.md#merge)
 canons give each prepared capability its own address. For merge, each owner
 checks its protection, shown flag and pending-removal refusals at preparation
-(built; its sender, the merge coordinator, is built by HIL-2000 and goes live at
-the merge switch, HIL-1999). Reservation guards cover the
+(built; the live merge coordinator sends these duties since HIL-1999).
+Reservation guards cover the
 existing personal protection mutations and affected policy entrances, including
 late service frames (built, HIL-1989). Saved trust policy still limits reads;
 startup and service application defer the material writes while this account is
@@ -135,12 +132,12 @@ done answer carries only committed material. The reset notice follows commit.
 New sign-in grants recheck the saved give fact before binding, including OAuth
 no-trip, live, held and resumed paths; survivor sign-in remains refused through
 receipt even when DB sync was missed. Grant-or-renew has no holder fallback.
-These guards are active, but the prepared merge remains inert until HIL-1999.
+These guards and the owner-driven merge are live since HIL-1999.
 The loser transfers or deletes its factor
 and backup codes by fate, preserving spent status, and removes its other
 second-factor rows with its nonsecret result and separate private copy in the
 [prepared give](account-operations.md#the-prepared-loser-give), sent by the merge
-coordinator, built by HIL-2000 and live at the merge switch (HIL-1999). The [prepared survivor receipt](account-operations.md#the-prepared-survivor-receipt)
+coordinator, live since HIL-1999. The [prepared survivor receipt](account-operations.md#the-prepared-survivor-receipt)
 writes the longer saved-source/current-own effective wait for `BOTH`, clears
 pending shortening and preserves app-code misses and lock state. Other fates
 leave settings untouched. It deletes its own trusts when the loser's
@@ -148,15 +145,14 @@ preparation captured a confirmed factor, under the existing policy. These own
 writes and the exact `go`/`receive` result commit in one participant transaction.
 Warm receive uses applied memory; local startup resumes an existing obligation
 from current mapped own rows, including a new owner in the same worker.
-Prepared hand-over transport, coordinator, and DB recovery continue these
-prepared duties; production callers remain on the legacy path until HIL-1999.
+The live hand-over transport, coordinator, and DB recovery continue these
+owner duties. HIL-1999 connected the administrator and CLI callers to them.
 The prepared holder `go/sessions` duty ends loser
 sessions after the exact give; `go/survivor_sessions` ends survivor sessions
 after the exact receipt only when the saved give retained the loser's factor.
 Each commits its strict `{"sessions":<n>,"accessLog":<m>}` result with its
 work and publishes session/profile notifications only after commit (HIL-1995).
-These duties remain prepared: normal merge production is built by HIL-2000 and
-goes live at the merge switch (not in the code yet — HIL-1999).
+These duties are part of the live merge path from HIL-1999.
 
 The loser's sessions end after the prepared duty commits. When its factor first
 protects the survivor, the survivor's sessions end after receipt too. A
@@ -305,13 +301,13 @@ the sweep of HIL-1901 which work is unfinished. Today the sweep is what sends
 the frame; the switch-off below sends it through the request of the next
 paragraph (HIL-1909), and so does the term (HIL-1908).
 The owner-only grant path closes the old holder-insert race with a concurrent
-revocation. Two gaps remain. First, the skew of the cluster's clocks inside the
-window: the confirmation is a moment of the holder's clock and the password
-change one of the agent's, so a change that follows the confirmation by less
-than the skew can carry the earlier moment when the agent's clock runs behind.
-Second, the retained legacy merge still deletes the survivor's trusts in the
-holder's transaction; that path remains until the merge cutover HIL-1999. The
-prepared merge's saved-fact sign-in gate does not activate that cutover.
+revocation. A merge also refuses a browser-trust renewal when the latest merge
+record naming that person was created at or after the grant moment. A merge
+that was canceled or did not change trust can therefore still require a fresh
+second-factor proof. One gap remains: clock skew inside the window can let a
+password change that follows confirmation by less than the skew carry the
+earlier moment when the agent's clock runs behind. This merge check does not
+close that clock-skew gap.
 
 Missed application is found in two places (HIL-1901). The sessions holder
 sweeps for it: the framework cron rule
@@ -358,10 +354,10 @@ The personal owners apply the saved cap, or remove their rows for a zero term,
 on the frame of the sweep that the term asked for (HIL-1908). They also forget their trusts when installation
 switch-off calls for it, on the frame of the sweep that the switch-off asked for
 (HIL-1909). The saved-moment rule, no extension of an earlier expiry, current
-gate checks and browser outcomes above stay requirements. The current holder calls remain
-until each ordinary move is enabled. HIL-1952 retired its erasure removals;
-the merge's terminal removals remain until its switch
-(not in the code yet — HIL-1999).
+gate checks and browser outcomes above stay requirements. HIL-1952 retired the
+holder's erasure removals and HIL-1999 retired its merge terminal removals.
+The personal owners apply the saved cap, or remove their rows for a zero term,
+on the frame of the sweep that the term asked for.
 
 ## The delayed removal
 

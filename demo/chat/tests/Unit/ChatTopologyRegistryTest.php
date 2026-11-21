@@ -3279,17 +3279,7 @@ final class ChatTopologyRegistryTest extends TestCase
      */
     public function testSharedOwnershipDebtDoesNotGrow(): void
     {
-        $ceiling = [
-            'eventMessages' => ['HIL-1999'],
-            'identities' => ['HIL-1999'],
-            'passkeyCredentials' => ['HIL-1999'],
-            'secondFactorBackupCodes' => ['HIL-1999'],
-            'secondFactorResets' => ['HIL-1999'],
-            'secondFactorSettings' => ['HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1999'],
-            'secondFactors' => ['HIL-1999'],
-            'users' => ['HIL-1999'],
-        ];
+        $ceiling = [];
         foreach (Hilos::SHARED_DB_OWNERS as $collection => $pending) {
             $this->assertArrayHasKey($collection, $ceiling);
             $this->assertNotEmpty($pending);

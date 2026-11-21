@@ -810,15 +810,6 @@ final class SecondFactorCeilingTestHolder extends AbstractSessionsLibraryAgent
     {
     }
 
-    /**
-     * @param int $survivorUserId Surviving account
-     * @param int $loserUserId Folded account
-     * @return array<string, int> This fixture has no project rows
-     */
-    protected function applyAccountMerge(int $survivorUserId, int $loserUserId): array
-    {
-        return [];
-    }
 }
 
 /**

@@ -8,6 +8,7 @@ use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\AccountOperation\AccountMergeCoordinator;
 use Hilos\Auth\AccountOperation\AccountMergeRefusal;
 use Hilos\Auth\AccountOperation\AccountOperationCircle;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
@@ -192,6 +193,8 @@ final class AccountMergeBrowserStartIntegrationTest extends HilosSessionIntegrat
         yield 'folded-loser' => ['folded-loser', 'Loser (#12) was already merged into Third (#13)'];
         yield 'erase-survivor' => ['erase-survivor', 'Survivor (#11) is being deleted'];
         yield 'erase-loser' => ['erase-loser', 'Loser (#12) is being deleted'];
+        yield 'wrong-step-up' => ['wrong-step-up', StepUpMessages::EXPIRED];
+        yield 'former-admin' => ['former-admin', 'Only an active administrator can do this'];
         yield 'password' => ['password', 'Both accounts have a password: choose which one stays'];
         yield 'password-fate' => ['password-fate', 'Unknown account-merge password fate'];
         yield 'second-factor-fate' => ['second-factor-fate', 'Unknown account-merge second-factor fate'];
@@ -206,6 +209,12 @@ final class AccountMergeBrowserStartIntegrationTest extends HilosSessionIntegrat
     {
         if ($case === 'no-step-up') {
             Database::sqlRun('DELETE FROM `hilos_step_up`');
+        }
+        if ($case === 'wrong-step-up') {
+            Database::sqlRun('UPDATE `hilos_step_up` SET `operation` = ?', [StepUpOperationKey::GRANT_ADMIN]);
+        }
+        if ($case === 'former-admin') {
+            AccountMergeRouteTestAdminAudience::$ids = [];
         }
         if (str_starts_with($case, 'folded-')) {
             Database::sqlRun('INSERT INTO `hilos_user_merge` (`user_id`, `survivor_user_id`, `merged_at`) VALUES (?, ?, 1)',
@@ -232,6 +241,25 @@ final class AccountMergeBrowserStartIntegrationTest extends HilosSessionIntegrat
         self::assertSame([], Database::sql("SELECT * FROM `hilos_account_operation` WHERE `kind` = 'merge'")->rows());
         self::assertSame([], Database::sql('SELECT * FROM `hilos_account_operation_assignment`')->rows());
         self::assertSame([], $this->pending);
+    }
+
+    /** Closing an unstarted erasure releases the same accounts for a new live merge. */
+    public function testAMergeCompletesAfterTheSameAccountsErasureEndsNotStarted(): void
+    {
+        $erasure = $this->asHolder(static fn () => Hilos::$db->accountOperations->actions->recordErasure(
+            1, self::LOSER, AccountOperationCircle::fromArray([self::LOSER], self::LOSER),
+        ));
+        $refusal = $this->start($this->request());
+        self::assertInstanceOf(PageActionErrorSignalData::class, $refusal);
+        self::assertSame('Loser (#12) is being deleted', $refusal->reason);
+        self::assertTrue($this->asHolder(static fn () => $erasure->actions->finish($erasure->stage, AccountOperationOutcome::NotStarted)));
+
+        $ack = $this->start($this->request());
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $ack);
+        self::assertNotSame($erasure->id, $ack->reply['operationId']);
+        $this->settle();
+        self::assertSame('completed', $this->row($ack->reply['operationId'])['outcome']);
+        self::assertSame(self::SURVIVOR, Hilos::$db->userMerges[self::LOSER]->survivorUserId);
     }
 
     public function testAChangedProtectionSnapshotIsAcceptedAndThenRefusedByTheOwners(): void
@@ -296,16 +324,24 @@ final class AccountMergeBrowserStartIntegrationTest extends HilosSessionIntegrat
         self::assertCount(1, Database::sql('SELECT `id` FROM `hilos_account_operation`')->rows());
     }
 
-    public function testThePreparedHandlerHasNoProductionCallerAndTheOldRouteIsUnchanged(): void
+    public function testTheExistingRouteUsesTheLiveMergeHandler(): void
     {
         self::assertSame(AccountMergeSignalData::class, AbstractSessionsLibraryAgent::AGENT_SIGNALS[HilosSignalConstants::HILOS_ACCOUNT_MERGE]);
-        $source = file_get_contents(dirname(__DIR__, 2) . '/backend/Auth/Library/AbstractSessionsLibraryAgent.php');
-        $route = explode('case HilosSignalConstants::HILOS_ACCOUNT_MERGE:', $source, 2)[1];
-        $route = explode('case ', $route, 2)[0];
-        self::assertStringContainsString('$this->handleAccountMergeRequest($merge);', $route);
-        self::assertStringNotContainsString('handlePreparedAccountMergeRequest', $route);
-        self::assertSame(1, substr_count($source, 'handlePreparedAccountMergeRequest('));
-        self::assertNotContains('handlePreparedAccountMergeRequest', AbstractSessionsLibraryAgent::AGENT_SIGNALS);
+        $ack = $this->start($this->request());
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $ack);
+        self::assertSame($ack->reply['operationId'], (int)Database::sql(
+            'SELECT `id` FROM `hilos_account_operation`',
+        )->firstRow()['id']);
+    }
+
+    public function testDisabledMergeStepUpAcceptsWithoutAConfirmation(): void
+    {
+        Database::sqlRun('DELETE FROM `hilos_step_up`');
+        Hilos::$setting = new SettingsAccessor(AccountMergeRouteTestMergeOffCatalog::class);
+        $ack = $this->start($this->request());
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $ack);
+        $this->settle();
+        self::assertSame('completed', $this->row($ack->reply['operationId'])['outcome']);
     }
 
     /**
@@ -450,7 +486,7 @@ final class BrowserMergeHolder extends AbstractSessionsLibraryAgent
     /** @param AccountMergeSignalData $request Prepared browser request */
     public function startBrowserMerge(AccountMergeSignalData $request): void
     {
-        $this->handlePreparedAccountMergeRequest($request);
+        $this->onSignalAgent(new AgentSignalData($request), '', HilosSignalConstants::HILOS_ACCOUNT_MERGE);
     }
 
     /**

@@ -26,7 +26,6 @@ use Hilos\Database\Entity\Item\PasskeyCredential as EntityPasskeyCredential;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Identity\IdentityExportEntry;
 use Hilos\Database\Identity\IdentityType;
-use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\Object\Objects;
 use Hilos\Database\SqlParam;
@@ -549,61 +548,6 @@ class Identities extends Objects
     }
 
     /**
-     * Re-points every identity owned by a loser user to a survivor user (HIL-378).
-     *
-     * Account-merge write path: the survivor absorbs the loser's sign-in
-     * methods. Each identity keeps its (type, identifier) and only its owner
-     * changes, so a move is a targeted user_id write broadcast through the object
-     * (a DB_SYNC event re-emits the survivor's identities projection). A link is
-     * never moved onto a duplicate: (type, identifier) is globally unique, so
-     * should the survivor already own an identical pair the loser's row is
-     * hard-deleted rather than moved (HIL-282 "never move a link"). Returns the
-     * number of identities actually moved; dropped duplicates are not counted.
-     *
-     * The passwords are settled BEFORE anything moves (HIL-692), because moving them
-     * first would build the very state the one-password rule forbids and then ask this
-     * method to unbuild it. `$passwordFate` has no default on purpose: an account merge
-     * has to name what happens to a password even when the answer is "nothing to name",
-     * and a default would let the one caller that forgot look exactly like the ones that
-     * decided. Null is that "nothing to name" and is only legal when at most one of the
-     * two accounts has a password - {@see passwordFateNeeded()} is how a caller asks
-     * that in time to refuse in its own words.
-     *
-     * @param int $fromUserId Loser user id whose identities are absorbed
-     * @param int $toUserId Survivor user id that receives the identities
-     * @param ?PasswordFate $passwordFate Whose password stays, or null when neither pair of accounts holds two
-     * @return int Number of identities re-pointed to the survivor
-     * @throws LogicException When both accounts hold a password and no fate was named
-     * @throws DatabaseException If a lookup, move, demote, or delete query fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws CreateNotAllowedException When no truth source in this process may add a row here
-     * @throws WriteNotAllowedException When no truth source in this process may write that row
-     */
-    public function rePointToUser(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): int
-    {
-        $this->settlePasswords($fromUserId, $toUserId, $passwordFate);
-
-        $moved = 0;
-        foreach ($this->listByUser($fromUserId) as $identity) {
-            $existing = $this->findByIdentity($identity->type, $identity->identifier);
-            if ($existing !== null && $existing->userId === $toUserId) {
-                $identity->delete();
-                if ($identity->id !== null) {
-                    unset($this[$identity->id]);
-                }
-                continue;
-            }
-
-            $identity->userId = $toUserId;
-            $identity->sync();
-            $moved++;
-        }
-
-        return $moved;
-    }
-
-    /**
      * Whether a merge of these two accounts has to be told whose password stays (HIL-692).
      *
      * The question a merge asks its operator BEFORE it opens a transaction: only two
@@ -694,8 +638,7 @@ class Identities extends Objects
      * (`magic_link`, address), so a password on that address can then be minted for any
      * account at all. A row whose address ALREADY has a `magic_link` is deleted because
      * (type, identifier) is globally unique and the address is carried by the row that is
-     * there - the same reasoning {@see rePointToUser()} uses for a duplicate it declines
-     * to move. Either deletion is written to the log with the address and both merged
+     * there. Either deletion is written to the log with the address and both merged
      * accounts: it takes a sign-in row away, and no operator asked for that by name. The
      * line goes down inside the merge transaction, so a rollback leaves it standing as
      * the record of an attempt.
@@ -769,44 +712,6 @@ class Identities extends Objects
             }
             $this->objects[$id]->delete();
             unset($this[$id]);
-        }
-    }
-
-    /**
-     * Applies the named fate to the two accounts' passwords, before any identity moves.
-     *
-     * One reading of the name for all three cases, and no refusals of its own: the value
-     * says whose password STAYS, so the other one is demoted whether or not the account
-     * naming it has a password of its own. "Keep the survivor's, and the survivor has
-     * none" is an outcome the operator is entitled to ask for, not a typo to reject.
-     *
-     * @param int $fromUserId Loser user id whose identities are absorbed
-     * @param int $toUserId Survivor user id that receives them
-     * @param ?PasswordFate $passwordFate Whose password stays, or null when nobody had to choose
-     * @throws LogicException When both accounts hold a password and no fate was named
-     * @throws DatabaseException If a lookup, erase, delete, or update query fails
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     */
-    private function settlePasswords(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): void
-    {
-        $loserPassword = $this->findPasswordByUser($fromUserId);
-        $survivorPassword = $this->findPasswordByUser($toUserId);
-
-        if ($passwordFate === null) {
-            if ($loserPassword !== null && $survivorPassword !== null) {
-                throw new LogicException('Merging two accounts with a password each needs a password fate');
-            }
-
-            return;
-        }
-
-        if ($survivorPassword !== null && $passwordFate !== PasswordFate::SURVIVOR) {
-            $this->demotePasswordToMagicLink($survivorPassword, $fromUserId, $toUserId);
-        }
-
-        if ($loserPassword !== null && $passwordFate !== PasswordFate::LOSER) {
-            $this->demotePasswordToMagicLink($loserPassword, $fromUserId, $toUserId);
         }
     }
 

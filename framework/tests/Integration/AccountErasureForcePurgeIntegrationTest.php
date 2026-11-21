@@ -373,7 +373,7 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
     }
 
     /** The ordinary merge command refuses an account already claimed by the live force opening. */
-    public function testTheOldMergeRefusesAnAccountOfTheNewOperation(): void
+    public function testMergeRefusesAnAccountOfTheErasureOperation(): void
     {
         $root = self::seedPerson();
         $other = self::seedPerson();
@@ -381,6 +381,7 @@ final class AccountErasureForcePurgeIntegrationTest extends HilosSessionIntegrat
         $this->operationFrames();
 
         $this->sendCommand(new CommandRequestDTO('merge-after-opening', CliCommands::ACCOUNT_MERGE, [
+            AccountMergeCommandConstants::FIELD_MODE => AccountMergeCommandConstants::MODE_START,
             AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => $other,
             AccountMergeCommandConstants::FIELD_LOSER_USER_ID => $root,
         ]));

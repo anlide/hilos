@@ -42,24 +42,6 @@ class SecondFactors extends Objects
     public const string COLLECTION_KEY = HilosDbContext::secondFactors;
 
     /**
-     * Locks both account sets before merge reads them, without waiting for another writer.
-     * The caller must hold a transaction; this read neither opens nor commits one.
-     *
-     * @param int $survivorId Surviving account
-     * @param int $loserId Folded account
-     * @throws DatabaseException When a set is busy or its rows cannot be locked
-     */
-    public function lockForMerge(int $survivorId, int $loserId): void
-    {
-        Database::sql(
-            'SELECT `' . EntitySecondFactor::user_id . '` FROM `' . EntitySecondFactor::_table
-                . '` WHERE `' . EntitySecondFactor::user_id . '` IN (?, ?) ORDER BY `'
-                . EntitySecondFactor::user_id . '` FOR UPDATE NOWAIT',
-            [$survivorId, $loserId],
-        );
-    }
-
-    /**
      * Opens an enrolment: an unconfirmed authenticator holding a fresh secret.
      *
      * The personal owner calls this after {@see dropUnfinished()} in the same transaction
@@ -122,29 +104,6 @@ class SecondFactors extends Objects
         }
 
         return $result;
-    }
-
-    /**
-     * Moves confirmed authenticators inside the account-merge transaction.
-     *
-     * @param int $fromUserId Folded account
-     * @param int $toUserId Surviving account
-     * @throws WriteNotAllowedException When the caller cannot update both sets
-     * @throws CreateNotAllowedException Never for persisted rows; declared by sync
-     * @throws DatabaseException When reading or moving a row fails
-     * @throws InvalidArgumentException When a query or sync frame is invalid
-     * @throws SourceChangeSubscriberException When a change subscriber fails
-     * @throws ObjectGetIdStringNotImplementedException When a moved row has no key
-     */
-    public function rePointConfirmedToUser(int $fromUserId, int $toUserId): void
-    {
-        foreach ($this->listByUser($fromUserId) as $row) {
-            if ($row->confirmedAt === null) {
-                continue;
-            }
-            $row->userId = $toUserId;
-            $row->sync();
-        }
     }
 
     /**

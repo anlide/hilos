@@ -870,17 +870,17 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
       detail.hasSecondFactor,
       selectedCandidate.hasSecondFactor,
     )
-    const outcome = mergeWindow.track(handle, {
-      survivorUserId: detail.id,
-      loserUserId: selectedCandidate.id,
-      passwordFate: fate ?? null,
-      secondFactorFate: secondFactorFate ?? null,
-      expectedSurvivorHasSecondFactor: detail.hasSecondFactor,
-      expectedLoserHasSecondFactor: selectedCandidate.hasSecondFactor,
-    })
-    await mergeAction.run(handle)
-    // SCAFFOLD: the synchronous producer remains until HIL-1999.
-    if ((await outcome) === 'legacy') closeMerge()
+    await Promise.all([
+      mergeWindow.track(handle, {
+        survivorUserId: detail.id,
+        loserUserId: selectedCandidate.id,
+        passwordFate: fate ?? null,
+        secondFactorFate: secondFactorFate ?? null,
+        expectedSurvivorHasSecondFactor: detail.hasSecondFactor,
+        expectedLoserHasSecondFactor: selectedCandidate.hasSecondFactor,
+      }),
+      mergeAction.run(handle),
+    ])
   }
 
   function openEdit(): void {

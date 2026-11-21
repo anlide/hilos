@@ -76,6 +76,7 @@ use Hilos\Hilos;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 use Hilos\Users\Agent\AbstractUserAgent;
 use Hilos\Users\SecondFactorFate;
+use Hilos\Utils\Logger;
 use Hilos\Users\AccountErasure;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Assert;
@@ -148,6 +149,139 @@ final class AccountMergeCoordinatorIntegrationTest extends HilosSessionIntegrati
     protected function newPersonAgent(string $userId): AbstractUserAgent
     {
         return new MergeCoordinatorUser($userId);
+    }
+
+    /** @return iterable<string, array{?PasswordFate, bool, bool, bool, ?int, ?int}> Fate, password presence, proof, link owner, kept owner */
+    public static function passwordAddressChoices(): iterable
+    {
+        yield 'keep survivor' => [PasswordFate::SURVIVOR, true, true, true, null, self::SURVIVOR];
+        yield 'keep loser' => [PasswordFate::LOSER, true, true, true, null, self::LOSER];
+        yield 'keep neither' => [PasswordFate::NONE, true, true, true, null, null];
+        yield 'drop unproven survivor' => [PasswordFate::LOSER, true, true, false, null, self::LOSER];
+        yield 'drop both unproven' => [PasswordFate::NONE, true, true, false, null, null];
+        yield 'source link collision' => [PasswordFate::SURVIVOR, true, true, true, 11, self::SURVIVOR];
+        yield 'survivor link collision' => [PasswordFate::SURVIVOR, true, true, true, self::SURVIVOR, self::SURVIVOR];
+        yield 'name absent survivor' => [PasswordFate::SURVIVOR, false, true, true, null, null];
+        yield 'automatic source password' => [null, false, true, true, null, self::LOSER];
+        yield 'automatic target password' => [null, true, false, true, null, self::SURVIVOR];
+    }
+
+    /**
+     * @param ?PasswordFate $fate Immutable password choice
+     * @param bool $target Whether the survivor starts with a password
+     * @param bool $source Whether the loser starts with a password
+     * @param bool $verified Whether both password addresses were proved
+     * @param ?int $collisionOwner Owner of the existing link at the loser's password address, if any
+     * @param ?int $keptOwner Original owner of the surviving password, or no password
+     */
+    #[DataProvider('passwordAddressChoices')]
+    public function testPasswordChoicesKeepMomentsAddressesAndDeletionLogs(
+        ?PasswordFate $fate, bool $target, bool $source, bool $verified, ?int $collisionOwner, ?int $keptOwner,
+    ): void {
+        $moments = [self::SURVIVOR => 1700000000123, self::LOSER => 1710000000456];
+        $passwords = [];
+        foreach ([self::SURVIVOR => $target, self::LOSER => $source] as $userId => $present) {
+            if ($present) {
+                $password = Hilos::$db->identities->createPasswordIdentity($userId, 'merge-' . $userId . '@example.test', 'secret-' . $userId);
+                if ($verified) {
+                    $password->markVerified();
+                }
+                Database::sqlRun('UPDATE `hilos_identity` SET `password_changed_at` = ? WHERE `id` = ?', [$moments[$userId], $password->id]);
+                $passwords[$userId] = $password->id;
+            }
+        }
+        $linkId = $collisionOwner === null ? null : Hilos::$db->identities->createMagicLinkIdentity(
+            $collisionOwner, 'merge-' . self::LOSER . '@example.test',
+        )->id;
+        // The fixture changed stored moments deliberately; the live owners start from a fresh context.
+        $this->freshContext();
+        $log = (string)tempnam(sys_get_temp_dir(), 'merge-password-log');
+        Logger::setLogFile($log);
+        try {
+            $operation = $this->open(new AccountMergeChoice($fate, null, null, null));
+            $this->finishExchange($operation);
+            $written = (string)file_get_contents($log);
+            $kept = Hilos::$db->identities->findPasswordByUser(self::SURVIVOR);
+            self::assertSame($keptOwner === null ? null : $passwords[$keptOwner], $kept?->id);
+            self::assertSame($keptOwner === null ? null : $moments[$keptOwner], $kept?->passwordChangedAt);
+            $deleted = 0;
+            foreach ($passwords as $ownerId => $id) {
+                $row = Database::sql('SELECT * FROM `hilos_identity` WHERE `id` = ?', [$id])->firstRow();
+                $keeps = $ownerId === $keptOwner;
+                $drops = !$keeps && (!$verified || ($collisionOwner !== null && $ownerId === self::LOSER));
+                if ($drops) {
+                    $deleted++;
+                    self::assertNull($row);
+                    self::assertStringContainsString('Account merge deleted an identity row instead of demoting it', $written);
+                    self::assertStringContainsString('"reason":"' . ($verified ? 'magic_link_exists' : 'unverified') . '"', $written);
+                    self::assertStringContainsString('"identityId":' . $id, $written);
+                    self::assertStringContainsString('"identifier":"merge-' . $ownerId . '@example.test"', $written);
+                    self::assertStringContainsString('"ownerUserId":' . $ownerId, $written);
+                    self::assertStringContainsString('"fromUserId":' . self::LOSER, $written);
+                    self::assertStringContainsString('"toUserId":' . self::SURVIVOR, $written);
+                    if (!$verified) {
+                        self::assertNull(Hilos::$db->identities->findAccountIdByEmail('merge-' . $ownerId . '@example.test'));
+                        $replacementOwner = $ownerId === self::SURVIVOR ? 11 : 13;
+                        $replacement = Hilos::$db->identities->createPasswordIdentity(
+                            $replacementOwner, 'merge-' . $ownerId . '@example.test', 'replacement',
+                        );
+                        self::assertSame($replacementOwner, $replacement->userId);
+                    }
+                    continue;
+                }
+                self::assertNotNull($row);
+                self::assertSame(self::SURVIVOR, (int)$row['user_id']);
+                self::assertSame($keeps ? IdentityType::PASSWORD : IdentityType::MAGIC_LINK, $row['type']);
+                self::assertSame($keeps ? $moments[$ownerId] : null,
+                    $row['password_changed_at'] === null ? null : (int)$row['password_changed_at']);
+                self::assertSame($verified, (bool)$row['verified']);
+                if (!$keeps) {
+                    self::assertNull($row['secret']);
+                }
+                self::assertSame(self::SURVIVOR, Hilos::$db->identities->findAccountIdByEmail($row['identifier']));
+                if ($keptOwner !== null) {
+                    self::assertTrue($kept->verifyPassword('secret-' . $keptOwner));
+                }
+            }
+            self::assertSame($deleted, substr_count($written, 'Account merge deleted an identity row instead of demoting it'));
+            if ($collisionOwner !== null) {
+                $link = Database::sql('SELECT * FROM `hilos_identity` WHERE `id` = ?', [$linkId])->firstRow();
+                self::assertNotNull($link);
+                self::assertSame($collisionOwner, (int)$link['user_id']);
+                self::assertSame(IdentityType::MAGIC_LINK, $link['type']);
+                self::assertSame('merge-' . self::LOSER . '@example.test', $link['identifier']);
+                self::assertSame($linkId, Hilos::$db->identities->findByIdentity(IdentityType::MAGIC_LINK, $link['identifier'])?->id);
+                self::assertSame($collisionOwner, Hilos::$db->identities->findAccountIdByEmail($link['identifier']));
+            }
+        } finally {
+            Logger::resetLogFile();
+            unlink($log);
+        }
+    }
+
+    public function testProjectPreflightFollowsFrameworkRefusalsAndPrecedesTheOpening(): void
+    {
+        self::seedIdentity(self::SURVIVOR, IdentityType::PASSWORD, 'survivor@example.test');
+        self::seedIdentity(self::LOSER, IdentityType::PASSWORD, 'loser@example.test');
+        $this->holder->refusePreflight = new ValidationException('The project refuses this pair.');
+        $failure = $this->refused(ValidationException::class, fn () => $this->open(loser: 99));
+        self::assertSame('No such user: 99', $failure->getMessage());
+        self::assertFalse($this->holder->projectPreflightAsked);
+        $failure = $this->refused(ValidationException::class, fn () => $this->open());
+        self::assertSame('The project refuses this pair.', $failure->getMessage());
+        self::assertTrue($this->holder->projectPreflightAsked);
+        self::assertSame([], Database::sql('SELECT * FROM `hilos_account_operation`')->rows());
+        self::assertSame([], $this->frames());
+    }
+
+    public function testCompletedMergeRemainsInTheErasureCircleAndRefusalsFollowTheLiveChain(): void
+    {
+        $this->finishExchange($this->open());
+        self::assertSame([self::LOSER, self::SURVIVOR], Hilos::$db->userMerges->erasureCircleOf(self::SURVIVOR)->toArray());
+        $this->finishExchange($this->open(survivor: 11, loser: self::SURVIVOR));
+        self::assertSame([self::LOSER, self::SURVIVOR, 11], Hilos::$db->userMerges->erasureCircleOf(11)->toArray());
+        $failure = $this->refused(ValidationException::class, fn () => $this->open(survivor: 13));
+        self::assertSame('Loser (#9) was already merged into Other (#11)', $failure->getMessage());
     }
 
     public function testExactRepeatPreservesThePairChoiceAndOperationWhileConflictsRefuse(): void
@@ -1764,6 +1898,21 @@ final class AccountMergeCoordinatorIntegrationTest extends HilosSessionIntegrati
 final class MergeCoordinatorHolder extends AbstractSessionsLibraryAgent
 {
     public ?AccountMergeDuty $heldDuty = null;
+    public ?ValidationException $refusePreflight = null;
+    public bool $projectPreflightAsked = false;
+
+    /**
+     * @param int $survivorUserId Survivor named by the opening
+     * @param int $loserUserId Loser named by the opening
+     */
+    protected function assertMergeable(int $survivorUserId, int $loserUserId): void
+    {
+        parent::assertMergeable($survivorUserId, $loserUserId);
+        $this->projectPreflightAsked = true;
+        if ($this->refusePreflight !== null) {
+            throw $this->refusePreflight;
+        }
+    }
 
     /**
      * @param int $assignmentId Real inline assignment, held only by the existing wait outcome

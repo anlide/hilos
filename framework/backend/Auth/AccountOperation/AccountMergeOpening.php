@@ -22,7 +22,6 @@ use Throwable;
  * The composition is read back with {@see AccountOperationExpectedSet::of()}: the preparations and
  * the give obligation carry no `expect:` or `wait:` key and are not part of it.
  * The prepared coordinator opens and reconciles before asking the owners.
- * SCAFFOLD: the live merge stays on its existing path until the merge switch (HIL-1999).
  */
 final class AccountMergeOpening
 {

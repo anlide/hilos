@@ -20,7 +20,6 @@ use Throwable;
 /**
  * The canonical session holder selects merge duties from committed, owner-bound proofs.
  * Participants alone perform their work and write their results; sending follows each transaction.
- * SCAFFOLD: the protected holder entry is prepared; production merge switches in HIL-1999.
  */
 final class AccountMergeCoordinator
 {

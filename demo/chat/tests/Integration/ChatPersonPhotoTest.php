@@ -13,7 +13,6 @@ use Demo\Chat\Hilos;
 use Demo\Chat\Pages\DTO\UserPageSubscribeParams;
 use Demo\Chat\Pages\MainPage;
 use Demo\Chat\Pages\UserPage;
-use Hilos\Constants\CliCommands;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
@@ -28,8 +27,6 @@ use Hilos\Database\View\Item\UserPhoto as ViewUserPhoto;
 use Hilos\Files\HilosFiles;
 use Hilos\Files\Upload\ProfilePhotoUploadTarget;
 use Hilos\HilosException;
-use Hilos\Socket\Command\DTO\CommandReplyDTO;
-use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Utils\Helpers\RandomHelper;
@@ -46,12 +43,14 @@ use Hilos\Utils\Helpers\RandomHelper;
  * The photo row is written the way a node writes it: by the person's own agent, which holds that
  * person's set of the photo table, over a registry row as the files library would have published
  * it. The merge goes through the operator command of the sessions library, the path
- * {@see AccountMergeTest} drives.
+ * {@see AccountMergeObservationTest} drives.
  *
  * Requires the test DB reset before run (composer run test:db-reset).
  */
 final class ChatPersonPhotoTest extends IntegrationTestCase
 {
+    use AccountMergeFrames;
+
     /**
      * Gives the case a signal router: the page answers and the merge reply are queued on it.
      */
@@ -147,40 +146,14 @@ final class ChatPersonPhotoTest extends IntegrationTestCase
     }
 
     /**
-     * Folds one account into another over the operator command, and asserts it went through.
-     *
-     * Dispatched inside the sessions library's own frame, as a worker dispatches it, so every write
-     * of the merge is judged as the library's - see {@see AccountMergeTest} for why that matters.
-     *
      * @param int $survivorId Account that absorbs the other
      * @param int $loserId Account folded into the survivor
-     * @throws HilosException When the command handler fails
      */
     private function merge(int $survivorId, int $loserId): void
     {
-        $library = $this->sessionsLibrary();
-        ExecutionContext::run(
-            new ExecutionFrame(agentId: $library->getId()),
-            static function () use ($library, $survivorId, $loserId): void {
-                $library->onSignalCommand(new CommandRequestDTO(
-                    correlationId: RandomHelper::hex(8),
-                    command: CliCommands::ACCOUNT_MERGE,
-                    payload: [
-                        AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => $survivorId,
-                        AccountMergeCommandConstants::FIELD_LOSER_USER_ID => $loserId,
-                    ],
-                ), '', '');
-            },
-        );
-
-        $replies = [];
-        while (($signal = Hilos::$sr?->getNextQueuedSignal()) !== null) {
-            if ($signal->data instanceof CommandReplyDTO) {
-                $replies[] = $signal->data;
-            }
-        }
-        $this->assertCount(1, $replies, 'Every merge answers the operator exactly once');
-        $this->assertTrue($replies[0]->isOk(), 'The merge was refused: ' . json_encode($replies[0]->payload));
+        $reply = $this->runOwnerMerge($survivorId, $loserId);
+        $this->assertTrue($reply->isOk(), 'The merge was refused: ' . json_encode($reply->payload));
+        $this->assertSame('completed', $reply->payload[AccountMergeCommandConstants::FIELD_MERGE]['outcome']);
     }
 
     /**

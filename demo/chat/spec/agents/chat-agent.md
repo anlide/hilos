@@ -32,7 +32,7 @@ through this agent. Uploads belong to the framework uploads agent.
   unavailable state. ChatAgent is the sole message writer and runs each handler
   to completion; the holder's post-commit sign-out frame cannot close this door.
   The live erasure switch (HIL-1952) retired the session holder's project seam and its
-  borrowed erasure rights; rights needed for the old merge remain.
+  borrowed erasure rights; HIL-1999 retired its borrowed merge message-update right.
   The framework [erasure canon](../../../../docs/agents/architecture/account-operations.md#erasure)
   owns the protocol and its participant boundary.
 
@@ -42,17 +42,16 @@ through this agent. Uploads belong to the framework uploads agent.
   implements both project owner interfaces. Its prepared `mergeAccountPart()`
   runs in `AccountMergeProjectStep` and records exactly `{"rows":{"messages":<n>}}`.
   The existing `chat_account_operation_step` ask/answer entry selects merge or
-  erasure by the assignment operation's durable kind. Its sender, the merge
-  coordinator, is built by HIL-2000 and goes live at the merge switch (not in the
-  code yet — HIL-1999). The late-publication guard already rejects
+  erasure by the assignment operation's durable kind. The live merge coordinator
+  sends this assignment route from HIL-1999. The late-publication guard already rejects
   a committed merged author through the existing draft/unavailable outcome,
   without publishing as the survivor: it uses fresh `isMergedInDatabase()` at
   both write doors, including null-survivor tombstones, before sign-out or
   DB_SYNC. Preparing alone leaves sending open; erasure's `startedOf()` guard
   stays, and unbound registry files follow `removeUnlinkedPublicationFiles()`.
-  The holder's current `applyAccountMerge()` and borrowed `Update` on
-  `eventMessages` remain until the single live switch
-  (not in the code yet — HIL-1999). The framework
+  HIL-1999 connected the live merge path and removed the holder's borrowed
+  `Update` on `eventMessages`; ChatAgent owns the author transfer and its result.
+  The framework
   [merge canon](../../../../docs/agents/architecture/account-operations.md#merge)
   owns the protocol and its participant boundary.
 

@@ -24,7 +24,6 @@ final class DbWriterTransitionCatalog extends FrameworkDbWriterTransitionCatalog
     {
         $definitions = parent::buildDefinitions($hilosClass);
         $chat = $this->role($hilosClass, ChatAgent::AGENT_TYPE);
-        $holder = $this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY);
         $users = $this->role($hilosClass, HilosAgentType::HILOS_USERS_LIBRARY);
         foreach ([ChatDbContext::events, ChatDbContext::eventUserRegistrations,
             ChatDbContext::eventMessages, ChatDbContext::eventAttachments] as $collection) {
@@ -32,11 +31,7 @@ final class DbWriterTransitionCatalog extends FrameworkDbWriterTransitionCatalog
             if (in_array($collection, [ChatDbContext::events, ChatDbContext::eventUserRegistrations], true)) {
                 $base = [...$base, ...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add)];
             }
-            $pending = [];
-            if ($collection === ChatDbContext::eventMessages) {
-                $pending[self::MERGE] = $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Update);
-            }
-            $definitions[$collection] = $this->states($base, $pending);
+            $definitions[$collection] = $this->states($base, []);
         }
 
         return $definitions;

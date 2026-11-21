@@ -417,7 +417,6 @@ final class ChatAgent extends AbstractAgent implements AccountErasureProjectOwne
 
     /**
      * Transfers the loser's message authorship inside the common merge step's transaction.
-     * SCAFFOLD: sent by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
      *
      * @param AccountMergePart $part Operation, survivor and loser whose messages move
      * @return array<string, int> Number of messages moved to the survivor

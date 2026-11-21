@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Database\Actions\Collection;
 
-use Demo\Chat\Agents\Hilos\SessionsLibraryAgent;
 use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Database\Entity\Item\EventMessage;
 use Demo\Chat\Database\Object\Collection\EventMessages as ObjectEventMessages;
@@ -15,7 +14,6 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Actions\Collection\DbActions;
-use Hilos\Database\Object\Collection\Identities;
 use Hilos\HilosException;
 
 /**
@@ -66,28 +64,10 @@ final class EventMessagesActions extends DbActions
     /**
      * Re-points every message authored by a loser user to a survivor user (HIL-378).
      *
-     * The demo content-transfer half of account merge, symmetric with the
-     * framework identity re-point ({@see Identities::rePointToUser()}):
-     * the survivor absorbs the loser's chat messages. Each message is moved
-     * through its object's {@see ObjectEventMessage::sync()} rather than a single
-     * bulk UPDATE, exactly like the identity re-point, so every moved row emits a
-     * DB_SYNC_UPDATED broadcast — the workers apply the authorship diff and
-     * re-render the messages for viewers. A raw bulk UPDATE would emit no DB_SYNC,
-     * leaving the transferred authorship invisible until a full reload (the merge
-     * is a rare admin op, so the per-message sync cost is irrelevant). Returns the
-     * number of messages re-pointed (the merge summary's "messages moved"). Runs
-     * inside the merge transaction, so a failure rolls the whole merge back.
-     *
-     * ChatAgent runs its prepared merge participant under its own collection claim.
-     * The current live merge still runs in the sessions holder, with its borrowed narrow
-     * Update grant ({@see SessionsLibraryAgent::OWNS_DB}) until the HIL-1999 switch.
-     * The registry is per process, so that transitional grant stays beside the owner.
-     * The framework half of the legacy merge ({@see Identities::rePointToUser()})
-     * remains on its current path too.
-     *
-     * This used to read that no claim was needed because the collection is registered
-     * with a lazy key strategy. That held on nothing but the guard's silence: the right
-     * was asked only of the collections loaded whole, and HIL-716 asks it of every one.
+     * ChatAgent runs its merge participant under its own collection claim. Each message moves
+     * through its object's {@see ObjectEventMessage::sync()}, so viewers receive the authorship
+     * diff through DB sync. The participant's transaction records its moved count with its result;
+     * a failure rolls back that part, and a repeated completed part returns the saved count.
      *
      * @param int $fromUserId Loser user id whose messages are absorbed
      * @param int $toUserId Survivor user id that receives the messages

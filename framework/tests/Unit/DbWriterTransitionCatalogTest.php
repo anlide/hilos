@@ -128,38 +128,14 @@ final class DbWriterTransitionCatalogTest extends TestCase
 
         // The subject stays literal: widths, operations and leaves are not taken from the provider.
         $vectors = [
-            'users' => [['users', 'whole', 'add'], ['person', 'rows', 'remove,update'], ['holder', 'whole', 'update']],
-            'identities' => [['users', 'whole', 'add'], ['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove,update']],
-            'passkeyCredentials' => [['users', 'whole', 'add'], ['person', 'set', 'add,remove,update'], ['holder', 'whole', 'update']],
-            'secondFactors' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove,update']],
-            'secondFactorBackupCodes' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove,update']],
-            'secondFactorResets' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
-            'secondFactorSettings' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'add,remove,update']],
-            'secondFactorTrusts' => [['person', 'set', 'add,remove,update'], ['holder', 'whole', 'remove']],
             'notificationDeliveries' => [
                 ['notifications', 'whole', 'add'], ['mail', 'whole', 'remove,update']],
         ];
-        $leaves = [
-            'users' => ['HIL-1999'],
-            'identities' => ['HIL-1999'],
-            'passkeyCredentials' => ['HIL-1999'],
-            'secondFactors' => ['HIL-1999'],
-            'secondFactorBackupCodes' => ['HIL-1999'],
-            'secondFactorResets' => ['HIL-1999'],
-            'secondFactorSettings' => ['HIL-1999'],
-            'secondFactorTrusts' => ['HIL-1999'],
-            'notificationDeliveries' => [],
-        ];
+        $leaves = ['notificationDeliveries' => []];
         foreach (['sms' => $hasDurableSms, 'push' => $hasPush] as $role => $present) {
             if ($present) {
                 $vectors['notificationDeliveries'][] = [$role, 'whole', 'remove,update'];
             }
-        }
-        if ($isChat) {
-            $roles['chat'] = 'Demo\\Chat\\Agents\\ChatAgent';
-            self::assertSame($roles['chat'], AgentRegistry::workerClass($facade::AGENTS['chat']));
-            $vectors['eventMessages'] = [['chat', 'whole', 'add,remove,update'], ['holder', 'whole', 'update']];
-            $leaves['eventMessages'] = ['HIL-1999'];
         }
         if (!$hasDurableSms && !$hasPush) {
             unset($vectors['notificationDeliveries'], $leaves['notificationDeliveries']);
@@ -239,18 +215,13 @@ final class DbWriterTransitionCatalogTest extends TestCase
             new DbWriterTransitionState([], $person['pushSubscriptions']));
     }
 
-    /** Terminal deletion keeps Remove after ordinary work. */
-    public function testTrustSharedUsesAndTerminalRights(): void
+    /** Trusts have one personal writer after the merge cutover. */
+    public function testTrustsHaveOnlyTheirPersonalWriter(): void
     {
-        $states = $this->statesByPendingLeaves(ChatHilos::getDbWriterTransitions()['secondFactorTrusts']);
-        self::assertSame(['', 'HIL-1999'], array_keys($states));
-        foreach ($states as $pending => $state) {
-            $expected = [UserAgent::class . ':set:add,remove,update'];
-            if ($pending !== '') {
-                $expected[] = SessionsLibraryAgent::class . ':whole:remove';
-            }
-            $this->assertVector($expected, $state);
-        }
+        self::assertArrayNotHasKey('secondFactorTrusts', ChatHilos::getDbWriterTransitions());
+        $claims = DbWriterClaim::declarationsOf(UserAgent::class);
+        $this->assertVector([UserAgent::class . ':set:add,remove,update'],
+            new DbWriterTransitionState([], $claims['secondFactorTrusts']));
     }
 
     /** Channel removal and retry are permanent; the library only adds, and holder erasure alone remains transitional. */
@@ -289,43 +260,37 @@ final class DbWriterTransitionCatalogTest extends TestCase
         }
     }
 
-    /** Erasure cannot retire ordinary work or the grants still used by the old merge. */
-    public function testTerminalCutoversKeepExactMergeRightsAndFinalPersonalGrants(): void
+    /** The holder no longer borrows any personal or project changing right. */
+    public function testMergeCutoverLeavesOnlyTheActualWriters(): void
     {
+        self::assertSame([
+            'sessions' => TruthSourceOperation::BY_KIND,
+            'accountOperations' => [TruthSourceOperation::Add, TruthSourceOperation::Update],
+            'accountOperationAssignments' => [TruthSourceOperation::Add],
+            'accessLogEntries' => TruthSourceOperation::ALL,
+        ], AbstractSessionsLibraryAgent::OWNS_DB);
+        self::assertSame(AbstractSessionsLibraryAgent::OWNS_DB, SessionsLibraryAgent::OWNS_DB);
+        self::assertSame([], ChatHilos::SHARED_DB_OWNERS);
         $catalog = ChatHilos::getDbWriterTransitions();
-        $users = $this->statesByPendingLeaves($catalog['users']);
-        self::assertSame(['', 'HIL-1999'], array_keys($users));
-        $this->assertVector([
-            UsersLibraryAgent::class . ':whole:add', UserAgent::class . ':rows:remove,update',
-            SessionsLibraryAgent::class . ':whole:update',
-        ], $users['HIL-1999']);
-        $this->assertVector([
-            UsersLibraryAgent::class . ':whole:add', UserAgent::class . ':rows:remove,update',
-        ], $users['']);
-        foreach ([
-            'identities' => 'remove,update', 'passkeyCredentials' => 'update',
-            'secondFactors' => 'remove,update', 'secondFactorBackupCodes' => 'remove,update',
-            'secondFactorResets' => 'remove', 'secondFactorSettings' => 'add,remove,update',
-            'secondFactorTrusts' => 'remove', 'eventMessages' => 'update',
-        ] as $collection => $mergeOperations) {
-            $states = $this->statesByPendingLeaves($catalog[$collection]);
-            $holder = array_values(array_filter($states['HIL-1999']->claims,
-                static fn (DbWriterClaim $claim): bool => $claim->ownerClass === SessionsLibraryAgent::class));
-            self::assertSame([SessionsLibraryAgent::class . ':whole:' . $mergeOperations], $this->signatures($holder), $collection);
+        $person = DbWriterClaim::declarationsOf(UserAgent::class);
+        foreach (['identities', 'passkeyCredentials', 'secondFactors', 'secondFactorBackupCodes',
+            'secondFactorResets', 'secondFactorSettings', 'secondFactorTrusts'] as $collection) {
+            self::assertArrayNotHasKey($collection, $catalog);
+            $claims = array_values(array_filter($person[$collection],
+                static fn (DbWriterClaim $claim): bool => $claim->ownerClass === UserAgent::class));
+            $this->assertVector([UserAgent::class . ':set:add,remove,update'], new DbWriterTransitionState([], $claims));
         }
-        foreach (['stepUps', 'userRenames', 'accountDeletions', 'events', 'eventAttachments', 'eventUserRegistrations'] as $collection) {
-            self::assertArrayNotHasKey($collection, $catalog, $collection . ' has no shared debt');
+        foreach (['users', 'eventMessages', 'stepUps', 'userRenames', 'accountDeletions', 'events',
+            'eventAttachments', 'eventUserRegistrations', 'legalAcceptances'] as $collection) {
+            self::assertArrayNotHasKey($collection, $catalog);
         }
-        self::assertArrayNotHasKey('legalAcceptances', $catalog);
-        $settings = $this->statesByPendingLeaves($catalog['secondFactorSettings']);
-        $this->assertVector([UserAgent::class . ':set:add,remove,update'], $settings['']);
     }
 
     public function testTypedValuesAndCanonicalLeaves(): void
     {
         $claim = new DbWriterClaim(AbstractAgent::class, DbWriterClaimWidth::Rows, TruthSourceOperations::of(TruthSourceOperation::Update));
-        $state = new DbWriterTransitionState(['HIL-1999', 'HIL-1952', 'HIL-1952'], [$claim], [DbWriterPartition::NotificationChannelShard]);
-        self::assertSame(['HIL-1952', 'HIL-1999'], $state->pendingLeaves);
+        $state = new DbWriterTransitionState(['HIL-9999', 'HIL-1952', 'HIL-1952'], [$claim], [DbWriterPartition::NotificationChannelShard]);
+        self::assertSame(['HIL-1952', 'HIL-9999'], $state->pendingLeaves);
         self::assertSame([$claim], $state->claims);
         self::assertSame('rows', $claim->width->value);
         self::assertSame('notification-channel-shard', $state->partitions[0]->value);
@@ -344,19 +309,11 @@ final class DbWriterTransitionCatalogTest extends TestCase
         self::assertArrayNotHasKey('legalAcceptanceExports', $catalog);
         self::assertArrayNotHasKey('dataExports', $catalog);
         self::assertArrayNotHasKey('notificationDeliveries', $catalog);
-        self::assertSame(['HIL-1999'], $catalog['identities'][0]->pendingLeaves);
-        self::assertSame([
-            AbstractSessionsLibraryAgent::class . ':whole:remove,update',
-            AbstractUserAgent::class . ':set:add,remove,update',
-        ], $this->signatures($catalog['identities'][0]->claims));
+        self::assertArrayNotHasKey('identities', $catalog);
 
         self::assertSame([], Hilos::featuresOf(CatalogRegisteredButInactiveHilos::class));
         $inactive = CatalogRegisteredButInactiveHilos::getDbWriterTransitions();
-        $this->assertVector([
-            AbstractUsersLibraryAgent::class . ':whole:add',
-            AbstractUserAgent::class . ':set:add,remove,update',
-            AbstractSessionsLibraryAgent::class . ':whole:remove,update',
-        ], $inactive['identities'][0]);
+        self::assertArrayNotHasKey('identities', $inactive);
         self::assertArrayNotHasKey('notificationDeliveries', $inactive);
         foreach (['legalAcceptanceExports', 'dataExports', 'settings', 'probeValues', 'sessions', 'accessLogEntries', 'userMerges'] as $key) {
             self::assertArrayNotHasKey($key, $inactive);
@@ -455,49 +412,10 @@ final class DbWriterTransitionCatalogTest extends TestCase
     private function ceilingV1(bool $isChat): array
     {
         $ceiling = [
-            'users' => [
-                'HIL-1999' => ['users:whole:add', 'person:rows:remove,update', 'holder:whole:update'],
-                '' => ['users:whole:add', 'person:rows:remove,update'],
-            ],
-            'identities' => [
-                'HIL-1999' => ['users:whole:add', 'person:set:add,remove,update', 'holder:whole:remove,update'],
-                '' => ['users:whole:add', 'person:set:add,remove,update'],
-            ],
-            'passkeyCredentials' => [
-                'HIL-1999' => ['users:whole:add', 'person:set:add,remove,update', 'holder:whole:update'],
-                '' => ['users:whole:add', 'person:set:add,remove,update'],
-            ],
-            'secondFactors' => [
-                'HIL-1999' => ['person:set:add,remove,update', 'holder:whole:remove,update'],
-                '' => ['person:set:add,remove,update'],
-            ],
-            'secondFactorBackupCodes' => [
-                'HIL-1999' => ['person:set:add,remove,update', 'holder:whole:remove,update'],
-                '' => ['person:set:add,remove,update'],
-            ],
-            'secondFactorResets' => [
-                'HIL-1999' => ['person:set:add,remove,update', 'holder:whole:remove'],
-                '' => ['person:set:add,remove,update'],
-            ],
-            'secondFactorSettings' => [
-                'HIL-1999' => ['person:set:add,remove,update', 'holder:whole:add,remove,update'],
-                '' => ['person:set:add,remove,update'],
-            ],
-            'secondFactorTrusts' => [
-                'HIL-1999' => ['person:set:add,remove,update', 'holder:whole:remove'],
-                '' => ['person:set:add,remove,update'],
-            ],
             'notificationDeliveries' => [
                 '' => ['notifications:whole:add', 'channel:whole:remove,update', 'partition:notification-channel-shard'],
             ],
         ];
-        if ($isChat) {
-            $ceiling['eventMessages'] = [
-                'HIL-1999' => ['chat:whole:add,remove,update', 'holder:whole:update'],
-                '' => ['chat:whole:add,remove,update'],
-            ];
-        }
-
         return $ceiling;
     }
 

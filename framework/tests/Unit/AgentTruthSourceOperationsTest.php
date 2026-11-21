@@ -219,22 +219,18 @@ final class AgentTruthSourceOperationsTest extends TestCase
         ], AbstractOAuthAgent::READS_DB);
     }
 
-    /**
-     * The sessions library edits the person row only for the remaining ordinary merge.
-     *
-     * It blocks the loser inside the merge transaction
-     * and the personal owner removes its own row; the admin and block flags an administrator
-     * asks for are written by the person's agent (HIL-1404). Read off an empty subclass, so what answers is the base's
-     * own declaration and no project's addition to it.
-     */
-    public function testSessionsLibraryKeepsOnlyTheMergeEditOfThePersonRow(): void
+    /** The empty project subclass keeps only the holder's own whole-collection writes. */
+    public function testSessionsLibraryKeepsOnlyItsOwnOperationWrites(): void
     {
         $claims = OwnershipDeclaration::dbCollectionsOf(AgentTruthSourceOperationsTestSessionsLibrary::class);
 
-        $this->assertArrayHasKey(HilosDbContext::users, $claims);
-        $this->assertFalse($claims[HilosDbContext::users]->allows(TruthSourceOperation::Add));
-        $this->assertTrue($claims[HilosDbContext::users]->allows(TruthSourceOperation::Update));
-        $this->assertFalse($claims[HilosDbContext::users]->allows(TruthSourceOperation::Remove));
+        $this->assertSame([
+            HilosDbContext::sessions,
+            HilosDbContext::accountOperations,
+            HilosDbContext::accountOperationAssignments,
+            HilosDbContext::accessLogEntries,
+        ], array_keys($claims));
+        $this->assertArrayNotHasKey(HilosDbContext::users, $claims);
         $this->assertArrayNotHasKey(HilosDbContext::userRenames, $claims);
     }
 

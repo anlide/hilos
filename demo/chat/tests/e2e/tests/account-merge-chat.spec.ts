@@ -174,11 +174,13 @@ test(
       await protection.check()
       await clickSubmit(expect, confirm)
 
-      const outcome = `Merged #${loser.userId} into #${survivor.userId}. Moved: sign-in methods 1, messages 1.`
-      await expect(page.getByTestId('modal')).toBeHidden()
-      await expect(page.getByTestId('hilos-toast-success')).toContainText(
-        outcome,
-      )
+      const mergeDialog = page.getByRole('dialog')
+      await expect(mergeDialog).toBeVisible()
+      await expect(
+        mergeDialog.getByRole('status').filter({ hasText: 'Merge completed' }),
+      ).toHaveText('Merge completed')
+      await mergeDialog.getByTestId('hilos-user-merge-close').click()
+      await expect(mergeDialog).toBeHidden()
 
       // The other tab was not reloaded: the candidate it had chosen is gone, and
       // Merge cannot be pressed (HIL-1294).

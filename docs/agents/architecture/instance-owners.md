@@ -80,19 +80,17 @@ may itself be the only writer, as with `settings`; see
 
 The ordinary set guard grants a cross-set move only to a whole-table claimant,
 because one set claim cannot cover both origin and destination. This is the
-mechanism today, not a license to add such a claimant. The agreed terminal
-direction is each owner deleting its own rows in its own transaction, and
-the loser giving rows away under a narrow
+mechanism today, not a license to add such a claimant. Each owner deletes its
+own rows in its own transaction, and the loser gives rows away under a narrow
 [operation right](account-operations.md#the-transfer-right), judged against
 the operation and both preparations without a new claim width or `_setVia`
 change. The transfer door and the
 [prepared loser give](account-operations.md#the-prepared-loser-give) are built:
 `AccountMergeGiving::run()` commits the own-row transfer, tombstone, block,
 nonsecret result and separate private copy together; `copy()` reads only that
-saved carrier. The owner entry and assignment match are sent by the merge
-coordinator, built by HIL-2000 and live at the merge switch (HIL-1999). The
-owner-local erasure path is live from HIL-1952; the
-old merge remains until HIL-1999 (not in the code yet — HIL-1999).
+saved carrier. The owner entry and assignment match are sent by the live merge
+coordinator, connected to the administrator and CLI paths in HIL-1999. The
+owner-local erasure path is live from HIL-1952.
 
 **Executors keep their working rows.** A delivery status, a personal data export
 and an administrator's export of acceptances stay with the executor that writes
@@ -138,8 +136,9 @@ frame, and by the owner's own start, which applies the saved restrictions
 without one (HIL-1901). The personal owner applies the cap
 or the zero term on the sweep's frame (HIL-1908) and, when the second factor is
 turned off with the forget switch on, removes its trusts on that frame
-(HIL-1909); the holder waits for them and answers the administrator by the result. Erasure and merge remain the terminal debts
-below. Notification marks, channel preferences and push unsubscribe are the
+(HIL-1909); the holder waits for them and answers the administrator by the result.
+HIL-1952 retired the erasure debt, and HIL-1999 retired the merge debt below.
+Notification marks, channel preferences and push unsubscribe are the
 person's agent's too (HIL-1408).
 A session has no instance owner today: it stays standalone and the sessions
 holder, whose responsibility is authorization, stays its writer; an agent per
@@ -302,10 +301,11 @@ for any sweep, erasure or merge:
   observe a durable operation. Each participant deletes its own rows and saves
   its result in one local transaction; a later refusal leaves earlier commits
   intact and the operation unfinished for recovery (HIL-1952).
-- **Account merge:** `mergeAccounts()` and `applyAccountMerge()` run one
-  transaction there too. Ways in, second factor, chat authorship, the loser's
-  block and the tombstone keep their current writers until the merge cutover
-  (not in the code yet — HIL-1999).
+- **Account merge:** the sessions holder coordinates a durable operation.
+  Personal owners transfer the loser's rows and record their results in their
+  own transactions; project owners move their registered rows the same way.
+  HIL-1999 connected the browser and CLI entrances and retired the old borrowed
+  merge writes.
 - **Stops:** a deleted person row stops the affected personal agent; an agent
   not running does not rise, and the survivor is not stopped. Erasure stops
   the personal agent after its final write and confirmed part (HIL-1952).
@@ -313,8 +313,8 @@ for any sweep, erasure or merge:
   together after receipt, then requests stop; exact saved replay can request the
   same stop. A wait or transaction failure does not stop the source. Its context
   is restored before ordinary startup work.
-  The old immediate stop is removed only at the merge cutover
-  (not in the code yet — HIL-1999).
+  HIL-1999 removed the immediate stop on a merge row: the loser stops only
+  after its copy cleanup commits or its exact saved result replays.
 
 Ordinary cross-owner writes are separate, finite transitions. The chat agent's
 history-clear request calls `unlinkEventsOf()` through the journal's personal
@@ -331,8 +331,8 @@ and [ordinary transitions](account-operations.md#ordinary-transitions) cover
 the other rows and the exact current operations.
 
 The three phases have distinct end points: ordinary moves left only the
-named erasure/merge debts; HIL-1952 switched erasure and left only merge
-debt; HIL-1999 switches merge and removes that remainder. The detailed
+named erasure/merge debts; HIL-1952 switched erasure, and HIL-1999 switched
+merge and removed its remaining debt. The detailed
 [erasure canon](account-operations.md#erasure) records the personal finishing
 mode: the same agent, including a folded account's, closes ordinary actions
 and late frames, accepts only continuation of its own operation and finishes
@@ -346,12 +346,12 @@ and stage (HIL-1950); the holder's recovery pass and an owner's start find open
 obligations from DB (HIL-1951; [The erasure recovery](account-operations.md#current-implementation));
 the live due and force-purge paths open those operations in HIL-1952.
 
-The [prepared give](account-operations.md#the-prepared-loser-give) already
+The [prepared give](account-operations.md#the-prepared-loser-give)
 replays its exact saved result and copy for a folded loser without reading
 business sets. The [prepared cleanup and finishing](account-operations.md#the-prepared-loser-cleanup-and-finishing)
 restore a source from its exact saved give and both immutable preparations,
-including after cleanup or operation completion; legacy tombstones without
-that give keep today's immediate stop.
+including after cleanup or operation completion. The live source stop follows
+its exact cleanup result, not the merge-row write.
 The detailed [merge canon](account-operations.md#merge) gives the folded loser
 a finishing mode: it accepts only continuation of its own operation, copy
 replay and cleanup, and stops after cleanup commits following receipt. Ordinary
@@ -367,18 +367,17 @@ proofs and current copy absence. The holder reads copy metadata and gains no
 right to delete it. Project stage carry preserves the original preparing
 expectation's owner, id and result binding.
 Prepared DB recovery raises it only to complete those durable obligations,
-including after a lost frame or a move. This mode replaces the current
-immediate stop only at live merge cutover (not in the code yet — HIL-1999).
+including after a lost frame or a move. This finishing mode and its cleanup-
+owned stop are live from HIL-1999.
 
 The live erasure path uses the durable operation for both new starts and open
 work; the former holder-side erasure calls and grants were retired in HIL-1952.
-Merge remains on its old path until HIL-1999.
+HIL-1999 connected merge to the same durable owner path and retired its former
+holder-side writes and grants.
 
-Keep the grants, comments and debt entries needed by the old path until its
-actual switch. In the commit that enables a move, its implementing leaf removes
-the obsolete foreign right, comment, debt entry and its markers. If erasure
-and merge share a right, erasure's switch keeps what merge still needs. Do not
-add another foreign writer under the name of a set operation or sweep.
+The erasure and merge cutovers retired their respective foreign rights,
+comments and debt entries with the paths they replaced. Do not add another
+foreign writer under the name of a set operation or sweep.
 
 ## Anti-Patterns
 

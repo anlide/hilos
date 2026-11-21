@@ -70,7 +70,7 @@ class AccountOperations extends DbCollection
     }
 
     /**
-     * Asked by the old merge's refusal ({@see AbstractSessionsLibraryAgent::assertMergeable()}, HIL-1960), by the
+     * Asked by the merge opening ({@see AbstractSessionsLibraryAgent::assertMergeable()}, HIL-1960), by the
      * erasure opening, by the card's erasure progress, by the merge preparation and by the merge availability that
      * the people list, the merge candidates and the card show.
      *

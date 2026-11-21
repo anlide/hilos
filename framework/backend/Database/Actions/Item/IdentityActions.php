@@ -47,7 +47,6 @@ class IdentityActions extends DbActions
 
     /**
      * Demotes the source preparation password before its separate transfer, or deletes it under the existing rules.
-     * SCAFFOLD: called by the prepared give (HIL-1992); no production caller until the merge switch (HIL-1999).
      *
      * @param AccountMergeTransfer $transfer Active give capability
      * @throws HilosException When the anchor, ordinary own write or password demotion refuses the action

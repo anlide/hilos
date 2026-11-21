@@ -4,34 +4,32 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Constants\CliCommands;
+use Hilos\Constants\CommandChannelWindows;
+use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
+use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\InvalidJsonException;
 use Hilos\Database\Identity\PasswordFate;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Users\AccountMergeCommandConstants;
+use Hilos\Users\AccountMergeProgress;
+use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\SecondFactorFate;
-use Hilos\Users\SecondFactorOutcome;
+use JsonException;
 
 /**
- * Merges one populated account into another through the daemon command channel (HIL-378).
+ * Account merge client over the daemon command channel.
  *
- * Sends the command over the daemon command channel; the daemon parks the connection, routes
- * it to the agent that answers the name (which re-points the loser's sign-in identities and
- * the rows the project keeps for it, tombstones the loser, and forces its live sessions to
- * log out - all in one transaction), and writes the reply back. Prints what moved.
  *
- * `--password` is where the operator says whose password the merged account keeps
- * (HIL-692). It is asked for only when it is a real question - two accounts each holding
- * one - and the absent key says so, so the ordinary merge keeps the shape it had. The
- * reply is read back as an outcome rather than an echo: naming an account that has no
- * password is allowed, and what gets printed is what the person ended up with.
- *
- * Real operator command, not test-only, and database-free ({@see DatabaseFreeCommand}) for
- * the reason its neighbours are: every row it causes is written where the accounts live, so
- * the CLI process needs no connection of its own.
+ * The merge is distributed across the owners that record its parts. This process
+ * only chooses start or observe, waits for one reply, and prints the saved merge.
+ * A lost reply does not cancel the operation, and neither does Ctrl+C.
+ * Not final: a test stands in for the channel.
  */
-final class AccountMergeCommand implements CommandInterface, DatabaseFreeCommand
+class AccountMergeCommand implements CommandInterface, DatabaseFreeCommand
 {
     use CommandChannelClientTrait;
 
@@ -39,6 +37,15 @@ final class AccountMergeCommand implements CommandInterface, DatabaseFreeCommand
     public const array OPTIONS = [
         AccountMergeCommandConstants::OPTION_PASSWORD,
         AccountMergeCommandConstants::OPTION_SECOND_FACTOR,
+        AccountMergeCommandConstants::OPTION_OBSERVE,
+        AccountMergeCommandConstants::OPTION_OPERATION,
+    ];
+
+    /** @var list<string> Keys an ok merge reply may carry */
+    private const array OBSERVED_REPLY_KEYS = [
+        AccountMergeCommandConstants::FIELD_MERGE,
+        AccountMergeCommandConstants::FIELD_SUMMARY,
+        CommandConstants::FIELD_MESSAGE,
     ];
 
     public function getName(): string
@@ -58,101 +65,73 @@ final class AccountMergeCommand implements CommandInterface, DatabaseFreeCommand
 
     public function getDescription(): string
     {
-        return 'Merge one populated account into another through the daemon command channel';
+        return 'Merge one account into another, or observe a merge, through the daemon command channel';
     }
 
+    /**
+     * Describes the distributed merge, the bounded wait, and how to observe it again.
+     *
+     * @return string Full help text with usage examples
+     */
     public function getHelp(): string
     {
+        $seconds = (int)CommandChannelWindows::CALLER_WAIT_SECONDS;
+        $timeout = ExitCode::TIMEOUT;
+
         return <<<HELP
 Command: account:merge
 
 Description:
-  Merge one populated account (the loser) into another (the survivor). Sends the
-  command over the daemon command channel; the daemon routes it to the agent that
-  answers it, which re-points the loser's sign-in identities and the rows this
-  project keeps for a person, tombstones the loser (a row in hilos_user_merge + login closed),
-  and forces the loser's live sessions to log out. The survivor keeps its own
-  profile. The whole transfer runs in one transaction; on any failure nothing is
-  written.
+  Ask the daemon to merge one account into another, or to report a merge that
+  is already recorded. The merge is distributed: each owner records its own
+  part, and there is no single transaction around the whole merge. This process
+  waits up to {$seconds}s for a reply. That wait is not the merge.
 
-  An account holds at most one password. While at most one of the two accounts
-  has one, it survives and nothing needs saying; when BOTH have one the merge
-  refuses until --password names which stays. A password that does not stay is
-  not deleted with its address - the row becomes a sign-in-link address, so the
-  person keeps every address they had.
+  A reply shows preparing, wait, refusal, cancelling, or a durable end. An open
+  snapshot, including a refusal that has not finished, exits {$timeout}; observe
+  it again. Success is printed only for a durable end.
+
+  The channel closing, a timeout, or Ctrl+C stops this process only. Ctrl+C
+  does not cancel the merge. Observe a known operation with --operation, or the
+  same pair with --observe. The command chooses start or observe from the form
+  you type.
 
 Usage:
-  php cli.php account:merge <survivorId> <loserId> [--password=survivor|loser|none]
+  php cli.php account:merge <survivorId> <loserId> [--password=survivor|loser|none] [--second-factor=survivor|both]
+  php cli.php account:merge --operation=<id>
+  php cli.php account:merge <survivorId> <loserId> --observe
 
 Options:
-  --password=survivor  keep the survivor's password
-  --password=loser     keep the loser's password
-  --password=none      keep neither; the person sets one anew in their profile
-  --second-factor=survivor  keep only the survivor's apps and backup codes
-  --second-factor=both      keep confirmed apps and backup codes from both accounts
+  --password=survivor|loser|none  whose password to keep, only when starting
+  --second-factor=survivor|both   whose confirmed authenticators to keep, only when starting
+  --operation=<id>                watch one saved operation, not with a pair, --observe, or a fate
+  --observe                       watch the latest merge of a pair, not with a fate
 
-  --second-factor is required only when the loser has a confirmed authenticator.
-  With no authenticator on the survivor, only both is allowed; its sessions end.
-  A pending factor removal on the loser, or on the survivor with both, refuses
-  the merge. Trust of both accounts is revoked when the loser has a factor.
+  An omitted fate is left unnamed. It is not sent as none.
 
 Examples:
-  php cli.php account:merge 3 7
   php cli.php account:merge 3 7 --password=loser
+  php cli.php account:merge --operation=15
+  php cli.php account:merge 3 7 --observe
 HELP;
     }
 
     /**
-     * Sends the account-merge command through the channel and prints the outcome.
+     * Sends start or observe and prints the saved merge.
      *
-     * An omitted --password is a legitimate request and not a missing argument: it says
-     * the operator has nothing to decide, and the merge refuses on its own if it turns
-     * out otherwise. A value outside the three is rejected here, before anything is sent.
+     * An invalid form returns before the channel is opened. A lost reply names the
+     * outcome unknown and tells the operator how to observe; it does not repeat the start.
      *
-     * @param array<string, mixed> $options Parsed options (password fate)
-     * @param list<string> $args Positional args: [0] survivor id, [1] loser id
-     * @return int Exit code (0 on success)
+     * @param array<string, mixed> $options Declared options only
+     * @param list<string> $args Positional survivor and loser ids, when the form has them
+     * @return int Exit code: 0 completed, 6 still open, 1 refused or unreadable or unanswered, 2 invalid, 3 config
      */
     public function execute(array $options, array $args): int
     {
-        // external-boundary: positional arguments the operator types; the check below rejects them
-        $survivorId = (int)($args[0] ?? 0);
-        $loserId = (int)($args[1] ?? 0);
-        if ($survivorId <= 0 || $loserId <= 0) {
-            echo "Two positive user ids are required (e.g. {$this->getName()} <survivorId> <loserId>)\n";
-
+        $payload = $this->payload($options, $args);
+        if ($payload === null) {
             return ExitCode::INVALID_ARGUMENT;
         }
-
-        $payload = [
-            AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => $survivorId,
-            AccountMergeCommandConstants::FIELD_LOSER_USER_ID => $loserId,
-        ];
-        if (isset($options[AccountMergeCommandConstants::OPTION_PASSWORD])) {
-            // external-boundary: an option the operator types by hand; the error below rejects a bad one
-            $passwordRaw = (string)$options[AccountMergeCommandConstants::OPTION_PASSWORD];
-            $passwordFate = PasswordFate::tryFrom($passwordRaw);
-            if ($passwordFate === null) {
-                echo "Unknown --password value: {$passwordRaw} (expected survivor, loser or none)\n";
-
-                return ExitCode::INVALID_ARGUMENT;
-            }
-
-            $payload[AccountMergeCommandConstants::FIELD_PASSWORD_FATE] = $passwordFate->value;
-        }
-
-        if (isset($options[AccountMergeCommandConstants::OPTION_SECOND_FACTOR])) {
-            $secondFactorRaw = $options[AccountMergeCommandConstants::OPTION_SECOND_FACTOR];
-            $secondFactorFate = is_string($secondFactorRaw) ? SecondFactorFate::tryFrom($secondFactorRaw) : null;
-            if ($secondFactorFate === null) {
-                echo "Unknown --second-factor value (expected survivor or both)\n";
-
-                return ExitCode::INVALID_ARGUMENT;
-            }
-            $payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE] = $secondFactorFate->value;
-        }
-
-        echo "Merging user #{$loserId} into #{$survivorId}...\n";
 
         try {
             $result = $this->sendCommand($this->getName(), $payload);
@@ -163,70 +142,417 @@ HELP;
         }
 
         if ($result->reply === null) {
-            return $this->printChannelFailure($result, $this->getName());
+            $code = $this->printChannelFailure($result, $this->getName());
+            $this->writeToStandardError(
+                'The merge outcome is unknown; the channel failure did not cancel it.',
+            );
+            $this->writeToStandardError($this->observeCommand($payload));
+
+            return $code;
         }
 
-        $reply = $result->reply;
-
-        if (!$reply->isOk()) {
-            return $this->printRefusal($reply);
-        }
-
-        echo "Reply (ok): merged user #{$loserId} into #{$survivorId} ({$this->describeTransfer($reply)})\n";
-        echo 'Password: ' . $this->passwordOutcome($reply) . "\n";
-        $namedOutcome = $reply->payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_KEPT] ?? null;
-        $secondFactorKept = is_string($namedOutcome) ? SecondFactorOutcome::tryFrom($namedOutcome) : null;
-        echo 'Second factor: ' . ($secondFactorKept?->describe() ?? 'not reported by the daemon') . "\n";
-
-        return ExitCode::SUCCESS;
+        return $this->printObserved($result->reply, $payload);
     }
 
     /**
-     * Words what the merge carried over, naming each family of rows the way the project did.
+     * Builds the start or observe payload, or rejects a form that is not one of the three.
      *
-     * The identity count comes first because it is the framework's own and is always there;
-     * what follows is whatever the project reported, and a project that moves nothing of its
-     * own simply adds nothing to the line.
+     * An omitted fate is left out of the payload. It is not stored as none.
      *
-     * @param CommandReplyDTO $reply Ok reply of the merge command
-     * @return string Comma-separated tally, e.g. "2 identities, 1 messages moved"
+     * @param array<string, mixed> $options Declared options only
+     * @param list<string> $args Positional arguments
+     * @return ?array<string, int|string> Payload to send, or null when the form is invalid
      */
-    private function describeTransfer(CommandReplyDTO $reply): string
+    private function payload(array $options, array $args): ?array
     {
-        // external-boundary: the daemon's reply payload is untyped on this side
-        $identities = (int)($reply->payload[AccountMergeCommandConstants::FIELD_IDENTITIES_MOVED] ?? 0);
-        $rowsMoved = $reply->payload[AccountMergeCommandConstants::FIELD_ROWS_MOVED] ?? [];
-
-        $parts = ["{$identities} identities"];
-        if (is_array($rowsMoved)) {
-            foreach ($rowsMoved as $family => $moved) {
-                $parts[] = (int)$moved . ' ' . (string)$family;
+        foreach ([...$options] as $name => $_) {
+            if (!in_array($name, self::OPTIONS, true)) {
+                return $this->invalid();
             }
+        }
+        $observing = array_key_exists(AccountMergeCommandConstants::OPTION_OBSERVE, $options);
+        $namingOperation = array_key_exists(AccountMergeCommandConstants::OPTION_OPERATION, $options);
+        $namingPassword = array_key_exists(AccountMergeCommandConstants::OPTION_PASSWORD, $options);
+        $namingSecondFactor = array_key_exists(AccountMergeCommandConstants::OPTION_SECOND_FACTOR, $options);
+        if ($namingOperation) {
+            if ($args !== [] || $observing || $namingPassword || $namingSecondFactor) {
+                return $this->invalid();
+            }
+            $operationId = $this->positiveId($options[AccountMergeCommandConstants::OPTION_OPERATION]);
+            if ($operationId === null) {
+                return $this->invalid();
+            }
+
+            return [
+                AccountMergeCommandConstants::FIELD_MODE => AccountMergeCommandConstants::MODE_OBSERVE,
+                AccountMergeCommandConstants::FIELD_OPERATION_ID => $operationId,
+            ];
+        }
+        if ($observing) {
+            if ($options[AccountMergeCommandConstants::OPTION_OBSERVE] !== true
+                || $namingPassword || $namingSecondFactor || count($args) !== 2) {
+                return $this->invalid();
+            }
+            $survivorId = $this->positiveId($args[0]);
+            $loserId = $this->positiveId($args[1]);
+            if ($survivorId === null || $loserId === null) {
+                return $this->invalid();
+            }
+
+            return [
+                AccountMergeCommandConstants::FIELD_MODE => AccountMergeCommandConstants::MODE_OBSERVE,
+                AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => $survivorId,
+                AccountMergeCommandConstants::FIELD_LOSER_USER_ID => $loserId,
+            ];
+        }
+        if (count($args) !== 2) {
+            return $this->invalid();
+        }
+        $survivorId = $this->positiveId($args[0]);
+        $loserId = $this->positiveId($args[1]);
+        if ($survivorId === null || $loserId === null) {
+            return $this->invalid();
+        }
+        $payload = [
+            AccountMergeCommandConstants::FIELD_MODE => AccountMergeCommandConstants::MODE_START,
+            AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => $survivorId,
+            AccountMergeCommandConstants::FIELD_LOSER_USER_ID => $loserId,
+        ];
+        if ($namingPassword) {
+            $passwordRaw = $options[AccountMergeCommandConstants::OPTION_PASSWORD];
+            $passwordFate = is_string($passwordRaw) ? PasswordFate::tryFrom($passwordRaw) : null;
+            if ($passwordFate === null) {
+                echo "Usage: unknown --password value (expected survivor, loser or none)\n";
+
+                return null;
+            }
+            $payload[AccountMergeCommandConstants::FIELD_PASSWORD_FATE] = $passwordFate->value;
+        }
+        if ($namingSecondFactor) {
+            $secondFactorRaw = $options[AccountMergeCommandConstants::OPTION_SECOND_FACTOR];
+            $secondFactorFate = is_string($secondFactorRaw) ? SecondFactorFate::tryFrom($secondFactorRaw) : null;
+            if ($secondFactorFate === null) {
+                echo "Usage: unknown --second-factor value (expected survivor or both)\n";
+
+                return null;
+            }
+            $payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE] = $secondFactorFate->value;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Prints the three accepted forms and rejects the invocation.
+     *
+     * @return null Always null, so the caller returns the invalid-argument code
+     */
+    private function invalid(): null
+    {
+        echo "Usage: account:merge <survivorId> <loserId> [--password=survivor|loser|none]"
+            . " [--second-factor=survivor|both] | account:merge --operation=<id>"
+            . " | account:merge <survivorId> <loserId> --observe\n";
+
+        return null;
+    }
+
+    /**
+     * Reads one positive account id from a token the operator typed.
+     *
+     * @param mixed $token Positional argument or option value
+     * @return ?int The id, or null when the token is not a positive decimal integer
+     */
+    private function positiveId(mixed $token): ?int
+    {
+        if (!is_string($token) || !ctype_digit($token)) {
+            return null;
+        }
+        $id = (int)$token;
+
+        return $id > 0 ? $id : null;
+    }
+
+    /**
+     * Prints one saved merge, or refuses a reply that is not the merge that was asked for.
+     *
+     * An ok reply is readable only with merge and summary, plus message on a not-started
+     * end that has no refusal. Any other key, a message on another branch, or a negative
+     * tally is unreadable. Observing a pair names that record as the latest before the
+     * rest of the snapshot; start and an operation watch do not.
+     *
+     * @param CommandReplyDTO $reply Daemon reply
+     * @param array<string, int|string> $payload Request this command sent
+     * @return int Exit code for the snapshot
+     */
+    private function printObserved(CommandReplyDTO $reply, array $payload): int
+    {
+        if (!$reply->isOk()) {
+            return $this->printRefusal($reply);
+        }
+        if (array_diff(array_keys($reply->payload), self::OBSERVED_REPLY_KEYS) !== []) {
+            return $this->printUnreadable();
+        }
+        $merge = $reply->payload[AccountMergeCommandConstants::FIELD_MERGE] ?? null;
+        if (!is_array($merge) || !array_key_exists(AccountMergeCommandConstants::FIELD_SUMMARY, $reply->payload)) {
+            return $this->printUnreadable();
+        }
+        try {
+            $progress = AccountMergeProgress::fromArray($merge);
+            $summary = $this->strictSummary($progress, $reply->payload[AccountMergeCommandConstants::FIELD_SUMMARY]);
+        } catch (InvalidFormatException | InvalidJsonException | JsonException) {
+            return $this->printUnreadable();
+        }
+        if ($this->forbiddenMessage($progress, $reply)) {
+            return $this->printUnreadable();
+        }
+        if (!$this->sameObservation($progress, $payload)) {
+            return $this->printDifferentObservation();
+        }
+        if ($summary !== null) {
+            $this->printIdentity($progress, $payload);
+            echo 'Reply (ok): merged user #' . $progress->loserUserId . ' into #' . $progress->survivorUserId
+                . ' (' . $this->tally($summary) . ")\n";
+            echo 'Password: ' . $this->passwordOutcome($summary) . "\n";
+            echo 'Second factor: ' . $summary->secondFactorKept->describe() . "\n";
+
+            return ExitCode::SUCCESS;
+        }
+        if ($progress->outcome === AccountOperationOutcome::NotStarted->value) {
+            $reason = $this->terminalReason($reply, $progress);
+            if ($reason === null) {
+                return $this->printUnreadable();
+            }
+            $this->printIdentity($progress, $payload);
+
+            return $progress->refusal === null
+                ? $this->printRefusal($reply)
+                : $this->printRefusal(CommandReplyDTO::error($reply->correlationId, $reason));
+        }
+        if ($progress->outcome !== null) {
+            return $this->printUnreadable();
+        }
+        $this->printIdentity($progress, $payload);
+        echo $this->openLine($progress);
+        if ($progress->refusal !== null) {
+            echo $progress->refusal[AccountMergeProgress::reason] . "\n";
+        }
+        echo 'Observe it with account:merge --operation=' . $progress->operationId . "\n";
+
+        return ExitCode::TIMEOUT;
+    }
+
+    /**
+     * Reads the summary only on a completed end, and only when it is strict.
+     *
+     * @param AccountMergeProgress $progress Saved merge
+     * @param mixed $summary Summary field of the reply, null until a completed end
+     * @return ?AccountMergeSummary Summary of a completed end, or null when this end has none
+     * @throws InvalidFormatException When the summary is present on another branch, missing on a completed end, not strict, or negative
+     */
+    private function strictSummary(AccountMergeProgress $progress, mixed $summary): ?AccountMergeSummary
+    {
+        $completed = $progress->state === AccountMergeProgress::END
+            && $progress->outcome === AccountOperationOutcome::Completed->value;
+        if ($summary === null) {
+            if ($completed) {
+                throw new InvalidFormatException('A completed merge reply requires its summary.');
+            }
+
+            return null;
+        }
+        if (!$completed || !is_array($summary)) {
+            throw new InvalidFormatException('A merge reply carries a summary only for a completed end.');
+        }
+        $parsed = AccountMergeSummary::fromArray($summary);
+        if ($parsed->identitiesMoved < 0) {
+            throw new InvalidFormatException('A merge reply cannot report a negative identity count.');
+        }
+        foreach ($parsed->rowsMoved as $moved) {
+            if ($moved < 0) {
+                throw new InvalidFormatException('A merge reply cannot report a negative row count.');
+            }
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @param AccountMergeProgress $progress Saved merge the reply names
+     * @param array<string, int|string> $payload Request this command sent
+     * @return bool Whether the reply is the operation or the pair that was asked for
+     */
+    private function sameObservation(AccountMergeProgress $progress, array $payload): bool
+    {
+        if (array_key_exists(AccountMergeCommandConstants::FIELD_OPERATION_ID, $payload)) {
+            return $progress->operationId === $payload[AccountMergeCommandConstants::FIELD_OPERATION_ID];
+        }
+
+        return $progress->survivorUserId === $payload[AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID]
+            && $progress->loserUserId === $payload[AccountMergeCommandConstants::FIELD_LOSER_USER_ID];
+    }
+
+    /**
+     * Prints the latest-record lead for a pair observation, then the operation, the pair, and the choices.
+     *
+     * @param AccountMergeProgress $progress Saved merge
+     * @param array<string, int|string> $payload Request this command sent
+     */
+    private function printIdentity(AccountMergeProgress $progress, array $payload): void
+    {
+        if ($this->isPairObservation($payload)) {
+            echo 'The latest recorded merge for this pair is operation ' . $progress->operationId . ".\n";
+        }
+        echo $this->identityLine($progress);
+    }
+
+    /**
+     * @param array<string, int|string> $payload Request this command sent
+     * @return bool Whether the request observes a pair rather than starting or naming an operation
+     */
+    private function isPairObservation(array $payload): bool
+    {
+        return array_key_exists(AccountMergeCommandConstants::FIELD_MODE, $payload)
+            && $payload[AccountMergeCommandConstants::FIELD_MODE] === AccountMergeCommandConstants::MODE_OBSERVE
+            && !array_key_exists(AccountMergeCommandConstants::FIELD_OPERATION_ID, $payload)
+            && array_key_exists(AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID, $payload)
+            && array_key_exists(AccountMergeCommandConstants::FIELD_LOSER_USER_ID, $payload);
+    }
+
+    /**
+     * @param AccountMergeProgress $progress Saved merge the reply names
+     * @param CommandReplyDTO $reply Ok reply
+     * @return bool Whether the reply carries a message this branch forbids
+     */
+    private function forbiddenMessage(AccountMergeProgress $progress, CommandReplyDTO $reply): bool
+    {
+        if (!array_key_exists(CommandConstants::FIELD_MESSAGE, $reply->payload)) {
+            return false;
+        }
+
+        return $progress->outcome !== AccountOperationOutcome::NotStarted->value
+            || $progress->refusal !== null;
+    }
+
+    /**
+     * @param AccountMergeProgress $progress Saved merge
+     * @return string Operation, pair, and the saved choice fates, with a line break
+     */
+    private function identityLine(AccountMergeProgress $progress): string
+    {
+        return 'Operation ' . $progress->operationId
+            . ', pair ' . $progress->survivorUserId . ' ' . $progress->loserUserId
+            . ', password ' . $this->fateWord($progress->choice->passwordFate?->value)
+            . ', second factor ' . $this->fateWord($progress->choice->secondFactorFate?->value)
+            . "\n";
+    }
+
+    /**
+     * @param ?string $fate Saved choice, or null when the merge left it unnamed
+     * @return string The fate's own word, or the words for an unnamed choice
+     */
+    private function fateWord(?string $fate): string
+    {
+        return $fate ?? 'not specified';
+    }
+
+    /**
+     * @param AccountMergeSummary $summary Strict completed tally
+     * @return string Identities and project rows, in the order the summary carries them
+     */
+    private function tally(AccountMergeSummary $summary): string
+    {
+        $parts = [$summary->identitiesMoved . ' identities'];
+        foreach ($summary->rowsMoved as $family => $moved) {
+            $parts[] = $moved . ' ' . $family;
         }
 
         return implode(', ', $parts) . ' moved';
     }
 
     /**
-     * Words what the merge did with the password, from what it actually did.
-     *
-     * Printed on every merge and not only on a decided one, because "nothing survived"
-     * is the outcome an operator most needs to hear: whoever they merged has no way in
-     * by password until they set one, and no other line of this reply would say so.
-     *
-     * @param CommandReplyDTO $reply Ok reply of the merge command
-     * @return string One line naming whose password the account kept
+     * @param AccountMergeSummary $summary Strict completed tally
+     * @return string Whose password the merged account ended up with
      */
-    private function passwordOutcome(CommandReplyDTO $reply): string
+    private function passwordOutcome(AccountMergeSummary $summary): string
     {
-        // external-boundary: a reply key an older daemon may not carry; the default reads as unknown
-        $kept = PasswordFate::tryFrom((string)($reply->payload[AccountMergeCommandConstants::FIELD_PASSWORD_KEPT] ?? ''));
-
-        return match ($kept) {
+        return match ($summary->passwordKept) {
             PasswordFate::SURVIVOR => "the survivor's password stayed",
             PasswordFate::LOSER => "the loser's password stayed and now opens the account",
             PasswordFate::NONE => 'the account has no password; it can be set in the profile',
-            default => 'not reported by the daemon',
         };
+    }
+
+    /**
+     * @param AccountMergeProgress $progress Open merge
+     * @return string Stage, parts done, and outstanding waits, with a line break
+     */
+    private function openLine(AccountMergeProgress $progress): string
+    {
+        $done = 0;
+        foreach ($progress->parts as $part) {
+            $done += $part[AccountMergeProgress::done] ? 1 : 0;
+        }
+        $stage = $progress->stage === $progress->state
+            ? $progress->state
+            : $progress->state . ' ' . $progress->stage;
+        $line = $stage . ': ' . $done . ' of ' . count($progress->parts) . ' parts done';
+        if ($progress->waits !== []) {
+            $waited = [];
+            foreach ($progress->waits as $wait) {
+                $waited[] = $wait[AccountMergeProgress::participant]
+                    . ' (user ' . $wait[AccountMergeProgress::userId] . ')';
+            }
+            $line .= '; waiting for ' . implode(', ', $waited);
+        }
+
+        return $line . "\n";
+    }
+
+    /**
+     * @param CommandReplyDTO $reply Ok reply of a merge that ended without completing
+     * @param AccountMergeProgress $progress That merge
+     * @return ?string Daemon sentence, or null when the reply does not carry one
+     */
+    private function terminalReason(CommandReplyDTO $reply, AccountMergeProgress $progress): ?string
+    {
+        if ($progress->refusal !== null) {
+            return $progress->refusal[AccountMergeProgress::reason];
+        }
+        $message = $reply->payload[CommandConstants::FIELD_MESSAGE] ?? null;
+        if (!is_string($message) || $message === '') {
+            return null;
+        }
+
+        return $message;
+    }
+
+    /**
+     * @return int {@see ExitCode::ERROR}
+     */
+    private function printUnreadable(): int
+    {
+        return $this->printToStandardError('The account merge reply cannot be read.');
+    }
+
+    /**
+     * @return int {@see ExitCode::ERROR}
+     */
+    private function printDifferentObservation(): int
+    {
+        return $this->printToStandardError('The account merge reply names a different operation.');
+    }
+
+    /**
+     * @param array<string, int|string> $payload Request whose reply did not arrive
+     * @return string Command that observes the same merge
+     */
+    private function observeCommand(array $payload): string
+    {
+        if (array_key_exists(AccountMergeCommandConstants::FIELD_OPERATION_ID, $payload)) {
+            return 'account:merge --operation=' . $payload[AccountMergeCommandConstants::FIELD_OPERATION_ID];
+        }
+
+        return 'account:merge ' . $payload[AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID]
+            . ' ' . $payload[AccountMergeCommandConstants::FIELD_LOSER_USER_ID] . ' --observe';
     }
 }

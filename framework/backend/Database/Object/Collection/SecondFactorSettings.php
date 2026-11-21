@@ -12,7 +12,6 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Constants\TimeConstants;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
-use Hilos\Database\Entity\Item\SecondFactorSetting as EntitySecondFactorSetting;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Entity\Collection\SecondFactorSettings as EntitySecondFactorSettings;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
@@ -41,24 +40,6 @@ class SecondFactorSettings extends Objects
     public const string OBJECT_CLASS = ObjectSecondFactorSetting::class;
     public const string ENTITY_COLLECTION_CLASS = EntitySecondFactorSettings::class;
     public const string COLLECTION_KEY = HilosDbContext::secondFactorSettings;
-
-    /**
-     * Locks both account sets before merge reads them, without waiting for another writer.
-     * The caller must hold a transaction; this read neither opens nor commits one.
-     *
-     * @param int $survivorId Surviving account
-     * @param int $loserId Folded account
-     * @throws DatabaseException When a set is busy or its rows cannot be locked
-     */
-    public function lockForMerge(int $survivorId, int $loserId): void
-    {
-        Database::sql(
-            'SELECT `' . EntitySecondFactorSetting::user_id . '` FROM `' . EntitySecondFactorSetting::_table
-                . '` WHERE `' . EntitySecondFactorSetting::user_id . '` IN (?, ?) ORDER BY `'
-                . EntitySecondFactorSetting::user_id . '` FOR UPDATE NOWAIT',
-            [$survivorId, $loserId],
-        );
-    }
 
     /**
      * Stores a person's removal wait: the one in force and a shorter one parked until a moment.

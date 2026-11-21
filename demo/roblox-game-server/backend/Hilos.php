@@ -494,18 +494,6 @@ class Hilos extends HilosFacade
         HilosAgentType::HILOS_PROBE_DB => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_DB],
     ];
 
-    /** @var array<string, list<string>> Outstanding closed DB writer transitions. */
-    public const array SHARED_DB_OWNERS = [
-        HilosDbContext::identities => ['HIL-1999'],
-        HilosDbContext::passkeyCredentials => ['HIL-1999'],
-        HilosDbContext::secondFactorBackupCodes => ['HIL-1999'],
-        HilosDbContext::secondFactorResets => ['HIL-1999'],
-        HilosDbContext::secondFactorSettings => ['HIL-1999'],
-        HilosDbContext::secondFactorTrusts => ['HIL-1999'],
-        HilosDbContext::secondFactors => ['HIL-1999'],
-        HilosDbContext::users => ['HIL-1999'],
-    ];
-
     public const array TABLES = [
         RobloxGameServerTableContext::hilosTermsHistory => HilosTermsHistoryTable::class,
         RobloxGameServerTableContext::hilosPrivacyHistory => HilosPrivacyHistoryTable::class,

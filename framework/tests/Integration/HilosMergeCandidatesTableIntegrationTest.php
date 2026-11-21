@@ -123,7 +123,7 @@ final class HilosMergeCandidatesTableIntegrationTest extends HilosSessionIntegra
             $other = $this->openTableMerge(self::GAMMA, self::TWELVE);
             $otherAssignment = Hilos::$db->accountOperationAssignments->forOperation($other->id)->first();
             $deletion = $this->requestTableDeletion(self::ALPHA);
-            $this->asMergeHolder(static fn () => Hilos::$db->userMerges->actions->add(self::ALPHA, self::BETA));
+            $this->asPerson(self::ALPHA, static fn () => Hilos::$db->userMerges->actions->add(self::ALPHA, self::BETA));
             foreach ([
                 [HilosDbContext::accountOperations, $operation->id,
                     [EntityAccountOperation::root_user_id => self::GAMMA, EntityAccountOperation::loser_user_id => self::TWELVE],

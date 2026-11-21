@@ -1405,7 +1405,7 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         }
     }
 
-    public function testHoldStillRepairsAFoldedAccountAndStopsItsAgentButRenameStaysRefused(): void
+    public function testHoldStillRepairsAFoldedAccountButRenameStaysRefused(): void
     {
         self::accept(self::USER_ID, 'terms', 'second');
         self::accept(self::USER_ID, 'privacy', 'privacy');
@@ -1435,7 +1435,7 @@ final class AccountStandingIntegrationTest extends ProfileIntegrationTestCase
         $frames = $this->drained();
         self::assertCount(1, $frames['corr-1'] ?? []);
         self::assertTrue($frames['corr-1'][0]->isOk());
-        self::assertTrue($this->personAgent(self::USER_ID)->shouldStop());
+        self::assertFalse($this->personAgent(self::USER_ID)->shouldStop());
         $rows = $this->acceptanceRows();
         self::assertCount(2, $rows);
         self::assertSame(['privacy', 'first'], array_column($rows, 'revision_id'));

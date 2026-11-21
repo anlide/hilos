@@ -1043,7 +1043,7 @@ describe('createHilosAccountMerge', () => {
         },
       },
     ])
-    reply(handle.requestId)
+    reply(handle.requestId, { operationId: 42 })
     await handle.done
   })
 
@@ -1070,29 +1070,26 @@ describe('createHilosAccountMerge', () => {
         },
       },
     ])
-    reply(handle.requestId)
+    reply(handle.requestId, { operationId: 42 })
     await handle.done
   })
 
-  it.each([{ operationId: 42 }, undefined])(
-    'reads the accepted reply or legacy absence: %j',
-    async (accepted) => {
-      const { context, reply } = recordingContext()
-      const handle = createHilosAccountMerge(context).merge(
-        12,
-        57,
-        undefined,
-        undefined,
-        false,
-        false,
-      )
-      reply(handle.requestId, accepted)
-      await expect(handle.done).resolves.toEqual({
-        message: undefined,
-        reply: accepted,
-      })
-    },
-  )
+  it('reads the accepted reply with its operation id', async () => {
+    const { context, reply } = recordingContext()
+    const handle = createHilosAccountMerge(context).merge(
+      12,
+      57,
+      undefined,
+      undefined,
+      false,
+      false,
+    )
+    reply(handle.requestId, { operationId: 42 })
+    await expect(handle.done).resolves.toEqual({
+      message: undefined,
+      reply: { operationId: 42 },
+    })
+  })
 
   it.each([
     { operationId: 42, extra: true },
@@ -1100,6 +1097,7 @@ describe('createHilosAccountMerge', () => {
     { operationId: '42' },
     { operationId: 1.5 },
     {},
+    undefined,
     null,
   ])('rejects an invalid accepted reply: %j', async (accepted) => {
     const { context, reply } = recordingContext()

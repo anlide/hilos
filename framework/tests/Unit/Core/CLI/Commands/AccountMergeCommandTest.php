@@ -12,7 +12,7 @@ use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\ExitCode;
-use Hilos\Core\CLI\Commands\AccountMergeOwnerCommand;
+use Hilos\Core\CLI\Commands\AccountMergeCommand;
 use Hilos\Core\CLI\Commands\CommandChannelResult;
 use Hilos\Core\CLI\Commands\CommandExecutionSite;
 use Hilos\Core\CLI\Commands\DatabaseFreeCommand;
@@ -34,7 +34,7 @@ use PHPUnit\Framework\TestCase;
  * reply: a strict completed tally, an open snapshot at exit 6, a terminal refusal at exit 1,
  * and an unknown outcome when no reply arrived.
  */
-final class AccountMergeOwnerCommandTest extends TestCase
+final class AccountMergeCommandTest extends TestCase
 {
     private const string CANCEL_MESSAGE = 'The account merge was canceled before any accounts were merged.';
 
@@ -84,7 +84,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
     #[DataProvider('invalidInvocations')]
     public function testRejectsAFormThatIsNotOneOfTheThree(array $options, array $args): void
     {
-        $command = new AccountMergeOwnerCommandSpy();
+        $command = new AccountMergeCommandSpy();
         $this->expectOutputRegex('/^Usage:/');
         self::assertSame(ExitCode::INVALID_ARGUMENT, $command->execute($options, $args));
         self::assertNull($command->sentPayload);
@@ -106,7 +106,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
     #[DataProvider('declaredOptions')]
     public function testOptionsSiteNameAndDatabaseFree(string $option, bool $declared): void
     {
-        $command = new AccountMergeOwnerCommand();
+        $command = new AccountMergeCommand();
 
         self::assertSame($declared, in_array($option, $command::OPTIONS, true));
         self::assertSame(CliCommands::ACCOUNT_MERGE, $command->getName());
@@ -170,7 +170,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
     #[DataProvider('requestShapes')]
     public function testSendsTheThreeRequestShapes(array $options, array $args, array $payload): void
     {
-        $command = new AccountMergeOwnerCommandSpy();
+        $command = new AccountMergeCommandSpy();
         $this->expectOutputString('');
         self::assertSame(ExitCode::ERROR, $command->execute($options, $args));
         self::assertSame(CliCommands::ACCOUNT_MERGE, $command->sentCommand);
@@ -260,7 +260,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
         CommandReplyDTO $reply,
         string $output,
     ): void {
-        $command = new AccountMergeOwnerCommandSpy();
+        $command = new AccountMergeCommandSpy();
         $command->result = self::channel($reply);
         $this->expectOutputString($output);
         self::assertSame(ExitCode::SUCCESS, $command->execute($options, $args));
@@ -327,7 +327,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
         string $output,
         string $standardError,
     ): void {
-        $command = new AccountMergeOwnerCommandSpy();
+        $command = new AccountMergeCommandSpy();
         $command->result = self::channel($reply);
         $this->expectOutputString($output);
         self::assertSame(
@@ -392,7 +392,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
     #[DataProvider('openReplies')]
     public function testAnOpenSnapshotAsksToBeObserved(CommandReplyDTO $reply, string $output): void
     {
-        $command = new AccountMergeOwnerCommandSpy();
+        $command = new AccountMergeCommandSpy();
         $command->result = self::channel($reply);
         $this->expectOutputString($output);
         self::assertSame(ExitCode::TIMEOUT, $command->execute([], ['7', '9']));
@@ -454,7 +454,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
         string $output,
         string $standardError,
     ): void {
-        $command = new AccountMergeOwnerCommandSpy();
+        $command = new AccountMergeCommandSpy();
         $command->result = self::channel($reply);
         $this->expectOutputString($output);
         self::assertSame(ExitCode::ERROR, $command->execute($options, $args));
@@ -528,7 +528,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
         string $standardError,
         string $output,
     ): void {
-        $command = new AccountMergeOwnerCommandSpy();
+        $command = new AccountMergeCommandSpy();
         if ($result === null) {
             $command->envFailure = new EnvException('missing command channel');
         } else {
@@ -711,7 +711,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
         CommandReplyDTO $reply,
         string $standardError,
     ): void {
-        $command = new AccountMergeOwnerCommandSpy();
+        $command = new AccountMergeCommandSpy();
         $command->result = self::channel($reply);
         $this->expectOutputString('');
         self::assertSame(ExitCode::ERROR, $command->execute($options, $args));
@@ -739,7 +739,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
     #[DataProvider('helpPhrases')]
     public function testHelpDescribesTheBoundWaitAndTheDistributedEnd(string $phrase): void
     {
-        $help = (new AccountMergeOwnerCommand())->getHelp();
+        $help = (new AccountMergeCommand())->getHelp();
 
         self::assertStringContainsString($phrase, $help);
         self::assertStringNotContainsString('one transaction', $help);
@@ -855,7 +855,7 @@ final class AccountMergeOwnerCommandTest extends TestCase
  * The command with its one outward call stood in: what it would have put on the wire is captured
  * instead, a canned round-trip comes back, and stderr is kept for the case to read.
  */
-final class AccountMergeOwnerCommandSpy extends AccountMergeOwnerCommand
+final class AccountMergeCommandSpy extends AccountMergeCommand
 {
     /** @var ?string Wire name the command sent, or null when it refused before sending */
     public ?string $sentCommand = null;

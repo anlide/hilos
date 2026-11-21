@@ -19,8 +19,6 @@ use Hilos\Notification\Delivery\AbstractDeliveryChannelAgent;
  */
 class DbWriterTransitionCatalog
 {
-    protected const string MERGE = 'HIL-1999';
-
     /**
      * @param class-string<Hilos> $hilosClass Topology being inspected, independent of the active facade
      * @return array<string, list<DbWriterTransitionState>> Applicable closed state graphs
@@ -56,14 +54,13 @@ class DbWriterTransitionCatalog
     {
         $users = $this->role($hilosClass, HilosAgentType::HILOS_USERS_LIBRARY);
         $person = $this->role($hilosClass, HilosAgentType::HILOS_USER);
-        $holder = $this->role($hilosClass, HilosAgentType::HILOS_SESSIONS_LIBRARY);
         $notifications = $this->role($hilosClass, HilosAgentType::HILOS_NOTIFICATIONS_LIBRARY);
         $definitions = [];
 
         $definitions[HilosDbContext::users] = $this->states(
             [...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add),
                 ...$this->claim($person, DbWriterClaimWidth::Rows, TruthSourceOperation::Update, TruthSourceOperation::Remove)],
-            [self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Update)],
+            [],
         );
 
         foreach ([HilosDbContext::identities, HilosDbContext::passkeyCredentials,
@@ -74,26 +71,19 @@ class DbWriterTransitionCatalog
             if (in_array($collection, [HilosDbContext::identities, HilosDbContext::passkeyCredentials], true)) {
                 $base = [...$this->claim($users, DbWriterClaimWidth::Whole, TruthSourceOperation::Add), ...$base];
             }
-            $mergeOperations = match ($collection) {
-                HilosDbContext::passkeyCredentials => [TruthSourceOperation::Update],
-                HilosDbContext::secondFactorResets => [TruthSourceOperation::Remove],
-                default => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-            };
-            $pending = [self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, ...$mergeOperations)];
-            $definitions[$collection] = $this->states($base, $pending);
+            $definitions[$collection] = $this->states($base, []);
         }
 
-        // The personal owner removes its settings; the holder retains the existing merge's rights.
         $definitions[HilosDbContext::secondFactorSettings] = $this->states(
             $this->claim($person, DbWriterClaimWidth::Set,
                 TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove),
-            [self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, ...TruthSourceOperation::ALL)],
+            [],
         );
 
         $definitions[HilosDbContext::secondFactorTrusts] = $this->states(
             $this->claim($person, DbWriterClaimWidth::Set,
                 TruthSourceOperation::Add, TruthSourceOperation::Update, TruthSourceOperation::Remove),
-            [self::MERGE => $this->claim($holder, DbWriterClaimWidth::Whole, TruthSourceOperation::Remove)],
+            [],
         );
 
         $definitions[HilosDbContext::legalAcceptances] = $this->states(
@@ -198,10 +188,6 @@ class DbWriterTransitionCatalog
         }
         $leaves = array_keys($pending);
         sort($leaves, SORT_STRING);
-        $ordinary = array_values(array_diff($leaves, [self::MERGE]));
-        if (isset($pending[self::MERGE])) {
-            $requires[self::MERGE] = [...($requires[self::MERGE] ?? []), ...$ordinary];
-        }
         $subsets = [[]];
         foreach ($leaves as $leaf) {
             foreach ($subsets as $subset) {

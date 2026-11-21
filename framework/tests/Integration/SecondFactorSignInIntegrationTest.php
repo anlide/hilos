@@ -4,6 +4,22 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Users\Agent\AbstractUserAgent;
+use Hilos\Users\AccountMergeProgressChangeSubscriber;
+use Hilos\Users\AccountMergeProgressResolver;
+
+use Hilos\Core\Router\SignalSource;
+
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+
+use Hilos\Constants\HilosAgentType;
+
+use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
+
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
+
+use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
+
 use Generator;
 use Hilos\Auth\Flow\AuthFlowOutcome;
 use Hilos\Auth\Flow\AuthFlowStep;
@@ -31,6 +47,7 @@ use Hilos\Constants\EnvConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\DTO\UserBrowserTrustRenewDoneSignalData;
 use Hilos\Users\DTO\UserBrowserTrustRenewSignalData;
@@ -324,19 +341,15 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
     /** @throws HilosException When the merge or a sign-in step fails */
     public function testMergedProtectionGuardsTheSurvivorsNextSignIn(): void
     {
-        Database::sqlRun((string)file_get_contents(
-            dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_hilos_passkey_credential.sql',
-        ));
+        foreach (['hilos_passkey_credential', 'hilos_account_merge_copy'] as $table) {
+            Database::sqlRun((string)file_get_contents(dirname(__DIR__, 2) . '/backend/Database/Migration/Stub/create_' . $table . '.sql'));
+        }
         try {
             Database::sqlRun("INSERT INTO hilos_user (id, name) VALUES (78, 'Folded')");
             Hilos::$db->secondFactors->actions->startEnrolment(78, 'Transferred', Base32::encode(self::SECRET_BYTES))
                 ->actions->confirm('Transferred');
             Hilos::$db->secondFactorBackupCodes->actions->issueSet(78, ['abcdefghjk']);
-            $this->holder->onSignalCommand(new CommandRequestDTO('merge-sign-in', CliCommands::ACCOUNT_MERGE, [
-                AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => self::USER_ID,
-                AccountMergeCommandConstants::FIELD_LOSER_USER_ID => 78,
-                AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE => SecondFactorFate::BOTH->value,
-            ]), '', '');
+            $this->mergeProtection();
             $this->drain();
             $this->assertSame(self::USER_ID, Hilos::$db->userMerges[78]->survivorUserId);
             $this->grant();
@@ -355,7 +368,58 @@ final class SecondFactorSignInIntegrationTest extends HilosSessionIntegrationTes
             $this->expectException(ValidationException::class);
             $this->confirm('ABCDE-FGHJK', backupCode: true);
         } finally {
-            Database::sqlRun('DROP TABLE IF EXISTS hilos_passkey_credential');
+            Database::sqlRun('DROP TABLE IF EXISTS hilos_account_merge_copy, hilos_passkey_credential');
+        }
+    }
+
+    /** Establishes protection through the canonical command and both personal owners' committed parts. */
+    private function mergeProtection(): void
+    {
+        $previousApp = Hilos::appClass();
+        SecondFactorMergeHilos::initBrowser();
+        SourceChangeBus::subscribe(new AccountMergeProgressChangeSubscriber());
+        AccountMergeProgressResolver::forgetAll();
+        OwnershipDeclaration::claimAll($this->holder);
+        try {
+            ExecutionContext::run(new ExecutionFrame(agentId: $this->holder->getId()), fn () =>
+                $this->holder->onSignalCommand(new CommandRequestDTO('merge-sign-in', CliCommands::ACCOUNT_MERGE, [
+                    AccountMergeCommandConstants::FIELD_MODE => AccountMergeCommandConstants::MODE_START,
+                    AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID => self::USER_ID,
+                    AccountMergeCommandConstants::FIELD_LOSER_USER_ID => 78,
+                    AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE => SecondFactorFate::BOTH->value,
+                ]), '', ''));
+            $replies = [];
+            $carried = 0;
+            while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+                self::assertLessThan(100, ++$carried, 'The owner exchange must settle without a retry loop.');
+                $data = $signal->data;
+                $name = $signal->signalName->getName();
+                if ($data instanceof AgentSignalData) {
+                    $signal = SignalDTO::fromArray(json_decode(json_encode($signal->toArray(), JSON_THROW_ON_ERROR), true,
+                        flags: JSON_THROW_ON_ERROR));
+                    $data = Hilos::$sr->createAgentSignalPayloadDTO($name, $signal->data);
+                }
+                $sender = SignalSource::describe($signal->signalSource);
+                if ($data instanceof AgentSignalData && $data->data instanceof AccountOperationAnswerSignalData) {
+                    ExecutionContext::run(new ExecutionFrame(agentId: $this->holder->getId()), fn () =>
+                        $this->holder->onSignalAgent($data, $sender, $name));
+                } elseif ($data instanceof AgentSignalData && ($data->data instanceof AccountOperationAskSignalData
+                    || $data->data instanceof AccountMergeHandoverSignalData)) {
+                    $this->asPerson((int)$data->data->ownerIndex, static fn (AbstractUserAgent $agent) =>
+                        $agent->onSignalAgent($data, $sender, $name));
+                } elseif ($data instanceof CommandReplyDTO) {
+                    $replies[] = $data;
+                }
+            }
+            self::assertCount(1, $replies);
+            self::assertTrue($replies[0]->isOk());
+            self::assertSame('completed', $replies[0]->payload[AccountMergeCommandConstants::FIELD_MERGE]['outcome']);
+        } finally {
+            TruthSourceRegistry::unregisterAgent($this->holder->getId());
+            RtTruthSourceRegistry::unregisterAgent($this->holder->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->holder->getId()));
+            $previousApp::initBrowser();
+            AccountMergeProgressResolver::forgetAll();
         }
     }
 
@@ -2329,15 +2393,6 @@ final class SecondFactorTestHolder extends AbstractSessionsLibraryAgent
     {
     }
 
-    /**
-     * @param int $survivorUserId Surviving account
-     * @param int $loserUserId Folded account
-     * @return array<string, int> This fixture has no project rows
-     */
-    protected function applyAccountMerge(int $survivorUserId, int $loserUserId): array
-    {
-        return [];
-    }
 }
 
 /**
@@ -2416,4 +2471,13 @@ final class SecondFactorTestConnection extends HilosSessionConnection
     {
         yield new RtWork();
     }
+}
+
+/** The sign-in fixture's real session holder and indexed personal owner, also used during merge setup. */
+abstract class SecondFactorMergeHilos extends Hilos
+{
+    public const array AGENTS = [
+        HilosAgentType::HILOS_USER => [AgentRegistryKey::WORKER => IntegrationUserAgent::class, AgentRegistryKey::INDEXED => true],
+        HilosAgentType::HILOS_SESSIONS_LIBRARY => [AgentRegistryKey::WORKER => SecondFactorTestHolder::class],
+    ];
 }

@@ -29,7 +29,6 @@ use Throwable;
 
 /**
  * Applies the survivor's own protection and records its receipt in one participant transaction.
- * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
  */
 final class AccountMergeReceiving
 {

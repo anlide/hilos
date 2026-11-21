@@ -15,7 +15,6 @@ use Throwable;
 /**
  * Durable cancel-before-fact driver; records obligations and waits for both owners without sending frames.
  * The prepared coordinator checks strict release bindings before advancing cancellation.
- * SCAFFOLD: production merge switches in HIL-1999.
  */
 final class AccountMergeCancellation
 {

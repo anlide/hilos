@@ -30,6 +30,7 @@ use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
 use Hilos\Auth\AccountOperation\AccountOperationAsks;
 use Hilos\Auth\AccountOperation\AccountOperationExpectation;
 use Hilos\Auth\AccountOperation\AccountOperationKind;
+use Hilos\Auth\AccountOperation\AccountOperationOutcome;
 use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
@@ -194,9 +195,7 @@ use Hilos\Core\Daemon\Cron\Exception\CronRuleNameException;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
-use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
-use Hilos\Core\Exception\NotImplementedException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\Feature\HilosFeature;
@@ -216,7 +215,6 @@ use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Identity\PasswordFate;
-use Hilos\Database\Object\Collection\Identities;
 use Hilos\Database\Object\Item\Session as ObjectSession;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Database\Schema\Schema;
@@ -253,11 +251,8 @@ use Hilos\Users\DTO\AccountAdminSetSignalData;
 use Hilos\Users\DTO\AccountBlockSetSignalData;
 use Hilos\Users\AccountMergeCommandConstants;
 use Hilos\Users\AccountMergeProgressResolver;
-use Hilos\Users\AccountMergeSummary;
 use Hilos\Users\AccountMergeRefusalText;
 use Hilos\Users\SecondFactorFate;
-use Hilos\Users\SecondFactorOutcome;
-use Hilos\Auth\SecondFactor\SecondFactorResetWait;
 use Hilos\Auth\SecondFactor\SecondFactorGroup;
 use Hilos\Auth\SecondFactor\SecondFactorStateProjector;
 use Hilos\Auth\SecondFactor\SecondFactorTrustRestrictionSweep;
@@ -308,8 +303,8 @@ use Throwable;
  * merged and the tombstone of the loser (HIL-1199, {@see assertMergeable()}). The framework also
  * removes the person, their rename journal and the accounts folded into them on erasure
  * (HIL-1200). What a project adds is the claims over its own way in - the sign-in waits and the
- * registration holds, declared where a sign-in surface exists - and its own rows in a merge
- * ({@see applyAccountMerge()}). Project erasure is carried by its account-data owner.
+ * registration holds, declared where a sign-in surface exists - and its own rows in account
+ * operations, carried by its account-data owner.
  *
  * A session is anonymous (user id null) until {@see authenticateSession()} binds a user;
  * {@see deauthenticateSession()} is the symmetric downgrade that keeps the row and moves it
@@ -365,11 +360,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * Sessions and the coordinator's immutable work records belong to this holder. Its own
-     * erasure part releases sessions and removes access-log rows. The remaining foreign rights
-     * serve the existing merge until its owner protocol is activated; erasure writes go to each
-     * participant in that participant's execution frame.
-     * Ordinary browser trust creation, renewal and revocation belong to the personal owner.
-     * This holder retains only merge removal, which also supplies its sign-in read interest.
+     * operation parts release sessions and move or remove access-log rows. Every personal and
+     * project part writes through its owner in that participant's execution frame.
      *
      * @var array<string, list<TruthSourceOperation>>
      */
@@ -377,16 +369,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
         HilosDbContext::sessions => TruthSourceOperation::BY_KIND,
         HilosDbContext::accountOperations => [TruthSourceOperation::Add, TruthSourceOperation::Update],
         HilosDbContext::accountOperationAssignments => [TruthSourceOperation::Add],
-        // Only terminal merge removal remains; the personal owner grants and renews trusts.
-        HilosDbContext::secondFactorTrusts => [TruthSourceOperation::Remove],
-        HilosDbContext::users => [TruthSourceOperation::Update],
-        HilosDbContext::identities => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::passkeyCredentials => [TruthSourceOperation::Update],
-        HilosDbContext::secondFactors => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::secondFactorBackupCodes => [TruthSourceOperation::Update, TruthSourceOperation::Remove],
-        HilosDbContext::secondFactorResets => [TruthSourceOperation::Remove],
-        HilosDbContext::secondFactorSettings => TruthSourceOperation::ALL,
-        HilosDbContext::userMerges => [TruthSourceOperation::Add],
         HilosDbContext::accessLogEntries => TruthSourceOperation::ALL,
     ];
 
@@ -403,12 +385,20 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     ];
 
     /**
-     * @var list<string> The stored trust restrictions, read when a sign-in asks whether its browser is
-     *     trusted (HIL-1900): the settings library writes them, and a restriction counts at the door
-     *     before the person's agent has applied it. A project subclass with reads of its own keeps this
-     *     list with `[...parent::READS_DB, …]`.
+     * @var list<string> Personal records read by sign-in and merge preflight, now written by their
+     *     owners. Stored trust restrictions count at the sign-in door before the person's agent has
+     *     applied them (HIL-1900). A project subclass keeps this list with `[...parent::READS_DB, …]`.
      */
     public const array READS_DB = [
+        HilosDbContext::users,
+        HilosDbContext::identities,
+        HilosDbContext::passkeyCredentials,
+        HilosDbContext::secondFactors,
+        HilosDbContext::secondFactorBackupCodes,
+        HilosDbContext::secondFactorResets,
+        HilosDbContext::secondFactorSettings,
+        HilosDbContext::secondFactorTrusts,
+        HilosDbContext::userMerges,
         HilosDbContext::secondFactorTrustRestrictions,
         HilosDbContext::accountDeletions,
         HilosDbContext::legalAcceptances,
@@ -660,13 +650,10 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * that. It shares its whole body with the browser control of the same name - one core,
      * two ways in - which is why the wire name is one on both sides.
      *
-     * The merge ({@see CliCommands::ACCOUNT_MERGE}, HIL-378, moved here by HIL-729) is the
-     * last, and it reaches a session by consequence rather than by aim: what it asks for is
-     * that two accounts become one, and the loser's open sessions have to be signed out
-     * before that is true. It is also the one command with a second way in - an admin table
-     * submits it as a page action and the page forwards it on
-     * {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE} - so the two entrances share one core
-     * and differ only in whom the answer goes to.
+     * The merge ({@see CliCommands::ACCOUNT_MERGE}) opens or observes a durable operation.
+     * The browser enters through {@see HilosSignalConstants::HILOS_ACCOUNT_MERGE}; both ways
+     * use the same coordinator and each owner records its own part. The browser receives the
+     * opening's operation id, while the command waits for its saved outcome or a live snapshot.
      *
      * The seventh name, {@see CliCommands::ACCOUNT_TEST_FORCE_PURGE}, is test-only:
      * the command socket's non-production gate refuses it on production. This holder
@@ -674,14 +661,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      *
      * The fixture bind also runs here: this holder owns the anonymous session it authenticates.
      *
-     * Every project that registers the library answers these names. The first five are the
-     * framework's code over `hilos_user` in every one of them ({@see AbstractUsersLibraryAgent::createAdministrator()},
-     * {@see AbstractUserAgent::writeAdminFlag()}, {@see assertImpersonationAllowed()}, HIL-1197);
-     * only the merge still answers a REFUSAL by default, in a project that never wired it
-     * ({@see applyAccountMerge()}), rather than nothing at all. That is the honest outcome for an
-     * operator who typed it into the wrong installation: before the move the name was carried by
-     * whichever agent chose to, so a project that did not left the command socket silent - which
-     * reads as a hang, not as a no.
+     * Every AUTH project that registers the library answers these names. They operate on the
+     * framework's account records, with project data supplied by the account-data owner directory.
      */
     public const array AGENT_COMMANDS = [
         CliCommands::ADMIN_CREATE,
@@ -6502,48 +6483,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs {@see CliCommands::ACCOUNT_MERGE} for an operator: reads the two accounts off the
-     * command payload, merges them, and answers the parked socket with what moved.
-     *
-     * The operator IS answered from here, unlike the impersonation pair: nothing about the
-     * result reaches anybody else, so there is no later place that knows it better. What a
-     * browser gets instead is {@see self::handleAccountMergeRequest()}.
-     *
-     * Every failure is caught, the project's seams among them: a command failure that reached
-     * the worker loop would leave the operator parked on the socket with nothing coming back.
-     *
-     * @param CommandRequestDTO $data Command request carrying the survivor and loser user ids
-     * @throws InvalidArgumentException When the reply carries an empty correlation id
-     */
-    private function handleAccountMergeCommand(CommandRequestDTO $data): void
-    {
-        // external-boundary: an operator's command line, refused by the guards below
-        $survivorId = (int)($data->payload[AccountMergeCommandConstants::FIELD_SURVIVOR_USER_ID] ?? 0);
-        $loserId = (int)($data->payload[AccountMergeCommandConstants::FIELD_LOSER_USER_ID] ?? 0);
-        // An absent fate is the operator not naming one, which is a legitimate request and not
-        // a missing field (HIL-692): the merge refuses on its own if the two accounts turn out
-        // to need one. An unreadable value is the command's to reject before it sends, so both
-        // absence and nonsense land on the same null and the guards below decide what it means.
-        $namedFate = $data->payload[AccountMergeCommandConstants::FIELD_PASSWORD_FATE] ?? null;
-        $passwordFate = is_string($namedFate) ? PasswordFate::tryFrom($namedFate) : null;
-
-        try {
-            $namedSecondFactor = $data->payload[AccountMergeCommandConstants::FIELD_SECOND_FACTOR_FATE] ?? null;
-            $secondFactorFate = is_string($namedSecondFactor) ? SecondFactorFate::tryFrom($namedSecondFactor) : null;
-            if ($namedSecondFactor !== null && $secondFactorFate === null) {
-                throw new ValidationException('Unknown account-merge second-factor fate');
-            }
-            $summary = $this->mergeAccounts($survivorId, $loserId, $passwordFate, $secondFactorFate);
-        } catch (Throwable $e) {
-            $this->replyToCommand(CommandReplyDTO::error($data->correlationId, $e->getMessage()));
-
-            return;
-        }
-
-        $this->replyToCommand(CommandReplyDTO::ok($data->correlationId, $summary->toArray()));
-    }
-
-    /**
      * Runs the test-only account purge and answers the parked socket exactly once.
      *
      * @param CommandRequestDTO $data Command request carrying the user id
@@ -6591,15 +6530,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * SCAFFOLD: prepared merge command; production callers switch to it in HIL-1999.
      * Start opens through openAccountMerge, and an exact open pair keeps that operation.
-     * A saved terminal pair is answered as it stands and is not opened again.
+     * A completed pair is answered as it stands; a not-started pair may open a new operation.
      * Observation only reads. Every path answers once or parks the command.
      *
      * @param CommandRequestDTO $data Prepared start or observe request
      * @throws InvalidArgumentException When the reply carries an empty correlation id
      */
-    protected function handlePreparedAccountMergeCommand(CommandRequestDTO $data): void
+    protected function handleAccountMergeCommand(CommandRequestDTO $data): void
     {
         try {
             $mode = $data->payload[AccountMergeCommandConstants::FIELD_MODE] ?? null;
@@ -6812,14 +6750,14 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     /**
      * @param int $survivorUserId Survivor the start names
      * @param int $loserUserId Loser the start names
-     * @return ?AccountOperation Latest saved merge of this exact pair when that merge has already ended
+     * @return ?AccountOperation Latest completed merge of this exact pair
      * @throws HilosException When the latest merge cannot be read
      */
     private function savedTerminalMerge(int $survivorUserId, int $loserUserId): ?AccountOperation
     {
         $latest = Hilos::$db->accountOperations->latestMergeNaming($loserUserId);
         if ($latest === null || $latest->kind !== AccountOperationKind::Merge || $latest->survivorUserId !== $survivorUserId
-            || $latest->loserUserId !== $loserUserId || $latest->outcome === null) {
+            || $latest->loserUserId !== $loserUserId || $latest->outcome !== AccountOperationOutcome::Completed->value) {
             return null;
         }
 
@@ -6843,85 +6781,15 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Runs the merge the Hilos user page asked for, and hands the outcome back to it.
-     *
-     * The second way into one core (HIL-378, HIL-411). The administrator is re-checked and their
-     * fresh confirmation of the merge is asked first ({@see AskingAdministrator::confirmed()},
-     * HIL-1275); the command-line way stands outside it - the operator at the console has nothing
-     * to confirm with. The password fate is read at the write boundary. When both accounts have a
-     * password and the action named none, the browser gets its own instruction before the
-     * CLI-shaped core can emit its command-line wording.
-     *
-     * A refusal is answered rather than thrown because the page deferred its ack. Internal
-     * failures are logged here, where the write context is known, and travel through the same
-     * sanitized refusal door as every other handed-over action.
-     *
-     * @param AccountMergeSignalData $request Both accounts and the connection waiting on the answer
-     * @throws InvalidArgumentException When the answering frame cannot be named
-     */
-    private function handleAccountMergeRequest(AccountMergeSignalData $request): void
-    {
-        try {
-            AskingAdministrator::confirmed($request->acceptKey, StepUpOperationKey::MERGE_ACCOUNTS);
-            $passwordFate = $request->passwordFate === null ? null : PasswordFate::tryFrom($request->passwordFate);
-            if ($request->passwordFate !== null && $passwordFate === null) {
-                throw new ValidationException('Unknown account-merge password fate');
-            }
-            if (
-                $passwordFate === null
-                && Hilos::$db->identities->passwordFateNeeded($request->loserUserId, $request->survivorUserId)
-            ) {
-                throw new ValidationException(self::ACCOUNT_MERGE_PASSWORD_FATE_REQUIRED_MESSAGE);
-            }
-            $secondFactorFate = $request->secondFactorFate === null
-                ? null : SecondFactorFate::tryFrom($request->secondFactorFate);
-            if ($request->secondFactorFate !== null && $secondFactorFate === null) {
-                throw new ValidationException('Unknown account-merge second-factor fate');
-            }
-            $summary = $this->mergeAccounts(
-                $request->survivorUserId,
-                $request->loserUserId,
-                $passwordFate,
-                $secondFactorFate,
-                $request->expectedSurvivorHasSecondFactor,
-                $request->expectedLoserHasSecondFactor,
-            );
-        } catch (WiringRefusal $refusal) {
-            throw $refusal;
-        } catch (Throwable $e) {
-            $refusal = ActionRefusal::fromThrowable($e);
-            if ($refusal->isInternal()) {
-                $this->logAgentError(
-                    "Account merge #{$request->loserUserId} into #{$request->survivorUserId} failed: {$e->getMessage()}",
-                );
-            }
-            $this->sendToAgent($request->replySignal, HandoverAnswerSignalData::to($request, $refusal));
-
-            return;
-        }
-
-        $this->sendToAgent($request->replySignal, new HandoverAnswerSignalData(
-            acceptKey: $request->acceptKey,
-            requestId: $request->requestId,
-            action: $request->action,
-            successMessage: $summary->successMessage($request->survivorUserId, $request->loserUserId),
-            error: null,
-            errorType: null,
-            errorDetail: null,
-        ));
-    }
-
-    /**
-     * SCAFFOLD: prepared browser start; HIL-1999 routes HILOS_ACCOUNT_MERGE here and removes handleAccountMergeRequest.
      *
      * Acceptance names the durable opening, including an exact repeat recovered after a drive
      * failure. The operation's later outcome is independent of this action reply.
      *
      * @param AccountMergeSignalData $request Both accounts, immutable choices and the waiting browser
-     * @throws WiringRefusal When the holder cannot read the collections needed to judge the request
+     * @throws HilosException When the holder cannot read the collections needed to judge the request
      * @throws InvalidArgumentException When the answering frame cannot be named
      */
-    protected function handlePreparedAccountMergeRequest(AccountMergeSignalData $request): void
+    protected function handleAccountMergeRequest(AccountMergeSignalData $request): void
     {
         try {
             AskingAdministrator::confirmed($request->acceptKey, StepUpOperationKey::MERGE_ACCOUNTS);
@@ -7013,210 +6881,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
             errorType: null,
             errorDetail: null,
         ));
-    }
-
-    /**
-     * Folds one account into another and reports what moved - the core behind both ways in
-     * (HIL-378).
-     *
-     * The survivor absorbs the loser's ways in, with the device keys that hang on them (HIL-1132),
-     * the loser's access log, which travels with the account as its device keys do (HIL-1174),
-     * and the rows the project keeps for it, then the loser is tombstoned - a row of
-     * `hilos_user_merge` and a closed sign-in (HIL-1199) - and its live sessions are signed out.
-     * It runs here rather than in a project agent because of that last step: the sessions are this
-     * library's, and before HIL-729 the merge had to ASK for
-     * each sign-out over a frame.
-     *
-     * Guards, in order: the two ids must differ, which is the one refusal that needs nobody's
-     * help; then whether these two accounts may be merged at all ({@see self::assertMergeable()}):
-     * both exist, neither is folded already and neither is in the circle of an open erasure
-     * (HIL-1960); then the passwords are weighed. One guard
-     * is about the merge rather than the ids (HIL-692): an account holds at most one password,
-     * so two accounts that each have one cannot both be right and this refuses until the
-     * operator says which stays. While at most one of the two has a password, that one
-     * survives and the command keeps the shape it always had.
-     *
-     * The transfer is one explicit transaction so a half-merged account can never survive a
-     * mid-way failure: the identity re-point, the loser's device keys and access log, everything the project
-     * moves and the tombstone either all commit or all roll back. The loser is tombstoned,
-     * never deleted, so no foreign-key cascade can fire; the one order that matters is inside
-     * the tombstone ({@see self::foldAccount()}).
-     *
-     * What comes back is the OUTCOME and not the request: the account is asked afterwards
-     * which password it now carries, so a fate naming an account that had none reports the
-     * truth ({@see PasswordFate::NONE}) rather than the word that was typed.
-     *
-     * @param int $survivorId Survivor user id that absorbs the loser
-     * @param int $loserId Loser user id folded into the survivor
-     * @param ?PasswordFate $passwordFate Whose password to keep, or null when nobody named one
-     * @param ?SecondFactorFate $secondFactorFate Protection to preserve when the loser has a confirmed app
-     * @param ?bool $expectedSurvivorHasSecondFactor Browser's snapshot, or null for the console
-     * @param ?bool $expectedLoserHasSecondFactor Browser's snapshot, or null for the console
-     * @return AccountMergeSummary Counts and the password and second-factor outcomes
-     * @throws ValidationException When a guard rejects the merge, a project's own among them
-     * @throws NotImplementedException When the project has not wired the merge seam
-     * @throws ItemNotFoundForUpdateException When the loser row went missing between the guard and the tombstone
-     * @throws InvalidArgumentException When a sign-out frame cannot be named
-     * @throws RandomException When the platform CSPRNG cannot mint a rotated session token
-     * @throws HilosException On database or truth-source failure (transaction rolled back)
-     */
-    private function mergeAccounts(
-        int $survivorId,
-        int $loserId,
-        ?PasswordFate $passwordFate,
-        ?SecondFactorFate $secondFactorFate,
-        ?bool $expectedSurvivorHasSecondFactor = null,
-        ?bool $expectedLoserHasSecondFactor = null,
-    ): AccountMergeSummary {
-        if ($survivorId === $loserId) {
-            throw new ValidationException('Cannot merge a user into itself');
-        }
-
-        $this->assertMergeable($survivorId, $loserId);
-
-        if ($passwordFate === null && Hilos::$db->identities->passwordFateNeeded($loserId, $survivorId)) {
-            throw new ValidationException('Both accounts have a password: pass --password=survivor|loser|none');
-        }
-
-        $survivorPasswordId = Hilos::$db->identities->findPasswordByUser($survivorId)?->id;
-
-        Database::transactionStart();
-        try {
-            Hilos::$db->secondFactors->lockForMerge($survivorId, $loserId);
-            Hilos::$db->secondFactorBackupCodes->lockForMerge($survivorId, $loserId);
-            Hilos::$db->secondFactorResets->lockForMerge($survivorId, $loserId);
-            Hilos::$db->secondFactorSettings->lockForMerge($survivorId, $loserId);
-            Hilos::$db->secondFactorTrusts->lockForMerge($survivorId, $loserId);
-            // Lock every set before the first consistent read; source frames may still be in transit.
-            foreach ([
-                HilosDbContext::secondFactors, HilosDbContext::secondFactorBackupCodes,
-                HilosDbContext::secondFactorResets, HilosDbContext::secondFactorSettings, HilosDbContext::secondFactorTrusts,
-            ] as $collection) {
-                Hilos::$db->reHydrateCollection($collection);
-            }
-            $survivorHasSecondFactor = Hilos::$db->secondFactors->confirmedOf($survivorId) !== [];
-            $loserHasSecondFactor = Hilos::$db->secondFactors->confirmedOf($loserId) !== [];
-            if (
-                ($expectedSurvivorHasSecondFactor !== null && $expectedSurvivorHasSecondFactor !== $survivorHasSecondFactor)
-                || ($expectedLoserHasSecondFactor !== null && $expectedLoserHasSecondFactor !== $loserHasSecondFactor)
-            ) {
-                throw new ValidationException('Second-factor protection changed. Review the accounts and choose again.');
-            }
-            if ($loserHasSecondFactor && $secondFactorFate === null) {
-                throw new ValidationException('Choose second-factor protection: survivor or both (--second-factor on the console).');
-            }
-            if (!$loserHasSecondFactor && $secondFactorFate !== null) {
-                throw new ValidationException('The loser has no confirmed authenticator. Remove the second-factor choice.');
-            }
-            if ($secondFactorFate === SecondFactorFate::SURVIVOR && !$survivorHasSecondFactor) {
-                throw new ValidationException("The survivor has no confirmed authenticator. Transfer the loser's protection or cancel.");
-            }
-            if ($loserHasSecondFactor && Hilos::$db->secondFactorResets->liveOf($loserId) !== null) {
-                throw new ValidationException('The loser has a pending second-factor removal. Cancel it or wait for it to finish.');
-            }
-            if ($secondFactorFate === SecondFactorFate::BOTH && Hilos::$db->secondFactorResets->liveOf($survivorId) !== null) {
-                throw new ValidationException('The survivor has a pending second-factor removal. Cancel it or wait for it to finish.');
-            }
-
-            $identitiesMoved = Hilos::$db->identities->rePointToUser($loserId, $survivorId, $passwordFate);
-            Hilos::$db->passkeyCredentials->rePointToUser($loserId, $survivorId);
-            Hilos::$db->accessLogEntries->actions->rePointToUser($loserId, $survivorId);
-            if ($secondFactorFate === SecondFactorFate::BOTH) {
-                $policy = SecondFactorPolicy::current();
-                $nowMs = TimeHelper::nowMs();
-                $waitDays = max(
-                    SecondFactorResetWait::of($survivorId)->effectiveDays($policy, $nowMs),
-                    SecondFactorResetWait::of($loserId)->effectiveDays($policy, $nowMs),
-                );
-                Hilos::$db->secondFactors->actions->rePointConfirmedToUser($loserId, $survivorId);
-                Hilos::$db->secondFactorBackupCodes->actions->rePointToUser($loserId, $survivorId);
-                Hilos::$db->secondFactors->unconfirmedOf($loserId)?->actions->delete();
-                Hilos::$db->secondFactorSettings->actions->setResetWait($survivorId, $waitDays, null, null);
-            } else {
-                Hilos::$db->secondFactors->actions->deleteForUser($loserId);
-                Hilos::$db->secondFactorBackupCodes->actions->deleteForUser($loserId);
-            }
-            Hilos::$db->secondFactorResets->actions->deleteForUser($loserId);
-            Hilos::$db->secondFactorSettings->actions->deleteForUser($loserId);
-            Hilos::$db->secondFactorTrusts->actions->deleteForUser($loserId);
-            if ($loserHasSecondFactor) {
-                Hilos::$db->secondFactorTrusts->actions->deleteForUser($survivorId);
-            }
-            $secondFactorKept = match (true) {
-                $secondFactorFate === SecondFactorFate::BOTH && $survivorHasSecondFactor => SecondFactorOutcome::BOTH,
-                $secondFactorFate === SecondFactorFate::BOTH => SecondFactorOutcome::LOSER,
-                $survivorHasSecondFactor => SecondFactorOutcome::SURVIVOR,
-                default => SecondFactorOutcome::NONE,
-            };
-            $rowsMoved = $this->applyAccountMerge($survivorId, $loserId);
-            $this->foldAccount($survivorId, $loserId);
-            Database::transactionCommit();
-        } catch (HilosException $e) {
-            Database::transactionRollbackSilent();
-
-            throw $e;
-        }
-
-        $keptPasswordId = Hilos::$db->identities->findPasswordByUser($survivorId)?->id;
-        $passwordKept = match (true) {
-            $keptPasswordId === null => PasswordFate::NONE,
-            $keptPasswordId === $survivorPasswordId => PasswordFate::SURVIVOR,
-            default => PasswordFate::LOSER,
-        };
-
-        $this->logAgentInfo('account_merge ' . json_encode([
-            'event' => 'account_merge',
-            'survivor' => $survivorId,
-            'loser' => $loserId,
-            AccountMergeCommandConstants::FIELD_IDENTITIES_MOVED => $identitiesMoved,
-            AccountMergeCommandConstants::FIELD_ROWS_MOVED => $rowsMoved,
-            AccountMergeCommandConstants::FIELD_PASSWORD_KEPT => $passwordKept->value,
-        ]));
-
-        $this->killUserSessions($loserId);
-        if ($secondFactorKept === SecondFactorOutcome::LOSER) {
-            $this->killUserSessions($survivorId);
-        }
-        $this->sendToGroup(
-            HilosSignalConstants::HILOS_SECOND_FACTOR_STATE,
-            SecondFactorGroup::forUser($survivorId),
-            SecondFactorStateProjector::stateFor($survivorId),
-        );
-
-        return new AccountMergeSummary($identitiesMoved, $rowsMoved, $passwordKept, $secondFactorKept);
-    }
-
-    /**
-     * Tombstones the loser of a merge: its row in the merge table, then its closed sign-in (HIL-1199).
-     *
-     * The ORDER is the point. The merge row goes first, the block flag second: a table of merge
-     * candidates hears of the merge by the change of the person's row, and reads "is this account
-     * merged" from the merge table at that moment - so the row has to be there already.
-     *
-     * The flag is written straight rather than through the person's agent: a block frame to
-     * that agent ({@see AbstractUserAgent::writeBlockFlag()}) is refused at its entry for a
-     * folded account, and its answer here would arm the "Access closed" card - a merged loser is
-     * not a punished person, and its tabs get the plain sign-in form
-     * ({@see self::killUserSessions()}). The flag stays because it is what every sign-in check
-     * reads, the ways in the merge left the loser among them.
-     *
-     * Runs inside the merge transaction, after the project moved its rows. The loser's row is
-     * read as required: one gone between the guard and this write is a storage failure, not a
-     * refusal.
-     *
-     * @param int $survivorId Survivor user id that absorbs the loser
-     * @param int $loserId Loser user id folded into the survivor
-     * @throws ItemNotFoundForUpdateException When the loser row has no persisted id
-     * @throws DatabaseException When the loser row is not there, or cannot be loaded
-     * @throws LogicException When the people collection's class constants are not configured
-     * @throws InvalidArgumentException When a stored row is not the collection's object type
-     * @throws HilosException On database or truth-source failure while writing the tombstone
-     */
-    private function foldAccount(int $survivorId, int $loserId): void
-    {
-        Hilos::$db->userMerges->actions->add($loserId, $survivorId);
-
-        Hilos::$db->users[$loserId]->actions->setBlock(true);
     }
 
     /**
@@ -7408,9 +7072,8 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
      * A third question is asked of the framework's own tables: whether either account is in the
      * circle of an open erasure, from its preparation on (owner's decision of 12.11.2026,
      * HIL-1938/HIL-1960). It is asked after existence and folding, so the earlier refusals keep
-     * their precedence. Asking it outside the transaction is enough: the holder is the only
-     * writer of the merges and the one that opens the operations, and the merge runs
-     * synchronously.
+     * their precedence. This is the opening's preflight; each personal owner rechecks its own
+     * account while preparing, before the coordinator can authorize the loser's give.
      *
      * A project with a refusal of its own overrides this and calls the parent FIRST, so the
      * framework's refusals keep their order and the project only adds to them.
@@ -7452,35 +7115,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
                 ));
             }
         }
-    }
-
-    /**
-     * Moves everything this project keeps for the loser onto the survivor - the project's half
-     * of the merge.
-     *
-     * A seam with a refusing default rather than an abstract method: the mount stands on this
-     * class, so an operator who typed the command into a project that wires nothing hears a
-     * refusal rather than silence - after the framework's own checks, so an id that names nobody
-     * is still refused as such.
-     *
-     * Called INSIDE the merge transaction, between the ways in (with their device keys) and the
-     * tombstone, so whatever it writes rolls back with the rest - and so does the default's
-     * refusal. The tombstone is not the project's: the framework writes it after this returns
-     * ({@see self::foldAccount()}).
-     *
-     * The tally is a map rather than a number because the framework cannot know what a
-     * project keeps for a person - in a chat, the messages. It goes back to the operator
-     * under the project's own family names ({@see AccountMergeCommandConstants::FIELD_ROWS_MOVED}).
-     *
-     * @param int $survivorUserId Survivor user id that absorbs the loser
-     * @param int $loserUserId Loser user id folded into the survivor
-     * @return array<string, int> Rows re-pointed, per family this project names
-     * @throws NotImplementedException When the project has not wired the merge seams
-     * @throws HilosException Whatever the project's implementation raises while moving its rows
-     */
-    protected function applyAccountMerge(int $survivorUserId, int $loserUserId): array
-    {
-        throw new NotImplementedException('Account merge is not wired in this project');
     }
 
     /**
@@ -7796,7 +7430,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * SCAFFOLD: prepared merge entry; production callers switch in HIL-1999.
      * Exact repeats precede preflight so a committed give continues under the same operation id.
      *
      * @param int $survivorUserId Immutable survivor
@@ -8027,7 +7660,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * Transfers the loser's access log and ends touching sessions after its committed give.
-     * The prepared coordinator dispatches this entry inline; production merge switches in HIL-1999.
+     * The coordinator dispatches this entry inline under the holder's own claim.
      *
      * @param int $assignmentId Canonical go/sessions assignment
      * @return AccountOperationResult Committed counts or the exact saved result
@@ -8040,7 +7673,7 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
 
     /**
      * Ends survivor sessions only when the committed give kept the loser's factor, after receipt.
-     * The prepared coordinator dispatches this entry inline; production merge switches in HIL-1999.
+     * The coordinator dispatches this entry inline under the holder's own claim.
      *
      * @param int $assignmentId Canonical go/survivor_sessions assignment
      * @return AccountOperationResult Committed counts or the exact saved result
@@ -8052,7 +7685,6 @@ abstract class AbstractSessionsLibraryAgent extends AbstractAgent
     }
 
     /**
-     * SCAFFOLD: protected access to the prepared end; production merge switches in HIL-1999.
      *
      * @param AccountOperation $operation Merge considered outside an application transaction
      * @return bool Whether the merge has its confirmed Completed outcome

@@ -21,7 +21,6 @@ use Throwable;
 /**
  * Moves a registered project owner's rows under its original immutable expectation.
  * The prepared holder delivers original expectations and correlates carried-stage answers.
- * SCAFFOLD: the live switch remains HIL-1999.
  */
 final class AccountMergeProjectStep
 {

@@ -87,20 +87,19 @@ including a repeat, the agent requests
 
 The libraries judge those edits and do what follows them;
 creation, including the guest's submitted theme choice and the first
-administrator, stays with the users library. The sessions library keeps two set
-operations on the row: the loser's block inside a merge and the erased person's
-row. After a successful write of the password (changed or
+administrator, stays with the users library. The person's agent updates its
+own row and performs the loser's block during its merge give; it also removes
+the row in its erasure final. After a successful write of the password (changed or
 recovered) or of a block flag that really changed, the person's agent sends the
 mandatory security notice (`SecurityNotifier`, HIL-294); a notice that cannot be
 queued goes to the agent's log and does not undo the write.
 
-Those two sessions-holder operations are the code today. HIL-1898 moved
-creation of the first administrator to the users library; the sessions holder
-authorizes and binds the session. HIL-1952 retired the old erasure's foreign
-`Remove`; the old merge's foreign `Update` remains until its own switch
-(not in the code yet — HIL-1999). The
-[Writer Map](account-operations.md#writer-map) keeps those terminal debts
-separate from ordinary creation. Under the detailed
+The sessions holder authorizes and binds the session; it has no borrowed write
+to another person's row. HIL-1898 moved creation of the first administrator
+to the users library, HIL-1952 retired the holder's erasure `Remove`, and
+HIL-1999 retired its merge `Update`. The
+[Writer Map](account-operations.md#writer-map) records these terminal writes
+beside ordinary creation. Under the detailed
 [erasure canon](account-operations.md#erasure), the personal owner removes its
 merge row, `userRenames` and `users` last, after required participant results,
 and completes its own request in that final local transaction. That final is
@@ -109,9 +108,8 @@ production `Remove` claim. Under the detailed
 [merge canon](account-operations.md#merge), the loser writes its own block
 after its merge row in the
 [prepared give transaction](account-operations.md#the-prepared-loser-give).
-The owner entry is sent by the merge coordinator, built by HIL-2000 and live at
-the merge switch named above; until that switch the holder's old `Update`
-remains.
+The live merge coordinator sends that owner entry and assignment match from
+HIL-1999, which retired the holder's borrowed `Update`.
 
 ## What The Framework Does For A Person
 
@@ -281,51 +279,32 @@ survivor's final waits while any account is folded into it. This is live in
 HIL-1952 (prepared in HIL-1942); the holder's former erasure rights were
 retired at that switch.
 
-The table is the sessions library's whole, and the whole operation is framework
-code (`AbstractSessionsLibraryAgent::mergeAccounts()`): whether the two accounts
-may be merged — both exist, neither is folded already (`assertMergeable()`) —
-then the password and second-factor choices, then one transaction: the ways in,
-the second-factor sets and the project's own rows
-(`applyAccountMerge()`, the one seam a project answers), and the tombstone. The
-tombstone writes the merge row FIRST and the loser's block flag second: the
-merge-candidates table hears of the merge by the change of the person's row, and
-reads "is this account merged" from the table at that moment. The flag is
-written straight, not as a block: a merged loser is not a punished person. A
-refusal from `assertMergeable()` names both accounts by name and number, and a
-merged account by the live end of its chain (HIL-1294); the window and the
-console receive that one sentence.
+The table remains the sessions library's whole for reads and coordination;
+the merge's row writes belong to the personal owners. The sessions holder
+opens and drives the durable operation. The loser's agent transfers its own
+rows under their existing ids, applies the password fate to its own previous
+password, then writes the merge row and its block with its nonsecret result
+and separate private hand-over copy. The detailed
+[merge canon](account-operations.md#merge) describes this live path.
 
-That one transaction is the merge in the tree. The detailed
-[merge canon](account-operations.md#merge) keeps what the tombstone means and
-its order: the loser transfers its own rows under their existing ids, applies
-the fate to its own previous password, then writes the merge row and its own
-block in the same transaction with its nonsecret result and separate private
-hand-over copy. This [prepared give](account-operations.md#the-prepared-loser-give)
-is driven by the prepared coordinator and hand-over; production callers remain
-on the legacy path until HIL-1999. The survivor's memory admission
-and [durable fence against stale frames](account-operations.md#durable-merge-admission)
-are built as a prepared API. The [prepared survivor receipt](account-operations.md#the-prepared-survivor-receipt)
-commits its own captured password/protection writes and exact result together;
-local startup resumes an existing receive obligation from current own rows.
+HIL-1999 connected the browser and CLI entrances to the coordinator and
+retired the holder's borrowed merge writes and grants. The survivor admits the
+handover under the [durable fence against stale frames](account-operations.md#durable-merge-admission)
+and commits its own captured password/protection writes with the exact receipt;
+local startup resumes an existing receive obligation from its current rows.
 The shared first/hourly holder pass and owner-start resume continue open merge
-duties from DB.
-The [prepared loser cleanup and finishing](account-operations.md#the-prepared-loser-cleanup-and-finishing)
+duties from DB. The [loser cleanup and finishing](account-operations.md#the-prepared-loser-cleanup-and-finishing)
 commit copy deletion with strict `{"cleanup":"cleaned"}` after the exact
 receipt, then request stop; an exact saved replay can request the same stop.
 Startup restores the source from immutable DB proofs before ordinary trust
 work, retaining a local idle pin while cleanup is pending or lookup unresolved.
 Ordinary access and late service writes stay closed. The keys, chain and readers
-below retain their meanings. Preparation remains inert and
-`mergeAccounts()` remains the only normal producer until the live switch
-retires its foreign writes, grants, comments, debt, locks, rereads and the
-immediate stop on a merge row
-(not in the code yet — HIL-1999). A prepared handler does not clear this marker.
+below retain their meanings.
 
-The existing merge refuses (HIL-1960) when either
-account is in the circle of an open erasure operation, from
-preparation on (owner's decision 2026-11-12, HIL-1938). This is a guard beside
-the erasure cutover; it does not implement the future merge or its
-transfer/receipt rules.
+The live merge refuses (HIL-1960) when either account is in the circle of an
+open erasure operation, from preparation on (owner's decision 2026-11-12,
+HIL-1938). HIL-1999 connected this preflight to the owner transfer and receipt
+path; the guard remains alongside the erasure cutover.
 
 The second-factor choice is independent of the password choice. A protected
 loser requires an explicit transfer, or retaining the survivor's existing

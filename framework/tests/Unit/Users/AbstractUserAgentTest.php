@@ -640,7 +640,7 @@ final class AbstractUserAgentTest extends TestCase
         self::assertEquals($hydrated, AgentSignalData::fromArray($hydrated->toArray()));
     }
 
-    public function testAMergeRowForThePersonAsksTheAgentToStop(): void
+    public function testAMergeRowAloneDoesNotAskTheAgentToStop(): void
     {
         $previousDb = Hilos::$db;
         $assignments = $this->createStub(AccountOperationAssignments::class);
@@ -658,7 +658,7 @@ final class AbstractUserAgentTest extends TestCase
                 'db',
                 SignalConstants::DB_SYNC_CREATED,
             );
-            self::assertTrue($agent->shouldStop());
+            self::assertFalse($agent->shouldStop());
             self::assertFalse($agent->hasWorkInFlight());
         } finally {
             Hilos::$db = $previousDb;

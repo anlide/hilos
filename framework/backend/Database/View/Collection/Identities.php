@@ -11,12 +11,10 @@ use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
-use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
 use Hilos\Database\Identity\IdentityExportEntry;
-use Hilos\Database\Identity\PasswordFate;
 use Hilos\Database\Object\Collection\Identities as ObjectIdentities;
 use Hilos\Database\Object\Item\Identity as ObjectIdentity;
 use Hilos\Database\View\Item\Identity;
@@ -588,34 +586,6 @@ class Identities extends DbCollection
     public function changeEmail(int $userId, string $from, string $to): int
     {
         return $this->objectCollection->changeEmail($userId, $from, $to);
-    }
-
-    /**
-     * Re-points every identity owned by a loser user to a survivor user (HIL-378).
-     *
-     * Account-merge write path: delegates to the object collection's
-     * {@see ObjectIdentities::rePointToUser()} primitive, which owns the
-     * duplicate-drop guard, the password settlement, and the targeted user_id move.
-     *
-     * `$passwordFate` is passed through without a default of its own (HIL-692) — the
-     * write-path parity guard only watches the `create*` methods, so a default invented
-     * here would diverge from the object collection silently and hand every caller on
-     * this side an answer nobody chose.
-     *
-     * @param int $fromUserId Loser user id whose identities are absorbed
-     * @param int $toUserId Survivor user id that receives the identities
-     * @param ?PasswordFate $passwordFate Whose password stays, or null when neither account pair holds two
-     * @return int Number of identities re-pointed to the survivor
-     * @throws LogicException When both accounts hold a password and no fate was named
-     * @throws DatabaseException On database error while re-pointing the identities
-     * @throws InvalidArgumentException When the entity query is given an invalid order direction
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws CreateNotAllowedException When no truth source in this process may add a row here
-     * @throws WriteNotAllowedException When no truth source in this process may write that row
-     */
-    public function rePointToUser(int $fromUserId, int $toUserId, ?PasswordFate $passwordFate): int
-    {
-        return $this->objectCollection->rePointToUser($fromUserId, $toUserId, $passwordFate);
     }
 
     /**

@@ -604,7 +604,7 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         self::assertSame($foreign, $this->deviceRow($foreignId));
     }
 
-    public function testAFoldedPersonsAgentAppliesTheTransportReportAndStopsButStillRefusesAnOrdinaryRemoval(): void
+    public function testAFoldedPersonsAgentAppliesTheTransportReportButStillRefusesAnOrdinaryRemoval(): void
     {
         $foldedId = self::seedPerson();
         $survivorId = self::seedPerson();
@@ -620,7 +620,7 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         self::assertNotNull($gone['gone_at']);
         $before['gone_at'] = $gone['gone_at'];
         self::assertSame($before, $gone);
-        self::assertTrue($this->personAgent($foldedId)->shouldStop());
+        self::assertFalse($this->personAgent($foldedId)->shouldStop());
         $removed = $this->carry(HilosSignalConstants::HILOS_USER_PUSH_REMOVE, new UserPushRemoveSignalData(
             $foldedId,
             $id,
@@ -1035,7 +1035,7 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         self::assertSame(1, $this->pushDeviceCount());
     }
 
-    public function testAFoldedPriorOwnerStillReleasesTheEndpointAndStopsButRefusesAnOrdinaryRemoval(): void
+    public function testAFoldedPriorOwnerStillReleasesTheEndpointButRefusesAnOrdinaryRemoval(): void
     {
         $priorId = self::seedPerson();
         $survivorId = self::seedPerson();
@@ -1057,7 +1057,7 @@ final class PersonNotificationEditsIntegrationTest extends HilosSessionIntegrati
         self::assertNull(Database::sql('SELECT `id` FROM `hilos_push_subscription` WHERE `id` = ?', [$id])->firstRow());
         $newId = $this->subscriptionIdOf($subscriberId, self::ENDPOINT);
         self::assertNotNull($newId);
-        self::assertTrue($this->personAgent($priorId)->shouldStop());
+        self::assertFalse($this->personAgent($priorId)->shouldStop());
         $created = $this->deviceRow($newId);
         $removed = $this->carry(HilosSignalConstants::HILOS_USER_PUSH_REMOVE, new UserPushRemoveSignalData(
             $priorId, $newId, HilosSignalConstants::HILOS_USER_NOTIFICATION_WRITE_DONE,

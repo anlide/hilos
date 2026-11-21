@@ -21,8 +21,6 @@ use Hilos\HilosException;
  * The same singleton ChatAgent implements AccountErasureProjectOwner and AccountMergeProjectOwner:
  * it erases its own feed part or transfers message authorship. Both censuses expect it even
  * without rows.
- * SCAFFOLD: ChatAgent's merge part is sent by the merge coordinator (HIL-2000); no production caller until the merge switch
- * (HIL-1999).
  */
 final class ChatAccountDataOwnerDirectory extends AccountDataOwnerDirectory
 {

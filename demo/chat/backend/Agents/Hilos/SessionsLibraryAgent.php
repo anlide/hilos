@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Demo\Chat\Agents\Hilos;
 
-use Demo\Chat\Database\ChatDbContext;
 use Demo\Chat\Agents\ChatAgent;
-use Demo\Chat\Constants\ChatCommandConstants;
 use Demo\Chat\Hilos;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Constants\CliCommands;
@@ -14,7 +12,6 @@ use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Feature\Definition\AuthFeature;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\HilosException;
 use Hilos\Runtime\State\Item\HilosCodeSendAttempt as StateHilosCodeSendAttempt;
 use Hilos\Runtime\State\Item\HilosOAuthTrip as StateHilosOAuthTrip;
 use Hilos\Runtime\State\Item\HilosProfileFlow as StateHilosProfileFlow;
@@ -35,11 +32,8 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
  * accounts may be merged, the loser's tombstone and every refusal to a merged account
  * (HIL-1199): they live in the framework's merge table, not in a chat column.
  *
- * The merge is where this demo's answer is largest, and it is still not the operation: the
- * framework checks both accounts, moves the ways in, tombstones the loser and signs it out, and
- * asks this demo the one thing only it knows - what a chat keeps for a person.
- *
- * Project erasure belongs to ChatAgent, reached through its account-data owner directory.
+ * Project merge and erasure belong to ChatAgent, reached through the account-data owner
+ * directory. The sessions holder coordinates them and writes only its own operation parts.
  *
  * What stayed in {@see ChatAgent} is the other half of the seam: who is on the wire, what
  * that person is called, and the tab that has to be told. The library says what a session
@@ -50,22 +44,6 @@ use Hilos\Runtime\State\Item\RegistrationWaiter as StateRegistrationWaiter;
  */
 final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
 {
-    /**
-     * The chat tables this library writes on its way through a person.
-     *
-     * The chat pair is borrowed and narrow, and the reason the rights have to be said out loud at
-     * all is HIL-716: they used to be asked only of a collection loaded whole, so a lazily loaded
-     * table was written by anybody in silence. They are asked of every table now, and the registry
-     * is per process - so this library holds its own grant rather than leaning on the one the
-     * owner registered in some other worker.
-     *
-     * @var array<string, list<TruthSourceOperation>>
-     */
-    public const array OWNS_DB = [
-        // The existing merge moves messages until its owner protocol is activated.
-        ChatDbContext::eventMessages => [TruthSourceOperation::Update],
-    ];
-
     /**
      * Registration holds read at handshake and when finding sessions waiting on an address.
      *
@@ -103,26 +81,5 @@ final class SessionsLibraryAgent extends AbstractSessionsLibraryAgent
         StateHilosProfileFlow::RT_COLLECTION => TruthSourceOperation::BY_KIND,
         StateHilosProfileNameChange::RT_COLLECTION => TruthSourceOperation::BY_KIND,
     ];
-
-    /**
-     * Moves what chat keeps for a person onto the survivor.
-     *
-     * Everything a chat holds for somebody is their messages, so the tally goes back under
-     * one family name. The tombstone is the framework's, written after this returns.
-     *
-     * Runs inside the framework's merge transaction, so a failure rolls back the identity
-     * re-point that came before it.
-     *
-     * @param int $survivorUserId Survivor user id that absorbs the loser
-     * @param int $loserUserId Loser user id folded into the survivor
-     * @return array<string, int> The messages that moved, under chat's own family name
-     * @throws HilosException On database or truth-source failure while moving the rows
-     */
-    protected function applyAccountMerge(int $survivorUserId, int $loserUserId): array
-    {
-        $messagesMoved = Hilos::$db->eventMessages->actions->rePointAuthor($loserUserId, $survivorUserId);
-
-        return [ChatCommandConstants::ROWS_MOVED_MESSAGES => $messagesMoved];
-    }
 
 }

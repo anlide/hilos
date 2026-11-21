@@ -78,23 +78,22 @@ Framework rules stay in `/docs/agents/**`; nothing here overrides them.
    registry, and again when the registry replies before writing; the connected tab
    sees the unavailable state. ChatAgent is the sole message writer and runs each
    handler to completion; the holder's post-commit sign-out frame cannot close this
-   door. The live erasure switch (HIL-1952) retired the holder's borrowed erasure
-   rights; whatever rights the old merge needs stay.
+   door. HIL-1952 retired the holder's borrowed erasure rights, and HIL-1999
+   retired its borrowed merge rights, including the message-update write.
    The [chat merge part](spec/agents/chat-agent.md#responsibilities) transfers the
    loser's message authorship across all rooms in one `ChatAgent` transaction with
    its result through `AccountMergeProjectStep`. The directory's `chat` singleton
    implements both project owner interfaces; its prepared `mergeAccountPart()`
    uses the existing `chat_account_operation_step` ask/answer entry, dispatching
-   by the assignment operation's durable kind. Its sender, the merge coordinator,
-   is built by HIL-2000 and goes live at the merge switch (not in the code yet —
-   HIL-1999). A committed merge already closes both late
+   by the assignment operation's durable kind. The live merge coordinator sends
+   that assignment route from HIL-1999. A committed merge already closes both late
    publication doors through the fresh `isMergedInDatabase()` reader, including
    a null-survivor tombstone, without waiting for sign-out or DB_SYNC. The
    existing draft/unavailable outcome stays, with no publication as survivor;
    preparing alone leaves sending open, and unbound registry files follow
-   `removeUnlinkedPublicationFiles()`. The holder's current `applyAccountMerge()`
-   and borrowed `Update` on `eventMessages` remain until the single merge switch
-   (not in the code yet — HIL-1999).
+   `removeUnlinkedPublicationFiles()`. HIL-1999 connected the live merge path
+   and removed the holder's borrowed `Update` on `eventMessages`; ChatAgent owns
+   the author transfer and its result.
 2. `LibraryAgent` is the **only** truth source for the admin library DB collection `bots`
 3. `ChatContextAnalyzerAgent` is the only truth source for `chatContexts`
 4. Uploads belong to the framework uploads agent (`hilosUploads`) and attached files to the files registry (`hilos_file`); the composer projection lives on `Connection`, the shared moderation attempt lives in `hilosModerationChecks`, and the submit rate limit lives on `ChatUserState`.

@@ -22,7 +22,6 @@ use Throwable;
 /**
  * Prepared holder end: committed participant facts and current copy absence precede the terminal CAS.
  * The prepared coordinator calls this entry after saved results and on explicit reentry.
- * SCAFFOLD: the live switch remains HIL-1999.
  */
 final class AccountMergeEnd
 {

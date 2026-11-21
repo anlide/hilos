@@ -155,33 +155,28 @@ pass running reads nothing. These paths are live from the HIL-1952 cutover.
 For [merge](../architecture/account-operations.md#merge), the loser commits
 its work, nonsecret result and separate private copy together in the
 [prepared give](../architecture/account-operations.md#the-prepared-loser-give),
-sent by the merge coordinator, built by HIL-2000 and live at the merge switch
-(HIL-1999); the survivor commits its own
+sent by the live merge coordinator (HIL-1999); the survivor commits its own
 work with its exact receipt in the
 [prepared survivor step](../architecture/account-operations.md#the-prepared-survivor-receipt),
-including local startup resume from current own rows for an existing obligation,
-its normal producer built by HIL-2000 and live at the merge switch (HIL-1999).
+including local startup resume from current own rows for an existing obligation.
 The holder's prepared
 `go/sessions` and `go/survivor_sessions` duties commit their own work with
 strict nonsecret `{"sessions":<n>,"accessLog":<m>}` results: the first follows
 the exact give, and the second follows the exact receipt and ends survivor
 sessions only when the saved give retained the loser's factor. Each replays a
 saved result before current-stage or business reads and publishes
-session/profile notifications only after commit (HIL-1995). The normal merge
-producer is built by HIL-2000 and goes live at the merge switch
-(not in the code yet — HIL-1999).
+session/profile notifications only after commit (HIL-1995). The live merge
+producer is connected by HIL-1999.
 Declared project
 participants follow that same local atomic boundary — `AccountMergeProjectStep`
 commits an owner's move with its result, built and live at the merge switch —
 including chat's prepared author transfer and message count through its
-existing assignment ask/answer entry, sent by the merge coordinator, built by
-HIL-2000 and live at the merge switch (HIL-1999). Operation/stage correlation
+existing assignment ask/answer entry, sent by the live merge coordinator
+(HIL-1999). Operation/stage correlation
 rejects duplicate, old and foreign answers without advancing unrelated work;
-it is built by HIL-2000 and goes live at the merge switch
-(not in the code yet — HIL-1999). The shared first/hourly holder pass selects
+it is live in the HIL-1999 merge path. The shared first/hourly holder pass selects
 unfinished obligations from DB; owner startup reads merge owed-to state and
-resumes existing asks. Prepared merge operations use this recovery while
-production callers remain on the legacy path until HIL-1999. No transaction
+resumes existing asks. The live merge uses this recovery. No transaction
 spans frames and no new after-commit, file or external retry guarantee follows.
 
 ## Anti-Patterns

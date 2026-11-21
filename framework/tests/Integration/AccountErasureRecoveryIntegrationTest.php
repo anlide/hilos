@@ -622,8 +622,8 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
         }
     }
 
-    /** Case 9: a folded account's new agent runs its one ready capture, asks to stop and leaves the rest to the coordinator. */
-    public function testAFoldedAccountsNewAgentRunsOneDutyStopsAndSendsItselfNothing(): void
+    /** Case 9: a folded account's new agent runs its one ready capture and leaves the rest to the coordinator. */
+    public function testAFoldedAccountsNewAgentRunsOneDutyAndSendsItselfNothing(): void
     {
         $root = self::seedPerson();
         $folded = self::seedPerson();
@@ -641,7 +641,7 @@ final class AccountErasureRecoveryIntegrationTest extends HilosSessionIntegratio
 
         $this->startOwner($agent);
 
-        self::assertTrue($agent->shouldStop());
+        self::assertFalse($agent->shouldStop());
         $answers = $this->operationFrames();
         self::assertSame($this->frameIds($lost), $this->frameIds($answers));
         self::assertSame(['done'], self::answerKinds($answers));

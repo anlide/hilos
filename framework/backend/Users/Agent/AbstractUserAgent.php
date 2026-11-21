@@ -719,7 +719,6 @@ abstract class AbstractUserAgent extends AbstractAgent
     /**
      * Checks the person's own side of a merge and records the preparation in the participant transaction;
      * a repeat returns the saved result without checking again.
-     * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
      *
      * @param int $assignmentId Preparation assignment the coordinator gave this agent
      * @return AccountOperationResult Committed preparation or the saved result of an earlier attempt
@@ -1514,11 +1513,11 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
-     * Stops when a merge row appears for this person, which is what folding them in commits.
+     * Restores prepared finishing when this person's merge row arrives.
      *
-     * A project subclass that overrides this calls parent, so the stop still happens. The merge
-     * row is keyed by the folded account, so a row naming this person as the survivor does not
-     * stop this agent. Every other collection is ignored.
+     * A project override calls parent so the source keeps its durable continuation. The row alone
+     * never requests a stop: only the loser's cleanup does, once its receipt is committed.
+     * A row naming this person as survivor and every other collection are ignored.
      *
      * @param DbSyncCreatedSignalData $data Created row
      * @param string $source Signal source (unused)
@@ -1527,7 +1526,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
         if ($data->collectionKey === HilosDbContext::userMerges && $this->isThisPerson($data->idString)) {
-            $this->stopOrContinueMerge(true);
+            $this->stopOrContinueMerge();
         }
     }
 
@@ -1711,18 +1710,11 @@ abstract class AbstractUserAgent extends AbstractAgent
         return $operation;
     }
 
-    /**
-     * @param bool $mergeRowCreated Whether the delivered fact itself names this person's tombstone
-     */
-    private function stopOrContinueMerge(bool $mergeRowCreated = false): void
+    /** Restores the loser's prepared finishing context; cleanup owns its eventual stop. */
+    private function stopOrContinueMerge(): void
     {
         try {
-            if ($this->refreshMergeFinishing() !== null) {
-                return;
-            }
-            if ($mergeRowCreated || isset(Hilos::$db->userMerges[$this->userId])) {
-                $this->selfStop();
-            }
+            $this->refreshMergeFinishing();
         } catch (WiringRefusal) {
             $this->logAgentError("Merge finishing of #{$this->userId} could not be resolved");
         } catch (Throwable) {
@@ -2202,7 +2194,8 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
-     * Grants or renews browser trust after rechecking the person, session, proof and current policy.
+     * Grants or renews browser trust after rechecking the person, session, proof, policy and latest merge.
+     * A grant from before a merge opened cannot recreate trust removed by that merge.
      * Saved restrictions apply atomically; a later grant is preserved.
      *
      * @param UserBrowserTrustRenewSignalData $ask The library's request: the browser, the new end and the grant
@@ -2225,6 +2218,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
         $password = Hilos::$db->identities->findPasswordByUser($this->userId);
         if ($password?->passwordChangedAt !== null && $password->passwordChangedAt >= $ask->grantedAt) {
+            return false;
+        }
+        $merge = Hilos::$db->accountOperations->latestMergeNaming($this->userId);
+        if ($merge !== null && $merge->createdAt >= $ask->grantedAt) {
             return false;
         }
 

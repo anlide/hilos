@@ -15,7 +15,6 @@ use stdClass;
  * The payload is exactly `{"rows":{"<family>":<int>,…}}`: the rows the owner moved from the loser
  * to the survivor per family it names. With nothing moved it is `{"rows":{}}` - `rows` stays a
  * JSON object even when empty.
- * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
  */
 final class AccountMergeProjectResult
 {

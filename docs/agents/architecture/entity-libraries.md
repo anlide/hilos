@@ -51,9 +51,9 @@ writer of its collection, with no instance owner: `settings` below is such a
 library. Executors also keep their own working rows. The creator, the personal
 owner and the executor are chosen by responsibility, not by a class name.
 
-Account erasure now uses a durable operation and owner-local transactions;
-each participant commits its own work and result (HIL-1952). Merge remains on
-its old single-holder path until HIL-1999. The
+Account erasure and merge use durable operations and owner-local transactions;
+each participant commits its own work and result. HIL-1952 connected erasure
+and HIL-1999 connected merge to their live entrances. The
 [three phases](account-operations.md#three-phases) separate ordinary moves
 from those terminal cutovers. The read path and placement axes below stay
 unchanged.
@@ -523,26 +523,27 @@ id travels through the rebind, so the ack leaves behind the restored identity.
 three session-toast controls are the same again.
 
 **The accepting page answers even when only the project can perform part of the
-write.** Legacy account merge follows the same two-step shape as impersonation: the framework
+write.** Account merge follows a two-step browser outcome: the framework
 single-user ADMIN page owns `HILOS_USER_MERGE`, forwards `HILOS_ACCOUNT_MERGE` with
-`HandoverGatekeeperTrait`, and defers the tracked action. The sessions library calls the
-project's merge seams inside the transaction, then answers the page on
-`HILOS_ACCOUNT_MERGE_DONE` with the finished summary as the success message. The project
-does not mint a second action or ack name merely because it contributes rows to the write;
-the gatekeeper still owns the browser outcome. The card's admin-rights, block,
-deletion and takeover actions use the same handover: the sessions library writes rights,
-blocks and the takeover, and the users library schedules or cancels deletion; the ADMIN
-page answers each press.
+`HandoverGatekeeperTrait`, and completes the tracked action when the sessions
+holder accepts the durable operation. The page then observes that operation;
+its final outcome is separate from acceptance. Registered project owners move
+their own rows through the existing account-operation assignment route. The
+project does not mint a second action or ack name merely because it contributes
+rows to the write; the gatekeeper still owns the browser outcome. The card's
+admin-rights, block, deletion and takeover actions use the same handover: the
+sessions library writes rights, blocks and the takeover, and the users library
+schedules or cancels deletion; the ADMIN page answers each press.
 
-For the prepared [split merge](account-operations.md#merge-cutover-and-observation),
+For the live [split merge](account-operations.md#merge-cutover-and-observation),
 the tracked action's success reply means acceptance and carries `{operationId}`.
 The operation's saved observation, waits and safe refusal arrive in the first
 `page_response` and live standing updates (HIL-2003; see
 [the card carriers](account-standing.md#the-wire)). The outcome is read from
 that operation's live carrier: success requires `state=end` and
 `outcome=completed`. A lost action reply does not establish an outcome. This
-card read path stays read-only; legacy production callers remain until the
-common switch (not in the code yet — HIL-1999).
+card read path stays read-only while the live production callers use the
+operation path connected by HIL-1999.
 
 **An operation with two entrances: the gatekeeper's lock closes the browser one
 only.** The writer keeps its own check for the entrance that has no page. The

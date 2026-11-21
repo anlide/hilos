@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Auth\AccountOperation\AccountMergeChoice;
 use Hilos\Auth\Library\AbstractSessionsLibraryAgent;
 use Hilos\Auth\Library\AbstractUsersLibraryAgent;
 use Hilos\Auth\StepUp\StepUpConfirmations;
@@ -40,6 +41,7 @@ use Hilos\Users\DTO\UserStepUpCreditSignalData;
 use Hilos\Users\DTO\UserStepUpRecordDoneSignalData;
 use Hilos\Users\DTO\UserStepUpRecordSignalData;
 use Hilos\Utils\Helpers\TimeHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * A person's step-up confirmations and the trust of their browsers are written by that person's agent (HIL-1407).
@@ -207,10 +209,7 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
         $userId = $this->seedSignedInPerson();
         $survivorId = self::seedPerson();
         $hash = ProtectedModeRuntime::hashSessionToken(self::SESSION_TOKEN);
-        ExecutionContext::run(
-            new ExecutionFrame(agentId: $this->sessions->getId()),
-            static fn () => Hilos::$db->userMerges->actions->add($userId, $survivorId),
-        );
+        $this->asPerson($userId, static fn () => Hilos::$db->userMerges->actions->add($userId, $survivorId));
 
         $answer = $this->carry($this->sessions, HilosSignalConstants::HILOS_USER_STEP_UP_CREDIT, new UserStepUpCreditSignalData(
             $userId,
@@ -356,6 +355,47 @@ final class PersonStepUpTrustEditsIntegrationTest extends HilosSessionIntegratio
             'SELECT COUNT(*) AS `trusts` FROM `hilos_second_factor_trust` WHERE `user_id` = ?',
             [$userId],
         )->row()['trusts']);
+    }
+
+    /** @return iterable<string, array{int, bool, bool}> Grant offset, whether the named person survives, and renewal verdict */
+    public static function grantsAroundMerge(): iterable
+    {
+        foreach ([true, false] as $survivor) {
+            yield ($survivor ? 'survivor ' : 'loser ') . 'before' => [-1, $survivor, false];
+            yield ($survivor ? 'survivor ' : 'loser ') . 'same moment' => [0, $survivor, false];
+            yield ($survivor ? 'survivor ' : 'loser ') . 'after' => [1, $survivor, true];
+        }
+    }
+
+    /**
+     * @param int $offset Milliseconds from the merge opening to the trust grant
+     * @param bool $survivor Whether this person is the survivor of the recorded pair
+     * @param bool $expected Whether the missing pair may be created
+     */
+    #[DataProvider('grantsAroundMerge')]
+    public function testRenewalChecksTheLatestMergeBeforeCreatingAPair(int $offset, bool $survivor, bool $expected): void
+    {
+        $userId = $this->seedSignedInPerson();
+        $otherId = self::seedPerson();
+        $sessionId = (int)Hilos::$db->sessions->findByToken(self::SESSION_TOKEN)?->id;
+        $operation = ExecutionContext::run(new ExecutionFrame(agentId: $this->sessions->getId()),
+            static fn () => Hilos::$db->accountOperations->actions->recordMerge(
+                $survivor ? $userId : $otherId,
+                $survivor ? $otherId : $userId,
+                new AccountMergeChoice(null, null, null, null),
+            ));
+        $grantedAt = $operation->createdAt + $offset;
+        $until = $grantedAt + self::TRUST_DAYS * TimeConstants::SECONDS_PER_DAY * TimeConstants::MS_PER_SECOND;
+        $answer = $this->carry($this->sessions, HilosSignalConstants::HILOS_USER_BROWSER_TRUST_RENEW,
+            $this->renew($userId, $sessionId, $until, $grantedAt));
+
+        self::assertInstanceOf(UserBrowserTrustRenewDoneSignalData::class, $answer);
+        self::assertSame($expected, $answer->renewed);
+        self::assertNull($answer->error);
+        self::assertSame($expected ? 1 : 0, (int)Database::sql(
+            'SELECT COUNT(*) AS `trusts` FROM `hilos_second_factor_trust` WHERE `session_id` = ? AND `user_id` = ?',
+            [$sessionId, $userId],
+        )->firstRow()['trusts']);
     }
 
     /**

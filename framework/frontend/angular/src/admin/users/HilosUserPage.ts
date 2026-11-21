@@ -2116,10 +2116,12 @@ export class HilosUserPage {
   protected async submitMerge(): Promise<void> {
     const survivor = this.detail()
     const loser = this.selectedCandidate()
+    const mergeWindow = this.mergeWindow
     if (
       !survivor ||
       !loser ||
       !this.accountMerge ||
+      !mergeWindow ||
       this.mergeAction.busy() ||
       this.mergeDisabled() ||
       typeof survivor.hasSecondFactor !== 'boolean' ||
@@ -2138,20 +2140,16 @@ export class HilosUserPage {
       survivor.hasSecondFactor,
       loser.hasSecondFactor,
     )
-    const [outcome] = await Promise.all([
-      this.mergeWindow?.track(handle, {
+    await Promise.all([
+      mergeWindow.track(handle, {
         survivorUserId: survivor.id,
         loserUserId: loser.id,
         passwordFate: fate ?? null,
         secondFactorFate: this.secondFactorFate() ?? null,
         expectedSurvivorHasSecondFactor: survivor.hasSecondFactor,
         expectedLoserHasSecondFactor: loser.hasSecondFactor,
-      }) ?? Promise.resolve('legacy'),
+      }),
       this.mergeAction.run(handle),
     ])
-    // SCAFFOLD: legacy synchronous producer until HIL-1999
-    if (outcome === 'legacy') {
-      this.onMergeOpenChange(false)
-    }
   }
 }

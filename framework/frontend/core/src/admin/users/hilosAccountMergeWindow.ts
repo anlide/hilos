@@ -69,9 +69,9 @@ export interface HilosAccountMergeRequest {
   readonly expectedLoserHasSecondFactor: boolean
 }
 
-/** Whether the request was accepted, finished synchronously, refused or unanswered. */
+/** Whether the request was accepted, refused or unanswered. */
 export type HilosAccountMergeStartOutcome =
-  'accepted' | 'legacy' | 'refused' | 'unanswered'
+  'accepted' | 'refused' | 'unanswered'
 
 /** Local observation of one operation on one shown person's card. */
 export interface HilosAccountMergeWindow {
@@ -85,7 +85,7 @@ export interface HilosAccountMergeWindow {
    * @param request The account pair and choices submitted with that action.
    */
   track(
-    handle: ActionHandle<HilosAccountMergeAccepted | undefined>,
+    handle: ActionHandle<HilosAccountMergeAccepted>,
     request: HilosAccountMergeRequest,
   ): Promise<HilosAccountMergeStartOutcome>
   /** Open from current data, returning false when the card or progress is unavailable. */
@@ -279,20 +279,18 @@ export function createHilosAccountMergeWindow(
       }
       try {
         const { reply } = await handle.done
-        if (reply === undefined) {
-          // SCAFFOLD: legacy synchronous producer until HIL-1999.
-          if (active) clearTracking()
-          return 'legacy'
-        }
+        // The required merge reply schema rejects an absent payload
+        // before `done` resolves.
+        const accepted = reply as HilosAccountMergeAccepted
         if (active && userId !== undefined) {
           close()
           observe(
             userId,
-            reply.operationId,
+            accepted.operationId,
             readableHilosAccountMergeProgress(
               merge.get(),
               hilosAdminAccess.get(),
-            )?.operationId !== reply.operationId,
+            )?.operationId !== accepted.operationId,
           )
         }
         return 'accepted'

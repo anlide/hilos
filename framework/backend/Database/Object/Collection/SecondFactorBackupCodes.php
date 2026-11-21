@@ -47,24 +47,6 @@ class SecondFactorBackupCodes extends Objects
     public const string COLLECTION_KEY = HilosDbContext::secondFactorBackupCodes;
 
     /**
-     * Locks both account sets before merge reads them, without waiting for another writer.
-     * The caller must hold a transaction; this read neither opens nor commits one.
-     *
-     * @param int $survivorId Surviving account
-     * @param int $loserId Folded account
-     * @throws DatabaseException When a set is busy or its rows cannot be locked
-     */
-    public function lockForMerge(int $survivorId, int $loserId): void
-    {
-        Database::sql(
-            'SELECT `' . EntitySecondFactorBackupCode::user_id . '` FROM `' . EntitySecondFactorBackupCode::_table
-                . '` WHERE `' . EntitySecondFactorBackupCode::user_id . '` IN (?, ?) ORDER BY `'
-                . EntitySecondFactorBackupCode::user_id . '` FOR UPDATE NOWAIT',
-            [$survivorId, $loserId],
-        );
-    }
-
-    /**
      * Creates a person's set of backup codes.
      *
      * The personal owner calls this after {@see deleteForUser()} in the same transaction
@@ -187,26 +169,6 @@ class SecondFactorBackupCodes extends Objects
         }
 
         return $result;
-    }
-
-    /**
-     * Moves backup codes, preserving their spent status inside the account-merge transaction.
-     *
-     * @param int $fromUserId Folded account
-     * @param int $toUserId Surviving account
-     * @throws WriteNotAllowedException When the caller cannot update both sets
-     * @throws CreateNotAllowedException Never for persisted rows; declared by sync
-     * @throws DatabaseException When reading or moving a row fails
-     * @throws InvalidArgumentException When a query or sync frame is invalid
-     * @throws SourceChangeSubscriberException When a change subscriber fails
-     * @throws ObjectGetIdStringNotImplementedException When a moved row has no key
-     */
-    public function rePointToUser(int $fromUserId, int $toUserId): void
-    {
-        foreach ($this->listByUser($fromUserId) as $row) {
-            $row->userId = $toUserId;
-            $row->sync();
-        }
     }
 
     /**

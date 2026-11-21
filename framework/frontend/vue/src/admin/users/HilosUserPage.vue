@@ -759,7 +759,7 @@ async function submitMerge(): Promise<void> {
     survivor.hasSecondFactor,
     loser.hasSecondFactor,
   )
-  const [outcome] = await Promise.all([
+  await Promise.all([
     mergeWindow.track(handle, {
       survivorUserId: survivor.id,
       loserUserId: loser.id,
@@ -770,10 +770,6 @@ async function submitMerge(): Promise<void> {
     }),
     mergeAction.run(handle),
   ])
-  // SCAFFOLD: the synchronous producer remains until HIL-1999.
-  if (outcome === 'legacy') {
-    closeMerge()
-  }
 }
 
 // The name window, as the core has it over the card's own row — there is no

@@ -479,11 +479,11 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
     }
 
     /**
-     * An account folded into another one still applies the restriction to its trusts, answers and stops.
+     * An account folded into another one still applies the restriction to its trusts and answers.
      *
      * @throws HilosException When a fixture row cannot be written or the frame fails
      */
-    public function testAFoldedAccountAppliesTheRestrictionAndStops(): void
+    public function testAFoldedAccountAppliesTheRestrictionWithoutStopping(): void
     {
         $now = TimeHelper::nowMs();
         [$userId, $sessionId] = $this->seedSignedInPerson();
@@ -491,15 +491,12 @@ final class SecondFactorTrustRestrictionIntegrationTest extends HilosSessionInte
         $trust = self::insertTrust($sessionId, $userId, $now - 2 * self::DAY_MS, $now + 28 * self::DAY_MS);
         $savedAt = $now - self::DAY_MS;
         $restrictionId = $this->recordAs($this->settings->getId(), $savedAt, 7);
-        ExecutionContext::run(
-            new ExecutionFrame(agentId: $this->sessions->getId()),
-            static fn () => Hilos::$db->userMerges->actions->add($userId, $survivorId),
-        );
+        $this->asPerson($userId, static fn () => Hilos::$db->userMerges->actions->add($userId, $survivorId));
 
         self::assertNull($this->apply($userId, $restrictionId)->error);
 
         self::assertSame([$trust => [$now - 2 * self::DAY_MS, $now - 2 * self::DAY_MS, $savedAt + 7 * self::DAY_MS]], self::trustRows($userId));
-        self::assertTrue($this->personAgent($userId)->shouldStop());
+        self::assertFalse($this->personAgent($userId)->shouldStop());
     }
 
     /**

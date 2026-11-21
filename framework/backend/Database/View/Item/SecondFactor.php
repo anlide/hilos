@@ -56,7 +56,6 @@ class SecondFactor extends DbItem
     }
 
     /**
-     * SCAFFOLD: called by the prepared give (HIL-1992); no production caller until the merge switch (HIL-1999).
      *
      * @param AccountMergeTransfer $transfer Active right over this captured source row
      * @return ?string Stored secret for the attempt-local hand-over copy

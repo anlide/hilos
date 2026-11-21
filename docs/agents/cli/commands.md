@@ -144,13 +144,13 @@ confirm with.
 
 Under the detailed [merge canon](../architecture/account-operations.md#merge-cutover-and-observation),
 `account:merge` distinguishes preparing, wait, refusal and end, with the chosen
-fates, through the daemon channel. The prepared command sends start or observe
+fates, through the daemon channel. The command sends start or observe
 from the form that was typed, holds an open merge until the caller's deadline,
 and does not block the event loop. A channel disconnect is neither cancellation
 nor success: the outcome is unknown, and the merge is observed again. An open
-snapshot exits 6. Success means durable end. This prepared adapter stays inert
-until the live command path at the single merge switch
-(not in the code yet — HIL-1999).
+snapshot exits 6. Success means durable end. HIL-1999 connected this command
+to the live operation path; an open or unknown outcome remains observable by
+operation id.
 
 `impersonate:start` is judged by the same `assertImpersonationAllowed()` as the person's
 card, the impersonation settings included (HIL-1170,

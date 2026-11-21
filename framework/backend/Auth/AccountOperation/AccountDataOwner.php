@@ -13,8 +13,6 @@ use Closure;
  * project declares it in its {@see AccountDataOwnerDirectory}, and each account operation reads
  * from it what it needs to know about the owner.
  * The erasure reads `$perPerson` and `$hasRowsOf`, and the startup coverage gate reads the rest.
- * SCAFFOLD: the merge reads `$perPerson` and `$hasRowsOf` too, with no production caller until the merge
- * switch (HIL-1999).
  */
 final readonly class AccountDataOwner
 {

@@ -522,7 +522,7 @@ export interface HilosAccountMerge {
     secondFactorFate: HilosSecondFactorFate | undefined,
     expectedSurvivorHasSecondFactor: boolean,
     expectedLoserHasSecondFactor: boolean,
-  ): ActionHandle<HilosAccountMergeAccepted | undefined>
+  ): ActionHandle<HilosAccountMergeAccepted>
   /**
    * Request cancellation. Acceptance is not the end; the outcome arrives on
    * userStanding.merge.
@@ -2140,8 +2140,6 @@ export function hilosPasswordFateChoices(
 const accountMergeAcceptedSchema = z
   .object({ [ACCOUNT_MERGE_OPERATION_ID_FIELD]: z.number().int().positive() })
   .strict()
-  // SCAFFOLD: legacy synchronous producer until HIL-1999.
-  .optional()
 
 /**
  * The tracked account-merge action for a user-detail view.

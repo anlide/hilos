@@ -737,19 +737,6 @@ final class Hilos extends HilosFacade
         ],
     ];
 
-    /** @var array<string, list<string>> Outstanding closed DB writer transitions. */
-    public const array SHARED_DB_OWNERS = [
-        ChatDbContext::eventMessages => ['HIL-1999'],
-        HilosDbContext::identities => ['HIL-1999'],
-        HilosDbContext::passkeyCredentials => ['HIL-1999'],
-        HilosDbContext::secondFactorBackupCodes => ['HIL-1999'],
-        HilosDbContext::secondFactorResets => ['HIL-1999'],
-        HilosDbContext::secondFactorSettings => ['HIL-1999'],
-        HilosDbContext::secondFactorTrusts => ['HIL-1999'],
-        HilosDbContext::secondFactors => ['HIL-1999'],
-        HilosDbContext::users => ['HIL-1999'],
-    ];
-
     public const array TABLES = [
         ChatTableContext::hilosUsers => HilosUsersTable::class,
         ChatTableContext::hilosMergeCandidates => HilosMergeCandidatesTable::class,

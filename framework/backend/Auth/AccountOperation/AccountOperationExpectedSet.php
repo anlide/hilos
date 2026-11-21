@@ -17,8 +17,6 @@ use JsonException;
  * A wait is lifted when an owner is expected for the same participant and account; the
  * participant is the one the payload names. Assignments under any other key — the stage duties of
  * the operation — are not part of the composition and are passed over.
- * The erasure reads it. SCAFFOLD: the merge reads it too, with no production caller until the merge switch
- * (HIL-1999).
  */
 final readonly class AccountOperationExpectedSet
 {

@@ -39,7 +39,7 @@ COLLECTION-SQL-READ framework/backend/Database/Object/Collection/LegalAcceptance
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/LegalAcceptances.php 2 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/NotificationPreferences.php 3 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/Notifications.php 2 # HIL-1533
-COLLECTION-SQL-READ framework/backend/Database/Object/Collection/PasskeyCredentials.php 6 # HIL-1533
+COLLECTION-SQL-READ framework/backend/Database/Object/Collection/PasskeyCredentials.php 5 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/RegistrationReservations.php 3 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/SecondFactorBackupCodes.php 1 # HIL-1533
 COLLECTION-SQL-READ framework/backend/Database/Object/Collection/SecondFactorResets.php 4 # HIL-1533

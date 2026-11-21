@@ -256,15 +256,13 @@ declarative router logic are unchanged. Saved receipt replay after cleanup or
 end does not hydrate old memory. Receipt proves the survivor's Receiving step,
 not delivery of a frame or completion of the operation.
 
-The protected holder merge entries drive this prepared exchange; administrator
-and `account:merge` production callers remain legacy until HIL-1999. A missing
-owner or step signal leaves its durable duty open. The queue lasts one handler;
-explicit drive of the same id can recover ready work after a lost frame, with
-at most one saved give replay before receipt. Answers do not start a resend
-loop. The shared first/hourly holder pass and owner-start resume continue open
-duties from DB. Prepared merge operations use this recovery while production
-callers remain on the legacy path until HIL-1999. Real cluster/backup evidence
-remains HIL-2013; see
+The protected holder merge entries drive this live exchange; HIL-1999 connected
+the administrator and `account:merge` callers to it. A missing owner or step
+signal leaves its durable duty open. The queue lasts one handler; explicit
+drive of the same id can recover ready work after a lost frame, with at most
+one saved give replay before receipt. Answers do not start a resend loop. The
+shared first/hourly holder pass and owner-start resume continue open duties
+from DB. Real cluster/backup evidence remains HIL-2013; see
 [The Prepared Merge Coordinator](../architecture/account-operations.md#the-prepared-merge-coordinator)
 and [The Prepared Source-To-Survivor Handover](../architecture/account-operations.md#the-prepared-source-to-survivor-handover).
 

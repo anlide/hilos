@@ -57,24 +57,6 @@ class SecondFactorTrusts extends Objects
     public const string COLLECTION_KEY = HilosDbContext::secondFactorTrusts;
 
     /**
-     * Locks both account sets before merge reads them, without waiting for another writer.
-     * The caller must hold a transaction; this read neither opens nor commits one.
-     *
-     * @param int $survivorId Surviving account
-     * @param int $loserId Folded account
-     * @throws DatabaseException When a set is busy or its rows cannot be locked
-     */
-    public function lockForMerge(int $survivorId, int $loserId): void
-    {
-        Database::sql(
-            'SELECT `' . EntitySecondFactorTrust::user_id . '` FROM `' . EntitySecondFactorTrust::_table
-                . '` WHERE `' . EntitySecondFactorTrust::user_id . '` IN (?, ?) ORDER BY `'
-                . EntitySecondFactorTrust::user_id . '` FOR UPDATE NOWAIT',
-            [$survivorId, $loserId],
-        );
-    }
-
-    /**
      * Trusts a browser for a person until a moment, when the pair has no trust yet (HIL-1907).
      *
      * The new pair is written now and takes the confirmation as its grant. A standing pair - live,

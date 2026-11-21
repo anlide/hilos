@@ -3456,7 +3456,7 @@ describe('HilosUserPage merge observation, draft and cancellation', () => {
     ).toBe(false)
   })
 
-  it.each(['accepted', 'legacy', 'refused', 'unanswered'] as const)(
+  it.each(['accepted', 'refused', 'unanswered'] as const)(
     'binds the %s start outcome to the same action handle',
     async (outcome) => {
       const world = setup(true, null)
@@ -3469,7 +3469,6 @@ describe('HilosUserPage merge observation, draft and cancellation', () => {
       await act(async () => {
         if (outcome === 'accepted')
           world.answerMerge(undefined, { operationId: 40 })
-        else if (outcome === 'legacy') world.answerMerge()
         else if (outcome === 'refused') world.answerMerge('Merge refused')
         else world.disconnect()
       })
@@ -3479,11 +3478,6 @@ describe('HilosUserPage merge observation, draft and cancellation', () => {
         expect(hilosToasts.toasts.get()).toEqual([])
         await act(async () => world.update(progress()))
         expect(dialog().textContent).toContain('Preparing merge')
-      } else if (outcome === 'legacy') {
-        expect(byId('modal')).toBeNull()
-        expect(hilosToasts.toasts.get()).toEqual([
-          expect.objectContaining({ message: 'Merged.' }),
-        ])
       } else if (outcome === 'refused') {
         expect(byId('hilos-action-error')?.textContent).toBe('Merge refused')
         expect(byId('hilos-user-merge-confirm')).not.toBeNull()

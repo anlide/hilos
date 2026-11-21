@@ -571,11 +571,13 @@ const STEP_UP_REFUSAL =
   'Add a password, an email or a phone to your account to do this'
 
 const mounted: ReturnType<typeof mount>[] = []
+const adminAccessReleases: (() => void)[] = []
 
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) {
     wrapper.unmount()
   }
+  for (const release of adminAccessReleases.splice(0)) release()
   document.body.innerHTML = ''
   document.body.classList.remove('modal-open')
 })
@@ -1411,7 +1413,18 @@ describe('HilosUserPage rename modal', () => {
 
     passwordWrapper.unmount()
     mounted.splice(mounted.indexOf(passwordWrapper), 1)
+    const plainScopes = new ScopeManager()
+    plainScopes.session.data.set('currentUser', {
+      type: USER_ENTITY_TYPE,
+      id: 99,
+    })
+    plainScopes.session.entities.upsert(
+      { type: USER_ENTITY_TYPE, id: 99 },
+      { id: 99, admin: true },
+    )
+    adminAccessReleases.push(bindAdminAccess(plainScopes))
     const plainWorld = userContext(true, {
+      scopes: plainScopes,
       detailHasPassword: true,
       candidateHasPassword: false,
     })
@@ -1434,6 +1447,7 @@ describe('HilosUserPage rename modal', () => {
     modalEl('hilos-user-merge-next')?.click()
     await nextTick()
     expect(modalEl('hilos-user-merge-fate-survivor')).toBeNull()
+    const toastsBeforeAccepted = [...hilosToasts.toasts.get()]
     modalEl('hilos-user-merge-confirm')?.click()
     expect(plainWorld.sent.at(-1)).toMatchObject({
       action: 'hilos_user_merge',
@@ -1444,14 +1458,14 @@ describe('HilosUserPage rename modal', () => {
         expectedLoserHasSecondFactor: false,
       },
     })
-    plainWorld.answerMerge()
+    plainWorld.answerMerge(undefined, { operationId: 42 })
     await flushPromises()
     await nextTick()
-    expect(modalEl('modal')).toBeNull()
-    expect(hilosToasts.toasts.get().at(-1)).toMatchObject({
-      message: 'Merged.',
-      severity: 'success',
-    })
+    expect(modalEl('modal')).not.toBeNull()
+    expect(modalEl('hilos-user-merge-confirm')).toBeNull()
+    expect(modalEl('hilos-user-merge-close')).not.toBeNull()
+    expect(document.body.textContent).toContain('Preparing merge')
+    expect(hilosToasts.toasts.get()).toEqual(toastsBeforeAccepted)
   })
 
   it('shows removal notices for unconfirmed password addresses in the merge window (HIL-1276)', async () => {
@@ -6347,7 +6361,7 @@ describe('HilosUserPage merge observation', () => {
     expect(world.sent).toEqual([])
   })
 
-  it('closes on loss of admin-section access and keeps a terminal result separate from a new legacy draft', async () => {
+  it('closes on loss of admin-section access and keeps a terminal result separate from a new merge draft', async () => {
     const world = setup(
       true,
       mergeProgress({ state: 'end', outcome: 'not_started' }),

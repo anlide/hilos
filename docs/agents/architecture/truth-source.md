@@ -62,10 +62,10 @@ rules and limits are spelled out under *What The Start Refuses* below. RT's
 complete-owner comparison remains separate.
 
 Ordinary moves landed first. HIL-1952 switched erasure to owner-local work and
-retired the old erasure grants and comments. The old merge and its grants stay
-until its live cutover (not in the code yet — HIL-1999). The agreed terminal
-design in [account-operations.md](account-operations.md) describes the erasure
-path that is live and the merge path still to come.
+retired its old grants and comments. HIL-1999 connected merge to the owner-local
+operation path and retired the old merge grants and comments. The detailed
+[account-operations.md](account-operations.md) describes both live terminal
+paths.
 The trigger-written tables and scoped receipt lifecycle below stay separate.
 
 ## A Collection Written Outside The Application
@@ -178,15 +178,12 @@ somebody else: it is borrowed by the same test — no `Add` among its folded
 operations — and waits at the start the same way. *A Claim Over A Set* has the
 case.
 
-The sessions holder's claims for the account erasure and the account merge are
-borrowed claims of this kind — `Update` and `Remove`, or `Remove` alone, over
-seventeen collections somebody else brings into being — and so are the chat
-holder's over the room tables. Nothing of the mechanism here changes for them.
-The [Writer Map](account-operations.md#writer-map) assigns those terminal
-writes to the row owners. HIL-1952 retired borrowed rights used only by
-erasure; the borrowed merge rights leave at its own live cutover
-(not in the code yet — HIL-1999). These moves do not change the borrowed wait,
-the initial RT snapshot or the DB reader-interest acknowledgement.
+The sessions holder's former claims for account erasure and merge, and the chat
+holder's former merge write on room messages, were borrowed claims of this kind:
+they covered rows another owner brings into being. HIL-1952 retired the erasure
+claims; HIL-1999 retired the merge claims. The [Writer Map](account-operations.md#writer-map)
+assigns those terminal writes to the row owners. These moves do not change the
+borrowed wait, the initial RT snapshot or the DB reader-interest acknowledgement.
 
 The interest of a claim that may add is raised at the claim and not at the
 report that follows it. An agent writing its first row inside `onStart()` reads
@@ -857,12 +854,11 @@ opening or settling a transport, and bounded recovery uses the saved routing key
 (or notification id for legacy NULL keys). Raw SMS workers carry no delivery claim.
 No arbitrary callback or boolean can stand in for this proof.
 
-The sessions holder's borrowed erasure claims were retired by HIL-1952; the
-borrowed merge claims remain in the catalog until their live cutover. Their
-comments stay attached to the live paths described in
+The sessions holder's borrowed erasure claims were retired by HIL-1952, and
+HIL-1999 removed its borrowed merge claims from the catalog. The chat holder's
+borrowed message-update claim was removed at that merge cutover as well. The
+live owner paths are described in
 [instance-owners.md](instance-owners.md#operations-over-many-instances).
-HIL-1999 removes the remaining merge rights at its switch. Preparation alone
-does not retire a grant.
 
 **RT comparison.** RT keeps its existing complete-only comparison. Its
 `Hilos::SHARED_RT_OWNERS` entries still use `SharedOwnersKey::OWNERS` and

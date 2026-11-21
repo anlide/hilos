@@ -43,9 +43,9 @@ use Hilos\Utils\Helpers\RandomHelper;
  * the commit, which removes them (HIL-144). Another person's rows are the proof that the erasure
  * cut by the person.
  *
- * Driven inside the library's own execution frame, as {@see AccountMergeTest} drives the
- * merge: every write runs as the agent that owns the sessions, so the borrowed claims the
- * erasure needs on the chat tables are asked exactly as on a live node.
+ * Driven through the coordinator and each participant's own execution frame, as
+ * {@see AccountMergeObservationTest} drives the merge: writes are judged against the owner's
+ * claims exactly as on a live node.
  *
  * Requires the test DB reset before run (composer run test:db-reset).
  */

@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Database\Identity;
 
-use Hilos\Database\Object\Collection\Identities;
-
 /**
  * PasswordFate - whose password an account keeps when two accounts become one (HIL-692).
  *
  * An account holds at most one password, so a merge of two that each have one is the
  * single place where something has to give, and no rule can pick which: both secrets
  * are equally the person's. The operator names it, and the value travels from the
- * command into {@see Identities::rePointToUser()} without being re-derived on the way;
+ * command into the merge opening without being re-derived on the way;
  * hence the backed values.
  *
  * The name says whose password STAYS, not whose is erased, and it says it the same way

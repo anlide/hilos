@@ -34,7 +34,6 @@ use WeakReference;
 
 /**
  * An attempt-local right to give selected rows, with no ambient permission to write either account.
- * SCAFFOLD: called by the prepared give (HIL-1992); no production caller until the merge switch (HIL-1999).
  */
 final class AccountMergeTransfer
 {

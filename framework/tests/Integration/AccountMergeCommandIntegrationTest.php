@@ -39,7 +39,6 @@ use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\AccountMergeCommand;
-use Hilos\Core\CLI\Commands\AccountMergeOwnerCommand;
 use Hilos\Core\CLI\Commands\CommandChannelResult;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\InvalidJsonException;
@@ -452,10 +451,13 @@ final class AccountMergeCommandIntegrationTest extends HilosSessionIntegrationTe
         $this->start('again', self::SURVIVOR, self::LOSER, [
             AccountMergeCommandConstants::FIELD_PASSWORD_FATE => PasswordFate::SURVIVOR->value,
         ]);
-        $again = $this->onlyReply();
-        self::assertSame($reply->payload, $again->payload);
-        self::assertSame($count, $this->operationCount());
-        self::assertSame([], $this->frames());
+        self::assertSame([], $this->replies());
+        self::assertSame($count + 1, $this->operationCount());
+        $new = Hilos::$db->accountOperations->openMergeOfLoser(self::LOSER);
+        self::assertNotNull($new);
+        self::assertNotSame($operation->id, $new->id);
+        self::assertSame(PasswordFate::SURVIVOR, $new->mergeChoice->passwordFate);
+        self::assertCount(2, $this->frames());
     }
 
     public function testTwoWaitsAnswerOnceAcrossADuplicateFrameAndARepeatedSweep(): void
@@ -672,7 +674,7 @@ final class AccountMergeCommandIntegrationTest extends HilosSessionIntegrationTe
 
     public function testLostTransportLeavesTheOpenMergeReadable(): void
     {
-        $spy = new AccountMergeOwnerCommandTransportSpy();
+        $spy = new AccountMergeCommandTransportSpy();
         $cases = [
             [CommandChannelResult::timedOut('127.0.0.1:8094'), self::SURVIVOR, self::LOSER],
             [CommandChannelResult::unreachable('127.0.0.1:8094'), 11, 13],
@@ -740,7 +742,7 @@ final class AccountMergeCommandIntegrationTest extends HilosSessionIntegrationTe
         self::assertArrayNotHasKey(AccountMergeCommandConstants::FIELD_PASSWORD_FATE, $spy->sent[0]);
     }
 
-    public function testRepeatedStartAfterNotStartedPrintsThatSnapshot(): void
+    public function testRepeatedStartAfterNotStartedOpensANewOperation(): void
     {
         $this->start('cancel');
         $this->frames();
@@ -749,23 +751,30 @@ final class AccountMergeCommandIntegrationTest extends HilosSessionIntegrationTe
         $this->finishCancellation();
         $saved = $this->onlyReply();
         self::assertSame(self::CANCEL_MESSAGE, $saved->payload[CommandConstants::FIELD_MESSAGE]);
-        $spy = $this->ownerTransport();
-        $this->expectOutputRegex(
-            '/Operation ' . $operation->id . ', pair ' . self::SURVIVOR . ' ' . self::LOSER
-            . ', password not specified, second factor not specified/',
-        );
-        self::assertSame(ExitCode::ERROR, $spy->execute([], [(string)self::SURVIVOR, (string)self::LOSER]));
-        self::assertSame('Refused: ' . self::CANCEL_MESSAGE . "\n", $spy->standardError);
-        self::assertSame(1, $this->operationCount());
-        self::assertSame($operation->id, $this->soleOperation()->id);
+        $spy = new AccountMergeCommandTransportSpy();
+        $spy->transport = function (string $command, array $payload): CommandChannelResult {
+            $this->handle(new CommandRequestDTO('again', $command, $payload));
+            self::assertSame([], $this->replies());
+            $this->sweep();
+
+            return CommandChannelResult::replied($this->onlyReply(), '127.0.0.1:8094');
+        };
+        $this->expectOutputRegex('/Operation [0-9]+, pair ' . self::SURVIVOR . ' ' . self::LOSER . '.*preparing/s');
+        self::assertSame(ExitCode::TIMEOUT, $spy->execute([], [(string)self::SURVIVOR, (string)self::LOSER]));
+        self::assertSame('', $spy->standardError);
+        self::assertSame(2, $this->operationCount());
+        $new = Hilos::$db->accountOperations->openMergeOfLoser(self::LOSER);
+        self::assertNotNull($new);
+        self::assertNotSame($operation->id, $new->id);
+        self::assertNull($new->mergeChoice->passwordFate);
         self::assertArrayNotHasKey(AccountMergeCommandConstants::FIELD_PASSWORD_FATE, $spy->sent[0]);
     }
 
-    public function testRegisteredMergeStaysOnTheOldCommand(): void
+    public function testRegisteredCommandDispatchesTheMergeProtocol(): void
     {
         $classes = (new CliManager([]))->commandClasses();
         self::assertSame(AccountMergeCommand::class, $classes[CliCommands::ACCOUNT_MERGE]);
-        self::assertNotContains(AccountMergeOwnerCommand::class, $classes);
+        self::assertSame(1, count(array_filter($classes, static fn (string $class): bool => $class === AccountMergeCommand::class)));
         $this->holder();
         $before = $this->operationCount();
         $this->asHolder(fn () => $this->holder()->onSignalCommand(
@@ -778,14 +787,14 @@ final class AccountMergeCommandIntegrationTest extends HilosSessionIntegrationTe
         ));
         $reply = $this->onlyReply();
         self::assertFalse($reply->isOk());
-        self::assertSame('Cannot merge a user into itself', $reply->payload[CommandConstants::FIELD_MESSAGE]);
+        self::assertSame('No saved merge has that operation id.', $reply->payload[CommandConstants::FIELD_MESSAGE]);
         self::assertArrayNotHasKey(AccountMergeCommandConstants::FIELD_MERGE, $reply->payload);
         self::assertSame($before, $this->operationCount());
     }
 
-    private function ownerTransport(): AccountMergeOwnerCommandTransportSpy
+    private function ownerTransport(): AccountMergeCommandTransportSpy
     {
-        $spy = new AccountMergeOwnerCommandTransportSpy();
+        $spy = new AccountMergeCommandTransportSpy();
         $spy->transport = function (string $command, array $payload) use ($spy): CommandChannelResult {
             $this->handle(new CommandRequestDTO('cli-' . count($spy->sent), $command, $payload));
             $replies = $this->replies();
@@ -1049,7 +1058,7 @@ final class AccountMergeCommandIntegrationTest extends HilosSessionIntegrationTe
 
     private function handle(CommandRequestDTO $command): void
     {
-        $this->asHolder(fn () => $this->holder()->handle($command));
+        $this->asHolder(fn () => $this->holder()->onSignalCommand($command, '', ''));
     }
 
     /** @param array<string, mixed> $extra Fate keys the start names */
@@ -1256,14 +1265,9 @@ final class AccountMergeCommandIntegrationTest extends HilosSessionIntegrationTe
     }
 }
 
-/** Exposes the prepared merge command. Production dispatch stays on the old handler. */
+/** Thin access to the live merge command and explicit deadline sweeps. */
 final class AccountMergeCommandHolder extends AbstractSessionsLibraryAgent
 {
-    public function handle(CommandRequestDTO $command): void
-    {
-        $this->handlePreparedAccountMergeCommand($command);
-    }
-
     public function sweep(float $now): void
     {
         $this->sweepAccountMergeCommands($now);
@@ -1288,7 +1292,7 @@ final class AccountMergeCommandHolder extends AbstractSessionsLibraryAgent
 /**
  * Stands in for the socket: the payload goes to the prepared holder, and the real reply comes back.
  */
-final class AccountMergeOwnerCommandTransportSpy extends AccountMergeOwnerCommand
+final class AccountMergeCommandTransportSpy extends AccountMergeCommand
 {
     /** @var Closure(string, array<string, mixed>): CommandChannelResult */
     public Closure $transport;

@@ -28,7 +28,6 @@ use Throwable;
 
 /**
  * Commits the loser's complete handover and its private copy beside the nonsecret give fact.
- * SCAFFOLD: called by the merge coordinator (HIL-2000); no production caller until the merge switch (HIL-1999).
  */
 final class AccountMergeGiving
 {

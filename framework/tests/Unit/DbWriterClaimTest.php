@@ -19,9 +19,9 @@ final class DbWriterClaimTest extends TestCase
     public function testStateKeepsExactClaimsAndCanonicalPendingLeaves(): void
     {
         $claim = new DbWriterClaim(AbstractAgent::class, DbWriterClaimWidth::Rows, TruthSourceOperations::of(TruthSourceOperation::Update));
-        $state = new DbWriterTransitionState(['HIL-1999', 'HIL-1952', 'HIL-1952'], [$claim], [DbWriterPartition::NotificationChannelShard]);
+        $state = new DbWriterTransitionState(['HIL-9999', 'HIL-1952', 'HIL-1952'], [$claim], [DbWriterPartition::NotificationChannelShard]);
 
-        self::assertSame(['HIL-1952', 'HIL-1999'], $state->pendingLeaves);
+        self::assertSame(['HIL-1952', 'HIL-9999'], $state->pendingLeaves);
         self::assertSame([$claim], $state->claims);
         self::assertSame(AbstractAgent::class, $claim->ownerClass);
         self::assertSame([TruthSourceOperation::Update], $claim->operations->asList());
