@@ -2660,7 +2660,7 @@ describe('HilosUserPage erasure (HIL-1961)', () => {
     )
   }
 
-  it('draws Being deleted, the notice and the progress section when erasing with an accountErasure block', async () => {
+  it("offers nothing to press on an account being erased and shows the erasure's progress", async () => {
     const context = userContext(true, true, 'skip', {
       impersonation: impersonationSettings(),
     })
@@ -2673,6 +2673,25 @@ describe('HilosUserPage erasure (HIL-1961)', () => {
 
     expect(byId('hilos-user-edit')).not.toBeNull()
     expect(byId('hilos-user-erasure')).toBeNull()
+
+    // The standing turns before the erasure's block is read: the badge and the
+    // notice stand, nothing is offered, and there is no progress to show yet.
+    await change(() => {
+      context.standingFrame({ userId: 1, accountStanding: erasing })
+    })
+
+    expect(byId('user-standing-badge')?.textContent?.trim()).toBe(
+      'Being deleted',
+    )
+    const notice = byId('hilos-user-erasing')
+    expect(notice?.textContent?.trim()).toBe('This account is being deleted.')
+    expect(notice?.getAttribute('role')).toBe('status')
+    expect(byId('hilos-user-erasure')).toBeNull()
+    expect(byId('hilos-user-edit')).toBeNull()
+    expect(byId('hilos-user-rights')).toBeNull()
+    expect(byId('hilos-user-access')).toBeNull()
+    expect(byId('hilos-user-merge-zone')).toBeNull()
+    expect(byId('hilos-user-impersonate-open')).toBeNull()
 
     await change(() => {
       context.standingFrame({
