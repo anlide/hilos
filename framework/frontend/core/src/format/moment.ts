@@ -98,7 +98,7 @@ export function formatMoment(
  * Internal entry for historical labels in an accepted snapshot's fixed zone.
  * Calendar labels require the snapshot's asOfTs as options.now; without that
  * reference they return null rather than reading the live clock.
- * Deliberately absent from the base and root package barrels.
+ * Deliberately absent from the base package barrel.
  *
  * @param moment Epoch milliseconds or a complete ISO UTC timestamp ending in Z.
  * @param timeZone The zone captured with the snapshot, never the live reader zone.
@@ -121,7 +121,7 @@ export function formatSnapshotMoment(
 
 /**
  * Internal HH:mm preview of a Time zone choice, independent of the live reader.
- * Deliberately absent from the base and root package barrels.
+ * Deliberately absent from the base package barrel.
  *
  * @param moment Epoch milliseconds or a complete ISO UTC timestamp ending in Z.
  * @param timeZone The exact named zone whose clock the picker previews.

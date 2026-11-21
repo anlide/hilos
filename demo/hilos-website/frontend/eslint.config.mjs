@@ -42,7 +42,7 @@ export default tseslint.config(
         {
           paths: [
             {
-              name: '@hilos/core',
+              name: '@hilos/core/base',
               importNames: [
                 'openRowEdit',
                 'resolveRowEdit',

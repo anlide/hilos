@@ -70,16 +70,18 @@ export default tseslint.config(
   // of the four merge functions in a view layer is the old shape coming back
   // (docs/agents/frontend/conflict-resolution.md, "The row-edit session");
   // `import type` of their types stays allowed. The core — the session and its
-  // tests — is not under this block.
+  // tests — is not under this block, nor are the view layers' tests, which spy
+  // on the core through a namespace import rather than build an edit window.
   {
     files: ['vue/**', 'react/**', 'angular/**'],
+    ignores: ['**/*.test.ts', '**/*.test.tsx', '**/test/**'],
     rules: {
       '@typescript-eslint/no-restricted-imports': [
         'error',
         {
           paths: [
             {
-              name: '@hilos/core',
+              name: '@hilos/core/base',
               importNames: [
                 'openRowEdit',
                 'resolveRowEdit',
