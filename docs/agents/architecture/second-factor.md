@@ -166,8 +166,9 @@ codes or app labels.
 
 "Don't ask again on this device" writes a trust row for (session row, person)
 until now + the administrator's days (0 offers no trust). The row also keeps the
-moment it was last granted: a new pair stores it with its creation, and an
-extension moves it to now while the first writing stays. The session row
+moment it was last granted: a new pair stores it with its creation, and a
+renewal by the person's agent moves it to the moment the second factor was
+confirmed again (HIL-1907), while the first writing stays. The session row
 survives token rotation, so a trusted browser stays trusted; signing out does
 not end the trust, switching the factor off and a carried-out removal do.
 Trust does not remove a protected operation's fresh confirmation; step-up asks a
