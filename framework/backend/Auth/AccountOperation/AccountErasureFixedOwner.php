@@ -26,7 +26,9 @@ final readonly class AccountErasureFixedOwner implements AccountErasureParticipa
      * @param list<string> $collections Collection keys the participant covers
      * @param string $ownerType Agent type that owns the rows
      * @param bool $perPerson Whether the owner is indexed by the account id rather than a single agent
-     * @param Closure(int): bool $hasRowsOf Whether an account still has rows here, asked only when no owner is registered
+     * @param Closure(int): bool $hasRowsOf Whether an account still has rows here, asked only when no owner is registered.
+     *     The coordinator, the sessions holder, runs it in its own process, so whatever it reads the holder must be
+     *     allowed to read (`READS_DB` or a claim)
      */
     public function __construct(
         private string $key,

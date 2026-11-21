@@ -21,7 +21,9 @@ final readonly class AccountDataOwner
      * @param list<string> $collections Collection keys of the project context the owner covers
      * @param string $ownerType Agent type that owns the rows
      * @param bool $perPerson Whether the owner is indexed by the account id rather than a single agent
-     * @param Closure(int): bool $hasRowsOf Whether an account still has rows here
+     * @param Closure(int): bool $hasRowsOf Whether an account still has rows here. The operation's coordinator, the
+     *     sessions holder, runs it in its own process and only while no owner is registered, so whatever it reads
+     *     the holder must be allowed to read (`READS_DB` or a claim)
      */
     public function __construct(
         public string $key,

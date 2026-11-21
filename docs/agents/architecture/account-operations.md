@@ -675,7 +675,9 @@ the 56 mounted framework collections, and a unit check holds that equality.
 `AccountOperationExpectation` list, by the accounts of the circle in its order
 and, for each, by the participants in catalog order. A participant is activated
 when any of its collections is mounted and its table is in the schema; one
-whose tables the installation never created is not asked. An expectation is
+whose tables the installation never created is not asked. Activation reads no
+rows and needs no right to read them; a row question — an owner's `hasRowsOf`,
+the deliveries — does, and the holder must be allowed to read what it reads. An expectation is
 recorded as an assignment of the operation, with its `user_id` the account of
 the circle and its stage the stage the operation is at (`preparing` when it is
 opened). The keys and the payload are literal: an expected owner is
