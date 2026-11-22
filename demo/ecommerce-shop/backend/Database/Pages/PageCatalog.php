@@ -97,6 +97,13 @@ final class PageCatalog implements PageCatalogProviderInterface
                 PageCatalogConstants::CATALOG_ENTRY_PARENT => PageConstants::ADMIN_PRODUCT,
                 PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Stock',
             ],
+            PageConstants::ADMIN_VOUCHERS => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Vouchers',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Discount codes buyers enter in the cart.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Vouchers',
+                PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+            ],
         ];
     }
 
@@ -108,11 +115,12 @@ final class PageCatalog implements PageCatalogProviderInterface
         return [
             [
                 PageCatalogConstants::SECTION_TITLE => 'Shop administration',
-                PageCatalogConstants::SECTION_DESCRIPTION => 'Warehouses and the catalog.',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'Warehouses, catalog, and vouchers.',
                 PageCatalogConstants::SECTION_ITEMS => [
                     PageConstants::ADMIN_WAREHOUSES,
                     PageConstants::ADMIN_CATEGORIES,
                     PageConstants::ADMIN_PRODUCTS,
+                    PageConstants::ADMIN_VOUCHERS,
                 ],
             ],
         ];

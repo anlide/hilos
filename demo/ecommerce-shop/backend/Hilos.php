@@ -61,6 +61,7 @@ use Demo\EcommerceShop\Pages\AdminCategoriesPage;
 use Demo\EcommerceShop\Pages\AdminProductPage;
 use Demo\EcommerceShop\Pages\AdminProductStockPage;
 use Demo\EcommerceShop\Pages\AdminProductsPage;
+use Demo\EcommerceShop\Pages\AdminVouchersPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
@@ -387,6 +388,7 @@ final class Hilos extends HilosFacade
         AdminProductsPage::PAGE => AdminProductsPage::class,
         AdminProductPage::PAGE => AdminProductPage::class,
         AdminProductStockPage::PAGE => AdminProductStockPage::class,
+        AdminVouchersPage::PAGE => AdminVouchersPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -770,6 +772,9 @@ final class Hilos extends HilosFacade
         ],
         AdminProductStockPage::PAGE => [
             EcommerceShopTableContext::productStock => [],
+        ],
+        AdminVouchersPage::PAGE => [
+            EcommerceShopTableContext::vouchers => [],
         ],
         LanguagesListPage::PAGE => [
             EcommerceShopTableContext::hilosI18nLanguages => [],

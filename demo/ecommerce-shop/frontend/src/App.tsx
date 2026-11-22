@@ -31,6 +31,7 @@ import {
   PAGE_ADMIN_PRODUCT,
   PAGE_ADMIN_PRODUCT_STOCK,
   PAGE_ADMIN_PRODUCTS,
+  PAGE_ADMIN_VOUCHERS,
   PAGE_ADMIN_WAREHOUSES,
   PAGE_CATEGORY,
   PAGE_MAIN,
@@ -62,7 +63,8 @@ const pages: Record<string, PageView<ComponentType>> = {
   // recopied per project (page-module-structure.md).
   ...hilosAdminViews(),
   // The shop's own admin pages, in their own dashboard group (views/AdminWarehouses,
-  // views/AdminCategories, views/AdminProducts, views/AdminProduct).
+  // views/AdminCategories, views/AdminProducts, views/AdminProduct,
+  // views/AdminVouchers).
   [PAGE_ADMIN_WAREHOUSES]: lazyPage(() =>
     import('./views/AdminWarehouses/AdminWarehouses.js').then((m) => m.default),
   ),
@@ -79,6 +81,9 @@ const pages: Record<string, PageView<ComponentType>> = {
     import('./views/AdminProductStock/AdminProductStock.js').then(
       (m) => m.default,
     ),
+  ),
+  [PAGE_ADMIN_VOUCHERS]: lazyPage(() =>
+    import('./views/AdminVouchers/AdminVouchers.js').then((m) => m.default),
   ),
   // The framework Change Log section: the framework owns the feed, the tables
   // viewport, the history and the receipt reader; the project binds its

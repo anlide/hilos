@@ -53,6 +53,9 @@ final class EcommerceShopSignalConstants
     /** @var string Subscription page admin products signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_PRODUCTS = 'subscription_page_admin_products';
 
+    /** @var string Subscription page admin vouchers signal name */
+    public const string SUBSCRIPTION_PAGE_ADMIN_VOUCHERS = 'subscription_page_admin_vouchers';
+
     /** @var string Product create action name */
     public const string PRODUCT_CREATE = 'product_create';
 

@@ -34,6 +34,9 @@ final class PageConstants
     /** @var string Shop administration: the products table */
     public const string ADMIN_PRODUCTS = 'admin_products';
 
+    /** @var string Shop administration: the vouchers table */
+    public const string ADMIN_VOUCHERS = 'admin_vouchers';
+
     /** @var string Shop administration: one product's page, addressed by its id */
     public const string ADMIN_PRODUCT = 'admin_product';
 

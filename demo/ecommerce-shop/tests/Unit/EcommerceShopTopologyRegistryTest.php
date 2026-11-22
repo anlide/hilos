@@ -175,6 +175,7 @@ use Demo\EcommerceShop\Pages\AdminCategoriesPage;
 use Demo\EcommerceShop\Pages\AdminProductsPage;
 use Demo\EcommerceShop\Pages\AdminProductPage;
 use Demo\EcommerceShop\Pages\AdminProductStockPage;
+use Demo\EcommerceShop\Pages\AdminVouchersPage;
 use Demo\EcommerceShop\Browser\Data\AdminProductBrowserData;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserData;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserSource;
@@ -876,6 +877,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AdminProductsPage::PAGE => AdminProductsPage::class,
             AdminProductPage::PAGE => AdminProductPage::class,
             AdminProductStockPage::PAGE => AdminProductStockPage::class,
+            AdminVouchersPage::PAGE => AdminVouchersPage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
@@ -1337,6 +1339,32 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     }
 
     /**
+     * The vouchers admin page: an admin-level route served by the vouchers library, binding the
+     * vouchers table, answering on its own signal, and reached from the dashboard's shop group.
+     */
+    public function testTheVouchersAdminPageIsServedByTheLibraryAndHangsOffTheDashboard(): void
+    {
+        self::assertSame('admin_vouchers', AdminVouchersPage::PAGE);
+        self::assertSame(PageReach::ROUTE, AdminVouchersPage::REACH);
+        self::assertSame(PageAccessLevel::ADMIN, AdminVouchersPage::ACCESS_LEVEL);
+        self::assertSame(AgentType::VOUCHERS_LIBRARY, Hilos::getPageRoutes()[AdminVouchersPage::PAGE]);
+        self::assertSame([EcommerceShopTableContext::vouchers => []], Hilos::PAGE_TABLES[AdminVouchersPage::PAGE]);
+        self::assertSame(
+            [BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_VOUCHERS],
+            AdminVouchersPage::BROWSER,
+        );
+        self::assertSame('subscription_page_admin_vouchers', EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_VOUCHERS);
+        self::assertSame([], AdminVouchersPage::ACTIONS);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Vouchers',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Discount codes buyers enter in the cart.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => HilosPageConstants::HILOS_DASHBOARD,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Vouchers',
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], PageCatalog::pages()[PageConstants::ADMIN_VOUCHERS]);
+    }
+
+    /**
      * The warehouses admin page: an admin-level route served by the warehouses library, binding the
      * warehouses table, answering on its own signal, and reached from the dashboard's shop group.
      */
@@ -1392,11 +1420,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([
             [
                 PageCatalogConstants::SECTION_TITLE => 'Shop administration',
-                PageCatalogConstants::SECTION_DESCRIPTION => 'Warehouses and the catalog.',
+                PageCatalogConstants::SECTION_DESCRIPTION => 'Warehouses, catalog, and vouchers.',
                 PageCatalogConstants::SECTION_ITEMS => [
                     PageConstants::ADMIN_WAREHOUSES,
                     PageConstants::ADMIN_CATEGORIES,
                     PageConstants::ADMIN_PRODUCTS,
+                    PageConstants::ADMIN_VOUCHERS,
                 ],
             ],
         ], PageCatalog::dashboardSections());
