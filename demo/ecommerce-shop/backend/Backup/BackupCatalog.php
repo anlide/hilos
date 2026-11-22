@@ -9,6 +9,7 @@ use Demo\EcommerceShop\Database\Object\Collection\CategorySlugs;
 use Demo\EcommerceShop\Database\Object\Collection\Products;
 use Demo\EcommerceShop\Database\Object\Collection\ProductSlugs;
 use Demo\EcommerceShop\Database\Object\Collection\ProductWarehouseStocks;
+use Demo\EcommerceShop\Database\Object\Collection\Vouchers;
 use Demo\EcommerceShop\Database\Object\Collection\Warehouses;
 use Hilos\Backup\BackupConstants;
 use Hilos\Core\Catalog\CatalogProviderInterface;
@@ -29,7 +30,9 @@ use Hilos\Database\Object\Collection\Files;
  * its own, and Migration/Seed/001_hilos_flowers.sql seeds them; categories and products name
  * their pictures by the number of a files registry row, so the registry rides with them. On
  * connection index 0 these tables are the reference ones schema-seed keeps rows of; the carts
- * of the visitors are not, the seed writes none. The bytes of the pictures are not in the
+ * of the visitors are not, the seed writes none. The voucher table, seeded by
+ * Migration/Seed/002_hilos_vouchers.sql, is a reference table of connection index 0, and
+ * schema-seed keeps every row of it. The bytes of the pictures are not in the
  * archive: a backup carries the database only (files-registry.md, "What Is Not Here").
  *
  * What a restore into a lesser environment must rewrite is declared on each table's own
@@ -51,6 +54,7 @@ final class BackupCatalog implements CatalogProviderInterface
                     Products::class,
                     ProductSlugs::class,
                     ProductWarehouseStocks::class,
+                    Vouchers::class,
                     Files::class,
                 ],
             ],

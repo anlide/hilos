@@ -47,17 +47,17 @@ final class VouchersLibraryTest extends VouchersLibraryEnvironment
     /** Creation stores the normalized code, the discount, and the requested flag. */
     public function testCreateStoresTheNormalizedCodeDiscountAndFlag(): void
     {
-        $active = Hilos::$db->vouchers->actions->create('  spring10 ', 10, true);
+        $active = Hilos::$db->vouchers->actions->create('  library10 ', 10, true);
         $inactive = Hilos::$db->vouchers->actions->create('AUTUMN20', 20, false);
 
-        self::assertVoucherState($active, 'SPRING10', 10, true);
+        self::assertVoucherState($active, 'LIBRARY10', 10, true);
         self::assertVoucherState($inactive, 'AUTUMN20', 20, false);
     }
 
     /** An edit saves all three fields on the same voucher. */
     public function testUpdateStoresTheNewCodeDiscountAndFlag(): void
     {
-        $voucher = Hilos::$db->vouchers->actions->create('SPRING10', 10, true);
+        $voucher = Hilos::$db->vouchers->actions->create('LIBRARY10', 10, true);
 
         $voucher->actions->update('  autumn20 ', 20, false);
 
@@ -67,56 +67,56 @@ final class VouchersLibraryTest extends VouchersLibraryEnvironment
     /** The library can disable and re-enable a voucher, and repeating the flag leaves its row as it was. */
     public function testSetActiveChangesOnlyTheFlagAndCanBeRepeated(): void
     {
-        $voucher = Hilos::$db->vouchers->actions->create('SPRING10', 10, true);
+        $voucher = Hilos::$db->vouchers->actions->create('LIBRARY10', 10, true);
 
         $voucher->actions->setActive(false);
-        self::assertVoucherState($voucher, 'SPRING10', 10, false);
+        self::assertVoucherState($voucher, 'LIBRARY10', 10, false);
 
         $voucher->actions->setActive(true);
-        self::assertVoucherState($voucher, 'SPRING10', 10, true);
+        self::assertVoucherState($voucher, 'LIBRARY10', 10, true);
 
         $voucher->actions->setActive(true);
-        self::assertVoucherState($voucher, 'SPRING10', 10, true);
+        self::assertVoucherState($voucher, 'LIBRARY10', 10, true);
     }
 
     /** A code already in use is refused on creation and on renaming, even in another case. */
     public function testDuplicateCodeIsRefusedOnCreateAndUpdate(): void
     {
-        $existing = Hilos::$db->vouchers->actions->create('SPRING10', 10, true);
+        $existing = Hilos::$db->vouchers->actions->create('LIBRARY10', 10, true);
         $voucher = Hilos::$db->vouchers->actions->create('AUTUMN20', 20, false);
         $before = self::storedCount();
 
         self::assertRefused(
             DuplicateValueException::class,
             'A voucher with this code already exists',
-            static fn () => Hilos::$db->vouchers->actions->create('spring10', 30, false),
+            static fn () => Hilos::$db->vouchers->actions->create('library10', 30, false),
         );
         self::assertRefused(
             DuplicateValueException::class,
             'A voucher with this code already exists',
-            static fn () => $voucher->actions->update('spring10', 30, true),
+            static fn () => $voucher->actions->update('library10', 30, true),
         );
 
         self::assertSame($before, self::storedCount());
-        self::assertVoucherState($existing, 'SPRING10', 10, true);
+        self::assertVoucherState($existing, 'LIBRARY10', 10, true);
         self::assertVoucherState($voucher, 'AUTUMN20', 20, false);
     }
 
     /** A voucher may keep its own code when the caller enters it in another case. */
     public function testChangingTheCaseOfTheSameCodeKeepsItsNormalizedForm(): void
     {
-        $voucher = Hilos::$db->vouchers->actions->create('SPRING10', 10, true);
+        $voucher = Hilos::$db->vouchers->actions->create('LIBRARY10', 10, true);
 
-        $voucher->actions->update('spring10', 10, true);
+        $voucher->actions->update('library10', 10, true);
 
-        self::assertVoucherState($voucher, 'SPRING10', 10, true);
+        self::assertVoucherState($voucher, 'LIBRARY10', 10, true);
     }
 
     /** Both ends of the discount range are accepted. */
     public function testDiscountAcceptsOneAndOneHundred(): void
     {
-        $voucher = Hilos::$db->vouchers->actions->create('SPRING10', 1, true);
-        self::assertVoucherState($voucher, 'SPRING10', 1, true);
+        $voucher = Hilos::$db->vouchers->actions->create('LIBRARY10', 1, true);
+        self::assertVoucherState($voucher, 'LIBRARY10', 1, true);
 
         $voucher->actions->update('AUTUMN20', 100, false);
         self::assertVoucherState($voucher, 'AUTUMN20', 100, false);
@@ -130,7 +130,7 @@ final class VouchersLibraryTest extends VouchersLibraryEnvironment
     #[DataProvider('invalidDiscounts')]
     public function testInvalidDiscountIsRefusedOnCreateAndUpdate(int $discountPercent): void
     {
-        $voucher = Hilos::$db->vouchers->actions->create('SPRING10', 10, true);
+        $voucher = Hilos::$db->vouchers->actions->create('LIBRARY10', 10, true);
         $before = self::storedCount();
 
         self::assertRefused(
@@ -145,7 +145,7 @@ final class VouchersLibraryTest extends VouchersLibraryEnvironment
         );
 
         self::assertSame($before, self::storedCount());
-        self::assertVoucherState($voucher, 'SPRING10', 10, true);
+        self::assertVoucherState($voucher, 'LIBRARY10', 10, true);
     }
 
     /**
@@ -158,24 +158,24 @@ final class VouchersLibraryTest extends VouchersLibraryEnvironment
     #[DataProvider('invalidCodes')]
     public function testInvalidCodeIsRefusedOnCreateAndUpdate(string $code, string $expected, string $sentence): void
     {
-        $voucher = Hilos::$db->vouchers->actions->create('SPRING10', 10, true);
+        $voucher = Hilos::$db->vouchers->actions->create('LIBRARY10', 10, true);
         $before = self::storedCount();
 
         self::assertRefused($expected, $sentence, static fn () => Hilos::$db->vouchers->actions->create($code, 20, false));
         self::assertRefused($expected, $sentence, static fn () => $voucher->actions->update($code, 20, false));
 
         self::assertSame($before, self::storedCount());
-        self::assertVoucherState($voucher, 'SPRING10', 10, true);
+        self::assertVoucherState($voucher, 'LIBRARY10', 10, true);
     }
 
     /** The app agent may repeat the current flag. Creation, editing, and changing the flag require the library's claim. */
     public function testAnotherWriterIsRefusedUnlessTheFlagAlreadyMatches(): void
     {
-        $voucher = Hilos::$db->vouchers->actions->create('SPRING10', 10, true);
+        $voucher = Hilos::$db->vouchers->actions->create('LIBRARY10', 10, true);
         $before = self::storedCount();
 
         ExecutionContext::run(new ExecutionFrame(agentId: AgentType::ECOMMERCE_SHOP), static fn () => $voucher->actions->setActive(true));
-        self::assertVoucherState($voucher, 'SPRING10', 10, true);
+        self::assertVoucherState($voucher, 'LIBRARY10', 10, true);
 
         self::assertRefusedToAnotherWriter(
             CreateNotAllowedException::class,
@@ -195,7 +195,7 @@ final class VouchersLibraryTest extends VouchersLibraryEnvironment
         );
 
         self::assertSame($before, self::storedCount());
-        self::assertVoucherState($voucher, 'SPRING10', 10, true);
+        self::assertVoucherState($voucher, 'LIBRARY10', 10, true);
     }
 
     /**

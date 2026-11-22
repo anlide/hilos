@@ -548,6 +548,7 @@ the container `env_file`.
 | `composer run db:migration:status` | migration status |
 | `composer run db:schema:status` | compare schema against entities |
 | `composer run db:seed:apply -- 001` | fill the local database with the Hilos Flowers catalog; the daemon stopped (beside a running one the command refuses) |
+| `composer run db:seed:apply -- 002` | add the missing example vouchers; the daemon stopped (beside a running one the command refuses) |
 
 ## PHP tests
 

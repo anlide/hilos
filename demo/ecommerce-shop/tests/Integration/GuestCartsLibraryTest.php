@@ -268,11 +268,11 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     public function testApplyingAndRemovingAVoucherKeepsASingleSlot(): void
     {
         $sessionId = self::guestSessionId();
-        $first = self::createVoucher('SPRING10', 10, true);
+        $first = self::createVoucher('SUMMER25', 10, true);
         $second = self::createVoucher('AUTUMN20', 20, true);
         self::createVoucher('WINTER30', 30, false);
 
-        $this->carts()->applyVoucher($sessionId, '  spring10 ');
+        $this->carts()->applyVoucher($sessionId, '  summer25 ');
         self::assertSame($first->id, self::storedVoucherId($sessionId));
         self::assertSame([], self::storedLines($sessionId));
 
@@ -308,12 +308,12 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     public function testCartVoucherFollowsCatalogChangesWithoutReapplying(): void
     {
         $sessionId = self::guestSessionId();
-        $voucher = self::createVoucher('SPRING10', 10, true);
+        $voucher = self::createVoucher('SUMMER25', 10, true);
 
         self::assertNull($this->carts()->cartVoucher($sessionId));
         self::assertSame(0, CartVoucherRules::effectiveDiscountPercent($this->carts()->cartVoucher($sessionId)));
 
-        $this->carts()->applyVoucher($sessionId, 'SPRING10');
+        $this->carts()->applyVoucher($sessionId, 'SUMMER25');
         self::assertSame(10, CartVoucherRules::effectiveDiscountPercent($this->carts()->cartVoucher($sessionId)));
 
         self::asOwner(new VouchersLibraryAgent(), static fn () => $voucher->actions->update('AUTUMN20', 20, false));
@@ -335,12 +335,12 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     {
         $sweptSessionId = self::guestSessionId();
         $keptSessionId = self::guestSessionId();
-        $voucher = self::createVoucher('SPRING10', 10, true);
+        $voucher = self::createVoucher('SUMMER25', 10, true);
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 2);
         foreach ([$sweptSessionId, $keptSessionId] as $sessionId) {
             Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
-            $this->carts()->applyVoucher($sessionId, 'SPRING10');
+            $this->carts()->applyVoucher($sessionId, 'SUMMER25');
         }
         $keptLines = self::storedLines($keptSessionId);
 
@@ -357,7 +357,7 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::assertSame($voucher->id, self::storedVoucherId($keptSessionId));
         self::assertRefused(
             'This guest session is no longer available',
-            fn () => $this->carts()->applyVoucher($sweptSessionId, 'SPRING10'),
+            fn () => $this->carts()->applyVoucher($sweptSessionId, 'SUMMER25'),
         );
         self::assertNull(self::storedVoucherId($sweptSessionId));
 
@@ -366,7 +366,7 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$keptSessionId]->actions->bindUser($userId));
         self::assertRefused(
             'This guest session is no longer available',
-            fn () => $this->carts()->applyVoucher($keptSessionId, 'SPRING10'),
+            fn () => $this->carts()->applyVoucher($keptSessionId, 'SUMMER25'),
         );
         self::assertSame($voucher->id, self::storedVoucherId($keptSessionId));
     }
@@ -375,13 +375,13 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     public function testLateVoucherApplyRefusesADeletedSessionBeforeSync(): void
     {
         $sessionId = self::guestSessionId();
-        self::createVoucher('SPRING10', 10, true);
+        self::createVoucher('SUMMER25', 10, true);
         self::assertNull(Hilos::$db->sessions[$sessionId]->userId);
 
         Database::sql('DELETE FROM hilos_session WHERE id = ?', [$sessionId]);
         self::assertNotNull(Hilos::$db->sessions[$sessionId] ?? null);
 
-        self::assertRefused('This guest session is no longer available', fn () => $this->carts()->applyVoucher($sessionId, 'SPRING10'));
+        self::assertRefused('This guest session is no longer available', fn () => $this->carts()->applyVoucher($sessionId, 'SUMMER25'));
         self::assertNull(self::storedVoucherId($sessionId));
     }
 
@@ -389,9 +389,9 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     public function testLateVoucherApplyRefusesABoundSessionBeforeSync(): void
     {
         $sessionId = self::guestSessionId();
-        $voucher = self::createVoucher('SPRING10', 10, true);
+        $voucher = self::createVoucher('SUMMER25', 10, true);
         self::createVoucher('AUTUMN20', 20, true);
-        $this->carts()->applyVoucher($sessionId, 'SPRING10');
+        $this->carts()->applyVoucher($sessionId, 'SUMMER25');
         self::assertNull(Hilos::$db->sessions[$sessionId]->userId);
 
         Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 0, 0)', ['Signed-in shopper']);
@@ -407,12 +407,12 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     {
         $sweptSessionId = self::guestSessionId();
         $keptSessionId = self::guestSessionId();
-        $voucher = self::createVoucher('SPRING10', 10, true);
+        $voucher = self::createVoucher('SUMMER25', 10, true);
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 2);
         foreach ([$sweptSessionId, $keptSessionId] as $sessionId) {
             Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
-            $this->carts()->applyVoucher($sessionId, 'SPRING10');
+            $this->carts()->applyVoucher($sessionId, 'SUMMER25');
         }
         $sweptLines = self::storedLines($sweptSessionId);
         $keptLines = self::storedLines($keptSessionId);
@@ -491,8 +491,8 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     {
         $this->carts()->onTick();
         $sessionId = self::guestSessionId();
-        self::createVoucher('SPRING10', 10, true);
-        $this->carts()->applyVoucher($sessionId, 'SPRING10');
+        self::createVoucher('SUMMER25', 10, true);
+        $this->carts()->applyVoucher($sessionId, 'SUMMER25');
 
         self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$sessionId]->actions->delete());
         self::assertNotNull(self::storedVoucherId($sessionId));
@@ -504,30 +504,30 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     /** Both cursors return to the start of their original pass while new pages of cart rows are still arriving. */
     public function testRecoveryWrapsAtTheOriginalLastCartEvenWhenNewCartsArrive(): void
     {
-        $voucher = self::createVoucher('SPRING10', 10, true);
+        $voucher = self::createVoucher('SUMMER25', 10, true);
         $product = self::product(ProductKind::STOCK);
         self::stock($product, self::warehouse(), 1);
         $firstSessionId = self::guestSessionId();
         Hilos::$db->sessionProductCarts->actions->add($firstSessionId, $product);
-        $this->carts()->applyVoucher($firstSessionId, 'SPRING10');
+        $this->carts()->applyVoucher($firstSessionId, 'SUMMER25');
         for ($i = 1; $i < 60; $i++) {
             $sessionId = self::guestSessionId();
             Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
-            $this->carts()->applyVoucher($sessionId, 'SPRING10');
+            $this->carts()->applyVoucher($sessionId, 'SUMMER25');
         }
         $this->carts()->onTick();
 
         self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$firstSessionId]->actions->delete());
         $lateOrphanId = self::guestSessionId();
         Hilos::$db->sessionProductCarts->actions->add($lateOrphanId, $product);
-        $this->carts()->applyVoucher($lateOrphanId, 'SPRING10');
+        $this->carts()->applyVoucher($lateOrphanId, 'SUMMER25');
         self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$lateOrphanId]->actions->delete());
 
         for ($page = 0; $page < 3; $page++) {
             for ($i = 0; $i < 25; $i++) {
                 $sessionId = self::guestSessionId();
                 Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
-                $this->carts()->applyVoucher($sessionId, 'SPRING10');
+                $this->carts()->applyVoucher($sessionId, 'SUMMER25');
             }
             self::assertCount(1, self::storedLines($firstSessionId));
             self::assertSame($voucher->id, self::storedVoucherId($firstSessionId));

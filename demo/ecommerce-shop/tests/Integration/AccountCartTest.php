@@ -365,14 +365,14 @@ final class AccountCartTest extends AccountCartEnvironment
         $agent = $this->agent();
         $userId = $this->personId();
         [$first, $second] = self::asOwner(new VouchersLibraryAgent(), static fn (): array => [
-            Hilos::$db->vouchers->actions->create('SPRING10', 10, true),
+            Hilos::$db->vouchers->actions->create('SUMMER25', 10, true),
             Hilos::$db->vouchers->actions->create('AUTUMN20', 20, true),
             Hilos::$db->vouchers->actions->create('WINTER30', 30, false),
         ]);
 
         self::assertNull($agent->cartVoucher());
         self::assertSame(0, CartVoucherRules::effectiveDiscountPercent($agent->cartVoucher()));
-        $agent->applyVoucher('  spring10 ');
+        $agent->applyVoucher('  summer25 ');
         self::assertSame($first->id, self::storedVoucherId($userId));
         self::assertSame([], self::storedLines($userId));
         self::assertSame(10, CartVoucherRules::effectiveDiscountPercent($agent->cartVoucher()));
@@ -425,7 +425,7 @@ final class AccountCartTest extends AccountCartEnvironment
         $otherId = $this->otherPersonId();
         $otherAgent = new UserAgent((string)$otherId);
         [$first, $second] = self::asOwner(new VouchersLibraryAgent(), static fn (): array => [
-            Hilos::$db->vouchers->actions->create('SPRING10', 10, true),
+            Hilos::$db->vouchers->actions->create('SUMMER25', 10, true),
             Hilos::$db->vouchers->actions->create('AUTUMN20', 20, true),
         ]);
 
