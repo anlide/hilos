@@ -19,4 +19,20 @@ test("a guest finds the shop's categories on the home, each with its count and t
   await expect(bouquets).toContainText('5 products')
   await expect(bouquets).toHaveAttribute('href', '/category/bouquets')
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+
+  await test.step('scroll the catalog from the left gutter', async () => {
+    const main = page.locator('#hilos-main-content')
+    const mainScrollBefore = await main.evaluate((node) => node.scrollTop)
+    const documentScrollBefore = await page.evaluate(() => window.scrollY)
+    const viewportMidY = await page.evaluate(() => window.innerHeight / 2)
+
+    await page.mouse.move(8, viewportMidY)
+    await page.mouse.wheel(0, 240)
+
+    await expect
+      .poll(() => main.evaluate((node) => node.scrollTop))
+      .toBeGreaterThan(mainScrollBefore)
+    const documentScrollAfter = await page.evaluate(() => window.scrollY)
+    expect(documentScrollAfter).toBe(documentScrollBefore)
+  })
 })

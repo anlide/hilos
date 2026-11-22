@@ -908,62 +908,66 @@ export function HilosLayout({
             id="hilos-main-content"
             ref={pageRoot}
             tabIndex={-1}
-            className={`container flex-grow-1 overflow-auto py-4${
-              maintenanceShown ? ' d-flex flex-column' : ''
-            }`}
+            className="flex-grow-1 overflow-auto"
           >
-            {maintenanceShown ? (
-              <HilosMaintenance
-                status={protectedMode}
-                connection={connection}
-                adminSurface={currentRoute.admin}
-              />
-            ) : (
-              <fieldset
-                ref={pageFieldset}
-                className="border-0 m-0 p-0 h-100 position-relative"
-                data-id="page-interaction-scope"
-              >
-                {accountBlocked !== null && !publicStatus ? (
-                  <HilosAccountBlocked notice={accountBlocked} />
-                ) : frozenShown ? (
-                  <div
-                    className="row justify-content-center"
-                    data-id="legal-frozen-screen"
-                  >
-                    <div className="col-12 col-md-10 col-lg-8">
-                      <div className="text-center mb-3">
-                        <span className="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1">
-                          <i className="bi bi-snow" aria-hidden="true" />
-                        </span>
+            <div
+              className={`container h-100 py-4${
+                maintenanceShown ? ' d-flex flex-column' : ''
+              }`}
+            >
+              {maintenanceShown ? (
+                <HilosMaintenance
+                  status={protectedMode}
+                  connection={connection}
+                  adminSurface={currentRoute.admin}
+                />
+              ) : (
+                <fieldset
+                  ref={pageFieldset}
+                  className="border-0 m-0 p-0 h-100 position-relative"
+                  data-id="page-interaction-scope"
+                >
+                  {accountBlocked !== null && !publicStatus ? (
+                    <HilosAccountBlocked notice={accountBlocked} />
+                  ) : frozenShown ? (
+                    <div
+                      className="row justify-content-center"
+                      data-id="legal-frozen-screen"
+                    >
+                      <div className="col-12 col-md-10 col-lg-8">
+                        <div className="text-center mb-3">
+                          <span className="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1">
+                            <i className="bi bi-snow" aria-hidden="true" />
+                          </span>
+                        </div>
+                        <HilosLegalReconsent
+                          variant="frozen"
+                          content={reconsentContent}
+                          view={reconsentView}
+                          loading={reconsentLoading}
+                          error={reconsentError}
+                          busy={reconsentBusy}
+                          person={reconsentPerson}
+                          deletionScheduled={
+                            standing?.deletionEffectiveAt != null
+                          }
+                          now={reconsentNow}
+                          onAccept={() => void hilosLegalReconsent.accept()}
+                          onRetry={() => void hilosLegalReconsent.load()}
+                          onShow={hilosLegalReconsent.show}
+                        />
                       </div>
-                      <HilosLegalReconsent
-                        variant="frozen"
-                        content={reconsentContent}
-                        view={reconsentView}
-                        loading={reconsentLoading}
-                        error={reconsentError}
-                        busy={reconsentBusy}
-                        person={reconsentPerson}
-                        deletionScheduled={
-                          standing?.deletionEffectiveAt != null
-                        }
-                        now={reconsentNow}
-                        onAccept={() => void hilosLegalReconsent.accept()}
-                        onRetry={() => void hilosLegalReconsent.load()}
-                        onShow={hilosLegalReconsent.show}
-                      />
                     </div>
-                  </div>
-                ) : (
-                  <HilosTakeoverViewOnlyContext.Provider
-                    value={takeoverViewOnly}
-                  >
-                    {children}
-                  </HilosTakeoverViewOnlyContext.Provider>
-                )}
-              </fieldset>
-            )}
+                  ) : (
+                    <HilosTakeoverViewOnlyContext.Provider
+                      value={takeoverViewOnly}
+                    >
+                      {children}
+                    </HilosTakeoverViewOnlyContext.Provider>
+                  )}
+                </fieldset>
+              )}
+            </div>
           </main>
           {!underMaintenance && (
             <footer

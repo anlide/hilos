@@ -880,58 +880,62 @@ const footerHref = (page: string): string => HILOS_PAGE_ROUTES[page] ?? '/'
       id="hilos-main-content"
       ref="pageRoot"
       tabindex="-1"
-      class="container flex-grow-1 overflow-auto py-4"
-      :class="{ 'd-flex flex-column': underMaintenance && !publicStatus }"
+      class="flex-grow-1 overflow-auto"
     >
-      <HilosMaintenance
-        v-if="underMaintenance && !publicStatus"
-        :status="protectedMode"
-        :connection="props.connection"
-        :admin-surface="currentRoute?.admin ?? false"
-      />
-      <fieldset
-        v-else
-        ref="pageFieldset"
-        class="border-0 m-0 p-0 h-100 position-relative"
-        data-id="page-interaction-scope"
+      <div
+        class="container h-100 py-4"
+        :class="{ 'd-flex flex-column': underMaintenance && !publicStatus }"
       >
-        <HilosAccountBlocked
-          v-if="accountBlocked !== null && !publicStatus"
-          :notice="accountBlocked"
+        <HilosMaintenance
+          v-if="underMaintenance && !publicStatus"
+          :status="protectedMode"
+          :connection="props.connection"
+          :admin-surface="currentRoute?.admin ?? false"
         />
-        <div
-          v-else-if="frozenShown"
-          class="row justify-content-center"
-          data-id="legal-frozen-screen"
+        <fieldset
+          v-else
+          ref="pageFieldset"
+          class="border-0 m-0 p-0 h-100 position-relative"
+          data-id="page-interaction-scope"
         >
-          <div class="col-12 col-md-10 col-lg-8">
-            <div class="text-center mb-3">
-              <span
-                class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
-              >
-                <i class="bi bi-snow" aria-hidden="true"></i>
-              </span>
+          <HilosAccountBlocked
+            v-if="accountBlocked !== null && !publicStatus"
+            :notice="accountBlocked"
+          />
+          <div
+            v-else-if="frozenShown"
+            class="row justify-content-center"
+            data-id="legal-frozen-screen"
+          >
+            <div class="col-12 col-md-10 col-lg-8">
+              <div class="text-center mb-3">
+                <span
+                  class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
+                >
+                  <i class="bi bi-snow" aria-hidden="true"></i>
+                </span>
+              </div>
+              <HilosLegalReconsent
+                variant="frozen"
+                :content="reconsentContent"
+                :view="reconsentView"
+                :loading="reconsentLoading"
+                :error="reconsentError"
+                :busy="reconsentBusy"
+                :person="reconsentPerson"
+                :deletion-scheduled="standing?.deletionEffectiveAt != null"
+                :now="reconsentNow"
+                @accept="onReconsentAccept"
+                @retry="onReconsentRetry"
+                @show="hilosLegalReconsent.show"
+              />
             </div>
-            <HilosLegalReconsent
-              variant="frozen"
-              :content="reconsentContent"
-              :view="reconsentView"
-              :loading="reconsentLoading"
-              :error="reconsentError"
-              :busy="reconsentBusy"
-              :person="reconsentPerson"
-              :deletion-scheduled="standing?.deletionEffectiveAt != null"
-              :now="reconsentNow"
-              @accept="onReconsentAccept"
-              @retry="onReconsentRetry"
-              @show="hilosLegalReconsent.show"
-            />
           </div>
-        </div>
-        <HilosTakeoverScope v-else>
-          <slot />
-        </HilosTakeoverScope>
-      </fieldset>
+          <HilosTakeoverScope v-else>
+            <slot />
+          </HilosTakeoverScope>
+        </fieldset>
+      </div>
     </main>
     <footer
       v-if="!underMaintenance"

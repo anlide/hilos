@@ -490,60 +490,64 @@ const CONN_VISUAL: Record<ConnectionState, ConnVisual> = {
           id="hilos-main-content"
           #pageRoot
           tabindex="-1"
-          class="container flex-grow-1 overflow-auto py-4"
-          [class.d-flex]="underMaintenance()"
-          [class.flex-column]="underMaintenance()"
+          class="flex-grow-1 overflow-auto"
         >
-          @if (underMaintenance() && !publicStatus()) {
-            <hilos-maintenance
-              [status]="protectedMode()"
-              [connection]="connection()"
-              [adminSurface]="adminSurface()"
-            />
-          } @else {
-            <fieldset
-              #pageFieldset
-              class="border-0 m-0 p-0 h-100 position-relative"
-              data-id="page-interaction-scope"
-            >
-              @if (!publicStatus() && accountBlocked(); as notice) {
-                <hilos-account-blocked [notice]="notice" />
-              } @else if (frozenShown()) {
-                <div
-                  class="row justify-content-center"
-                  data-id="legal-frozen-screen"
-                >
-                  <div class="col-12 col-md-10 col-lg-8">
-                    <div class="text-center mb-3">
-                      <span
-                        class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
-                      >
-                        <i class="bi bi-snow" aria-hidden="true"></i>
-                      </span>
+          <div
+            class="container h-100 py-4"
+            [class.d-flex]="underMaintenance()"
+            [class.flex-column]="underMaintenance()"
+          >
+            @if (underMaintenance() && !publicStatus()) {
+              <hilos-maintenance
+                [status]="protectedMode()"
+                [connection]="connection()"
+                [adminSurface]="adminSurface()"
+              />
+            } @else {
+              <fieldset
+                #pageFieldset
+                class="border-0 m-0 p-0 h-100 position-relative"
+                data-id="page-interaction-scope"
+              >
+                @if (!publicStatus() && accountBlocked(); as notice) {
+                  <hilos-account-blocked [notice]="notice" />
+                } @else if (frozenShown()) {
+                  <div
+                    class="row justify-content-center"
+                    data-id="legal-frozen-screen"
+                  >
+                    <div class="col-12 col-md-10 col-lg-8">
+                      <div class="text-center mb-3">
+                        <span
+                          class="bg-info-subtle text-info rounded-circle d-inline-flex align-items-center justify-content-center p-3 fs-4 lh-1"
+                        >
+                          <i class="bi bi-snow" aria-hidden="true"></i>
+                        </span>
+                      </div>
+                      <hilos-legal-reconsent
+                        variant="frozen"
+                        [content]="reconsentContent()"
+                        [view]="reconsentView()"
+                        [loading]="reconsentLoading()"
+                        [error]="reconsentError()"
+                        [busy]="reconsentBusy()"
+                        [person]="reconsentPerson()"
+                        [deletionScheduled]="deletionScheduled()"
+                        [now]="reconsentNow()"
+                        (accept)="onReconsentAccept()"
+                        (retry)="onReconsentRetry()"
+                        (show)="reconsent.show($event)"
+                      />
                     </div>
-                    <hilos-legal-reconsent
-                      variant="frozen"
-                      [content]="reconsentContent()"
-                      [view]="reconsentView()"
-                      [loading]="reconsentLoading()"
-                      [error]="reconsentError()"
-                      [busy]="reconsentBusy()"
-                      [person]="reconsentPerson()"
-                      [deletionScheduled]="deletionScheduled()"
-                      [now]="reconsentNow()"
-                      (accept)="onReconsentAccept()"
-                      (retry)="onReconsentRetry()"
-                      (show)="reconsent.show($event)"
-                    />
                   </div>
-                </div>
-              } @else {
-                <ng-container
-                  [ngTemplateOutlet]="pageTemplate()?.template ?? null"
-                />
-              }
-            </fieldset>
-          }
+                } @else {
+                  <ng-container
+                    [ngTemplateOutlet]="pageTemplate()?.template ?? null"
+                  />
+                }
+              </fieldset>
+            }
+          </div>
         </main>
         @if (!underMaintenance()) {
           <footer
