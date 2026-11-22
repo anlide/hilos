@@ -147,15 +147,22 @@ const CATEGORIES_COLUMNS: HilosTableColumnOf<CategoryRow>[] = [
   },
 ]
 
-// No title: the section head names the table. No main action yet: adding a
-// category is a leaf of its own.
-const CATEGORIES_FRAME: HilosTableFrame = {
-  search: { placeholder: 'Search categories' },
-  columns: CATEGORIES_COLUMNS,
-  empty: {
-    title: 'No categories yet',
-    hint: 'Add one before adding products: every product lives in a category.',
-  },
+/**
+ * The categories table frame. No title: the section head names the table. The
+ * main action opens the Add category dialog, which the view owns.
+ *
+ * @param addCategory Open the Add category dialog.
+ */
+function categoriesFrame(addCategory: () => void): HilosTableFrame {
+  return {
+    search: { placeholder: 'Search categories' },
+    columns: CATEGORIES_COLUMNS,
+    mainAction: { label: 'Add category', press: addCategory },
+    empty: {
+      title: 'No categories yet',
+      hint: 'Add one before adding products: every product lives in a category.',
+    },
+  }
 }
 
 /**
@@ -163,11 +170,15 @@ const CATEGORIES_FRAME: HilosTableFrame = {
  * paging change the viewport descriptor sent over the connection, and the
  * backend replies a window plus live deltas scoped to the table's (page,
  * tableKey) address. Rows resolve through {@link resolveCategoryRow}.
+ *
+ * @param addCategory Open the Add category dialog — the table's main action.
  */
-export function createCategoriesTable(): CategoriesTable {
+export function createCategoriesTable(
+  addCategory: () => void,
+): CategoriesTable {
   const controller = new TableViewportController<CategoryRow>({
     resolve: (row) => resolveCategoryRow(row, fieldsOf),
-    frame: CATEGORIES_FRAME,
+    frame: categoriesFrame(addCategory),
     sendViewport: (descriptor) =>
       connection.sendTableViewport(
         PAGE_ADMIN_CATEGORIES,

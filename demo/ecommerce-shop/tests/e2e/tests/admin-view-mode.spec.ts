@@ -2,6 +2,7 @@ import { test, expect } from '../test.js'
 
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 import {
+  drawPhotoFixture,
   gotoPage,
   PAGE_READY,
 } from '../../../../../framework/frontend/e2e/index.js'
@@ -18,6 +19,10 @@ import {
 /** The words of the view-mode strip, as the shell draws them. */
 const VIEW_MODE_STRIP_TEXT =
   'View mode · You can look around, but not change anything.'
+
+/** The refusal a viewer's change meets — ActionMessages::VIEW_MODE. */
+const VIEW_MODE_REFUSAL =
+  'View mode: you can look around, but not change anything.'
 
 /**
  * Every admin page of demo/ecommerce-shop/backend/Hilos.php (PAGES) whose route
@@ -59,4 +64,27 @@ test('a guest reads the view-mode strip on every operations screen', async ({
     await expect(strip).toHaveText(VIEW_MODE_STRIP_TEXT)
     await expect(page.getByTestId('page-error')).toHaveCount(0)
   }
+})
+
+test('a guest picking a category picture meets the view-mode refusal on the upload', async ({
+  page,
+}) => {
+  await setAdminViewMode(true)
+  await gotoPage(expect, page, '/hilos/app/categories', PAGE_READY)
+  await page.getByTestId('hilos-table-main-action').click()
+  const dialog = page.getByTestId('admin-categories-add')
+  await expect(dialog).toBeVisible()
+  await dialog.getByTestId('admin-categories-add-picture-input').setInputFiles({
+    name: 'picture.png',
+    mimeType: 'image/png',
+    buffer: await drawPhotoFixture(page, {
+      width: 160,
+      height: 120,
+      mimeType: 'image/png',
+      rectangles: [{ color: '#246ac4', x: 0, y: 0, width: 160, height: 120 }],
+    }),
+  })
+  await expect(
+    dialog.getByTestId('admin-categories-add-upload-error'),
+  ).toContainText(VIEW_MODE_REFUSAL)
 })

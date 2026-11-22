@@ -28,7 +28,9 @@ The empty shell of the shop, and the smallest complete Hilos project on React
   it keeps, and the numbers change by themselves as stock moves. Its
   **Categories** page lists the categories in catalog order, each with its
   picture, its description and how many products it holds, and that number
-  changes by itself too. Its **Products** page lists every product, recently
+  changes by itself too. An administrator adds a category there in a dialog:
+  a name, a description and a JPG or PNG picture uploaded right in the dialog;
+  the new category takes the last place. Its **Products** page lists every product, recently
   changed first, with its category, kind, price, stock and availability; it
   filters by category, kind and availability, and the rows change by themselves.
   A row opens the product's own page: its kind, picture, description, category,

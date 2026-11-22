@@ -32,6 +32,15 @@ final class EcommerceShopSignalConstants
     /** @var string Category move up action name */
     public const string CATEGORY_MOVE_UP = 'category_move_up';
 
+    /** @var string Category create action name */
+    public const string CATEGORY_CREATE = 'category_create';
+
+    /** @var string Category picture publish action name: the picture of a new category is published once it is uploaded */
+    public const string CATEGORY_PICTURE_PUBLISH = 'category_picture_publish';
+
+    /** @var string Files door → categories library: the answer to a category picture publication */
+    public const string CATEGORY_PICTURE_PUBLISHED = 'category_picture_published';
+
     /** @var string Subscription page admin products signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_PRODUCTS = 'subscription_page_admin_products';
 

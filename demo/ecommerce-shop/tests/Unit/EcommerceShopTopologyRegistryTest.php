@@ -60,7 +60,9 @@ use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Agents\StockLibraryAgent;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
 use Demo\EcommerceShop\Constants\PageConstants;
@@ -170,7 +172,9 @@ use Demo\EcommerceShop\Browser\List\AdminProductWarehousesBrowserList;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
+use Demo\EcommerceShop\CLI\DTO\CategoryDeleteCommandData;
 use Demo\EcommerceShop\CLI\DTO\WarehouseDeleteCommandData;
+use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
@@ -1172,6 +1176,17 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([EcommerceShopDbContext::categories, EcommerceShopDbContext::categorySlugs], array_keys($claims));
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::categories]->asList());
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::categorySlugs]->asList());
+        self::assertSame([HilosDbContext::files], CategoriesLibraryAgent::readDbCollections());
+        self::assertSame(
+            [EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISHED => FilesPublishedSignalData::class],
+            CategoriesLibraryAgent::AGENT_SIGNALS,
+        );
+        self::assertSame('category_picture_published', EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISHED);
+        self::assertSame(
+            [EcommerceShopCommandConstants::CATEGORY_TEST_DELETE => CategoryDeleteCommandData::class],
+            CategoriesLibraryAgent::AGENT_COMMANDS,
+        );
+        self::assertSame('test:ecommerce-shop:category-delete', EcommerceShopCommandConstants::CATEGORY_TEST_DELETE);
     }
 
     /**
@@ -1333,15 +1348,26 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], PageCatalog::pages()[PageConstants::ADMIN_CATEGORIES]);
         self::assertSame(
-            [EcommerceShopSignalConstants::CATEGORY_MOVE_UP => CategoryMoveUpActionDTO::class],
+            [
+                EcommerceShopSignalConstants::CATEGORY_MOVE_UP => CategoryMoveUpActionDTO::class,
+                EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH => CategoryPicturePublishActionDTO::class,
+                EcommerceShopSignalConstants::CATEGORY_CREATE => CategoryCreateActionDTO::class,
+            ],
             AdminCategoriesPage::ACTIONS,
         );
-        self::assertSame('admin_categories', Hilos::getPageActionRoutes()[EcommerceShopSignalConstants::CATEGORY_MOVE_UP]);
-        self::assertSame(
-            AgentType::CATEGORIES_LIBRARY,
-            Hilos::getActionAgentRoutes()[EcommerceShopSignalConstants::CATEGORY_MOVE_UP],
-        );
+        foreach (
+            [
+                EcommerceShopSignalConstants::CATEGORY_MOVE_UP,
+                EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH,
+                EcommerceShopSignalConstants::CATEGORY_CREATE,
+            ] as $action
+        ) {
+            self::assertSame('admin_categories', Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::CATEGORIES_LIBRARY, Hilos::getActionAgentRoutes()[$action]);
+        }
         self::assertSame('category_move_up', EcommerceShopSignalConstants::CATEGORY_MOVE_UP);
+        self::assertSame('category_picture_publish', EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH);
+        self::assertSame('category_create', EcommerceShopSignalConstants::CATEGORY_CREATE);
     }
 
     /** The products table is registered under its key, for the page that binds it. */
@@ -1630,6 +1656,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $this->assertSame(
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::ECOMMERCE_SHOP,
+                EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISHED => AgentType::CATEGORIES_LIBRARY,
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::GUEST_CARTS_LIBRARY,
                 EcommerceShopSignalConstants::GUEST_CART_SEND => AgentType::GUEST_CARTS_LIBRARY,
                 HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,
