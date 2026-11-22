@@ -187,8 +187,8 @@ function CategoryEditDialog({
                 onSelection: (id) => {
                   selectedUpload.current = id
                 },
-                onPicture: (picture) => {
-                  if (selectedUpload.current !== null) {
+                onPicture: (picture, clientUploadId) => {
+                  if (selectedUpload.current === clientUploadId) {
                     selectedUpload.current = null
                     edit.patchForm({ picture })
                   }

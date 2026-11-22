@@ -56,6 +56,7 @@ interface UploadEntry {
   upload: HilosUpload
   readonly file: File
   announced: boolean
+  cancelRequested: boolean
   streamVersion: number
   sentBytes: number
   allowedUpTo: number
@@ -74,7 +75,7 @@ let boundActions: ActionLifecycle | null = null
 let boundRelease: (() => void) | null = null
 let connectionGeneration = 0
 let connectionReady = false
-let queueOwner: number | null | undefined
+let queueOwner: number | null = null
 let activeUploadId: string | null = null
 
 function publish(): void {
@@ -89,40 +90,36 @@ function replaceUpload(
   publish()
 }
 
-function removeUpload(clientUploadId: string): void {
-  const entry = entries.get(clientUploadId)
-  if (entry !== undefined) {
-    resetCredit(entry)
-  }
+function removeUpload(entry: UploadEntry): void {
+  const { clientUploadId } = entry.upload
+  resetCredit(entry)
   entries.delete(clientUploadId)
   if (activeUploadId === clientUploadId) {
     activeUploadId = null
   }
-  publish()
 }
 
-function dispatchCancel(
-  clientUploadId: string,
-  removeOnSuccess: boolean,
-): void {
+function dispatchCancel(entry: UploadEntry, removeOnSuccess: boolean): void {
   const actions = boundActions
   if (actions === null) {
     return
   }
+  entry.cancelRequested = true
+  const { clientUploadId } = entry.upload
+  if (removeOnSuccess) {
+    replaceUpload(entry, { canceling: true })
+  }
   void actions
     .dispatch(UPLOAD_ACTION_CANCEL, { clientUploadId })
     .done.then(() => {
-      if (removeOnSuccess && entries.has(clientUploadId)) {
-        removeUpload(clientUploadId)
+      if (removeOnSuccess && entries.get(clientUploadId) === entry) {
+        removeUpload(entry)
+        publish()
         pumpQueue()
       }
     })
     .catch(() => {
-      if (!removeOnSuccess) {
-        return
-      }
-      const entry = entries.get(clientUploadId)
-      if (entry === undefined) {
+      if (!removeOnSuccess || entries.get(clientUploadId) !== entry) {
         return
       }
       replaceUpload(entry, { canceling: false })
@@ -131,6 +128,12 @@ function dispatchCancel(
       }
       pumpQueue()
     })
+}
+
+function requestCleanup(entry: UploadEntry): void {
+  if (entry.announced && !entry.cancelRequested) {
+    dispatchCancel(entry, false)
+  }
 }
 
 function failUnreadable(entry: UploadEntry): void {
@@ -142,7 +145,7 @@ function failUnreadable(entry: UploadEntry): void {
     errorMessage: UPLOAD_COPY.unreadable,
     canceling: false,
   })
-  dispatchCancel(entry.upload.clientUploadId, false)
+  requestCleanup(entry)
   activeUploadId = null
   pumpQueue()
 }
@@ -250,7 +253,7 @@ function onInitFailure(entry: UploadEntry, error: unknown): void {
     errorMessage: error instanceof Error ? error.message : String(error),
   })
   if (timedOut) {
-    dispatchCancel(entry.upload.clientUploadId, false)
+    requestCleanup(entry)
   }
   pumpQueue()
 }
@@ -275,6 +278,7 @@ function pumpQueue(): void {
 
   activeUploadId = entry.upload.clientUploadId
   entry.announced = true
+  entry.cancelRequested = false
   const generation = connectionGeneration
   const streamVersion = entry.streamVersion
   void boundActions
@@ -333,10 +337,7 @@ function onConnectionLost(): void {
   publish()
 }
 
-function onConnectionReady(currentUserId: ReadonlySignal<number | null>): void {
-  if (queueOwner === undefined) {
-    queueOwner = currentUserId.get()
-  }
+function onConnectionReady(): void {
   connectionReady = true
   pumpQueue()
 }
@@ -353,7 +354,8 @@ function onUploadState(signal: ProjectSignal): void {
       entry.upload.phase === UPLOAD_PHASE_COMPLETE ||
       entry.upload.phase === UPLOAD_PHASE_FAILED
     ) {
-      removeUpload(data.clientUploadId)
+      removeUpload(entry)
+      publish()
     } else if (
       entry.upload.phase === UPLOAD_PHASE_READY ||
       entry.upload.phase === UPLOAD_PHASE_UPLOADING
@@ -434,7 +436,7 @@ export function bindUploads(
   boundConnection = connection
   boundActions = actions
   connectionReady = false
-  queueOwner = undefined
+  queueOwner = currentUserId.get()
   activeUploadId = null
   const stopState = connection.on('state', (state) => {
     if (state === 'reconnecting' || state === 'disconnected') {
@@ -446,7 +448,7 @@ export function bindUploads(
       signal.type === SIGNAL_TYPE_PAGE_RESPONSE ||
       signal.type === SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR
     ) {
-      onConnectionReady(currentUserId)
+      onConnectionReady()
     } else if (signal.type === SIGNAL_UPLOAD_STATE) {
       onUploadState(signal)
     } else if (signal.type === SIGNAL_UPLOAD_CREDIT) {
@@ -454,23 +456,14 @@ export function bindUploads(
     }
   })
   const stopUser = subscribeSignal(currentUserId, (nextUserId) => {
-    if (queueOwner === undefined || nextUserId === queueOwner) {
+    if (nextUserId === queueOwner) {
       return
     }
-    if (queueOwner === null) {
-      queueOwner = nextUserId
-      return
-    }
-    for (const entry of entries.values()) {
-      resetCredit(entry)
-      if (entry.announced) {
-        dispatchCancel(entry.upload.clientUploadId, false)
-      }
-    }
-    entries.clear()
-    activeUploadId = null
+    const previousOwner = queueOwner
     queueOwner = nextUserId
-    publish()
+    if (previousOwner !== null) {
+      discardUploads(entries.keys())
+    }
   })
   const release = (): void => {
     stopState()
@@ -483,7 +476,7 @@ export function bindUploads(
     boundConnection = null
     boundActions = null
     connectionReady = false
-    queueOwner = undefined
+    queueOwner = null
     activeUploadId = null
     connectionGeneration += 1
     for (const entry of entries.values()) {
@@ -526,6 +519,7 @@ export function uploadFile(target: string, file: File): string {
     },
     file,
     announced: false,
+    cancelRequested: false,
     streamVersion: 0,
     sentBytes: 0,
     allowedUpTo: 0,
@@ -555,7 +549,8 @@ export function cancelUpload(clientUploadId: string): void {
     return
   }
   if (entry.upload.phase === UPLOAD_PHASE_QUEUED && !entry.announced) {
-    removeUpload(clientUploadId)
+    removeUpload(entry)
+    publish()
     pumpQueue()
 
     return
@@ -563,6 +558,30 @@ export function cancelUpload(clientUploadId: string): void {
 
   entry.streamVersion += 1
   resetCredit(entry)
-  replaceUpload(entry, { canceling: true })
-  dispatchCancel(clientUploadId, true)
+  dispatchCancel(entry, true)
+}
+
+/**
+ * Drop an abandoned selection from the local queue before starting the next upload.
+ * Request server cleanup once per declaration.
+ *
+ * @param clientUploadIds Uploads owned by the abandoned selection.
+ */
+export function discardUploads(clientUploadIds: Iterable<string>): void {
+  const removed: UploadEntry[] = []
+  for (const clientUploadId of clientUploadIds) {
+    const entry = entries.get(clientUploadId)
+    if (entry !== undefined) {
+      removeUpload(entry)
+      removed.push(entry)
+    }
+  }
+  if (removed.length === 0) {
+    return
+  }
+  for (const entry of removed) {
+    requestCleanup(entry)
+  }
+  publish()
+  pumpQueue()
 }

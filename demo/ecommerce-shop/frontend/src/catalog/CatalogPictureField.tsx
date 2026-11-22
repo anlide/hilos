@@ -6,7 +6,7 @@ import {
   type ComponentType,
 } from 'react'
 import {
-  computedSignal,
+  ActionError,
   createHilosUploadField,
   subscribeSignal,
   type ActionHandle,
@@ -34,49 +34,18 @@ const PICTURE_ACCEPT = 'image/jpeg,image/png'
 
 /** Create the upload field owned by one catalog dialog opening. */
 export function createCatalogPictureUploadField(): HilosUploadField {
-  const field = createHilosUploadField({ target: CATALOG_PICTURE_TARGET })
-  // A refused cancel can return an earlier opening's upload to ready.
-  const existingIds = new Set(
-    field.files.get().map((file) => file.clientUploadId),
-  )
-  const files = computedSignal(() =>
-    field.files.get().filter((file) => !existingIds.has(file.clientUploadId)),
-  )
-  return {
-    ...field,
-    files,
-    ready: computedSignal(() =>
-      field.ready.get().filter((id) => !existingIds.has(id)),
-    ),
-    busy: computedSignal(() =>
-      files
-        .get()
-        .some(
-          (file) => file.reading === 'waiting' || file.reading === 'uploading',
-        ),
-    ),
-    refusal: computedSignal(() =>
-      files.get().some((file) => file.reading === 'failed')
-        ? field.refusal.get()
-        : null,
-    ),
-    dispose() {
-      field.setDisabled(false)
-      for (const file of files.get()) {
-        if (!file.canceling) {
-          field.remove(file.clientUploadId)
-        }
-      }
-      field.dispose()
-    },
-  }
+  return createHilosUploadField({
+    target: CATALOG_PICTURE_TARGET,
+    selectionOnly: true,
+  })
 }
 
 /**
  * The upload field of one dialog opening, or null before its first layout.
  *
  * Disposal is permanent, so each setup — StrictMode replay included — owns one
- * field. On close it cancels the uploads selected during that opening.
+ * field and sees only its own selections. Closing the dialog discards those
+ * selections from the queue and requests server cleanup.
  */
 export function useCatalogPictureField(): HilosUploadField | null {
   const [field, setField] = useState<HilosUploadField | null>(null)
@@ -94,8 +63,8 @@ export function useCatalogPictureField(): HilosUploadField | null {
 /**
  * Follow picks synchronously, even when React batches the upload updates.
  *
- * @param field The dialog's upload field.
- * @param report The current files and the newest pick, if one arrived.
+ * @param field The dialog's single-selection upload field.
+ * @param report The current files and the newly observed pick, if any.
  */
 export function followCatalogPictureFiles(
   field: HilosUploadField,
@@ -104,14 +73,20 @@ export function followCatalogPictureFiles(
     newest: HilosUploadFieldFile | undefined,
   ) => void,
 ): () => void {
-  let previous = new Set<string>()
+  let reportedId: string | undefined
 
   function follow(current: readonly HilosUploadFieldFile[]): void {
-    const newest = [...current]
-      .reverse()
-      .find((file) => !file.canceling && !previous.has(file.clientUploadId))
-    previous = new Set(current.map((file) => file.clientUploadId))
-    report(current, newest)
+    const file = current.at(-1)
+    if (
+      file !== undefined &&
+      !file.canceling &&
+      file.clientUploadId !== reportedId
+    ) {
+      reportedId = file.clientUploadId
+      report(current, file)
+    } else {
+      report(current, undefined)
+    }
   }
 
   follow(field.files.get())
@@ -139,7 +114,9 @@ export interface CatalogPictureFieldProps {
   /** Report the selected upload before publication, or null when canceled. */
   readonly onSelection?: (clientUploadId: string | null) => void
   /** Take a newly published picture into the draft. */
-  readonly onPicture: (picture: CatalogPicture) => void
+  readonly onPicture: (picture: CatalogPicture, clientUploadId: string) => void
+  /** Retire the selection and report that its sent publication lost its reply. */
+  readonly onPublicationUnknown?: (clientUploadId: string) => void
   /** Report whether a picture is uploading or waiting for its publication. */
   readonly onPending: (pending: boolean) => void
 }
@@ -158,38 +135,34 @@ export function CatalogPictureField({
   picture,
   onSelection,
   onPicture,
+  onPublicationUnknown,
   onPending,
 }: CatalogPictureFieldProps) {
-  const files = useSignal(field.files)
   const ready = useSignal(field.ready)
   const uploading = useSignal(field.busy)
+  const disabled = useSignal(field.disabled)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [settledId, setSettledId] = useState<string | null>(null)
   const selected = useRef<string | null>(null)
   const requested = useRef<string | null>(null)
-  const removedAfterRefusal = useRef<string | null>(null)
-  const report = useRef({ onSelection, onPicture, onPending })
-  report.current = { onSelection, onPicture, onPending }
+  const report = useRef({
+    onSelection,
+    onPicture,
+    onPublicationUnknown,
+    onPending,
+  })
+  report.current = { onSelection, onPicture, onPublicationUnknown, onPending }
 
+  // Selection has to be recorded even if React batches the upload updates.
   // Handing a file over for publication removes its chip before the reply.
   useLayoutEffect(() => {
-    const stop = followCatalogPictureFiles(field, (current, newest) => {
-      if (newest !== undefined) {
+    const stop = followCatalogPictureFiles(field, (_current, newest) => {
+      if (newest !== undefined && newest.clientUploadId !== selected.current) {
         selected.current = newest.clientUploadId
         setSelectedId(newest.clientUploadId)
         report.current.onSelection?.(newest.clientUploadId)
-      } else if (
-        selected.current !== removedAfterRefusal.current &&
-        current.some(
-          (file) => file.clientUploadId === selected.current && file.canceling,
-        )
-      ) {
-        selected.current = null
-        setSelectedId(null)
-        report.current.onSelection?.(null)
       }
     })
-
     return () => {
       stop()
       selected.current = null
@@ -197,29 +170,23 @@ export function CatalogPictureField({
   }, [field])
 
   const { busy: publishing, run } = publish
-  const awaitingPublication =
-    selectedId !== null &&
-    ready.includes(selectedId) &&
-    selectedId !== settledId
-  const pending = uploading || publishing || awaitingPublication
+  const awaitingPublication = selectedId !== null && selectedId !== settledId
+  const selectedReady = selectedId !== null && ready.includes(selectedId)
+  const pending =
+    uploading ||
+    (awaitingPublication && (selectedReady || selectedId === requested.current))
 
   useLayoutEffect(() => {
     report.current.onPending(pending)
-  }, [pending])
-
-  useEffect(() => {
-    const newest = files.at(-1)
-    for (const file of files) {
-      if (file !== newest && !file.canceling) {
-        field.remove(file.clientUploadId)
-      }
-    }
-  }, [files, field])
+  }, [pending, selectedId])
 
   useEffect(() => {
     if (
+      disabled ||
+      field.disabled.get() ||
       publishing ||
       !awaitingPublication ||
+      !selectedReady ||
       selectedId === null ||
       selectedId !== selected.current ||
       selectedId === requested.current
@@ -228,25 +195,59 @@ export function CatalogPictureField({
     }
     requested.current = selectedId
     const handle = sendPublish(selectedId)
-    void run(handle).then(async (published) => {
-      if (!published) {
+    void run(handle)
+    void handle.done.then(
+      ({ reply }) => {
         if (selected.current === selectedId) {
-          // Taking away the refused upload's chip leaves its refusal in the dialog.
-          removedAfterRefusal.current = selectedId
+          if (reply !== undefined) {
+            report.current.onPicture(
+              { fileId: reply.fileId, url: reply.picture },
+              selectedId,
+            )
+          }
           setSettledId(selectedId)
+        }
+      },
+      (failure: unknown) => {
+        if (selected.current !== selectedId) return
+        setSettledId(selectedId)
+        if (!(failure instanceof ActionError)) return
+
+        if (
+          report.current.onPublicationUnknown !== undefined &&
+          handle.sent === true &&
+          (failure.outcome === 'timeout' || failure.outcome === 'disconnected')
+        ) {
+          selected.current = null
+          setSelectedId(null)
+          field.discard(selectedId)
+          report.current.onPublicationUnknown(selectedId)
+        } else if (failure.outcome === 'fail') {
           field.remove(selectedId)
         }
-        return
-      }
-      const { reply } = await handle.done
-      if (selected.current === selectedId) {
-        setSettledId(selectedId)
-        if (reply !== undefined) {
-          report.current.onPicture({ fileId: reply.fileId, url: reply.picture })
-        }
-      }
-    })
-  }, [awaitingPublication, field, publishing, run, selectedId, sendPublish])
+      },
+    )
+  }, [
+    awaitingPublication,
+    disabled,
+    field,
+    publishing,
+    run,
+    selectedId,
+    selectedReady,
+    sendPublish,
+  ])
+
+  const uploadChips = {
+    ...field,
+    remove(clientUploadId: string) {
+      if (field.disabled.get() || selected.current !== clientUploadId) return
+      selected.current = null
+      setSelectedId(null)
+      report.current.onSelection?.(null)
+      field.remove(clientUploadId)
+    },
+  }
 
   const labelId = `${idPrefix}-picture-label`
 
@@ -273,7 +274,7 @@ export function CatalogPictureField({
         />
         <span className="form-text m-0">JPG or PNG</span>
       </div>
-      <HilosUploadFiles field={field} dataId={`${idPrefix}-upload`} />
+      <HilosUploadFiles field={uploadChips} dataId={`${idPrefix}-upload`} />
     </div>
   )
 }

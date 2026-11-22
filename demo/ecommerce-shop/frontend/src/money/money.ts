@@ -28,6 +28,12 @@ const HALF_KOPECK = 50
 /** A place between digits where a group of three starts, counted from the end. */
 const THOUSANDS = /\B(?=(?:\d{3})+$)/g
 
+// Money::parse accepts only these three spaces and up to fifteen whole digits.
+const INPUT_AMOUNT =
+  /^[ \u00a0\u202f]*(\d+(?:[ \u00a0\u202f]+\d+)*)(?:[.,](\d{1,2}))?[ \u00a0\u202f]*$/
+const INPUT_SPACES = /[ \u00a0\u202f]/g
+const MAX_HRYVNIA_DIGITS = 15
+
 /**
  * Prints an amount the way the shop shows it.
  *
@@ -59,6 +65,22 @@ export function formatDeduction(kopecks: number): string {
  */
 export function moneyInputText(kopecks: number): string {
   return amountText(kopecks, INPUT_THOUSANDS_SEPARATOR)
+}
+
+/**
+ * Project a money input onto its exact comparison text for a row edit.
+ *
+ * @param text The draft as written. Invalid input keeps its own spelling.
+ */
+export function moneyInputComparisonText(text: string): string {
+  const amount = INPUT_AMOUNT.exec(text)
+  if (amount === null) return text
+  const hryvnias = amount[1].replace(INPUT_SPACES, '')
+  if (hryvnias.length > MAX_HRYVNIA_DIGITS) return text
+
+  const whole = hryvnias.replace(/^0+(?=\d)/, '')
+  const fraction = (amount[2] ?? '').padEnd(KOPECK_DIGITS, KOPECK_PAD)
+  return groupedAmountText(whole, fraction, INPUT_THOUSANDS_SEPARATOR)
 }
 
 /**
@@ -147,17 +169,26 @@ export function totalAfterDiscount(items: number, discount: number): number {
  */
 function amountText(kopecks: number, separator: string): string {
   requireAmount(kopecks, 'An amount')
-  const hryvnias = String(Math.floor(kopecks / KOPECKS_IN_HRYVNIA)).replace(
-    THOUSANDS,
-    separator,
+  const whole = String(Math.floor(kopecks / KOPECKS_IN_HRYVNIA))
+  const fraction = String(kopecks % KOPECKS_IN_HRYVNIA).padStart(
+    KOPECK_DIGITS,
+    KOPECK_PAD,
   )
-  const rest = kopecks % KOPECKS_IN_HRYVNIA
-  if (rest === 0) {
-    return hryvnias
-  }
-  return (
-    hryvnias + DECIMAL_POINT + String(rest).padStart(KOPECK_DIGITS, KOPECK_PAD)
-  )
+  return groupedAmountText(whole, fraction, separator)
+}
+
+/**
+ * @param whole The whole hryvnias as digits.
+ * @param fraction The two kopeck digits.
+ * @param separator What stands between the groups of three hryvnia digits.
+ */
+function groupedAmountText(
+  whole: string,
+  fraction: string,
+  separator: string,
+): string {
+  const grouped = whole.replace(THOUSANDS, separator)
+  return fraction === '00' ? grouped : grouped + DECIMAL_POINT + fraction
 }
 
 /**

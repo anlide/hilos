@@ -296,6 +296,7 @@ describe('ActionLifecycle', () => {
     const lifecycle = new ActionLifecycle(source)
 
     const handle = lifecycle.dispatch('a', {})
+    expect(handle.sent).toBe(true)
     source.state('reconnecting')
     await expect(handle.done).rejects.toMatchObject({ outcome: 'disconnected' })
   })
@@ -306,6 +307,7 @@ describe('ActionLifecycle', () => {
     const lifecycle = new ActionLifecycle(source)
 
     const handle = lifecycle.dispatch('a', {})
+    expect(handle.sent).toBe(false)
     await expect(handle.done).rejects.toMatchObject({ outcome: 'disconnected' })
     expect(handle.loading.get()).toBe(false)
   })

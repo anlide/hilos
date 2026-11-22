@@ -185,6 +185,8 @@ export interface TableWindowDescriptorSource {
  */
 export interface WebSocketLike {
   readonly bufferedAmount?: number
+  /** Native WebSocket state, when exposed by the transport. */
+  readonly readyState?: number
   send(data: string | ArrayBuffer | Blob): void
   close(code?: number, reason?: string): void
   addEventListener(
@@ -192,6 +194,9 @@ export interface WebSocketLike {
     listener: (event: { data?: unknown }) => void,
   ): void
 }
+
+// WebSocket.OPEN in runtimes that provide a global WebSocket constructor.
+const WEB_SOCKET_OPEN = 1
 
 /**
  * A session-token rotation waiting for its cookie: the one-time ticket, and the name of
@@ -741,10 +746,11 @@ export class HilosConnection {
   }
 
   /**
-   * Send one raw text frame. Returns false — and sends nothing — unless the
-   * connection is currently `connected`; senders re-send on the next
-   * `connected` transition instead of queueing (every new socket starts a
-   * fresh protocol exchange).
+   * Hand one raw text frame to the socket. Returns false when the connection
+   * is unavailable or the socket reports a state other than OPEN, including
+   * the interval before it delivers a close event. A true result reports a
+   * handoff to the transport. A correlated reply confirms server receipt.
+   * Every new socket starts a fresh protocol exchange.
    *
    * Also refuses, the same way, while protected mode holds: every outbound frame
    * reaches an agent, and a stopped agent is what the freeze is made of. This is
@@ -765,6 +771,10 @@ export class HilosConnection {
     if (this.protectedModeStatus.active) {
       return false
     }
+    const readyState = this.socket.readyState
+    if (readyState !== undefined && readyState !== WEB_SOCKET_OPEN) {
+      return false
+    }
     this.socket.send(text)
 
     return true
@@ -772,10 +782,9 @@ export class HilosConnection {
 
   /**
    * Send one raw binary frame — the `frame_binary` upload channel of
-   * wire-protocol.md. Returns false, sending nothing, unless the connection is
-   * currently `connected`, exactly like {@link send} — including its refusal while
-   * protected mode holds; a dropped upload restarts rather than queueing. Callers stream a file as a sequence of these once the
-   * backend has acknowledged the upload init sent over {@link sendAction}.
+   * wire-protocol.md. Requires Hilos to be `connected` and outside protected mode.
+   * A dropped upload restarts. Callers stream a file as a sequence of these once
+   * the backend has acknowledged the upload init sent over {@link sendAction}.
    *
    * @param data The binary chunk to send.
    */
@@ -793,8 +802,8 @@ export class HilosConnection {
 
   /**
    * Send a client action frame — `{type:'action', action, data, requestId?}` —
-   * that the subscribed page's ACTIONS map routes by name. Returns false,
-   * sending nothing, unless the connection is `connected`, like {@link send}.
+   * that the subscribed page's ACTIONS map routes by name. Returns whether
+   * {@link send} handed the frame to the transport.
    *
    * Passing a `requestId` opts the action into the framework reply lifecycle:
    * the backend echoes that id on the action's `::success` / `::fail`. Omitting

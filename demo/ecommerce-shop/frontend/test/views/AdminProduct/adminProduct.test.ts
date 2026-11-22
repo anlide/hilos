@@ -53,6 +53,8 @@ const pot: AdminProduct = {
   categoryId: 3,
   description: 'A glazed pot for a small palm.',
   pictureUrl: '/pictures/pot-lg.webp',
+  pictureFileId: 18,
+  editVersion: 'a'.repeat(64),
   stock: { units: 42, warehouses: 2, warehouseId: null },
 }
 
@@ -64,6 +66,8 @@ const vase: AdminProduct = {
   categoryId: 2,
   description: 'Thrown by hand, one of a kind.',
   pictureUrl: '/pictures/vase-lg.webp',
+  pictureFileId: 16,
+  editVersion: 'b'.repeat(64),
   stock: { units: 1, warehouses: 1, warehouseId: 5 },
 }
 

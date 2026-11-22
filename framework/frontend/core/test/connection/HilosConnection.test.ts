@@ -28,6 +28,7 @@ class MockWebSocket implements WebSocketLike {
   readonly url: string
   readonly sent: (string | ArrayBuffer | Blob)[] = []
   bufferedAmount = 0
+  readyState?: number
   closeCalls = 0
 
   private readonly listeners = new Map<
@@ -632,12 +633,28 @@ describe('action send', () => {
     const { connection } = createConnection()
     connection.connect()
     const socket = MockWebSocket.last
+    socket.readyState = WebSocket.OPEN
     socket.open()
 
     expect(connection.sendAction('message', { content: 'hi' })).toBe(true)
     expect(socket.sent).toEqual([
       '{"type":"action","action":"message","data":{"content":"hi"}}',
     ])
+  })
+
+  it('refuses an action while the socket is closing before the close event', () => {
+    const { connection } = createConnection()
+    connection.connect()
+    const socket = MockWebSocket.last
+    socket.readyState = WebSocket.OPEN
+    socket.open()
+    socket.readyState = WebSocket.CLOSING
+
+    expect(connection.state).toBe('connected')
+    expect(connection.sendAction('message', { content: 'hi' }, 'req-1')).toBe(
+      false,
+    )
+    expect(socket.sent).toEqual([])
   })
 
   it('sends nothing unless connected', () => {

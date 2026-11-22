@@ -7,6 +7,7 @@ import {
 import { type WritableSignal } from '../../src/state/signal.js'
 import {
   cancelUpload,
+  discardUploads,
   hilosUploads,
   uploadFile,
   type HilosUpload,
@@ -26,6 +27,7 @@ vi.mock('../../src/uploads/hilosUploads.js', async () => {
     hilosUploads: createSignal<readonly HilosUpload[]>([]),
     uploadFile: vi.fn(() => 'minted'),
     cancelUpload: vi.fn(),
+    discardUploads: vi.fn(),
   }
 })
 
@@ -64,6 +66,7 @@ beforeEach(() => {
   uploads.set([])
   vi.mocked(uploadFile).mockClear()
   vi.mocked(cancelUpload).mockClear()
+  vi.mocked(discardUploads).mockClear()
 })
 
 it('carries the approved words', () => {
@@ -340,6 +343,68 @@ describe('createHilosUploadField add and remove', () => {
     ])
     field.dispose()
   })
+
+  it('relinquishes only the removed id immediately in selection-only mode', () => {
+    const field = createHilosUploadField({
+      target: TARGET,
+      selectionOnly: true,
+    })
+    field.add([file('notes.txt')])
+    uploads.set([
+      record('another-selection', UPLOAD_PHASE_UPLOADING),
+      record('minted', UPLOAD_PHASE_UPLOADING),
+    ])
+
+    field.remove('another-selection')
+    field.remove('minted')
+
+    expect(field.files.get()).toEqual([])
+    expect(field.busy.get()).toBe(false)
+    expect(discardUploads).toHaveBeenCalledExactlyOnceWith(['minted'])
+    expect(cancelUpload).not.toHaveBeenCalled()
+    field.dispose()
+    expect(discardUploads).toHaveBeenCalledTimes(1)
+  })
+
+  it('discards only the requested current pick even while disabled', () => {
+    const field = createHilosUploadField({
+      target: TARGET,
+      selectionOnly: true,
+    })
+    field.add([file('notes.txt')])
+    uploads.set([record('minted', UPLOAD_PHASE_COMPLETE)])
+    field.setDisabled(true)
+
+    field.discard('previous-pick')
+    expect(field.ready.get()).toEqual(['minted'])
+    expect(discardUploads).not.toHaveBeenCalled()
+
+    field.discard('minted')
+    expect(field.files.get()).toEqual([])
+    expect(discardUploads).toHaveBeenCalledExactlyOnceWith(['minted'])
+    expect(cancelUpload).not.toHaveBeenCalled()
+    field.dispose()
+    expect(discardUploads).toHaveBeenCalledTimes(1)
+  })
+
+  it('discards only its own picks on disposal, even while disabled', () => {
+    const field = createHilosUploadField({
+      target: TARGET,
+      selectionOnly: true,
+    })
+    uploads.set([record('another-selection', UPLOAD_PHASE_UPLOADING)])
+    field.add([file('notes.txt')])
+    uploads.set([
+      ...uploads.get(),
+      record('minted', UPLOAD_PHASE_UPLOADING, { canceling: true }),
+    ])
+    field.setDisabled(true)
+
+    field.dispose()
+
+    expect(discardUploads).toHaveBeenCalledExactlyOnceWith(['minted'])
+    expect(cancelUpload).not.toHaveBeenCalled()
+  })
 })
 
 describe('createHilosUploadField voice', () => {
@@ -450,6 +515,7 @@ describe('createHilosUploadField voice', () => {
 
     expect(field.status.get()).toBe('')
     expect(cancelUpload).not.toHaveBeenCalled()
+    expect(discardUploads).not.toHaveBeenCalled()
     expect(uploads.get()).toHaveLength(1)
   })
 })

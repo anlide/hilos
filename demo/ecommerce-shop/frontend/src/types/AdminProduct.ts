@@ -14,6 +14,10 @@ export interface AdminProduct {
   readonly description: string
   /** Address of the large product picture. */
   readonly pictureUrl: string
+  /** Stored file of the product picture. */
+  readonly pictureFileId: number
+  /** Opaque version of the saved catalog fields. */
+  readonly editVersion: string
   /** What the warehouses hold of the product. */
   readonly stock: AdminProductStock
 }

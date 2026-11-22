@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import { HILOS_VIEW_MODE_COPY, type HilosUploadField } from '@hilos/core/base'
 import {
   HilosActionError,
@@ -8,15 +8,10 @@ import {
   useLookOnly,
   useSignal,
   useTrackedAction,
-  type HilosUploadPickerProps,
 } from '@hilos/react/base'
 
-import { kindText } from '../../catalog/catalog.js'
-import {
-  CatalogPictureField,
-  useCatalogPictureField,
-} from '../../catalog/CatalogPictureField.js'
-import { moneyFieldLabel } from '../../money/money.js'
+import { useCatalogPictureField } from '../../catalog/CatalogPictureField.js'
+import { ProductFormFields } from '../../catalog/ProductFormFields.js'
 import {
   sendProductCreate,
   sendProductPicturePublish,
@@ -27,65 +22,10 @@ import {
   isProductDraftDirty,
   productCreatePayload,
   type ProductAddDraft,
-  type ProductKind,
 } from './productAddDraft.js'
 
 const ID_PREFIX = 'admin-products-add'
 const FORM_ID = `${ID_PREFIX}-form`
-const NAME_ID = `${ID_PREFIX}-name`
-const CATEGORY_ID = `${ID_PREFIX}-category`
-const KIND_HINT_ID = `${ID_PREFIX}-kind-hint`
-const PRICE_ID = `${ID_PREFIX}-price`
-const DESCRIPTION_ID = `${ID_PREFIX}-description`
-const KIND_HINTS: Record<ProductKind, string> = {
-  unique:
-    'One of a kind: sold once, no quantity. You choose its warehouse on the product card.',
-  stock: 'Has stock in warehouses; you set it on the product card.',
-}
-const KINDS: readonly ProductKind[] = ['unique', 'stock']
-
-/**
- * Open the catalog chooser from the Add product's Upload button.
- *
- * @param props The same field, id and filter that the default chooser uses.
- */
-function ProductPictureChooser({
-  field,
-  dataId,
-  accept,
-}: HilosUploadPickerProps) {
-  const disabled = useSignal(field.disabled)
-  const input = useRef<HTMLInputElement>(null)
-
-  return (
-    <>
-      <button
-        type="button"
-        className="btn btn-sm btn-outline-secondary flex-shrink-0"
-        disabled={disabled}
-        data-id={dataId}
-        onClick={() => input.current?.click()}
-      >
-        <i className="bi bi-upload me-1" aria-hidden="true"></i>
-        Upload
-      </button>
-      <input
-        ref={input}
-        type="file"
-        multiple
-        className="d-none"
-        accept={accept}
-        disabled={disabled}
-        data-id={`${dataId}-input`}
-        onChange={(event) => {
-          const chooser = event.currentTarget
-          field.add(chooser.files ?? [])
-          chooser.value = ''
-        }}
-      />
-    </>
-  )
-}
 
 /**
  * One opening of the Add product dialog.
@@ -189,6 +129,7 @@ function ProductAddDialog({
       open
       size="wide"
       title="Add product"
+      initialFocus="inner"
       onClose={onClose}
       confirmOnClose={isProductDraftDirty(draft) || picturePending}
       busy={create.busy}
@@ -247,137 +188,39 @@ function ProductAddDialog({
             void submit()
           }}
         >
-          <div className="mb-3">
-            <label className="form-label" htmlFor={NAME_ID}>
-              Name
-            </label>
-            <input
-              id={NAME_ID}
-              type="text"
-              className="form-control"
-              value={draft.name}
-              required
-              data-autofocus
-              onChange={(event) => {
-                const name = event.target.value
-                setDraft((current) => ({ ...current, name }))
-              }}
-            />
-          </div>
-          <div className="mb-3">
-            <label className="form-label" htmlFor={CATEGORY_ID}>
-              Category
-            </label>
-            <select
-              id={CATEGORY_ID}
-              className="form-select"
-              value={categoryAvailable ? (categoryId ?? '') : ''}
-              required
-              onChange={(event) => {
-                const value = event.target.value
-                setCategoryRemoved(false)
-                setDraft((current) => ({
-                  ...current,
-                  categoryId: value === '' ? null : Number(value),
-                }))
-              }}
-            >
-              <option value="" disabled>
-                {categoryRemoved
-                  ? 'Choose a category again'
-                  : 'Choose a category'}
-              </option>
-              {categories.map(({ value, label }) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <fieldset className="mb-3" aria-describedby={KIND_HINT_ID}>
-            <legend className="form-label fs-6 float-none">Kind</legend>
-            <div className="btn-group flex-wrap">
-              {KINDS.map((kind) => {
-                const id = `${ID_PREFIX}-${kind}`
-                return (
-                  <Fragment key={kind}>
-                    <input
-                      id={id}
-                      name="kind"
-                      type="radio"
-                      className="btn-check"
-                      value={kind}
-                      checked={draft.kind === kind}
-                      onChange={() =>
-                        setDraft((current) => ({ ...current, kind }))
-                      }
-                    />
-                    <label
-                      className="btn btn-outline-secondary btn-sm"
-                      htmlFor={id}
-                    >
-                      {kindText(kind)}
-                    </label>
-                  </Fragment>
-                )
-              })}
-            </div>
-            <div id={KIND_HINT_ID} className="form-text">
-              {KIND_HINTS[draft.kind]}
-            </div>
-          </fieldset>
-          <div className="mb-3">
-            <label className="form-label" htmlFor={PRICE_ID}>
-              {moneyFieldLabel('Price')}
-            </label>
-            <input
-              id={PRICE_ID}
-              type="text"
-              inputMode="decimal"
-              className="form-control"
-              value={draft.price}
-              required
-              onChange={(event) => {
-                const price = event.target.value
-                setDraft((current) => ({ ...current, price }))
-              }}
-            />
-          </div>
-          <div className="mb-3">
-            <label className="form-label" htmlFor={DESCRIPTION_ID}>
-              Description
-            </label>
-            <textarea
-              id={DESCRIPTION_ID}
-              rows={2}
-              className="form-control"
-              value={draft.description}
-              required
-              onChange={(event) => {
-                const description = event.target.value
-                setDraft((current) => ({ ...current, description }))
-              }}
-            />
-          </div>
-          <CatalogPictureField
-            field={field}
-            publish={publish}
-            sendPublish={publishPicture}
+          <ProductFormFields
             idPrefix={ID_PREFIX}
-            chooser={ProductPictureChooser}
-            picture={draft.picture}
-            onSelection={(clientUploadId) => {
-              setSelectedUploadId(clientUploadId)
-              setDraft((current) =>
-                current.picture === null
-                  ? current
-                  : { ...current, picture: null },
-              )
+            draft={draft}
+            onDraftChange={(change) => {
+              if (change.categoryId !== undefined) {
+                setCategoryRemoved(false)
+              }
+              setDraft((current) => ({ ...current, ...change }))
             }}
-            onPicture={(picture) =>
-              setDraft((current) => ({ ...current, picture }))
+            categories={categories}
+            categoryAvailable={categoryAvailable}
+            categoryRemoved={categoryRemoved}
+            kind={draft.kind}
+            onKindChange={(kind) =>
+              setDraft((current) => ({ ...current, kind }))
             }
-            onPending={setPicturePending}
+            pictureField={{
+              field,
+              publish,
+              sendPublish: publishPicture,
+              picture: draft.picture,
+              onSelection: (clientUploadId) => {
+                setSelectedUploadId(clientUploadId)
+                setDraft((current) =>
+                  current.picture === null
+                    ? current
+                    : { ...current, picture: null },
+                )
+              },
+              onPicture: (picture) =>
+                setDraft((current) => ({ ...current, picture })),
+              onPending: setPicturePending,
+            }}
           />
         </form>
       </HilosUploadDrop>

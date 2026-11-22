@@ -39,8 +39,10 @@ React. See `docs/new-project/README.md` to start a project from it.
   changed first, with its category, kind, price, stock and availability; it
   filters by category, kind and availability, and the rows change by themselves.
   A row opens the product's own page: its kind, picture, description, category,
-  price and what the warehouses hold of it, all of it live. Only administrators
-  see them; the shop's other admin pages arrive with their own leaves.
+  price and what the warehouses hold of it, all of it live. The product's
+  **Overview** has an **Edit** button for changing its name, category, price,
+  description and picture. Only administrators see them; the shop's other admin
+  pages arrive with their own leaves.
 - **Notifications**: the bell in the header for a signed-in person, with
   delivery by email.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.

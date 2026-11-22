@@ -7,6 +7,7 @@ import {
   formatMoney,
   lineTotal,
   moneyFieldLabel,
+  moneyInputComparisonText,
   moneyInputText,
   sumMoney,
   totalAfterDiscount,
@@ -62,6 +63,16 @@ describe('money', () => {
     [5, '0.05'],
   ])('moneyInputText(%i) writes %s', (kopecks, text) => {
     expect(moneyInputText(kopecks)).toBe(text)
+  })
+
+  it.each([
+    ['00,00', '0'],
+    ['000.5', '0.50'],
+    ['999999999999999,98', '999 999 999 999 999.98'],
+    ['999999999999999,99', '999 999 999 999 999.99'],
+    ['1000000000000000,99', '1000000000000000,99'],
+  ])('compares the exact input amount %s as %s', (text, comparable) => {
+    expect(moneyInputComparisonText(text)).toBe(comparable)
   })
 
   it('names a money field with the sign', () => {

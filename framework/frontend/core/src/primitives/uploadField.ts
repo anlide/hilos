@@ -20,6 +20,7 @@ import {
 } from '../state/signal.js'
 import {
   cancelUpload,
+  discardUploads,
   hilosUploads,
   uploadFile,
   type HilosUpload,
@@ -88,7 +89,7 @@ type HilosUploadFieldReading = HilosUploadFieldFile['reading']
 
 /** The headless upload field the upload tags render. */
 export interface HilosUploadField {
-  /** Chips of this field's target, in selection order. */
+  /** Chips the field presents, in selection order. */
   readonly files: ReadonlySignal<readonly HilosUploadFieldFile[]>
   /** The sentence of the last refused file, or null. */
   readonly refusal: ReadonlySignal<string | null>
@@ -116,7 +117,13 @@ export interface HilosUploadField {
   add(files: Iterable<File>): void
   /** @param clientUploadId Upload whose × was pressed. */
   remove(clientUploadId: string): void
-  /** Stop listening to the uploads client; its records stay as they are. */
+  /**
+   * Relinquish a file immediately, even while the controls are disabled.
+   *
+   * @param clientUploadId Upload owned by the field.
+   */
+  discard(clientUploadId: string): void
+  /** Stop listening to the uploads client and discard this field's selection in selection-only mode. */
   dispose(): void
 }
 
@@ -147,20 +154,28 @@ function percentOf(upload: HilosUpload): number {
 /**
  * Create the upload field over one target's uploads.
  *
- * @param options The project's upload target the field sends to and shows.
+ * @param options The upload target and whether the field owns only its most recent file.
  */
 export function createHilosUploadField(options: {
   target: string
+  selectionOnly?: boolean
 }): HilosUploadField {
-  const { target } = options
+  const { target, selectionOnly = false } = options
   const disabled = createSignal(false)
   const depth = createSignal(0)
   const alert = createSignal('')
   const status = createSignal('')
+  const selectedId = createSignal<string | null>(null)
 
-  // Only this field's target: another surface of the page may upload too.
+  // Dialogs can share a target and still own the uploads of one opening.
   const records = computedSignal(() =>
-    hilosUploads.get().filter((upload) => upload.target === target),
+    hilosUploads
+      .get()
+      .filter(
+        (upload) =>
+          upload.target === target &&
+          (!selectionOnly || selectedId.get() === upload.clientUploadId),
+      ),
   )
 
   const files = computedSignal(() =>
@@ -246,7 +261,15 @@ export function createHilosUploadField(options: {
   for (const upload of records.get()) {
     readings.set(upload.clientUploadId, readingOf(upload.phase))
   }
-  const stop = subscribeSignal(hilosUploads, hear)
+  const stop = subscribeSignal(records, hear)
+
+  function discardSelection(): void {
+    const id = selectedId.get()
+    if (id !== null) {
+      selectedId.set(null)
+      discardUploads([id])
+    }
+  }
 
   function add(picked: Iterable<File>): void {
     if (disabled.get()) {
@@ -254,7 +277,13 @@ export function createHilosUploadField(options: {
     }
     // An empty file is dropped silently.
     const accepted = Array.from(picked).filter((file) => file.size > 0)
-    if (accepted.length === 0) {
+    const newest = accepted.at(-1)
+    if (newest === undefined) {
+      return
+    }
+    if (selectionOnly) {
+      discardSelection()
+      selectedId.set(uploadFile(target, newest))
       return
     }
     // A new pick clears the previous refusal: its record goes, and its line with it.
@@ -295,10 +324,24 @@ export function createHilosUploadField(options: {
       if (disabled.get()) {
         return
       }
-      cancelUpload(clientUploadId)
+      if (selectionOnly) {
+        if (selectedId.get() === clientUploadId) discardSelection()
+      } else {
+        cancelUpload(clientUploadId)
+      }
+    },
+    discard(clientUploadId) {
+      if (selectionOnly) {
+        if (selectedId.get() === clientUploadId) discardSelection()
+      } else if (
+        records.get().some((upload) => upload.clientUploadId === clientUploadId)
+      ) {
+        discardUploads([clientUploadId])
+      }
     },
     dispose() {
       stop()
+      discardSelection()
     },
   }
 }

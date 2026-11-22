@@ -67,6 +67,7 @@ use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductPicturePublishActionDTO;
+use Demo\EcommerceShop\Pages\DTO\ProductUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
@@ -1570,6 +1571,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(PageReach::ROUTE, AdminProductPage::REACH);
         self::assertSame(PageAccessLevel::ADMIN, AdminProductPage::ACCESS_LEVEL);
         self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getPageRoutes()[AdminProductPage::PAGE]);
+        $action = EcommerceShopSignalConstants::PRODUCT_UPDATE;
+        self::assertSame('product_update', $action);
+        self::assertSame([$action => ProductUpdateActionDTO::class], AdminProductPage::ACTIONS);
+        self::assertSame(ProductUpdateActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
+        self::assertSame(AdminProductPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+        self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getActionAgentRoutes()[$action]);
         self::assertArrayNotHasKey(AdminProductPage::PAGE, Hilos::PAGE_TABLES);
         self::assertSame(
             [BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_PRODUCT],

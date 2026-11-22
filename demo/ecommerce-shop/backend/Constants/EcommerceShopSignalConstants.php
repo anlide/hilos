@@ -59,6 +59,9 @@ final class EcommerceShopSignalConstants
     /** @var string Product create action name */
     public const string PRODUCT_CREATE = 'product_create';
 
+    /** @var string Product update action name */
+    public const string PRODUCT_UPDATE = 'product_update';
+
     /** @var string Product picture publish action name */
     public const string PRODUCT_PICTURE_PUBLISH = 'product_picture_publish';
 

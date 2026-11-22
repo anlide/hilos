@@ -13,6 +13,7 @@ use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock as EntityProductWarehouseStock;
 use Demo\EcommerceShop\Database\Object\Item\Category as ObjectCategory;
+use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
 use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProductWarehouseStock;
 use Demo\EcommerceShop\Database\Object\Item\Warehouse as ObjectWarehouse;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
@@ -20,18 +21,26 @@ use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminProductPage;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\HilosPageConstants;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAccessGate;
+use Hilos\Core\Page\PageErrorMessages;
+use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Sync\DTO\DbSyncDeletedSignalData;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Database\Pages\PageCatalogConstants;
@@ -107,10 +116,12 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
             'price' => 41000,
             'categoryId' => $this->categoryId,
             'description' => 'Product of the case',
+            ObjectProduct::pictureFileId => $this->pictureFileOf($this->bulbs),
             AdminProductBrowserData::FIELD_PICTURE_URL => HilosFiles::downloadPath(
                 $this->pictureFileOf($this->bulbs),
                 CatalogPictureUploadTarget::VARIANT_LG,
             ),
+            AdminProductBrowserData::FIELD_EDIT_VERSION => $this->bulbsEditVersion(),
             AdminProductBrowserData::FIELD_STOCK => self::stockField(42, 2, null),
         ], $payload[PagePayload::data][AdminProductBrowserData::DATA]);
         self::assertStringContainsString(
@@ -182,6 +193,39 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         }
     }
 
+    /** A live DB delete refuses the Overview that was subscribed to the deleted product. */
+    public function testDeletingTheOpenProductSendsTheResourceRefusal(): void
+    {
+        $pages = new PageSignalRouter(new HilosPageFactory(new ProductsLibraryAgent(), Hilos::class), new ActionRouteConfig());
+        $resender = $this->createMock(PageResender::class);
+        $resender->method('refuseDeletedResource')->willReturnCallback($pages->refuseDeletedResource(...));
+        Hilos::$browser->bindPageResender($resender);
+        $this->subscribe(self::ADMIN_KEY, $this->jug);
+
+        $id = (string)$this->jug;
+        $row = Database::sql('SELECT * FROM product WHERE id = ?', [$this->jug])->rows()[0];
+        Database::sql('DELETE FROM product WHERE id = ?', [$this->jug]);
+        DbSyncApplicator::applyDeleted(new DbSyncDeletedSignalData(EcommerceShopDbContext::products, $id, $row));
+        self::deliver(SourceChange::dbDeleted(EcommerceShopDbContext::products, $id, $row));
+
+        $replies = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof WebSocketSignalData && $signal->data->targetAcceptKey === self::ADMIN_KEY) {
+                $replies[$signal->signalName->getName()][] = $signal->data->data;
+            }
+        }
+        self::assertArrayNotHasKey(SignalTypeConstants::PAGE_RESPONSE, $replies);
+        $errors = $replies[SignalConstants::SUBSCRIPTION_PAGE_ERROR] ?? [];
+        self::assertCount(1, $errors);
+        self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $errors[0]);
+        self::assertSame(PageSubscriptionErrorSignalData::forStatus(
+            AdminProductPage::PAGE,
+            404,
+            'not_found',
+            PageErrorMessages::RESOURCE_DELETED_MESSAGE,
+        )->toArray(), $errors[0]->toArray());
+    }
+
     /** An address that is not a number is refused as an invalid route param. */
     public function testANonNumericAddressIsAnInvalidRouteParam(): void
     {
@@ -211,6 +255,8 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
 
         self::assertSame($this->bulbsName, $card['name']);
         self::assertSame(41000, $card['price']);
+        self::assertSame($this->pictureFileOf($this->bulbs), $card[ObjectProduct::pictureFileId]);
+        self::assertSame($this->bulbsEditVersion(), $card[AdminProductBrowserData::FIELD_EDIT_VERSION]);
         self::assertSame(self::stockField(42, 2, null), $card[AdminProductBrowserData::FIELD_STOCK]);
         foreach ($card as $field => $value) {
             self::assertFalse(HiddenValue::isMark($value), "field {$field} is a mark for the viewer");
@@ -231,6 +277,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         $cards = $this->sentCards(self::ADMIN_KEY);
         self::assertCount(1, $cards);
         self::assertSame(self::stockField(50, 3, null), $cards[0][AdminProductBrowserData::FIELD_STOCK]);
+        self::assertSame($this->bulbsEditVersion(), $cards[0][AdminProductBrowserData::FIELD_EDIT_VERSION]);
 
         Hilos::$db->productWarehouseStocks->actions->setUnits($this->seeds, $this->kyiv, 5);
         self::deliver(SourceChange::dbCreated(
@@ -429,6 +476,15 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
     private function cardOf(PageResponseSignalData $response): array
     {
         return $response->payload->toArray()[PagePayload::data][AdminProductBrowserData::DATA];
+    }
+
+    /** @return string Version of the initial bulbs fixture from its stored catalog fields */
+    private function bulbsEditVersion(): string
+    {
+        return hash('sha256', json_encode([
+            $this->bulbs, $this->bulbsName, $this->categoryId, ProductKind::STOCK->value, 41000,
+            'Product of the case', $this->pictureFileOf($this->bulbs), 1795132800123,
+        ], JSON_THROW_ON_ERROR));
     }
 
     /**

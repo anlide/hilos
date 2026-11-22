@@ -84,7 +84,7 @@ abstract class AdminProductsPageActionEnvironment extends AdminProductsPageEnvir
      * Dispatches a tracked action to the products library with its ordinary page router.
      *
      * @param string $action Action name
-     * @param array<string, int|string> $payload Form fields
+     * @param array<string, int|string|null> $payload Form fields
      * @param ?string $requestId Client-minted request id, null for an untracked action
      * @param string $acceptKey Acting connection
      */

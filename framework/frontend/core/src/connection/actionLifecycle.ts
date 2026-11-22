@@ -76,6 +76,8 @@ export interface ActionResult<T = unknown> {
 export interface ActionHandle<T = unknown> {
   /** The client-minted id correlating this action with its reply. */
   readonly requestId: string
+  /** Whether the connection accepted the outgoing frame, when known. */
+  readonly sent?: boolean
   /** Loading: stays false until the deferral elapses while the action is still pending. */
   readonly loading: ReadonlySignal<boolean>
   /**
@@ -232,7 +234,7 @@ export class ActionLifecycle {
       // TODO(i18n): Remove this client-side fallback when backend-provided local error copy is available.
       reject(new ActionError(action, 'disconnected', 'Not connected.'))
 
-      return { requestId, loading, done }
+      return { requestId, sent: false, loading, done }
     }
 
     const deferredTimer = setTimeout(() => {
@@ -251,7 +253,7 @@ export class ActionLifecycle {
       replySchema: options.replySchema,
     })
 
-    return { requestId, loading, done }
+    return { requestId, sent: true, loading, done }
   }
 
   /**

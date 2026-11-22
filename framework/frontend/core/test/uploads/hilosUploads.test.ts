@@ -15,6 +15,7 @@ import { createSignal } from '../../src/state/signal.js'
 import {
   bindUploads,
   cancelUpload,
+  discardUploads,
   hilosUploads,
   uploadFile,
 } from '../../src/uploads/hilosUploads.js'
@@ -415,6 +416,10 @@ describe('canceling uploads', () => {
     const { connection, actions } = setup()
     const clientUploadId = uploadFile('message', file('a.bin', 1))
     ready(connection)
+    connection.signal(SIGNAL_UPLOAD_STATE, {
+      clientUploadId,
+      phase: UPLOAD_PHASE_UPLOADING,
+    })
     cancelUpload(clientUploadId)
 
     actions.pending[1]?.reject(
@@ -426,6 +431,127 @@ describe('canceling uploads', () => {
       clientUploadId,
       canceling: false,
     })
+    connection.state('reconnecting')
+    ready(connection)
+    expect(actions.pending[2]).toMatchObject({
+      action: UPLOAD_ACTION_INIT,
+      data: { clientUploadId },
+    })
+  })
+})
+
+describe('discarding a closed selection', () => {
+  it.each(['fail', 'timeout'] as const)(
+    'frees the queue before a cancel settles with %s',
+    async (outcome) => {
+      const { connection, actions } = setup()
+      const active = uploadFile('message', file('active.bin', 1))
+      const waiting = uploadFile('message', file('waiting.bin', 1))
+      const next = uploadFile('message', file('next.bin', 1))
+      ready(connection)
+
+      discardUploads([active, waiting])
+
+      expect(hilosUploads.get()).toMatchObject([{ clientUploadId: next }])
+      expect(actions.pending).toMatchObject([
+        { action: UPLOAD_ACTION_INIT, data: { clientUploadId: active } },
+        { action: UPLOAD_ACTION_CANCEL, data: { clientUploadId: active } },
+        { action: UPLOAD_ACTION_INIT, data: { clientUploadId: next } },
+      ])
+      actions.pending[0]?.resolve()
+      actions.pending[1]?.reject(
+        new ActionError(
+          UPLOAD_ACTION_CANCEL,
+          outcome,
+          'Cancel did not finish.',
+        ),
+      )
+      await settle()
+      connection.signal(SIGNAL_UPLOAD_CREDIT, {
+        clientUploadId: active,
+        sendUpToBytes: 1,
+      })
+      connection.signal(SIGNAL_UPLOAD_STATE, {
+        clientUploadId: active,
+        phase: UPLOAD_PHASE_COMPLETE,
+      })
+      connection.signal(SIGNAL_UPLOAD_STATE, { clientUploadId: active })
+
+      expect(connection.textFrames).toEqual([])
+      expect(connection.binaryFrames).toEqual([])
+      expect(hilosUploads.get()).toMatchObject([{ clientUploadId: next }])
+      connection.state('reconnecting')
+      ready(connection)
+      expect(actions.pending.slice(3)).toMatchObject([
+        { action: UPLOAD_ACTION_INIT, data: { clientUploadId: next } },
+      ])
+    },
+  )
+
+  it('reuses a pending cancel when the field closes', async () => {
+    const { connection, actions } = setup()
+    const clientUploadId = uploadFile('message', file('a.bin', 1))
+    ready(connection)
+    cancelUpload(clientUploadId)
+
+    discardUploads([clientUploadId])
+
+    expect(hilosUploads.get()).toEqual([])
+    expect(actions.pending).toMatchObject([
+      { action: UPLOAD_ACTION_INIT, data: { clientUploadId } },
+      { action: UPLOAD_ACTION_CANCEL, data: { clientUploadId } },
+    ])
+    actions.pending[1]?.reject(
+      new ActionError(UPLOAD_ACTION_CANCEL, 'fail', 'Already complete.'),
+    )
+    await settle()
+    expect(hilosUploads.get()).toEqual([])
+  })
+
+  it.each(['pending', 'refused'] as const)(
+    'does not resend a %s cleanup after init timed out',
+    async (cancel) => {
+      const { connection, actions } = setup()
+      const clientUploadId = uploadFile('message', file('a.bin', 1))
+      ready(connection)
+      actions.pending[0]?.reject(
+        new ActionError(UPLOAD_ACTION_INIT, 'timeout', 'Init timed out.'),
+      )
+      await settle()
+      if (cancel === 'refused') {
+        actions.pending[1]?.reject(
+          new ActionError(UPLOAD_ACTION_CANCEL, 'fail', 'Cancel was refused.'),
+        )
+        await settle()
+      }
+
+      discardUploads([clientUploadId])
+
+      expect(hilosUploads.get()).toEqual([])
+      expect(actions.pending).toMatchObject([
+        { action: UPLOAD_ACTION_INIT, data: { clientUploadId } },
+        { action: UPLOAD_ACTION_CANCEL, data: { clientUploadId } },
+      ])
+    },
+  )
+
+  it('drops a replay candidate on close during reconnect', () => {
+    const { connection, actions } = setup()
+    const clientUploadId = uploadFile('message', file('a.bin', 1))
+    ready(connection)
+    connection.signal(SIGNAL_UPLOAD_STATE, {
+      clientUploadId,
+      phase: UPLOAD_PHASE_UPLOADING,
+    })
+    connection.state('reconnecting')
+
+    discardUploads([clientUploadId])
+    ready(connection)
+
+    expect(hilosUploads.get()).toEqual([])
+    expect(actions.pending).toMatchObject([
+      { action: UPLOAD_ACTION_INIT, data: { clientUploadId } },
+    ])
   })
 })
 
@@ -528,6 +654,38 @@ describe('connection and identity lifetime', () => {
     })
   })
 
+  it('does not resend an ordinary cancel when the signed-in owner changes', () => {
+    const { connection, actions, currentUserId } = setup()
+    const clientUploadId = uploadFile('message', file('a.bin', 1))
+    ready(connection)
+    cancelUpload(clientUploadId)
+
+    currentUserId.set(2)
+
+    expect(hilosUploads.get()).toEqual([])
+    expect(actions.pending).toMatchObject([
+      { action: UPLOAD_ACTION_INIT, data: { clientUploadId } },
+      { action: UPLOAD_ACTION_CANCEL, data: { clientUploadId } },
+    ])
+  })
+
+  it.each([2, null])(
+    'drops the first signed-in selection before readiness when the user becomes %s',
+    (nextUserId) => {
+      const { connection, actions, currentUserId } = setup()
+      uploadFile('message', file('before.bin', 1))
+
+      currentUserId.set(nextUserId)
+      const clientUploadId = uploadFile('message', file('after.bin', 1))
+      ready(connection)
+
+      expect(hilosUploads.get()).toMatchObject([{ clientUploadId }])
+      expect(actions.pending).toMatchObject([
+        { action: UPLOAD_ACTION_INIT, data: { clientUploadId } },
+      ])
+    },
+  )
+
   it('does not treat identity resolution before first readiness as a change', () => {
     const { connection, actions, currentUserId } = setup(null)
     uploadFile('message', file('a.bin', 1))
@@ -571,6 +729,45 @@ describe('file reads', () => {
 })
 
 describe('upload memory credit', () => {
+  it('drops unused and late credit for a discarded partial upload', async () => {
+    const { connection, actions } = setup()
+    connection.autoCredit = false
+    const source = file('partial.bin', 3)
+    const read = vi.spyOn(source, 'slice')
+    const clientUploadId = uploadFile('message', source)
+    const next = uploadFile('message', file('next.bin', 1))
+    const sendBinary = connection.sendBinary.bind(connection)
+    const firstChunk = new Promise<void>((resolve) => {
+      vi.spyOn(connection, 'sendBinary').mockImplementation((frame) => {
+        const sent = sendBinary(frame)
+        resolve()
+        return sent
+      })
+    })
+    ready(connection)
+    actions.pending[0]?.resolve()
+    await settle()
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId,
+      sendUpToBytes: 1,
+    })
+    await firstChunk
+
+    discardUploads([clientUploadId])
+    connection.signal(SIGNAL_UPLOAD_CREDIT, {
+      clientUploadId,
+      sendUpToBytes: 3,
+    })
+    await settle()
+
+    expect(read).toHaveBeenCalledExactlyOnceWith(0, 1)
+    expect(connection.binaryFrames).toHaveLength(1)
+    expect(actions.pending.slice(1)).toMatchObject([
+      { action: UPLOAD_ACTION_CANCEL, data: { clientUploadId } },
+      { action: UPLOAD_ACTION_INIT, data: { clientUploadId: next } },
+    ])
+  })
+
   it('waits before reading and consumes cumulative partial windows without polling', async () => {
     const { connection, actions } = setup()
     connection.autoCredit = false

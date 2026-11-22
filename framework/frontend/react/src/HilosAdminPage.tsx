@@ -122,8 +122,10 @@ export interface HilosAdminPageProps {
   /**
    * Draw the page error in place of the content and keep modals mounted under
    * it, so a dialog open when the page's resource is deleted keeps its draft.
+   * Pass a predicate to also keep the shell on a plain resource 404 while a
+   * draft is open, for example on the first answer after reconnect.
    */
-  preserveModalDraftsOnDelete?: boolean
+  preserveModalDraftsOnDelete?: boolean | (() => boolean)
   /** The page's dialogs: the one part an opted-in page error leaves mounted. */
   modals?: ReactNode
 }
@@ -201,7 +203,12 @@ export function HilosAdminPage({
     const releaseFocus = registerFocusReturnFallback(section, () =>
       section.querySelector<HTMLElement>('[data-id="page-error-home"]'),
     )
-    const releaseRetention = retainForResourceDeletion?.(page)
+    const releaseRetention = retainForResourceDeletion?.(
+      page,
+      typeof preserveModalDraftsOnDelete === 'function'
+        ? preserveModalDraftsOnDelete
+        : undefined,
+    )
     return () => {
       releaseRetention?.()
       releaseFocus()

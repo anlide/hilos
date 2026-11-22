@@ -56,6 +56,7 @@ export function uploadFieldDouble(runner: UploadTestRunner) {
     drop: runner.vi.fn(),
     add: runner.vi.fn(),
     remove: runner.vi.fn(),
+    discard: runner.vi.fn(),
     dispose: runner.vi.fn(),
   }
   return { field, files, refusal, disabled, dragging, alert, status }

@@ -20,7 +20,7 @@ use Hilos\Core\Browser\Config\BrowserRefType;
 /**
  * One product's card on its admin page and the stock rows that can change its computed total.
  *
- * The picture's address and the stock total are computed by {@see EcommerceShopBrowserContext}.
+ * The picture's address, edit version and stock total are computed by {@see EcommerceShopBrowserContext}.
  * The names of the product's category and of the warehouse keeping a unique product are not on
  * the card: the page reads them by number from its categories and warehouses lists, which keep
  * renames live.
@@ -30,6 +30,7 @@ final class AdminProductBrowserData
     public const string DATA = EcommerceShopBrowserData::ADMIN_PRODUCT;
     public const string productId = 'productId';
     public const string FIELD_PICTURE_URL = 'pictureUrl';
+    public const string FIELD_EDIT_VERSION = 'editVersion';
     public const string FIELD_STOCK = 'stock';
     public const string STOCK_UNITS = 'units';
     public const string STOCK_WAREHOUSES = 'warehouses';
@@ -68,10 +69,10 @@ final class AdminProductBrowserData
                 BrowserDataFieldKey::FIELDS => [
                     ObjectProduct::id => self::productId,
                     ObjectProduct::name, ObjectProduct::kind, ObjectProduct::price,
-                    ObjectProduct::categoryId, ObjectProduct::description,
+                    ObjectProduct::categoryId, ObjectProduct::description, ObjectProduct::pictureFileId,
                 ],
-                BrowserDataFieldKey::COMPUTED => [self::FIELD_PICTURE_URL, self::FIELD_STOCK],
-                BrowserDataFieldKey::NOT_PERSONAL => [self::FIELD_PICTURE_URL, self::FIELD_STOCK],
+                BrowserDataFieldKey::COMPUTED => [self::FIELD_PICTURE_URL, self::FIELD_EDIT_VERSION, self::FIELD_STOCK],
+                BrowserDataFieldKey::NOT_PERSONAL => [self::FIELD_PICTURE_URL, self::FIELD_EDIT_VERSION, self::FIELD_STOCK],
             ],
             [
                 BrowserDataFieldKey::SOURCE => EcommerceShopBrowserSource::DB_PRODUCT_WAREHOUSE_STOCKS,

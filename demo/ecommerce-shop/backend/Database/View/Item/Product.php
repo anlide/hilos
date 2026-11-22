@@ -7,10 +7,12 @@ namespace Demo\EcommerceShop\Database\View\Item;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Actions\Item\ProductActions;
 use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
+use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ActionsClassException;
 use Hilos\Database\Exception\View\Item\PropertyNotFoundException;
 use Hilos\Database\View\Item\DbItem;
 use Hilos\HilosException;
+use JsonException;
 
 /**
  * Product - Db item with high-level abstraction and lazy loading.
@@ -57,5 +59,26 @@ final class Product extends DbItem
             ObjectProduct::changedAt => $this->_object->changedAt,
             default => parent::__get($name),
         };
+    }
+
+    /**
+     * Identifies the saved catalog fields the editor reads.
+     *
+     * @return string Opaque version for comparing a submitted edit with the current product
+     * @throws DatabaseException When the persisted fields cannot be read
+     * @throws JsonException When the saved fields cannot be encoded
+     */
+    public function editVersion(): string
+    {
+        return hash('sha256', json_encode([
+            $this->_object->id,
+            $this->_object->name,
+            $this->_object->categoryId,
+            ProductKind::from($this->_object->kind)->value,
+            $this->_object->price,
+            $this->_object->description,
+            $this->_object->pictureFileId,
+            $this->_object->changedAt,
+        ], JSON_THROW_ON_ERROR));
     }
 }

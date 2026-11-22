@@ -22,14 +22,15 @@ use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\Files\HilosFiles;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
+use JsonException;
 
 /**
  * EcommerceShopBrowserContext - Browser-facing context ($browser layer) for ecommerce-shop.
  *
  * Says who is behind a socket - the admin pages ask it through the page access gate - and
  * computes the two fields of the home page: the address of a category's tile picture and whether
- * a product is on the shop front; and the two of the product card on the admin_product page: the
- * address of the product's picture and what the warehouses keep of it. A person's presence and
+ * a product is on the shop front; and the fields of the product card on the admin_product page:
+ * the picture's address, the edit version, and what the warehouses keep of it. A person's presence and
  * session count, the password fields and the scheduled deletion's date are the framework's,
  * computed for its card of one person (HIL-1254), and the other admin tables go out through the
  * framework self-snapshot path.
@@ -98,6 +99,10 @@ final class EcommerceShopBrowserContext extends BrowserContext
                     return HilosFiles::downloadPath($product->pictureFileId, CatalogPictureUploadTarget::VARIANT_LG);
                 }
 
+                if ($field === AdminProductBrowserData::FIELD_EDIT_VERSION) {
+                    return $product->editVersion();
+                }
+
                 if ($field === AdminProductBrowserData::FIELD_STOCK) {
                     $totals = Hilos::$db->productWarehouseStocks->totalsOfProducts($product->id)->of($product->id);
 
@@ -112,7 +117,8 @@ final class EcommerceShopBrowserContext extends BrowserContext
                 | InvalidArgumentException
                 | LogicException
                 | ObjectGetIdStringNotImplementedException
-                | CollectionNotManualException $exception
+                | CollectionNotManualException
+                | JsonException $exception
             ) {
                 throw new PageInternalErrorException('Admin product card could not be resolved', $exception);
             }

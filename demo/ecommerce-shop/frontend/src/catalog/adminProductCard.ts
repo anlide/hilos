@@ -32,6 +32,10 @@ const PRODUCT_CATEGORY_ID_FIELD = 'categoryId'
 const PRODUCT_DESCRIPTION_FIELD = 'description'
 /** Card payload key of the large picture address. */
 const PRODUCT_PICTURE_URL_FIELD = 'pictureUrl'
+/** Card payload key of the stored picture file. */
+const PRODUCT_PICTURE_FILE_ID_FIELD = 'pictureFileId'
+/** Card payload key of the saved catalog fields' version. */
+const PRODUCT_EDIT_VERSION_FIELD = 'editVersion'
 /** Card payload key of the stock total record. */
 const PRODUCT_STOCK_FIELD = 'stock'
 /** Stock payload key of the units in all warehouses. */
@@ -75,6 +79,8 @@ export function resolveAdminProduct(raw: unknown): AdminProduct | null {
     categoryId: readNumber(card, PRODUCT_CATEGORY_ID_FIELD),
     description: readString(card, PRODUCT_DESCRIPTION_FIELD),
     pictureUrl: readString(card, PRODUCT_PICTURE_URL_FIELD),
+    pictureFileId: readNumber(card, PRODUCT_PICTURE_FILE_ID_FIELD),
+    editVersion: readString(card, PRODUCT_EDIT_VERSION_FIELD),
     stock: {
       units: readNumber(stock, STOCK_UNITS_FIELD),
       warehouses: readNumber(stock, STOCK_WAREHOUSES_FIELD),

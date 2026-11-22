@@ -38,13 +38,17 @@ export interface PageViewState<T> {
   setPages(pages: Readonly<Record<string, PageView<T>>>): void
   /**
    * Register the mounted page as the shell that draws a deletion of its own
-   * resource. Only a live 404 naming that transition starts the hold, on the
-   * same page, route, and mounted component; it never mounts a page.
+   * resource, on the same page, route, and mounted component. A live deletion
+   * starts the hold. A plain resource 404 can also start it for an open draft.
    *
    * @param page The page key the registering shell serves.
+   * @param hasOpenDraft Whether the shell has a draft to retain on a plain 404.
    * @returns A function that removes this registration, never a later one.
    */
-  retainForResourceDeletion(page: string): Unsubscribe
+  retainForResourceDeletion(
+    page: string,
+    hasOpenDraft?: () => boolean,
+  ): Unsubscribe
   /** Detach listeners and prevent late imports from publishing state. */
   dispose(): void
 }
@@ -66,6 +70,7 @@ interface Retention<T> {
   readonly page: string
   readonly generation: number
   readonly view: T | undefined
+  readonly hasOpenDraft?: () => boolean
 }
 
 /** Identify the descriptor by its tag, never by a component being callable. */
@@ -107,20 +112,20 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
   const error = computedSignal(() => snapshot.get().error)
   const retainedOnError = computedSignal(() => snapshot.get().retainedOnError)
 
-  // A live 404 that names the deletion starts the hold; while held, a later
-  // plain 404 of the same subscription continues it. Only the component the
-  // shell registered from after mounting on this route generation is kept.
+  // A plain 404 after reconnect can be the first verdict the open draft sees.
+  // Only the matching route generation and already mounted shell can keep it.
   function retains(serverError: PageError | null, loaded: T): boolean {
     return (
       serverError !== null &&
       serverError.httpCode === RESOURCE_NOT_FOUND_STATUS &&
       serverError.errorCode === PAGE_ERROR_NOT_FOUND &&
-      (serverError.transitionMessage !== undefined ||
-        snapshot.get().retainedOnError) &&
       retention !== null &&
       retention.generation === generation &&
       retention.page === router.currentRoute.get().page &&
-      retention.view === loaded
+      retention.view === loaded &&
+      (serverError.transitionMessage !== undefined ||
+        snapshot.get().retainedOnError ||
+        retention.hasOpenDraft?.() === true)
     )
   }
 
@@ -274,8 +279,13 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
         select(false)
       }
     },
-    retainForResourceDeletion: (page) => {
-      const own: Retention<T> = { page, generation, view: snapshot.get().view }
+    retainForResourceDeletion: (page, hasOpenDraft) => {
+      const own: Retention<T> = {
+        page,
+        generation,
+        view: snapshot.get().view,
+        hasOpenDraft,
+      }
       retention = own
       return () => {
         if (retention === own) {

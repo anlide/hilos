@@ -3,6 +3,7 @@ import {
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_UPLOAD_STATE,
   UPLOAD_ACTION_CANCEL,
+  UPLOAD_ACTION_INIT,
   UPLOAD_PHASE_COMPLETE,
   bindUploads,
   createSignal,
@@ -77,9 +78,15 @@ describe('catalog picture openings', () => {
     'isolates a discarded upload when Cancel is refused %s reopening',
     async (refusalOrder) => {
       let signal!: (signal: ProjectSignal) => void
+      let reconnect!: () => void
       const connection = {
-        on(event: string, listener: (frame: ProjectSignal) => void) {
+        on(
+          ...[event, listener]:
+            | ['projectSignal', (frame: ProjectSignal) => void]
+            | ['state', (state: 'reconnecting') => void]
+        ) {
           if (event === 'projectSignal') signal = listener
+          if (event === 'state') reconnect = () => listener('reconnecting')
           return () => undefined
         },
       } as unknown as Parameters<typeof bindUploads>[0]
@@ -115,10 +122,8 @@ describe('catalog picture openings', () => {
         .fn<(id: string) => Promise<CatalogPicture | null>>()
         .mockReturnValueOnce(firstReply.done)
         .mockResolvedValue(replacementPicture)
-      const first = openPicture(
-        { fileId: 7, url: '/files/7/catalog_sm' },
-        publish,
-      )
+      const firstPicture = { fileId: 7, url: '/files/7/catalog_sm' }
+      const first = openPicture(firstPicture, publish)
       first.field.add([new File(['a'], 'old.png', { type: 'image/png' })])
       const oldId = hilosUploads.get()[0]!.clientUploadId
       complete(oldId)
@@ -128,29 +133,33 @@ describe('catalog picture openings', () => {
       expect(dispatch).toHaveBeenLastCalledWith(UPLOAD_ACTION_CANCEL, {
         clientUploadId: oldId,
       })
-      firstReply.answer(null)
       const second =
         refusalOrder === 'after' ? openPicture(openingPicture, publish) : null
       cancelReply.refuse(new Error('Cancel refused'))
       await cancelReply.done.catch(() => undefined)
-      await Promise.resolve()
-      expect(hilosUploads.get()[0]).toMatchObject({
-        clientUploadId: oldId,
-        phase: UPLOAD_PHASE_COMPLETE,
-        canceling: false,
-      })
 
       const reopened = second ?? openPicture(openingPicture, publish)
       let newId: string
       try {
+        firstReply.answer(replacementPicture)
+        reconnect()
+        signal({ type: SIGNAL_TYPE_PAGE_RESPONSE } as ProjectSignal)
+        complete(oldId)
         await Promise.resolve()
+        expect(first.preview.get()).toEqual(firstPicture)
         expect(publish).toHaveBeenCalledExactlyOnceWith(oldId)
         expect(reopened.preview.get()).toEqual(openingPicture)
         expect(reopened.field.files.get()).toEqual([])
         expect(reopened.field.ready.get()).toEqual([])
+        expect(hilosUploads.get()).toEqual([])
+        expect(
+          dispatch.mock.calls.filter(
+            ([action]) => action === UPLOAD_ACTION_INIT,
+          ),
+        ).toHaveLength(1)
 
         reopened.field.add([new File(['b'], 'new.png', { type: 'image/png' })])
-        newId = hilosUploads.get()[1]!.clientUploadId
+        newId = hilosUploads.get()[0]!.clientUploadId
         complete(newId)
         await Promise.resolve()
         expect(publish.mock.calls).toEqual([[oldId], [newId]])
@@ -166,10 +175,7 @@ describe('catalog picture openings', () => {
         [UPLOAD_ACTION_CANCEL, { clientUploadId: oldId }],
         [UPLOAD_ACTION_CANCEL, { clientUploadId: newId }],
       ])
-      await Promise.resolve()
-      expect(hilosUploads.get().map((upload) => upload.clientUploadId)).toEqual(
-        [oldId],
-      )
+      expect(hilosUploads.get()).toEqual([])
     },
   )
 })
