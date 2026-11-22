@@ -135,6 +135,7 @@ use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
+use Demo\EcommerceShop\Tables\Product\CategoryProductsTable;
 use Demo\EcommerceShop\Tables\Product\ProductsTable;
 use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
@@ -595,6 +596,7 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::warehouses => WarehousesTable::class,
         EcommerceShopTableContext::categories => CategoriesTable::class,
         EcommerceShopTableContext::products => ProductsTable::class,
+        EcommerceShopTableContext::categoryProducts => CategoryProductsTable::class,
         EcommerceShopTableContext::productStock => ProductStockTable::class,
         EcommerceShopTableContext::hilosI18nLanguageNames => HilosI18nLanguageNamesTable::class,
         EcommerceShopTableContext::hilosI18nCountryNames => HilosI18nCountryNamesTable::class,

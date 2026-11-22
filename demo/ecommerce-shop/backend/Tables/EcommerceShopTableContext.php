@@ -7,6 +7,7 @@ namespace Demo\EcommerceShop\Tables;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
+use Demo\EcommerceShop\Tables\Product\CategoryProductsTable;
 use Demo\EcommerceShop\Tables\Product\ProductsTable;
 use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
@@ -56,8 +57,8 @@ use Hilos\Tables\Status\HilosStatusHistoryTable;
  * via Hilos::$table->hilosBackups, Hilos::$table->hilosVerifierCircle, Hilos::$table->settings and
  * Hilos::$table->hilosUsers. The other admin sections arrive with the leaves that move their e2e
  * onto this demo, each with its table. The shop's own sections arrive the same way, each leaf
- * with its table: today the warehouses and the categories, via Hilos::$table->warehouses and
- * Hilos::$table->categories.
+ * with its table: warehouses, categories, products, a product's stock in Hilos::$table->productStock,
+ * and the storefront's category products in Hilos::$table->categoryProducts.
  *
  * @property-read HilosChangeLogFeedTable $hilosChangeLogFeed
  * @property-read HilosTermsHistoryTable $hilosTermsHistory
@@ -82,6 +83,7 @@ use Hilos\Tables\Status\HilosStatusHistoryTable;
  * @property-read WarehousesTable $warehouses
  * @property-read CategoriesTable $categories
  * @property-read ProductsTable $products
+ * @property-read CategoryProductsTable $categoryProducts
  * @property-read ProductStockTable $productStock
  * @property-read HilosI18nLanguageNamesTable $hilosI18nLanguageNames
  * @property-read HilosI18nLanguagesTable $hilosI18nLanguages
@@ -127,6 +129,7 @@ final class EcommerceShopTableContext extends TableContext
     public const string warehouses = 'warehouses';
     public const string categories = 'categories';
     public const string products = ProductsTable::TABLE;
+    public const string categoryProducts = CategoryProductsTable::TABLE;
     public const string productStock = ProductStockTable::TABLE;
     public const string hilosI18nLanguageNames = HilosI18nLanguageNamesTable::TABLE;
     public const string hilosI18nLanguages = HilosI18nLanguagesTable::TABLE;

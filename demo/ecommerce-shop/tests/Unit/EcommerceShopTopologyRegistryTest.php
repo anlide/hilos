@@ -182,6 +182,7 @@ use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
+use Demo\EcommerceShop\Tables\Product\CategoryProductsTable;
 use Demo\EcommerceShop\Tables\Product\ProductsTable;
 use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
@@ -1392,6 +1393,13 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testTheProductsTableIsRegistered(): void
     {
         self::assertSame(ProductsTable::class, Hilos::TABLES[EcommerceShopTableContext::products]);
+    }
+
+    /** The storefront table is registered under the category-products key. */
+    public function testTheCategoryProductsTableIsRegistered(): void
+    {
+        self::assertSame('categoryProducts', EcommerceShopTableContext::categoryProducts);
+        self::assertSame(CategoryProductsTable::class, Hilos::TABLES[EcommerceShopTableContext::categoryProducts]);
     }
 
     /**

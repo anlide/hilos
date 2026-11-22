@@ -104,15 +104,22 @@ abstract class ProductsTableEnvironment extends StockLibraryEnvironment
      * @param string $name Name of the product
      * @param int $price Price in kopecks
      * @param int $changedAt Moment of the last edit, epoch milliseconds
+     * @param string $description Description stored for this fixture
      * @return int Id of the new product
      */
-    protected static function productIn(int $categoryId, ProductKind $kind, string $name, int $price, int $changedAt): int
-    {
+    protected static function productIn(
+        int $categoryId,
+        ProductKind $kind,
+        string $name,
+        int $price,
+        int $changedAt,
+        string $description = 'Product of the case',
+    ): int {
         $slug = 'product-' . RandomHelper::hex(8);
         Database::sql(
             'INSERT INTO product (name, category_id, kind, price, description, picture_file_id, slug, changed_at) '
             . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [$name, $categoryId, $kind->value, $price, 'Product of the case', self::pictureFile(), $slug, $changedAt],
+            [$name, $categoryId, $kind->value, $price, $description, self::pictureFile(), $slug, $changedAt],
         );
 
         return Database::lastInsertId();
