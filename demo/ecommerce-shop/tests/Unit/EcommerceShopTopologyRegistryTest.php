@@ -112,6 +112,7 @@ use Hilos\Tables\Status\HilosStatusSubscribersTable;
 use Hilos\Tables\Status\HilosStatusWorksTable;
 use Hilos\Tables\Status\HilosStatusHistoryTable;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
+use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
 use Demo\EcommerceShop\Pages\Hilos\Backup\BackupPage;
 use Demo\EcommerceShop\Pages\Hilos\ChangeLog\ChangeLogDashboardPage;
@@ -173,6 +174,7 @@ use Demo\EcommerceShop\Pages\AdminProductsPage;
 use Demo\EcommerceShop\Pages\AdminProductPage;
 use Demo\EcommerceShop\Browser\Data\AdminProductBrowserData;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserData;
+use Demo\EcommerceShop\Browser\EcommerceShopBrowserSource;
 use Demo\EcommerceShop\Browser\List\AdminProductWarehousesBrowserList;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
@@ -189,6 +191,7 @@ use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Demo\EcommerceShop\Tables\Product\CategoryProductsTable;
 use Demo\EcommerceShop\Tables\Product\ProductsTable;
 use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
+use Demo\EcommerceShop\Tables\Voucher\VouchersTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Hilos\Auth\AccountOperation\AccountErasureExemption;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
@@ -1316,6 +1319,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testTheWarehousesTableIsRegistered(): void
     {
         self::assertSame(WarehousesTable::class, Hilos::TABLES[EcommerceShopTableContext::warehouses]);
+    }
+
+    /** The vouchers table is registered under its key, with the voucher collection as its only source. */
+    public function testTheVouchersTableIsRegistered(): void
+    {
+        self::assertSame(VouchersTable::class, Hilos::TABLES[EcommerceShopTableContext::vouchers]);
+        self::assertSame(
+            [EcommerceShopBrowserSource::DB_VOUCHERS],
+            VouchersTable::BROWSER[BrowserTableConfigKey::SOURCES],
+        );
     }
 
     /**

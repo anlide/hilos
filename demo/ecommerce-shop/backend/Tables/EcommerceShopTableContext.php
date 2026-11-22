@@ -10,6 +10,7 @@ use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Demo\EcommerceShop\Tables\Product\CategoryProductsTable;
 use Demo\EcommerceShop\Tables\Product\ProductsTable;
 use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
+use Demo\EcommerceShop\Tables\Voucher\VouchersTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Hilos\Core\Table\Context\TableContext;
 use Hilos\Tables\ChangeLog\HilosChangeLogFeedTable;
@@ -81,6 +82,7 @@ use Hilos\Tables\Status\HilosStatusHistoryTable;
  * @property-read HilosNotificationDeliveriesTable $hilosNotificationDeliveries
  * @property-read HilosUsersTable $hilosUsers
  * @property-read WarehousesTable $warehouses
+ * @property-read VouchersTable $vouchers
  * @property-read CategoriesTable $categories
  * @property-read ProductsTable $products
  * @property-read CategoryProductsTable $categoryProducts
@@ -127,6 +129,7 @@ final class EcommerceShopTableContext extends TableContext
     public const string hilosNotificationDeliveries = HilosNotificationDeliveriesTable::TABLE;
     public const string hilosUsers = 'hilosUsers';
     public const string warehouses = 'warehouses';
+    public const string vouchers = 'vouchers';
     public const string categories = 'categories';
     public const string products = ProductsTable::TABLE;
     public const string categoryProducts = CategoryProductsTable::TABLE;

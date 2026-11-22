@@ -39,6 +39,11 @@ final class EcommerceShopBrowserSource
         BrowserSourceKey::KEY => EcommerceShopDbContext::products,
     ];
 
+    public const array DB_VOUCHERS = [
+        BrowserSourceKey::TYPE => BrowserSourceType::DB,
+        BrowserSourceKey::KEY => EcommerceShopDbContext::vouchers,
+    ];
+
     public const array RT_CONNECTIONS = [
         BrowserSourceKey::TYPE => BrowserSourceType::RT,
         BrowserSourceKey::KEY => EcommerceShopRtContext::connections,

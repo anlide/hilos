@@ -138,6 +138,7 @@ use Demo\EcommerceShop\Tables\HilosUser\HilosUsersTable;
 use Demo\EcommerceShop\Tables\Product\CategoryProductsTable;
 use Demo\EcommerceShop\Tables\Product\ProductsTable;
 use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
+use Demo\EcommerceShop\Tables\Voucher\VouchersTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgent;
 use Hilos\Auth\Throttle\Agent\AuthThrottleAgentDaemon;
@@ -594,6 +595,7 @@ final class Hilos extends HilosFacade
         EcommerceShopTableContext::hilosAppearanceSettings => HilosAppearanceSettingsTable::class,
         EcommerceShopTableContext::hilosUsers => HilosUsersTable::class,
         EcommerceShopTableContext::warehouses => WarehousesTable::class,
+        EcommerceShopTableContext::vouchers => VouchersTable::class,
         EcommerceShopTableContext::categories => CategoriesTable::class,
         EcommerceShopTableContext::products => ProductsTable::class,
         EcommerceShopTableContext::categoryProducts => CategoryProductsTable::class,
