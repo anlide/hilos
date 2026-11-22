@@ -26,7 +26,7 @@ carried every scenario on a single shape is retired (HIL-1218).
 
 | Demo | View | Hilos cluster | MariaDB | Scenarios |
 |---|---|---|---|---|
-| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations, 46 browser liveness across masters, 47 a node with another project time zone refused on both ends, 57 millisecond moments survive a real hot FULL restore, 58 erasure frames and owner recovery, 59 erasure waits and restrict, 60 partial erasure survives FULL restore |
+| binance-btc-tracker | Vue | three masters, two slaves and `x1`, a node of a foreign authority | one server, primary + derived journal | 1 master-slave mesh, 2 master-master, 5 leader-kill re-election, 7 quorum-loss, 8 split-brain prevention, 10 cross-node browser, 13 rt partition converges (skipped as flaky, P-169), 17 foreign certificate refused, 20 rt set width across nodes, 23 verifier circle on every master, 25 freeze settles on every master, 29 a node with a cluster directory of its own refused on both ends, 30 a ready data export copy outlives the node its agent lived on, 32 a node with another admin view mode refused on both ends, 33 every master takes browsers, 34 a tab is the same on every master under protected mode, 35 rt row deleted while cut off is swept, 36 a slave cut off with its leader stops its work before it runs elsewhere, 38 manual maintenance from any node, 41 i18n catalog taken once and skipped after holder restart, 42 a node with another default language refused on both ends, 44 replicated waiting fleet survives leader death and quorum loss, then starts when slots return without another ask, 45 upload pool across nodes: reservations, worker receipts, crossing waits and peer generations, 46 browser liveness across masters, 47 a node with another project time zone refused on both ends, 57 millisecond moments survive a real hot FULL restore, 58 erasure frames and owner recovery, 59 erasure waits and restrict, 60 partial erasure survives FULL restore, 61 merge recovery after sender worker death and FULL restore |
 | ecommerce-shop | React | one master and two slaves of unequal room, `ram=10` and `ram=4`, each with `slots=64` | one server, primary + derived journal | 3 placement, 4 slave-kill failover, 6 hot-join, 9 daemon-crash self-heal, 12 rt replication, 14 rt claim refused, 16 recreated node leaves no phantom fleet, 18 capacity is consumed, 19 worker death on a live node, 37 costless agents consume slots, 39 person agents across nodes, 43 waiting ballast retries after a slave returns without another ask (cleanup checked with `composer -d demo/ecommerce-shop run test:cluster:scenarios -- 43 37 18`) |
 | online-testing | Angular | three equal masters that host work themselves | one server, primary + derived journal | 11 cross-node db fact, 15 db interest addressing, 21 schema rolled out once by nodes that start together, 22 a node reading another database refused on both ends, 24 a cut-off leader stops its work before it runs elsewhere, 40 journal triggers installed once and unchanged on ordinary restart, 48 daemon hang self-heal |
 | roblox-game-server | Vue | three masters and one slave: `m1` without capacity — it votes and hosts no placed work; `m2`, `m3` workers with `ram=10`, `slots=64`; slave `s1` worker with `ram=4`, `slots=64` | Galera of two data nodes and the `garbd` arbitrator, which votes and stores no data, behind HAProxy; the application uses both data nodes: HAProxy gives each node a data node of its own — `m1` and `m3` the first, `m2` and `s1` the second — so a row written by one node is always read by a node on the other data node, and a node whose data node is down is led to the living one. HAProxy closes the sessions of a data node it marks down: a data node cut off from the majority stays reachable and refuses every statement, and Hilos does not reconnect from a member outside the primary component, so a proxy in front of Galera must close them | 26 database is one cluster, 49 a row written by one node is read by another through another data node, past the process copy, and after that connection is lost, 50 journal is one logical set on every server; 51 a working master that does not lead is cut off and stops its work before it runs elsewhere; 27 the data node under the settings library dies under load: every node writes on through the survivor and the arbitrator, and it comes back, catches up from the survivor that donates while it serves, and takes connections only when Synced, with the journal oracle on both; 53 the arbitrator lost and back; 54 a data node cut off from the other and the arbitrator is fenced while the majority writes on |
@@ -53,6 +53,62 @@ Fresh pointed runs `58 59` and, separately, `60` passed with their owned cleanup
 fixtures, settings, the one faulted node, exact archive/sidecar, own restore
 window and ordinary mesh/fleet restart, as applicable. Their measured scenario
 times, including cleanup, are recorded in the Binance README.
+
+Scenario 61 opens a merge and verifies a FULL archive after give and holder
+sessions commit, with the hand-over still held and the receipt absent. The
+survivor stops idle and the sender worker dies. With the holder pass paused,
+an ordinary placement request starts a replacement sender, which replays the
+saved give at startup. Its hand-over wakes the survivor, whose receipt commits
+while the ordinary receive path is gated. The stand observes the receipt,
+clears the gate and then fires the ordinary pass to finish any open duties.
+After hot FULL import, the same merge completes with the archived results,
+assignments, transferred row IDs and fence revisions. Recovery rebuilds the
+receipt, survivor sessions and cleanup, and each backup code retains its spend
+status by ID.
+
+The original ordinary receive ask was held and discarded. After FULL recovery,
+the stand confirms the restored sender stopped, allowing a later ordinary
+start on the current node if the sender has already been placed again. It
+records the current nodes and worker incarnations of both agents, arms the
+survivor's answer probe once and delivers one old hand-over. The survivor's
+single `go`/`done` receipt reply matches the original operation, receive
+assignment and journal receipt. The completed SQL snapshot and the neighbour
+stay unchanged, with the copy absent and fence revisions still one. The
+pointed run observed both agents on one worker on `s1`. A cross-node proof
+requires the two agents to be on different nodes before sending.
+
+On success, product erasure removes the survivor's circle and the neighbour,
+and scenario 60 runs next on the same stand without a restart in between. A
+failed 61 uses the targeted fixture SQL cleanup and stand restart from
+scenarios 58–60. PHP integration checks two separate deliveries of the old
+hand-over after completion, both through the same survivor handler. It also
+covers give replay on an already-running holder's scheduled pass, a lost
+receipt answer, a subsequent merge and old `DB_SYNC`. Scenario 58 covers
+owner relocation after node failure. See the restore window checks and PHP
+integration details in
+[Account operation recovery](../architecture/account-operations.md#recovery).
+The measured time is in the [Binance README](../../../demo/binance-btc-tracker/README.md).
+
+On the dedicated, disposable test stand, scenarios 58–61 admit fixture writes
+and backup mutations using the current roster's daemon, BackupAgent, and
+LogStore journals. For each required stream, a pruned batch is covered by a
+retained, confirmed segment or a complete batch listing that shows the stream
+was absent. The reader confirms the listing separately for each stream. If part
+of a batch is deleted between reads, a `BackupAgent` or `error` file seen while
+reading another stream can later be counted as absent. This can let the harness
+stop the stand during an unrelated `CREATE`. The reader preserves observed file
+sizes across listing and open, and checks unfinished copies within the history
+needed to establish the boot or match the stopped writers' last segments. For an
+addressed backup mutation, the final incarnation check compares the expected
+publisher with the last confirmed journal read on the original holder's node.
+A BackupAgent restart on the same worker in the same millisecond as the previous
+daemon acknowledgment can be mistaken for the previous incarnation until the
+new acknowledgment is read. After a move to another node, the new holder can
+already be visible in that node's journal while the final check still uses the
+original holder's journal. An addressed mutation can then write on the former
+holder's node. The last confirmed reads bound what admission can establish.
+When admission detects an unsafe state, the harness stops the run with `FATAL`
+and preserves any primary `FAIL`.
 
 `ram` means abstract units of declared placement capacity, not gigabytes of RAM
 or a container memory limit.

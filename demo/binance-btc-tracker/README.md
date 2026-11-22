@@ -233,8 +233,9 @@ cut off with its leader stops its work (skipped as flaky since 2026-10-10;
 default language refused, 44 waiting work survives leadership changes, 45
 upload pool across nodes, 47 another project time zone refused, 57
 millisecond moments survive a real hot FULL restore, 58 erasure frames and
-owner recovery, 59 erasure waits and restrict, and 60 partial erasure survives
-FULL restore. Scenario 58 recovers a lost ask, routes live duplicate frames,
+owner recovery, 59 erasure waits and restrict, 60 partial erasure survives
+FULL restore, and 61 merge recovery after sender worker death and FULL
+restore. Scenario 58 recovers a lost ask, routes live duplicate frames,
 and loses the root's host after personal commit while mail debt remains open.
 The root starts on the surviving slave; the original holder stays alive.
 A stale ask from that holder produces an observed participant answer without
@@ -251,6 +252,39 @@ the neighbour unchanged. Fresh `test:cluster:scenarios -- 58 59` and the separat
 ordinary `test:cluster:scenarios -- 60` passed. Their scenario times, including
 owned cleanup, were 101.1 s, 65.4 s and 77.3 s respectively on the test box;
 stand startup is outside those times. No baseline delta was measured.
+Scenario 61 holds a hand-over after give commits, verifies the partial FULL
+archive, then stops the survivor idle and kills the sender's worker. With the
+holder pass paused, an ordinary placement request starts a new sender, which
+replays the saved give at startup. The fresh hand-over wakes the survivor,
+which commits its receipt while ordinary receive is gated. The stand observes
+the receipt, clears the gate and then fires the ordinary pass to finish any
+open duties. Hot FULL import keeps the archived results, assignments,
+transferred row IDs and fence revisions. Ordinary recovery rebuilds the receipt,
+survivor sessions and cleanup for the same merge. Each backup code keeps its
+spend status by ID.
+
+The original ordinary receive ask was held and discarded. After FULL recovery,
+the stand confirms the restored sender stopped, accepting a later ordinary
+start on the current node if the sender is already placed again. It records
+the nodes and worker incarnations of both agents, arms the survivor's probe
+once and delivers one old hand-over. The single saved `go`/`done` reply matches
+the original operation, receive assignment and journal receipt. The completed
+SQL snapshot and the neighbour stay unchanged, with the copy absent and fence
+revisions still one. Both agents shared one worker on `s1` in the pointed run.
+A cross-node proof requires their placements to be on different nodes before
+sending.
+
+PHP integration exercises two separate deliveries through the same survivor
+handler after completion, scheduled give replay by an already-running holder,
+a lost receipt answer, a subsequent merge and old `DB_SYNC`. Scenario 58
+covers moving an owner after node failure. The restore window checks and PHP
+integration details are in [Account operation recovery](../../docs/agents/architecture/account-operations.md#recovery).
+
+In the pointed `test:cluster:scenarios -- 61 60` run, scenario 61 took 322.0 s
+including product erasure of the survivor's circle and the neighbour. Scenario
+60 ran next on the same stand without an intervening restart. A failed 61 uses
+targeted fixture SQL cleanup and restarts the stand.
+
 The `entry-welcome <master> [<token>] [<pass>]` harness command reads the first
 WebSocket welcome through the stand entry and reports whether that browser is
 inside or on the maintenance stub.

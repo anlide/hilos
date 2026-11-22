@@ -7,11 +7,11 @@ namespace Hilos\Tests\Unit;
 use Closure;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HilosAgentType;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeAction;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeAction;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeRequest;
 use Hilos\Environment\EnvAccessor;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbeDTO;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbedDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbeDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbedDTO;
 use Hilos\Constants\WorkerConstants;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\AgentIdleTracker;
@@ -92,22 +92,22 @@ final class WorkerManagerIdleStopTest extends TestCase
             $times = new ReflectionProperty(AgentIdleTracker::class, 'lastEventAt');
             $before = $times->getValue($this->tracker($manager));
             foreach ([HilosAgentType::HILOS_USER . ':99', HilosAgentType::HILOS_USER . ':0', self::IDLE_AGENT_ID] as $invalid) {
-                $manager->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('invalid',
-                    new AccountErasureProbeRequest($invalid, AccountErasureProbeAction::ExpireIdle)));
+                $manager->handleDaemonMessage(new WorkerTestAccountOperationProbeDTO('invalid',
+                    new AccountOperationProbeRequest($invalid, AccountOperationProbeAction::ExpireIdle)));
                 $ack = $manager->daemonClientDouble->sent[array_key_last($manager->daemonClientDouble->sent)];
-                self::assertInstanceOf(WorkerTestAccountErasureProbedDTO::class, $ack);
+                self::assertInstanceOf(WorkerTestAccountOperationProbedDTO::class, $ack);
                 self::assertFalse($ack->ok);
                 self::assertSame($before, $times->getValue($this->tracker($manager)), 'A refusal cannot create or age a tracker key');
             }
             $this->bindAppClass(IdleStopProbeNoIdleHilos::class);
-            $manager->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('undeclared',
-                new AccountErasureProbeRequest($personalId, AccountErasureProbeAction::ExpireIdle)));
+            $manager->handleDaemonMessage(new WorkerTestAccountOperationProbeDTO('undeclared',
+                new AccountOperationProbeRequest($personalId, AccountOperationProbeAction::ExpireIdle)));
             self::assertFalse($manager->daemonClientDouble->sent[array_key_last($manager->daemonClientDouble->sent)]->ok);
             self::assertSame($before, $times->getValue($this->tracker($manager)));
             $this->bindAppClass(IdleStopProbeTestHilos::class);
             $this->tracker($manager)->noteSubscriber($personalId, 'probe-tab', 1000.0);
-            $manager->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('expire',
-                new AccountErasureProbeRequest($personalId, AccountErasureProbeAction::ExpireIdle)));
+            $manager->handleDaemonMessage(new WorkerTestAccountOperationProbeDTO('expire',
+                new AccountOperationProbeRequest($personalId, AccountOperationProbeAction::ExpireIdle)));
             $ack = $manager->daemonClientDouble->sent[array_key_last($manager->daemonClientDouble->sent)];
             self::assertTrue($ack->ok);
             self::assertSame(['armed' => false, 'matched' => 0, 'held' => null], $ack->state->toArray());
@@ -116,8 +116,8 @@ final class WorkerManagerIdleStopTest extends TestCase
             $this->tickAgents($manager);
             self::assertTrue($manager->hasAgent($personalId), 'The subscriber still holds the source');
             $this->tracker($manager)->dropSubscriber($personalId, 'probe-tab', 1000.0);
-            $manager->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('expire-again',
-                new AccountErasureProbeRequest($personalId, AccountErasureProbeAction::ExpireIdle)));
+            $manager->handleDaemonMessage(new WorkerTestAccountOperationProbeDTO('expire-again',
+                new AccountOperationProbeRequest($personalId, AccountOperationProbeAction::ExpireIdle)));
             $personal->workInFlight = true;
             $this->tickAgents($manager);
             self::assertTrue($manager->hasAgent($personalId), 'In-flight work still holds the source');

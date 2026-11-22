@@ -12,7 +12,7 @@ use Hilos\Core\Daemon\ConnectionDropper;
 use Hilos\Core\Daemon\ConnectionLivenessTestDoor;
 use Hilos\Core\Daemon\DaemonManager;
 use Hilos\Core\Daemon\CronFireTestDoor;
-use Hilos\Core\Daemon\AccountErasureProbeTestDoor;
+use Hilos\Core\Daemon\AccountOperationProbeTestDoor;
 use Hilos\Core\Daemon\DaemonNodeReportTestDoor;
 use Hilos\Core\Daemon\DaemonStatusSource;
 use Hilos\Core\Daemon\ProtectedModeSnapshotSource;
@@ -74,8 +74,8 @@ class CommandServer extends AbstractServer
     /** Master seam for the test-only command that fires one cron rule once now. */
     private ?CronFireTestDoor $cronFireTestDoor = null;
 
-    /** Local master entrance for the erasure probe. */
-    private ?AccountErasureProbeTestDoor $accountErasureProbeTestDoor = null;
+    /** Local master entrance for the account operation probe. */
+    private ?AccountOperationProbeTestDoor $accountOperationProbeTestDoor = null;
 
     private ?UploadMemoryTestDoor $uploadMemoryTestDoor = null;
 
@@ -333,16 +333,16 @@ class CommandServer extends AbstractServer
         return $this->cronFireTestDoor;
     }
 
-    /** @param AccountErasureProbeTestDoor $door Master owning local probe waits */
-    public function setAccountErasureProbeTestDoor(AccountErasureProbeTestDoor $door): void
+    /** @param AccountOperationProbeTestDoor $door Master owning local probe waits */
+    public function setAccountOperationProbeTestDoor(AccountOperationProbeTestDoor $door): void
     {
-        $this->accountErasureProbeTestDoor = $door;
+        $this->accountOperationProbeTestDoor = $door;
     }
 
-    /** @return ?AccountErasureProbeTestDoor Local master entrance, or null before wiring */
-    public function accountErasureProbeTestDoor(): ?AccountErasureProbeTestDoor
+    /** @return ?AccountOperationProbeTestDoor Local master entrance, or null before wiring */
+    public function accountOperationProbeTestDoor(): ?AccountOperationProbeTestDoor
     {
-        return $this->accountErasureProbeTestDoor;
+        return $this->accountOperationProbeTestDoor;
     }
 
     /** @param AgentRestartDoor $door Master handling the restart request */

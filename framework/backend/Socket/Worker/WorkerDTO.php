@@ -63,8 +63,8 @@ use Hilos\Socket\Worker\DTO\WorkerUploadSettingsDTO;
 use Hilos\Socket\Worker\DTO\WorkerDeliverySettingsDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Utils\Logger;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbeDTO;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbedDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbeDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbedDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
@@ -161,8 +161,8 @@ abstract class WorkerDTO extends BaseDTO
             WorkerTestOrmForgottenDTO::MESSAGE_TYPE => WorkerTestOrmForgottenDTO::fromArray($data),
             WorkerTestCronFireDTO::MESSAGE_TYPE => WorkerTestCronFireDTO::fromArray($data),
             WorkerTestCronFiredDTO::MESSAGE_TYPE => WorkerTestCronFiredDTO::fromArray($data),
-            WorkerTestAccountErasureProbeDTO::MESSAGE_TYPE => WorkerTestAccountErasureProbeDTO::fromArray($data),
-            WorkerTestAccountErasureProbedDTO::MESSAGE_TYPE => WorkerTestAccountErasureProbedDTO::fromArray($data),
+            WorkerTestAccountOperationProbeDTO::MESSAGE_TYPE => WorkerTestAccountOperationProbeDTO::fromArray($data),
+            WorkerTestAccountOperationProbedDTO::MESSAGE_TYPE => WorkerTestAccountOperationProbedDTO::fromArray($data),
             WorkerTestCronScheduleDTO::MESSAGE_TYPE => WorkerTestCronScheduleDTO::fromArray($data),
             WorkerTestCronScheduleResultDTO::MESSAGE_TYPE => WorkerTestCronScheduleResultDTO::fromArray($data),
             WorkerDbReHydratedDTO::MESSAGE_TYPE => WorkerDbReHydratedDTO::fromArray($data),

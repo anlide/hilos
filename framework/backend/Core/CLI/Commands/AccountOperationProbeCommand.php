@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Core\CLI\Commands;
 
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeState;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeRequest;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeState;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
@@ -14,8 +14,8 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Environment\Exception\EnvException;
 use JsonException;
 
-/** Thin CLI half of the local worker's bounded erasure probe. */
-class AccountErasureProbeCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
+/** Thin CLI half of the local worker's bounded account operation probe. */
+class AccountOperationProbeCommand extends AbstractCommandChannelTestCommand implements DatabaseFreeCommand
 {
     public const array OPTIONS = [
         self::OPTION_FRAME_KIND, self::OPTION_OPERATION_ID, self::OPTION_STAGE,
@@ -32,13 +32,13 @@ class AccountErasureProbeCommand extends AbstractCommandChannelTestCommand imple
     /** @return string Test-only command name */
     public function getName(): string
     {
-        return CliCommands::ACCOUNT_TEST_ERASURE_PROBE;
+        return CliCommands::ACCOUNT_TEST_OPERATION_PROBE;
     }
 
     /** @return string One-line description */
     public function getDescription(): string
     {
-        return 'Control one local worker erasure probe (test-only)';
+        return 'Control one local worker account operation probe (test-only)';
     }
 
     /** @return string Supported arguments, options and output */
@@ -47,7 +47,7 @@ class AccountErasureProbeCommand extends AbstractCommandChannelTestCommand imple
         return <<<HELP
 Usage: {$this->getName()} <agentId> <action>
   Actions: arm, inspect, release, discard, replay, expire-idle, clear.
-  arm requires --frame-kind=ask|answer; optional selectors:
+  arm requires --frame-kind=ask|answer|handover; optional selectors:
     --operation-id=<positive id> --stage=<stage> --assignment-id=<positive id>
   replay requires --frame-json=<captured full envelope> --copies=1|2.
   Other actions accept no options. Only an existing local source is addressed.
@@ -71,18 +71,18 @@ HELP;
             if (count($args) !== 2) {
                 throw new InvalidFormatException('Expected agentId and action');
             }
-            $payload = [AgentConstants::FIELD_AGENT_ID => $args[0], AccountErasureProbeRequest::ACTION => $args[1]];
+            $payload = [AgentConstants::FIELD_AGENT_ID => $args[0], AccountOperationProbeRequest::ACTION => $args[1]];
             if (array_key_exists(self::OPTION_FRAME_KIND, $options)) {
-                $payload[AccountErasureProbeRequest::FRAME_KIND] = $options[self::OPTION_FRAME_KIND];
+                $payload[AccountOperationProbeRequest::FRAME_KIND] = $options[self::OPTION_FRAME_KIND];
             }
             if (array_key_exists(self::OPTION_OPERATION_ID, $options)) {
-                $payload[AccountErasureProbeRequest::OPERATION_ID] = $this->positiveInteger($options[self::OPTION_OPERATION_ID]);
+                $payload[AccountOperationProbeRequest::OPERATION_ID] = $this->positiveInteger($options[self::OPTION_OPERATION_ID]);
             }
             if (array_key_exists(self::OPTION_STAGE, $options)) {
-                $payload[AccountErasureProbeRequest::STAGE] = $options[self::OPTION_STAGE];
+                $payload[AccountOperationProbeRequest::STAGE] = $options[self::OPTION_STAGE];
             }
             if (array_key_exists(self::OPTION_ASSIGNMENT_ID, $options)) {
-                $payload[AccountErasureProbeRequest::ASSIGNMENT_ID] = $this->positiveInteger($options[self::OPTION_ASSIGNMENT_ID]);
+                $payload[AccountOperationProbeRequest::ASSIGNMENT_ID] = $this->positiveInteger($options[self::OPTION_ASSIGNMENT_ID]);
             }
             if (array_key_exists(self::OPTION_FRAME_JSON, $options)) {
                 if (!is_string($options[self::OPTION_FRAME_JSON])) {
@@ -92,12 +92,12 @@ HELP;
                 if (!is_array($frame)) {
                     throw new InvalidFormatException('frame-json requires a JSON envelope');
                 }
-                $payload[AccountErasureProbeRequest::FRAME] = $frame;
+                $payload[AccountOperationProbeRequest::FRAME] = $frame;
             }
             if (array_key_exists(self::OPTION_COPIES, $options)) {
-                $payload[AccountErasureProbeRequest::COPIES] = $this->positiveInteger($options[self::OPTION_COPIES]);
+                $payload[AccountOperationProbeRequest::COPIES] = $this->positiveInteger($options[self::OPTION_COPIES]);
             }
-            $request = AccountErasureProbeRequest::fromArray($payload);
+            $request = AccountOperationProbeRequest::fromArray($payload);
         } catch (InvalidFormatException|JsonException $failure) {
             echo "Usage: {$this->getName()} <agentId> <action>: {$failure->getMessage()}\n";
             return ExitCode::INVALID_ARGUMENT;
@@ -115,9 +115,9 @@ HELP;
             return $this->printRefusal($result->reply);
         }
         try {
-            echo AccountErasureProbeState::fromArray($result->reply->payload)->toJson() . "\n";
+            echo AccountOperationProbeState::fromArray($result->reply->payload)->toJson() . "\n";
         } catch (InvalidFormatException) {
-            echo "Command failed: the reply carries no valid erasure probe state\n";
+            echo "Command failed: the reply carries no valid account operation probe state\n";
             return ExitCode::ERROR;
         }
         return ExitCode::SUCCESS;

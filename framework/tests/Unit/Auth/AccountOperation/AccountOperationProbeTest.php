@@ -5,14 +5,25 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Auth\AccountOperation;
 
 use Closure;
+use Hilos\Auth\AccountOperation\AccountMergeAdmissionManifest;
+use Hilos\Auth\AccountOperation\AccountMergeHandover;
+use Hilos\Auth\AccountOperation\AccountMergeHandoverCopy;
+use Hilos\Auth\AccountOperation\AccountMergeIdentityRow;
+use Hilos\Auth\AccountOperation\AccountMergePasskeyRow;
+use Hilos\Auth\AccountOperation\AccountMergeRowRevision;
+use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\AccountOperationAnswerKind;
+use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbe;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeAction;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeFrameKind;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeState;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbe;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeAction;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeFrameKind;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeRequest;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeState;
+use Hilos\Constants\AgentConstants;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentId;
 use Hilos\Core\Agent\AgentInterface;
@@ -31,16 +42,21 @@ use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use Hilos\Database\Identity\IdentityType;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbeDTO;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbedDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbeDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbedDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 
 /** Model and real IPC registry coverage; the connected worker sender is covered separately. */
-final class AccountErasureProbeTest extends TestCase
+final class AccountOperationProbeTest extends TestCase
 {
+    private const int HANDOVER_LOSER_ID = 42;
+    private const string HANDOVER_SOURCE = HilosAgentType::HILOS_USER . AgentConstants::ID_SEPARATOR . self::HANDOVER_LOSER_ID;
+
     /** A raw worker frame meets the production gate before looking up or mutating any local source. */
     public function testRawWorkerEntranceRefusesProductionBeforeTouchingTheProbe(): void
     {
@@ -52,11 +68,11 @@ final class AccountErasureProbeTest extends TestCase
         $agents->expects(self::never())->method('getAgent');
         $client = $this->createMock(WorkerDaemonClient::class);
         $client->expects(self::once())->method('send')->with(self::callback(static function ($ack): bool {
-            self::assertInstanceOf(WorkerTestAccountErasureProbedDTO::class, $ack);
+            self::assertInstanceOf(WorkerTestAccountOperationProbedDTO::class, $ack);
             self::assertSame('raw-production', $ack->correlationId);
             self::assertFalse($ack->ok);
             self::assertNull($ack->state);
-            self::assertSame(TestOnlyCommandOnProductionException::message(CliCommands::ACCOUNT_TEST_ERASURE_PROBE), $ack->error);
+            self::assertSame(TestOnlyCommandOnProductionException::message(CliCommands::ACCOUNT_TEST_OPERATION_PROBE), $ack->error);
             return true;
         }));
         try {
@@ -82,8 +98,8 @@ final class AccountErasureProbeTest extends TestCase
                     return new SignalRouter();
                 }
             };
-            $worker->handleDaemonMessage(new WorkerTestAccountErasureProbeDTO('raw-production',
-                new AccountErasureProbeRequest('holder:42', AccountErasureProbeAction::Arm, AccountErasureProbeFrameKind::Ask)));
+            $worker->handleDaemonMessage(new WorkerTestAccountOperationProbeDTO('raw-production',
+                new AccountOperationProbeRequest('holder:42', AccountOperationProbeAction::Arm, AccountOperationProbeFrameKind::Ask)));
         } finally {
             Hilos::$env = $previousEnv;
             Hilos::$sr = $previousRouter;
@@ -93,61 +109,80 @@ final class AccountErasureProbeTest extends TestCase
     /** Every selector matters; unrelated traffic passes and the first exact match occupies one slot. */
     public function testBoundedCapturePreservesTheWholeEnvelopeAndPassesOtherFrames(): void
     {
-        foreach (AccountErasureProbeFrameKind::cases() as $kind) {
-            $probe = new AccountErasureProbe();
-            $source = $this->source('holder:42');
-            $probe->arm(new AccountErasureProbeRequest('holder:42', AccountErasureProbeAction::Arm, $kind, 7, 'parts', 11), $source);
-            $matching = self::frame($kind);
+        $agentId = self::HANDOVER_SOURCE;
+        foreach (AccountOperationProbeFrameKind::cases() as $kind) {
+            $probe = new AccountOperationProbe();
+            $stage = AccountMergeStage::Go->value;
+            $matching = self::frame($kind, $agentId, stage: $stage);
+            $source = $this->source($agentId);
+            $probe->arm(
+                new AccountOperationProbeRequest($agentId, AccountOperationProbeAction::Arm, $kind, 7, 'another-stage', 11),
+                $source,
+            );
+            self::assertSame($matching, $probe->intercept($matching, $source));
+            $probe->clear();
+            $probe->arm(new AccountOperationProbeRequest($agentId, AccountOperationProbeAction::Arm, $kind, 7, $stage, 11), $source);
             $signal = $matching->signal;
             $others = [
-                self::frame($kind, operationId: 8),
-                self::frame($kind, stage: 'another-stage'),
-                self::frame($kind, assignmentId: 12),
-                self::frame($kind, agentId: 'holder:43'),
-                self::frame($kind === AccountErasureProbeFrameKind::Ask
-                    ? AccountErasureProbeFrameKind::Answer : AccountErasureProbeFrameKind::Ask),
-                new WorkerAgentMessageDTO('holder:42', new SignalDTO(
-                    new SignalSource(SignalSource::WORKER, 'holder', '42'),
+                self::frame($kind, $agentId, operationId: 8, stage: $stage),
+                self::frame($kind, $agentId, stage: $stage, assignmentId: 12),
+                self::frame($kind, agentId: 'holder:43', stage: $stage),
+                new WorkerAgentMessageDTO($agentId, new SignalDTO(
+                    new SignalSource(SignalSource::WORKER, $signal->signalSource->getType(), $signal->signalSource->getIndex()),
                     $signal->signalType, $signal->signalName, $signal->data,
                 )),
-                new WorkerAgentMessageDTO('holder:42', new SignalDTO(
-                    new SignalSource(SignalSource::AGENT, 'holder', '43'),
+                new WorkerAgentMessageDTO($agentId, new SignalDTO(
+                    new SignalSource(SignalSource::AGENT, $signal->signalSource->getType(), '43'),
                     $signal->signalType, $signal->signalName, $signal->data,
                 )),
-                new WorkerAgentMessageDTO('holder:42', new SignalDTO(
+                new WorkerAgentMessageDTO($agentId, new SignalDTO(
                     $signal->signalSource, new SignalType(SignalTypeConstants::CRON), $signal->signalName, $signal->data,
                 )),
-                new WorkerAgentMessageDTO('holder:42', new SignalDTO(
+                new WorkerAgentMessageDTO($agentId, new SignalDTO(
                     $signal->signalSource, $signal->signalType, $signal->signalName, new AgentSignalData(new SignalData([])),
                 )),
-                new WorkerAgentMessageDTO('holder:42', new SignalDTO(
+                new WorkerAgentMessageDTO($agentId, new SignalDTO(
                     $signal->signalSource, $signal->signalType, $signal->signalName, $signal->data->data,
                 )),
             ];
             foreach ($others as $other) {
                 self::assertSame($other, $probe->intercept($other, $source));
             }
+            foreach (AccountOperationProbeFrameKind::cases() as $otherKind) {
+                if ($kind !== $otherKind) {
+                    $other = self::frame($otherKind, $agentId, stage: $stage);
+                    self::assertSame($other, $probe->intercept($other, $source));
+                }
+            }
             self::assertSame($matching, $probe->intercept($matching, null));
-            self::assertSame($matching, $probe->intercept($matching, $this->source('holder:42')));
+            self::assertSame($matching, $probe->intercept($matching, $this->source($agentId)));
             self::assertSame(['armed' => true, 'matched' => 0, 'held' => null], $probe->inspect()->toArray());
             self::assertNull($probe->intercept($matching, $source));
             self::assertSame($matching, $probe->inspect()->held);
             self::assertSame(['armed' => false, 'matched' => 1, 'held' => $matching->toArray()], $probe->inspect()->toArray());
             self::assertSame($matching, $probe->intercept($matching, $source));
             self::assertSame(1, $probe->inspect()->matched);
-            self::refuses(fn() => $probe->arm(new AccountErasureProbeRequest('holder:42', AccountErasureProbeAction::Arm, $kind), $source));
-            self::assertSame($matching, $probe->release('holder:42', $source));
-            self::refuses(fn() => $probe->release('holder:42', $source));
+            self::refuses(fn() => $probe->arm(new AccountOperationProbeRequest($agentId, AccountOperationProbeAction::Arm, $kind), $source));
+            self::assertSame($matching, $probe->release($agentId, $source));
+            self::refuses(fn() => $probe->release($agentId, $source));
         }
     }
 
-    /** Omitted selectors match freely; discard and clear consume only their declared local state. */
-    public function testDiscardClearAndLossOfTheOriginalSource(): void
+    /**
+     * Omitted selectors match freely; discard and clear consume only their declared local state.
+     *
+     * @param AccountOperationProbeFrameKind $kind Fixture frame kind
+     * @param ?string $fixtureSource Fixture source override
+     */
+    #[TestWith([AccountOperationProbeFrameKind::Answer, 'holder'])]
+    #[TestWith([AccountOperationProbeFrameKind::Handover, null])]
+    public function testDiscardClearAndLossOfTheOriginalSource(AccountOperationProbeFrameKind $kind, ?string $fixtureSource): void
     {
-        $probe = new AccountErasureProbe();
-        $source = $this->source('holder');
-        $arm = new AccountErasureProbeRequest('holder', AccountErasureProbeAction::Arm, AccountErasureProbeFrameKind::Answer);
-        $frame = self::frame(AccountErasureProbeFrameKind::Answer, 'holder', 91, 'intermediate', 92);
+        $probe = new AccountOperationProbe();
+        $frame = self::frame($kind, $fixtureSource, 91, 'intermediate', 92);
+        $agentId = $frame->agentId;
+        $source = $this->source($agentId);
+        $arm = new AccountOperationProbeRequest($agentId, AccountOperationProbeAction::Arm, $kind);
         $probe->arm($arm, $source);
         self::refuses(fn() => $probe->arm($arm, $source));
         self::assertNull($probe->intercept($frame, $source));
@@ -155,17 +190,17 @@ final class AccountErasureProbeTest extends TestCase
         $probe->discard();
         self::assertSame($frame, $snapshot->held);
         self::assertSame(['armed' => false, 'matched' => 1, 'held' => null], $probe->inspect()->toArray());
-        self::refuses(fn() => $probe->release('holder', $source));
+        self::refuses(fn() => $probe->release($agentId, $source));
         self::refuses(fn() => $probe->discard());
 
-        foreach ([null, $this->source('holder')] as $goneOrReplaced) {
+        foreach ([null, $this->source($agentId)] as $goneOrReplaced) {
             $probe->arm($arm, $source);
             self::assertNull($probe->intercept($frame, $source));
             self::refuses(fn() => $probe->release('foreign', $source));
             self::assertSame($frame, $probe->inspect()->held);
-            self::refuses(fn() => $probe->release('holder', $goneOrReplaced));
+            self::refuses(fn() => $probe->release($agentId, $goneOrReplaced));
             self::assertNull($probe->inspect()->held);
-            self::refuses(fn() => $probe->release('holder', $source));
+            self::refuses(fn() => $probe->release($agentId, $source));
         }
         self::assertSame(3, $probe->inspect()->matched);
         $probe->arm($arm, $source);
@@ -175,7 +210,7 @@ final class AccountErasureProbeTest extends TestCase
         $probe->intercept($frame, $source);
         $probe->clear();
         self::assertSame(['armed' => false, 'matched' => 0, 'held' => null], $probe->inspect()->toArray());
-        self::refuses(fn() => $probe->release('holder', $source));
+        self::refuses(fn() => $probe->release($agentId, $source));
         self::refuses(fn() => $probe->arm($arm, $this->source('foreign')));
     }
 
@@ -183,48 +218,48 @@ final class AccountErasureProbeTest extends TestCase
     public function testRequestAndWorkerIpcRoundtripWithoutInventingAbsentSelectors(): void
     {
         self::assertSame(['arm', 'inspect', 'release', 'discard', 'replay', 'expire-idle', 'clear'],
-            array_column(AccountErasureProbeAction::cases(), 'value'));
-        self::assertSame(['ask', 'answer'], array_column(AccountErasureProbeFrameKind::cases(), 'value'));
-        foreach (AccountErasureProbeAction::cases() as $action) {
+            array_column(AccountOperationProbeAction::cases(), 'value'));
+        self::assertSame(['ask', 'answer', 'handover'], array_column(AccountOperationProbeFrameKind::cases(), 'value'));
+        foreach (AccountOperationProbeAction::cases() as $action) {
             $wire = ['agentId' => 'holder:42', 'action' => $action->value];
-            if ($action === AccountErasureProbeAction::Arm) {
+            if ($action === AccountOperationProbeAction::Arm) {
                 $wire += ['frameKind' => 'ask'];
-            } elseif ($action === AccountErasureProbeAction::Replay) {
-                $wire += ['frame' => self::frame(AccountErasureProbeFrameKind::Ask)->toArray(), 'copies' => 2];
+            } elseif ($action === AccountOperationProbeAction::Replay) {
+                $wire += ['frame' => self::frame(AccountOperationProbeFrameKind::Ask)->toArray(), 'copies' => 2];
             }
-            $request = AccountErasureProbeRequest::fromArray($wire);
+            $request = AccountOperationProbeRequest::fromArray($wire);
             self::assertSame($wire, $request->toArray());
-            $ipc = new WorkerTestAccountErasureProbeDTO('probe-1', $request);
+            $ipc = new WorkerTestAccountOperationProbeDTO('probe-1', $request);
             $payload = $wire;
             unset($payload['agentId']);
             self::assertSame([
-                'type' => 'test_account_erasure_probe', 'correlationId' => 'probe-1', 'agentId' => 'holder:42', 'request' => $payload,
+                'type' => 'test_account_operation_probe', 'correlationId' => 'probe-1', 'agentId' => 'holder:42', 'request' => $payload,
             ], $ipc->toArray());
             $restored = WorkerDTO::factoryWorkerDTO($ipc->toJson());
-            self::assertInstanceOf(WorkerTestAccountErasureProbeDTO::class, $restored);
+            self::assertInstanceOf(WorkerTestAccountOperationProbeDTO::class, $restored);
             self::assertSame($ipc->toArray(), $restored->toArray());
-            self::assertSame('test_account_erasure_probe', $restored->getType());
+            self::assertSame('test_account_operation_probe', $restored->getType());
         }
         $selected = ['agentId' => 'holder:42', 'action' => 'arm', 'frameKind' => 'answer',
             'operationId' => 7, 'stage' => 'parts', 'assignmentId' => 11];
-        self::assertSame($selected, AccountErasureProbeRequest::fromArray($selected)->toArray());
-        foreach ([null, self::frame(AccountErasureProbeFrameKind::Ask), self::frame(AccountErasureProbeFrameKind::Answer)] as $held) {
-            $state = new AccountErasureProbeState(false, $held === null ? 0 : 1, $held);
-            $ipc = new WorkerTestAccountErasureProbedDTO('probe-1', true, $state, null);
+        self::assertSame($selected, AccountOperationProbeRequest::fromArray($selected)->toArray());
+        foreach ([null, ...array_map(self::frame(...), AccountOperationProbeFrameKind::cases())] as $held) {
+            $state = new AccountOperationProbeState(false, $held === null ? 0 : 1, $held);
+            $ipc = new WorkerTestAccountOperationProbedDTO('probe-1', true, $state, null);
             self::assertSame([
-                'type' => 'test_account_erasure_probed', 'correlationId' => 'probe-1', 'ok' => true,
+                'type' => 'test_account_operation_probed', 'correlationId' => 'probe-1', 'ok' => true,
                 'state' => $state->toArray(), 'error' => null,
             ], $ipc->toArray());
             $restored = WorkerDTO::factoryWorkerDTO($ipc->toJson());
-            self::assertInstanceOf(WorkerTestAccountErasureProbedDTO::class, $restored);
+            self::assertInstanceOf(WorkerTestAccountOperationProbedDTO::class, $restored);
             self::assertSame($ipc->toArray(), $restored->toArray());
-            self::assertSame('test_account_erasure_probed', $restored->getType());
+            self::assertSame('test_account_operation_probed', $restored->getType());
         }
-        $failure = new WorkerTestAccountErasureProbedDTO('probe-1', false, null, 'Local source is gone.');
+        $failure = new WorkerTestAccountOperationProbedDTO('probe-1', false, null, 'Local source is gone.');
         self::assertSame($failure->toArray(), WorkerDTO::factoryWorkerDTO($failure->toJson())->toArray());
-        self::refuses(fn() => new WorkerTestAccountErasureProbeDTO('', AccountErasureProbeRequest::fromArray($selected)));
-        self::refuses(fn() => new WorkerTestAccountErasureProbedDTO('probe-1', true, null, null));
-        self::refuses(fn() => new WorkerTestAccountErasureProbedDTO('probe-1', false, null, ''));
+        self::refuses(fn() => new WorkerTestAccountOperationProbeDTO('', AccountOperationProbeRequest::fromArray($selected)));
+        self::refuses(fn() => new WorkerTestAccountOperationProbedDTO('probe-1', true, null, null));
+        self::refuses(fn() => new WorkerTestAccountOperationProbedDTO('probe-1', false, null, ''));
     }
 
     /** @param array<string, mixed> $wire Invalid command request */
@@ -232,7 +267,7 @@ final class AccountErasureProbeTest extends TestCase
     public function testRequestGuardsRejectMalformedTypesAndCombinations(array $wire): void
     {
         $this->expectException(InvalidFormatException::class);
-        AccountErasureProbeRequest::fromArray($wire);
+        AccountOperationProbeRequest::fromArray($wire);
     }
 
     /** @return iterable<string, array{array<string, mixed>}> Strict request boundary refusals */
@@ -262,7 +297,7 @@ final class AccountErasureProbeTest extends TestCase
             yield "selectors on $action" => [array_replace($arm, ['action' => $action])];
         }
         $replay = ['agentId' => 'holder:42', 'action' => 'replay',
-            'frame' => self::frame(AccountErasureProbeFrameKind::Ask)->toArray(), 'copies' => 1];
+            'frame' => self::frame(AccountOperationProbeFrameKind::Ask)->toArray(), 'copies' => 1];
         foreach (['frame', 'copies'] as $key) {
             $missing = $replay;
             unset($missing[$key]);
@@ -290,9 +325,9 @@ final class AccountErasureProbeTest extends TestCase
     /** @return iterable<string, array{array<string, mixed>}> Request and reply IPC guards */
     public static function invalidIpc(): iterable
     {
-        $request = ['type' => 'test_account_erasure_probe', 'correlationId' => 'probe-1', 'agentId' => 'holder',
+        $request = ['type' => 'test_account_operation_probe', 'correlationId' => 'probe-1', 'agentId' => 'holder',
             'request' => ['action' => 'inspect']];
-        $reply = ['type' => 'test_account_erasure_probed', 'correlationId' => 'probe-1', 'ok' => true,
+        $reply = ['type' => 'test_account_operation_probed', 'correlationId' => 'probe-1', 'ok' => true,
             'state' => ['armed' => false, 'matched' => 0, 'held' => null], 'error' => null];
         foreach (['request' => $request, 'reply' => $reply] as $direction => $frame) {
             foreach (array_keys($frame) as $key) {
@@ -328,7 +363,7 @@ final class AccountErasureProbeTest extends TestCase
         foreach ([['armed' => 1], ['matched' => -1], ['matched' => '0'], ['held' => false], ['unknown' => 1]] as $index => $patch) {
             yield "state invalid $index" => [array_replace($reply, ['state' => array_replace($reply['state'], $patch)])];
         }
-        $held = self::frame(AccountErasureProbeFrameKind::Ask)->toArray();
+        $held = self::frame(AccountOperationProbeFrameKind::Ask)->toArray();
         foreach ([['armed' => true, 'matched' => 1], ['armed' => false, 'matched' => 0]] as $index => $state) {
             yield "state inconsistent $index" => [array_replace($reply, ['state' => $state + ['held' => $held]])];
         }
@@ -337,14 +372,14 @@ final class AccountErasureProbeTest extends TestCase
     /** Replays preserve receipts and metadata, require a live matching source, and do not alter the capture. */
     public function testReplayUsesCompleteCopiesAndRefusesForeignOrLossyFrames(): void
     {
-        $probe = new AccountErasureProbe();
-        $source = $this->source('holder:42');
-        foreach (AccountErasureProbeFrameKind::cases() as $kind) {
+        $probe = new AccountOperationProbe();
+        foreach (AccountOperationProbeFrameKind::cases() as $kind) {
             $frame = self::frame($kind);
+            $source = $this->source($frame->agentId);
             foreach ([1, 2] as $copies) {
-                $request = new AccountErasureProbeRequest('holder:42', AccountErasureProbeAction::Replay, frame: $frame, copies: $copies);
-                $restored = WorkerDTO::factoryWorkerDTO(new WorkerTestAccountErasureProbeDTO('replay-1', $request)->toJson());
-                self::assertInstanceOf(WorkerTestAccountErasureProbeDTO::class, $restored);
+                $request = new AccountOperationProbeRequest($frame->agentId, AccountOperationProbeAction::Replay, frame: $frame, copies: $copies);
+                $restored = WorkerDTO::factoryWorkerDTO(new WorkerTestAccountOperationProbeDTO('replay-1', $request)->toJson());
+                self::assertInstanceOf(WorkerTestAccountOperationProbeDTO::class, $restored);
                 $replayed = $probe->replay($restored->request, $source);
                 self::assertCount($copies, $replayed);
                 foreach ($replayed as $copy) {
@@ -357,18 +392,19 @@ final class AccountErasureProbeTest extends TestCase
             }
         }
         self::assertSame(['armed' => false, 'matched' => 0, 'held' => null], $probe->inspect()->toArray());
-        $held = self::frame(AccountErasureProbeFrameKind::Ask);
-        $probe->arm(new AccountErasureProbeRequest(
-            'holder:42', AccountErasureProbeAction::Arm, AccountErasureProbeFrameKind::Ask,
+        $held = self::frame(AccountOperationProbeFrameKind::Ask);
+        $source = $this->source('holder:42');
+        $probe->arm(new AccountOperationProbeRequest(
+            'holder:42', AccountOperationProbeAction::Arm, AccountOperationProbeFrameKind::Ask,
         ), $source);
         $probe->intercept($held, $source);
-        $probe->replay(new AccountErasureProbeRequest(
-            'holder:42', AccountErasureProbeAction::Replay, frame: self::frame(AccountErasureProbeFrameKind::Answer), copies: 1,
+        $probe->replay(new AccountOperationProbeRequest(
+            'holder:42', AccountOperationProbeAction::Replay, frame: self::frame(AccountOperationProbeFrameKind::Answer), copies: 1,
         ), $source);
         self::assertSame($held, $probe->inspect()->held);
         self::assertSame(1, $probe->inspect()->matched);
 
-        $valid = self::frame(AccountErasureProbeFrameKind::Ask)->toArray();
+        $valid = self::frame(AccountOperationProbeFrameKind::Ask)->toArray();
         $forgeries = [
             array_replace_recursive($valid, ['agentId' => 'foreign']),
             array_replace_recursive($valid, ['type' => 'other-worker-type']),
@@ -390,42 +426,101 @@ final class AccountErasureProbeTest extends TestCase
         unset($withoutMeta['signal']['meta']);
         $forgeries[] = $withoutMeta;
         foreach ($forgeries as $forged) {
-            self::refuses(fn() => AccountErasureProbeRequest::fromArray([
+            self::refuses(fn() => AccountOperationProbeRequest::fromArray([
                 'agentId' => 'holder:42', 'action' => 'replay', 'frame' => $forged, 'copies' => 1,
             ]));
         }
-        self::refuses(fn() => new AccountErasureProbeRequest(
-            'foreign', AccountErasureProbeAction::Replay, frame: self::frame(AccountErasureProbeFrameKind::Ask), copies: 1,
+        self::refuses(fn() => new AccountOperationProbeRequest(
+            'foreign', AccountOperationProbeAction::Replay, frame: self::frame(AccountOperationProbeFrameKind::Ask), copies: 1,
         ));
-        $singleton = self::frame(AccountErasureProbeFrameKind::Answer, 'holder');
-        self::assertSame($singleton->toArray(), AccountErasureProbeRequest::restoreFrame($singleton->toArray())->toArray());
+        $singleton = self::frame(AccountOperationProbeFrameKind::Answer, 'holder');
+        self::assertSame($singleton->toArray(), AccountOperationProbeRequest::restoreFrame($singleton->toArray())->toArray());
         $reordered = array_reverse($valid, true);
-        self::assertSame($valid, AccountErasureProbeRequest::restoreFrame($reordered)->toArray());
+        self::assertSame($valid, AccountOperationProbeRequest::restoreFrame($reordered)->toArray());
+    }
+
+    /** The typed copy survives JSON hydration with the passkey's binary handle intact. */
+    public function testRestoreHandoverPreservesItsEnvelopeAndPasskeyHandle(): void
+    {
+        $frame = self::frame(AccountOperationProbeFrameKind::Handover);
+        $restored = AccountOperationProbeRequest::restoreFrame(json_decode($frame->toJson(), true, flags: JSON_THROW_ON_ERROR));
+        self::assertSame($frame->toArray(), $restored->toArray());
+        $payload = $restored->signal->data->data;
+        self::assertInstanceOf(AccountMergeHandoverSignalData::class, $payload);
+        self::assertSame("\xff\x00\x80", $payload->handover->copy->passkeyCredentials[0]->userHandle);
+    }
+
+    /** The source inside the signal must agree with the addressed worker source. */
+    public function testValidateFrameRejectsHandoverFromAnotherSource(): void
+    {
+        $frame = self::frame(AccountOperationProbeFrameKind::Handover);
+        $this->expectException(InvalidFormatException::class);
+        $this->expectExceptionMessage('Account operation probe requires an account-operation frame from its addressed agent');
+        AccountOperationProbeRequest::validateFrame(new WorkerAgentMessageDTO('holder:42', $frame->signal));
     }
 
     /**
-     * @param AccountErasureProbeFrameKind $kind Payload family
-     * @param string $agentId Fixture source address
+     * @param string $agentId Matching worker and signal source addresses
+     * @param string $signalName Name carried by the handover envelope
+     */
+    #[TestWith([self::HANDOVER_SOURCE, 'fixture-account-operation'])]
+    #[TestWith(['holder:42', HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER])]
+    #[TestWith([HilosAgentType::HILOS_USER . AgentConstants::ID_SEPARATOR . '43', HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER])]
+    public function testHandoverWithWrongSignalNameOrSourcePassesCaptureAndCannotBeRestored(string $agentId, string $signalName): void
+    {
+        $frame = self::frame(AccountOperationProbeFrameKind::Handover, $agentId, signalName: $signalName);
+        $source = $this->source($agentId);
+        $probe = new AccountOperationProbe();
+        $probe->arm(new AccountOperationProbeRequest($agentId, AccountOperationProbeAction::Arm, AccountOperationProbeFrameKind::Handover), $source);
+
+        self::assertTrue($probe->intercept($frame, $source) === $frame, 'The nonmatching handover passes through unchanged');
+        self::assertTrue($probe->inspect()->armed);
+        self::assertSame(0, $probe->inspect()->matched);
+        self::assertTrue($probe->inspect()->held === null);
+        self::refuses(fn() => AccountOperationProbeRequest::validateFrame($frame));
+        self::refuses(fn() => AccountOperationProbeRequest::restoreFrame($frame->toArray()));
+    }
+
+    /**
+     * @param AccountOperationProbeFrameKind $kind Payload family
+     * @param ?string $agentId Override of the fixture source address
      * @param int $operationId Operation selector value
      * @param string $stage Stage selector value
      * @param int $assignmentId Assignment selector value
+     * @param ?string $signalName Override of the fixture signal name
      * @return WorkerAgentMessageDTO Full envelope with receipt and signal metadata
      */
     private static function frame(
-        AccountErasureProbeFrameKind $kind,
-        string $agentId = 'holder:42',
+        AccountOperationProbeFrameKind $kind,
+        ?string $agentId = null,
         int $operationId = 7,
         string $stage = 'parts',
         int $assignmentId = 11,
+        ?string $signalName = null,
     ): WorkerAgentMessageDTO {
+        $agentId ??= $kind === AccountOperationProbeFrameKind::Handover ? self::HANDOVER_SOURCE : 'holder:42';
         $identity = AgentId::fromId($agentId);
-        $payload = $kind === AccountErasureProbeFrameKind::Ask
-            ? new AccountOperationAskSignalData($operationId, $stage, $assignmentId, '42')
-            : new AccountOperationAnswerSignalData($operationId, $stage, $assignmentId, AccountOperationAnswerKind::Waits);
+        $payload = match ($kind) {
+            AccountOperationProbeFrameKind::Ask => new AccountOperationAskSignalData($operationId, $stage, $assignmentId, '42'),
+            AccountOperationProbeFrameKind::Answer => new AccountOperationAnswerSignalData(
+                $operationId, $stage, $assignmentId, AccountOperationAnswerKind::Waits,
+            ),
+            AccountOperationProbeFrameKind::Handover => new AccountMergeHandoverSignalData(
+                $operationId, AccountMergeStage::Go->value, $assignmentId, '7', new AccountMergeHandover(
+                    new AccountMergeHandoverCopy($operationId, 10, self::HANDOVER_LOSER_ID, 7, 31, null, null,
+                        [new AccountMergeIdentityRow(31, 7, IdentityType::PASSWORD, 'person@example.test', 'fixture-hash',
+                            null, true, null, null, -1, 0)],
+                        [new AccountMergePasskeyRow(41, 31, 7, 'credential', 'public-key', -7, 1, null, null, "\xff\x00\x80", null, null, 0)],
+                        [], []),
+                    new AccountMergeAdmissionManifest([new AccountMergeRowRevision(31, 1)], [new AccountMergeRowRevision(41, 2)], [], []),
+                ),
+            ),
+        };
         return new WorkerAgentMessageDTO($agentId, new SignalDTO(
             new SignalSource(SignalSource::AGENT, $identity->type, $identity->index),
             new SignalType(SignalTypeConstants::AGENT_SIGNAL),
-            new SignalName('fixture-account-operation'),
+            new SignalName($signalName ?? ($kind === AccountOperationProbeFrameKind::Handover
+                ? HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER : 'fixture-account-operation')),
             new AgentSignalData($payload, 91),
             ['trace' => 'erasure-fixture', 'sequence' => 9],
         ));
@@ -438,7 +533,7 @@ final class AccountErasureProbeTest extends TestCase
     {
         try {
             $operation();
-            self::fail('Expected an erasure probe refusal');
+            self::fail('Expected an account operation probe refusal');
         } catch (InvalidFormatException $error) {
             self::assertNotSame('', $error->getMessage());
         }

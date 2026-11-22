@@ -98,11 +98,11 @@ use Random\RandomException;
 use Throwable;
 use LogicException;
 use Hilos\Core\Daemon\CronFireTestDoor;
-use Hilos\Core\Daemon\AccountErasureProbeTestDoor;
+use Hilos\Core\Daemon\AccountOperationProbeTestDoor;
 use Hilos\Core\Daemon\DaemonNodeReportTestDoor;
 use Hilos\Core\Daemon\TestOrmForgetDoor;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbeDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbeDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
@@ -390,8 +390,8 @@ abstract class WorkerServer extends AbstractServer implements
     /** Master owning the test-only cron firing waits on this server. */
     private ?CronFireTestDoor $cronFireTestDoor = null;
 
-    /** Local master entrance for the erasure probe. */
-    private ?AccountErasureProbeTestDoor $accountErasureProbeTestDoor = null;
+    /** Local master entrance for the account operation probe. */
+    private ?AccountOperationProbeTestDoor $accountOperationProbeTestDoor = null;
 
     /** Master owning the local node-report waits on this server. */
     private ?DaemonNodeReportTestDoor $daemonNodeReportTestDoor = null;
@@ -532,16 +532,16 @@ abstract class WorkerServer extends AbstractServer implements
         return $this->cronFireTestDoor;
     }
 
-    /** @param AccountErasureProbeTestDoor $door Master owning local probe waits */
-    public function setAccountErasureProbeTestDoor(AccountErasureProbeTestDoor $door): void
+    /** @param AccountOperationProbeTestDoor $door Master owning local probe waits */
+    public function setAccountOperationProbeTestDoor(AccountOperationProbeTestDoor $door): void
     {
-        $this->accountErasureProbeTestDoor = $door;
+        $this->accountOperationProbeTestDoor = $door;
     }
 
-    /** @return ?AccountErasureProbeTestDoor Local master entrance, or null before wiring */
-    public function accountErasureProbeTestDoor(): ?AccountErasureProbeTestDoor
+    /** @return ?AccountOperationProbeTestDoor Local master entrance, or null before wiring */
+    public function accountOperationProbeTestDoor(): ?AccountOperationProbeTestDoor
     {
-        return $this->accountErasureProbeTestDoor;
+        return $this->accountOperationProbeTestDoor;
     }
 
     /** @param DaemonNodeReportTestDoor $door Master owning the node-report waits */
@@ -570,10 +570,10 @@ abstract class WorkerServer extends AbstractServer implements
 
     /**
      * @param int $workerId Signed id from the master's existing local roster
-     * @param WorkerTestAccountErasureProbeDTO $request Probe operation without agent start or placement
+     * @param WorkerTestAccountOperationProbeDTO $request Probe operation without agent start or placement
      * @return ?WorkerClient Exact live registered channel, or null when unavailable
      */
-    public function sendTestAccountErasureProbe(int $workerId, WorkerTestAccountErasureProbeDTO $request): ?WorkerClient
+    public function sendTestAccountOperationProbe(int $workerId, WorkerTestAccountOperationProbeDTO $request): ?WorkerClient
     {
         return $this->sendToLiveWorker($workerId, $request);
     }

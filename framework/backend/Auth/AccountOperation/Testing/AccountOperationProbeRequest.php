@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\AccountOperation\Testing;
 
+use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\BaseDTO;
 use Hilos\Constants\AgentConstants;
+use Hilos\Constants\HilosAgentType;
+use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalPayloadConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AgentId;
@@ -19,7 +22,7 @@ use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /** Strict command boundary; absent selectors impose no restriction. */
-final class AccountErasureProbeRequest extends BaseDTO
+final class AccountOperationProbeRequest extends BaseDTO
 {
     public const string ACTION = 'action';
     public const string FRAME_KIND = 'frameKind';
@@ -31,8 +34,8 @@ final class AccountErasureProbeRequest extends BaseDTO
 
     /**
      * @param string $agentId Existing local source address
-     * @param AccountErasureProbeAction $action Test operation
-     * @param ?AccountErasureProbeFrameKind $frameKind Required kind for arm
+     * @param AccountOperationProbeAction $action Test operation
+     * @param ?AccountOperationProbeFrameKind $frameKind Required kind for arm
      * @param ?int $operationId Optional arm operation selector
      * @param ?string $stage Optional arm stage selector
      * @param ?int $assignmentId Optional arm assignment selector
@@ -42,8 +45,8 @@ final class AccountErasureProbeRequest extends BaseDTO
      */
     public function __construct(
         public readonly string $agentId,
-        public readonly AccountErasureProbeAction $action,
-        public readonly ?AccountErasureProbeFrameKind $frameKind = null,
+        public readonly AccountOperationProbeAction $action,
+        public readonly ?AccountOperationProbeFrameKind $frameKind = null,
         public readonly ?int $operationId = null,
         public readonly ?string $stage = null,
         public readonly ?int $assignmentId = null,
@@ -52,25 +55,25 @@ final class AccountErasureProbeRequest extends BaseDTO
     ) {
         if ($agentId === '' || ($operationId !== null && $operationId <= 0)
             || ($assignmentId !== null && $assignmentId <= 0) || $stage === '') {
-            throw new InvalidFormatException('Erasure probe requires a source and valid selectors');
+            throw new InvalidFormatException('Account operation probe requires a source and valid selectors');
         }
-        if ($action === AccountErasureProbeAction::Arm) {
+        if ($action === AccountOperationProbeAction::Arm) {
             if ($frameKind === null) {
-                throw new InvalidFormatException('Arming an erasure probe requires frameKind');
+                throw new InvalidFormatException('Arming an account operation probe requires frameKind');
             }
         } elseif ($frameKind !== null || $operationId !== null || $stage !== null || $assignmentId !== null) {
-            throw new InvalidFormatException('Erasure probe selectors belong only to arm');
+            throw new InvalidFormatException('Account operation probe selectors belong only to arm');
         }
-        if ($action === AccountErasureProbeAction::Replay) {
+        if ($action === AccountOperationProbeAction::Replay) {
             if ($frame === null || !in_array($copies, [1, 2], true)) {
-                throw new InvalidFormatException('Erasure probe replay requires a frame and one or two copies');
+                throw new InvalidFormatException('Account operation probe replay requires a frame and one or two copies');
             }
             self::validateFrame($frame);
             if (!self::isFrom($frame, $agentId)) {
-                throw new InvalidFormatException('Erasure probe replay names another source');
+                throw new InvalidFormatException('Account operation probe replay names another source');
             }
         } elseif ($frame !== null || $copies !== null) {
-            throw new InvalidFormatException('Erasure probe frame and copies belong only to replay');
+            throw new InvalidFormatException('Account operation probe frame and copies belong only to replay');
         }
     }
 
@@ -90,34 +93,40 @@ final class AccountErasureProbeRequest extends BaseDTO
             || !in_array(self::requireString($wrapper, SignalPayloadConstants::FIELD_DATA_TYPE), [
                 AccountOperationAskSignalData::class,
                 AccountOperationAnswerSignalData::class,
+                AccountMergeHandoverSignalData::class,
             ], true)) {
-            throw new InvalidFormatException('Erasure probe accepts only typed account-operation agent envelopes');
+            throw new InvalidFormatException('Account operation probe accepts only typed account-operation agent envelopes');
         }
         try {
             $frame = WorkerAgentMessageDTO::fromArray($data);
         } catch (HilosException $error) {
-            throw new InvalidFormatException('Erasure probe frame could not be restored', 0, $error);
+            throw new InvalidFormatException('Account operation probe frame could not be restored', 0, $error);
         }
         self::validateFrame($frame);
         if (!self::sameEnvelope($data, $frame->toArray())) {
-            throw new InvalidFormatException('Erasure probe frame must preserve the complete captured envelope');
+            throw new InvalidFormatException('Account operation probe frame must preserve the complete captured envelope');
         }
         return $frame;
     }
 
     /**
      * @param WorkerAgentMessageDTO $frame Candidate outgoing envelope
-     * @return ?AccountErasureProbeFrameKind Recognized kind, or null for other traffic
+     * @return ?AccountOperationProbeFrameKind Recognized kind, or null for other traffic
      */
-    public static function kindOf(WorkerAgentMessageDTO $frame): ?AccountErasureProbeFrameKind
+    public static function kindOf(WorkerAgentMessageDTO $frame): ?AccountOperationProbeFrameKind
     {
         if ($frame->signal->signalType->getType() !== SignalTypeConstants::AGENT_SIGNAL
             || !$frame->signal->data instanceof AgentSignalData) {
             return null;
         }
+        $payload = $frame->signal->data->data;
         return match (true) {
-            $frame->signal->data->data instanceof AccountOperationAskSignalData => AccountErasureProbeFrameKind::Ask,
-            $frame->signal->data->data instanceof AccountOperationAnswerSignalData => AccountErasureProbeFrameKind::Answer,
+            $payload instanceof AccountOperationAskSignalData => AccountOperationProbeFrameKind::Ask,
+            $payload instanceof AccountOperationAnswerSignalData => AccountOperationProbeFrameKind::Answer,
+            $payload instanceof AccountMergeHandoverSignalData
+                && $frame->signal->signalName->getName() === HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER
+                && self::isFrom($frame, HilosAgentType::HILOS_USER . AgentConstants::ID_SEPARATOR . $payload->handover->copy->loserUserId)
+                => AccountOperationProbeFrameKind::Handover,
             default => null,
         };
     }
@@ -143,16 +152,14 @@ final class AccountErasureProbeRequest extends BaseDTO
     public static function validateFrame(WorkerAgentMessageDTO $frame): void
     {
         if ($frame->agentId === null || $frame->agentId === ''
-            || $frame->signal->signalType->getType() !== SignalTypeConstants::AGENT_SIGNAL
             || !$frame->signal->data instanceof AgentSignalData
-            || !($frame->signal->data->data instanceof AccountOperationAskSignalData
-                || $frame->signal->data->data instanceof AccountOperationAnswerSignalData)
+            || self::kindOf($frame) === null
             || !self::isFrom($frame, $frame->agentId)) {
-            throw new InvalidFormatException('Erasure probe requires an account-operation frame from its addressed agent');
+            throw new InvalidFormatException('Account operation probe requires an account-operation frame from its addressed agent');
         }
         $payload = $frame->signal->data->data;
         if ($payload->operationId <= 0 || $payload->assignmentId <= 0 || $payload->stage === '') {
-            throw new InvalidFormatException('Erasure probe frame requires positive identifiers and a stage');
+            throw new InvalidFormatException('Account operation probe frame requires positive identifiers and a stage');
         }
     }
 
@@ -186,13 +193,13 @@ final class AccountErasureProbeRequest extends BaseDTO
             AgentConstants::FIELD_AGENT_ID, self::ACTION, self::FRAME_KIND, self::OPERATION_ID,
             self::STAGE, self::ASSIGNMENT_ID, self::FRAME, self::COPIES,
         ]) !== []) {
-            throw new InvalidFormatException('Unknown erasure probe request field');
+            throw new InvalidFormatException('Unknown account operation probe request field');
         }
-        $action = AccountErasureProbeAction::tryFrom(self::requireString($data, self::ACTION));
+        $action = AccountOperationProbeAction::tryFrom(self::requireString($data, self::ACTION));
         $kind = array_key_exists(self::FRAME_KIND, $data)
-            ? AccountErasureProbeFrameKind::tryFrom(self::requireString($data, self::FRAME_KIND)) : null;
+            ? AccountOperationProbeFrameKind::tryFrom(self::requireString($data, self::FRAME_KIND)) : null;
         if ($action === null || (array_key_exists(self::FRAME_KIND, $data) && $kind === null)) {
-            throw new InvalidFormatException('Unknown erasure probe action or frame kind');
+            throw new InvalidFormatException('Unknown account operation probe action or frame kind');
         }
         return new static(
             agentId: self::requireString($data, AgentConstants::FIELD_AGENT_ID),

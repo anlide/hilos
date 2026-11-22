@@ -211,6 +211,12 @@ def down(stand, volumes=False):
     return 0
 
 
+def start_database(stand):
+    """Mount only the retained database for SQL cleanup while application writers are down."""
+    assert stand.database is not None and len(stand.database_servers) == 1, "expected one database for account cleanup"
+    return compose(stand, "up", "-d", "--no-deps", "--wait", stand.database.service, capture=False)
+
+
 def up_e2e(stand):
     """Raise the browser profile services after the cluster members and entry are running."""
     return compose(stand, "--profile", "e2e", "up", "-d", "--build", *stand.e2e.services, capture=False)
@@ -806,6 +812,11 @@ def recreate(stand, node_id):
 def container_id(stand, node_id):
     node = stand.member(node_id)
     return _run(["docker", "inspect", "-f", "{{.Id}}", node.container])
+
+
+def container_state(stand, node_id):
+    return _run(["docker", "inspect", "-f", "{{.Id}} {{.State.Running}} {{.State.StartedAt}}",
+                 stand.member(node_id).container])
 
 
 def container_log(stand, node_id):

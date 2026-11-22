@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Hilos\Tests\Unit\Core\CLI\Commands;
 
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeState;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeRequest;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeState;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\ExitCode;
 use Hilos\Constants\SignalTypeConstants;
-use Hilos\Core\CLI\Commands\AccountErasureProbeCommand;
+use Hilos\Core\CLI\Commands\AccountOperationProbeCommand;
 use Hilos\Core\CLI\CliManager;
 use Hilos\Core\CLI\Commands\CommandChannelResult;
 use Hilos\Core\Router\AgentSignalData;
@@ -27,7 +27,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /** CLI maps argv into the strict request before it opens the command channel. */
-final class AccountErasureProbeCommandTest extends TestCase
+final class AccountOperationProbeCommandTest extends TestCase
 {
     private ?EnvAccessor $previousEnv;
 
@@ -54,15 +54,16 @@ final class AccountErasureProbeCommandTest extends TestCase
             ['arm', ['frame-kind' => 'answer', 'operation-id' => '7', 'stage' => 'parts', 'assignment-id' => '11'],
                 ['frameKind' => 'answer', 'operationId' => 7, 'stage' => 'parts', 'assignmentId' => 11]],
             ['arm', ['frame-kind' => 'ask'], ['frameKind' => 'ask']],
+            ['arm', ['frame-kind' => 'handover'], ['frameKind' => 'handover']],
             ['replay', ['frame-json' => $frame->toJson(), 'copies' => '2'], ['frame' => $frame->toArray(), 'copies' => 2]],
             ['inspect', [], []], ['release', [], []], ['discard', [], []], ['clear', [], []], ['expire-idle', [], []],
         ];
         $printed = '';
         foreach ($cases as [$action, $options, $fields]) {
-            $command = new AccountErasureProbeCommandSpy();
+            $command = new AccountOperationProbeCommandSpy();
             self::assertSame(ExitCode::SUCCESS, $command->execute($options, ['holder:42', $action]));
-            self::assertSame(CliCommands::ACCOUNT_TEST_ERASURE_PROBE, $command->sentCommand);
-            self::assertSame([AgentConstants::FIELD_AGENT_ID => 'holder:42', AccountErasureProbeRequest::ACTION => $action] + $fields,
+            self::assertSame(CliCommands::ACCOUNT_TEST_OPERATION_PROBE, $command->sentCommand);
+            self::assertSame([AgentConstants::FIELD_AGENT_ID => 'holder:42', AccountOperationProbeRequest::ACTION => $action] + $fields,
                 $command->sentPayload);
             $printed .= "{\"armed\":false,\"matched\":0,\"held\":null}\n";
         }
@@ -93,7 +94,7 @@ final class AccountErasureProbeCommandTest extends TestCase
     /** The CLI spine refuses an undeclared option before it can reach this command or its channel. */
     public function testUnknownOptionIsRefusedAtTheCliEntrance(): void
     {
-        $manager = new class (['cli.php', CliCommands::ACCOUNT_TEST_ERASURE_PROBE, 'holder:42', 'inspect', '--other=1']) extends CliManager {
+        $manager = new class (['cli.php', CliCommands::ACCOUNT_TEST_OPERATION_PROBE, 'holder:42', 'inspect', '--other=1']) extends CliManager {
             public ?string $error = null;
 
             /** @param string $text Refusal sent to stderr by the real option gate */
@@ -104,7 +105,7 @@ final class AccountErasureProbeCommandTest extends TestCase
         };
         self::assertSame(ExitCode::INVALID_ARGUMENT, $manager->answerWithoutRunning());
         self::assertStringContainsString('Unknown option --other', $manager->error);
-        self::assertStringContainsString(CliCommands::ACCOUNT_TEST_ERASURE_PROBE, $manager->error);
+        self::assertStringContainsString(CliCommands::ACCOUNT_TEST_OPERATION_PROBE, $manager->error);
     }
 
     /** @param array<string, mixed> $options Parsed options
@@ -113,14 +114,14 @@ final class AccountErasureProbeCommandTest extends TestCase
     #[DataProvider('invalidArgv')]
     public function testInvalidArgvNeverOpensTheChannel(array $options, array $args): void
     {
-        $command = new AccountErasureProbeCommandSpy();
+        $command = new AccountOperationProbeCommandSpy();
         $this->expectOutputRegex('/Usage:/');
         self::assertSame(ExitCode::INVALID_ARGUMENT, $command->execute($options, $args));
         self::assertNull($command->sentCommand);
     }
 }
 
-final class AccountErasureProbeCommandSpy extends AccountErasureProbeCommand
+final class AccountOperationProbeCommandSpy extends AccountOperationProbeCommand
 {
     public ?string $sentCommand = null;
     /** @var array<string, mixed> Payload handed to the channel */
@@ -135,7 +136,7 @@ final class AccountErasureProbeCommandSpy extends AccountErasureProbeCommand
     {
         $this->sentCommand = $command;
         $this->sentPayload = $payload;
-        return CommandChannelResult::replied(CommandReplyDTO::ok('probe', new AccountErasureProbeState(false, 0, null)->toArray()),
+        return CommandChannelResult::replied(CommandReplyDTO::ok('probe', new AccountOperationProbeState(false, 0, null)->toArray()),
             '127.0.0.1:1');
     }
 }

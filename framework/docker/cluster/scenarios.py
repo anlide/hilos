@@ -162,6 +162,8 @@ from datetime import datetime, timezone
 
 import control
 import erasure
+import merge
+from account_operations import StandUnusable
 
 # The stand the matrix drives, bound once by bind() before it runs: one process, one stand. The
 # names below are read off it there - its nodes by role, its stranger, the room its slaves
@@ -2635,6 +2637,11 @@ def scenario_59_erasure_waits_and_restrict():
 def scenario_60_partial_erasure_survives_full_restore():
     """A partial FULL archive survives real idle, holder restart and hot import/resume."""
     return erasure.scenario_60_partial_erasure_survives_full_restore(sys.modules[__name__])
+
+
+def scenario_61_merge_survives_sender_death_and_full_restore():
+    """Recover a committed give across worker death, FULL import and a late handover."""
+    return merge.scenario_61_merge_survives_sender_death_and_full_restore(sys.modules[__name__])
 
 
 def scenario_10_cross_node_browser():
@@ -7216,7 +7223,7 @@ def restore_stand(failed, label, action):
     try:
         action()
     except BaseException as error:
-        if not failed:
+        if not failed or isinstance(error, StandUnusable):
             raise
         print(f"    {label} recovery failed: {error}", flush=True)
 
@@ -7936,6 +7943,8 @@ SCENARIOS = [
              Need(masters=3, slaves=2)),
     Scenario("59 erasure waits and restrict", scenario_59_erasure_waits_and_restrict,
              Need(masters=3, slaves=2)),
+    Scenario("61 merge survives sender death and full restore", scenario_61_merge_survives_sender_death_and_full_restore,
+             Need(masters=3, slaves=2)),
     Scenario("60 partial erasure survives full restore", scenario_60_partial_erasure_survives_full_restore,
              Need(masters=3, slaves=2)),
     # Last, both of them, because the freeze stops ordinary agents on every node: a lift that fails
@@ -8079,6 +8088,10 @@ def run_scenario(name, fn):
             if first_failure is not None:
                 print(f"hilos-unstable: 1 (cluster/scenario-{name.split()[0]})")
             return detail
+        except StandUnusable as error:
+            if first_failure is not None:
+                error.original = first_failure
+            raise
         except ScenarioTimeout as e:
             if first_failure is None:
                 first_failure = e
@@ -8168,15 +8181,23 @@ def run_matrix(stand, numbers):
 
     failures = []
     skipped = []
+    ran = 0
     for name, fn, _need in selected:
         print(f"\n== scenario {name} ==")
         if name in FLAKY_SKIP:
             print(f"  SKIP (fixme): {FLAKY_SKIP[name]}")
             skipped.append(name)
             continue
+        ran += 1
         try:
             detail = run_scenario(name, fn)
             print(f"  PASS: {detail}")
+        except StandUnusable as error:
+            if error.original is not None:
+                print(f"  FAIL: {error.original}")
+            print(f"  FATAL: stand unusable: {error}")
+            failures.append(name)
+            break
         except AssertionError as e:
             print(f"  FAIL: {e}")
             failures.append(name)
@@ -8184,7 +8205,6 @@ def run_matrix(stand, numbers):
             print(f"  ERROR: {type(e).__name__}: {e}")
             failures.append(name)
 
-    ran = len(selected) - len(skipped)
     print("\n=== summary ===")
     print(f"  {ran - len(failures)}/{ran} scenarios passed"
           + (f"; {len(skipped)} skipped ({', '.join(skipped)})" if skipped else ""))

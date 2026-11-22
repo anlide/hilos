@@ -293,7 +293,7 @@ use WeakMap;
 use WeakReference;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbedDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbedDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
 
@@ -334,7 +334,7 @@ abstract class DaemonManager extends BaseManager implements
     TestOrmForgetDoor,
     DaemonNodeReportTestDoor,
     CronFireTestDoor,
-    AccountErasureProbeTestDoor,
+    AccountOperationProbeTestDoor,
     ConnectionLivenessTestDoor,
     PageAgentRestartDoor,
     AgentSignalSink,
@@ -788,7 +788,7 @@ abstract class DaemonManager extends BaseManager implements
     private readonly CronFireTestRequests $cronFireTestRequests;
 
     /** Connection-bound local test probe waits. */
-    private readonly AccountErasureProbeTestRequests $accountErasureProbeTestRequests;
+    private readonly AccountOperationProbeTestRequests $accountOperationProbeTestRequests;
 
     /** Browser waiters, separate from the restart records and console connections. */
     private readonly PageAgentRestarts $pageAgentRestarts;
@@ -926,7 +926,7 @@ abstract class DaemonManager extends BaseManager implements
     private bool $ormForgetDeadlineDue = false;
     private bool $nodeReportDeadlineDue = false;
     private bool $cronFireDeadlineDue = false;
-    private bool $accountErasureProbeDeadlineDue = false;
+    private bool $accountOperationProbeDeadlineDue = false;
     private bool $agentRestartDeadlineDue = false;
     private bool $pageAgentRestartDeadlineDue = false;
 
@@ -1049,7 +1049,7 @@ abstract class DaemonManager extends BaseManager implements
                 $this->findCommandServer()?->deliver($reply->correlationId, $reply);
             },
         );
-        $this->accountErasureProbeTestRequests = new AccountErasureProbeTestRequests(
+        $this->accountOperationProbeTestRequests = new AccountOperationProbeTestRequests(
             $this->agentManagerDaemon,
             fn (): ?WorkerServer => $this->findWorkerServer(),
             function (CommandReplyDTO $reply): void {
@@ -1634,7 +1634,7 @@ abstract class DaemonManager extends BaseManager implements
             || $this->hasRunnableSingletonStart() || $this->hasRunnableDeclarations()
             || $this->cronMinuteDue || $this->analyticsFlushDue || $this->clientReadSummaryDue || $this->masterHeartbeatDue
             || $this->agentRestartDeadlineDue || $this->pageAgentRestartDeadlineDue || $this->ormForgetDeadlineDue
-            || $this->nodeReportDeadlineDue || $this->cronFireDeadlineDue || $this->accountErasureProbeDeadlineDue
+            || $this->nodeReportDeadlineDue || $this->cronFireDeadlineDue || $this->accountOperationProbeDeadlineDue
             || $this->reHydrateRoundReady || $this->leaderPageRecoveryReady
             || $this->protectedModeWatchdog->hasReadyWork()
             || ($peer?->hasConsensusReadyWork() ?? false) || ($peer?->hasPlacementReadyWork() ?? false)
@@ -3590,7 +3590,7 @@ abstract class DaemonManager extends BaseManager implements
             $server->setTestOrmForgetDoor($this);
             $server->setDaemonNodeReportTestDoor($this);
             $server->setCronFireTestDoor($this);
-            $server->setAccountErasureProbeTestDoor($this);
+            $server->setAccountOperationProbeTestDoor($this);
             $server->setAgentRestartDoor($this);
             $server->setUploadMemoryTestDoor($this);
             // And the test-only door to the sockets' liveness: the sockets and their clocks are
@@ -3622,7 +3622,7 @@ abstract class DaemonManager extends BaseManager implements
             $server->setLiveConnectionRoster($this);
             $server->setTestOrmForgetDoor($this);
             $server->setCronFireTestDoor($this);
-            $server->setAccountErasureProbeTestDoor($this);
+            $server->setAccountOperationProbeTestDoor($this);
             $server->setDaemonNodeReportTestDoor($this);
             $server->setPageAgentRestartDoor($this);
         }
@@ -3967,7 +3967,7 @@ abstract class DaemonManager extends BaseManager implements
         $this->testOrmForgetRequests->abandon($correlationId);
         $this->daemonNodeReportTestRequests->abandon($correlationId);
         $this->cronFireTestRequests->abandon($correlationId);
-        $this->accountErasureProbeTestRequests->abandon($correlationId);
+        $this->accountOperationProbeTestRequests->abandon($correlationId);
         $this->agentRestarts->onCommandAbandoned($correlationId);
         $this->dropParkedCommandSignals($correlationId, $origin);
     }
@@ -4151,28 +4151,28 @@ abstract class DaemonManager extends BaseManager implements
      * @param CommandRequestDTO $request Held local probe request
      * @throws EventLoopException When the original probe deadline cannot be armed or canceled
      */
-    public function requestAccountErasureProbe(CommandRequestDTO $request): void
+    public function requestAccountOperationProbe(CommandRequestDTO $request): void
     {
-        $this->accountErasureProbeTestRequests->request($request);
+        $this->accountOperationProbeTestRequests->request($request);
     }
 
     /**
      * @param WorkerClient $worker Original worker connection
-     * @param WorkerTestAccountErasureProbedDTO $ack Parsed probe outcome
+     * @param WorkerTestAccountOperationProbedDTO $ack Parsed probe outcome
      * @throws EventLoopException When the next probe deadline cannot be armed or canceled
      */
-    public function acceptAccountErasureProbed(WorkerClient $worker, WorkerTestAccountErasureProbedDTO $ack): void
+    public function acceptAccountOperationProbed(WorkerClient $worker, WorkerTestAccountOperationProbedDTO $ack): void
     {
-        $this->accountErasureProbeTestRequests->accept($worker, $ack);
+        $this->accountOperationProbeTestRequests->accept($worker, $ack);
     }
 
     /**
      * @param WorkerClient $worker Original channel that closed
      * @throws EventLoopException When the next probe deadline cannot be armed or canceled
      */
-    public function accountErasureProbeWorkerGone(WorkerClient $worker): void
+    public function accountOperationProbeWorkerGone(WorkerClient $worker): void
     {
-        $this->accountErasureProbeTestRequests->workerGone($worker);
+        $this->accountOperationProbeTestRequests->workerGone($worker);
     }
 
     /**
@@ -5231,8 +5231,8 @@ abstract class DaemonManager extends BaseManager implements
         $this->cronFireTestRequests->attachEventLoop($this->eventLoop, function (): void {
             $this->cronFireDeadlineDue = true;
         });
-        $this->accountErasureProbeTestRequests->attachEventLoop($this->eventLoop, function (): void {
-            $this->accountErasureProbeDeadlineDue = true;
+        $this->accountOperationProbeTestRequests->attachEventLoop($this->eventLoop, function (): void {
+            $this->accountOperationProbeDeadlineDue = true;
         });
         $this->agentRestarts->attachEventLoop($this->eventLoop, function (): void {
             $this->agentRestartDeadlineDue = true;
@@ -5248,13 +5248,13 @@ abstract class DaemonManager extends BaseManager implements
         $this->testOrmForgetRequests->detachEventLoop();
         $this->daemonNodeReportTestRequests->detachEventLoop();
         $this->cronFireTestRequests->detachEventLoop();
-        $this->accountErasureProbeTestRequests->detachEventLoop();
+        $this->accountOperationProbeTestRequests->detachEventLoop();
         $this->agentRestarts->detachEventLoop();
         $this->pageAgentRestarts->detachEventLoop();
         $this->ormForgetDeadlineDue = false;
         $this->nodeReportDeadlineDue = false;
         $this->cronFireDeadlineDue = false;
-        $this->accountErasureProbeDeadlineDue = false;
+        $this->accountOperationProbeDeadlineDue = false;
         $this->agentRestartDeadlineDue = false;
         $this->pageAgentRestartDeadlineDue = false;
     }
@@ -5278,9 +5278,9 @@ abstract class DaemonManager extends BaseManager implements
             $this->cronFireDeadlineDue = false;
             $this->cronFireTestRequests->tick();
         }
-        if ($this->accountErasureProbeDeadlineDue) {
-            $this->accountErasureProbeDeadlineDue = false;
-            $this->accountErasureProbeTestRequests->tick();
+        if ($this->accountOperationProbeDeadlineDue) {
+            $this->accountOperationProbeDeadlineDue = false;
+            $this->accountOperationProbeTestRequests->tick();
         }
         if ($this->pageAgentRestartDeadlineDue) {
             $this->pageAgentRestartDeadlineDue = false;

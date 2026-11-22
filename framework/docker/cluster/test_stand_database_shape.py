@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import control
 import stand
 from stand import DatabaseVoter, StandRefused, stand_from_config
 
@@ -74,6 +75,21 @@ class StandDatabaseShapeTest(unittest.TestCase):
         self.assertEqual((), parsed.database_sql_backends)
         self.assertEqual((), parsed.database_voters)
         self.assertEqual(0, parsed.database_votes)
+
+    def test_account_cleanup_starts_only_the_single_retained_database(self):
+        for clustered in (False, True):
+            with self.subTest(clustered=clustered), patch.object(control, "compose", return_value=0) as compose:
+                parsed = self.read(self.config(data_members=1, clustered=clustered))
+                self.assertEqual(0, control.start_database(parsed))
+                compose.assert_called_once_with(parsed, "up", "-d", "--no-deps", "--wait", "db1", capture=False)
+
+    def test_account_cleanup_refuses_zero_or_multiple_database_servers(self):
+        for config in (self.config(), self.config(data_members=1, replicas=1)):
+            parsed = self.read(config)
+            with self.subTest(servers=len(parsed.database_servers)), patch.object(control, "compose") as compose:
+                with self.assertRaisesRegex(AssertionError, "expected one database for account cleanup"):
+                    control.start_database(parsed)
+                compose.assert_not_called()
 
     def test_database_without_one_static_address_keeps_ip_none(self):
         for networks in [None, {}, {"nodes": None}, {"nodes": {"aliases": ["db"]}},

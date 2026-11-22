@@ -255,34 +255,39 @@ Use this seam for a test-only command over a feature owned by one project. Comma
 framework-owned state stay in `framework/backend/Core/CLI/Commands/`, even when one
 project is their only current consumer.
 
-### Account erasure probe
+### Account operation probe
 
 | Command | Site | Description |
 |---|---|---|
-| `test:account:erasure-probe <agentId> <action>` | `daemon` | Control a bounded, worker-local account-operation frame probe for an existing local agent |
+| `test:account:operation-probe <agentId> <action>` | `daemon` | Control a bounded, worker-local account-operation frame probe for an existing local agent |
 
 ```text
-test:account:erasure-probe <agentId> arm --frame-kind=ask|answer [--operation-id=<positive id>] [--stage=<stage>] [--assignment-id=<positive id>]
-test:account:erasure-probe <agentId> inspect
-test:account:erasure-probe <agentId> release
-test:account:erasure-probe <agentId> discard
-test:account:erasure-probe <agentId> replay --frame-json=<captured full envelope> --copies=1|2
-test:account:erasure-probe <agentId> expire-idle
-test:account:erasure-probe <agentId> clear
+test:account:operation-probe <agentId> arm --frame-kind=ask|answer|handover [--operation-id=<positive id>] [--stage=<stage>] [--assignment-id=<positive id>]
+test:account:operation-probe <agentId> inspect
+test:account:operation-probe <agentId> release
+test:account:operation-probe <agentId> discard
+test:account:operation-probe <agentId> replay --frame-json=<captured full envelope> --copies=1|2
+test:account:operation-probe <agentId> expire-idle
+test:account:operation-probe <agentId> clear
 ```
 
-`arm` requires `--frame-kind=ask|answer`; its optional selectors are a positive
-`--operation-id`, `--stage`, and a positive `--assignment-id`. The selectors
-are accepted only by `arm`. `replay` requires both `--frame-json` and
-`--copies=1|2`; all other actions accept no options. The JSON envelope must be
-a complete typed account-operation ask or answer from the addressed source.
+`arm` requires `--frame-kind=ask|answer|handover`. Its optional selectors are a
+positive `--operation-id`, `--stage`, and a positive `--assignment-id`. The
+`handover` kind means `HILOS_USER_ACCOUNT_MERGE_HANDOVER` carrying the standard
+merge copy for the loser in `AccountMergeHandoverSignalData`. The envelope
+and its inner signal source must both name the canonical personal agent of
+the loser in that copy. The assignment is the survivor's receive assignment.
+The project `AccountMergePersonalHandoverSignalData` follows its own route.
+Only `arm` accepts selectors. `replay` requires both `--frame-json` and `--copies=1|2`.
+The JSON envelope must be a complete typed account-operation ask, answer, or
+handover from the addressed source. All other actions accept no options.
 Hydration preserves its fields and nested metadata, and replay sends the
 envelope through the ordinary worker sender while bypassing capture.
 
 The command is database-free and test-only. The CLI sends it through the local
 master to the worker that currently runs `<agentId>`; it does not start or
 place an agent, and it cannot arm a future source or a later rebind. `arm`
-holds at most one matching ask or answer from that source incarnation. Each
+holds at most one matching frame from that source incarnation. Each
 successful action prints one JSON state with `armed` (boolean), `matched`
 (captures since `clear`), and `held` (the complete envelope or `null`).
 `inspect` is non-consuming. `release` sends the held envelope once through the
@@ -675,7 +680,7 @@ commands print JSON), `test:notification:emit`, `test:user:create` and `test:ses
 `test:status:silence:remove` and `test:settings:write` (the same shape: the Status owner or the
 settings library answers and writes, and the CLI process has nothing to read or write —
 HIL-1856 and HIL-1886),
-`test:account:force-purge`, `test:account:erasure-probe` (the master routes it
+`test:account:force-purge`, `test:account:operation-probe` (the master routes it
 to the worker running an existing local agent; the CLI does not read or write
 database state), `test:verification:sweep`,
 `test:legal:hold` (the users library creates the held acceptance if missing without publication,

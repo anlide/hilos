@@ -14,7 +14,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Constants\TimeConstants;
 use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Core\Daemon\CronFireTestRequests;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeRequest;
 use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\EventLoopTimer;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
@@ -519,23 +519,23 @@ class CommandClient extends AbstractClient implements CommandClientInterface
                 return;
             }
 
-            if ($request->command === CliCommands::ACCOUNT_TEST_ERASURE_PROBE) {
+            if ($request->command === CliCommands::ACCOUNT_TEST_OPERATION_PROBE) {
                 try {
-                    AccountErasureProbeRequest::fromArray($request->payload);
+                    AccountOperationProbeRequest::fromArray($request->payload);
                 } catch (InvalidFormatException $failure) {
                     $this->queueWrite(CommandReplyDTO::error($request->correlationId, $failure->getMessage())->toJson() . "\n");
                     continue;
                 }
-                $door = $this->server->accountErasureProbeTestDoor();
+                $door = $this->server->accountOperationProbeTestDoor();
                 if ($door === null) {
                     $this->queueWrite(CommandReplyDTO::error(
                         $request->correlationId,
-                        'This daemon has no account erasure probe door',
+                        'This daemon has no account operation probe door',
                     )->toJson() . "\n");
                     continue;
                 }
                 $this->hold($request);
-                $door->requestAccountErasureProbe($request);
+                $door->requestAccountOperationProbe($request);
                 return;
             }
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Auth\AccountOperation\Testing;
 
 /** The closed vocabulary of the worker-local erasure test control. */
-enum AccountErasureProbeAction: string
+enum AccountOperationProbeAction: string
 {
     case Arm = 'arm';
     case Inspect = 'inspect';

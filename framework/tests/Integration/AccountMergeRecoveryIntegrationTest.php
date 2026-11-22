@@ -308,55 +308,51 @@ final class AccountMergeRecoveryIntegrationTest extends HilosSessionIntegrationT
     #[DataProvider('replayEntrances')]
     public function testFreshSourceReplaysCommittedGiveThroughStartupOrNewHolder(bool $startup): void
     {
-        self::seedIdentity(9, IdentityType::MAGIC_LINK, 'loser@example.test');
-        [$operation, $give] = $this->readyGo();
-        $this->deliver($give);
-        [$handover, $answer] = $this->frames();
-        self::assertInstanceOf(AccountMergeHandoverSignalData::class, $handover->data->data);
-        $saved = $this->operationFacts();
-        $identities = Database::sql('SELECT * FROM `hilos_identity` ORDER BY `id`')->rows();
-        self::assertSame('7', $identities[0]['user_id']);
-        self::assertNotEmpty($handover->data->data->handover->admission->toArray());
-        $oldSource = $this->personAgent(9);
-        $this->releasePersonAgents();
-        $this->freshContext();
-        if ($startup) {
-            $this->startOwner($this->personAgent(9));
-        } else {
+        $this->assertCommittedGiveReplay(function (AccountOperationAskSignalData $give) use ($startup): void {
+            if ($startup) {
+                $this->startOwner($this->personAgent(9));
+
+                return;
+            }
             $this->startHolder();
             $this->tick();
             $retries = $this->frames();
             $source = array_values(array_filter($retries, fn (SignalDTO $frame): bool =>
                 $frame->data->data instanceof AccountOperationAskSignalData
-                && $frame->data->data->assignmentId === $give->data->data->assignmentId));
+                && $frame->data->data->assignmentId === $give->assignmentId));
             self::assertCount(1, $source);
             $this->deliver($source[0]);
-        }
-        self::assertNotSame($oldSource, $this->personAgent(9));
-        [$replay, $replayedAnswer] = $this->frames();
-        self::assertSame($handover->data->data->toArray(), $replay->data->data->toArray());
-        self::assertSame($answer->data->data->toArray(), $replayedAnswer->data->data->toArray());
-        // A new holder may have committed its own sessions duty while selecting the wave.
-        self::assertSame($saved['copies'], $this->operationFacts()['copies']);
-        self::assertSame($saved['merges'], $this->operationFacts()['merges']);
-        self::assertSame($identities, Database::sql('SELECT * FROM `hilos_identity` ORDER BY `id`')->rows());
-        $originalResult = array_values(array_filter($saved['results'], static fn (array $row): bool =>
-            (int)$row['assignment_id'] === $give->data->data->assignmentId));
-        self::assertSame($originalResult, Database::sql('SELECT * FROM `hilos_account_operation_result` WHERE `assignment_id` = ?',
-            [$give->data->data->assignmentId])->rows());
-        $this->deliver($replay);
-        $receiptAnswer = $this->frames();
-        self::assertNotContains($give->data->data->assignmentId,
-            $this->owedIds(new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, '9')));
-        $this->deliver($replayedAnswer);
-        self::assertNotContains('give', $this->keys($this->frames()));
-        foreach ($receiptAnswer as $frame) {
-            $this->deliver($frame);
-        }
-        $pending = $this->frames();
-        $this->startHolder();
+        });
+    }
+
+    /** An already-running holder's scheduled pass reissues the committed give to a fresh source. */
+    public function testFreshSourceReplaysCommittedGiveThroughRunningHolderPass(): void
+    {
+        $holder = $this->startHolder();
+        $context = Hilos::$db;
+        self::assertInstanceOf(MergeRecoveryContext::class, $context);
+        $context->operationReads = 0;
         $this->tick();
-        $this->finishExchange($operation, [...$pending, ...$this->frames()]);
+        self::assertGreaterThan(0, $context->operationReads);
+        self::assertSame([], $this->frames());
+
+        $this->assertCommittedGiveReplay(function (AccountOperationAskSignalData $give) use ($holder): void {
+            self::assertSame($holder, $this->holder);
+            $this->armPass();
+            $this->tick();
+            $retries = array_values(array_filter($this->frames(), static fn (SignalDTO $frame): bool =>
+                $frame->data->data instanceof AccountOperationAskSignalData
+                && Hilos::$db->accountOperationAssignments[$frame->data->data->assignmentId]->assignmentKey === AccountMergeDuty::Give->value));
+            self::assertCount(1, $retries, 'The running holder must reissue exactly one give on its scheduled pass.');
+            self::assertSame($give->toArray(), $retries[0]->data->data->toArray());
+            self::assertSame(
+                SignalSource::describe(new SignalSource(SignalSource::AGENT, $holder->getType(), $holder->getIndex())),
+                SignalSource::describe($retries[0]->signalSource),
+            );
+            Hilos::$db->forgetHoldingForTest(HilosDbContext::accountOperationResults, HilosDbContext::accountMergeCopies);
+            $this->deliver($retries[0]);
+        }, keepHolderAndSurvivor: true);
+        self::assertSame($holder, $this->holder);
     }
 
     /** Group 4: lost receipt answers replay before protection or snapshot reads and leave cleanup available to a fresh holder. */
@@ -811,16 +807,27 @@ final class AccountMergeRecoveryIntegrationTest extends HilosSessionIntegrationT
         }
         $this->releasePersonAgents();
         $this->freshContext();
-        $this->personAgent(7);
+        $survivor = $this->personAgent(7);
         $writes = new MergeRecoveryWrites();
         SourceChangeBus::subscribe($writes);
         Hilos::$db->denyReceiptReads = true;
         try {
             $replayed = $this->asPerson(7, static fn (AbstractUserAgent $agent) => $agent->resumeMergeReceipt($receiptId));
             self::assertSame($receipt, $replayed->toArray());
-            $this->deliver($handover);
-            [$answer] = $this->frames();
-            self::assertSame(AccountOperationAnswerKind::Done, $answer->data->data->answer);
+            self::assertSame([], $this->frames());
+            $deliveries = $ended ? 2 : 1;
+            for ($delivery = 1; $delivery <= $deliveries; $delivery++) {
+                $this->deliver($handover);
+                $answers = $this->frames();
+                self::assertCount(1, $answers, "Handover delivery {$delivery} must answer exactly once.");
+                $answer = $answers[0]->data->data;
+                self::assertInstanceOf(AccountOperationAnswerSignalData::class, $answer);
+                self::assertSame($operation->id, $answer->operationId);
+                self::assertSame($receiptId, $answer->assignmentId);
+                self::assertSame(AccountMergeStage::Go->value, $answer->stage);
+                self::assertSame(AccountOperationAnswerKind::Done, $answer->answer);
+                self::assertSame($survivor, $this->personAgent(7));
+            }
         } finally {
             Hilos::$db->denyReceiptReads = false;
         }
@@ -839,7 +846,13 @@ final class AccountMergeRecoveryIntegrationTest extends HilosSessionIntegrationT
         self::assertFalse(isset(Hilos::$db->mountedObjectCollection(HilosDbContext::identities)[$source]));
         self::assertSame([], $writes->receiptIds);
         self::assertSame([], $this->frames());
-        self::assertSame($durable, $this->operationFacts());
+        $after = $this->operationFacts();
+        if ($ended) {
+            $savedResults = array_column($durable['results'], null, 'assignment_id');
+            self::assertArrayHasKey($receiptId, $savedResults);
+            self::assertSame($savedResults[$receiptId], array_column($after['results'], null, 'assignment_id')[$receiptId] ?? null);
+        }
+        self::assertSame($durable, $after);
         self::assertSame($identities, Database::sql('SELECT * FROM `hilos_identity` ORDER BY `id`')->rows());
         self::assertSame($fences, Database::sql('SELECT * FROM `hilos_account_merge_fence` ORDER BY `collection_key`, `row_id`')->rows());
     }
@@ -1357,6 +1370,83 @@ final class AccountMergeRecoveryIntegrationTest extends HilosSessionIntegrationT
     }
 
     /**
+     * @param callable(AccountOperationAskSignalData): void $requestReplay Entrance that causes the fresh source to replay give
+     * @param bool $keepHolderAndSurvivor Whether only the source is replaced
+     */
+    private function assertCommittedGiveReplay(callable $requestReplay, bool $keepHolderAndSurvivor = false): void
+    {
+        self::seedIdentity(9, IdentityType::MAGIC_LINK, 'loser@example.test');
+        [$operation, $give] = $this->readyGo();
+        $ask = $give->data->data;
+        self::assertInstanceOf(AccountOperationAskSignalData::class, $ask);
+        $this->deliver($give);
+        [$handover, $answer] = $this->frames();
+        self::assertInstanceOf(AccountMergeHandoverSignalData::class, $handover->data->data);
+        $saved = $this->operationFacts();
+        $identities = Database::sql('SELECT * FROM `hilos_identity` ORDER BY `id`')->rows();
+        self::assertSame('7', $identities[0]['user_id']);
+        self::assertNotEmpty($handover->data->data->handover->admission->toArray());
+        $fences = $this->giveFences($operation->id, $ask->assignmentId);
+        self::assertCount(1, $fences);
+        self::assertSame(HilosDbContext::identities, $fences[0]['collection_key']);
+        self::assertSame((int)$identities[0]['id'], (int)$fences[0]['row_id']);
+        self::assertSame(7, (int)$fences[0]['owner_user_id']);
+        self::assertSame(1, (int)$fences[0]['revision']);
+        self::assertFalse((bool)$fences[0]['deleted']);
+
+        $oldSource = $this->personAgent(9);
+        $survivor = $keepHolderAndSurvivor ? $this->personAgent(7) : null;
+        if ($keepHolderAndSurvivor) {
+            $this->releasePersonAgent(9);
+        } else {
+            $this->releasePersonAgents();
+            $this->freshContext();
+        }
+
+        $requestReplay($ask);
+        $source = $this->personAgent(9);
+        self::assertNotSame($oldSource, $source);
+        if ($survivor !== null) {
+            self::assertInstanceOf(MergeRecoveryUser::class, $source);
+            self::assertFalse($source->started, 'The scheduled give replay must reach the source through its signal handler.');
+            self::assertSame($survivor, $this->personAgent(7));
+        }
+        [$replay, $replayedAnswer] = $this->frames();
+        self::assertSame($handover->data->data->toArray(), $replay->data->data->toArray());
+        self::assertSame($answer->data->data->toArray(), $replayedAnswer->data->data->toArray());
+        // A holder pass may have committed its own sessions duty while selecting the wave.
+        self::assertCount(1, $saved['copies']);
+        self::assertSame($saved['copies'], $this->operationFacts()['copies']);
+        self::assertSame($saved['merges'], $this->operationFacts()['merges']);
+        self::assertSame($identities, Database::sql('SELECT * FROM `hilos_identity` ORDER BY `id`')->rows());
+        $originalResult = array_values(array_filter($saved['results'], static fn (array $row): bool =>
+            (int)$row['assignment_id'] === $ask->assignmentId));
+        self::assertCount(1, $originalResult);
+        self::assertSame($originalResult, Database::sql('SELECT * FROM `hilos_account_operation_result` WHERE `assignment_id` = ?',
+            [$ask->assignmentId])->rows());
+        self::assertSame($fences, $this->giveFences($operation->id, $ask->assignmentId), 'Give replay must preserve its committed fences.');
+        $this->deliver($replay);
+        if ($survivor !== null) {
+            self::assertSame($survivor, $this->personAgent(7));
+        }
+        self::assertSame($fences, $this->giveFences($operation->id, $ask->assignmentId), 'Handover receipt must preserve the give fences.');
+        $receiptAnswer = $this->frames();
+        self::assertNotContains($ask->assignmentId, $this->owedIds(new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, '9')));
+        $this->deliver($replayedAnswer);
+        self::assertNotContains('give', $this->keys($this->frames()));
+        foreach ($receiptAnswer as $frame) {
+            $this->deliver($frame);
+        }
+        $pending = $this->frames();
+        if (!$keepHolderAndSurvivor) {
+            $this->startHolder();
+            $this->tick();
+        }
+        $this->finishExchange($operation, [...$pending, ...$this->frames()]);
+        self::assertSame($fences, $this->giveFences($operation->id, $ask->assignmentId), 'Merge completion must preserve the give fences.');
+    }
+
+    /**
      * @param ?callable(AccountOperation): void $prepare Optional checkpoint before real preparations run
      * @param int $survivor Survivor account
      * @param int $loser Source account
@@ -1454,6 +1544,17 @@ final class AccountMergeRecoveryIntegrationTest extends HilosSessionIntegrationT
             'copies' => Database::sql('SELECT * FROM `hilos_account_merge_copy` ORDER BY `assignment_id`')->rows(),
             'merges' => Database::sql('SELECT * FROM `hilos_user_merge` ORDER BY `user_id`')->rows(),
         ];
+    }
+
+    /**
+     * @param int $operationId Operation that committed the give
+     * @param int $assignmentId Original give assignment
+     * @return list<array<string, mixed>> Committed fence rows in business-key order
+     */
+    private function giveFences(int $operationId, int $assignmentId): array
+    {
+        return Database::sql('SELECT * FROM `hilos_account_merge_fence` WHERE `operation_id` = ? AND `assignment_id` = ?'
+            . ' ORDER BY `collection_key`, `row_id`', [$operationId, $assignmentId])->rows();
     }
 
     /** @inheritDoc */
@@ -1788,9 +1889,17 @@ final class MergeRecoveryHolder extends AbstractSessionsLibraryAgent
     }
 }
 
-/** Ordinary personal owner, with every operation step inherited. */
+/** Ordinary personal owner with startup observed separately from signal delivery. */
 final class MergeRecoveryUser extends AbstractUserAgent
 {
+    public bool $started = false;
+
+    /** Records startup and runs the ordinary owner initialization. */
+    public function onStart(): void
+    {
+        $this->started = true;
+        parent::onStart();
+    }
 }
 
 /** Ordinary creator of the erasure requests mixed into the common pass. */

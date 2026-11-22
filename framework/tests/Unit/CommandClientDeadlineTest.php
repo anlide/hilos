@@ -12,8 +12,8 @@ use Hilos\Constants\TimeConstants;
 use Hilos\Core\Daemon\AbandonedCommandSink;
 use Hilos\Core\Daemon\AgentRestartDoor;
 use Hilos\Core\Daemon\CronFireTestDoor;
-use Hilos\Core\Daemon\AccountErasureProbeTestDoor;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
+use Hilos\Core\Daemon\AccountOperationProbeTestDoor;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeRequest;
 use Hilos\Core\Daemon\DaemonNodeReportTestDoor;
 use Hilos\Core\Daemon\TestOrmForgetDoor;
 use Hilos\Core\EventLoop\EventLoop;
@@ -52,8 +52,8 @@ final class CommandClientDeadlineTest extends TestCase
         yield 'node report' => [CliCommands::DAEMON_TEST_NODE_REPORT, DaemonNodeReportTestDoor::class,
             'setDaemonNodeReportTestDoor', 'requestNodeReport'];
         yield 'cron fire' => [CliCommands::CRON_TEST_FIRE, CronFireTestDoor::class, 'setCronFireTestDoor', 'requestCronFire'];
-        yield 'erasure probe' => [CliCommands::ACCOUNT_TEST_ERASURE_PROBE, AccountErasureProbeTestDoor::class,
-            'setAccountErasureProbeTestDoor', 'requestAccountErasureProbe'];
+        yield 'account operation probe' => [CliCommands::ACCOUNT_TEST_OPERATION_PROBE, AccountOperationProbeTestDoor::class,
+            'setAccountOperationProbeTestDoor', 'requestAccountOperationProbe'];
         yield 'cron pause' => [CliCommands::CRON_TEST_PAUSE, CronFireTestDoor::class, 'setCronFireTestDoor', 'requestCronSchedule'];
         yield 'cron cancel pause' => [CliCommands::CRON_TEST_CANCEL_PAUSE, CronFireTestDoor::class,
             'setCronFireTestDoor', 'requestCronSchedule'];
@@ -82,9 +82,9 @@ final class CommandClientDeadlineTest extends TestCase
             $server->$setter($door);
         }
         $before = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
-        $this->send($peer, new CommandRequestDTO('held', $command, $command === CliCommands::ACCOUNT_TEST_ERASURE_PROBE ? [
+        $this->send($peer, new CommandRequestDTO('held', $command, $command === CliCommands::ACCOUNT_TEST_OPERATION_PROBE ? [
             CommandConstants::FIELD_AGENT_ID => 'holder:42',
-            AccountErasureProbeRequest::ACTION => 'inspect',
+            AccountOperationProbeRequest::ACTION => 'inspect',
         ] : [
             CommandConstants::FIELD_AGENT_ID => null,
             CommandConstants::FIELD_RULE_NAME => 'fixture-rule',

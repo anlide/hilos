@@ -9,7 +9,7 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 
 /** Immutable transport snapshot of the single worker-local capture. */
-final class AccountErasureProbeState extends BaseDTO
+final class AccountOperationProbeState extends BaseDTO
 {
     public const string ARMED = 'armed';
     public const string MATCHED = 'matched';
@@ -27,10 +27,10 @@ final class AccountErasureProbeState extends BaseDTO
         public readonly ?WorkerAgentMessageDTO $held,
     ) {
         if ($matched < 0 || ($held !== null && ($armed || $matched === 0))) {
-            throw new InvalidFormatException('Erasure probe state is inconsistent');
+            throw new InvalidFormatException('Account operation probe state is inconsistent');
         }
         if ($held !== null) {
-            AccountErasureProbeRequest::validateFrame($held);
+            AccountOperationProbeRequest::validateFrame($held);
         }
     }
 
@@ -48,13 +48,13 @@ final class AccountErasureProbeState extends BaseDTO
     public static function fromArray(array $data): static
     {
         if (array_diff(array_keys($data), [self::ARMED, self::MATCHED, self::HELD]) !== []) {
-            throw new InvalidFormatException('Unknown erasure probe state field');
+            throw new InvalidFormatException('Unknown account operation probe state field');
         }
         $held = self::requireNullableArray($data, self::HELD);
         return new static(
             self::requireBool($data, self::ARMED),
             self::requireInt($data, self::MATCHED),
-            $held === null ? null : AccountErasureProbeRequest::restoreFrame($held),
+            $held === null ? null : AccountOperationProbeRequest::restoreFrame($held),
         );
     }
 }

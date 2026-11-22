@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Core\Daemon;
 
 use Closure;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeRequest;
 use Hilos\Constants\CliCommands;
 use Hilos\Constants\CommandChannelWindows;
 use Hilos\Constants\TimeConstants;
@@ -20,12 +20,12 @@ use Hilos\Socket\Client\WorkerClient;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Server\WorkerServer;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbeDTO;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbedDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbeDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbedDTO;
 use Throwable;
 
 /** Process-private console waits bound to the exact original local worker connection. */
-final class AccountErasureProbeTestRequests
+final class AccountOperationProbeTestRequests
 {
     /** @var array<string, WorkerClient> Original connections, keyed by console correlation */
     private array $workers = [];
@@ -83,17 +83,17 @@ final class AccountErasureProbeTestRequests
         if (!NonProductionGate::admitted()) {
             ($this->reply)(CommandReplyDTO::error(
                 $request->correlationId,
-                TestOnlyCommandOnProductionException::message(CliCommands::ACCOUNT_TEST_ERASURE_PROBE),
+                TestOnlyCommandOnProductionException::message(CliCommands::ACCOUNT_TEST_OPERATION_PROBE),
             ));
             return;
         }
         try {
-            $probe = AccountErasureProbeRequest::fromArray($request->payload);
+            $probe = AccountOperationProbeRequest::fromArray($request->payload);
             $workerId = $this->agents->getAgentWorkerId($probe->agentId);
             $server = ($this->workerServer)();
-            $worker = $workerId === null ? null : $server?->sendTestAccountErasureProbe(
+            $worker = $workerId === null ? null : $server?->sendTestAccountOperationProbe(
                 $workerId,
-                new WorkerTestAccountErasureProbeDTO($request->correlationId, $probe),
+                new WorkerTestAccountOperationProbeDTO($request->correlationId, $probe),
             );
             if ($worker === null) {
                 ($this->reply)(CommandReplyDTO::error($request->correlationId, "No agent {$probe->agentId} runs on this node."));
@@ -108,7 +108,7 @@ final class AccountErasureProbeTestRequests
         } catch (InvalidFormatException $failure) {
             ($this->reply)(CommandReplyDTO::error($request->correlationId, $failure->getMessage()));
         } catch (Throwable) {
-            ($this->reply)(CommandReplyDTO::error($request->correlationId, 'Could not reach the local erasure probe worker.'));
+            ($this->reply)(CommandReplyDTO::error($request->correlationId, 'Could not reach the local account operation probe worker.'));
         }
         $this->rearmDeadlineTimer();
     }
@@ -117,11 +117,11 @@ final class AccountErasureProbeTestRequests
      * Unknown, duplicate and foreign acknowledgements cannot consume another connection's wait.
      *
      * @param WorkerClient $worker Actual sender connection
-     * @param WorkerTestAccountErasureProbedDTO $ack Parsed outcome
+     * @param WorkerTestAccountOperationProbedDTO $ack Parsed outcome
      * @param ?float $now Monotonic seconds, injectable for deadline tests
      * @throws EventLoopException When the nearest original deadline cannot be armed or canceled
      */
-    public function accept(WorkerClient $worker, WorkerTestAccountErasureProbedDTO $ack, ?float $now = null): void
+    public function accept(WorkerClient $worker, WorkerTestAccountOperationProbedDTO $ack, ?float $now = null): void
     {
         $correlationId = $ack->correlationId;
         if (($this->workers[$correlationId] ?? null) !== $worker) {
@@ -137,7 +137,7 @@ final class AccountErasureProbeTestRequests
             return;
         }
         if ($this->agents->getAgentWorkerId($this->agentIds[$correlationId]) !== $this->workerIds[$correlationId]) {
-            $this->refuse($correlationId, 'The erasure probe source no longer runs on the original worker.');
+            $this->refuse($correlationId, 'The account operation probe source no longer runs on the original worker.');
             return;
         }
         $this->abandon($correlationId);
@@ -153,7 +153,7 @@ final class AccountErasureProbeTestRequests
     public function workerGone(WorkerClient $worker): void
     {
         foreach (array_keys($this->workers, $worker, true) as $correlationId) {
-            $this->refuse((string)$correlationId, 'The erasure probe worker went down before acknowledging the request.');
+            $this->refuse((string)$correlationId, 'The account operation probe worker went down before acknowledging the request.');
         }
     }
 
@@ -195,7 +195,7 @@ final class AccountErasureProbeTestRequests
      */
     private function lateRefusal(string $correlationId): string
     {
-        return "Agent {$this->agentIds[$correlationId]} did not acknowledge the erasure probe in time.";
+        return "Agent {$this->agentIds[$correlationId]} did not acknowledge the account operation probe in time.";
     }
 
     /**

@@ -324,7 +324,7 @@ final class CliCommands
     public const string ACCOUNT_TEST_FORCE_PURGE = 'test:account:force-purge';
 
     /** Local worker account-erasure test probe. */
-    public const string ACCOUNT_TEST_ERASURE_PROBE = 'test:account:erasure-probe';
+    public const string ACCOUNT_TEST_OPERATION_PROBE = 'test:account:operation-probe';
 
     /**
      * Make a person hold an exact revision of a legal document (test-only).

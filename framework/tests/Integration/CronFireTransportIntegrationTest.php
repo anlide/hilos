@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbe;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbe;
 use Hilos\Socket\Server\AbstractServer;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Constants\CliCommands;
@@ -580,7 +580,7 @@ final class CronTransportWorker extends WorkerManager
         $this->daemonClient = $sender;
         $this->agentManager = $agents;
         new ReflectionProperty(WorkerManager::class, 'agentIdleTracker')->setValue($this, new AgentIdleTracker());
-        new ReflectionProperty(WorkerManager::class, 'accountErasureProbe')->setValue($this, new AccountErasureProbe());
+        new ReflectionProperty(WorkerManager::class, 'accountOperationProbe')->setValue($this, new AccountOperationProbe());
     }
 
     /** The agents' tick of one loop pass. */

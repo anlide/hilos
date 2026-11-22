@@ -206,11 +206,11 @@ use Hilos\Core\CLI\Exception\TestOnlyCommandOnProductionException;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgetDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestOrmForgottenDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFireDTO;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbeDTO;
-use Hilos\Socket\Worker\DTO\WorkerTestAccountErasureProbedDTO;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbe;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeAction;
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbeDTO;
+use Hilos\Socket\Worker\DTO\WorkerTestAccountOperationProbedDTO;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbe;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeAction;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeRequest;
 use Hilos\Socket\Worker\DTO\WorkerTestCronFiredDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleDTO;
 use Hilos\Socket\Worker\DTO\WorkerTestCronScheduleResultDTO;
@@ -376,7 +376,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
     private array $cronFiredAcks = [];
 
     /** One bounded capture, private to this worker and lost with it. */
-    private readonly AccountErasureProbe $accountErasureProbe;
+    private readonly AccountOperationProbe $accountOperationProbe;
 
     /** Pid of the daemon that forked this worker, or null before the loop starts. */
     protected ?int $daemonPid = null;
@@ -453,7 +453,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
         Hilos::initSignalRouter($this->createSignalRouter());
         $this->agentManager = $this->createAgentManager();
         $this->agentIdleTracker = new AgentIdleTracker();
-        $this->accountErasureProbe = new AccountErasureProbe();
+        $this->accountOperationProbe = new AccountOperationProbe();
     }
 
     /**
@@ -1112,12 +1112,12 @@ abstract class WorkerManager extends BaseManager implements PageResender
                 $this->handleTestOrmForget($data);
                 break;
 
-            case WorkerConstants::MESSAGE_TEST_ACCOUNT_ERASURE_PROBE:
-                if (!$data instanceof WorkerTestAccountErasureProbeDTO) {
-                    Logger::error('handleTestAccountErasureProbe - unexpected type: ' . get_class($data));
+            case WorkerConstants::MESSAGE_TEST_ACCOUNT_OPERATION_PROBE:
+                if (!$data instanceof WorkerTestAccountOperationProbeDTO) {
+                    Logger::error('handleTestAccountOperationProbe - unexpected type: ' . get_class($data));
                     break;
                 }
-                $this->handleTestAccountErasureProbe($data);
+                $this->handleTestAccountOperationProbe($data);
                 break;
 
             case WorkerConstants::MESSAGE_TEST_CRON_FIRE:
@@ -5266,7 +5266,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
             // so the message carries no agent id at all rather than an empty one.
             $agentId = $this->agentManager->buildAgentId($agentType, $agentIndex);
 
-            $frame = $this->accountErasureProbe->intercept(
+            $frame = $this->accountOperationProbe->intercept(
                 new WorkerAgentMessageDTO(agentId: $agentId, signal: $signal),
                 $agentId === null ? null : $this->agentManager->getAgent($agentId),
             );
@@ -5397,64 +5397,64 @@ abstract class WorkerManager extends BaseManager implements PageResender
     /**
      * Control only: released envelopes use the ordinary sender, outside the capture drain.
      *
-     * @param WorkerTestAccountErasureProbeDTO $message Independently gated local probe request
+     * @param WorkerTestAccountOperationProbeDTO $message Independently gated local probe request
      * @throws InvalidFormatException When the acknowledgement cannot represent its correlation or outcome
      */
-    private function handleTestAccountErasureProbe(WorkerTestAccountErasureProbeDTO $message): void
+    private function handleTestAccountOperationProbe(WorkerTestAccountOperationProbeDTO $message): void
     {
         $state = null;
         $error = null;
         try {
             if (!NonProductionGate::admitted()) {
-                throw new InvalidFormatException(TestOnlyCommandOnProductionException::message(CliCommands::ACCOUNT_TEST_ERASURE_PROBE));
+                throw new InvalidFormatException(TestOnlyCommandOnProductionException::message(CliCommands::ACCOUNT_TEST_OPERATION_PROBE));
             }
             $request = $message->request;
             $source = $this->agentManager->getAgent($request->agentId);
             // release must see absence itself: it discards a held envelope whose original source died.
-            if ($request->action !== AccountErasureProbeAction::Release && $source === null) {
+            if ($request->action !== AccountOperationProbeAction::Release && $source === null) {
                 throw new InvalidFormatException("No agent {$request->agentId} runs on this worker.");
             }
             switch ($request->action) {
-                case AccountErasureProbeAction::Arm:
-                    $this->accountErasureProbe->arm($request, $source);
+                case AccountOperationProbeAction::Arm:
+                    $this->accountOperationProbe->arm($request, $source);
                     break;
-                case AccountErasureProbeAction::Release:
-                    $this->sendToDaemon($this->accountErasureProbe->release($request->agentId, $source));
+                case AccountOperationProbeAction::Release:
+                    $this->sendToDaemon($this->accountOperationProbe->release($request->agentId, $source));
                     break;
-                case AccountErasureProbeAction::Replay:
-                    foreach ($this->accountErasureProbe->replay($request, $source) as $frame) {
+                case AccountOperationProbeAction::Replay:
+                    foreach ($this->accountOperationProbe->replay($request, $source) as $frame) {
                         $this->sendToDaemon($frame);
                     }
                     break;
-                case AccountErasureProbeAction::Discard:
-                    $this->accountErasureProbe->discard();
+                case AccountOperationProbeAction::Discard:
+                    $this->accountOperationProbe->discard();
                     break;
-                case AccountErasureProbeAction::Clear:
-                    $this->accountErasureProbe->clear();
+                case AccountOperationProbeAction::Clear:
+                    $this->accountOperationProbe->clear();
                     break;
-                case AccountErasureProbeAction::ExpireIdle:
-                    $this->expireAccountErasureProbeIdle($request, $source);
+                case AccountOperationProbeAction::ExpireIdle:
+                    $this->expireAccountOperationProbeIdle($request, $source);
                     break;
-                case AccountErasureProbeAction::Inspect:
+                case AccountOperationProbeAction::Inspect:
                     break;
             }
-            $state = $this->accountErasureProbe->inspect();
+            $state = $this->accountOperationProbe->inspect();
         } catch (InvalidFormatException $failure) {
             $error = $failure->getMessage();
         } catch (Throwable) {
-            $error = 'The local erasure probe could not complete the request.';
+            $error = 'The local account operation probe could not complete the request.';
         }
-        $this->sendToDaemon(new WorkerTestAccountErasureProbedDTO($message->correlationId, $error === null, $state, $error));
+        $this->sendToDaemon(new WorkerTestAccountOperationProbedDTO($message->correlationId, $error === null, $state, $error));
     }
 
     /**
      * Ages only the existing personal source; the next ordinary tick decides whether it may stop.
      *
-     * @param AccountErasureProbeRequest $request Source to age
+     * @param AccountOperationProbeRequest $request Source to age
      * @param AgentInterface $source Current local incarnation
      * @throws InvalidFormatException When the source is not a personal instance with declared idle expiry
      */
-    private function expireAccountErasureProbeIdle(AccountErasureProbeRequest $request, AgentInterface $source): void
+    private function expireAccountOperationProbeIdle(AccountOperationProbeRequest $request, AgentInterface $source): void
     {
         $id = AgentId::fromId($request->agentId);
         $timeout = AgentRegistry::idleTimeout(Hilos::appClass()::AGENTS[$source->getType()] ?? null);

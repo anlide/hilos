@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Auth\AccountOperation\Testing;
 
+use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAnswerSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Core\Agent\AgentInterface;
@@ -12,26 +13,26 @@ use Hilos\Core\Router\AgentSignalData;
 use Hilos\Socket\Worker\DTO\WorkerAgentMessageDTO;
 
 /** One bounded capture private to one worker; process death deliberately loses it. */
-final class AccountErasureProbe
+final class AccountOperationProbe
 {
-    private ?AccountErasureProbeRequest $armed = null;
+    private ?AccountOperationProbeRequest $armed = null;
     private ?AgentInterface $armedSource = null;
     private ?WorkerAgentMessageDTO $held = null;
     private ?AgentInterface $heldSource = null;
     private int $matched = 0;
 
     /**
-     * @param AccountErasureProbeRequest $request Arm request with optional selectors
+     * @param AccountOperationProbeRequest $request Arm request with optional selectors
      * @param AgentInterface $source Current local instance from AgentManager
      * @throws InvalidFormatException When the probe is occupied or the request names another source
      */
-    public function arm(AccountErasureProbeRequest $request, AgentInterface $source): void
+    public function arm(AccountOperationProbeRequest $request, AgentInterface $source): void
     {
-        if ($request->action !== AccountErasureProbeAction::Arm || $source->getId() !== $request->agentId) {
-            throw new InvalidFormatException('Erasure probe arm requires its current local source');
+        if ($request->action !== AccountOperationProbeAction::Arm || $source->getId() !== $request->agentId) {
+            throw new InvalidFormatException('Account operation probe arm requires its current local source');
         }
         if ($this->armed !== null || $this->held !== null) {
-            throw new InvalidFormatException('Erasure probe is already occupied');
+            throw new InvalidFormatException('Account operation probe is already occupied');
         }
         $this->armed = $request;
         $this->armedSource = $source;
@@ -49,11 +50,12 @@ final class AccountErasureProbe
     {
         if ($this->armed === null || $source === null || $source !== $this->armedSource
             || $source->getId() !== $this->armed->agentId
-            || !AccountErasureProbeRequest::isFrom($frame, $this->armed->agentId)
-            || AccountErasureProbeRequest::kindOf($frame) !== $this->armed->frameKind
+            || !AccountOperationProbeRequest::isFrom($frame, $this->armed->agentId)
+            || AccountOperationProbeRequest::kindOf($frame) !== $this->armed->frameKind
             || !$frame->signal->data instanceof AgentSignalData
             || !($frame->signal->data->data instanceof AccountOperationAskSignalData
-                || $frame->signal->data->data instanceof AccountOperationAnswerSignalData)) {
+                || $frame->signal->data->data instanceof AccountOperationAnswerSignalData
+                || $frame->signal->data->data instanceof AccountMergeHandoverSignalData)) {
             return $frame;
         }
         $payload = $frame->signal->data->data;
@@ -62,7 +64,7 @@ final class AccountErasureProbe
             || ($this->armed->assignmentId !== null && $payload->assignmentId !== $this->armed->assignmentId)) {
             return $frame;
         }
-        AccountErasureProbeRequest::validateFrame($frame);
+        AccountOperationProbeRequest::validateFrame($frame);
         $this->held = $frame;
         $this->heldSource = $source;
         $this->armed = null;
@@ -80,11 +82,11 @@ final class AccountErasureProbe
     public function release(string $agentId, ?AgentInterface $source): WorkerAgentMessageDTO
     {
         if ($this->held === null || $this->held->agentId !== $agentId) {
-            throw new InvalidFormatException('Erasure probe holds no frame for this source');
+            throw new InvalidFormatException('Account operation probe holds no frame for this source');
         }
         if ($source === null || $source !== $this->heldSource || $source->getId() !== $agentId) {
             $this->discard();
-            throw new InvalidFormatException('Erasure probe source stopped or was replaced; held frame discarded');
+            throw new InvalidFormatException('Account operation probe source stopped or was replaced; held frame discarded');
         }
         $frame = $this->held;
         $this->discard();
@@ -97,7 +99,7 @@ final class AccountErasureProbe
     public function discard(): void
     {
         if ($this->held === null) {
-            throw new InvalidFormatException('Erasure probe holds no frame');
+            throw new InvalidFormatException('Account operation probe holds no frame');
         }
         $this->held = null;
         $this->heldSource = null;
@@ -114,26 +116,26 @@ final class AccountErasureProbe
     }
 
     /**
-     * @param AccountErasureProbeRequest $request Validated replay request
+     * @param AccountOperationProbeRequest $request Validated replay request
      * @param ?AgentInterface $source Current live local instance from AgentManager
      * @return list<WorkerAgentMessageDTO> Complete copies for the ordinary sender, bypassing capture
      * @throws InvalidFormatException When this is not a replay or its live source does not exist
      */
-    public function replay(AccountErasureProbeRequest $request, ?AgentInterface $source): array
+    public function replay(AccountOperationProbeRequest $request, ?AgentInterface $source): array
     {
-        if ($request->action !== AccountErasureProbeAction::Replay || $request->frame === null || $request->copies === null
+        if ($request->action !== AccountOperationProbeAction::Replay || $request->frame === null || $request->copies === null
             || $source === null || $source->getId() !== $request->agentId) {
-            throw new InvalidFormatException('Erasure probe replay requires its live local source');
+            throw new InvalidFormatException('Account operation probe replay requires its live local source');
         }
         return array_fill(0, $request->copies, $request->frame);
     }
 
     /**
-     * @return AccountErasureProbeState Non-consuming transport snapshot
+     * @return AccountOperationProbeState Non-consuming transport snapshot
      * @throws InvalidFormatException When the captured envelope cannot form a valid state
      */
-    public function inspect(): AccountErasureProbeState
+    public function inspect(): AccountOperationProbeState
     {
-        return new AccountErasureProbeState($this->armed !== null, $this->matched, $this->held);
+        return new AccountOperationProbeState($this->armed !== null, $this->matched, $this->held);
     }
 }

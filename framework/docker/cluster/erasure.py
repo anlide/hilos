@@ -7,137 +7,26 @@ handlers retain every business write. The final restart discards fixture process
 
 import json
 import re
-import sys
-import threading
 import time
 import uuid
 
 import control
+from account_operations import HOLDER, AccountOperationRun, payload
 
 
-HOLDER = "hilos_sessions_library"
-PROBE = "test:account:erasure-probe"
-RECOVERY = f"{HOLDER}/hilos_account_erasure_recovery"
 EMAIL_ENABLED = "notifications.channel.email.enabled"
-# Mirrors CommandChannelWindows::CHANNEL_HELD_SECONDS, the outer command deadline.
-CALLER_DEADLINE = 30
+MARKER_SUFFIX = "after-archive"
 
 
-def payload(frame):
-    """Read the typed assignment address without rebuilding its saved envelope."""
-    return frame["signal"]["data"]["data"]
-
-
-class ErasureRun:
-    """One harness invocation's private handles and fixture keys, never shared state."""
+class ErasureRun(AccountOperationRun):
+    """Fixtures for one live erasure journey."""
 
     def __init__(self, scenarios):
-        self.s = scenarios
-        self.stand = scenarios.STAND
-        self.entry = scenarios.MASTERS[0]
-        self.nodes = list(scenarios.ALL_NODES)
-        self.users = []
-        self.notifications = []
-        self.callers = []
-        self.probes = {}
-        self.pauses = []
-        self.killed = None
+        super().__init__(scenarios, "erasure")
+        self.names = []
+        self.archived_users = set()
         self.email_snapshot = None
         self.prefix = f"cluster-erasure-{uuid.uuid4().hex}"
-
-    def sql(self, statement):
-        answer = control.db_sql(self.stand, statement)
-        assert answer.code == 0, f"erasure SQL oracle failed: {answer.err or answer.out}"
-        return answer.out.strip()
-
-    def command(self, node, *args):
-        answer = control.client(self.stand, node, *map(str, args), timeout=CALLER_DEADLINE)
-        assert answer.code == 0, f"{node} {args}: {answer.code}: {answer.err or answer.out}"
-        return answer.out.strip()
-
-    def wait(self, predicate, description, nodes=None, timeout=None):
-        return self.s.wait_until(predicate, timeout or self.s.CONVERGE_TIMEOUT,
-                                 description, nodes=nodes or self.nodes)
-
-    def placed(self, agent):
-        views = self.wait(lambda v: self.s.placement_row(v, agent).get("state") == "started",
-                          f"{agent} really started")
-        return self.s.placement_row(views, agent)
-
-    def process(self, agent):
-        row = self.placed(agent)
-        node = row["nodeId"]
-        starts = [int(index) for name, index in self.s.AGENT_STARTED_ON_WORKER.findall(self.s.node_log(node))
-                  if name == agent]
-        assert starts, f"{agent} has no worker start on {node}: {row}"
-        return control.worker_process(self.stand, node, starts[-1])
-
-    def place(self, agent):
-        self.command(self.entry, "test:cluster:agent:place", *agent.split(":", 1))
-        return self.process(agent)
-
-    def incarnation(self, agent):
-        """A worker can host several successive instances; retain its actual start line too."""
-        process = self.process(agent)
-        pattern = re.compile(rf"Agent '{re.escape(agent)}' started on worker #{process.index}\b")
-        starts = [line for line in self.s.node_log(process.node).splitlines() if pattern.search(line)]
-        assert starts, f"no lifecycle start for {agent} on {process}"
-        return process, starts[-1]
-
-    def forget_stopped(self, agent, incarnation):
-        """Forget handles locally only after the caller has proved stop or replacement."""
-        if self.probes.get(agent) == incarnation:
-            self.probes.pop(agent)
-        if agent == HOLDER:
-            self.pauses = [(owner, pause) for owner, pause in self.pauses if owner != incarnation]
-
-    def probe(self, agent, action, node=None, **options):
-        if node is None:
-            node = self.placed(agent)["nodeId"]
-        if action == "arm":
-            self.probes[agent] = self.incarnation(agent)
-        answer = self.command(node, PROBE, agent, action,
-                              *(f"--{key.replace('_', '-')}={value}" for key, value in options.items()))
-        return json.loads(answer)
-
-    def held(self, agent, node=None):
-        node = node or self.placed(agent)["nodeId"]
-        found = []
-        last_state = None
-
-        def captured(_):
-            nonlocal last_state
-            state = self.probe(agent, "inspect", node)
-            last_state = state
-            if state["held"] is None:
-                return False
-            assert not state["armed"] and state["matched"] >= 1, state
-            found.append(state["held"])
-            return True
-
-        try:
-            self.wait(captured, f"{agent} captured its production frame")
-        except self.s.ScenarioTimeout as failure:
-            # An armed probe which never saw its frame is a missing behavior, rather than
-            # fleet convergence. Do not retry the entire destructive journey for it.
-            raise AssertionError(f"{agent} on {node} never captured its frame: {last_state}") from failure
-        return found[0]
-
-    def replay(self, frame, copies=1):
-        return self.probe(frame["agentId"], "replay", frame_json=json.dumps(frame, separators=(",", ":")),
-                          copies=copies)
-
-    def pause(self, rule=RECOVERY):
-        incarnation = self.incarnation(HOLDER)
-        process = incarnation[0]
-        answer = self.command(process.node, "test:cron:pause", rule)
-        match = re.fullmatch(r"Paused .+: pause (\S+)", answer)
-        assert match, f"missing exact pause id for {rule}: {answer}"
-        self.pauses.append((incarnation, match[1]))
-
-    def fire(self):
-        answer = self.command(self.placed(HOLDER)["nodeId"], "test:cron:fire", RECOVERY)
-        assert re.fullmatch(r"Fired .+: ran at epoch ms \d+", answer), answer
 
     def prepare(self):
         self.s.wait_converge(self.nodes)
@@ -145,32 +34,28 @@ class ErasureRun:
         # AUTH is a live sessions holder and personal owner, BACKUP a live registered owner.
         for agent in (HOLDER, "hilos_users_library", "hilos_backup", "hilos_settings_library"):
             self.placed(agent)
+        self.begin_backup_observation()
         self.pause()
 
     def person(self, suffix):
-        user = int(self.sql(f"INSERT INTO hilos_user (name, admin) VALUES ('{self.prefix}-{suffix}', 0); "
-                            "SELECT LAST_INSERT_ID()"))
-        self.users.append(user)
+        name = f"{self.prefix}-{suffix}"
+        self.names.append(name)
+        user = int(self.fixture_sql(f"INSERT INTO hilos_user (name, admin) VALUES ('{name}', 0); SELECT LAST_INSERT_ID()"))
+        if suffix != MARKER_SUFFIX:
+            self.archived_users.add(user)
         now = int(time.time() * 1000)
-        self.sql("INSERT INTO hilos_identity (user_id, type, identifier, verified, created_at, updated_at) "
+        self.fixture_sql("INSERT INTO hilos_identity (user_id, type, identifier, verified, created_at, updated_at) "
                  f"VALUES ({user}, 'password', '{self.prefix}-{suffix}@example.test', 1, {now}, {now}); "
                  "INSERT INTO hilos_user_rename (user_id, old_name, new_name, renamed_at) "
                  f"VALUES ({user}, 'Before', '{self.prefix}-{suffix}', {now})")
         return user
 
-    def request(self, root):
-        now = int(time.time() * 1000)
-        # A future standing request prevents the ordinary deletion sweep opening it first.
-        return int(self.sql("INSERT INTO hilos_account_deletion (user_id, requested_at, effective_at) "
-                            f"VALUES ({root}, {now}, {now + 86400000}); SELECT LAST_INSERT_ID()"))
-
     def delivery(self, root, channel, routing_key=0):
         now = int(time.time() * 1000)
-        notification = int(self.sql("INSERT INTO hilos_notification (user_id, type, title, created_at) "
+        notification = int(self.fixture_sql("INSERT INTO hilos_notification (user_id, type, title, created_at) "
                                     f"VALUES ({root}, 'cluster.erasure', 'Erasure fixture', {now}); "
                                     "SELECT LAST_INSERT_ID()"))
-        self.notifications.append(notification)
-        return int(self.sql("INSERT INTO hilos_notification_delivery "
+        return int(self.fixture_sql("INSERT INTO hilos_notification_delivery "
                             "(notification_id, channel, routing_key, status, created_at, updated_at) "
                             f"VALUES ({notification}, '{channel}', {routing_key}, 'pending', {now}, {now}); "
                             "SELECT LAST_INSERT_ID()"))
@@ -178,22 +63,12 @@ class ErasureRun:
     def disable_email(self):
         self.email_snapshot = self.command(self.entry, "test:settings:snapshot", EMAIL_ENABLED)
         json.loads(self.email_snapshot)
+        self.backup_admission()
         self.command(self.entry, "settings:set", EMAIL_ENABLED, "false")
         assert self.sql(f"SELECT value FROM hilos_setting WHERE `key` = '{EMAIL_ENABLED}'") in ("0", "false")
 
     def force(self, root):
-        result = []
-
-        def call():
-            try:
-                result.append(control.client(self.stand, self.entry, "test:account:force-purge", str(root),
-                                             timeout=CALLER_DEADLINE))
-            except BaseException as error:
-                result.append(error)
-
-        thread = threading.Thread(target=call)
-        self.callers.append((thread, result))
-        thread.start()
+        self.start_caller(self.entry, "test:account:force-purge", root)
 
     def operation(self, root):
         found = []
@@ -206,17 +81,6 @@ class ErasureRun:
 
         self.wait(opened, f"one durable erasure of {root}")
         return found[0]
-
-    def assignment(self, operation, key):
-        value = self.sql("SELECT id FROM hilos_account_operation_assignment "
-                         f"WHERE operation_id = {operation} AND assignment_key = '{key}'")
-        assert value.isdigit(), f"no unique assignment {key}: {value}"
-        return int(value)
-
-    def result(self, assignment):
-        # Keep these bytes, including id, JSON and original commit moment, for duplicate proof.
-        return self.sql("SELECT id, owner_agent_id, payload_json, created_at FROM hilos_account_operation_result "
-                        f"WHERE assignment_id = {assignment}")
 
     def personal_key(self, prefix, user):
         return f"{prefix}:personal:hilos_user:{user}:{user}"
@@ -250,103 +114,37 @@ class ErasureRun:
         self.process(agent)
         return operation, personal, held
 
-    def worker_marks(self, node):
-        return {path: control.LogMark(path.stat().st_ino, path.stat().st_size)
-                for path in self.stand.node(node).log_dir.glob("worker-*.log")}
-
-    def worker_since(self, node, marks):
-        parts = []
-        for path in self.stand.node(node).log_dir.glob("worker-*.log"):
-            try:
-                with path.open("rb") as stream:
-                    mark = marks.get(path)
-                    if mark is not None and path.stat().st_ino == mark.inode:
-                        stream.seek(mark.size)
-                    parts.append(stream.read().decode("utf-8", errors="replace"))
-            except FileNotFoundError:
-                continue
-        return "\n".join(parts)
-
-    def collect_callers(self):
-        for thread, result in self.callers:
-            thread.join(CALLER_DEADLINE)
-            assert not thread.is_alive(), "force-purge caller outlived its command deadline"
-            assert len(result) == 1 and not isinstance(result[0], BaseException), result
-            # An unfinished or disconnected command is not the operation oracle.
-            assert result[0].code in (0, 1, 6), result[0]
-
-    def clean_probes(self):
-        for agent, incarnation in list(self.probes.items()):
-            views = self.s.inspect_all(self.nodes)
-            if self.s.placement_row(views, agent).get("state") != "started":
-                self.probes.pop(agent)
-                continue
-            if self.incarnation(agent) != incarnation:
-                self.probes.pop(agent)
-                continue  # Even a replacement on the same worker must not inherit the handle.
-            self.probe(agent, "clear", incarnation[0].node)
-
-    def clean_fixtures(self):
-        if not self.users:
+    def clean_fixtures(self, failed):
+        if not self.names:
             return
-        ids = ",".join(map(str, self.users))
-        if self.notifications:
-            notifications = ",".join(map(str, self.notifications))
-            self.sql(f"DELETE FROM hilos_notification_delivery WHERE notification_id IN ({notifications})")
-        self.sql(f"DELETE FROM hilos_account_operation WHERE root_user_id IN ({ids}); "
+        names = ", ".join(f"'{name}'" for name in self.names)
+        ids = self.fixture_users(names, self.archived_users)
+        if not ids:
+            return
+        if not self.writers_stopped:
+            self.backup_admission(allow_stopped=True)
+        self.sql("START TRANSACTION; "
+                 "DELETE d FROM hilos_notification_delivery d JOIN hilos_notification n ON n.id = d.notification_id "
+                 f"WHERE n.user_id IN ({ids}); "
+                 f"DELETE FROM hilos_account_operation WHERE root_user_id IN ({ids}); "
                  f"DELETE FROM hilos_account_deletion WHERE user_id IN ({ids}); "
                  f"DELETE FROM hilos_user_verification WHERE user_id IN ({ids}); "
                  f"DELETE FROM hilos_identity WHERE user_id IN ({ids}); "
                  f"DELETE FROM hilos_notification WHERE user_id IN ({ids}); "
                  f"DELETE FROM hilos_user_rename WHERE user_id IN ({ids}); "
                  f"DELETE FROM hilos_user_merge WHERE user_id IN ({ids}); "
-                 f"DELETE FROM hilos_user WHERE id IN ({ids})")
+                 f"DELETE FROM hilos_user WHERE id IN ({ids}); COMMIT")
         assert self.sql(f"SELECT COUNT(*) FROM hilos_user WHERE id IN ({ids})") == "0"
-
-    def clean_pauses(self):
-        for incarnation, pause in self.pauses:
-            if self.incarnation(HOLDER) == incarnation:
-                self.command(incarnation[0].node, "test:cron:cancel-pause", pause)
 
     def restore_email(self):
         if self.email_snapshot is not None:
             self.command(self.entry, "test:settings:restore", self.email_snapshot)
             assert json.loads(self.command(self.entry, "test:settings:snapshot", EMAIL_ENABLED)) == json.loads(self.email_snapshot)
 
-    def return_node(self):
-        if self.killed is not None:
-            node, self.killed = self.killed, None
-            self.s.ctl("start", node)
-            self.nodes = list(self.s.ALL_NODES)
-            self.s.wait_converge(self.nodes)
-
-    def restart(self):
-        assert control.restart(self.stand, f"{sys.argv[0]} {self.stand.compose}") == 0
-        self.s.wait_converge(self.s.ALL_NODES)
-        self.wait(self.s.fleet_started, "the original mesh and fleet after erasure cleanup")
-
-    def cleanup(self, failed):
-        # Every necessary action runs even if its predecessor fails. The existing helper
-        # preserves the original scenario error and makes a standalone cleanup failure red.
-        try:
-            self.s.restore_stand(failed, "erasure callers", self.collect_callers)
-        finally:
-            try:
-                self.s.restore_stand(failed or sys.exc_info()[0] is not None, "erasure probes", self.clean_probes)
-            finally:
-                try:
-                    self.s.restore_stand(failed or sys.exc_info()[0] is not None, "erasure fixtures", self.clean_fixtures)
-                finally:
-                    try:
-                        self.s.restore_stand(failed or sys.exc_info()[0] is not None, "erasure pauses", self.clean_pauses)
-                    finally:
-                        try:
-                            self.s.restore_stand(failed or sys.exc_info()[0] is not None, "erasure node", self.return_node)
-                        finally:
-                            try:
-                                self.s.restore_stand(failed or sys.exc_info()[0] is not None, "email setting", self.restore_email)
-                            finally:
-                                self.s.restore_stand(failed or sys.exc_info()[0] is not None, "erasure stand", self.restart)
+    def cleanup(self, failed, *, archive_first=False, writers_finished=False):
+        email = (("email setting", self.restore_email),) if self.email_snapshot is not None else ()
+        super().cleanup(failed, before_restart=email,
+                        archive_first=archive_first, writers_finished=writers_finished)
 
 
 def scenario_58_erasure_frames_and_owner_recovery(s):
@@ -365,11 +163,11 @@ def scenario_58_erasure_frames_and_owner_recovery(s):
         for suffix in ("a", "b"):
             candidate = run.person(f"root-{suffix}")
             child = run.person(f"folded-{suffix}")
-            run.sql("INSERT INTO hilos_user_merge (user_id, survivor_user_id, merged_at) "
+            run.fixture_sql("INSERT INTO hilos_user_merge (user_id, survivor_user_id, merged_at) "
                     f"VALUES ({child}, {candidate}, {int(time.time() * 1000)})")
             request_id = run.request(candidate)
             now = int(time.time() * 1000)
-            verification_id = int(run.sql("INSERT INTO hilos_user_verification "
+            verification_id = int(run.fixture_sql("INSERT INTO hilos_user_verification "
                 "(user_id, type, identifier, expires_at, created_at) "
                 f"VALUES ({candidate}, 'password_reset', '{run.prefix}-{suffix}-code@example.test', "
                 f"{now + 86400000}, {now}); SELECT LAST_INSERT_ID()"))
@@ -513,6 +311,7 @@ def scenario_58_erasure_frames_and_owner_recovery(s):
               f"mail debt open; owner={owner_before}, holder={holder_before}; "
               f"duplicate ask={json.dumps(library_ask)}, answer={json.dumps(library_answer)}", flush=True)
         run.killed = owner_before[0].node
+        run.killed_container = owner_before[0].container
         s.ctl("kill", run.killed)
         run.nodes = [node for node in s.ALL_NODES if node != run.killed]
         gone = control.signal_worker_process(run.stand, owner_before[0])
@@ -569,7 +368,7 @@ def scenario_58_erasure_frames_and_owner_recovery(s):
         raise
     finally:
         try:
-            run.cleanup(failed)
+            run.cleanup(failed, writers_finished=True)
         finally:
             print(f"    erasure 58 elapsed including cleanup: {time.monotonic() - started:.1f}s", flush=True)
 
@@ -615,7 +414,7 @@ def scenario_59_erasure_waits_and_restrict(s):
         rename_before = run.sql(f"SELECT * FROM hilos_user_rename WHERE user_id = {root}")
         request_before = run.sql(f"SELECT * FROM hilos_account_deletion WHERE id = {request}")
         now = int(time.time() * 1000)
-        run.sql("INSERT INTO hilos_identity (user_id, type, identifier, created_at, updated_at) "
+        run.fixture_sql("INSERT INTO hilos_identity (user_id, type, identifier, created_at, updated_at) "
                 f"VALUES ({root}, 'password', '{run.prefix}-late@example.test', {now}, {now})")
         person_before = run.business(root)
         run.probe(HOLDER, "release")
@@ -639,59 +438,12 @@ def scenario_59_erasure_waits_and_restrict(s):
             print(f"    erasure 59 elapsed including cleanup: {time.monotonic() - started:.1f}s", flush=True)
 
 
-def _backup_command(run, node, *args):
-    """Keep archive preflight and the hot monitor inside the actual holder's environment."""
-    answer = control.compose(run.stand, "exec", "-T", run.stand.member(node).service,
-                             *control.CLI_ENTRY, *args)
-    print(f"    erasure 60 {args[0]} on {node}: {answer.out.strip()}", flush=True)
-    assert answer.code == 0, f"backup on {node} {args}: {answer.code}: {answer.err or answer.out}"
-    return answer.out.strip()
-
-
-def _full_archive(run, node, backup_id, remove=False):
-    """Read or remove only this invocation's exact full archive/sidecar pair."""
-    assert re.fullmatch(r"[A-Za-z0-9._-]+", backup_id), backup_id
-    script = '''set -eu
-: "${BACKUP_DIR:?}" "${APP_ENV:?}"
-base="$BACKUP_DIR/full/$1-$APP_ENV-full"
-if [ "$2" = remove ]; then
-    rm -f -- "$base.json" "$base.tar.gz"
-    test ! -e "$base.json" && test ! -e "$base.tar.gz"
-elif [ -f "$base.json" ]; then
-    printf '%s\\n' "$APP_ENV"
-    cat "$base.json"
-fi
-'''
-    answer = control.compose(run.stand, "exec", "-T", run.stand.member(node).service,
-                             "sh", "-c", script, "erasure-full-archive", backup_id,
-                             "remove" if remove else "read")
-    assert answer.code == 0, f"archive {backup_id} on {node}: {answer.err or answer.out}"
-    if remove or not answer.out.strip():
-        return None
-    environment, raw = answer.out.split("\n", 1)
-    metadata = json.loads(raw)
-    assert metadata["id"] == backup_id and metadata["env"] == environment, metadata
-    assert metadata["scope"] == "full" and metadata["status"] == "success", metadata
-    assert isinstance(metadata["createdAt"], str) and metadata["createdAt"].endswith("Z"), metadata
-    assert metadata["sizeBytes"] > 0 and metadata["dumpBytes"] > 0, metadata
-    assert metadata["failureReason"] is None, metadata
-    assert re.fullmatch(r"[0-9a-f]{64}", metadata["sha256"]), metadata
-    assert metadata["connections"], metadata
-    for connection in metadata["connections"]:
-        assert isinstance(connection["index"], int) and connection["database"], connection
-        assert isinstance(connection["migrationIndex"], int), connection
-    return metadata
-
-
 def scenario_60_partial_erasure_survives_full_restore(s):
     """A real FULL import retains committed parts and resumes the archived unfinished circle."""
     started = time.monotonic()
     run = ErasureRun(s)
     failed = False
-    backup_id = None
-    backup_node = None
     operation = None
-    restore_attempted = False
     try:
         run.prepare()
         run.pause(f"{HOLDER}/hilos_account_deletion_sweep")
@@ -703,7 +455,7 @@ def scenario_60_partial_erasure_survives_full_restore(s):
         neighbour = run.person("restore-neighbour")
         request = run.request(root)
         neighbour_request = run.request(neighbour)
-        run.sql("INSERT INTO hilos_user_merge (user_id, survivor_user_id, merged_at) "
+        run.fixture_sql("INSERT INTO hilos_user_merge (user_id, survivor_user_id, merged_at) "
                 f"VALUES ({folded}, {root}, {int(time.time() * 1000)})")
 
         def neighbour_snapshot():
@@ -760,17 +512,7 @@ def scenario_60_partial_erasure_survives_full_restore(s):
                             if int(line.split("\t", 1)[0]) not in (capture, folded_capture)}
         assert archived_results and personal not in archived_results and final not in archived_results
         folded_result = run.result(folded_final)
-        backup_node = run.placed("hilos_backup")["nodeId"]
-        answer = run.command(backup_node, "test:backup:run-schedule", "hilos_backup_daily_full")
-        match = re.fullmatch(r"Started scheduled backup (\S+) \(scope=full\)", answer)
-        assert match, answer
-        backup_id = match[1]
-        run.wait(lambda _: _full_archive(run, backup_node, backup_id) is not None,
-                 f"full archive {backup_id} and its successful explicit metadata")
-        verified = _backup_command(run, backup_node, "backup:verify", backup_id, "--scope=full")
-        assert "checked 1: ok 1, mismatch 0, skipped 0, unverified 0" in verified, verified
-        metadata = _full_archive(run, backup_node, backup_id)
-        assert metadata["verifyOutcome"] == "ok" and metadata["verifiedAt"], metadata
+        backup_id, backup_node = run.capture_full_archive()
         captured = snapshot()
         assert captured == archived, f"partial SQL changed during FULL capture/verify: {archived!r} -> {captured!r}"
         print("    erasure 60 archived SQL: " + json.dumps(archived, sort_keys=True), flush=True)
@@ -828,29 +570,15 @@ def scenario_60_partial_erasure_survives_full_restore(s):
         assert run.sql(f"SELECT COUNT(*) FROM hilos_user WHERE id IN ({root},{folded})") == "0"
         assert run.result(folded_final) == folded_result
         later_results = {assignment: run.result(assignment) for assignment in (personal, final)}
-        marker = run.person("after-archive")
-        assert run.sql(f"SELECT COUNT(*) FROM hilos_user WHERE id = {marker}") == "1"
+        marker = f"{run.prefix}-{MARKER_SUFFIX}"
+        marker_id = run.person(MARKER_SUFFIX)
+        assert run.sql(f"SELECT id FROM hilos_user WHERE name = '{marker}'") == str(marker_id)
         assert neighbour_snapshot() == neighbour_before
         run.collect_callers()
-        restore_started_at = int(run.sql("SELECT FLOOR(UNIX_TIMESTAMP(CURRENT_TIMESTAMP(3)) * 1000)"))
-        restore_attempted = True
-        restored = _backup_command(run, backup_node, "backup:restore", backup_id, "--scope=full", "--yes")
-        assert f"Restore accepted: {backup_id} (scope=full)" in restored, restored
-        assert "Restore completed" in restored and "The system is open to pass holders only" in restored, restored
-
-        protected = json.loads(run.command(backup_node, "protected-mode:inspect"))
-        assert protected["phase"] == "verifying" and protected["operation"] == "restore", protected
-        assert protected["initiatorAgentType"] == "hilos_backup" and protected["initiatorAgentIndex"] is None, protected
-        initiator = protected["initiatorNodeId"]
-        assert initiator == backup_node, protected
-        # The full freeze stopped ordinary agents; no pre-freeze handles address successors.
-        assert not run.probes and not run.pauses
-        run.command(initiator, "protected-mode:open")
-        run.wait(lambda _: all(json.loads(run.command(node, "protected-mode:inspect"))["phase"] == "inactive"
-                               for node in run.nodes), "the recorded restore initiator opened every node")
+        restore_started_at = run.restore_full_archive()
         run.wait(completed, "ordinary startup/resume completed the archived circle without another purge")
 
-        assert run.sql(f"SELECT COUNT(*) FROM hilos_user WHERE id = {marker}") == "0", "FULL import kept a post-archive row"
+        assert run.sql(f"SELECT COUNT(*) FROM hilos_user WHERE name = '{marker}'") == "0", "FULL import kept a post-archive row"
         assert run.sql(f"SELECT COUNT(*) FROM hilos_user WHERE id IN ({root},{folded})") == "0"
         assert run.sql(f"SELECT COUNT(*) FROM hilos_user_merge WHERE user_id = {folded}") == "0"
         assert not missing() and snapshot()["assignments"] == archived["assignments"]
@@ -879,26 +607,6 @@ def scenario_60_partial_erasure_survives_full_restore(s):
         raise
     finally:
         try:
-            if restore_attempted:
-                def reopen():
-                    rows = [json.loads(run.command(node, "protected-mode:inspect")) for node in run.nodes]
-                    occupied = [row for row in rows if row["phase"] != "inactive"]
-                    assert all(row["operation"] == "restore"
-                               and row["initiatorAgentType"] == "hilos_backup"
-                               and row["initiatorAgentIndex"] is None
-                               and row["initiatorNodeId"] == backup_node for row in occupied), occupied
-                    if occupied:
-                        run.command(backup_node, "protected-mode:open")
-                        s.wait_protected_mode(lambda row: row.get("phase") == "inactive",
-                                              "only this restore reopened during cleanup", nodes=run.nodes)
-                s.restore_stand(failed, "erasure restore mode", reopen)
+            run.cleanup(failed, archive_first=True, writers_finished=True)
         finally:
-            try:
-                if backup_id is not None:
-                    s.restore_stand(failed or sys.exc_info()[0] is not None, "erasure archive",
-                                    lambda: _full_archive(run, backup_node, backup_id, remove=True))
-            finally:
-                try:
-                    run.cleanup(failed or sys.exc_info()[0] is not None)
-                finally:
-                    print(f"    erasure 60 elapsed including cleanup: {time.monotonic() - started:.1f}s", flush=True)
+            print(f"    erasure 60 elapsed including cleanup: {time.monotonic() - started:.1f}s", flush=True)

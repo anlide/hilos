@@ -285,10 +285,17 @@ trait PersonAgentFrames
     /** Takes back every claim the agents raised by this case laid. */
     private function releasePersonAgents(): void
     {
-        foreach ($this->personAgents as $agent) {
-            TruthSourceRegistry::unregisterAgent($agent->getId());
-            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agent->getId()));
+        foreach (array_keys($this->personAgents) as $userId) {
+            $this->releasePersonAgent($userId);
         }
-        $this->personAgents = [];
+    }
+
+    /** @param int $userId Raised agent whose claims and interests are released */
+    private function releasePersonAgent(int $userId): void
+    {
+        $agentId = $this->personAgents[$userId]->getId();
+        TruthSourceRegistry::unregisterAgent($agentId);
+        SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($agentId));
+        unset($this->personAgents[$userId]);
     }
 }

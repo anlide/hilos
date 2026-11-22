@@ -262,7 +262,11 @@ signal leaves its durable duty open. The queue lasts one handler; explicit
 drive of the same id can recover ready work after a lost frame, with at most
 one saved give replay before receipt. Answers do not start a resend loop. The
 shared first/hourly holder pass and owner-start resume continue open duties
-from DB. Real cluster/backup evidence remains HIL-2013; see
+from DB. [Binance scenario 61](../architecture/account-operations.md#recovery)
+exercises lost asks, ordinary sender startup after worker death, hot FULL
+import and one old hand-over after restore. PHP integration exercises two
+separate deliveries through the survivor handler after completion and saved
+give replay on the scheduled pass of an already-running holder. See
 [The Prepared Merge Coordinator](../architecture/account-operations.md#the-prepared-merge-coordinator)
 and [The Prepared Source-To-Survivor Handover](../architecture/account-operations.md#the-prepared-source-to-survivor-handover).
 

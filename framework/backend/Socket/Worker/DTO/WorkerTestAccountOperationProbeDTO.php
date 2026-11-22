@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Worker\DTO;
 
-use Hilos\Auth\AccountOperation\Testing\AccountErasureProbeRequest;
+use Hilos\Auth\AccountOperation\Testing\AccountOperationProbeRequest;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\CommandConstants;
 use Hilos\Constants\WorkerConstants;
@@ -12,22 +12,22 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Socket\Worker\WorkerDTO;
 
 /** Test-only master request to the worker already holding the local source. */
-final class WorkerTestAccountErasureProbeDTO extends WorkerDTO
+final class WorkerTestAccountOperationProbeDTO extends WorkerDTO
 {
-    public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_TEST_ACCOUNT_ERASURE_PROBE;
+    public const string MESSAGE_TYPE = WorkerConstants::MESSAGE_TEST_ACCOUNT_OPERATION_PROBE;
     public const string REQUEST = 'request';
 
     /**
      * @param string $correlationId Held command correlation
-     * @param AccountErasureProbeRequest $request Strict request including its local source
+     * @param AccountOperationProbeRequest $request Strict request including its local source
      * @throws InvalidFormatException When the correlation is empty
      */
     public function __construct(
         public readonly string $correlationId,
-        public readonly AccountErasureProbeRequest $request,
+        public readonly AccountOperationProbeRequest $request,
     ) {
         if ($correlationId === '') {
-            throw new InvalidFormatException('Erasure probe requires a nonempty correlation');
+            throw new InvalidFormatException('Account operation probe requires a nonempty correlation');
         }
     }
 
@@ -60,16 +60,16 @@ final class WorkerTestAccountErasureProbeDTO extends WorkerDTO
         if (array_diff(array_keys($data), [
             self::TYPE, CommandConstants::FIELD_CORRELATION_ID, AgentConstants::FIELD_AGENT_ID, self::REQUEST,
         ]) !== [] || self::requireString($data, self::TYPE) !== self::MESSAGE_TYPE) {
-            throw new InvalidFormatException('Invalid erasure probe worker request envelope');
+            throw new InvalidFormatException('Invalid account operation probe worker request envelope');
         }
         $payload = self::requireArray($data, self::REQUEST);
         if (array_key_exists(AgentConstants::FIELD_AGENT_ID, $payload)) {
-            throw new InvalidFormatException('Erasure probe source belongs only to the outer worker envelope');
+            throw new InvalidFormatException('Account operation probe source belongs only to the outer worker envelope');
         }
         $payload[AgentConstants::FIELD_AGENT_ID] = self::requireString($data, AgentConstants::FIELD_AGENT_ID);
         return new static(
             self::requireString($data, CommandConstants::FIELD_CORRELATION_ID),
-            AccountErasureProbeRequest::fromArray($payload),
+            AccountOperationProbeRequest::fromArray($payload),
         );
     }
 }
