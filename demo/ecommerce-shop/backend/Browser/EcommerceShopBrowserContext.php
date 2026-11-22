@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Browser;
 
+use Demo\EcommerceShop\Browser\Data\AdminProductBrowserData;
 use Demo\EcommerceShop\Browser\List\MainCategoriesBrowserList;
 use Demo\EcommerceShop\Browser\List\MainProductsBrowserList;
 use Demo\EcommerceShop\Constants\ProductAvailability;
+use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Browser\Context\BrowserContext;
@@ -26,14 +28,17 @@ use Hilos\Runtime\Exception\Rt\RtCollectionNotFoundException;
  *
  * Says who is behind a socket - the admin pages ask it through the page access gate - and
  * computes the two fields of the home page: the address of a category's tile picture and whether
- * a product is on the shop front. A person's presence and session count, the password fields
- * and the scheduled deletion's date are the framework's, computed for its card of one person
- * (HIL-1254), and the other admin tables go out through the framework self-snapshot path.
+ * a product is on the shop front; and the two of the product card on the admin_product page: the
+ * address of the product's picture and what the warehouses keep of it. A person's presence and
+ * session count, the password fields and the scheduled deletion's date are the framework's,
+ * computed for its card of one person (HIL-1254), and the other admin tables go out through the
+ * framework self-snapshot path.
  */
 final class EcommerceShopBrowserContext extends BrowserContext
 {
     /**
-     * Computes the home page's browser fields and hands every other name to the framework.
+     * Computes the home page's browser fields and the admin product card's, and hands every other
+     * name to the framework.
      *
      * The item is built from a live row of its anchor, so the category or the product is read by
      * its key without a check that it is there.
@@ -83,6 +88,33 @@ final class EcommerceShopBrowserContext extends BrowserContext
                 | CollectionNotManualException $exception
             ) {
                 throw new PageInternalErrorException('Product shop front state could not be resolved', $exception);
+            }
+        }
+
+        if ($browserKey === AdminProductBrowserData::DATA) {
+            try {
+                $product = Hilos::$db->products[(int) $rowKey];
+                if ($field === AdminProductBrowserData::FIELD_PICTURE_URL) {
+                    return HilosFiles::downloadPath($product->pictureFileId, CatalogPictureUploadTarget::VARIANT_LG);
+                }
+
+                if ($field === AdminProductBrowserData::FIELD_STOCK) {
+                    $totals = Hilos::$db->productWarehouseStocks->totalsOfProducts($product->id)->of($product->id);
+
+                    return [
+                        AdminProductBrowserData::STOCK_UNITS => $totals->unitCount,
+                        AdminProductBrowserData::STOCK_WAREHOUSES => $totals->warehouseCount,
+                        AdminProductBrowserData::STOCK_WAREHOUSE_ID => $product->kind === ProductKind::UNIQUE ? $totals->warehouseId : null,
+                    ];
+                }
+            } catch (
+                DatabaseException
+                | InvalidArgumentException
+                | LogicException
+                | ObjectGetIdStringNotImplementedException
+                | CollectionNotManualException $exception
+            ) {
+                throw new PageInternalErrorException('Admin product card could not be resolved', $exception);
             }
         }
 

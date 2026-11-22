@@ -266,9 +266,9 @@ final class ProductsTableTest extends ProductsTableEnvironment
 
         self::assertFalse($stock->isAllLoaded());
         self::assertCount(3, $totals);
-        self::assertEquals(new ProductStockTotals(7, null), $totals->of($bulbs));
-        self::assertEquals(new ProductStockTotals(1, $lviv), $totals->of($vase));
-        self::assertEquals(new ProductStockTotals(0, null), $totals->of($seeds));
+        self::assertEquals(new ProductStockTotals(7, null, 2), $totals->of($bulbs));
+        self::assertEquals(new ProductStockTotals(1, $lviv, 1), $totals->of($vase));
+        self::assertEquals(new ProductStockTotals(0, null, 0), $totals->of($seeds));
         self::assertCount(0, Hilos::$db->productWarehouseStocks->totalsOfProducts());
 
         $table = new ProductsTable();

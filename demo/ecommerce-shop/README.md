@@ -31,8 +31,9 @@ The empty shell of the shop, and the smallest complete Hilos project on React
   changes by itself too. Its **Products** page lists every product, recently
   changed first, with its category, kind, price, stock and availability; it
   filters by category, kind and availability, and the rows change by themselves.
-  Only administrators see it; the shop's other admin pages arrive with their
-  own leaves.
+  A row opens the product's own page: its kind, picture, description, category,
+  price and what the warehouses hold of it, all of it live. Only administrators
+  see them; the shop's other admin pages arrive with their own leaves.
 - **Notifications**: the bell in the header for a signed-in person, with
   delivery by email.
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
@@ -138,8 +139,9 @@ only.
 - `/hilos/app/warehouses` — Warehouses;
 - `/hilos/app/categories` — Categories, in the order of the home page;
 - `/hilos/app/products` — Products, recently changed first;
-- `/hilos/app/product/{id}` — a product's page; a stock item also has its
-  Stock tab at `/hilos/app/product/{id}/stock`, and a unique piece has no tabs.
+- `/hilos/app/product/{productId}` — a product's page; a stock item also has
+  its Stock tab at `/hilos/app/product/{productId}/stock`, and a unique piece
+  has no tabs.
 
 Every list and every number on these pages changes by itself when another
 window changes it.

@@ -24,8 +24,10 @@ use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Auth\EcommerceShopAccountDataOwnerDirectory;
 use Demo\EcommerceShop\Auth\EcommerceShopAuthMethodDirectory;
 use Demo\EcommerceShop\Backup\BackupCatalog;
+use Demo\EcommerceShop\Browser\Data\AdminProductBrowserData;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserContext;
 use Demo\EcommerceShop\Browser\List\AdminProductCategoriesBrowserList;
+use Demo\EcommerceShop\Browser\List\AdminProductWarehousesBrowserList;
 use Demo\EcommerceShop\Browser\List\MainCategoriesBrowserList;
 use Demo\EcommerceShop\Browser\List\MainProductsBrowserList;
 use Demo\EcommerceShop\Core\Agent\Daemon\CategoriesLibraryAgentDaemon;
@@ -54,6 +56,7 @@ use Demo\EcommerceShop\Groups\Hilos\NotificationsGroup;
 use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
 use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
+use Demo\EcommerceShop\Pages\AdminProductPage;
 use Demo\EcommerceShop\Pages\AdminProductsPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
@@ -375,6 +378,7 @@ final class Hilos extends HilosFacade
         AdminWarehousesPage::PAGE => AdminWarehousesPage::class,
         AdminCategoriesPage::PAGE => AdminCategoriesPage::class,
         AdminProductsPage::PAGE => AdminProductsPage::class,
+        AdminProductPage::PAGE => AdminProductPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -614,6 +618,7 @@ final class Hilos extends HilosFacade
     public const array BROWSER_DATA = [
         LanguageCardBrowserData::DATA => LanguageCardBrowserData::class,
         CountryCardBrowserData::DATA => CountryCardBrowserData::class,
+        AdminProductBrowserData::DATA => AdminProductBrowserData::class,
     ];
 
     public const array BROWSER_LISTS = [
@@ -621,6 +626,7 @@ final class Hilos extends HilosFacade
         MainProductsBrowserList::LIST => MainProductsBrowserList::class,
         HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::class,
         AdminProductCategoriesBrowserList::LIST => AdminProductCategoriesBrowserList::class,
+        AdminProductWarehousesBrowserList::LIST => AdminProductWarehousesBrowserList::class,
     ];
 
     public const array BROWSER_TABLES = [
@@ -634,6 +640,10 @@ final class Hilos extends HilosFacade
         ],
         AdminProductsPage::PAGE => [
             AdminProductCategoriesBrowserList::LIST => [],
+        ],
+        AdminProductPage::PAGE => [
+            AdminProductCategoriesBrowserList::LIST => [],
+            AdminProductWarehousesBrowserList::LIST => [],
         ],
         ProfilePage::PAGE => [
             HilosProfileIdentitiesBrowserList::LIST => HilosProfileIdentitiesBrowserList::BINDING,
@@ -661,6 +671,9 @@ final class Hilos extends HilosFacade
         ],
         CountryNamesPage::PAGE => [
             CountryCardBrowserData::DATA => CountryCardBrowserData::BINDING,
+        ],
+        AdminProductPage::PAGE => [
+            AdminProductBrowserData::DATA => AdminProductBrowserData::BINDING,
         ],
     ];
 

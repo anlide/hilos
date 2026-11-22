@@ -162,6 +162,10 @@ use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
 use Demo\EcommerceShop\Pages\AdminProductsPage;
+use Demo\EcommerceShop\Pages\AdminProductPage;
+use Demo\EcommerceShop\Browser\Data\AdminProductBrowserData;
+use Demo\EcommerceShop\Browser\EcommerceShopBrowserData;
+use Demo\EcommerceShop\Browser\List\AdminProductWarehousesBrowserList;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
@@ -850,6 +854,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AdminWarehousesPage::PAGE => AdminWarehousesPage::class,
             AdminCategoriesPage::PAGE => AdminCategoriesPage::class,
             AdminProductsPage::PAGE => AdminProductsPage::class,
+            AdminProductPage::PAGE => AdminProductPage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
@@ -1371,6 +1376,59 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         $browser = new EcommerceShopBrowserContext();
         $browser->bindHilosFacade(Hilos::class);
         self::assertContains(EcommerceShopDbContext::categories, $browser->dbSourceKeysOfPage('admin_products'));
+    }
+
+    /**
+     * One product's admin page is served by the products library, carries the product's card and
+     * the live categories and warehouses its names are read from, and hangs off the products page.
+     */
+    public function testTheProductAdminPageIsServedByTheLibraryAndHangsOffProducts(): void
+    {
+        self::assertSame('admin_product', AdminProductPage::PAGE);
+        self::assertSame(PageReach::ROUTE, AdminProductPage::REACH);
+        self::assertSame(PageAccessLevel::ADMIN, AdminProductPage::ACCESS_LEVEL);
+        self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getPageRoutes()[AdminProductPage::PAGE]);
+        self::assertArrayNotHasKey(AdminProductPage::PAGE, Hilos::PAGE_TABLES);
+        self::assertSame(
+            [BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_PRODUCT],
+            AdminProductPage::BROWSER,
+        );
+        self::assertSame('subscription_page_admin_product', EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_PRODUCT);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Product',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'One product of the catalog: its kind, picture, category, price and stock.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => PageConstants::ADMIN_PRODUCTS,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Product',
+            PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
+            PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
+        ], PageCatalog::pages()[PageConstants::ADMIN_PRODUCT]);
+        self::assertSame('adminProduct', EcommerceShopBrowserData::ADMIN_PRODUCT);
+        self::assertSame(AdminProductBrowserData::class, Hilos::BROWSER_DATA[AdminProductBrowserData::DATA]);
+        self::assertSame(
+            [AdminProductBrowserData::DATA => AdminProductBrowserData::BINDING],
+            Hilos::PAGE_DATA[AdminProductPage::PAGE],
+        );
+        self::assertSame('adminProductWarehouses', EcommerceShopBrowserList::ADMIN_PRODUCT_WAREHOUSES);
+        self::assertSame(
+            AdminProductWarehousesBrowserList::class,
+            Hilos::BROWSER_LISTS[AdminProductWarehousesBrowserList::LIST],
+        );
+        self::assertSame(
+            [AdminProductCategoriesBrowserList::LIST => [], AdminProductWarehousesBrowserList::LIST => []],
+            Hilos::PAGE_LISTS[AdminProductPage::PAGE],
+        );
+
+        $browser = new EcommerceShopBrowserContext();
+        $browser->bindHilosFacade(Hilos::class);
+        $sources = $browser->dbSourceKeysOfPage('admin_product');
+        foreach ([
+            EcommerceShopDbContext::products,
+            EcommerceShopDbContext::productWarehouseStocks,
+            EcommerceShopDbContext::categories,
+            EcommerceShopDbContext::warehouses,
+        ] as $source) {
+            self::assertContains($source, $sources);
+        }
     }
 
     /** The stock table of one product is registered under its key, for the page that binds it. */

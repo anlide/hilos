@@ -1,16 +1,17 @@
 // Pure selectors and table declarations for the shop's Products section.
-// The product and categories slots carry records bearing an `id`, so the
-// normalizer stores each one as an entity of the page scope and leaves a
-// reference in the slot; the fields are read back through the resolver the
-// caller hands in, keeping this module free of the application bootstrap.
+// The product slot carries a record bearing an `id`, so the normalizer stores
+// it as an entity of the page scope and leaves a reference in the slot; the
+// fields are read back through the resolver the caller hands in, keeping this
+// module free of the application bootstrap. The kind and category words shared
+// with one product's page live in catalog/catalog.ts.
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   readNumber,
   readString,
   readStringOrNull,
   type HilosTableColumnOf,
   type HilosTableFilterOption,
   type HilosTableFrame,
-  type ListItem,
   type TableRow,
 } from '@hilos/core/base'
 
@@ -24,10 +25,6 @@ import { type ProductRow } from './types/tables/ProductRow.js'
 export const PRODUCTS_TABLE = 'products'
 /** Entity row slot declared by ProductsTable::ROW_SLOT. */
 export const PRODUCT_SLOT = 'product'
-/** Page list carrying the Category filter's live options. */
-export const ADMIN_PRODUCT_CATEGORIES_LIST = 'adminProductCategories'
-/** Entity slot of the categories browser list. */
-const CATEGORY_SLOT = 'categories'
 /** Category filter key accepted by ProductsTable. */
 export const FILTER_CATEGORY = 'category'
 /** Kind filter key accepted by ProductsTable. */
@@ -57,12 +54,6 @@ const PRODUCT_WAREHOUSE_NAME_FIELD = 'warehouseName'
 export const PRODUCT_AVAILABILITY_FIELD = 'availability'
 /** Row payload key of the last product change in epoch milliseconds. */
 export const PRODUCT_CHANGED_AT_FIELD = 'changedAt'
-/** Row payload key of the filter category id. */
-const CATEGORY_ID_FIELD = 'id'
-/** Row payload key of the filter category name. */
-const CATEGORY_NAME_FIELD = 'name'
-/** Row payload key of the filter category catalog position. */
-const CATEGORY_POSITION_FIELD = 'position'
 
 /**
  * Resolve a product entity row into the table's row view-model.
@@ -89,22 +80,6 @@ export function resolveProductRow(
     warehouseName: readStringOrNull(product, PRODUCT_WAREHOUSE_NAME_FIELD),
     availability: readString(product, PRODUCT_AVAILABILITY_FIELD),
     changedAt: readNumber(product, PRODUCT_CHANGED_AT_FIELD),
-  }
-}
-
-/**
- * Name the product kind.
- *
- * @param kind The product's wire kind.
- */
-export function kindText(kind: string): string {
-  switch (kind) {
-    case 'unique':
-      return 'Unique piece'
-    case 'stock':
-      return 'Stock item'
-    default:
-      return ''
   }
 }
 
@@ -177,32 +152,6 @@ export const AVAILABILITY_OPTIONS: readonly HilosTableFilterOption[] = [
   { value: 'not_placed', label: 'Not in a warehouse yet' },
 ]
 
-/**
- * Read the live Category choices in catalog order, keeping numeric ids.
- *
- * @param items The page-scoped categories list.
- * @param fieldsOf The resolver of a slot's reference to its fields.
- */
-export function categoryOptions(
-  items: readonly ListItem[],
-  fieldsOf: EntityFieldsResolver,
-): HilosTableFilterOption[] {
-  return items
-    .map((item) => slotFields(item.slots[CATEGORY_SLOT], fieldsOf))
-    .filter((category) => typeof category[CATEGORY_ID_FIELD] === 'number')
-    .sort(
-      (left, right) =>
-        readNumber(left, CATEGORY_POSITION_FIELD) -
-          readNumber(right, CATEGORY_POSITION_FIELD) ||
-        readNumber(left, CATEGORY_ID_FIELD) -
-          readNumber(right, CATEGORY_ID_FIELD),
-    )
-    .map((category) => ({
-      value: readNumber(category, CATEGORY_ID_FIELD),
-      label: readString(category, CATEGORY_NAME_FIELD),
-    }))
-}
-
 /** Columns and the fields each cell needs for live redraws. */
 export const PRODUCTS_COLUMNS: HilosTableColumnOf<ProductRow>[] = [
   {
@@ -245,6 +194,13 @@ export const PRODUCTS_COLUMNS: HilosTableColumnOf<ProductRow>[] = [
     sortable: true,
     card: 'hidden',
     cellClass: 'text-nowrap',
+  },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+    reads: [],
   },
 ]
 

@@ -71,7 +71,7 @@ final class ProductWarehouseStocks extends DbCollection
      *
      * @param int ...$productIds Ids of the products
      * @return ProductStockTotalsCollection Totals by product id, one for every id asked about; zero
-     *     units and no warehouse for a product no warehouse keeps; empty for no ids
+     *     units, zero warehouses and no warehouse for a product no warehouse keeps; empty for no ids
      * @throws LogicException When collection class constants are not configured
      * @throws InvalidArgumentException When a loaded object does not match the collection
      * @throws DatabaseException When the rows cannot be read
@@ -92,6 +92,7 @@ final class ProductWarehouseStocks extends DbCollection
             $totals[$productId] = new ProductStockTotals(
                 $unitCount,
                 count($warehouseIds[$productId]) === 1 ? $warehouseIds[$productId][0] : null,
+                count($warehouseIds[$productId]),
             );
         }
 

@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SIGNAL_TYPE_PAGE_RESPONSE, ingest } from '@hilos/core/base'
 
 import { scopes } from '../../../src/bootstrap/session.js'
+import { ADMIN_PRODUCT_CATEGORIES_LIST } from '../../../src/catalog/catalog.js'
 import { PAGE_ADMIN_PRODUCTS } from '../../../src/pages/keys.js'
 import {
-  ADMIN_PRODUCT_CATEGORIES_LIST,
   FILTER_CATEGORY,
   PRODUCTS_TABLE,
 } from '../../../src/views/AdminProducts/adminProducts.js'

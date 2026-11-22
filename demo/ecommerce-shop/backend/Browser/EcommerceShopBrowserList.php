@@ -17,4 +17,7 @@ final class EcommerceShopBrowserList
 
     /** @var string The categories the products page offers in its Category filter */
     public const string ADMIN_PRODUCT_CATEGORIES = 'adminProductCategories';
+
+    /** @var string The warehouses whose names the product page shows */
+    public const string ADMIN_PRODUCT_WAREHOUSES = 'adminProductWarehouses';
 }

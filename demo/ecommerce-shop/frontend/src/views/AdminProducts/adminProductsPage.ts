@@ -4,12 +4,14 @@ import { TableViewportController, bindTableViewport } from '@hilos/core/base'
 
 import { connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
+import {
+  ADMIN_PRODUCT_CATEGORIES_LIST,
+  categoryOptions,
+} from '../../catalog/catalog.js'
 import { type EntityFieldsResolver } from '../../entityFields/entityFields.js'
 import { PAGE_ADMIN_PRODUCTS } from '../../pages/keys.js'
 import {
-  ADMIN_PRODUCT_CATEGORIES_LIST,
   PRODUCTS_TABLE,
-  categoryOptions,
   productsFrame,
   resolveProductRow,
 } from './adminProducts.js'

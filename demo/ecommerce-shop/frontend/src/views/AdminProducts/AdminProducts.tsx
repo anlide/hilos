@@ -1,15 +1,23 @@
 // Products under their shared administration section head. The SDK owns the
 // search, filters, paging and narrow-screen cards; this view supplies the cells.
-import { useLayoutEffect, useState } from 'react'
-import { formatMoment, hilosTimeZone } from '@hilos/core/base'
+// A product's name and its Open link lead to that product's own page.
+import { useContext, useLayoutEffect, useState } from 'react'
+import {
+  HILOS_TABLE_ACTIONS_KEY,
+  formatMoment,
+  hilosTimeZone,
+} from '@hilos/core/base'
 import {
   HilosAdminPage,
+  HilosLink,
+  HilosRouterContext,
   HilosViewportTable,
   useSignal,
 } from '@hilos/react/base'
 
+import { kindText } from '../../catalog/catalog.js'
 import { formatMoney } from '../../money/money.js'
-import { PAGE_ADMIN_PRODUCTS } from '../../pages/keys.js'
+import { PAGE_ADMIN_PRODUCT, PAGE_ADMIN_PRODUCTS } from '../../pages/keys.js'
 import {
   PRODUCT_AVAILABILITY_FIELD,
   PRODUCT_CATEGORY_NAME_FIELD,
@@ -20,13 +28,13 @@ import {
   PRODUCT_UNITS_FIELD,
   availabilityText,
   availabilityTone,
-  kindText,
   stockText,
 } from './adminProducts.js'
 import { createProductsTable, type ProductsTable } from './adminProductsPage.js'
 
 /** The Products administration page, read only. */
 export default function AdminProducts() {
+  const router = useContext(HilosRouterContext)
   const [products, setProducts] = useState<ProductsTable | null>(null)
   useSignal(hilosTimeZone)
 
@@ -38,6 +46,14 @@ export default function AdminProducts() {
     return () => table.dispose()
   }, [])
 
+  /**
+   * The address of one product's page, or undefined where no route builds it.
+   *
+   * @param productId The product's number.
+   */
+  const productPath = (productId: number): string | undefined =>
+    router?.resolvePath(PAGE_ADMIN_PRODUCT, { productId: String(productId) })
+
   return (
     <HilosAdminPage page={PAGE_ADMIN_PRODUCTS} headKind="section">
       {products && (
@@ -45,19 +61,31 @@ export default function AdminProducts() {
           controller={products.controller}
           dataId="admin-products-table"
           cells={{
-            [PRODUCT_NAME_FIELD]: (row) => (
-              <div className="d-flex align-items-center gap-2">
-                <img
-                  src={row.pictureUrl}
-                  alt=""
-                  width={36}
-                  height={27}
-                  loading="lazy"
-                  className="d-none d-md-block flex-shrink-0 rounded object-fit-cover"
-                />
-                <span className="fw-medium">{row.name}</span>
-              </div>
-            ),
+            [PRODUCT_NAME_FIELD]: (row) => {
+              const path = productPath(row.id)
+              return (
+                <div className="d-flex align-items-center gap-2">
+                  <img
+                    src={row.pictureUrl}
+                    alt=""
+                    width={36}
+                    height={27}
+                    loading="lazy"
+                    className="d-none d-md-block flex-shrink-0 rounded object-fit-cover"
+                  />
+                  {path ? (
+                    <HilosLink
+                      to={path}
+                      className="fw-medium text-decoration-none"
+                    >
+                      {row.name}
+                    </HilosLink>
+                  ) : (
+                    <span className="fw-medium">{row.name}</span>
+                  )}
+                </div>
+              )
+            },
             [PRODUCT_CATEGORY_NAME_FIELD]: (row) => (
               <span className="small">{row.categoryName}</span>
             ),
@@ -86,6 +114,18 @@ export default function AdminProducts() {
                 {formatMoment(row.changedAt, { kind: 'dateTime' }) ?? ''}
               </span>
             ),
+            [HILOS_TABLE_ACTIONS_KEY]: (row) => {
+              const path = productPath(row.id)
+              return path ? (
+                <HilosLink
+                  to={path}
+                  className="btn btn-sm btn-outline-secondary"
+                  aria-label={`Open ${row.name}`}
+                >
+                  Open
+                </HilosLink>
+              ) : null
+            },
           }}
         />
       )}
