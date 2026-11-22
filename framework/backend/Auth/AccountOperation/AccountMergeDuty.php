@@ -16,4 +16,6 @@ enum AccountMergeDuty: string
     case Cleanup = 'cleanup';
     case ReleaseLoser = 'release_loser';
     case ReleaseSurvivor = 'release_survivor';
+    case PersonalGive = 'personal_give';
+    case PersonalReceive = 'personal_receive';
 }

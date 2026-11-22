@@ -862,6 +862,8 @@ describe('hilosUserMergeSection', () => {
       ['cleanup', 'Remove transfer copy'],
       ['release_loser', 'Release source reservation'],
       ['release_survivor', 'Release receiving reservation'],
+      ['personal_give', 'Hand over project data'],
+      ['personal_receive', 'Join project data'],
     ])('shows unfinished %s without inventing a wait', (participant, label) => {
       const section = hilosUserMergeSection(
         progress({

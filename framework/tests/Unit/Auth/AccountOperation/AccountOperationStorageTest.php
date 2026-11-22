@@ -451,6 +451,7 @@ final class AccountOperationStorageTest extends TestCase
             'PrepareSurvivor' => 'prepare_survivor', 'PrepareLoser' => 'prepare_loser', 'Give' => 'give', 'Receive' => 'receive',
             'Sessions' => 'sessions', 'SurvivorSessions' => 'survivor_sessions', 'Cleanup' => 'cleanup',
             'ReleaseLoser' => 'release_loser', 'ReleaseSurvivor' => 'release_survivor',
+            'PersonalGive' => 'personal_give', 'PersonalReceive' => 'personal_receive',
         ], array_column(AccountMergeDuty::cases(), 'value', 'name'));
     }
 

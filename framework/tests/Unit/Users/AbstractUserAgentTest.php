@@ -24,6 +24,7 @@ use Hilos\Database\View\Item\AccountOperationAssignment;
 use Hilos\Database\View\Item\AccountOperationResult;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountMergePersonalHandoverSignalData;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalConstants;
@@ -392,6 +393,7 @@ final class AbstractUserAgentTest extends TestCase
         self::assertSame([
             HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP => AccountOperationAskSignalData::class,
             HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER => AccountMergeHandoverSignalData::class,
+            HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER => AccountMergePersonalHandoverSignalData::class,
             HilosSignalConstants::HILOS_USER_RENAME => UserRenameSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_WRITE => UserAdminWriteSignalData::class,
             HilosSignalConstants::HILOS_USER_ADMIN_COMMAND => UserAdminCommandSignalData::class,
@@ -443,7 +445,8 @@ final class AbstractUserAgentTest extends TestCase
         foreach (TestUserAgent::AGENT_SIGNALS as $name => $config) {
             self::assertSame(
                 in_array($name, [HilosSignalConstants::HILOS_USER_ACCOUNT_OPERATION_STEP,
-                    HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER], true) ? 'ownerIndex' : 'userId',
+                    HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER,
+                    HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER], true) ? 'ownerIndex' : 'userId',
                 $config[AgentSignalConfigKey::INDEX_FIELD],
             );
         }
@@ -479,6 +482,28 @@ final class AbstractUserAgentTest extends TestCase
             new AgentSignalData(new SignalData()),
             'agent/hilos_user#43',
             HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER,
+        );
+    }
+
+    public function testAPersonalMergeHandoverRefusesAnUnparsedPayload(): void
+    {
+        $this->expectException(InvalidAgentSignalPayloadException::class);
+
+        new TestUserAgent('42')->onSignalAgent(
+            new AgentSignalData(new SignalData()),
+            'agent/hilos_user#43',
+            HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER,
+        );
+    }
+
+    public function testAPersonalMergeHandoverCannotRetargetAnotherPersonsAgent(): void
+    {
+        $this->expectException(AgentException::class);
+
+        new TestUserAgent('42')->onSignalAgent(
+            new AgentSignalData(new AccountMergePersonalHandoverSignalData(1, AccountMergeStage::Go->value, 1, '43', [])),
+            'agent/hilos_user#44',
+            HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER,
         );
     }
 

@@ -446,6 +446,9 @@ If a merge has to move the loser's rows of the table, the class of its owner
 implements `AccountMergeProjectOwner`; an owner whose class does not keeps the
 merge waiting while the loser still has rows there
 ([../architecture/account-operations.md](../architecture/account-operations.md#merge)).
+A table named in `personal()` is joined into the survivor's by the person's
+agent's subclass through `AccountMergePersonalJoin`, and without that contract
+its rows stay with the loser.
 
 ## Settings Entity (special case)
 

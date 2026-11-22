@@ -2882,6 +2882,9 @@ final class HilosSignalConstants
     /** Source personal agent → survivor: saved merge handover, indexed by ownerIndex. */
     public const string HILOS_USER_ACCOUNT_MERGE_HANDOVER = 'hilos_user_account_merge_handover';
 
+    /** Source personal agent → survivor: its rows of the project's personal sets, indexed by ownerIndex. */
+    public const string HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER = 'hilos_user_account_merge_personal_handover';
+
     /** Sessions library → users library: run an account-operation assignment. */
     public const string HILOS_USERS_LIBRARY_ACCOUNT_OPERATION_STEP = 'hilos_users_library_account_operation_step';
 

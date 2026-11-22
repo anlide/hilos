@@ -529,6 +529,28 @@ erasure rights. `renamePerson()` is the real atomic example
 the target follows: the name and its journal row in one transaction of one
 owner, and what follows the commit is the library's, on the answer.
 
+The same subclass carries the project's part of a merge by implementing
+`AccountMergePersonalJoin`. A row of those sets belongs to one person's agent
+and no agent writes into another person's set, so the part is three methods and
+not a move, and none of them opens a transaction of its own:
+`personalRowsToGive(AccountMergePart)` on the loser reads its rows of the sets
+and writes nothing, returning them as a JSON object with named keys (empty when
+there is nothing); `joinPersonalRows(AccountMergePart, array)` on the survivor
+writes the given rows into its own sets by the project's rule, inside the
+participant step's transaction, and returns the rows joined per family;
+`deleteGivenPersonalRows(AccountMergePart)` on the loser deletes its own rows of
+the sets, inside its step's transaction, and returns the rows deleted per
+family. The project decides the format between the first two; the framework puts
+the object into the frame as it is and checks only that it is an object whose
+keys are named: a list or a key PHP reads as an integer is refused. The
+subclass's claim on such a set carries the operations its rule performs: `Add`
+for the rows the join inserts and `Remove` for the ones the delete removes, and
+`Update` as well when the rule folds a given row into a row the survivor already
+has, adding up a quantity for instance. A claim without `Update` refuses such a
+fold, so the join fails on every poll and the merge never ends. An exception
+from the join or the delete rolls its step back whole, and one from the read
+sends no frame. Files of the registry are not touched (*Merge*, step 6).
+
 **The participant result carrier and step.** The framework mounts
 `Hilos::$db->accountOperationResults` over `hilos_account_operation_result`, with
 at most one immutable result row per assignment. `owner_agent_id` stores the
@@ -779,8 +801,14 @@ no index (so the agent id is the bare type), rows or not; an owner that is not r
 `wait:<key>:<loserUserId>`, while the loser still has rows, and nothing is
 written once it has none. The survivor is never asked, and a malformed
 directory is the census's `InvalidTopologyException` as it is. The census asks
-the owners alone and does not read `personal()`: until HIL-2203 a merge leaves
-the loser's rows of the person's agent's project sets on the loser.
+the owners alone and does not read `personal()`. The person's agent's project
+sets have a part of their own: two go duties, the loser's `personal_give` and
+the survivor's `personal_receive`, written only while
+`AccountMergePersonalStep::isActive()` holds, that is, while `personal()` names
+at least one collection this installation carries and the class registered
+under `hilos_user` implements `AccountMergePersonalJoin` (*The person's agent's
+claims*; *Merge*, step 6). Without that contract on the subclass the loser's
+rows of those sets stay with the loser, as before the part existed.
 `AccountMergeOpening::open()` writes that composition after the two
 preparations, in the same transaction, so a failing census rolls back the
 operation and its preparations with it; a repeat writes only what is missing.
@@ -1930,6 +1958,46 @@ protocol to the live administrator and `account:merge` paths at the
    fate under the project participant contract: an owner moves only what the
    project's merge moves today, and every other row stays with the loser
    (`AccountMergeProjectOwner::mergeAccountPart()`, reached by live dispatch).
+   The rows of the person's agent's own project sets move in a part of their
+   own, only where `AccountMergePersonalStep::isActive()` holds; elsewhere they
+   stay with the loser. The coordinator writes the loser's `personal_give` and the
+   survivor's `personal_receive` with the other go duties. The part depends on
+   neither the framework's receive nor the sessions nor cleanup, and
+   `personal_give` is ready as soon as the loser's give is saved. Each ask of it
+   answers its saved result first. With no result of the survivor's yet, the
+   loser's agent reads its rows of the sets, and only reads, and the framework
+   sends them in one frame, `HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER`, to the
+   survivor's agent outside any transaction; the answer is `Waits` and nothing is
+   written, and every ask before the survivor answers sends the frame again. A
+   send that fails is a line in the log and fails nothing. The survivor's agent
+   takes the frame only from the loser's canonical agent, for a go merge where
+   its person is the survivor, on its own `personal_receive`, with the loser's
+   give saved; any other frame is refused and writes nothing. A saved result
+   answers first, so a repeated frame joins nothing twice, even after the merge
+   ended; new work exists only in open go. In ONE participant transaction the
+   project joins the rows into its own sets by its own rule and the step records
+   `{"rows":{<family>:<n>}}`, then answers `Done`; a coordinator ask without a
+   frame answers the saved result or `Waits`, since rows come only by the frame.
+   That `Done` wakes the next step, the ask of `personal_give`: with the
+   survivor's result saved, the loser's agent deletes its own rows of the sets
+   and records its result in one transaction, and the end check follows. The
+   delete leaves the registry's files alone, because the survivor may have taken
+   their references.
+   A throw from the join rolls the survivor's transaction back whole, saves no
+   result and answers `Failed` (`Refused` for a `ValidationException`); the
+   survivor's sign-in and its receive do not depend on it, and the next ask of
+   `personal_give` sends the frame again. A throw from the delete rolls back,
+   leaves the loser's rows and saves no result, and a repeat deletes once. A lost
+   frame leaves the loser's rows whole, and the asks that sent it repeat it: the
+   coordinator's reentry and the loser's owner-start resume. No poll runs behind
+   any of them. Until the delete, the loser's rows lie beside the joined ones; the
+   folded account cannot sign in, and a foreign key from such a row to a shared
+   row, `RESTRICT` for instance, holds that row until the delete, so the survivor
+   joins rows that still exist. Cancellation ends at the give, so the part, which
+   stands after it, is never cancelled. Cleanup waits for the receipt alone, so
+   the loser's agent may stop before it deletes; `personal_give` is part of the
+   folded loser's own continuation beside `prepare_loser`, give and cleanup, and
+   the next ask raises the agent again, with ordinary access still closed.
    Chat's late-publication guard already applies to the retained live merge:
    after a committed merge it refuses the author's pending text or document
    through the existing draft/unavailable outcome, without publishing as the
@@ -1968,7 +2036,8 @@ protocol to the live administrator and `account:merge` paths at the
    result and the absence of the copy. The prepared `AccountMergeEnd` /
    `advanceMergeEnd()` and the holder's metadata-only copy-read interest implement
    this gate; see [The prepared merge end](#the-prepared-merge-end). The folded
-   loser accepts only continuation of its own operation — copy replay and cleanup — with no ordinary access
+   loser accepts only continuation of its own operation — copy replay, the
+   personal give of a project part, and cleanup — with no ordinary access
    reopened;
    `AddressablePerson::require()` gains no general bypass. The prepared source
    lifecycle and cleanup dispatch implement this boundary. The copy's password
@@ -2001,7 +2070,8 @@ in enum order across both saved results, including `PasswordFateRequired` when
 both captured passwords exist and the immutable choice names no fate. Delivery
 order cannot choose the refusal. Only two reserved results and an allowed
 password fate permit the conditional transition to go. That transition and the
-five fixed go assignments commit together; reentry restores a missing duty
+five fixed go assignments, seven where the person's agent has a project part
+(*Merge*, step 6), commit together; reentry restores a missing duty
 without rewriting an existing assignment. Refusal enters the existing no-give
 cancellation gate and requires both strict owner-bound releases before
 `not_started`. Explicit cancellation uses that same gate; a saved give yields
@@ -2011,7 +2081,10 @@ cancellation gate and requires both strict owner-bound releases before
 
 1. Before the source fact, only the loser's `give` is ready.
 2. After the exact give, `receive`, holder `sessions` and original project
-   expectations are ready independently. Preparing project assignments retain
+   expectations are ready independently, and so is the loser's `personal_give`
+   where the project has a personal part. The survivor's `personal_receive` is
+   never ready by itself: only the loser's frame brings it rows, and its `Done`
+   wakes the next ask of `personal_give`. Preparing project assignments retain
    their id, stage, owner and payload and run through HIL-1998's stage-carry gate.
 3. After the exact receipt, `survivor_sessions` and source `cleanup` are also
    ready, independently of other outstanding results. Cleanup need not wait for
@@ -2188,7 +2261,8 @@ stop while cleanup is pending or context lookup is unresolved.
 skips it even for a cleaned source. `hasWorkInFlight()` reads only the local
 pin and performs no DB poll; another addressed frame can retry a failed lookup.
 Prepared sources accept only their exact own-operation continuation:
-loser preparation replay, give replay and cleanup. Ordinary access remains
+loser preparation replay, give replay, the personal give of a project part and
+cleanup. Ordinary access remains
 closed, and late legal-hold, trust-restriction and push service writes refuse
 without writing. A cleaned source has no idle pin; after its merge completes,
 the continuation gate also permits its own erasure. Legacy sources without a
@@ -2283,7 +2357,13 @@ parser; `survivor_sessions.accessLog` is zero. The expected set must have no ope
 wait and each original project expectation, including preparing expectations,
 must have its own strict rows-moved result. Zero rows is a recorded result;
 an absent owner or unanswered lifted wait is no substitute. Reconcile makes a
-newly registered owner obligatory before that judgment.
+newly registered owner obligatory before that judgment. Where
+`AccountMergePersonalStep::isActive()` holds, the end also requires both
+personal results, the loser's `personal_give` and the survivor's
+`personal_receive`, each on its exact assignment and owner with the same strict
+`{"rows":{…}}` payload; one of them missing waits, and without the part neither
+is asked for. A saved receive without the give's deletion therefore does not end
+the merge.
 
 After those facts, `accountMergeCopies->hasStored(giveId)` must report physical
 absence through its current locked metadata reader. The holder declares only

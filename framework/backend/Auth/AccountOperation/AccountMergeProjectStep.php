@@ -100,6 +100,40 @@ final class AccountMergeProjectStep
     }
 
     /**
+     * Requires the loser's saved give, which every project part of the merge waits for: the owners'
+     * parts here and the personal part of {@see AccountMergePersonalStep}.
+     *
+     * @param AccountOperation $operation Canonical pair
+     * @throws HilosException When the canonical source give or its bound strict result is absent or malformed
+     */
+    public static function guardGive(AccountOperation $operation): void
+    {
+        $assignment = Hilos::$db->accountOperationAssignments->byIdentity(
+            $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Give->value,
+        );
+        $owner = new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$operation->loserUserId);
+        if ($assignment === null) {
+            throw new ValidationException('An account merge part waits for the loser to give its rows away.');
+        }
+        if ($assignment->operationId !== $operation->id || $assignment->stage !== AccountMergeStage::Go->value
+            || $assignment->assignmentKey !== AccountMergeDuty::Give->value || $assignment->userId !== $operation->loserUserId
+            || !$assignment->owner->equals($owner) || !$assignment->payload->equals(AccountOperationAssignmentPayload::fromJson('{}'))) {
+            throw new InvalidFormatException('A project merge part requires its canonical source give.');
+        }
+        $result = Hilos::$db->accountOperationResults->byAssignment($assignment->id);
+        if ($result === null) {
+            throw new ValidationException('An account merge part waits for the loser to give its rows away.');
+        }
+        if ($result->assignmentId !== $assignment->id || $result->ownerAgentId !== $owner->agentId()) {
+            throw new InvalidFormatException('A project merge part requires the exact owner-bound give result.');
+        }
+        $give = AccountMergeGiveResult::of($result->payload);
+        if (($operation->mergeChoice->secondFactorFate === SecondFactorFate::BOTH) !== ($give->effectiveWaitDays !== null)) {
+            throw new InvalidFormatException('The saved merge give wait must match its operation choice.');
+        }
+    }
+
+    /**
      * @param AccountOperationAssignment $assignment Immutable project address
      * @param ?AccountOperation $operation Fresh operation, independent of its current stage
      * @throws HilosException When the pair, project registration or expectation differs
@@ -140,37 +174,6 @@ final class AccountMergeProjectStep
     {
         if ($operation->finishedAt !== null || $operation->stage !== AccountMergeStage::Go->value) {
             throw new AccountOperationStepRefusedException(AccountOperationStepRefusal::ClosedStage);
-        }
-    }
-
-    /**
-     * @param AccountOperation $operation Canonical pair
-     * @throws HilosException When the canonical source give or its bound strict result is absent or malformed
-     */
-    private static function guardGive(AccountOperation $operation): void
-    {
-        $assignment = Hilos::$db->accountOperationAssignments->byIdentity(
-            $operation->id, AccountMergeStage::Go->value, AccountMergeDuty::Give->value,
-        );
-        $owner = new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$operation->loserUserId);
-        if ($assignment === null) {
-            throw new ValidationException('An account merge part waits for the loser to give its rows away.');
-        }
-        if ($assignment->operationId !== $operation->id || $assignment->stage !== AccountMergeStage::Go->value
-            || $assignment->assignmentKey !== AccountMergeDuty::Give->value || $assignment->userId !== $operation->loserUserId
-            || !$assignment->owner->equals($owner) || !$assignment->payload->equals(AccountOperationAssignmentPayload::fromJson('{}'))) {
-            throw new InvalidFormatException('A project merge part requires its canonical source give.');
-        }
-        $result = Hilos::$db->accountOperationResults->byAssignment($assignment->id);
-        if ($result === null) {
-            throw new ValidationException('An account merge part waits for the loser to give its rows away.');
-        }
-        if ($result->assignmentId !== $assignment->id || $result->ownerAgentId !== $owner->agentId()) {
-            throw new InvalidFormatException('A project merge part requires the exact owner-bound give result.');
-        }
-        $give = AccountMergeGiveResult::of($result->payload);
-        if (($operation->mergeChoice->secondFactorFate === SecondFactorFate::BOTH) !== ($give->effectiveWaitDays !== null)) {
-            throw new InvalidFormatException('The saved merge give wait must match its operation choice.');
         }
     }
 

@@ -196,9 +196,13 @@ claims (HIL-630), and takes the frames of the edits that have moved to it
   project's `AccountDataOwnerDirectory` names the collection in `personal()`, and
   the subclass deletes it in `eraseProjectChildren()` inside the person's part of
   the erasure ([account-operations.md](account-operations.md#current-implementation),
-  *The person's agent's claims*). A set whose rows are born only by the person's
-  own choice is claimed whole, creation included, as the notification
-  preferences are. The first such set is the shop's account cart.
+  *The person's agent's claims*). In a merge the same subclass joins the loser's
+  rows of it into the survivor's through `AccountMergePersonalJoin`, and no
+  agent writes into another person's set
+  ([account-operations.md](account-operations.md#merge), step 6). A set whose
+  rows are born only by the person's own choice is claimed whole, creation
+  included, as the notification preferences are. The first such set is the
+  shop's account cart.
 
 Raising the instance owner is cheap enough to use as the write path. Do not
 bypass the hop by writing one person's content from the library to avoid
@@ -363,7 +367,8 @@ including after cleanup or operation completion. The live source stop follows
 its exact cleanup result, not the merge-row write.
 The detailed [merge canon](account-operations.md#merge) gives the folded loser
 a finishing mode: it accepts only continuation of its own operation, copy
-replay and cleanup, and stops after cleanup commits following receipt. Ordinary
+replay, the personal give of a project part and cleanup, and stops after cleanup
+commits following receipt. Ordinary
 access and late service writes stay closed; `AddressablePerson::require()` gains
 no general bypass. Pending cleanup or an unresolved context lookup pins the
 instance locally against idle stop, without a DB read in `hasWorkInFlight()`.

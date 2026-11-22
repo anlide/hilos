@@ -113,7 +113,8 @@ final class AccountMergeCoordinator
         if (AccountMergeEnd::advance($current)) {
             return [];
         }
-        if (in_array($answered->assignmentKey, [AccountMergeDuty::Give->value, AccountMergeDuty::Receive->value], true)) {
+        if (in_array($answered->assignmentKey, [AccountMergeDuty::Give->value, AccountMergeDuty::Receive->value,
+            AccountMergeDuty::PersonalReceive->value], true)) {
             return self::ready($current, false);
         }
 
@@ -251,12 +252,18 @@ final class AccountMergeCoordinator
     }
 
     /**
+     * The two personal duties join the five only where the project's personal part is active.
+     *
      * @param AccountOperation $operation Merge in the transaction that creates or repairs its fixed duties
      */
     private static function recordGo(AccountOperation $operation): void
     {
-        foreach ([AccountMergeDuty::Give, AccountMergeDuty::Receive, AccountMergeDuty::Sessions,
-            AccountMergeDuty::SurvivorSessions, AccountMergeDuty::Cleanup] as $duty) {
+        $duties = [AccountMergeDuty::Give, AccountMergeDuty::Receive, AccountMergeDuty::Sessions,
+            AccountMergeDuty::SurvivorSessions, AccountMergeDuty::Cleanup];
+        if (AccountMergePersonalStep::isActive()) {
+            array_push($duties, AccountMergeDuty::PersonalGive, AccountMergeDuty::PersonalReceive);
+        }
+        foreach ($duties as $duty) {
             $userId = self::userId($operation, $duty);
             Hilos::$db->accountOperationAssignments->actions->record(
                 $operation->id, AccountMergeStage::Go->value, $duty->value, self::owner($operation, $duty),
@@ -286,6 +293,9 @@ final class AccountMergeCoordinator
     }
 
     /**
+     * The personal give is ready once the give is saved; the personal receive never is, because only
+     * the loser's frame brings it its rows.
+     *
      * @param AccountOperation $operation Open go merge
      * @param bool $replayGive Whether to replay saved give once before receipt
      * @return list<AccountOperationAssignment> Ready unsaved duties, with an optional saved give replay
@@ -304,6 +314,9 @@ final class AccountMergeCoordinator
         $received = AccountMergeReceiveResult::forOperation($operation) !== null;
         $ready = $replayGive && !$received ? [$give] : [];
         array_push($ready, ...self::unanswered($operation, [AccountMergeDuty::Receive, AccountMergeDuty::Sessions]));
+        if (AccountMergePersonalStep::isActive()) {
+            array_push($ready, ...self::unanswered($operation, [AccountMergeDuty::PersonalGive]));
+        }
         foreach (AccountOperationExpectedSet::of($operation->id)->expected() as $assignment) {
             if (self::isCanonical($operation, $assignment) && self::result($assignment) === null) {
                 $ready[] = $assignment;
@@ -384,7 +397,7 @@ final class AccountMergeCoordinator
     private static function userId(AccountOperation $operation, AccountMergeDuty $duty): int
     {
         return in_array($duty, [AccountMergeDuty::PrepareSurvivor, AccountMergeDuty::Receive,
-            AccountMergeDuty::SurvivorSessions, AccountMergeDuty::ReleaseSurvivor], true)
+            AccountMergeDuty::SurvivorSessions, AccountMergeDuty::ReleaseSurvivor, AccountMergeDuty::PersonalReceive], true)
             ? $operation->survivorUserId : $operation->loserUserId;
     }
 
@@ -469,6 +482,7 @@ final class AccountMergeCoordinator
             AccountMergeDuty::Sessions, AccountMergeDuty::SurvivorSessions => AccountMergeSessionsResult::of($result->payload),
             AccountMergeDuty::Cleanup => AccountMergeCleanupResult::of($result->payload),
             AccountMergeDuty::ReleaseLoser, AccountMergeDuty::ReleaseSurvivor => AccountMergeReleaseResult::releasedOf($result->payload),
+            AccountMergeDuty::PersonalGive, AccountMergeDuty::PersonalReceive,
             null => AccountMergeProjectResult::rowsMovedOf($result->payload),
         };
 

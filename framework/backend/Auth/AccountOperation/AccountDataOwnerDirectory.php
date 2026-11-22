@@ -23,7 +23,9 @@ use Hilos\Users\Agent\AbstractUserAgent;
  * The collections of the person's agent are no owner: that agent's type is the framework's
  * ({@see HilosAgentType::HILOS_USER}), which no project owner may take. They are a part of the
  * person's own share of the erasure, which the agent deletes after the framework's sets and in the
- * same transaction; the merge census asks only the owners.
+ * same transaction. The merge census asks only the owners: in a merge these collections are joined
+ * by the project's subclass of that agent when it implements {@see AccountMergePersonalJoin}, and
+ * without it their rows stay with the loser.
  *
  * The owners are a list, not a map, so a key typed twice reaches the check instead of silently
  * replacing the first entry. A key is lower snake case with no colon, because the colon separates
@@ -119,6 +121,11 @@ abstract class AccountDataOwnerDirectory
      * Naming a collection here and not deleting it there is the project's mistake, and nothing
      * checks it at startup: the person's row is the last the erasure deletes, and a row that still
      * restricts it stops the erasure's final.
+     *
+     * In a merge these sets are joined by that subclass when it implements
+     * {@see AccountMergePersonalJoin}: the loser's agent gives its rows to the survivor's, which
+     * writes them into its own sets, and the loser's agent then deletes them. A subclass that does
+     * not implement it leaves the rows with the loser, and nothing checks that either.
      *
      * @return list<string> Collection keys the person's agent holds; none by default
      */

@@ -28,6 +28,8 @@ use Hilos\Auth\AccountOperation\AccountMergeGiving;
 use Hilos\Auth\AccountOperation\AccountMergeGiveResult;
 use Hilos\Auth\AccountOperation\AccountOperationAssignmentPayload;
 use Hilos\Auth\AccountOperation\AccountMergeHandover;
+use Hilos\Auth\AccountOperation\AccountMergePersonalJoin;
+use Hilos\Auth\AccountOperation\AccountMergePersonalStep;
 use Hilos\Auth\AccountOperation\AccountMergeReceiveResult;
 use Hilos\Auth\AccountOperation\AccountMergeStage;
 use Hilos\Auth\AccountOperation\AccountMergeReceiving;
@@ -43,6 +45,7 @@ use Hilos\Auth\AccountOperation\AccountOperationParticipantStep;
 use Hilos\Auth\AccountOperation\AccountOperationResultPayload;
 use Hilos\Auth\AccountOperation\DTO\AccountOperationAskSignalData;
 use Hilos\Auth\AccountOperation\DTO\AccountMergeHandoverSignalData;
+use Hilos\Auth\AccountOperation\DTO\AccountMergePersonalHandoverSignalData;
 use Hilos\Auth\AccountOperation\Exception\AccountErasingException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalRefusedException;
 use Hilos\Auth\AccountOperation\Exception\AccountErasureFinalWaitsException;
@@ -257,7 +260,10 @@ use Throwable;
  * ({@see finishAccountErasure()}, HIL-1942), holding the right to delete the person's row, journal
  * and merge row (HIL-1952).
  * The agent also checks its own side of a merge and records a reservation or refusal
- * ({@see prepareForMerge()}, HIL-1988).
+ * ({@see prepareForMerge()}, HIL-1988). A project's subclass that implements
+ * {@see AccountMergePersonalJoin} carries the project part of a merge too: the loser's agent gives
+ * its rows of the personal sets to the survivor's agent, which joins them into its own, and then
+ * deletes them ({@see givePersonalForMerge()}, {@see receivePersonalForMerge()}, HIL-2203).
  */
 abstract class AbstractUserAgent extends AbstractAgent
 {
@@ -277,6 +283,10 @@ abstract class AbstractUserAgent extends AbstractAgent
         HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_HANDOVER => [
             AgentSignalConfigKey::INDEX_FIELD => AccountMergeHandoverSignalData::ownerIndex,
             AgentSignalConfigKey::DTO => AccountMergeHandoverSignalData::class,
+        ],
+        HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER => [
+            AgentSignalConfigKey::INDEX_FIELD => AccountMergePersonalHandoverSignalData::ownerIndex,
+            AgentSignalConfigKey::DTO => AccountMergePersonalHandoverSignalData::class,
         ],
         HilosSignalConstants::HILOS_USER_RENAME => [
             AgentSignalConfigKey::INDEX_FIELD => UserRenameSignalData::userId,
@@ -763,6 +773,48 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * Gives the loser's rows of the project's personal sets to the survivor, and deletes them once
+     * the survivor has joined them. A failed send leaves the duty to the next ask.
+     *
+     * @param int $assignmentId Immutable loser go/personal give assignment
+     * @return AccountOperationResult Committed deletion or its saved durable fact
+     * @throws ValidationException When the project's agent does not join personal sets
+     * @throws Throwable When the continuation, the address, the agent's work or transactional storage refuses the step
+     */
+    public function givePersonalForMerge(int $assignmentId): AccountOperationResult
+    {
+        $this->requireMergeContinuation(Hilos::$db->accountOperationAssignments[$assignmentId]);
+
+        return AccountMergePersonalStep::give(
+            $assignmentId,
+            $this->userId,
+            $this->personalJoin(),
+            function (AccountMergePersonalHandoverSignalData $frame) use ($assignmentId): void {
+                try {
+                    $this->sendToAgent(HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER, $frame);
+                } catch (Throwable) {
+                    Logger::logAgentError(
+                        $this->getId(),
+                        "Account merge {$frame->operationId}, personal give {$assignmentId}: handover send failed.",
+                    );
+                }
+            },
+        );
+    }
+
+    /**
+     * @param int $assignmentId Immutable survivor go/personal receive assignment
+     * @param ?AccountMergePersonalHandoverSignalData $frame The loser's rows, or null when the ask came without them
+     * @return AccountOperationResult Committed join or its saved durable fact
+     * @throws ValidationException When the project's agent does not join personal sets
+     * @throws Throwable When the address, the frame, the agent's work or transactional storage refuses the step
+     */
+    public function receivePersonalForMerge(int $assignmentId, ?AccountMergePersonalHandoverSignalData $frame = null): AccountOperationResult
+    {
+        return AccountMergePersonalStep::receive($assignmentId, $this->userId, $this->personalJoin(), $frame);
+    }
+
+    /**
      * Deletes only this loser's private copy after the exact survivor receipt; stops only after commit or saved replay.
      *
      * @param int $assignmentId Immutable loser go/cleanup assignment
@@ -809,7 +861,9 @@ abstract class AbstractUserAgent extends AbstractAgent
      *
      * Account operation steps answer after start, capture, personal erasure, final, merge preparation or release; begun and folded
      * accounts still serve their own continuation. A prepared source stays until its cleanup commits;
-     * a legacy folded account stops after queuing its answer.
+     * a legacy folded account stops after queuing its answer. The loser's rows of the project's
+     * personal sets are answered as the survivor's personal receive, and only from the loser of
+     * that merge (HIL-2203).
      * A frame of the second factor is answered by {@see SecondFactorPersonEdits}, whatever came of
      * it: the browser action, the sweep or the operator's command waits on the answer (HIL-1406).
      * A confirmation recorded and a trust taken away are answered as a flag is (HIL-1407): the
@@ -834,11 +888,11 @@ abstract class AbstractUserAgent extends AbstractAgent
      * @param string $name Routed agent-signal name
      * @throws AgentUnknownSignalException When the name is not one of this agent's frames
      * @throws InvalidAgentSignalPayloadException When the payload is not the one its name promises
-     * @throws AgentException When the frame names another person
+     * @throws AgentException When the frame names another person, or personal rows come from anyone but the merge's loser
      * @throws InvalidArgumentException When the answer frame cannot be named or queued
      * @throws InvalidFormatException When a renewal or account operation answer is malformed
-     * @throws DatabaseException When the folded-account lookup fails
-     * @throws LogicException When the folded-account collection cannot be read
+     * @throws DatabaseException When the folded-account lookup or the merge of the loser's personal rows fails
+     * @throws LogicException When the folded-account or merge collection cannot be read
      */
     public function onSignalAgent(AgentSignalData $data, string $sender, string $name): void
     {
@@ -850,6 +904,16 @@ abstract class AbstractUserAgent extends AbstractAgent
                 }
 
                 $this->handleMergeHandover($handover, $sender);
+
+                return;
+
+            case HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER:
+                $personal = $data->data;
+                if (!$personal instanceof AccountMergePersonalHandoverSignalData) {
+                    throw new InvalidAgentSignalPayloadException($name, AccountMergePersonalHandoverSignalData::class, $personal);
+                }
+
+                $this->handlePersonalHandover($personal, $sender);
 
                 return;
 
@@ -880,6 +944,8 @@ abstract class AbstractUserAgent extends AbstractAgent
                             AccountMergeDuty::Give->value => $this->giveForMerge($assignment->id),
                             AccountMergeDuty::Receive->value => $this->receiveForMerge($assignment->id),
                             AccountMergeDuty::Cleanup->value => $this->cleanupForMerge($assignment->id),
+                            AccountMergeDuty::PersonalGive->value => $this->givePersonalForMerge($assignment->id),
+                            AccountMergeDuty::PersonalReceive->value => $this->receivePersonalForMerge($assignment->id),
                             default => AccountOperationExpectation::isExpectKey($assignment->assignmentKey)
                                 && AccountOperationExpectation::participantOf($assignment->payload) === AccountErasureParticipantCatalog::PERSONAL
                                     ? $this->eraseAccountPersonalPart($assignment->id)
@@ -1698,6 +1764,35 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /**
+     * Checks the sender against the loser of the frame's merge before the saved-first personal
+     * receive; the step itself checks the frame's receive address.
+     *
+     * @param AccountMergePersonalHandoverSignalData $frame Typed rows of the loser's personal sets
+     * @param string $sender Original transport source
+     * @throws AgentException When the frame addresses a different person or comes from anyone but the loser of its merge
+     * @throws DatabaseException When the frame's merge cannot be read
+     * @throws LogicException When the merge collection cannot be read
+     * @throws InvalidArgumentException When the merge row does not match its collection or the generic answer cannot be queued
+     * @throws InvalidFormatException When the answer cannot be constructed
+     */
+    private function handlePersonalHandover(AccountMergePersonalHandoverSignalData $frame, string $sender): void
+    {
+        $this->refuseAnotherPerson((int)$frame->ownerIndex, HilosSignalConstants::HILOS_USER_ACCOUNT_MERGE_PERSONAL_HANDOVER);
+        $operation = Hilos::$db->accountOperations[$frame->operationId] ?? null;
+        if ($operation === null || $operation->kind !== AccountOperationKind::Merge || $operation->loserUserId === null
+            || $sender !== SignalSource::describe(new SignalSource(
+                SignalSource::AGENT, HilosAgentType::HILOS_USER, (string)$operation->loserUserId,
+            ))) {
+            throw new AgentException('The personal merge handover requires the loser of its merge as the sender.');
+        }
+        $this->sendToAgent(HilosSignalConstants::HILOS_ACCOUNT_OPERATION_ANSWER, AccountOperationAsks::answer(
+            new AccountOperationAskSignalData($frame->operationId, $frame->stage, $frame->assignmentId, $frame->ownerIndex),
+            fn (AccountOperationAssignment $assignment): AccountOperationResult => $this->receivePersonalForMerge($assignment->id, $frame),
+            $this->getId(),
+        ));
+    }
+
+    /**
      * @return ?AccountOperation Durable source context, including already cleaned or finished merges
      * @throws HilosException When source metadata or cleanup facts cannot be resolved
      * @throws JsonException When immutable preparation proofs cannot be decoded
@@ -1739,7 +1834,7 @@ abstract class AbstractUserAgent extends AbstractAgent
         if ($assignment->operationId === $operation->id && $assignment->userId === $this->userId
             && $assignment->owner->equals(new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$this->userId))
             && in_array($assignment->assignmentKey, [AccountMergeDuty::PrepareLoser->value,
-                AccountMergeDuty::Give->value, AccountMergeDuty::Cleanup->value], true)) {
+                AccountMergeDuty::Give->value, AccountMergeDuty::Cleanup->value, AccountMergeDuty::PersonalGive->value], true)) {
             return;
         }
         if ($this->finishingOperationId === null && $operation->finishedAt !== null
@@ -1749,6 +1844,19 @@ abstract class AbstractUserAgent extends AbstractAgent
         }
 
         throw new ValidationException(AccountMergeAccess::REFUSED_MESSAGE);
+    }
+
+    /**
+     * @return AccountMergePersonalJoin This agent, as the project's subclass that joins personal sets
+     * @throws ValidationException When the project's agent does not join the personal part of a merge
+     */
+    private function personalJoin(): AccountMergePersonalJoin
+    {
+        if (!$this instanceof AccountMergePersonalJoin) {
+            throw new ValidationException('This person\'s agent does not join the personal part of a merge.');
+        }
+
+        return $this;
     }
 
     /**

@@ -24,7 +24,7 @@ export const HILOS_USER_MERGE_COPY = {
 } as const
 
 /**
- * Display names of the nine merge duties. Any other participant is already
+ * Display names of the eleven merge duties. Any other participant is already
  * the server's words and is shown unchanged.
  */
 const MERGE_DUTY_LABEL = {
@@ -37,6 +37,8 @@ const MERGE_DUTY_LABEL = {
   cleanup: 'Remove transfer copy',
   release_loser: 'Release source reservation',
   release_survivor: 'Release receiving reservation',
+  personal_give: 'Hand over project data',
+  personal_receive: 'Join project data',
 } as const
 
 type MergeDuty = keyof typeof MERGE_DUTY_LABEL

@@ -244,8 +244,8 @@ final class AccountMergeProgressResolver
             default => AccountMergeStage::Go,
         };
         $userId = match ($duty) {
-            AccountMergeDuty::PrepareSurvivor, AccountMergeDuty::Receive,
-            AccountMergeDuty::SurvivorSessions, AccountMergeDuty::ReleaseSurvivor => $operation->survivorUserId,
+            AccountMergeDuty::PrepareSurvivor, AccountMergeDuty::Receive, AccountMergeDuty::SurvivorSessions,
+            AccountMergeDuty::ReleaseSurvivor, AccountMergeDuty::PersonalReceive => $operation->survivorUserId,
             default => $operation->loserUserId,
         };
         $owner = in_array($duty, [AccountMergeDuty::Sessions, AccountMergeDuty::SurvivorSessions], true)
@@ -295,6 +295,8 @@ final class AccountMergeProgressResolver
             AccountMergeDuty::Cleanup => AccountMergeCleanupResult::forOperation($operation) !== null,
             AccountMergeDuty::Give => AccountMergeGiveResult::of($result->payload) !== null,
             AccountMergeDuty::Sessions, AccountMergeDuty::SurvivorSessions => AccountMergeSessionsResult::of($result->payload) !== null,
+            AccountMergeDuty::PersonalGive, AccountMergeDuty::PersonalReceive =>
+                AccountMergeProjectResult::rowsMovedOf($result->payload) !== null,
         };
     }
 

@@ -88,6 +88,17 @@ final class AccountMergeEnd
             if (AccountMergeCleanupResult::forOperation($current) === null || !self::projectsComplete($current)) {
                 return false;
             }
+            if (AccountMergePersonalStep::isActive()) {
+                foreach ([AccountMergeDuty::PersonalGive, AccountMergeDuty::PersonalReceive] as $duty) {
+                    $userId = $duty === AccountMergeDuty::PersonalGive ? $current->loserUserId : $current->survivorUserId;
+                    $result = self::dutyResult($current, AccountMergeStage::Go, $duty, $userId,
+                        new AccountOperationOwnerAddress(HilosAgentType::HILOS_USER, (string)$userId));
+                    if ($result === null) {
+                        return false;
+                    }
+                    AccountMergeProjectResult::rowsMovedOf($result->payload);
+                }
+            }
             if (Hilos::$db->accountMergeCopies->hasStored($giveResult->assignmentId)) {
                 return false;
             }
