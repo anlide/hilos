@@ -41,7 +41,10 @@ final class EcommerceShopSignalConstants
     /** @var string Category create action name */
     public const string CATEGORY_CREATE = 'category_create';
 
-    /** @var string Category picture publish action name: the picture of a new category is published once it is uploaded */
+    /** @var string Category update action name */
+    public const string CATEGORY_UPDATE = 'category_update';
+
+    /** @var string Category picture publish action name: a new or replacement picture is published once it is uploaded */
     public const string CATEGORY_PICTURE_PUBLISH = 'category_picture_publish';
 
     /** @var string Files door → categories library: the answer to a category picture publication */

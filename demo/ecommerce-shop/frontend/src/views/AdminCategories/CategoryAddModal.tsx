@@ -6,7 +6,7 @@
 // picture. The whole body takes a dropped or pasted file. The parent mounts one
 // window per opening, so an earlier refusal never carries into the next one.
 // Bootstrap classes only (styling-rules.md).
-import { useLayoutEffect, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { type HilosUploadField } from '@hilos/core/base'
 import {
   HilosActionError,
@@ -22,17 +22,11 @@ import {
   EMPTY_CATEGORY_DRAFT,
   canAddCategory,
   isCategoryDraftDirty,
-  type CategoryAddDraft,
 } from './categoryAddDraft.js'
-import {
-  CategoryPictureField,
-  useCatalogPictureField,
-} from './CategoryPictureField.js'
+import { CategoryFormFields } from './CategoryFormFields.js'
+import { useCatalogPictureField } from './CategoryPictureField.js'
 
 const FORM_ID = 'admin-categories-add-form'
-const NAME_ID = 'admin-categories-add-name'
-const DESCRIPTION_ID = 'admin-categories-add-description'
-const DESCRIPTION_HINT_ID = 'admin-categories-add-description-hint'
 
 /**
  * One opening of the Add category dialog; it closes itself on the backend's
@@ -61,32 +55,32 @@ function CategoryAddDialog({
   field: HilosUploadField
   onClose: () => void
 }) {
-  const [draft, setDraft] = useState<CategoryAddDraft>(EMPTY_CATEGORY_DRAFT)
+  const [draft, setDraft] = useState(EMPTY_CATEGORY_DRAFT)
   const [pending, setPending] = useState(false)
   const publish = useTrackedAction()
   const create = useTrackedAction()
+  const submitting = useRef(false)
   const { locked } = useLookOnly()
   // The refusal slot draws the action that ran last: a new picture after a
   // refused Add speaks for itself, and so does a new Add.
   const [lastRun, setLastRun] = useState<'publish' | 'create'>('create')
+  const onPublish = useCallback(() => setLastRun('publish'), [])
 
-  useLayoutEffect(() => {
-    if (publish.busy) {
-      setLastRun('publish')
-    }
-  }, [publish.busy])
-  useLayoutEffect(() => {
-    if (create.busy) {
-      setLastRun('create')
-    }
-  }, [create.busy])
-
-  const canAdd = canAddCategory(draft, pending)
+  const picturePending = pending || publish.busy
+  const canAdd = canAddCategory(draft, picturePending)
 
   async function submit(): Promise<void> {
-    if (locked || !canAdd) return
-    if (await create.run(sendCategoryCreate(draft))) {
-      onClose()
+    if (locked || !canAdd || field.busy.get() || submitting.current) return
+    submitting.current = true
+    setLastRun('create')
+    field.setDisabled(true)
+    try {
+      if (await create.run(sendCategoryCreate(draft))) {
+        onClose()
+      }
+    } finally {
+      field.setDisabled(false)
+      submitting.current = false
     }
   }
 
@@ -94,8 +88,9 @@ function CategoryAddDialog({
     <HilosModal
       open
       title="Add category"
+      initialFocus="inner"
       onClose={onClose}
-      confirmOnClose={isCategoryDraftDirty(draft)}
+      confirmOnClose={isCategoryDraftDirty(draft) || picturePending}
       busy={create.busy}
       actions={({ requestClose }) => (
         <>
@@ -136,55 +131,20 @@ function CategoryAddDialog({
               void submit()
             }}
           >
-            <div className="mb-3">
-              <label className="form-label" htmlFor={NAME_ID}>
-                Name
-              </label>
-              <input
-                id={NAME_ID}
-                type="text"
-                className="form-control"
-                value={draft.name}
-                data-id="admin-categories-add-name"
-                data-autofocus
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="mb-3">
-              <label className="form-label" htmlFor={DESCRIPTION_ID}>
-                Description
-              </label>
-              <textarea
-                id={DESCRIPTION_ID}
-                rows={2}
-                className="form-control"
-                value={draft.description}
-                aria-describedby={DESCRIPTION_HINT_ID}
-                data-id="admin-categories-add-description"
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-              />
-              <div id={DESCRIPTION_HINT_ID} className="form-text">
-                Buyers see it under the name on the home page.
-              </div>
-            </div>
-            <CategoryPictureField
-              field={field}
-              publish={publish}
-              picture={draft.picture}
-              onPicture={(picture) =>
-                setDraft((current) => ({ ...current, picture }))
+            <CategoryFormFields
+              idPrefix="admin-categories-add"
+              draft={draft}
+              onChange={(patch) =>
+                setDraft((current) => ({ ...current, ...patch }))
               }
-              onPending={setPending}
+              pictureField={{
+                field,
+                publish,
+                onPublish,
+                onPicture: (picture) =>
+                  setDraft((current) => ({ ...current, picture })),
+                onPending: setPending,
+              }}
             />
           </form>
         </div>

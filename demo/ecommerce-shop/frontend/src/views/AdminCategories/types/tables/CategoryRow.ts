@@ -14,8 +14,12 @@ export interface CategoryRow {
   readonly description: string
   /** Place of the category in the catalog, from the first. */
   readonly position: number
-  /** Address of the category picture. */
+  /** Address of the category thumbnail in the table. */
   readonly picture: string
+  /** Registry id of the saved category picture. */
+  readonly pictureFileId: number
+  /** Address of the saved category picture in the edit form. */
+  readonly picturePreview: string
   /** Products the category holds. */
   readonly productCount: number
   /** Whether no category comes before it in the catalog. */

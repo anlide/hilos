@@ -7,154 +7,50 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
-use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Database;
+use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\Entity\Item\Category as EntityCategory;
 use Demo\EcommerceShop\Database\Object\Item\Category as ObjectCategory;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
-use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
+use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\Category\CategoryTableRow;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Action\ActionMessages;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
-use Hilos\Core\Page\ActionRouteConfig;
 use Hilos\Core\Page\DTO\PageActionErrorSignalData;
 use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\ActionForbiddenException;
 use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
-use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageRouteParams;
-use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
-use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
-use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\Entity\Item\File;
 use Hilos\Files\DTO\FilesPublishedSignalData;
-use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
-use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
-use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Testing\IntegrationTest;
-use Hilos\TruthSource\RtTruthSourceRegistry;
-use Hilos\Users\AccountStandingResolver;
 use Hilos\Utils\Helpers\RandomHelper;
-
-/**
- * Mounts the shop's browser and its own signal router over the categories environment, turns the admin
- * view mode on, and claims the connections register the page gate reads a subscriber's identity from.
- *
- * The runtime writes run outside any agent, as the daemon's do: the environment beneath runs under the
- * categories library's frame, which owns neither the connections nor the view mode.
- */
-abstract class AdminCategoriesPageEnvironment extends CategoriesLibraryEnvironment
-{
-    private const string TEST_AGENT = 'admin-categories-page-test';
-
-    /** @var object{published: list<array{string, string, list<string>, string}>} The swapped door and the publications it wrote down */
-    protected object $recorder;
-
-    private ?SignalRouter $previousRouter = null;
-    private bool $claimed = false;
-    private ?HilosFiles $door = null;
-
-    /**
-     * Starts the categories library beneath and forgets what the ORM loaded earlier in the process, then
-     * mounts the browser, the router, the connections claim and the view mode, and swaps the files door
-     * for one that writes each publication down instead of sending it.
-     *
-     * The people are rows written past the users library, so a users collection an earlier case warmed
-     * would read them as absent; the next read reads the table again, inside the case, and the rollback
-     * forgets that read with the rows.
-     */
-    protected function prepareIntegrationEnvironment(): void
-    {
-        $this->previousRouter = Hilos::$sr;
-        parent::prepareIntegrationEnvironment();
-        Hilos::$db->forgetLoadedDataForTest();
-        Hilos::initBrowser();
-        Hilos::$sr = new EcommerceShopSignalRouter();
-        RtTruthSourceRegistry::register(EcommerceShopRtContext::connections, TruthSourceKeys::all(), self::TEST_AGENT);
-        RtTruthSourceRegistry::registerDaemon(AdminViewModeRuntime::RT_ITEM);
-        $this->claimed = true;
-        self::unattended(static function (): void {
-            Hilos::$rt->connections->actions->clear();
-            Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(true);
-        });
-        $door = Hilos::$files;
-        self::assertNotNull($door);
-        $this->door = $door;
-        $this->recorder = new class ($door->storage) extends HilosFiles {
-            /** @var list<array{string, string, list<string>, string}> Each publication: connection, target, uploads, answer name */
-            public array $published = [];
-
-            /**
-             * @param string $acceptKey Connection the uploads belong to
-             * @param string $target Upload target
-             * @param list<string> $clientUploadIds Uploads to publish
-             * @param string $replySignal Name the answer comes under
-             */
-            public function publishUploads(string $acceptKey, string $target, array $clientUploadIds, string $replySignal): void
-            {
-                $this->published[] = [$acceptKey, $target, $clientUploadIds, $replySignal];
-            }
-        };
-        Hilos::$files = $this->recorder;
-    }
-
-    /**
-     * Puts the files door back, turns the view mode off and forgets the connections if they were claimed,
-     * restores the router and the browser, then releases beneath, in every outcome of the preparation.
-     */
-    protected function releaseIntegrationEnvironment(): void
-    {
-        try {
-            if ($this->door !== null) {
-                Hilos::$files = $this->door;
-                $this->door = null;
-            }
-            if ($this->claimed) {
-                $this->claimed = false;
-                self::unattended(static function (): void {
-                    Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
-                    Hilos::$rt->connections->actions->clear();
-                });
-                RtTruthSourceRegistry::unregisterDaemon(AdminViewModeRuntime::RT_ITEM);
-                RtTruthSourceRegistry::unregisterAgent(self::TEST_AGENT);
-            }
-            Hilos::$sr = $this->previousRouter;
-            Hilos::initBrowser();
-        } finally {
-            parent::releaseIntegrationEnvironment();
-        }
-    }
-
-    /**
-     * Runs a runtime write outside any agent, the way the daemon writes.
-     *
-     * @param callable(): void $write The write
-     */
-    protected static function unattended(callable $write): void
-    {
-        ExecutionContext::run(new ExecutionFrame(), $write);
-    }
-}
 
 /**
  * The categories admin page in the admin view mode: a guest and a signed-in person without admin rights
@@ -166,47 +62,12 @@ abstract class AdminCategoriesPageEnvironment extends CategoriesLibraryEnvironme
  *
  * An administrator also adds a category: the picture is published through the files door, swapped here for
  * one that writes each publication down instead of sending it, and the answer is delivered to the library
- * by hand; the add checks the picture is a fresh file of the administrator.
+ * by hand. Creation and replacement require a fresh file of the administrator.
  */
 #[IntegrationTest]
 final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
 {
-    private const string GUEST_KEY = 'admin-categories-guest';
-    private const string VISITOR_KEY = 'admin-categories-visitor';
-    private const string ADMIN_KEY = 'admin-categories-admin';
-
-    private int $categoryId;
-    private int $categoryPosition;
-    private string $categoryName;
-    private int $pictureFileId;
-    private int $visitorId;
-    private int $adminId;
-
-    /** The library the actions and the answers of the case go through, one instance for the whole case. */
-    private CategoriesLibraryAgent $library;
-
-    /** On an empty catalog, one category of the case, and a guest, a person without admin rights and an administrator connected. */
-    protected function setUpInTransaction(): void
-    {
-        parent::setUpInTransaction();
-        $this->pictureFileId = self::pictureFile();
-        $this->categoryName = 'Category ' . RandomHelper::hex(8);
-        $category = Hilos::$db->categories->actions->create($this->categoryName, 'Flowers of the case', $this->pictureFileId);
-        $this->categoryId = $category->id;
-        $this->categoryPosition = $category->position;
-        $this->library = new CategoriesLibraryAgent();
-        $visitorId = self::person('Categories visitor', false);
-        $adminId = self::person('Categories admin', true);
-        $this->visitorId = $visitorId;
-        $this->adminId = $adminId;
-        self::unattended(static function () use ($visitorId, $adminId): void {
-            Hilos::$rt->connections->actions->register(self::GUEST_KEY, null);
-            Hilos::$rt->connections->actions->register(self::VISITOR_KEY, $visitorId);
-            Hilos::$rt->connections->actions->register(self::ADMIN_KEY, $adminId);
-        });
-    }
-
-    /** A viewer receives the categories window in the first answer, and the case's category with all seven fields shown. */
+    /** A viewer receives the categories window in the first answer with every field of the category shown. */
     public function testAViewerSeesTheCategoryWithEveryFieldShown(): void
     {
         foreach ([self::GUEST_KEY, self::VISITOR_KEY] as $acceptKey) {
@@ -223,9 +84,11 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
             self::assertSame([
                 CategoryTableRow::id => $this->categoryId,
                 CategoryTableRow::name => $this->categoryName,
-                CategoryTableRow::description => 'Flowers of the case',
+                CategoryTableRow::description => self::CATEGORY_DESCRIPTION,
                 CategoryTableRow::position => $this->categoryPosition,
                 CategoryTableRow::picture => HilosFiles::downloadPath($this->pictureFileId, CatalogPictureUploadTarget::VARIANT_XS),
+                CategoryTableRow::pictureFileId => $this->pictureFileId,
+                CategoryTableRow::picturePreview => HilosFiles::downloadPath($this->pictureFileId, CatalogPictureUploadTarget::VARIANT_SM),
                 CategoryTableRow::productCount => 0,
                 CategoryTableRow::first => $this->categoryPosition === self::storedLowestPosition(),
             ], $slot);
@@ -477,51 +340,164 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
         self::assertSame([], $this->recorder->published);
     }
 
+    /** An explicit null keeps the existing picture, and the success names the saved category. */
+    public function testAnAdminCanEditTheTextAndKeepThePicture(): void
+    {
+        $name = $this->categoryName . ' revised';
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::CATEGORY_UPDATE, $this->updatePayload([
+            ObjectCategory::name => "  {$name} ",
+            ObjectCategory::description => "\tFresh cut roses \n",
+        ]), 'req-category-update');
+
+        $success = $this->acknowledgement(SignalConstants::ACTION_SUCCESS, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        self::assertSame('req-category-update', $success->requestId);
+        self::assertSame(EcommerceShopSignalConstants::CATEGORY_UPDATE, $success->action);
+        self::assertSame(sprintf('Category “%s” saved.', $name), $success->message);
+        self::assertSame([$name, 'Fresh cut roses', $this->pictureFileId], $this->storedCategory());
+    }
+
+    /** The focused row receives both picture sizes and the current file ID after a replacement. */
+    public function testAnAdminCanReplaceThePictureAndFollowTheUpdatedRow(): void
+    {
+        $this->subscribe(self::ADMIN_KEY);
+        Hilos::$sr->setTableFocus(self::ADMIN_KEY, EcommerceShopTableContext::categories, (string)$this->categoryId);
+        $fileId = $this->ownPictureFile($this->adminId, false);
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::CATEGORY_UPDATE, $this->updatePayload([
+            ObjectCategory::name => $this->categoryName,
+            ObjectCategory::description => self::CATEGORY_DESCRIPTION,
+            ObjectCategory::pictureFileId => $fileId,
+        ]), 'req-category-update');
+        $success = $this->acknowledgement(SignalConstants::ACTION_SUCCESS, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        self::assertSame('req-category-update', $success->requestId);
+        self::assertSame([$this->categoryName, self::CATEGORY_DESCRIPTION, $fileId], $this->storedCategory());
+
+        // The rollback scope holds the real announcement. Deliver the picture change to the browser as a worker would receive it.
+        Hilos::$browser->record(SourceChange::dbUpdated(
+            EcommerceShopDbContext::categories,
+            (string)$this->categoryId,
+            [EntityCategory::picture_file_id => $fileId],
+            origin: self::ADMIN_KEY,
+            originRequestId: 'req-category-update',
+            previous: [EntityCategory::picture_file_id => $this->pictureFileId],
+        ));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $deltas = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->signalName->getName() === SignalTypeConstants::TABLE_VIEWPORT_DELTA) {
+                self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+                self::assertSame(self::ADMIN_KEY, $signal->data->targetAcceptKey);
+                self::assertInstanceOf(TableViewportDeltaDTO::class, $signal->data->data);
+                $deltas[] = $signal->data->data;
+            }
+        }
+        self::assertCount(1, $deltas);
+        [$delta] = $deltas;
+        self::assertSame(TableViewportDeltaDTO::KIND_ROW_UPDATED, $delta->kind);
+        self::assertTrue($delta->own);
+        $slot = $delta->row[PagePayload::slots][CategoriesTable::ROW_SLOT];
+        self::assertSame($fileId, $slot[CategoryTableRow::pictureFileId]);
+        self::assertSame(HilosFiles::downloadPath($fileId, CatalogPictureUploadTarget::VARIANT_XS), $slot[CategoryTableRow::picture]);
+        self::assertSame(HilosFiles::downloadPath($fileId, CatalogPictureUploadTarget::VARIANT_SM), $slot[CategoryTableRow::picturePreview]);
+    }
+
+    /** Each expected field can stop an edit before a replacement is checked or linked. */
+    public function testAnAdminIsRefusedAnEditOverAnyStaleField(): void
+    {
+        $replacement = $this->ownPictureFile($this->adminId, false);
+        $baseline = $this->storedCategory();
+        $staleFields = [
+            CategoryUpdateActionDTO::expectedName => ' ' . $this->categoryName,
+            CategoryUpdateActionDTO::expectedDescription => self::CATEGORY_DESCRIPTION . ' ',
+            CategoryUpdateActionDTO::expectedPictureFileId => $replacement,
+        ];
+        foreach ($staleFields as $field => $stale) {
+            $refusal = $this->refusedUpdate($this->updatePayload([
+                $field => $stale,
+                ObjectCategory::pictureFileId => $replacement,
+            ]));
+            self::assertSame('The category changed elsewhere. Review the current values and save again.', $refusal->reason, $field);
+            self::assertSame($baseline, $this->storedCategory(), $field);
+        }
+        $refusal = $this->refusedUpdate($this->updatePayload([
+            CategoryUpdateActionDTO::expectedPictureFileId => $replacement,
+            ObjectCategory::pictureFileId => $this->pictureFileId,
+        ]));
+        self::assertSame('The category changed elsewhere. Review the current values and save again.', $refusal->reason);
+        self::assertSame(0, (int)Database::sql('SELECT bound FROM hilos_file WHERE id = ?', [$replacement])->field(File::bound));
+        self::assertSame($baseline, $this->storedCategory());
+    }
+
+    /** A missing nullable key is a malformed edit rather than a request to keep the picture. */
+    public function testAnEditMustSupplyThePictureKey(): void
+    {
+        $baseline = $this->storedCategory();
+        $payload = $this->updatePayload();
+        unset($payload[ObjectCategory::pictureFileId]);
+
+        self::assertSame('Payload carries no value under key pictureFileId', $this->refusedUpdate($payload)->reason);
+        self::assertSame($baseline, $this->storedCategory());
+    }
+
+    /** Saving after the category was deleted returns the category's disappearance message. */
+    public function testAnAdminIsRefusedAnEditOfAMissingCategory(): void
+    {
+        $payload = $this->updatePayload();
+        Hilos::$db->categories[$this->categoryId]->actions->delete();
+
+        self::assertSame('This category no longer exists', $this->refusedUpdate($payload)->reason);
+    }
+
+    /** A duplicate name or an unavailable replacement leaves all the current category fields intact. */
+    public function testATakenNameAndUnavailablePicturesAreRefusedOnEdit(): void
+    {
+        $baseline = $this->storedCategory();
+        $takenName = $this->categoryName . ' other';
+        Hilos::$db->categories->actions->create($takenName, self::CATEGORY_DESCRIPTION, self::pictureFile());
+        self::assertSame(
+            'A category with this name already exists',
+            $this->refusedUpdate($this->updatePayload([ObjectCategory::name => $takenName]))->reason,
+        );
+        self::assertSame($baseline, $this->storedCategory());
+
+        $pictures = [
+            'foreign' => $this->ownPictureFile($this->visitorId, false),
+            'bound' => $this->ownPictureFile($this->adminId, true),
+            'unknown' => 999_999_999,
+        ];
+        foreach ($pictures as $case => $fileId) {
+            $refusal = $this->refusedUpdate($this->updatePayload([ObjectCategory::pictureFileId => $fileId]));
+            self::assertSame('This file is gone; upload it again', $refusal->reason, $case);
+            self::assertSame($baseline, $this->storedCategory(), $case);
+        }
+    }
+
+    /** The tracked write is refused to viewers and to a non-admin when view mode is off. */
+    public function testViewersAndANonAdminCannotEditTheCategory(): void
+    {
+        $baseline = $this->storedCategory();
+        foreach ([self::GUEST_KEY, self::VISITOR_KEY] as $acceptKey) {
+            $refusal = $this->refusedUpdate($this->updatePayload(), $acceptKey);
+            self::assertSame(ActionViewModeException::ERROR_CODE, $refusal->errorCode);
+            self::assertSame(ActionMessages::VIEW_MODE, $refusal->reason);
+            self::assertSame($baseline, $this->storedCategory());
+        }
+
+        self::unattended(static function (): void {
+            Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
+        });
+        $refusal = $this->refusedUpdate($this->updatePayload(), self::VISITOR_KEY);
+        self::assertSame(ActionForbiddenException::ERROR_CODE, $refusal->errorCode);
+        self::assertSame($baseline, $this->storedCategory());
+    }
+
     /** The test-only command removes the category of the given name, and answers a repeat that nothing was removed. */
     public function testTheTestCommandDeletesACategoryByItsName(): void
     {
         self::assertSame([EcommerceShopCommandConstants::deleted => true], $this->command($this->categoryName)->payload);
         self::assertSame(0, self::storedCountNamed($this->categoryName));
         self::assertSame([EcommerceShopCommandConstants::deleted => false], $this->command($this->categoryName)->payload);
-    }
-
-    /**
-     * Writes a registry row a category may show, with no file on disk behind it.
-     *
-     * @return int Id of the new registry row
-     */
-    private static function pictureFile(): int
-    {
-        $storedName = RandomHelper::hex(16) . '.webp';
-        Database::sql(
-            'INSERT INTO hilos_file (stored_name, filename, mime_type, size, content_hash, visibility, created_at) '
-            . 'VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [$storedName, 'roses.webp', 'image/webp', 4, hash('sha256', $storedName), FileVisibility::PUBLIC->value, 1000],
-        );
-
-        return Database::lastInsertId();
-    }
-
-    /**
-     * Writes a registry row published by the given person, with no file on disk behind it.
-     *
-     * @param int $ownerUserId Person who published the file
-     * @param bool $bound Whether a record already shows the file
-     * @return int Id of the new registry row
-     */
-    private function ownPictureFile(int $ownerUserId, bool $bound): int
-    {
-        $storedName = RandomHelper::hex(16) . '.webp';
-        Database::sql(
-            'INSERT INTO hilos_file (stored_name, filename, mime_type, size, content_hash, owner_user_id, visibility, bound, created_at) '
-            . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [
-                $storedName, 'lilies.webp', 'image/webp', 4, hash('sha256', $storedName),
-                $ownerUserId, FileVisibility::PUBLIC->value, (int)$bound, 1000,
-            ],
-        );
-
-        return Database::lastInsertId();
     }
 
     /**
@@ -594,23 +570,6 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
     }
 
     /**
-     * Writes a person past the users library and drops a verdict an earlier case of this process may have
-     * remembered for the same id.
-     *
-     * @param string $name Name of the person
-     * @param bool $admin Whether the person is an administrator
-     * @return int Id of the new person
-     */
-    private static function person(string $name, bool $admin): int
-    {
-        Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, ?, 0)', [$name, (int)$admin]);
-        $userId = Database::lastInsertId();
-        AccountStandingResolver::forget($userId);
-
-        return $userId;
-    }
-
-    /**
      * Subscribes one connection with an open categories window and reads the one page answer.
      *
      * @param string $acceptKey Subscribing connection
@@ -652,55 +611,6 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
     private function window(array $payloads): array
     {
         return $payloads[0][PageResponseSignalData::payload][PagePayload::windows][EcommerceShopTableContext::categories];
-    }
-
-    /**
-     * Sends one action frame through the real page router under the library agent.
-     *
-     * @param string $acceptKey Acting connection
-     * @param string $action Action name
-     * @param array<string, mixed> $payload Action payload
-     * @param ?string $requestId Client-minted request id
-     */
-    private function dispatchAction(string $acceptKey, string $action, array $payload, ?string $requestId = null): void
-    {
-        while (Hilos::$sr->getNextQueuedSignal() !== null) {
-        }
-        $agent = $this->library;
-        $router = new PageSignalRouter(
-            new HilosPageFactory($agent, Hilos::class),
-            new ActionRouteConfig(Hilos::getPageActionRoutes()),
-        );
-
-        ExecutionContext::run(
-            new ExecutionFrame(agentId: $agent->getId(), acceptKey: $acceptKey),
-            static fn () => $router->dispatchAction(
-                new WebSocketActionSignalDTO($acceptKey, $action, $payload, $requestId),
-                'websocket',
-            ),
-        );
-    }
-
-    /**
-     * Reads one acknowledgement signal of the given name.
-     *
-     * @param string $name Expected signal name
-     * @param string $acceptKey Expected target accept key
-     * @return SignalDataInterface Signal payload data
-     */
-    private function acknowledgement(string $name, string $acceptKey): SignalDataInterface
-    {
-        $frames = [];
-        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
-            if ($signal->signalName->getName() === $name) {
-                self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
-                self::assertSame($acceptKey, $signal->data->targetAcceptKey);
-                $frames[] = $signal->data->data;
-            }
-        }
-        self::assertCount(1, $frames);
-
-        return $frames[0];
     }
 
     /**

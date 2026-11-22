@@ -1,3 +1,5 @@
+import { useCallback } from 'react'
+
 import {
   CatalogPictureField,
   type CatalogPictureFieldProps,
@@ -9,23 +11,28 @@ export { useCatalogPictureField } from '../../catalog/CatalogPictureField.js'
 /** The shared field's category binding, including its add and edit id prefixes. */
 export type CategoryPictureFieldProps = Omit<
   CatalogPictureFieldProps,
-  'chooser' | 'idPrefix' | 'onSelection' | 'sendPublish'
-> & { readonly idPrefix?: string }
+  'chooser' | 'sendPublish'
+> & {
+  /** Switch the dialog's refusal slot to publication at dispatch. */
+  readonly onPublish: () => void
+}
 
 /**
  * Draw the category picture field with the category publication action.
  *
- * @param props The shared field's props and the category dialog's id prefix.
+ * @param props The shared field's props and the dialog's publication callback.
  */
 export function CategoryPictureField({
-  idPrefix = 'admin-categories-add',
+  onPublish,
   ...props
 }: CategoryPictureFieldProps) {
-  return (
-    <CatalogPictureField
-      {...props}
-      idPrefix={idPrefix}
-      sendPublish={sendCategoryPicturePublish}
-    />
+  const sendPublish = useCallback(
+    (clientUploadId: string) => {
+      onPublish()
+      return sendCategoryPicturePublish(clientUploadId)
+    },
+    [onPublish],
   )
+
+  return <CatalogPictureField {...props} sendPublish={sendPublish} />
 }

@@ -44,6 +44,12 @@ export const CATEGORY_FIRST_FIELD = 'first'
 /** Row payload key of the category picture address. */
 export const CATEGORY_PICTURE_FIELD = 'picture'
 
+/** Row payload key of the category picture's registry id. */
+const CATEGORY_PICTURE_FILE_ID_FIELD = 'pictureFileId'
+
+/** Row payload key of the edit preview's address. */
+const CATEGORY_PICTURE_PREVIEW_FIELD = 'picturePreview'
+
 /** Row payload key of the category name. */
 export const CATEGORY_NAME_FIELD = 'name'
 
@@ -103,6 +109,8 @@ export function resolveCategoryRow(
     description: readString(category, CATEGORY_DESCRIPTION_FIELD),
     position: readNumber(category, CATEGORY_POSITION_FIELD),
     picture: readString(category, CATEGORY_PICTURE_FIELD),
+    pictureFileId: readNumber(category, CATEGORY_PICTURE_FILE_ID_FIELD),
+    picturePreview: readString(category, CATEGORY_PICTURE_PREVIEW_FIELD),
     productCount: readNumber(category, CATEGORY_PRODUCT_COUNT_FIELD),
     first: readBoolean(category, CATEGORY_FIRST_FIELD),
   }
@@ -122,7 +130,7 @@ export interface CategoriesTable {
 // draws the description, so it reads that field too — an edit of the description
 // must reach the window. The picture has no label and no card of its own; the
 // count reads to the right, as numbers do. Actions sit in the trailing column,
-// hidden from narrow cards.
+// and the pencil is also shown on narrow cards.
 const CATEGORIES_COLUMNS: HilosTableColumnOf<CategoryRow>[] = [
   { key: CATEGORY_PICTURE_FIELD, label: '', card: 'hidden' },
   {
@@ -141,9 +149,14 @@ const CATEGORIES_COLUMNS: HilosTableColumnOf<CategoryRow>[] = [
     key: HILOS_TABLE_ACTIONS_KEY,
     label: '',
     headerClass: 'text-end',
-    cellClass: 'text-end',
-    card: 'hidden',
-    reads: [CATEGORY_NAME_FIELD, CATEGORY_FIRST_FIELD],
+    cellClass: 'text-end text-nowrap',
+    reads: [
+      CATEGORY_NAME_FIELD,
+      CATEGORY_DESCRIPTION_FIELD,
+      CATEGORY_PICTURE_FILE_ID_FIELD,
+      CATEGORY_PICTURE_PREVIEW_FIELD,
+      CATEGORY_FIRST_FIELD,
+    ],
   },
 ]
 

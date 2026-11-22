@@ -1,28 +1,32 @@
-// The Add category draft: what the modal holds between opening and the backend's
-// answer, and the two verdicts read from it. Pure — no connection, so the unit
-// test reads it in node. Both verdicts go by the raw value: trimming and the
-// length limits are the server's (rules-and-violations.md, section E).
+// The shared category form and the add dialog's draft checks. Read the raw
+// values: trimming and length limits are the server's.
 
 import { type CatalogPicture } from '../../catalog/catalogPictureReply.js'
 
-/** A picture already published for the category draft. */
-export type CategoryAddPicture = CatalogPicture
-
-/** The fields an Add category dialog collects. */
-export interface CategoryAddDraft {
+/** The form shown by Add category and Edit category. */
+export interface CategoryForm {
   /** The category name, as typed. */
   readonly name: string
   /** The category description, as typed. */
   readonly description: string
-  /** The picture published in this opening, or null before the first one. */
-  readonly picture: CategoryAddPicture | null
+  /** The saved or newly published picture, or null before there is one. */
+  readonly picture: CatalogPicture | null
 }
 
 /** The draft every opening starts from: nothing typed, no picture. */
-export const EMPTY_CATEGORY_DRAFT: CategoryAddDraft = {
+export const EMPTY_CATEGORY_DRAFT: CategoryForm = {
   name: '',
   description: '',
   picture: null,
+}
+
+/**
+ * Whether both text fields hold a value.
+ *
+ * @param draft The category form.
+ */
+export function hasCategoryText(draft: CategoryForm): boolean {
+  return draft.name !== '' && draft.description !== ''
 }
 
 /**
@@ -33,16 +37,8 @@ export const EMPTY_CATEGORY_DRAFT: CategoryAddDraft = {
  * @param draft The draft the dialog holds.
  * @param pending Whether a picture is still uploading or being published.
  */
-export function canAddCategory(
-  draft: CategoryAddDraft,
-  pending: boolean,
-): boolean {
-  return (
-    draft.name !== '' &&
-    draft.description !== '' &&
-    draft.picture !== null &&
-    !pending
-  )
+export function canAddCategory(draft: CategoryForm, pending: boolean): boolean {
+  return hasCategoryText(draft) && draft.picture !== null && !pending
 }
 
 /**
@@ -51,6 +47,6 @@ export function canAddCategory(
  *
  * @param draft The draft the dialog holds.
  */
-export function isCategoryDraftDirty(draft: CategoryAddDraft): boolean {
+export function isCategoryDraftDirty(draft: CategoryForm): boolean {
   return draft.name !== '' || draft.description !== '' || draft.picture !== null
 }

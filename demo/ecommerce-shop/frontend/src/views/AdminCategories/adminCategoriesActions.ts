@@ -8,13 +8,16 @@ import {
   catalogPictureReplySchema,
   type CatalogPictureReply,
 } from '../../catalog/catalogPictureReply.js'
-import { type CategoryAddDraft } from './categoryAddDraft.js'
+import { type CategoryForm } from './categoryAddDraft.js'
 
 /** Action name on the server (EcommerceShopSignalConstants::CATEGORY_MOVE_UP). */
 export const CATEGORY_MOVE_UP = 'category_move_up'
 
 /** Action name on the server (EcommerceShopSignalConstants::CATEGORY_CREATE). */
 export const CATEGORY_CREATE = 'category_create'
+
+/** Action name on the server (EcommerceShopSignalConstants::CATEGORY_UPDATE). */
+export const CATEGORY_UPDATE = 'category_update'
 
 /**
  * Action name on the server
@@ -43,7 +46,7 @@ export function sendCategoryMoveUp(id: number): ActionHandle {
  *   picture is published.
  * @throws Error When the draft holds no picture yet.
  */
-export function sendCategoryCreate(draft: CategoryAddDraft): ActionHandle {
+export function sendCategoryCreate(draft: CategoryForm): ActionHandle {
   if (draft.picture === null) {
     throw new Error('A category is added with a published picture.')
   }
@@ -55,6 +58,29 @@ export function sendCategoryCreate(draft: CategoryAddDraft): ActionHandle {
     description: draft.description,
     pictureFileId: draft.picture.fileId,
   })
+}
+
+/** The values sent to CategoryUpdateActionDTO, including the live comparison. */
+interface CategoryUpdatePayload {
+  readonly id: number
+  readonly name: string
+  readonly description: string
+  readonly pictureFileId: number | null
+  readonly expectedName: string
+  readonly expectedDescription: string
+  readonly expectedPictureFileId: number
+}
+
+/**
+ * Save the category draft if the server still holds the expected values.
+ *
+ * @param payload The draft and the values it expects, with null keeping the
+ *   saved picture.
+ */
+export function sendCategoryUpdate(
+  payload: CategoryUpdatePayload,
+): ActionHandle {
+  return actions.dispatch(CATEGORY_UPDATE, { ...payload })
 }
 
 /**

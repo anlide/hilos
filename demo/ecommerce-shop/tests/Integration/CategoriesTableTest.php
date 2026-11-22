@@ -39,7 +39,7 @@ use Hilos\Utils\Helpers\RandomHelper;
 #[IntegrationTest]
 final class CategoriesTableTest extends CategoriesTableEnvironment
 {
-    /** Every category is in the window with its small picture and its count, in catalog order rather than by id or name. */
+    /** The window carries both picture URLs, the file ID and the count, in catalog order. */
     public function testTheWindowCarriesEveryCategoryInCatalogOrderWithItsPictureAndCount(): void
     {
         $tag = RandomHelper::hex(8);
@@ -380,6 +380,8 @@ final class CategoriesTableTest extends CategoriesTableEnvironment
             CategoryTableRow::description => $description,
             CategoryTableRow::position => self::storedPosition($id),
             CategoryTableRow::picture => HilosFiles::downloadPath($picture, CatalogPictureUploadTarget::VARIANT_XS),
+            CategoryTableRow::pictureFileId => $picture,
+            CategoryTableRow::picturePreview => HilosFiles::downloadPath($picture, CatalogPictureUploadTarget::VARIANT_SM),
             CategoryTableRow::productCount => $productCount,
             CategoryTableRow::first => self::storedPosition($id) === self::storedLowestPosition(),
         ];

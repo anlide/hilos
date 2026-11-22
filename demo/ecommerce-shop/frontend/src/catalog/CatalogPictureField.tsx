@@ -6,6 +6,7 @@ import {
   type ComponentType,
 } from 'react'
 import {
+  computedSignal,
   createHilosUploadField,
   subscribeSignal,
   type ActionHandle,
@@ -31,32 +32,90 @@ const CATALOG_PICTURE_TARGET = 'catalog_picture'
 /** The types the chooser offers; the server judges what actually arrives. */
 const PICTURE_ACCEPT = 'image/jpeg,image/png'
 
+/** Create the upload field owned by one catalog dialog opening. */
+export function createCatalogPictureUploadField(): HilosUploadField {
+  const field = createHilosUploadField({ target: CATALOG_PICTURE_TARGET })
+  // A refused cancel can return an earlier opening's upload to ready.
+  const existingIds = new Set(
+    field.files.get().map((file) => file.clientUploadId),
+  )
+  const files = computedSignal(() =>
+    field.files.get().filter((file) => !existingIds.has(file.clientUploadId)),
+  )
+  return {
+    ...field,
+    files,
+    ready: computedSignal(() =>
+      field.ready.get().filter((id) => !existingIds.has(id)),
+    ),
+    busy: computedSignal(() =>
+      files
+        .get()
+        .some(
+          (file) => file.reading === 'waiting' || file.reading === 'uploading',
+        ),
+    ),
+    refusal: computedSignal(() =>
+      files.get().some((file) => file.reading === 'failed')
+        ? field.refusal.get()
+        : null,
+    ),
+    dispose() {
+      field.setDisabled(false)
+      for (const file of files.get()) {
+        if (!file.canceling) {
+          field.remove(file.clientUploadId)
+        }
+      }
+      field.dispose()
+    },
+  }
+}
+
 /**
  * The upload field of one dialog opening, or null before its first layout.
  *
  * Disposal is permanent, so each setup — StrictMode replay included — owns one
- * field. On close the field takes its files off first: a refusal or an upload
- * left behind would otherwise greet the next opening.
+ * field. On close it cancels the uploads selected during that opening.
  */
 export function useCatalogPictureField(): HilosUploadField | null {
   const [field, setField] = useState<HilosUploadField | null>(null)
 
   useLayoutEffect(() => {
-    const created = createHilosUploadField({ target: CATALOG_PICTURE_TARGET })
+    const created = createCatalogPictureUploadField()
     setField(created)
 
-    return () => {
-      created.setDisabled(false)
-      for (const file of created.files.get()) {
-        if (!file.canceling) {
-          created.remove(file.clientUploadId)
-        }
-      }
-      created.dispose()
-    }
+    return () => created.dispose()
   }, [])
 
   return field
+}
+
+/**
+ * Follow picks synchronously, even when React batches the upload updates.
+ *
+ * @param field The dialog's upload field.
+ * @param report The current files and the newest pick, if one arrived.
+ */
+export function followCatalogPictureFiles(
+  field: HilosUploadField,
+  report: (
+    current: readonly HilosUploadFieldFile[],
+    newest: HilosUploadFieldFile | undefined,
+  ) => void,
+): () => void {
+  let previous = new Set<string>()
+
+  function follow(current: readonly HilosUploadFieldFile[]): void {
+    const newest = [...current]
+      .reverse()
+      .find((file) => !file.canceling && !previous.has(file.clientUploadId))
+    previous = new Set(current.map((file) => file.clientUploadId))
+    report(current, newest)
+  }
+
+  follow(field.files.get())
+  return subscribeSignal(field.files, follow)
 }
 
 // Products and categories share the catalog upload target. A new selection
@@ -112,15 +171,9 @@ export function CatalogPictureField({
   const report = useRef({ onSelection, onPicture, onPending })
   report.current = { onSelection, onPicture, onPending }
 
-  // Selection has to be recorded even if React batches the upload updates.
   // Handing a file over for publication removes its chip before the reply.
   useLayoutEffect(() => {
-    let previous = new Set<string>()
-    function followSelection(current: readonly HilosUploadFieldFile[]): void {
-      const newest = [...current]
-        .reverse()
-        .find((file) => !file.canceling && !previous.has(file.clientUploadId))
-      previous = new Set(current.map((file) => file.clientUploadId))
+    const stop = followCatalogPictureFiles(field, (current, newest) => {
       if (newest !== undefined) {
         selected.current = newest.clientUploadId
         setSelectedId(newest.clientUploadId)
@@ -135,10 +188,8 @@ export function CatalogPictureField({
         setSelectedId(null)
         report.current.onSelection?.(null)
       }
-    }
+    })
 
-    followSelection(field.files.get())
-    const stop = subscribeSignal(field.files, followSelection)
     return () => {
       stop()
       selected.current = null

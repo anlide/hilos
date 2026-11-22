@@ -64,6 +64,7 @@ use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
@@ -1434,6 +1435,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 EcommerceShopSignalConstants::CATEGORY_MOVE_UP => CategoryMoveUpActionDTO::class,
                 EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH => CategoryPicturePublishActionDTO::class,
                 EcommerceShopSignalConstants::CATEGORY_CREATE => CategoryCreateActionDTO::class,
+                EcommerceShopSignalConstants::CATEGORY_UPDATE => CategoryUpdateActionDTO::class,
             ],
             AdminCategoriesPage::ACTIONS,
         );
@@ -1442,6 +1444,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 EcommerceShopSignalConstants::CATEGORY_MOVE_UP,
                 EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH,
                 EcommerceShopSignalConstants::CATEGORY_CREATE,
+                EcommerceShopSignalConstants::CATEGORY_UPDATE,
             ] as $action
         ) {
             self::assertSame('admin_categories', Hilos::getPageActionRoutes()[$action]);
@@ -1450,6 +1453,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame('category_move_up', EcommerceShopSignalConstants::CATEGORY_MOVE_UP);
         self::assertSame('category_picture_publish', EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH);
         self::assertSame('category_create', EcommerceShopSignalConstants::CATEGORY_CREATE);
+        self::assertSame('category_update', EcommerceShopSignalConstants::CATEGORY_UPDATE);
     }
 
     /** The products table is registered under its key, for the page that binds it. */

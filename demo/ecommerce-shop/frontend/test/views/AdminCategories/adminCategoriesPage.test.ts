@@ -44,6 +44,8 @@ const bouquets: CategoryRow = {
   description: 'Fresh seasonal arrangements',
   position: 1,
   picture: '/pictures/bouquets.webp',
+  pictureFileId: 12,
+  picturePreview: '/files/12/catalog_sm',
   productCount: 14,
   first: true,
 }
@@ -54,6 +56,8 @@ const pots: CategoryRow = {
   description: 'Ceramic and clay planters',
   position: 2,
   picture: '/pictures/pots.webp',
+  pictureFileId: 17,
+  picturePreview: '/files/17/catalog_sm',
   productCount: 5,
   first: false,
 }
@@ -155,6 +159,8 @@ describe('Categories table rows', () => {
       description: '',
       position: 0,
       picture: '',
+      pictureFileId: 0,
+      picturePreview: '',
       productCount: 0,
       first: false,
     })

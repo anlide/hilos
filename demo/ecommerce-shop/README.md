@@ -33,7 +33,9 @@ React. See `docs/new-project/README.md` to start a project from it.
   picture, its description and how many products it holds, and that number
   changes by itself too. An administrator adds a category there in a dialog:
   a name, a description and a JPG or PNG picture uploaded right in the dialog;
-  the new category takes the last place. Its **Products** page lists every product, recently
+  the new category takes the last place. The edit dialog can also replace the
+  picture and offers Keep mine or Take theirs when edits conflict. Its
+  **Products** page lists every product, recently
   changed first, with its category, kind, price, stock and availability; it
   filters by category, kind and availability, and the rows change by themselves.
   A row opens the product's own page: its kind, picture, description, category,

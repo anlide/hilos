@@ -13,6 +13,7 @@ use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\DuplicateValueException;
@@ -31,18 +32,19 @@ use Hilos\Core\Router\DTO\ActionPayloadDTO;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\HilosException;
 use Throwable;
 
 /**
- * The shop's categories under the head of its administration section: the page
- * carries the categories table and its own move-up action.
+ * The shop's categories under the head of its administration section. The page
+ * carries the categories table and the actions to add, edit and move categories.
  *
- * It also adds a category: the picture is published as soon as it is uploaded, and the
- * library acknowledges that action when the files door answers; the add itself carries
- * the number of the published file.
+ * A new or replacement picture is published after upload. The library acknowledges
+ * publication when the files door answers, and the save carries the published file ID.
  *
  * @property CategoriesLibraryAgent $agent
  */
@@ -72,6 +74,7 @@ final class AdminCategoriesPage extends AbstractPage
         EcommerceShopSignalConstants::CATEGORY_MOVE_UP => CategoryMoveUpActionDTO::class,
         EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH => CategoryPicturePublishActionDTO::class,
         EcommerceShopSignalConstants::CATEGORY_CREATE => CategoryCreateActionDTO::class,
+        EcommerceShopSignalConstants::CATEGORY_UPDATE => CategoryUpdateActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -79,7 +82,7 @@ final class AdminCategoriesPage extends AbstractPage
     ];
 
     /**
-     * Routes the category move up, picture publish and create actions to their typed handlers.
+     * Routes category move up, picture publication, creation and editing to their typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
@@ -88,16 +91,18 @@ final class AdminCategoriesPage extends AbstractPage
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws ItemNotFoundForUpdateException When category no longer exists
-     * @throws ValidationException When the category is already first, the picture is unavailable or publication is in flight
-     * @throws DatabaseException When category position exchange, collection loading, the insert or the commit fails
+     * @throws ItemNotFoundException When the collection cannot resolve a category by ID
+     * @throws ValidationException When the category is already first or changed, the picture is unavailable or publication is in flight
+     * @throws DatabaseException When collection loading, the write or the commit fails
      * @throws InvalidArgumentException When category type does not match the collection, or the publish signal cannot be queued
-     * @throws LogicException When the collection, address or files door cannot be used, or creation raises an unexpected failure
+     * @throws LogicException When the collection, address or files door cannot be used, or a save raises an unexpected failure
      * @throws FeatureNotDeclaredException When the project keeps no files or takes no uploads
      * @throws InvalidFormatException When the upload id is one the wire does not allow
      * @throws EmptyValueException When the name or the description is empty
      * @throws ValueTooLongException When the name or the description is longer than its column
      * @throws DuplicateValueException When another category already has this name
      * @throws CreateNotAllowedException When this process may not add a category or its address
+     * @throws WriteNotAllowedException When this process may not write the category
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
      * @throws HilosException When the registry cannot be read, or the right, the database or the collection refuses the write
      */
@@ -128,6 +133,14 @@ final class AdminCategoriesPage extends AbstractPage
 
                 return null;
 
+            case EcommerceShopSignalConstants::CATEGORY_UPDATE:
+                if (!$dto instanceof CategoryUpdateActionDTO) {
+                    throw new InvalidActionPayloadException($action, CategoryUpdateActionDTO::class, $dto);
+                }
+                $this->handleUpdate($acceptKey, $dto);
+
+                return null;
+
             default:
                 throw new AgentUnknownActionException(sprintf('Unknown action %s', $action));
         }
@@ -155,8 +168,8 @@ final class AdminCategoriesPage extends AbstractPage
     }
 
     /**
-     * Hands the uploaded picture of a new category to the library, which publishes it and acknowledges
-     * the action once the files door answers.
+     * Hands a new or replacement picture to the library, which publishes it and acknowledges the action
+     * once the files door answers.
      *
      * Deferred only for a tracked action: an untracked one owes no ack, and deferring it would leave the
      * dispatcher silent for a caller that never correlates.
@@ -210,5 +223,49 @@ final class AdminCategoriesPage extends AbstractPage
             throw new LogicException('The category could not be added', previous: $failure);
         }
         $this->setActionSuccessMessage(sprintf('Category “%s” added.', $category->name));
+    }
+
+    /**
+     * Checks the editor's baseline and saves in one handler of the categories library, its sole writer.
+     *
+     * @param string $acceptKey Accept key of the acting connection
+     * @param CategoryUpdateActionDTO $dto Update action payload
+     * @throws ItemNotFoundForUpdateException When the category no longer exists
+     * @throws ItemNotFoundException When the collection cannot resolve the category by ID
+     * @throws ValidationException When the category changed since editing began or the replacement is unavailable
+     * @throws EmptyValueException When the name or the description is empty
+     * @throws ValueTooLongException When the name or the description is longer than its column
+     * @throws DuplicateValueException When another category already has this name
+     * @throws WriteNotAllowedException When this process may not write the category
+     * @throws CreateNotAllowedException When this process may not record the new address
+     * @throws LogicException When the collection, address or files door cannot be used, or the save raises an unexpected failure
+     * @throws InvalidArgumentException When the loaded category has the wrong type
+     * @throws DatabaseException When loading, writing or committing the category fails
+     * @throws HilosException When the registry, the right, the database or the announcement refuses the save
+     */
+    private function handleUpdate(string $acceptKey, CategoryUpdateActionDTO $dto): void
+    {
+        if (!isset(Hilos::$db->categories[$dto->id])) {
+            throw new ItemNotFoundForUpdateException('This category no longer exists');
+        }
+
+        $category = Hilos::$db->categories[$dto->id];
+        if (
+            $category->name !== $dto->expectedName
+            || $category->description !== $dto->expectedDescription
+            || $category->pictureFileId !== $dto->expectedPictureFileId
+        ) {
+            throw new ValidationException('The category changed elsewhere. Review the current values and save again.');
+        }
+
+        $ownerId = $dto->pictureFileId === null ? null : CatalogPictureFile::freshOwnerId($acceptKey, $dto->pictureFileId);
+        try {
+            $category->actions->update($dto->name, $dto->description, $dto->pictureFileId, $ownerId);
+        } catch (HilosException $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            throw new LogicException('The category could not be saved', previous: $failure);
+        }
+        $this->setActionSuccessMessage(sprintf('Category “%s” saved.', $category->name));
     }
 }

@@ -11,8 +11,7 @@ use Hilos\Core\Table\Row\AbstractTableRow;
 /**
  * Backend row payload for the categories table: one category of the shop and how many products it holds.
  *
- * {@see picture} is the address of the small copy of the category's picture, {@see productCount}
- * is counted from the products, not stored, and {@see first} marks whether no category comes before it.
+ * The row carries the file ID and both picture sizes so the editor and the table use the same category.
  */
 final class CategoryTableRow extends AbstractTableRow
 {
@@ -21,6 +20,8 @@ final class CategoryTableRow extends AbstractTableRow
     public const string description = ObjectCategory::description;
     public const string position = ObjectCategory::position;
     public const string picture = 'picture';
+    public const string pictureFileId = ObjectCategory::pictureFileId;
+    public const string picturePreview = 'picturePreview';
     public const string productCount = 'productCount';
     public const string first = 'first';
 
@@ -29,7 +30,9 @@ final class CategoryTableRow extends AbstractTableRow
      * @param string $name Category name
      * @param string $description Category description
      * @param int $position Place of the category in the catalog
-     * @param string $picture Address of the small copy of the category's picture
+     * @param string $picture Address of the table thumbnail
+     * @param int $pictureFileId Registry ID of the current picture
+     * @param string $picturePreview Address of the picture preview for editing
      * @param int $productCount Products of either kind in the category
      * @param bool $first Whether no category comes before this one in the catalog
      */
@@ -39,6 +42,8 @@ final class CategoryTableRow extends AbstractTableRow
         public string $description,
         public int $position,
         public string $picture,
+        public int $pictureFileId,
+        public string $picturePreview,
         public int $productCount,
         public bool $first,
     ) {
@@ -71,6 +76,8 @@ final class CategoryTableRow extends AbstractTableRow
             self::description => $this->description,
             self::position => $this->position,
             self::picture => $this->picture,
+            self::pictureFileId => $this->pictureFileId,
+            self::picturePreview => $this->picturePreview,
             self::productCount => $this->productCount,
             self::first => $this->first,
         ];
@@ -91,6 +98,8 @@ final class CategoryTableRow extends AbstractTableRow
             description: self::requireString($data, self::description),
             position: self::requireInt($data, self::position),
             picture: self::requireString($data, self::picture),
+            pictureFileId: self::requireInt($data, self::pictureFileId),
+            picturePreview: self::requireString($data, self::picturePreview),
             productCount: self::requireInt($data, self::productCount),
             first: self::requireBool($data, self::first),
         );

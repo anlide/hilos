@@ -67,9 +67,11 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
                     ObjectCategory::name => CategoryTableRow::name,
                     ObjectCategory::description => CategoryTableRow::description,
                     ObjectCategory::position => CategoryTableRow::position,
+                    ObjectCategory::pictureFileId => CategoryTableRow::pictureFileId,
                 ],
                 BrowserTableFieldKey::COMPUTED => [
                     CategoryTableRow::picture,
+                    CategoryTableRow::picturePreview,
                     CategoryTableRow::productCount,
                     CategoryTableRow::first,
                 ],
@@ -228,8 +230,8 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
     }
 
     /**
-     * The four stored fields are columns of category, none of them personal; the picture's
-     * address is built from the category's picture column. The count is a computed, nonpersonal fact.
+     * The stored fields are nonpersonal category columns. Both picture URLs use the
+     * picture file ID column, and the count and first indicator are nonpersonal facts.
      *
      * @return array<string, WireField> Row field to where it comes from
      */
@@ -241,6 +243,8 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
             CategoryTableRow::description => WireField::column(EcommerceShopDbContext::categories, ObjectCategory::description),
             CategoryTableRow::position => WireField::column(EcommerceShopDbContext::categories, ObjectCategory::position),
             CategoryTableRow::picture => WireField::column(EcommerceShopDbContext::categories, ObjectCategory::pictureFileId),
+            CategoryTableRow::pictureFileId => WireField::column(EcommerceShopDbContext::categories, ObjectCategory::pictureFileId),
+            CategoryTableRow::picturePreview => WireField::column(EcommerceShopDbContext::categories, ObjectCategory::pictureFileId),
             CategoryTableRow::productCount => WireField::notPersonal(),
             CategoryTableRow::first => WireField::notPersonal(),
         ];
@@ -321,12 +325,16 @@ final class CategoriesTable extends TableDefinition implements MultiRowViewportT
      */
     private function buildRow(Category $category, ?int $firstPosition): CategoryTableRow
     {
+        $pictureFileId = $category->pictureFileId;
+
         return new CategoryTableRow(
             id: $category->id,
             name: $category->name,
             description: $category->description,
             position: $category->position,
-            picture: HilosFiles::downloadPath($category->pictureFileId, CatalogPictureUploadTarget::VARIANT_XS),
+            picture: HilosFiles::downloadPath($pictureFileId, CatalogPictureUploadTarget::VARIANT_XS),
+            pictureFileId: $pictureFileId,
+            picturePreview: HilosFiles::downloadPath($pictureFileId, CatalogPictureUploadTarget::VARIANT_SM),
             productCount: Hilos::$db->products->countInCategory($category->id),
             first: $firstPosition !== null && $category->position === $firstPosition,
         );

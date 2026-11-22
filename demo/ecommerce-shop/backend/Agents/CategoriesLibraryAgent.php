@@ -40,7 +40,7 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
  * Only an empty category is deleted: the database's reference from the products refuses the delete
  * while a product is still in the category, and the library asks nobody first (HIL-2161).
  *
- * The picture of a new category is published as soon as it is uploaded: the request waits in the
+ * A new or replacement picture is published as soon as it is uploaded: the request waits in the
  * library's memory until the files door answers, and the answer acknowledges the browser action that
  * asked for it.
  *
@@ -57,8 +57,8 @@ final class CategoriesLibraryAgent extends AbstractAgent
     ];
 
     /**
-     * @var list<string> The files registry: a new category's picture is checked to be a fresh
-     *     publication of the person adding it before the category is written with it
+     * @var list<string> The files registry: a new or replacement picture is checked to be a fresh
+     *     publication of the person saving the category
      */
     public const array READS_DB = [
         HilosDbContext::files,
@@ -77,7 +77,7 @@ final class CategoriesLibraryAgent extends AbstractAgent
     /** Category actions, publication answers and commands arrive in frames; there is no periodic work. */
     protected const MAX_IDLE_SLEEP_SECONDS = 600;
 
-    /** @var CatalogPicturePublications New category pictures handed to the files door and not answered yet */
+    /** @var CatalogPicturePublications Category picture publications awaiting a reply from the files door */
     private readonly CatalogPicturePublications $publications;
 
     /** Starts with no publication waiting. */
@@ -90,7 +90,7 @@ final class CategoriesLibraryAgent extends AbstractAgent
     }
 
     /**
-     * Hands the picture of a new category to the files door and waits for its answer.
+     * Hands a new or replacement picture to the files door and waits for its answer.
      *
      * @param string $acceptKey Accept key of the connection the upload belongs to
      * @param string $clientUploadId Id the browser gave the upload
