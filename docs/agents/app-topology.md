@@ -351,7 +351,7 @@ without one stays without one ([orm/migrations.md](orm/migrations.md)).
     `composer run test:unit` for that demo after the change. Because the snapshot
     is shared, a red run may already carry another ticket's missing entries: add
     only your own, and never assume a failing entry is foreign without checking
-    it against your own diff — see `docs/agents/testing.md`, "Attributing a red
+    it against your own diff — see `testing/phpunit-gates.md`, "Attributing a red
     snapshot guard".
 
 ## Preferred Shape

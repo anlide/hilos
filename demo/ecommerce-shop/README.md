@@ -600,7 +600,7 @@ the scenarios it names — 3 placement, 4 slave-kill failover, 6 hot-join,
 19 worker death on a live node, 37 costless agents consume slots, and
 39 person agents across nodes (skipped as flaky since 2026-10-17),
 43 waiting work retries when a node returns
-(`docs/agents/testing.md`, "The cluster stands — six demos, six shapes"). The framework's probe fleet, claimer and ballast
+(`../../docs/agents/testing/cluster-stands.md`, "The cluster stands — six demos, six shapes"). The framework's probe fleet, claimer and ballast
 are in this demo's `AGENTS`, and they start only here: on one node, on the
 Playwright stand and in production the rows are carried and nothing is run.
 
@@ -676,7 +676,7 @@ needs ordinary Linux shell utilities, the Docker CLI and an accessible local
 Unix Docker daemon; it does not need host Python, PHP, Composer or a Compose
 plugin. Docker Desktop, rootless, SSH and multi-machine daemons are outside the
 supported target. See the
-[shared runner details](../../docs/agents/testing.md#cluster-harness-runner).
+[shared runner details](../../docs/agents/testing/cluster-harness.md#cluster-harness-runner).
 
 The existing Composer command names above remain convenient entry points.
 `composer run test:cluster:down` still uses `../../scripts/down-stands.php`;
@@ -736,8 +736,8 @@ discards accumulated ordinary fixtures.
 Names and the `/dev/shm` DB directory take `HILOS_STAND_SUFFIX`; the subnet takes
 `HILOS_STAND_NET_ECOMMERCE_SHOP_CLUSTER`, and CPU weight takes
 `HILOS_STAND_CPU_SHARES`. See the shared guide's
-[stand instances](../../docs/agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)
-and [cluster lifecycle](../../docs/agents/testing.md#cluster-compose-model).
+[stand instances](../../docs/agents/testing/stand-compose.md)
+and [cluster lifecycle](../../docs/agents/testing/cluster-harness.md#cluster-compose-model).
 
 ### Standalone components
 
@@ -809,7 +809,7 @@ Historical migration: the former replica is removed by the old compose file's `d
 stays at `/dev/shm/hilos-ecommerce-shop-cluster-replica-data`. Scenario 31
 remains in the shared harness; its planned carrier is the file-gallery-manager
 cluster stand
-([The cluster stands](../../docs/agents/testing.md#the-cluster-stands--six-demos-six-shapes));
+([The cluster stands](../../docs/agents/testing/cluster-stands.md#the-cluster-stands--six-demos-six-shapes));
 replication is not a passing check of this stand.
 
 ### TLS fixtures

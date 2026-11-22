@@ -496,7 +496,7 @@ page identity and its bound windows in the first ordinary `page_response`.
 The list tables' `defaultFilter(PageRouteParams)` supplies the document scope,
 plus the revision scope on the exact Revision route. The matching Legal
 controllers consume that first window without an extra mount viewport request (see
-[table-subscription.md](../frontend/table-subscription.md#the-first-window-is-declared-on-the-backend)).
+[table-subscription.md](../frontend/table-subscription.md#the-first-window-reports-its-applied-filter)).
 Chat/Vue's `HilosLegalDocumentPageShell` shares the entity head across the four
 pages; `bindPageInstanceName` uses `hilosLegalDocumentLabel` and releases its
 binding on unmount. The head's single `h1`, breadcrumb and document title use

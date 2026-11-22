@@ -228,7 +228,7 @@ lived on, 32 a node with another admin view mode refused on both ends,
 33 every master takes browsers, 34 a tab is the same on every master under
 protected mode, 35 rt row deleted while cut off is swept, and 36 a slave
 cut off with its leader stops its work (skipped as flaky since 2026-10-10;
-`docs/agents/testing.md`, "The cluster stands — six demos, six shapes"),
+`../../docs/agents/testing/cluster-stands.md`, "The cluster stands — six demos, six shapes"),
 38 manual maintenance from any node, 41 i18n catalog taken once, 42 another
 default language refused, 44 waiting work survives leadership changes, 45
 upload pool across nodes, 47 another project time zone refused, 57
@@ -336,7 +336,7 @@ needs ordinary Linux shell utilities, the Docker CLI and an accessible local
 Unix Docker daemon; it does not need host Python, PHP, Composer or a Compose
 plugin. Docker Desktop, rootless, SSH and multi-machine daemons are outside the
 supported target. See the
-[shared runner details](../../docs/agents/testing.md#cluster-harness-runner).
+[shared runner details](../../docs/agents/testing/cluster-harness.md#cluster-harness-runner).
 
 The existing Composer command names above remain convenient entry points.
 `composer run test:cluster:down` still uses `../../scripts/down-stands.php`;
@@ -396,8 +396,8 @@ Names, the shared export volume and the `/dev/shm` DB directory take
 `HILOS_STAND_SUFFIX`; the subnet takes
 `HILOS_STAND_NET_BINANCE_BTC_TRACKER_CLUSTER`, and CPU weight takes
 `HILOS_STAND_CPU_SHARES`. See the shared guide's
-[stand instances](../../docs/agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)
-and [cluster lifecycle](../../docs/agents/testing.md#cluster-compose-model).
+[stand instances](../../docs/agents/testing/stand-compose.md)
+and [cluster lifecycle](../../docs/agents/testing/cluster-harness.md#cluster-compose-model).
 
 ### Standalone components
 

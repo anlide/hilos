@@ -59,7 +59,7 @@ use `$hilos-testing-cli`.
   owned cleanup" and "People and administrators as preconditions".
 - Clean cycles between runs, with shared DB/daemon inside a suite:
   `docs/agents/frontend/testing-strategy.md`, "Backend state"; re-run mechanics
-  in `docs/agents/testing.md`, "Re-running tests and state between runs".
+  in `docs/agents/testing/selective.md`, "Re-running tests and state between runs".
 - Static quarantine tags and affected parameterized variants:
   `docs/agents/frontend/testing-strategy.md`, "Quarantine — a static tag and one attempt after main".
 - The spec needs an external service on the stand — adding a channel or an

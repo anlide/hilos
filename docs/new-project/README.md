@@ -8,14 +8,14 @@ running in project-owned docker stacks. The demos, each with what it carries:
 |---|---|---|---|
 | [demo/tasks](../../demo/tasks) | one app agent, every admin section | React | every admin section on React |
 | [demo/polls](../../demo/polls) | one app agent, every admin section | Angular | every admin section on Angular, Angular toolchain |
-| [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand: [testing.md](../agents/testing.md) |
+| [demo/binance-btc-tracker](../../demo/binance-btc-tracker) | minimal | Vue | the smallest complete shape on Vue: sign-in and an empty home — copy this; its cluster stand: [../agents/testing/cluster-stands.md](../agents/testing/cluster-stands.md) |
 | [demo/pmd](../../demo/pmd) | service database | Vue | active carrier: empty home; sign-in, profile and Security; admin Analytics, Users, Settings, Appearance and Communications |
 | [demo/roblox-game-server](../../demo/roblox-game-server) | minimal | Vue | active carrier: empty home; sign-in and profile; admin Analytics, Communications, Change Log, Moderation, Daemon, Backup, Logs and Maintenance |
-| [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | the smallest complete shape on React: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
+| [demo/ecommerce-shop](../../demo/ecommerce-shop) | minimal | React | the smallest complete shape on React: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [../agents/testing/cluster-stands.md](../agents/testing/cluster-stands.md) |
 | [demo/solar-system-model](../../demo/solar-system-model) | minimal | React | active carrier: empty public home, sign-in at `/hilos`, profile; admin Analytics, Users, Settings |
-| [demo/online-testing](../../demo/online-testing) | minimal | Angular | the smallest complete shape on Angular: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [testing.md](../agents/testing.md) |
-| [demo/preferans](../../demo/preferans) | minimal | Angular | an active Angular carrier with password sign-in, an empty home, profile, settings, i18n, Appearance and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
-| [demo/concert-tickets](../../demo/concert-tickets) | minimal | Angular | an active Angular carrier with sign-in (password, passkey, SMS, GitHub), an empty home, profile, and admin Daemon, Logs, Change Log and Analytics; local/test stacks and e2e: [testing.md](../agents/testing.md) |
+| [demo/online-testing](../../demo/online-testing) | minimal | Angular | the smallest complete shape on Angular: sign-in and an empty home — copy this; its cluster stand and the operations e2e: [../agents/testing/cluster-stands.md](../agents/testing/cluster-stands.md) |
+| [demo/preferans](../../demo/preferans) | minimal | Angular | an active Angular carrier with password sign-in, an empty home, profile, settings, i18n, Appearance and Analytics; local/test stacks and e2e: [../agents/testing/ordinary-carriers.md](../agents/testing/ordinary-carriers.md) |
+| [demo/concert-tickets](../../demo/concert-tickets) | minimal | Angular | an active Angular carrier with sign-in (password, passkey, SMS, GitHub), an empty home, profile, and admin Daemon, Logs, Change Log and Analytics; local/test stacks and e2e: [../agents/testing/ordinary-carriers.md](../agents/testing/ordinary-carriers.md) |
 | [demo/chat](../../demo/chat) | full | Vue | every subsystem in real use |
 | [demo/hilos-website](../../demo/hilos-website) | minimal | Vue | the official Hilos site at hilos-dev.org — not a shape to copy: kept thin on purpose and left out of every-demo feature rollouts; empty public home, sign-in at `/hilos` with registration closed, admin Analytics and the email delivery journal, `/media/` from the installation data |
 
@@ -262,7 +262,7 @@ its own, suffixed with `${HILOS_STAND_SUFFIX:-}`, at `/app/data` on every node a
 its CLI, with Status on a named volume of its own over it. A new project that
 copies a demo's stand copies its data root too, and
 `framework/tests/Unit/StandDataRootGuardTest.php` holds it to that
-([Data root of a stand](../agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)).
+([Data root of a stand](../agents/testing/stand-compose.md)).
 
 **Ports.** In-container daemon ports are FIXED for every project: 8090
 (status) / 8091 (worker comm) / 8092 (websocket) — the nginx template proxies
@@ -345,7 +345,7 @@ for the rows. Column 10 (`10.210` / `10.220` / `10.230`) is not promised: it
 breaks the `10.20x` / `10.21x` / `10.22x` notation, and its `10.210` is
 column 0's test row. A stand instance moves its test network off its default
 onto the octet of its own block
-([Stand instances](../agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)).
+([Stand instances](../agents/testing/stand-compose.md)).
 Production installations sit outside these rows, in `10.240.0.0/16` (see
 **Production stack** above).
 

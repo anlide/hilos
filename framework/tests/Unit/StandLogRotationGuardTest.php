@@ -46,7 +46,7 @@ final class StandLogRotationGuardTest extends TestCase
     private const string DEMO_ROOT = 'demo/';
 
     /** The rule a message sends its reader to. */
-    private const string RULES = 'docs/agents/testing.md';
+    private const string RULES = 'docs/agents/testing/stand-compose.md';
 
     /** A key at the top level of a compose file. */
     private const string TOP_LEVEL_KEY = '/^([A-Za-z0-9_.-]+):/';
@@ -86,14 +86,14 @@ final class StandLogRotationGuardTest extends TestCase
             '      - LOG_ROTATION_CRON=0 3 29 2 *',
         ]);
         $this->assertNotNull($message);
-        foreach ([$compose, 'shop-daemon-test', '- LOG_ROTATION_CRON=0 3 29 2 *', 'docs/agents/testing.md'] as $expected) {
+        foreach ([$compose, 'shop-daemon-test', '- LOG_ROTATION_CRON=0 3 29 2 *', 'docs/agents/testing/stand-compose.md'] as $expected) {
             $this->assertStringContainsString($expected, $message);
         }
 
         $env = 'demo/shop/docker/cluster/common.env';
         $message = $this->problemOf($env, ['APP_ENV=dev', '# LOG_ROTATION_CRON=0 3 29 2 *']);
         $this->assertNotNull($message);
-        foreach ([$env, 'LOG_ROTATION_CRON=0 3 29 2 *', 'docs/agents/testing.md'] as $expected) {
+        foreach ([$env, 'LOG_ROTATION_CRON=0 3 29 2 *', 'docs/agents/testing/stand-compose.md'] as $expected) {
             $this->assertStringContainsString($expected, $message);
         }
     }

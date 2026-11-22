@@ -78,7 +78,7 @@ If an exception is granted, the implementation must follow the required form:
   end of the run and prints a second PHPUnit report;
 - The wait in `finally`, through `pcntl_waitpid()`.
 
-See [testing.md](../testing.md).
+See [../testing/writing-tests.md](../testing/writing-tests.md).
 
 ## Scope
 

@@ -149,7 +149,7 @@ change the body of that question, not the mode around it.
   In production a node that started before the mode closed keeps its mode until
   its next start. On the development cluster stand there is no latch, so peer
   refusal over the variable is the guard against permanently different modes.
-  Scenario 32 on the binance stand proves that refusal ([../testing.md](../testing.md)).
+  Scenario 32 on the binance stand proves that refusal ([../testing/cluster-stands.md](../testing/cluster-stands.md)).
 
 ## The View Verdict
 

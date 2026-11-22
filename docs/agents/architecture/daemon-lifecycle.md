@@ -882,7 +882,7 @@ peer naming it receives the common extra-kind refusal:
 The handshake DTO shape and `PeerProtocol::VERSION` did not change for this
 marker kind. Scenario 42 proves the exact `ru`/`en` refusal on both ends,
 exclusion from the mesh and absence of a provisioned `ru` row
-([../testing.md](../testing.md)).
+([../testing/cluster-stands.md](../testing/cluster-stands.md)).
 
 **The project time zone (HIL-1597).** Every project carries the kind
 `project-time-zone`, whose value is the exact string from
@@ -897,13 +897,13 @@ a peer without this kind is refused as
 The refusal is made at both ends before the peer is remembered. The handshake
 DTO shape and `PeerProtocol::VERSION` did not change for this marker kind.
 Scenario 47 proves refusal on both ends
-([../testing.md](../testing.md)).
+([../testing/cluster-stands.md](../testing/cluster-stands.md)).
 
 **Proof on the stand.** The cluster matrix starts five nodes at once on an empty database
 (HIL-1228), and the first convergence passes only if all five read one marker — the race of
 the first write, proven for free. Scenario 22 points a living node at another marker and
 shows it refused on both ends and listed by nobody, while the rest converge
-([../testing.md](../testing.md)).
+([../testing/cluster-stands.md](../testing/cluster-stands.md)).
 
 ## Consensus coordinator (HIL-339)
 

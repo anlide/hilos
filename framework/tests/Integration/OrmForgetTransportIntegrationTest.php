@@ -51,7 +51,7 @@ use RuntimeException;
 use Socket;
 
 /**
- * Loaded ORM rows never leave their process (testing.md observability exception 1).
+ * Loaded ORM rows never leave their process (testing/selective.md observability exception 1).
  * Separate contexts expose that memory while real socket pairs exercise both readers,
  * worker registration, the actual worker handler and the master's held console reply.
  */

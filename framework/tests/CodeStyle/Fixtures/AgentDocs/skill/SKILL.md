@@ -6,7 +6,7 @@ A router: every path written here is an address, whichever form it takes.
 |---|---|
 | [the routed rule](../catalog/routed.md) | a markdown link is the route |
 | `catalog/routed-and-declined.md` | a backticked path is the route just as much |
-| [the section of a live file](../catalog/routed.md#core-rule) | an anchor names a section, and the section is not checked |
+| [the section of a live file](../catalog/routed.md#core-rule) | the heading supplies the anchor |
 | [the published spec](https://example.com/spec.md) | the target leaves the repository |
 
 The wrapper also names `src/index.ts`, a file inside a frontend package root. It
@@ -37,3 +37,20 @@ Below are the three that must be caught: a [markdown link](../catalog/missing.md
 whose target is gone, a routed path `catalog/ghost.md` that names nothing, and a
 link [reflowed across
 lines](../catalog/nowhere.md) — one link still, and checked like one.
+
+Two routes into the same file: `doc/headings.md#plain-heading` and `doc/headings.md#absent`.
+
+\`doc/missing-escaped.md\`
+`compare ``doc/missing-phrase.md`` here`
+[Open](../doc/missing-link.md "see `doc/missing-title.md`")
+``doc/missing-real.md``
+
+> - ```md
+>   [Sample](missing-quote.md) and `doc/missing-quote.md`
+>   ```
+
+    [Sample](missing-indent.md) and `doc/missing-indent.md`
+
+- ```md
+  [Sample](missing-item.md) and `doc/missing-item.md`
+Outside the item, `doc/missing-outside.md`.

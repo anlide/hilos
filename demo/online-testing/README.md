@@ -209,7 +209,7 @@ the scenarios it names — 11 cross-node db fact, 15 db interest addressing
 database refused, 24 cut-off leader stops its work (skipped as flaky since
 2026-10-10), and 40 journal triggers installed once and unchanged on ordinary
 non-leader restart
-(`docs/agents/testing.md`, "The cluster stands — six demos, six shapes"). The framework's probe fleet and
+(`../../docs/agents/testing/cluster-stands.md`, "The cluster stands — six demos, six shapes"). The framework's probe fleet and
 database probe are in this demo's `AGENTS`, and they start only here: on one
 node, on the Playwright stand and in production the rows are carried and
 nothing is run.
@@ -253,7 +253,7 @@ its numeric group. This path needs ordinary Linux shell utilities, the Docker
 CLI and an accessible local Unix Docker daemon; it does not need host Python,
 PHP, Composer or a Compose plugin. Docker Desktop, rootless, SSH and multi-
 machine daemons are outside the supported target. See the
-[shared runner details](../../docs/agents/testing.md#cluster-harness-runner).
+[shared runner details](../../docs/agents/testing/cluster-harness.md#cluster-harness-runner).
 
 The existing Composer command names above remain convenient entry points.
 `composer run test:cluster:down` still uses `../../scripts/down-stands.php`;
@@ -316,8 +316,8 @@ volume at `/app/data`, and the nodes and entry share a named export volume of th
 stand over it, both suffixed the same way; the entry mounts Angular's
 `frontend/dist` at `/usr/share/nginx/html`. See the
 shared guide's
-[stand instances](../../docs/agents/testing.md#the-full-run--one-graph-a-bounded-number-of-lanes)
-and [cluster lifecycle](../../docs/agents/testing.md#cluster-compose-model).
+[stand instances](../../docs/agents/testing/stand-compose.md)
+and [cluster lifecycle](../../docs/agents/testing/cluster-harness.md#cluster-compose-model).
 
 ### Standalone components
 
@@ -400,7 +400,7 @@ compose file before switching. The Galera scripts and proxy configuration stay
 in Git history. Scenarios 26 and 27 remain in the shared harness; 28 was merged
 into 27 (HIL-2041) and its number is retired. The concert-tickets cluster stand
 carries 26 and 27
-([The cluster stands](../../docs/agents/testing.md#the-cluster-stands--six-demos-six-shapes)).
+([The cluster stands](../../docs/agents/testing/cluster-stands.md#the-cluster-stands--six-demos-six-shapes)).
 They are not passing checks of this stand.
 
 ### TLS fixtures

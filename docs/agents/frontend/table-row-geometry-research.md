@@ -1406,7 +1406,7 @@ applicable demo frontend/check command for demo edits, and that demo's
 `test:e2e-full -- <spec>` for its geometry/a11y scenarios. Tests run only through
 the line's stand wrapper; long runs use the line's detached mechanism.
 The integration/Verify phase owns the rare full pass prescribed by
-[testing.md](../testing.md); this Research does not launch it. Every card includes
+[../testing/selective.md](../testing/selective.md); this Research does not launch it. Every card includes
 its behavior tests rather than creating a separate Tooling card to validate
 someone else's code. CSS/browser proofs must cover each view's own lifecycle,
 even when the pure numeric core tests and geometry helper are shared.

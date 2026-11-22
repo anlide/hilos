@@ -14,7 +14,7 @@ target is **WCAG 2.1 AA**, in full, from v1.
 - The normative AA checklist (canonical): `docs/agents/frontend/accessibility.md`
 - Bootstrap-only styling — the no-hand-CSS rule a11y leans on: `docs/agents/frontend/styling-rules.md`
 - Focus-trapped modal editing (the edit-surface pillar): `docs/agents/frontend/conflict-resolution.md`
-- The rare a11y e2e category: `docs/agents/testing.md`
+- The rare a11y e2e category: `docs/agents/testing/selective.md`
 - Components: `framework/frontend/{vue,react,angular}/src/*` — `HilosLayout`,
   `HilosModal`, `HilosViewportTable`, `LoadingButton`, `HilosLink`
 - How the file itself must look once the a11y shape is decided:

@@ -385,7 +385,7 @@ class Hilos extends HilosFacade
         // The fleet probe of this demo's cluster stand - scenario 52 reads the fleet. A probe starts
         // only on a clustered node of a non-production environment, so this demo on one node, on
         // its Playwright stand and in production carries the row and runs none of it
-        // (docs/agents/testing.md, "The cluster stands").
+        // (docs/agents/testing/cluster-stands.md, "The cluster stands").
         HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
     ];
 

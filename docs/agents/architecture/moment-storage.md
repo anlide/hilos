@@ -473,4 +473,4 @@ composer run test:framework:unit -- --filter AgentDocGuardTest
 
 No new test is needed for this report. Schema/integration/e2e checks, resets
 and full cross-demo runs belong to the implementation changes they exercise;
-each future leaf selects its own checks under [testing.md](../testing.md).
+each future leaf selects its own checks under [../testing/selective.md](../testing/selective.md).

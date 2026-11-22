@@ -721,7 +721,7 @@ For its data and privacy boundaries, read
    clearing either database. The
    binance-btc-tracker, ecommerce-shop and online-testing cluster stands each
    use one ordinary MariaDB server; the planned carriers' database topologies
-   are in [the testing guide](../testing.md#the-cluster-stands--six-demos-six-shapes).
+   are in [the testing guide](../testing/cluster-stands.md#the-cluster-stands--six-demos-six-shapes).
    Their transition and
    the separate new directory for online-testing are in
    [change-log.md](change-log.md#where-the-journal-lives) and the demo READMEs.

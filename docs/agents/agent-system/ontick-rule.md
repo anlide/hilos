@@ -28,7 +28,8 @@ or real-time deadline, and it never permits spending that time inside
 can make the next pass happen sooner.
 
 For an indexed instance owner, the existing `AgentRegistry`/`AgentIdleTracker`
-idle-window end is another deadline ([idle stop](../architecture/agent-lifecycle.md#idle-stop)). A live subscription prevents that idle
+idle-window end is another deadline
+([idle stop](../architecture/agent-lifecycle.md#idle-stop-an-agent-that-lives-as-long-as-it-is-spoken-to)). A live subscription prevents that idle
 stop but does not grant a different worker allowance. Stops still use the
 ordinary path and retain the existing checks for silence, subscribers, work in
 flight, and protected mode; a stop blocked by those checks does not create a

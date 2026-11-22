@@ -72,7 +72,7 @@ offline path. No presence address is needed to generate these source files.
 | `test:stand:reset` | `cli-offline-write` | Reset the whole test stand in order: logs → backups → published files → database; stops at the first failure |
 | `test:files:reset` | `cli-offline-write` | Empty the published files directory (test env only); no-op when FILES is not declared |
 | `test:db:reset` | `cli-offline-write` | DROP and recreate the database → migrate → seed with its files (test env only); for ANALYTICS, first clears this environment and node's journal scope — runs before the database exists, but needs the server up |
-| `test:orm:forget daemon` / `test:orm:forget worker <workerId>` | `daemon` | Forget loaded ORM state in one live process; test-only use and owner restriction: [Forgetting loaded ORM state](../testing.md#forgetting-loaded-orm-state) |
+| `test:orm:forget daemon` / `test:orm:forget worker <workerId>` | `daemon` | Forget loaded ORM state in one live process; test-only use and owner restriction: [Forgetting loaded ORM state](../testing/orm-forgetting.md#forgetting-loaded-orm-state) |
 | `db:wait` | `cli-read` | Wait until MySQL is accepting connections — runs while the server is still down |
 
 `test:stand:reset` runs the offline reset of every kind of stand state in sequence:
@@ -656,7 +656,7 @@ without reading a database),
 `db:wait` (its poll *is* the connect, and it has to run before the server
 answers), `agent:restart` (the master coordinates the stop and start over its command
 socket, and the CLI process has no database work), `test:orm:forget` (only the addressed
-live process forgets ORM state; see [the test-only canon](../testing.md#forgetting-loaded-orm-state)),
+live process forgets ORM state; see [the test-only canon](../testing/orm-forgetting.md#forgetting-loaded-orm-state)),
 `test:stand:reset`, `test:files:reset`, `test:logs:reset`, `test:backup:reset`,
 `test:db:reset` (when `ANALYTICS` is declared, it initializes only the filesystem
 and clears the current journal scope first; then it opens its own server-level

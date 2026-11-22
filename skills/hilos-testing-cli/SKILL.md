@@ -10,17 +10,17 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
 ## Read First
 
 - Before considering ORM forget by CLI, API, or helper:
-  [Forgetting loaded ORM state](../../docs/agents/testing.md#forgetting-loaded-orm-state).
-- Test commands and test-writing rules: `docs/agents/testing.md`
+  [Forgetting loaded ORM state](../../docs/agents/testing/orm-forgetting.md#forgetting-loaded-orm-state).
+- Test commands: `docs/agents/testing/backend-suites.md`; test-writing rules: `docs/agents/testing/writing-tests.md`
 - Before writing or changing a rollback-scoped PHP integration test:
   [Rollback-scoped integration tests](../../docs/agents/testing/integration-tests.md).
 - The step graph, lanes, full-run verdict and narrow diagnostic repeats:
-  `docs/agents/testing.md`, section "The full run — one graph, a bounded number of lanes".
+  `docs/agents/testing/full-run.md`, section "The full run — one graph, a bounded number of lanes".
 - Retry evidence and attribution:
   `docs/agents/frontend/testing-strategy.md`, section
   "A retried test makes the step red, and its cause must be traced".
 - Shared Playwright entry, quarantine ledger/artifacts and diagnostic repeats:
-  `docs/agents/testing.md`, "Playwright quarantine" and "Narrow runs collect evidence".
+  `docs/agents/testing/full-run.md`, "Playwright quarantine" and "Narrow runs collect evidence".
 - Migrations, schema checks, DB reset, monitoring: `docs/agents/cli/commands.md`
 - Legacy CLI reference only if needed: `docs/cli-commands.md`
 
@@ -56,12 +56,12 @@ Use this skill whenever validation or CLI commands are needed. Start with `agent
   follow the linked canon.
 - Never run `git commit` or `git push`.
 - A unit test may spawn a second process only as the last step of the ladder in
-  `docs/agents/testing.md`, section "A cross-process defect is an e2e defect
+  `docs/agents/testing/selective.md`, section "A cross-process defect is an e2e defect
   first", and its docblock must name what stopped e2e and the stand gateway.
 - Never run `phpunit` or `vendor/bin/phpunit` directly from the host.
-- Prefer composer scripts documented in `docs/agents/testing.md`.
+- Prefer composer scripts documented in `docs/agents/testing/backend-suites.md`.
 - The full run owns the verdict. A retried success makes the step red; a narrow
   green run on the same HEAD does not override it. Use narrow runs for debugging
-  and evidence as described in `docs/agents/testing.md`, "Narrow runs collect evidence".
+  and evidence as described in `docs/agents/testing/full-run.md`, "Narrow runs collect evidence".
 - Read `=== unstable: ... ===`, name the tests and trace their history. Attribution
   does not change the verdict; report a foreign cause without fixing it in this ticket.

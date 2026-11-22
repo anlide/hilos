@@ -74,7 +74,7 @@ import { createBotExtras } from '../helpers/bots.js'
 // names and clean up their UI subjects even on failure. Other `AAA` names use a
 // number that falls as time goes on, so the newest sorts before an older one.
 // Resetting the database is the run's job, not the spec's
-// (docs/agents/testing.md, re-running tests).
+// (docs/agents/testing/selective.md, re-running tests).
 //
 // Bots are created with Active off. An active bot starts its agent, and the
 // agent's runtime status is a second writer to the same row; an inactive one

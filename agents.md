@@ -194,7 +194,17 @@ Minimum ORM rules before editing:
 
 | File | Read when... |
 |---|---|
-| [testing.md](docs/agents/testing.md) | running unit / integration / e2e tests — **always** via the composer scripts, never `phpunit` directly; which demo's cluster stand carries a scenario, and on what shape; adding or changing a stand's compose file — its data root and instance names |
+| [testing.md](docs/agents/testing.md) | where the testing rules live: the environment split — an agent works the test env, never the developer's sandbox — and the map from a section of the former single guide to the topic file that holds it now; every test runs through the composer scripts, never `phpunit` directly |
+| [testing/backend-suites.md](docs/agents/testing/backend-suites.md) | running the framework's or a demo's PHP suites — the composer scripts that start the test databases, prepare their schemas and run unit, integration or one piece; never `phpunit` directly |
+| [testing/phpunit-gates.md](docs/agents/testing/phpunit-gates.md) | a PHPUnit run is red without a failed assertion — a code-style rule or its baseline, a deprecation, notice or warning, a test past 60 seconds, a changed process environment — or a shared topology snapshot is red |
+| [testing/selective.md](docs/agents/testing/selective.md) | choosing which tests a change needs; proving a cross-process defect on the stand before a second process; re-running a test and the state a run leaves |
+| [testing/full-run.md](docs/agents/testing/full-run.md) | running or reading the full run — the step graph, lanes, `fe-dist`, a database per piece, a retried test making its step red, Playwright quarantine, narrow runs as evidence |
+| [testing/stand-compose.md](docs/agents/testing/stand-compose.md) | adding or changing a stand's compose file — instance names and networks, CPU weight, log rotation, its own data root, file ownership on a non-root clone |
+| [testing/ordinary-carriers.md](docs/agents/testing/ordinary-carriers.md) | the twelve ordinary demos as test carriers — activation state, running and cleaning up a stand, the runner's isolation, ordinary versus cluster phases |
+| [testing/cluster-stands.md](docs/agents/testing/cluster-stands.md) | which demo's cluster stand carries a scenario, on what shape, and what each stand already proves |
+| [testing/cluster-harness.md](docs/agents/testing/cluster-harness.md) | a cluster stand's compose model and the harness runner — its commands, scenario and browser steps, phases and artifacts |
+| [testing/orm-forgetting.md](docs/agents/testing/orm-forgetting.md) | before using or proposing ORM forget in a test — by CLI, direct API or helper; never outside tests unless the owner explicitly asks |
+| [testing/writing-tests.md](docs/agents/testing/writing-tests.md) | writing a new test — its kind and place, the reference to copy, a reproduction before its fix, a second process in a unit test, time-based waits |
 | [testing/integration-tests.md](docs/agents/testing/integration-tests.md) | writing or changing a rollback-scoped PHP integration test: its explicit marker, lifecycle, SQL boundary, rollback scope, and ORM reset |
 | [stand-services.md](docs/agents/stand-services.md) | a spec needs an external service on the stand: adding a channel or an emulator, choosing between a stub and an emulator, or reading where a caught message lands |
 | [manual-checks.md](docs/agents/manual-checks.md) | a change touches something only a person on a real device or a real provider sees — the passkey ceremony, a letter in a real mail client, a provider's consent screen: which items your hand-over names, and which platforms we promise |
@@ -289,7 +299,7 @@ rule — still goes back to the interview.
 9. If a DB/RT item key is known, update/delete that one item through `Hilos::$db/$rt->collection[$key]->actions`, not through collection actions that accept the key
 10. A page subscription answers in **one** `page_response` with everything that page needs for its first render — no second action, companion signal, or standalone catalog request to draw it; assemble it in that page's `buildPagePayload()` / `onSubscribe()` (see [signals/subscriptions.md](docs/agents/signals/subscriptions.md))
 11. When you land behavior a doc marks as not written yet, clear its markers in the same commit — grep `docs/` for your `HIL-<n>` key (see [rule-authoring.md](docs/agents/rule-authoring.md))
-12. Outside tests, do not use or propose ORM forget for approval; use it only when the owner explicitly asks. This covers CLI, direct API, and indirect use; see [Forgetting loaded ORM state](docs/agents/testing.md#forgetting-loaded-orm-state).
+12. Outside tests, do not use or propose ORM forget for approval; use it only when the owner explicitly asks. This covers CLI, direct API, and indirect use; see [Forgetting loaded ORM state](docs/agents/testing/orm-forgetting.md#forgetting-loaded-orm-state).
 13. The tree and its history are public. A machine name, a host's directory, a private pipeline or a link into a private note that came with the task never enters a tracked file or a commit message; keep the meaning in a public shape (see [public-repository-hygiene.md](docs/agents/public-repository-hygiene.md))
 14. Until the owner declares a production installation, no data an earlier version of the code wrote is owed compatibility: write no reader, conversion or bridge for an old format, and do not stop to ask. What every change still owes, and where production is declared: [orm/migrations.md](docs/agents/orm/migrations.md#whose-data-is-owed-compatibility)
 

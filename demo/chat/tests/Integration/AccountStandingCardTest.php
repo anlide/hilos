@@ -329,7 +329,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
     }
 
     /**
-     * E2e exception 1 (testing.md): only this worker can reveal its absent cached answer
+     * E2e exception 1 (testing/selective.md): only this worker can reveal its absent cached answer
      * and the rows its lazy applicator did not retain. Feed actual WorkerManager ingress.
      *
      * @param bool $warm Whether the card already showed that no merge existed
@@ -438,7 +438,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
         });
     }
 
-    /** E2e exception 1 (testing.md): a process restart cannot retain and test the stopped agent's cache. */
+    /** E2e exception 1 (testing/selective.md): a process restart cannot retain and test the stopped agent's cache. */
     public function testMergeWorkerStopNoReaderAndRestartReadARealOutcomeWrittenDuringTheGap(): void
     {
         $operation = $this->openMerge();
@@ -482,7 +482,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
     }
 
     /**
-     * E2e exception 1 (testing.md): prove each declared source at real WorkerManager ingress,
+     * E2e exception 1 (testing/selective.md): prove each declared source at real WorkerManager ingress,
      * retaining the warmed viewport and lazy mirrors while the separate owners commit.
      * Immutable-source updates are accepted reannouncements; deletes are explicit repair fixtures.
      *
@@ -924,7 +924,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
     }
 
     /**
-     * E2e exception 1 (testing.md): scenarios 11/15 see DB facts and interests, but cannot
+     * E2e exception 1 (testing/selective.md): scenarios 11/15 see DB facts and interests, but cannot
      * observe a particular worker's warmed resolver or whether its lazy applicator retained
      * a row. Recreating a node destroys that memory. Drive the real worker ingress here;
      * the separate writer context commits through the declared owner's actions.
@@ -1084,7 +1084,7 @@ final class AccountStandingCardTest extends IntegrationTestCase
     }
 
     /**
-     * E2e exception 1 (testing.md): the resolver surviving an agent stop is private to this
+     * E2e exception 1 (testing/selective.md): the resolver surviving an agent stop is private to this
      * worker; scenario 11 recreates the process and erases the evidence. Keep the worker,
      * stop its actual agent and last scoped reader, then deliver readiness and start again.
      *

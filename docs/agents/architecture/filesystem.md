@@ -97,7 +97,7 @@ containers mount the same directory read-only. A test stand keeps Status in its
 own data root, so the local and the test installation of one demo never publish
 into the same files: an ordinary test stack's daemon sees `data/test/status` as
 `/app/data/status`, and its nginx reads the same directory as `/status`
-([testing.md](../testing.md#the-full-run--one-graph-a-bounded-number-of-lanes),
+([../testing/stand-compose.md](../testing/stand-compose.md),
 "Data root of a stand"). Each demo cluster stand lays its own named Status volume,
 suffixed with `${HILOS_STAND_SUFFIX:-}`, over its data root volume.
 The current carriers are `binance-btc-tracker`, `ecommerce-shop` and `online-testing`.

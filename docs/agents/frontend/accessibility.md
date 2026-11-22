@@ -376,7 +376,7 @@ asserts the accessibility tree over the live socket: table accessible names and
 document title and page-change announcement, one top-level heading per page, and
 presence exposed as text. Run it in the full pass or pointed
 (`test:e2e-full -- a11y.spec`) while editing a11y; a green inner loop does not require
-it. See [testing.md](../testing.md).
+it. See [../testing/selective.md](../testing/selective.md).
 
 ## Checklist for a new page or component
 

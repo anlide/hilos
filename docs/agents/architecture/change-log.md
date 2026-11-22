@@ -393,7 +393,7 @@ Its name is the main database's name plus `-change-log`: `hilos-demo-chat` becom
 `hilos-framework-test-1-change-log`.
 
 The name cannot be one constant shared by all installations: integration tests
-have [a database per piece](../testing.md), named by
+have [a database per piece](../testing/full-run.md), named by
 `scripts/framework-pieces.php`. The separator is a hyphen because an underscore
 in a database name in `GRANT` is a wildcard for one character.
 
@@ -1005,7 +1005,7 @@ roblox-game-server (Galera) and concert-tickets (Galera) carry scenario 26, and
 file-gallery-manager (primary/replica) carries 31; concert-tickets carries
 scenario 27's full loss/return cycle. The shared harness keeps their
 shape guards; the carriers are in
-[The cluster stands](../testing.md#the-cluster-stands--six-demos-six-shapes).
+[The cluster stands](../testing/cluster-stands.md#the-cluster-stands--six-demos-six-shapes).
 This leaf (HIL-1621) does not establish non-duplication on Galera or trigger
 behavior on a replica; those guarantees needed carriers of their own as well as
 journal scenarios, and scenario 50 below carries them.
@@ -1090,4 +1090,4 @@ These proofs do not promise exactly-once business operations when a reply is los
 - [protected-mode.md](protected-mode.md) — the restore's freeze.
 - [access-log.md](access-log.md) — the account access log.
 - [../rule-authoring.md](../rule-authoring.md) — clearing markers when code lands.
-- [../testing.md](../testing.md) — the database per integration piece.
+- [../testing/full-run.md](../testing/full-run.md) — the database per integration piece.

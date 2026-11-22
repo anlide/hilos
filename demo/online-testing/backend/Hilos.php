@@ -465,7 +465,7 @@ final class Hilos extends HilosFacade
         // The probes of this demo's cluster stand - scenario 24 reads the fleet, scenario 11
         // writes and reads through the database probe. A probe starts only on a clustered node of
         // a non-production environment, so this demo on one node, on its Playwright stand and in
-        // production carries the rows and runs none of them (docs/agents/testing.md, "The cluster
+        // production carries the rows and runs none of them (docs/agents/testing/cluster-stands.md, "The cluster
         // stands").
         HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
         HilosAgentType::HILOS_PROBE_DB => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_DB],

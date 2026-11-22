@@ -334,7 +334,7 @@ with `composer run test:cluster:e2e -- --grep 'cluster theme'`.
 
 The harness commands — `kill`, `inspect` and the rest — use the shell entry
 point from this demo directory; see the
-[shared runner details](../../docs/agents/testing.md#cluster-harness-runner).
+[shared runner details](../../docs/agents/testing/cluster-harness.md#cluster-harness-runner).
 
 ### Raising and raising again
 

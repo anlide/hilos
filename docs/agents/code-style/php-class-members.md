@@ -114,4 +114,4 @@ php -l path/to/ChangedClass.php
 ```
 
 For framework changes with tests nearby, run the smallest relevant composer test
-script from [testing.md](../testing.md).
+script from [../testing/backend-suites.md](../testing/backend-suites.md).

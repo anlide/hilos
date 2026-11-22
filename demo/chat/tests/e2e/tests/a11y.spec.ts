@@ -119,7 +119,7 @@ import {
 import { setAdminViewMode } from '../../../../../framework/frontend/scripts/adminViewMode.mjs'
 
 // Hilos accessibility (a11y) e2e — the rarely-run a11y category (see
-// docs/agents/testing.md "Selective testing"). Asserts the framework viewport
+// docs/agents/testing/selective.md "Selective testing"). Asserts the framework viewport
 // table exposes a correct accessibility tree over the live socket: an accessible
 // name from the page heading it stands under, a labeled search box, and a sortable
 // header that reports aria-sort and is operable from the keyboard. The chat (Vue)

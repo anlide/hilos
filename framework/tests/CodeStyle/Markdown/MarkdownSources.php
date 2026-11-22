@@ -49,11 +49,49 @@ final class MarkdownSources
         'CLAUDE.md',
     ];
 
-    /** `[text](target)`; the optional title after the target is dropped by the caller. */
-    private const string LINK_PATTERN = '~!?\[[^]]*]\(([^)]*)\)~';
+    private const string QUOTE = '~^ {0,3}> ?~';
+    private const string LIST_ITEM = '~^ {0,3}(?:[-+*]|([0-9]{1,9})[.)])(?: {1,4}(?! )| |$)~';
+    private const string ATX = '~^ {0,3}#{1,6}(?:[ \t]+|$)~';
+    private const string DIVIDER = '~^ {0,3}(?:=+|-+|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})[ \t]*$~';
+    /** HTML block openers that can interrupt a paragraph (CommonMark §4.6, types 1 through 6). */
+    private const string HTML_BLOCK_OPEN = '~^ {0,3}<(?:!--|\?|![a-zA-Z]|!\[CDATA\[|(?i:'
+        . '(?:pre|script|style|textarea)(?=[ \t>]|$)|/?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup'
+        . '|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe'
+        . '|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th'
+        . '|thead|title|tr|track|ul)(?=[ \t]|/?>|$)))~';
+    private const string TABLE_DELIMITER = '~^\h*\|?\h*:?-+:?\h*(?:\|\h*:?-+:?\h*)*\|?\h*$~';
+    private const string CELL_DIVIDER = '~\x5c.(*SKIP)(*F)|\|~';
 
-    /** A path written on its own, in backticks — the form a wrapper routes with. */
-    private const string BACKTICKED_PATTERN = '~`([^`\n]+)`~';
+    /** Consume escapes and whole backtick runs in order. Inside a matched span even a backslash is literal. */
+    private const string INLINE_LITERAL = '(?<escape>\x5c[[:punct:]])|(?<span>(?<ticks>`++)(?<code>.+?)(?<!`)\k<ticks>(?!`))|`++';
+
+    /**
+     * An ordinary bracket pair belongs to a link label only if it has no destination
+     * of its own. Images can occur inside links and keep their balanced alt text.
+     */
+    private const string INLINE_PATTERN = '~' . self::INLINE_LITERAL . '|' . <<<'REGEX'
+        (?<image>!)? \[ (?<label> (?(image) (?&alt) | (?:
+              (?&text) | !\[(?&alt)\](?&destination) | !
+            | \[(?&label)\] (?! (?&destination) )
+        )*+ ) ) \]
+        (?<destination> \(
+            \s* (?<reference> <[^<>\n]*> | (?<path> (?: [^()\s]++ | \((?&path)\) )*+ ) )
+            (?: \s+ (?:
+                  "(?: [^"\\]++ | \\. )*"
+                | '(?: [^'\\]++ | \\. )*'
+                | \( (?: [^()\\]++ | \\. )* \)
+            ) )?
+            \s*
+        \) )
+        (?(DEFINE)
+            (?<text> [^][`\\!]++ | (?&escape) | \\ | (?&span) | `++ )
+            (?<alt> (?: (?&text) | ! | \[(?&alt)\] )*+ )
+        )
+        ~sx
+        REGEX;
+
+    /** Punctuation excluded from a heading anchor, including the delimiters of inline markup. */
+    private const string HEADING_PUNCTUATION = '~[^\p{L}\p{M}\p{N}\p{Pc}\- ]~u';
 
     /** Anything carrying a scheme leaves the repository and is not ours to check. */
     private const string EXTERNAL_PATTERN = '~^[a-z][a-z0-9+.-]*:~i';
@@ -76,18 +114,17 @@ final class MarkdownSources
      */
     private const string CITATION_PATTERN = '~:\d+(?:-\d+)?$~';
 
-    /**
-     * A fence opening or closing a code block. Its body is a sample, not a
-     * reference: a link shown in an example is not a link an agent follows, and a
-     * path shown there is not a route.
-     */
-    private const string FENCE_PATTERN = '#^\s*(?:```+|~~~+)#';
+    private const string FENCE_OPEN = '#^ {0,3}(`{3,}(?=[^`]*$)|~{3,})#';
+    private const string FENCE_CLOSE = '#^ {0,3}(?:`{3,}|~{3,})[ \t]*$#';
 
     /** @var array<int, string>|null Wrapper paths, walked once per instance */
     private ?array $wrappers = null;
 
     /** @var array<int, string>|null Document paths, walked once per instance */
     private ?array $documents = null;
+
+    /** @var array<string, array<int, string>> Anchors of each referenced Markdown file */
+    private array $anchors = [];
 
     /**
      * @param string $root Absolute path of the tree to scan
@@ -166,6 +203,24 @@ final class MarkdownSources
     }
 
     /**
+     * @param string $relativePath Path relative to the scanned root
+     * @return bool True when the target is a Markdown file whose anchors can be checked
+     */
+    public function isMarkdownFile(string $relativePath): bool
+    {
+        return str_ends_with($relativePath, '.md') && is_file($this->root . '/' . $relativePath);
+    }
+
+    /**
+     * @param string $relativePath Markdown file relative to the scanned root
+     * @return array<int, string> Heading and explicit HTML anchors in that file
+     */
+    public function anchors(string $relativePath): array
+    {
+        return $this->anchors[$relativePath] ??= $this->extractAnchors($this->read($relativePath));
+    }
+
+    /**
      * Reads the whole text rather than a line at a time, because a markdown link
      * reflowed across two lines is still one link, and a rule that scanned lines
      * would see a route the rule checking targets could not.
@@ -175,14 +230,7 @@ final class MarkdownSources
      */
     public function linksByLine(string $text): array
     {
-        $byLine = [];
-        foreach ($this->byLine(self::LINK_PATTERN, $text) as $line => $targets) {
-            foreach ($targets as $target) {
-                $byLine[$line][] = (string)strtok(trim($target), " \t\n");
-            }
-        }
-
-        return $byLine;
+        return $this->byLine('reference', $text);
     }
 
     /**
@@ -191,11 +239,11 @@ final class MarkdownSources
      */
     public function backtickedByLine(string $text): array
     {
-        return $this->byLine(self::BACKTICKED_PATTERN, $text);
+        return $this->byLine('code', $text);
     }
 
     /**
-     * Blanks the body of every fenced code block, keeping the line count intact so
+     * Blanks fenced and indented code, keeping the line count intact so
      * a hit still reports the line it sits on. A sample is not a reference: the
      * document that explains a rule has to show the shapes the rule judges, and
      * reading those as live would report the explanation itself.
@@ -205,19 +253,30 @@ final class MarkdownSources
      */
     public function prose(string $text): string
     {
-        $prose = [];
-        $fenced = false;
-        foreach (explode("\n", $text) as $line) {
-            if (preg_match(self::FENCE_PATTERN, $line) === 1) {
-                $fenced = !$fenced;
-                $prose[] = '';
-                continue;
+        $prose = explode("\n", $text);
+        foreach ($this->blocks($text) as $number => [$kind]) {
+            if ($kind === 'code') {
+                $prose[$number - 1] = '';
             }
-
-            $prose[] = $fenced ? '' : $line;
         }
 
         return implode("\n", $prose);
+    }
+
+    /**
+     * @param string $target Text written inside a reference
+     * @return string|null Text after the first hash, or null for an absent or empty fragment
+     */
+    public function fragment(string $target): ?string
+    {
+        $hash = strpos($target, '#');
+        if ($hash === false) {
+            return null;
+        }
+
+        $fragment = trim(substr($target, $hash + 1));
+
+        return $fragment === '' ? null : $fragment;
     }
 
     /**
@@ -253,6 +312,10 @@ final class MarkdownSources
      */
     public function linkTargets(string $target, string $relativePath): array
     {
+        if (str_starts_with($target, '#')) {
+            return [$relativePath];
+        }
+
         $path = $this->addressable($target);
         if ($path === null) {
             return [];
@@ -275,6 +338,63 @@ final class MarkdownSources
     }
 
     /**
+     * @param string $text Contents of one Markdown file
+     * @return array<int, string> Anchors generated from prose headings and declared by HTML anchor elements
+     */
+    private function extractAnchors(string $text): array
+    {
+        $anchors = [];
+        $occurrences = [];
+        foreach ($this->blocks($text) as [$kind, $lines]) {
+            if ($kind !== 'heading') {
+                continue;
+            }
+
+            $slug = $this->headingSlug($lines[0]);
+            $repeat = $occurrences[$slug] ?? 0;
+            $anchors[] = $repeat === 0 ? $slug : $slug . '-' . $repeat;
+            $occurrences[$slug] = $repeat + 1;
+        }
+
+        preg_match_all('~<a(?=\s)((?:[^>"\']++|"[^"]*"|\'[^\']*\')*)>~i', $text, $tags);
+        foreach ($tags[1] as $attributes) {
+            preg_match_all('~\s+([^\s=/>]+)\s*=\s*(["\'])(.*?)\2~s', $attributes, $matches, PREG_SET_ORDER);
+            foreach ($matches as [, $name, , $value]) {
+                if (in_array(strtolower($name), ['id', 'name'], true)) {
+                    $anchors[] = $value;
+                }
+            }
+        }
+
+        return $anchors;
+    }
+
+    /**
+     * @param string $heading ATX heading text after its opening hashes
+     * @return string Heading anchor before disambiguating repeated headings
+     */
+    private function headingSlug(string $heading): string
+    {
+        $heading = (string)preg_replace('~(?:^|\h+)#+$~', '', trim($heading));
+        $heading = (string)preg_replace_callback(
+            self::INLINE_PATTERN,
+            static fn (array $match): string => $match['label'] ?? $match[0],
+            $heading,
+        );
+        $heading = (string)preg_replace_callback(
+            '~' . self::INLINE_LITERAL . '~s',
+            static fn (array $literal): string => isset($literal['code'])
+                ? (string)preg_replace(self::HEADING_PUNCTUATION, '', $literal['code'])
+                : $literal[0],
+            $heading,
+        );
+        $heading = mb_strtolower(strip_tags($heading), 'UTF-8');
+        $heading = (string)preg_replace(self::HEADING_PUNCTUATION, '', $heading);
+
+        return str_replace(' ', '-', $heading);
+    }
+
+    /**
      * @param string $target Text written inside a reference
      * @return string|null The path part, or null when the text is not a path at all
      */
@@ -294,21 +414,266 @@ final class MarkdownSources
     }
 
     /**
-     * Counts the line in the same text the match came from: `prose()` keeps the
-     * line count of the original but not its byte offsets.
+     * A list entry stores its continuation indent. A quote stores its explicit
+     * marker. A literal block lasts only while every enclosing container continues.
      *
-     * @param string $pattern Regex whose first group holds the reference text
-     * @param string $text Markdown text of a whole file
-     * @return array<int, array<int, string>> First group of every match, keyed by the line it sits on
+     * @param string $line Source line
+     * @param array<int, int|string> $containers Enclosing list indents and quote markers
+     * @param bool $literal Whether a fence or HTML comment is open
+     * @param bool $paragraph Whether the previous line belongs to an open paragraph
+     * @return array{string, 'matched'|'changed'|'lazy'} Local line and how it continues its containers
      */
-    private function byLine(string $pattern, string $text): array
+    private function containerLine(string $line, array &$containers, bool $literal, bool $paragraph): array
     {
-        $prose = $this->prose($text);
-        preg_match_all($pattern, $prose, $found, PREG_OFFSET_CAPTURE);
+        // Expand tabs only in the prefix that can contain container markers or indent.
+        if (str_contains($line, "\t")) {
+            $width = strspn($line, " \t>+-*.0123456789)");
+            $prefix = (string)preg_replace_callback(
+                '~([^\t]*)\t~',
+                static fn (array $match): string => $match[1] . str_repeat(' ', 4 - strlen($match[1]) % 4),
+                substr($line, 0, $width),
+            );
+            $line = $prefix . substr($line, $width);
+        }
 
+        $changed = false;
+        foreach ($containers as $depth => $owner) {
+            if ($owner === '>') {
+                if (preg_match(self::QUOTE, $line, $prefix) === 1) {
+                    $line = substr($line, strlen($prefix[0]));
+                    continue;
+                }
+            } elseif (strspn($line, ' ') >= $owner || trim($line) === '') {
+                $line = substr($line, $owner);
+                continue;
+            }
+
+            if ($paragraph && $this->continuesWithoutPrefix($line, $owner !== '>')) {
+                return [$line, 'lazy'];
+            }
+
+            $containers = array_slice($containers, 0, $depth);
+            $literal = false;
+            $changed = true;
+            break;
+        }
+
+        while (!$literal) {
+            if (preg_match(self::QUOTE, $line, $prefix) === 1) {
+                $containers[] = '>';
+            } elseif (
+                preg_match(self::LIST_ITEM, $line, $prefix) === 1
+                && preg_match(self::DIVIDER, $line) !== 1
+                && ($changed || !$paragraph || $this->itemInterruptsParagraph($line, $prefix))
+            ) {
+                // An empty item reserves one column after its marker, regardless of trailing spaces.
+                $containers[] = trim(substr($line, strlen($prefix[0]))) === ''
+                    ? strlen(rtrim($prefix[0], ' ')) + 1
+                    : strlen($prefix[0]);
+            } else {
+                break;
+            }
+
+            $line = substr($line, strlen($prefix[0]));
+            $changed = true;
+        }
+
+        return [$line, $changed ? 'changed' : 'matched'];
+    }
+
+    /**
+     * @param string $line Text at the potential start of a new list
+     * @param array<int, string> $marker Matched list prefix and optional ordinal
+     * @return bool Whether the first item can interrupt an open paragraph
+     */
+    private function itemInterruptsParagraph(string $line, array $marker): bool
+    {
+        return (!isset($marker[1]) || (int)$marker[1] === 1)
+            && trim(substr($line, strlen($marker[0]))) !== '';
+    }
+
+    /**
+     * @param string $line Text after any explicit container prefixes
+     * @return bool Whether a blank line, divider or HTML opener ends the paragraph
+     */
+    private function paragraphBreak(string $line): bool
+    {
+        return trim($line) === '' || preg_match(self::DIVIDER, $line) === 1 || preg_match(self::HTML_BLOCK_OPEN, $line) === 1;
+    }
+
+    /**
+     * @param string $line Text after any explicit outer container prefixes
+     * @param bool $inList Whether a list marker here would start a sibling item
+     * @return bool Whether the open paragraph continues without the remaining prefixes
+     */
+    private function continuesWithoutPrefix(string $line, bool $inList): bool
+    {
+        if ($this->paragraphBreak($line)) {
+            return false;
+        }
+        if (preg_match(self::LIST_ITEM, $line, $item) === 1) {
+            return !$inList && !$this->itemInterruptsParagraph($line, $item);
+        }
+
+        return preg_match(self::QUOTE, $line) !== 1
+            && preg_match(self::ATX, $line) !== 1
+            && preg_match(self::FENCE_OPEN, $line) !== 1;
+    }
+
+    /**
+     * @param string $text Markdown source of a whole file
+     * @return iterable<int, array{string, array<int, string>}> Block kind and local lines or table cells, keyed by first source line
+     */
+    private function blocks(string $text): iterable
+    {
+        $containers = [];
+        $terminator = null;
+        $tableWidth = 0;
+        $paragraph = [];
+        foreach (explode("\n", $text) as $index => $raw) {
+            $number = $index + 1;
+            [$local, $continuation] = $this->containerLine(rtrim($raw, "\r"), $containers, $terminator !== null, $paragraph !== []);
+            if ($continuation === 'changed') {
+                $terminator = null;
+                $tableWidth = 0;
+                if ($paragraph !== []) {
+                    yield $number - count($paragraph) => ['paragraph', $paragraph];
+                    $paragraph = [];
+                }
+            }
+
+            if ($terminator === '-->') {
+                $kind = 'break';
+                if (str_contains($local, '-->')) {
+                    $terminator = null;
+                }
+            } elseif ($terminator !== null) {
+                $kind = 'code';
+                if (str_starts_with(ltrim($local, ' '), $terminator) && preg_match(self::FENCE_CLOSE, $local) === 1) {
+                    $terminator = null;
+                }
+            } elseif (preg_match(self::FENCE_OPEN, $local, $match) === 1) {
+                $kind = 'code';
+                $terminator = $match[1];
+            } elseif ($this->paragraphBreak($local)) {
+                $kind = 'break';
+                if (str_starts_with(ltrim($local, ' '), '<!--') && !str_contains($local, '-->')) {
+                    $terminator = '-->';
+                }
+            } elseif ($paragraph === [] && str_starts_with($local, '    ')) {
+                $kind = 'code';
+            } elseif (preg_match(self::ATX, $local, $match) === 1) {
+                $kind = 'heading';
+                $local = substr($local, strlen($match[0]));
+            } elseif ($tableWidth > 0) {
+                yield $number => ['row', array_slice($this->cells($local), 0, $tableWidth)];
+                continue;
+            } elseif ($continuation === 'matched' && $paragraph !== [] && ($header = $this->tableHeader(end($paragraph), $local)) !== []) {
+                $headerNumber = $number - 1;
+                array_pop($paragraph);
+                if ($paragraph !== []) {
+                    yield $headerNumber - count($paragraph) => ['paragraph', $paragraph];
+                    $paragraph = [];
+                }
+                $tableWidth = count($header);
+                yield $headerNumber => ['row', $header];
+                continue;
+            } else {
+                $paragraph[] = $local;
+                continue;
+            }
+
+            $tableWidth = 0;
+            if ($paragraph !== []) {
+                yield $number - count($paragraph) => ['paragraph', $paragraph];
+                $paragraph = [];
+            }
+            yield $number => [$kind, [$local]];
+        }
+
+        if ($paragraph !== []) {
+            yield $number - count($paragraph) + 1 => ['paragraph', $paragraph];
+        }
+    }
+
+    /**
+     * @param string $line A possible table row
+     * @return array<int, string> Cells between unescaped pipes, excluding optional outer borders
+     */
+    private function cells(string $line): array
+    {
+        $cells = preg_split(self::CELL_DIVIDER, trim($line));
+        if ($cells[0] === '') {
+            array_shift($cells);
+        }
+        if (end($cells) === '') {
+            array_pop($cells);
+        }
+
+        return $cells;
+    }
+
+    /**
+     * @param string $header Previous paragraph line
+     * @param string $delimiter Current local line
+     * @return array<int, string> Header cells when the delimiter confirms the same width
+     */
+    private function tableHeader(string $header, string $delimiter): array
+    {
+        if (!str_contains($header, '|') || preg_match(self::TABLE_DELIMITER, $delimiter) !== 1) {
+            return [];
+        }
+
+        $cells = $this->cells($header);
+
+        return count($cells) === count($this->cells($delimiter)) ? $cells : [];
+    }
+
+    /**
+     * A link can carry a routed span in its label. Consuming its complete title
+     * keeps quoted examples there out of both sets of references.
+     *
+     * @param string $block Text of one inline block
+     * @param string $group Requested reference or code capture
+     * @return iterable<int, string> References keyed by byte offset within the block
+     */
+    private function inlineReferences(string $block, string $group): iterable
+    {
+        preg_match_all(self::INLINE_PATTERN, $block, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+        foreach ($matches as $match) {
+            if (isset($match[$group]) && $match[$group][1] >= 0) {
+                [$value, $offset] = $match[$group];
+                yield $offset => $value;
+            }
+            if ($group === 'code' && isset($match['label'])) {
+                [$label, $offset] = $match['label'];
+                preg_match_all('~' . self::INLINE_LITERAL . '~s', $label, $literals, PREG_OFFSET_CAPTURE);
+                foreach ($literals['code'] as [$code, $at]) {
+                    if ($at >= 0) {
+                        yield $offset + $at => $code;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @param string $group Named inline match containing the requested reference
+     * @param string $text Markdown text of a whole file
+     * @return array<int, array<int, string>> References keyed by the line each sits on
+     */
+    private function byLine(string $group, string $text): array
+    {
         $byLine = [];
-        foreach ($found[1] as [$reference, $offset]) {
-            $byLine[substr_count($prose, "\n", 0, $offset) + 1][] = $reference;
+        foreach ($this->blocks($text) as $first => [$kind, $lines]) {
+            if ($kind === 'code' || $kind === 'break') {
+                continue;
+            }
+            foreach ($kind === 'row' ? $lines : [implode("\n", $lines)] as $block) {
+                foreach ($this->inlineReferences($block, $group) as $offset => $value) {
+                    $byLine[$first + substr_count($block, "\n", 0, $offset)][] = $value;
+                }
+            }
         }
 
         return $byLine;

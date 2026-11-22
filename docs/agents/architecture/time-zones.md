@@ -187,7 +187,7 @@ Every node of a cluster carries the `project-time-zone` marker: the exact string
 read from `Hilos::$env[EnvConstants::HILOS_PROJECT_TIME_ZONE]->string()`. The
 existing marker rule refuses a different value at both ends of the peer link;
 it also refuses a peer that names no such marker. Scenario 47 proves this on the
-binance-btc-tracker cluster stand ([../testing.md](../testing.md)).
+binance-btc-tracker cluster stand ([../testing/cluster-stands.md](../testing/cluster-stands.md)).
 
 **On a cluster.** A person's time-zone choice reaches tabs connected to other
 masters through the same session-restatement frame used for theme changes; the

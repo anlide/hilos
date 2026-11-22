@@ -11,7 +11,7 @@ canonical rule before writing or moving command code.
 ## Read First
 
 - Before considering ORM forget by CLI, API, or helper:
-  [Forgetting loaded ORM state](../../docs/agents/testing.md#forgetting-loaded-orm-state).
+  [Forgetting loaded ORM state](../../docs/agents/testing/orm-forgetting.md#forgetting-loaded-orm-state).
 - The rule, the five sites (including source generation), and the guard: `docs/agents/cli/command-execution.md`
 - The command catalog and how a project registers its own: `docs/agents/cli/commands.md`
 - A feature's test-only command that brings its timer to now:

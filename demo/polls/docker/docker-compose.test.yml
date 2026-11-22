@@ -135,7 +135,7 @@ services:
       hilos.role: app
     volumes:
       - ..:/app
-      # The stand's own data root: exports, backups, Status and files never share the local installation's data/ (docs/agents/testing.md).
+      # The stand's own data root: exports, backups, Status and files never share the local installation's data/ (docs/agents/testing/stand-compose.md).
       - ../data/test:/app/data
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro
@@ -357,7 +357,7 @@ services:
     container_name: polls-cli-test${HILOS_STAND_SUFFIX:-}
     volumes:
       - ..:/app
-      # The stand's own data root: exports, backups, Status and files never share the local installation's data/ (docs/agents/testing.md).
+      # The stand's own data root: exports, backups, Status and files never share the local installation's data/ (docs/agents/testing/stand-compose.md).
       - ../data/test:/app/data
       - ../../../composer.json:/hilos/composer.json:ro
       - ../../../composer.lock:/hilos/composer.lock:ro

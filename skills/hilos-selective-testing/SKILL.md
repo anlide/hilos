@@ -12,21 +12,21 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 ## Read First
 
 - The change-type → test-set map and the rare-full-run rule:
-  `docs/agents/testing.md`, section "Selective testing — what to run for which change".
+  `docs/agents/testing/selective.md`, section "Selective testing — what to run for which change".
 - What no run can prove — the part a person checks on a real device or provider,
   and what a change touching it names in its hand-over: `docs/agents/manual-checks.md`.
 - The ladder for a defect two processes disagree about, and when a unit test may
-  spawn a second process: `docs/agents/testing.md`, section "A cross-process
+  spawn a second process: `docs/agents/testing/selective.md`, section "A cross-process
   defect is an e2e defect first".
 - The step graph, lanes, and the full-run verdict:
-  `docs/agents/testing.md`, section "The full run — one graph, a bounded number of lanes".
+  `docs/agents/testing/full-run.md`, section "The full run — one graph, a bounded number of lanes".
 - Retry evidence and attribution:
   `docs/agents/frontend/testing-strategy.md`, section
   "A retried test makes the step red, and its cause must be traced".
 - Main versus quarantine observations and native diagnostic repeats:
-  `docs/agents/testing.md`, "Playwright quarantine" and "Narrow runs collect evidence".
-- Command mechanics, DB reset, and the re-run contract: the rest of
-  `docs/agents/testing.md`.
+  `docs/agents/testing/full-run.md`, "Playwright quarantine" and "Narrow runs collect evidence".
+- Command mechanics: `docs/agents/testing/backend-suites.md`; DB reset and the re-run contract:
+  `docs/agents/testing/selective.md`, section "Re-running tests and state between runs".
 
 ## Workflow
 
@@ -50,10 +50,10 @@ justified. For how to invoke a chosen command, use `$hilos-testing-cli`.
 7. Cluster behavior runs the scenarios that cover it on the stand that carries
    them — `composer run test:cluster:scenarios -- <numbers>` from the directory of
    the demo whose stand it is, a fresh stand every time; which stand carries which
-   scenario: `docs/agents/testing.md`, section "The cluster stands — six demos,
+   scenario: `docs/agents/testing/cluster-stands.md`, section "The cluster stands — six demos,
    six shapes".
 8. Use narrow runs for debugging and evidence as described in
-   `docs/agents/testing.md`, "Narrow runs collect evidence". The full run owns the
+   `docs/agents/testing/full-run.md`, "Narrow runs collect evidence". The full run owns the
    verdict; a narrow green run on the same HEAD cannot replace a full red one.
 9. An `=== unstable: ... ===` section names tests that only passed on a retry and
    made their step red. Trace their history without widening the ticket's scope;

@@ -14,6 +14,11 @@ namespace Hilos\Tests\CodeStyle\Markdown;
  * files inside other roots constantly, and reading those as addresses reported 46
  * legitimate mentions on the tree this was measured against.
  *
+ * A fragment is part of the address: a link to `page.md#section` that names no
+ * anchor of `page.md` breaks the jump as surely as a missing file, so the fragment
+ * of a reference to a `.md` file is checked against that file's headings and
+ * `<a id>`/`<a name>` anchors.
+ *
  * The rule judges a file at a time, and reads text rather than tokens, so it
  * implements no interface the PHP rules share.
  */
@@ -76,8 +81,13 @@ final class DocLinkRule
         foreach ($this->sources->backtickedByLine($text) as $number => $spans) {
             foreach ($spans as $span) {
                 $path = $this->sources->rootAnchoredTarget($span);
-                if ($path !== null && !$this->sources->exists($path)) {
-                    yield $this->describe($relativePath, $number, sprintf('routed path %s resolves to no file', $span));
+                if ($path === null) {
+                    continue;
+                }
+
+                $error = $this->targetError($span, [$path]);
+                if ($error !== null) {
+                    yield $this->describe($relativePath, $number, sprintf('routed path %s %s', $span, $error));
                 }
             }
         }
@@ -95,26 +105,45 @@ final class DocLinkRule
     /**
      * @param string $relativePath Path of the file carrying the links, relative to the scanned root
      * @param string $text Contents of that file
-     * @return iterable<string> One line per markdown link whose every candidate target is missing
+     * @return iterable<string> One line per markdown link with a missing file or anchor
      */
     private function brokenLinks(string $relativePath, string $text): iterable
     {
         foreach ($this->sources->linksByLine($text) as $number => $targets) {
             foreach ($targets as $target) {
-                $candidates = $this->sources->linkTargets($target, $relativePath);
-                if ($candidates === []) {
-                    continue;
+                $error = $this->targetError($target, $this->sources->linkTargets($target, $relativePath));
+                if ($error !== null) {
+                    yield $this->describe($relativePath, $number, sprintf('markdown link %s %s', $target, $error));
                 }
-
-                foreach ($candidates as $candidate) {
-                    if ($this->sources->exists($candidate)) {
-                        continue 2;
-                    }
-                }
-
-                yield $this->describe($relativePath, $number, sprintf('markdown link %s resolves to no file', $target));
             }
         }
+    }
+
+    /**
+     * @param string $target Reference as written
+     * @param array<int, string> $candidates Paths in resolution order, empty for references outside the rule
+     * @return string|null Failure reason to append to the reference in a report
+     */
+    private function targetError(string $target, array $candidates): ?string
+    {
+        foreach ($candidates as $candidate) {
+            if (!$this->sources->exists($candidate)) {
+                continue;
+            }
+
+            $fragment = $this->sources->fragment($target);
+            if (
+                $fragment !== null
+                && $this->sources->isMarkdownFile($candidate)
+                && !in_array($fragment, $this->sources->anchors($candidate), true)
+            ) {
+                return 'names no anchor in ' . $candidate;
+            }
+
+            return null;
+        }
+
+        return $candidates === [] ? null : 'resolves to no file';
     }
 
     /**

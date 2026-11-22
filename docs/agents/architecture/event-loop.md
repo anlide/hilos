@@ -252,7 +252,7 @@ took the moment — means the master has already told the owner, pinged, marked 
 socket to close or checked the row; no such socket on the node is an error. Only the
 node asked answers: a socket of the same browser on another master is brought to now on
 that master. The production values are held by the unit test `WebSocketLivenessTest`;
-[testing.md](../testing.md), under scenario 46, has the cluster scenario and the
+[../testing/cluster-stands.md](../testing/cluster-stands.md), under scenario 46, has the cluster scenario and the
 single-node spec that use the command.
 
 **What counts as the browser speaking.** A whole frame of any opcode, taken by the

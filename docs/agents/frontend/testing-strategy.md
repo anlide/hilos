@@ -406,7 +406,7 @@ Draw a new or replacement browser zone **once, while writing the test**, with
 the demo's `test:e2e-time-zone` Composer command. Active ordinary demos provide
 it; each planned carrier must supply the same interface
 under its activation marker in the
-[ordinary carrier table](../testing.md#ordinary-demo-carriers).
+[ordinary carrier table](../testing/ordinary-carriers.md#ordinary-demo-carriers).
 `binance-btc-tracker`, `concert-tickets`, `file-gallery-manager`,
 `online-testing` and `roblox-game-server` also provide
 `test:cluster:e2e-time-zone` for their cluster browser entries. Use the command
@@ -533,7 +533,7 @@ before moving, splitting or porting a spec too.
 
 #### Approved target ownership — HIL-1984
 
-The [twelve ordinary carriers and their current activation state](../testing.md#ordinary-demo-carriers)
+The [twelve ordinary carriers and their current activation state](../testing/ordinary-carriers.md#ordinary-demo-carriers)
 are cataloged in the testing guide, which also owns their commands, isolation,
 cleanup and phase boundary. The matrix below is the approved **target** for
 the framework areas that move. Its markers name the leaves that activate the
@@ -593,7 +593,7 @@ The React/Angular parity pass that followed these moves is HIL-2022.
 
 #### Approved cluster-browser target — HIL-1985
 
-The [six cluster carriers and their shapes](../testing.md#the-cluster-stands--six-demos-six-shapes)
+The [six cluster carriers and their shapes](../testing/cluster-stands.md#the-cluster-stands--six-demos-six-shapes)
 are cataloged in the testing guide. This matrix is the approved target, and
 its transfers are complete; each row names the leaf that moved the area.
 Names identify whole areas. Transfers stayed within their view framework and
@@ -688,7 +688,7 @@ a static `test.fixme` and the host's `FLAKY_SKIP['daemon']`; it is not evidence
 for the independent live section smoke. Its scenario still covers remote node
 reports, a remote log-store restart, mismatch privacy over matching frames and
 leader-loss recovery on a surviving follower. The host phase and restoration
-steps remain documented in [../testing.md](../testing.md).
+steps remain documented in [../testing/cluster-harness.md](../testing/cluster-harness.md).
 
 The parked case retains its shared `expectClusterOverview`,
 `expectClusterDaemonNodePage`, `expectClusterLeaderPlacement` and
@@ -703,7 +703,7 @@ navigation and returns matching mismatch `page_response`/`table_window` texts
 plus `stop()`; direct node Env frames are outside that privacy boundary.
 Navigation, order, contexts, the host handshake and inode/offset node-log
 observations stay in the demo. The fresh `test:cluster:e2e -- --daemon` phase
-and restoration before the old phases remain documented in [../testing.md](../testing.md).
+and restoration before the old phases remain documented in [../testing/cluster-harness.md](../testing/cluster-harness.md).
 
 The current Moderation section specs live where its views are mounted:
 roblox-game-server (Vue), tasks (React) and polls (Angular) each carry
@@ -926,7 +926,7 @@ HIL-1324 and HIL-1325 moved their specs (run 0995, the test box, 2026-10-09),
 ## Backend state — clean runs and test-owned preconditions
 
 The full clean cycle resets the database and daemon **between runs**, including
-a pointed re-run; follow [Re-running tests and state between runs](../testing.md#re-running-tests-and-state-between-runs).
+a pointed re-run; follow [Re-running tests and state between runs](../testing/selective.md#re-running-tests-and-state-between-runs).
 Within a suite, tests share the database and daemon. There is no full reset
 before every test and no per-test transaction rollback around the live daemon.
 Each test owns its created preconditions and their cleanup, and must work
@@ -1476,7 +1476,7 @@ The live test opens on a follower and confirms the live leader's delivered
 entry-points projection, the source HTTP page and the separate addresses for
 Overview, Agent placement and Env mismatch, without node failure or restart.
 The parked test's host phases, cleanup and artifacts are described in
-[testing.md](../testing.md). `expectClusterOverview` and
+[../testing/cluster-harness.md](../testing/cluster-harness.md). `expectClusterOverview` and
 `expectClusterDaemonNodePage` wait for real node reports; the latter also accepts
 a reported empty roster. `expectDaemonWorkerAgent` expands visible worker rows
 as they arrive until the requested agent is visible. Given the node's command
@@ -2120,7 +2120,7 @@ not make a red full run green.
 The full run owns the verdict. A narrow green re-run on the same HEAD, including
 five observations with `--tests=... --repeat=5`, is diagnostic evidence and does
 not replace the full red result. The command and validation rules live in
-[testing.md](../testing.md#narrow-runs-collect-evidence).
+[../testing/full-run.md](../testing/full-run.md#narrow-runs-collect-evidence).
 
 ### Quarantine — a static tag and one attempt after main
 
@@ -2154,13 +2154,13 @@ with no retries. A quarantine pass requires a real browser pass and successful
 host checks. A browser failure or timeout stays failed; a skipped, interrupted
 or missing test is reported as not run. These observations do not change main's
 rc or its retry-to-red rule. The report and isolated artifacts are documented
-in [testing.md](../testing.md#playwright-quarantine).
+in [../testing/full-run.md](../testing/full-run.md#playwright-quarantine).
 
 Keep the tag and the F record until removal is explicitly authorized; one green
 attempt does not heal a flake. Moving a test into quarantine does not authorize
 changing its selectors, waits, assertions or timeout. Explicit diagnostic
 repeats exercise tagged tests through the native retry path, outside quarantine
-statistics; see [narrow runs](../testing.md#narrow-runs-collect-evidence).
+statistics; see [narrow runs](../testing/full-run.md#narrow-runs-collect-evidence).
 
 ## Filling inputs — keyboard, not `fill`
 
@@ -2276,7 +2276,7 @@ ordinary samples, non-increases and falling pressure stay quiet.
 CI that knows its own box. The demo compose files only forward it into the e2e
 runner, and one graph step sets it: `binance-btc-tracker-cluster-e2e` pins both
 factors at 2, because it runs beside the demo e2e steps (the owner's decision,
-2026-10-25; `../testing.md`, "The full run"). A pinned value is a **floor**, not the
+2026-10-25; `../testing/full-run.md`, "The full run"). A pinned value is a **floor**, not the
 finished factor: memory may still raise it, while the load-per-CPU term steps
 aside for as long as it is set (HIL-853). A value below 1 is raised to 1: the knob
 can lengthen a timeout and never shorten one.
@@ -2290,7 +2290,7 @@ factor above 1 rescued no test, while a test that hangs costs 30 seconds an
 attempt at 1.0 against 120 at seven lanes.
 
 This exists because a full run puts several suites on the box at once
-(`../testing.md`): a starved host must make the suite slower, not red.
+(`../testing/full-run.md`): a starved host must make the suite slower, not red.
 
 The heuristic is a port of `resolve_timeout_scale()` in the shared cluster
 harness (`framework/docker/cluster/scenarios.py`), and the port is
@@ -2369,6 +2369,6 @@ iteration. Day-to-day stays pointed: run one demo's full cycle pointed at the
 slice under work — `composer run test:e2e-full -- --grep <pattern>`, or a spec
 file — one feature, or one of the categories above. It is the same clean cycle
 as the unpointed run (teardown, fresh database, fresh daemon), so a repeat is a
-fresh verdict; the mechanics are in [testing.md](../testing.md). Unit tests are
+fresh verdict; the mechanics are in [../testing/selective.md](../testing/selective.md). Unit tests are
 pointed the same way: `npm run test` in the SDK container, or one package via
 `npm run test -w <package>`.

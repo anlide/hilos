@@ -556,7 +556,7 @@ final class Hilos extends HilosFacade
         // its collection with the claimer, 18 fills the slaves with the ballast. A probe starts
         // only on a clustered node of a non-production environment, so this demo on one node, on
         // its Playwright stand and in production carries the rows and runs none of them
-        // (docs/agents/testing.md, "The cluster stands").
+        // (docs/agents/testing/cluster-stands.md, "The cluster stands").
         HilosAgentType::HILOS_PROBE_FLEET => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_FLEET],
         HilosAgentType::HILOS_PROBE_CLAIMER => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_CLAIMER],
         HilosAgentType::HILOS_PROBE_BALLAST => ClusterProbe::AGENTS[HilosAgentType::HILOS_PROBE_BALLAST],

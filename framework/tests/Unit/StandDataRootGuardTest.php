@@ -29,7 +29,7 @@ require_once __DIR__ . '/../../../scripts/stand-registry.php';
 final class StandDataRootGuardTest extends TestCase
 {
     /** The rule a message sends its reader to. */
-    private const string RULES = 'docs/agents/testing.md';
+    private const string RULES = 'docs/agents/testing/stand-compose.md';
 
     /** Where a service of a stand sees its data root. */
     private const string DATA_ROOT = '/app/data';
@@ -168,7 +168,7 @@ final class StandDataRootGuardTest extends TestCase
             $this->assertIsString($message);
             $this->assertStringStartsWith("{$expected[0]} the service {$service} mounts the project at /app but ", $message);
             $this->assertStringContainsString($expected[1], $message);
-            foreach (['mount `../data/test:/app/data`', 'its own named data volume', 'docs/agents/testing.md'] as $advice) {
+            foreach (['mount `../data/test:/app/data`', 'its own named data volume', 'docs/agents/testing/stand-compose.md'] as $advice) {
                 $this->assertStringContainsString($advice, $message);
             }
         }
@@ -293,7 +293,7 @@ final class StandDataRootGuardTest extends TestCase
             $this->assertIsString($message, "no refusal for `{$line}`");
             $this->assertStringStartsWith("{$local}:2: the guard cannot read the service shop-cluster-m1: ", $message);
             $this->assertStringContainsString($reason, $message);
-            $this->assertStringContainsString('docs/agents/testing.md', $message);
+            $this->assertStringContainsString('docs/agents/testing/stand-compose.md', $message);
         }
     }
 
@@ -335,7 +335,7 @@ final class StandDataRootGuardTest extends TestCase
     {
         $this->assertNull($this->markerVerdictOf('demo/shop', true));
         $this->assertSame(
-            'demo/shop/data/.gitignore: a demo with a test stand needs its data/ parent in Git; see docs/agents/testing.md',
+            'demo/shop/data/.gitignore: a demo with a test stand needs its data/ parent in Git; see docs/agents/testing/stand-compose.md',
             $this->markerVerdictOf('demo/shop', false),
         );
     }

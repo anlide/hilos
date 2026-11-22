@@ -332,7 +332,7 @@ $steps = array_merge($steps, [
     // Both timeout factors are pinned at 2 here, the owner's decision of the same day:
     // beside four e2e steps the box is loaded when this step reads its factor and may
     // be more loaded later. A pin silences the load term and keeps the memory floor
-    // (docs/agents/testing.md, "The full run — one graph").
+    // (docs/agents/testing/full-run.md, "The full run — one graph").
     [
         'id' => 'binance-btc-tracker-cluster-e2e',
         'command' => 'HILOS_E2E_TIMEOUT_SCALE=2 CLUSTER_E2E_TIMEOUT_SCALE=2 composer run test:cluster:e2e',

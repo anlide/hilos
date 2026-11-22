@@ -786,5 +786,5 @@ For this canon and its wrapper, run
 `composer run test:framework:unit -- --filter AgentDocGuardTest`, then
 `composer ai:install` and `composer ai:install:check` as
 [ai-tools.md](../ai-tools.md) prescribes. Implementation leaves choose their
-checks by [testing.md](../testing.md); this documentation change needs no e2e
+checks by [../testing/selective.md](../testing/selective.md); this documentation change needs no e2e
 or cluster run.

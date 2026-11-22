@@ -22,7 +22,7 @@ fixture directories, which it excludes by exact path.
   covers `framework/frontend`, `demo/*/frontend/src` and `demo/*/tests/e2e` for `.ts`,
   `.mts`, `.tsx`, `.vue` and `.html`. It skips dependency/build and generated
   directories, `playwright-report`, `test-results` and the exact fixture path
-  `framework/frontend/codestyle/fixtures`; see the [COMMENT-LANGUAGE registry entry](automated-checks.md#L45).
+  `framework/frontend/codestyle/fixtures`; see the [COMMENT-LANGUAGE registry entry](automated-checks.md#comment-language).
   It reads `//` and `/* */` comments in `.ts`, `.mts` and `.tsx`, including JSX
   `{/* */}`, and parses each `<script>` body in `.vue` and `.html` according to
   its `lang`, defaulting to TypeScript. Markup comments run from `<!--` to `-->`
