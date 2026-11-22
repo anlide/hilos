@@ -111,11 +111,11 @@ final class TlsSocketTransport implements SocketTransportInterface
         $owner = WeakReference::create($this);
         $this->event->setCallbacks(
             static function (EventBufferEvent $event) use ($owner, $generation): void {
+                $event->disable(Event::READ);
                 $transport = $owner->get();
                 if ($transport === null || $generation !== $transport->generation) {
                     return;
                 }
-                $event->disable(Event::READ);
                 $transport->notifyNative();
             },
             static function (EventBufferEvent $event) use ($owner, $generation): void {
@@ -144,20 +144,32 @@ final class TlsSocketTransport implements SocketTransportInterface
         $this->event->enable(Event::READ | Event::WRITE);
     }
 
-    /** Cancels callbacks and queued notifications before rebind or close, retaining the TLS session. */
+    /**
+     * Cancels callbacks and queued notifications before rebind or close, retaining the TLS session.
+     * The detached transport leaves native READ disabled.
+     */
     public function detachEventLoop(): void
     {
         ++$this->generation;
         $this->event?->disable(Event::READ | Event::WRITE);
         // ext-event 3.1.6 does not clear a callback zval when setCallbacks(null)
-        // releases it. Replace captures with inert callables before object destruction.
+        // releases it. Replace captures with ownerless callbacks before object destruction.
+        // libevent 2.1 reschedules the read callback while READ is enabled at the input high watermark.
         $ignore = static function (): void {};
-        $this->event?->setCallbacks($ignore, $ignore, $ignore);
+        $this->event?->setCallbacks(
+            static function (EventBufferEvent $event): void {
+                $event->disable(Event::READ);
+            },
+            $ignore,
+            $ignore,
+        );
         $this->notification?->close();
         $this->notification = null;
     }
 
     /**
+     * Consumes buffered input. Only an attached transport can reenable native READ.
+     *
      * @param int $length Maximum decrypted bytes to take
      * @return string|false Bytes, or empty while waiting or at EOF
      * @throws SocketReadException When TLS failed after its accepted input was consumed
@@ -180,7 +192,7 @@ final class TlsSocketTransport implements SocketTransportInterface
             }
             throw new SocketReadException($this->socketError, $this->describeError());
         }
-        if (!$this->hasTerminalEvent()) {
+        if ($this->notification !== null && !$this->hasTerminalEvent()) {
             $this->event?->enable(Event::READ);
         }
         return $data;

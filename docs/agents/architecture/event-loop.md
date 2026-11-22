@@ -188,9 +188,12 @@ it establishes no trust. The context's CA verification, required client
 certificate on mutual TLS ports and expected CN checks still apply after a
 successful handshake. A public TLS port makes no authenticated peer claim.
 
-`detachEventLoop()` is nonterminal: it invalidates the generation, disables
-native I/O, replaces captures with inert callbacks and closes queued
-notifications, retaining the TLS session on its original base. A live session
+`detachEventLoop()` retains the TLS session on its original base while it
+invalidates the generation, disables native I/O, replaces captured callbacks
+and closes queued notifications. The detached read callback disables READ
+because libevent reschedules it while READ is enabled at the input high
+watermark. Only `attachEventLoop()` and `read()` on an attached transport
+reenable native reads. A live session
 cannot move to another base. Terminal `close()` drops the transport's native
 reference before closing its PHP-owned socket. Retained native aliases follow
 the patched extension's ownership rules; do not force-free a shared base or

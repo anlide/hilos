@@ -151,11 +151,38 @@ final class TlsSocketTransportTest extends TestCase
         $this->assertLessThanOrEqual(65536, $this->native('accepting')->input->length);
     }
 
+    /** A late owner read leaves native READ disabled after detach. */
+    public function testReadOnADetachedTransportKeepsNativeReadOff(): void
+    {
+        $exchange = $this->connect();
+        $exchange->handshake();
+        $exchange->transports['dialing']->detachEventLoop();
+        $exchange->transports['dialing']->read(1);
+
+        $this->assertSame(0, $this->native('dialing')->getEnabled() & Event::READ);
+    }
+
+    /** The loop returns with bounded native input even if READ was reenabled after detach. */
+    public function testReenabledReadOnADetachedTransportLetsTheLoopRoundReturn(): void
+    {
+        $exchange = $this->connect();
+        $exchange->handshake();
+        $exchange->transports['dialing']->detachEventLoop();
+
+        $native = $this->native('dialing');
+        $native->enable(Event::READ);
+        $this->client->queue(str_repeat('ceiling', 50000));
+        for ($pass = 0; $pass < 100; ++$pass) {
+            $exchange->loop->tick();
+        }
+
+        $this->assertSame(0, $native->getEnabled() & Event::READ);
+        $this->assertLessThanOrEqual(65536 + 16384, $native->input->length);
+    }
+
+    /** Queued output becomes runnable again when the same TLS session is reattached. */
     public function testBlockedNativeOutputWaitsForPeerReadinessAndThenResumes(): void
     {
-        $this->markTestSkipped(
-            'FIXME(F-092, 2026-11-11): on fantom-pl the exchange spins forever instead of failing in 5 s · foreign · attempt 1 · HOTFIX',
-        );
         $exchange = $this->connect();
         $exchange->handshake();
         socket_set_option($exchange->sockets['accepting'], SOL_SOCKET, SO_SNDBUF, 4096);
