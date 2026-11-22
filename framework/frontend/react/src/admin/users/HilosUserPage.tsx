@@ -1082,7 +1082,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                           {row.hint}
                         </p>
                       </div>
-                      <div>
+                      <div className="ms-auto text-end">
                         <LoadingButton
                           className={`btn-sm ${lifecycleCopy.confirmations[row.choice].danger ? 'btn-outline-danger' : 'btn-primary'}`}
                           opensWindow
@@ -1242,7 +1242,7 @@ export function HilosUserPage({ context }: HilosUserPageProps) {
                       {impersonation.hint}
                     </p>
                   </div>
-                  <div>
+                  <div className="ms-auto text-end">
                     <LoadingButton
                       className="btn-sm btn-primary"
                       opensWindow
