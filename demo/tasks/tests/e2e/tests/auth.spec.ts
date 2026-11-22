@@ -683,48 +683,44 @@ test('says how the letter is going, to every tab of the browser and across a rel
   expect(await mailsTo(email)).toHaveLength(1)
 })
 
-// FIXME(F-027, 2026-10-24): second registration tab keeps its modal · чужой · попытка 2 · HIL-1667
-test(
-  'converges a second waiting tab onto the registration the first one confirms',
-  { tag: '@quarantine:F-027' },
-  async ({ page, context }) => {
-    const email = uniqueEmail()
+test('converges a second waiting tab onto the registration the first one confirms', async ({
+  page,
+  context,
+}) => {
+  const email = uniqueEmail()
 
-    // Tab A holds the address from the gated profile.
-    await gotoPage(expect, page, '/profile')
-    await expect(page.getByTestId('auth-surface')).toBeVisible()
-    await submitRegistration(expect, page, email)
+  // Tab A holds the address from the gated profile.
+  await gotoPage(expect, page, '/profile')
+  await expect(page.getByTestId('auth-surface')).toBeVisible()
+  await submitRegistration(expect, page, email)
 
-    // Tab B opens the same session's surface and is ALREADY on the code screen,
-    // naming the address it never typed (HIL-486): the unfinished step lives on the
-    // server, so it is answered to every tab of the session. Nothing is submitted
-    // here, so no second letter goes out either — both wait on the one in the inbox.
-    const second = await context.newPage()
-    await gotoPage(expect, second, '/')
-    await expect(second.getByTestId('conn-state')).toHaveText('connected')
-    await openSignIn(expect, second)
-    await expect(second.getByTestId('auth-code')).toBeVisible()
-    await expect(second.getByTestId('auth-surface')).toContainText(email)
-    expect(await mailsTo(email)).toHaveLength(1)
+  // Tab B opens the same session's surface and is ALREADY on the code screen,
+  // naming the address it never typed (HIL-486): the unfinished step lives on the
+  // server, so it is answered to every tab of the session. Nothing is submitted
+  // here, so no second letter goes out either — both wait on the one in the inbox.
+  const second = await context.newPage()
+  await gotoPage(expect, second, '/')
+  await expect(second.getByTestId('conn-state')).toHaveText('connected')
+  await openSignIn(expect, second)
+  await expect(second.getByTestId('auth-code')).toBeVisible()
+  await expect(second.getByTestId('auth-surface')).toContainText(email)
+  expect(await mailsTo(email)).toHaveLength(1)
 
-    // Tab A confirms. Tab B is not merely moved along: it really enters, resolving
-    // the self user of the account tab A just created. It gets no panel of its own,
-    // and that is the merged rule rather than a gap: the login rotates the session
-    // token and drops every socket but the initiator's (HIL-582), the sentence lives
-    // on the CONNECTION (HIL-422), and only the socket that trades the rotation
-    // ticket inherits one (HIL-423). Tab B comes back on the new token signed in and
-    // un-gated, which is exactly what it shows below.
-    await submitRegistrationCode(expect, page, await readRegisterCode(email))
-    await submitFirstPassword(expect, page, PASSWORD)
-    await continueFromDone(expect, page)
-    await expect(page.getByTestId('profile-name')).toBeVisible()
-    await expect(second.getByTestId('self-user')).toHaveText(
-      nameFromEmail(email),
-    )
-    await expect(second.getByTestId('modal')).toBeHidden()
-    await expect(second.getByTestId('nav-signin')).toHaveCount(0)
-  },
-)
+  // Tab A confirms. Tab B is not merely moved along: it really enters, resolving
+  // the self user of the account tab A just created. It gets no panel of its own,
+  // and that is the merged rule rather than a gap: the login rotates the session
+  // token and drops every socket but the initiator's (HIL-582), the sentence lives
+  // on the CONNECTION (HIL-422), and only the socket that trades the rotation
+  // ticket inherits one (HIL-423). Tab B comes back on the new token signed in and
+  // un-gated, which is exactly what it shows below.
+  await submitRegistrationCode(expect, page, await readRegisterCode(email))
+  await submitFirstPassword(expect, page, PASSWORD)
+  await continueFromDone(expect, page)
+  await expect(page.getByTestId('profile-name')).toBeVisible()
+  await expect(second.getByTestId('self-user')).toHaveText(nameFromEmail(email))
+  await expect(second.getByTestId('modal')).toBeHidden()
+  await expect(second.getByTestId('nav-signin')).toHaveCount(0)
+})
 
 test('resumes a held registration and completes it with the first mailed code', async ({
   page,
