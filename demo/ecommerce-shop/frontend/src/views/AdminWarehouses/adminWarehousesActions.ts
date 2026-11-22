@@ -12,6 +12,9 @@ export const WAREHOUSE_CREATE = 'warehouse_create'
 /** Action name on the server (EcommerceShopSignalConstants::WAREHOUSE_UPDATE). */
 export const WAREHOUSE_UPDATE = 'warehouse_update'
 
+/** Action name on the server (EcommerceShopSignalConstants::WAREHOUSE_DELETE). */
+export const WAREHOUSE_DELETE = 'warehouse_delete'
+
 /**
  * Add a warehouse. The fields go raw: the server trims and checks them.
  *
@@ -50,4 +53,13 @@ export function sendWarehouseUpdate(
     expectedName: saved.name,
     expectedAddress: saved.address,
   })
+}
+
+/**
+ * Delete an empty warehouse through WarehouseDeleteActionDTO.
+ *
+ * @param id The warehouse id.
+ */
+export function sendWarehouseDelete(id: number): ActionHandle {
+  return actions.dispatch(WAREHOUSE_DELETE, { id })
 }

@@ -7,6 +7,7 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\Object\Item\Warehouse as ObjectWarehouse;
@@ -133,8 +134,8 @@ abstract class AdminWarehousesPageEnvironment extends WarehousesTableEnvironment
 /**
  * The warehouses admin page in the admin view mode: a guest and a signed-in person without admin rights
  * see every field of a warehouse in the first answer, an administrator sees no mark at all, and with the
- * mode off the page is closed to whoever is not an administrator. An administrator adds and edits a warehouse
- * through the page, a viewer may do neither, and the test-only command removes a warehouse by its name.
+ * mode off the page is closed to whoever is not an administrator. An administrator adds, edits and deletes
+ * warehouses through the page, a viewer cannot change them, and the test-only command removes a warehouse by its name.
  *
  * Warehouses are rows written straight into their table, as the warehouses table's own test does; so are the
  * two people, before any read warms the users collection. The rollback scope proves reads of written rows.
@@ -350,6 +351,98 @@ final class AdminWarehousesPageTest extends AdminWarehousesPageEnvironment
             }
         }
         self::assertSame([['name' => $this->warehouseName, 'address' => self::WAREHOUSE_ADDRESS]], $this->storedWarehouse());
+    }
+
+    /** An administrator deletes an empty warehouse and the tracked success names the removed warehouse. */
+    public function testAnAdminDeletesAnEmptyWarehouse(): void
+    {
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_DELETE, [
+            ObjectWarehouse::id => $this->warehouseId,
+        ], 'req-warehouse-delete');
+
+        $success = $this->acknowledgement(SignalConstants::ACTION_SUCCESS, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        self::assertSame('req-warehouse-delete', $success->requestId);
+        self::assertSame(EcommerceShopSignalConstants::WAREHOUSE_DELETE, $success->action);
+        self::assertSame(sprintf('Warehouse “%s” deleted.', $this->warehouseName), $success->message);
+        self::assertSame([], $this->storedWarehouse());
+    }
+
+    /** Stock present when the request arrives keeps both rows and the tracked failure carries the library's refusal. */
+    public function testAnAdminCannotDeleteAWarehouseThatKeepsStock(): void
+    {
+        $productId = self::product(ProductKind::STOCK);
+        self::stock($productId, $this->warehouseId, 12);
+
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_DELETE, [
+            ObjectWarehouse::id => $this->warehouseId,
+        ], 'req-warehouse-delete-stock');
+
+        $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-warehouse-delete-stock', $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::WAREHOUSE_DELETE, $error->action);
+        self::assertSame('This warehouse keeps stock and cannot be deleted', $error->reason);
+        self::assertSame([['name' => $this->warehouseName, 'address' => self::WAREHOUSE_ADDRESS]], $this->storedWarehouse());
+        self::assertSame(
+            [['units' => '12']],
+            Database::sql(
+                'SELECT units FROM product_warehouse_stock WHERE product_id = ? AND warehouse_id = ?',
+                [$productId, $this->warehouseId],
+            )->rows(),
+        );
+    }
+
+    /** A request for an unknown warehouse is refused with the page's sentence. */
+    public function testAnAdminCannotDeleteAMissingWarehouse(): void
+    {
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_DELETE, [
+            ObjectWarehouse::id => $this->warehouseId + 1000,
+        ], 'req-warehouse-delete-missing');
+
+        $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-warehouse-delete-missing', $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::WAREHOUSE_DELETE, $error->action);
+        self::assertSame('This warehouse no longer exists', $error->reason);
+        self::assertSame([['name' => $this->warehouseName, 'address' => self::WAREHOUSE_ADDRESS]], $this->storedWarehouse());
+    }
+
+    /** Missing, non-integer and non-positive IDs fail at the payload boundary and leave the warehouse alone. */
+    public function testAnAdminCannotDeleteWithAnInvalidWarehouseId(): void
+    {
+        foreach ([
+            [[], 'Payload carries no integer under key id'],
+            [[ObjectWarehouse::id => (string)$this->warehouseId], 'Payload carries no integer under key id'],
+            [[ObjectWarehouse::id => 0], 'The warehouse ID must be a positive integer.'],
+            [[ObjectWarehouse::id => -1], 'The warehouse ID must be a positive integer.'],
+        ] as [$payload, $reason]) {
+            $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_DELETE, $payload, 'req-warehouse-delete-invalid');
+
+            $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, self::ADMIN_KEY);
+            self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+            self::assertSame('req-warehouse-delete-invalid', $error->requestId);
+            self::assertSame(EcommerceShopSignalConstants::WAREHOUSE_DELETE, $error->action);
+            self::assertSame($reason, $error->reason);
+            self::assertSame([['name' => $this->warehouseName, 'address' => self::WAREHOUSE_ADDRESS]], $this->storedWarehouse());
+        }
+    }
+
+    /** A guest and a signed-in viewer receive a tracked view-mode refusal and the empty warehouse remains. */
+    public function testAGuestAndANonAdminCannotDeleteWhenTheViewModeIsOn(): void
+    {
+        foreach ([self::GUEST_KEY, self::VISITOR_KEY] as $acceptKey) {
+            $this->dispatchAction($acceptKey, EcommerceShopSignalConstants::WAREHOUSE_DELETE, [
+                ObjectWarehouse::id => $this->warehouseId,
+            ], 'req-warehouse-delete-view-mode');
+
+            $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, $acceptKey);
+            self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+            self::assertSame('req-warehouse-delete-view-mode', $error->requestId);
+            self::assertSame(EcommerceShopSignalConstants::WAREHOUSE_DELETE, $error->action);
+            self::assertSame(ActionViewModeException::ERROR_CODE, $error->errorCode);
+            self::assertSame([['name' => $this->warehouseName, 'address' => self::WAREHOUSE_ADDRESS]], $this->storedWarehouse());
+        }
     }
 
     /** The test-only command removes the warehouse of the given name, and answers a repeat that nothing was removed. */

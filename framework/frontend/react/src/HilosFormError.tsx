@@ -27,6 +27,7 @@ import { useEffect, useState } from 'react'
 
 import { HilosLongText } from './HilosLongText.js'
 import { HilosModal } from './HilosModal.js'
+import { useFocusAfterControlRemoval } from './useFocusAfterControlRemoval.js'
 
 /** Props for {@link HilosFormError}. */
 export interface HilosFormErrorProps {
@@ -87,6 +88,7 @@ export function HilosFormError({
   // An empty string is the absence of a refusal, the same as null: one meaning,
   // one behavior — otherwise an empty string would draw a red row about nothing.
   const shown = (message ?? '') === '' ? null : message
+  const detailsButton = useFocusAfterControlRemoval(shown !== null)
   // An original text that was not sent is not a shorter block but no block.
   const hasDetail = (errorDetail ?? '') !== ''
   // The class name heads the original text, so what is read — and copied —
@@ -134,6 +136,7 @@ export function HilosFormError({
             ></i>
             <span className="flex-grow-1 text-truncate">{shown}</span>
             <button
+              ref={detailsButton}
               type="button"
               className={DETAILS_CLASS}
               aria-label="Show error details"

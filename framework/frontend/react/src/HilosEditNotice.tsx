@@ -24,6 +24,7 @@ import type { RowEditNoticeKind } from '@hilos/core/base'
 
 import { HilosLongText } from './HilosLongText.js'
 import { HilosModal } from './HilosModal.js'
+import { useFocusAfterControlRemoval } from './useFocusAfterControlRemoval.js'
 
 /** Props for {@link HilosEditNotice}. */
 export interface HilosEditNoticeProps {
@@ -67,6 +68,7 @@ const IDLE_TONE = TONES.conflict
  */
 export function HilosEditNotice({ kind, text, dataId }: HilosEditNoticeProps) {
   const [detailOpen, setDetailOpen] = useState(false)
+  const detailsButton = useFocusAfterControlRemoval(kind !== null)
 
   // A message that went takes the panel with it: a panel left open would be
   // showing a text the row no longer says.
@@ -103,6 +105,7 @@ export function HilosEditNotice({ kind, text, dataId }: HilosEditNoticeProps) {
             />
             <span className="flex-grow-1 text-truncate">{text}</span>
             <button
+              ref={detailsButton}
               type="button"
               className={DETAILS_CLASS}
               aria-label="Show details"

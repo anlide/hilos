@@ -10,12 +10,14 @@ use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\WarehouseDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -30,12 +32,13 @@ use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
 use Hilos\HilosException;
 
 /**
  * The shop's warehouses under the head of its administration section: the page
- * carries the warehouses table and its own add and edit actions.
+ * carries the warehouses table and its own add, edit and delete actions.
  *
  * @property WarehousesLibraryAgent $agent
  */
@@ -64,6 +67,7 @@ final class AdminWarehousesPage extends AbstractPage
     public const array ACTIONS = [
         EcommerceShopSignalConstants::WAREHOUSE_CREATE => WarehouseCreateActionDTO::class,
         EcommerceShopSignalConstants::WAREHOUSE_UPDATE => WarehouseUpdateActionDTO::class,
+        EcommerceShopSignalConstants::WAREHOUSE_DELETE => WarehouseDeleteActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -71,7 +75,7 @@ final class AdminWarehousesPage extends AbstractPage
     ];
 
     /**
-     * Routes the warehouse create and update actions to their typed handlers.
+     * Routes the warehouse create, update and delete actions to their typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
@@ -84,13 +88,15 @@ final class AdminWarehousesPage extends AbstractPage
      * @throws DuplicateValueException When another warehouse already has this name
      * @throws CreateNotAllowedException When this process may not add a warehouse
      * @throws ItemNotFoundForUpdateException When the edited warehouse no longer exists
-     * @throws ValidationException When the edited warehouse changed since the editor opened it
+     * @throws ItemNotFoundForDeleteException When the warehouse to delete no longer exists
+     * @throws ValidationException When the edited warehouse changed or the warehouse to delete still keeps stock
      * @throws WriteNotAllowedException When this process may not write the warehouse
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
+     * @throws ObjectCollectionNullException When the warehouse has no backing collection for deletion
      * @throws LogicException When the warehouses collection is not configured
      * @throws InvalidArgumentException When a loaded warehouse has the wrong type
-     * @throws DatabaseException When collection loading, the insert or the update fails
-     * @throws SourceChangeSubscriberException Whatever a subscriber to the store or update announcement raises
+     * @throws DatabaseException When collection loading, the insert, the update or the delete fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the write announcement raises
      * @throws HilosException When the right, the database or the collection refuses the write
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -109,6 +115,14 @@ final class AdminWarehousesPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, WarehouseUpdateActionDTO::class, $dto);
                 }
                 $this->handleUpdate($dto);
+
+                return null;
+
+            case EcommerceShopSignalConstants::WAREHOUSE_DELETE:
+                if (!$dto instanceof WarehouseDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, WarehouseDeleteActionDTO::class, $dto);
+                }
+                $this->handleDelete($dto);
 
                 return null;
 
@@ -166,5 +180,31 @@ final class AdminWarehousesPage extends AbstractPage
         }
         $warehouse->actions->update($dto->name, $dto->address);
         $this->setActionSuccessMessage(sprintf('Warehouse “%s” saved.', $warehouse->name));
+    }
+
+    /**
+     * Deletes a warehouse through the library's item action, which refuses it while it keeps stock.
+     *
+     * @param WarehouseDeleteActionDTO $dto Delete action payload
+     * @throws ItemNotFoundForDeleteException When the warehouse no longer exists
+     * @throws ValidationException When the warehouse still keeps stock
+     * @throws WriteNotAllowedException When this process may not remove the warehouse
+     * @throws ObjectCollectionNullException When the warehouse has no backing collection for deletion
+     * @throws LogicException When the warehouses collection is not configured
+     * @throws InvalidArgumentException When a loaded warehouse has the wrong type
+     * @throws DatabaseException When loading or deleting the warehouse fails
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the delete announcement raises
+     * @throws HilosException When the right, the database or the announcement refuses the delete
+     */
+    private function handleDelete(WarehouseDeleteActionDTO $dto): void
+    {
+        if (!isset(Hilos::$db->warehouses[$dto->id])) {
+            throw new ItemNotFoundForDeleteException('This warehouse no longer exists');
+        }
+
+        $warehouse = Hilos::$db->warehouses[$dto->id];
+        $name = $warehouse->name;
+        $warehouse->actions->delete();
+        $this->setActionSuccessMessage(sprintf('Warehouse “%s” deleted.', $name));
     }
 }

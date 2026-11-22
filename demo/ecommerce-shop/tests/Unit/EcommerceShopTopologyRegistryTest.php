@@ -67,6 +67,7 @@ use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\WarehouseDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
@@ -1323,6 +1324,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             [
                 EcommerceShopSignalConstants::WAREHOUSE_CREATE => WarehouseCreateActionDTO::class,
                 EcommerceShopSignalConstants::WAREHOUSE_UPDATE => WarehouseUpdateActionDTO::class,
+                EcommerceShopSignalConstants::WAREHOUSE_DELETE => WarehouseDeleteActionDTO::class,
             ],
             AdminWarehousesPage::ACTIONS,
         );
@@ -1338,6 +1340,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             Hilos::getActionAgentRoutes()[EcommerceShopSignalConstants::WAREHOUSE_UPDATE],
         );
         self::assertSame('warehouse_update', EcommerceShopSignalConstants::WAREHOUSE_UPDATE);
+        self::assertSame('admin_warehouses', Hilos::getPageActionRoutes()[EcommerceShopSignalConstants::WAREHOUSE_DELETE]);
+        self::assertSame(
+            AgentType::WAREHOUSES_LIBRARY,
+            Hilos::getActionAgentRoutes()[EcommerceShopSignalConstants::WAREHOUSE_DELETE],
+        );
+        self::assertSame('warehouse_delete', EcommerceShopSignalConstants::WAREHOUSE_DELETE);
     }
 
     /** The dashboard's shop group lists the shop's admin pages in the order their cards stand. */

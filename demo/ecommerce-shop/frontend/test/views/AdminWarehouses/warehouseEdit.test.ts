@@ -95,12 +95,16 @@ function mount(): WarehouseEdit {
 }
 
 /** The warehouse row's slot, as the backend sends it. */
-function warehouseSlot(name: string, address: string): Record<string, unknown> {
-  return { id: 1, name, address, productCount: 19, unitCount: 546 }
+function warehouseSlot(
+  name: string,
+  address: string,
+  productCount = 19,
+): Record<string, unknown> {
+  return { id: 1, name, address, productCount, unitCount: productCount * 2 }
 }
 
 /** The page's own answer, carrying the first window with one warehouse row. */
-function firstWindow(): void {
+function firstWindow(productCount?: number): void {
   emit('projectSignal', {
     type: SIGNAL_TYPE_PAGE_RESPONSE,
     data: {
@@ -115,6 +119,7 @@ function firstWindow(): void {
                   [WAREHOUSE_SLOT]: warehouseSlot(
                     OPENING_NAME,
                     OPENING_ADDRESS,
+                    productCount,
                   ),
                 },
               },
@@ -134,7 +139,11 @@ function firstWindow(): void {
 }
 
 /** Another tab saved the warehouse: the row changed where it stood. */
-function changedElsewhere(name: string, address: string): void {
+function changedElsewhere(
+  name: string,
+  address: string,
+  productCount?: number,
+): void {
   emit('tableViewportDelta', {
     data: {
       page: PAGE_ADMIN_WAREHOUSES,
@@ -143,7 +152,7 @@ function changedElsewhere(name: string, address: string): void {
       rowKey: '1',
       row: {
         rowKey: 1,
-        slots: { [WAREHOUSE_SLOT]: warehouseSlot(name, address) },
+        slots: { [WAREHOUSE_SLOT]: warehouseSlot(name, address, productCount) },
       },
     },
   })
@@ -163,9 +172,9 @@ function deletedElsewhere(): void {
 }
 
 /** The edit opened on the first window's row. */
-function opened(): WarehouseEdit {
+function opened(productCount?: number): WarehouseEdit {
   const edit = mount()
-  firstWindow()
+  firstWindow(productCount)
   expect(edit.open('1')).toBe(true)
   return edit
 }
@@ -249,5 +258,41 @@ describe('warehouse edit', () => {
 
     expect(edit.saveLabel.get()).toBe('Deleted')
     expect(edit.canSave.get()).toBe(false)
+  })
+
+  it('follows the live warehouse when stock arrives and leaves during the same edit', () => {
+    const edit = opened(0)
+    edit.patchForm({ name: 'Kyiv · Left Bank' })
+
+    expect(edit.live.get()).toMatchObject({ id: 1, productCount: 0 })
+
+    changedElsewhere('Kyiv · Obolon', OPENING_ADDRESS, 3)
+
+    expect(edit.live.get()).toMatchObject({
+      id: 1,
+      name: 'Kyiv · Obolon',
+      productCount: 3,
+    })
+
+    changedElsewhere('Kyiv · Obolon', OPENING_ADDRESS, 0)
+
+    expect(edit.live.get()).toMatchObject({ id: 1, productCount: 0 })
+    expect(edit.opened.get()).toBe(true)
+    expect(edit.form.get().name).toBe('Kyiv · Left Bank')
+  })
+
+  it('loses the live delete target while keeping the draft of a deleted warehouse', () => {
+    const edit = opened(0)
+    edit.patchForm({ address: 'Kyiv, 3 Test Street' })
+    expect(edit.live.get()).toMatchObject({ id: 1, productCount: 0 })
+
+    deletedElsewhere()
+
+    expect(edit.live.get()).toBeUndefined()
+    expect(edit.opened.get()).toBe(true)
+    expect(edit.form.get()).toEqual({
+      name: OPENING_NAME,
+      address: 'Kyiv, 3 Test Street',
+    })
   })
 })
