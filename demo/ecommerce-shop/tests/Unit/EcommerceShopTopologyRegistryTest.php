@@ -64,6 +64,8 @@ use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
+use Demo\EcommerceShop\Pages\DTO\ProductCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\ProductPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
 use Demo\EcommerceShop\Constants\PageConstants;
@@ -175,6 +177,7 @@ use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\CLI\DTO\CategoryDeleteCommandData;
+use Demo\EcommerceShop\CLI\DTO\ProductTestDeleteCommandData;
 use Demo\EcommerceShop\CLI\DTO\WarehouseDeleteCommandData;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Database\Pages\PageCatalogConstants;
@@ -1194,10 +1197,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     }
 
     /**
-     * The products library runs once on the policy-selected node, in a worker of its own, owns the products and their
-     * addresses whole and reads the categories.
+     * The products library holds the products and their addresses whole. It reads categories and files
+     * and answers picture publications and fixture cleanup.
      */
-    public function testProductsLibraryIsPolicyPlacedMonopolisticOwnsProductsAndTheirAddressesAndReadsCategories(): void
+    public function testProductsLibraryPlacementOwnershipAndRoutes(): void
     {
         $entry = Hilos::AGENTS[AgentType::PRODUCTS_LIBRARY];
         self::assertSame(ProductsLibraryAgent::class, AgentRegistry::workerClass($entry));
@@ -1209,7 +1212,22 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame([EcommerceShopDbContext::products, EcommerceShopDbContext::productSlugs], array_keys($claims));
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::products]->asList());
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::productSlugs]->asList());
-        self::assertSame([EcommerceShopDbContext::categories], ProductsLibraryAgent::readDbCollections());
+        self::assertSame([EcommerceShopDbContext::categories, HilosDbContext::files], ProductsLibraryAgent::readDbCollections());
+        self::assertSame(
+            [EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISHED => FilesPublishedSignalData::class],
+            ProductsLibraryAgent::AGENT_SIGNALS,
+        );
+        self::assertSame('product_picture_published', EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISHED);
+        self::assertSame(
+            [EcommerceShopCommandConstants::PRODUCT_TEST_DELETE => ProductTestDeleteCommandData::class],
+            ProductsLibraryAgent::AGENT_COMMANDS,
+        );
+        self::assertSame('test:ecommerce-shop:product-delete', EcommerceShopCommandConstants::PRODUCT_TEST_DELETE);
+        self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getCommandAgentRoutes()[EcommerceShopCommandConstants::PRODUCT_TEST_DELETE]);
+        self::assertSame(
+            ProductTestDeleteCommandData::class,
+            Hilos::getCommandDtoRoutes()[EcommerceShopCommandConstants::PRODUCT_TEST_DELETE],
+        );
     }
 
     /**
@@ -1412,6 +1430,16 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(PageReach::ROUTE, AdminProductsPage::REACH);
         self::assertSame(PageAccessLevel::ADMIN, AdminProductsPage::ACCESS_LEVEL);
         self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getPageRoutes()[AdminProductsPage::PAGE]);
+        self::assertSame([
+            EcommerceShopSignalConstants::PRODUCT_CREATE => ProductCreateActionDTO::class,
+            EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISH => ProductPicturePublishActionDTO::class,
+        ], AdminProductsPage::ACTIONS);
+        self::assertSame('product_create', EcommerceShopSignalConstants::PRODUCT_CREATE);
+        self::assertSame('product_picture_publish', EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISH);
+        foreach ([EcommerceShopSignalConstants::PRODUCT_CREATE, EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISH] as $action) {
+            self::assertSame(AdminProductsPage::PAGE, Hilos::getPageActionRoutes()[$action]);
+            self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getActionAgentRoutes()[$action]);
+        }
         self::assertSame([EcommerceShopTableContext::products => []], Hilos::PAGE_TABLES[AdminProductsPage::PAGE]);
         self::assertSame(
             [BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_PRODUCTS],
@@ -1683,6 +1711,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             [
                 HilosSignalConstants::HILOS_SESSION_STATE => AgentType::ECOMMERCE_SHOP,
                 EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISHED => AgentType::CATEGORIES_LIBRARY,
+                EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISHED => AgentType::PRODUCTS_LIBRARY,
                 HilosSignalConstants::HILOS_SESSIONS_SWEPT => AgentType::GUEST_CARTS_LIBRARY,
                 EcommerceShopSignalConstants::GUEST_CART_SEND => AgentType::GUEST_CARTS_LIBRARY,
                 HilosSignalConstants::MAINTENANCE_AGENT_ENABLE => HilosAgentType::HILOS_INDEX,

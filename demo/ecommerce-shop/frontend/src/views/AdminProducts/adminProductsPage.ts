@@ -1,6 +1,10 @@
 // Connection lifecycle for the Products table. The pure row selectors live in
 // adminProducts.ts so they can also be read without application bootstrap.
-import { TableViewportController, bindTableViewport } from '@hilos/core/base'
+import {
+  TableViewportController,
+  bindTableViewport,
+  computedSignal,
+} from '@hilos/core/base'
 
 import { connection } from '../../bootstrap/connection.js'
 import { scopes } from '../../bootstrap/session.js'
@@ -21,6 +25,11 @@ const categoryItems = scopes.pageListSignal(ADMIN_PRODUCT_CATEGORIES_LIST)
 const fieldsOf: EntityFieldsResolver = (ref) =>
   scopes.entitySignal(ref).get()?.fields
 
+/** The live Category choices shared by the Products filter and Add dialog. */
+export const productCategoryChoices = computedSignal(() =>
+  categoryOptions(categoryItems.get(), fieldsOf),
+)
+
 /** The Products table controller and its mount lifecycle. */
 export interface ProductsTable {
   /** The server-windowed controller rendered by the view. */
@@ -31,11 +40,15 @@ export interface ProductsTable {
   dispose(): void
 }
 
-/** Create the server-windowed Products table with reactive Category choices. */
-export function createProductsTable(): ProductsTable {
+/**
+ * Create the server-windowed Products table with reactive Category choices.
+ *
+ * @param addProduct Open the Add product dialog.
+ */
+export function createProductsTable(addProduct: () => void): ProductsTable {
   const controller = new TableViewportController<ProductRow>({
     resolve: (row) => resolveProductRow(row, fieldsOf),
-    frame: productsFrame(() => categoryOptions(categoryItems.get(), fieldsOf)),
+    frame: productsFrame(() => productCategoryChoices.get(), addProduct),
     sendViewport: (descriptor) =>
       connection.sendTableViewport(
         PAGE_ADMIN_PRODUCTS,

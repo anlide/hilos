@@ -88,11 +88,10 @@ final class AdminCategoriesPage extends AbstractPage
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
      * @throws ItemNotFoundForUpdateException When category no longer exists
-     * @throws ValidationException When category is already first in the catalog, or the picture is not a fresh file
+     * @throws ValidationException When the category is already first, the picture is unavailable or publication is in flight
      * @throws DatabaseException When category position exchange, collection loading, the insert or the commit fails
      * @throws InvalidArgumentException When category type does not match the collection, or the publish signal cannot be queued
-     * @throws LogicException When categories collection is not configured, another category shows the picture,
-     *     the files door is missing, or the create transaction raised something outside the framework's tree
+     * @throws LogicException When the collection, address or files door cannot be used, or creation raises an unexpected failure
      * @throws FeatureNotDeclaredException When the project keeps no files or takes no uploads
      * @throws InvalidFormatException When the upload id is one the wire does not allow
      * @throws EmptyValueException When the name or the description is empty
@@ -168,6 +167,7 @@ final class AdminCategoriesPage extends AbstractPage
      * @throws FeatureNotDeclaredException When the project keeps no files or takes no uploads
      * @throws InvalidFormatException When the upload id is one the wire does not allow
      * @throws InvalidArgumentException When the publish signal cannot be named or queued
+     * @throws ValidationException When another request is already publishing this upload
      */
     private function handlePublish(string $acceptKey, CategoryPicturePublishActionDTO $dto): void
     {
@@ -192,7 +192,7 @@ final class AdminCategoriesPage extends AbstractPage
      * @throws EmptyValueException When the name or the description is empty
      * @throws ValueTooLongException When the name or the description is longer than its column
      * @throws DuplicateValueException When another category already has this name
-     * @throws LogicException When another category already shows the picture, the files door is missing,
+     * @throws LogicException When the address or the files door cannot be used,
      *     or the create transaction raised something outside the framework's tree
      * @throws CreateNotAllowedException When this process may not add a category or its address
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
@@ -201,9 +201,9 @@ final class AdminCategoriesPage extends AbstractPage
      */
     private function handleCreate(string $acceptKey, CategoryCreateActionDTO $dto): void
     {
-        $fileId = CatalogPictureFile::fresh($acceptKey, $dto->pictureFileId);
+        $ownerId = CatalogPictureFile::freshOwnerId($acceptKey, $dto->pictureFileId);
         try {
-            $category = Hilos::$db->categories->actions->create($dto->name, $dto->description, $fileId);
+            $category = Hilos::$db->categories->actions->create($dto->name, $dto->description, $dto->pictureFileId, $ownerId);
         } catch (HilosException $refusal) {
             throw $refusal;
         } catch (Throwable $failure) {

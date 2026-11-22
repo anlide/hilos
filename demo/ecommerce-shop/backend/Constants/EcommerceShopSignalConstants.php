@@ -44,6 +44,15 @@ final class EcommerceShopSignalConstants
     /** @var string Subscription page admin products signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_PRODUCTS = 'subscription_page_admin_products';
 
+    /** @var string Product create action name */
+    public const string PRODUCT_CREATE = 'product_create';
+
+    /** @var string Product picture publish action name */
+    public const string PRODUCT_PICTURE_PUBLISH = 'product_picture_publish';
+
+    /** @var string Files door → products library: the answer to a product picture publication */
+    public const string PRODUCT_PICTURE_PUBLISHED = 'product_picture_published';
+
     /** @var string Subscription page admin product signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_PRODUCT = 'subscription_page_admin_product';
 

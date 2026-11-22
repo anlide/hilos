@@ -8,13 +8,11 @@ use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\ActionReplyDTO;
 
 /**
- * The answer to a category picture publication: the registry file the new category will show, and
- * the address of its copy for the modal preview.
+ * The published catalog picture's registry file and the address of its modal preview.
  *
- * The id goes back with the add request; the address lets the modal draw the picture it is about to
- * keep without building the path itself.
+ * The form sends the id when it saves and draws the preview at the supplied address.
  */
-final class CategoryPicturePublishReplyDTO extends ActionReplyDTO
+final class CatalogPicturePublishReplyDTO extends ActionReplyDTO
 {
     /** Wire key for the id of the published registry file. */
     public const string fileId = 'fileId';

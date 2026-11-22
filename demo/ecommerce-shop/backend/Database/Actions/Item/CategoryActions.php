@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Database\Actions\Item;
 
 use Demo\EcommerceShop\Database\Actions\CategoryFields;
+use Demo\EcommerceShop\Database\Object\CatalogPictureUsage;
 use Demo\EcommerceShop\Database\Entity\Item\Product;
 use Demo\EcommerceShop\Database\Object\Item\Category as ObjectCategory;
 use Demo\EcommerceShop\Database\View\Item\Category;
@@ -51,18 +52,20 @@ final class CategoryActions extends DbActions
      * @param string $name New category name, unique across the shop
      * @param string $description New line describing the category
      * @param ?int $pictureFileId Registry file to show instead, null to keep the current one
+     * @param ?int $pictureOwnerUserId Expected publisher when the browser supplies a replacement
      * @throws ItemNotFoundForUpdateException If the category id is null (not persisted)
      * @throws EmptyValueException When the name or the description is empty
      * @throws ValueTooLongException When the name or the description is longer than its column
      * @throws DuplicateValueException When another category already has this name
-     * @throws LogicException When another category already shows the picture, or the files door is missing
+     * @throws ValidationException When the replacement picture is unavailable
+     * @throws LogicException When the address or the files door cannot be used
      * @throws WriteNotAllowedException When this process may not write the category
      * @throws CreateNotAllowedException When this process may not record the new address
      * @throws DatabaseException When the update or the commit fails
      * @throws HilosException When the right, the database or the announcement refuses the save
      * @throws Throwable Whatever the transaction raises, preserved through its rollback
      */
-    public function update(string $name, string $description, ?int $pictureFileId): void
+    public function update(string $name, string $description, ?int $pictureFileId, ?int $pictureOwnerUserId = null): void
     {
         $this->ensureCanWrite();
 
@@ -74,14 +77,19 @@ final class CategoryActions extends DbActions
         $slug = CategoryFields::slug($name, $categoryId);
         $slugChanged = $slug !== $this->object->slug;
         $formerPictureFileId = $this->object->pictureFileId;
-        $pictureFileId = $pictureFileId === null || $pictureFileId === $formerPictureFileId
-            ? $formerPictureFileId
-            : CategoryFields::picture($pictureFileId, $categoryId);
+        $pictureFileId ??= $formerPictureFileId;
+        $pictureChanged = $pictureFileId !== $formerPictureFileId;
         $files = Hilos::$files ?? throw new LogicException('The files door is missing');
 
         Database::transaction(
             DatabaseNames::PRIMARY,
-            function () use ($categoryId, $name, $description, $slug, $slugChanged, $pictureFileId, $formerPictureFileId, $files): void {
+            function () use (
+                $categoryId, $name, $description, $slug, $slugChanged,
+                $pictureFileId, $formerPictureFileId, $pictureOwnerUserId, $pictureChanged, $files,
+            ): void {
+                if ($pictureChanged) {
+                    CatalogPictureUsage::lockFresh($pictureFileId, $pictureOwnerUserId);
+                }
                 $this->object->name = $name;
                 $this->object->description = $description;
                 $this->object->slug = $slug;
@@ -89,14 +97,14 @@ final class CategoryActions extends DbActions
                 try {
                     $this->object->sync();
                 } catch (DuplicateEntryException) {
-                    // The address and the picture are free by the checks above; the name is what is left.
+                    // The address and the picture are free by the checks above. Report the taken name.
                     throw new DuplicateValueException('A category with this name already exists');
                 }
 
                 if ($slugChanged) {
                     Hilos::$db->categorySlugs->actions->record($slug, $categoryId);
                 }
-                if ($pictureFileId !== $formerPictureFileId) {
+                if ($pictureChanged) {
                     // Two announcements, so that a failed bind does not keep the former file.
                     Database::afterCommit(static fn () => $files->markBound([$pictureFileId]));
                     Database::afterCommit(static fn () => $files->remove([$formerPictureFileId]));

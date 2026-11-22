@@ -8,10 +8,14 @@ use Demo\EcommerceShop\Database\Object\Collection\ProductSlugs as ObjectProductS
 use Demo\EcommerceShop\Database\Object\Item\ProductSlug as ObjectProductSlug;
 use Demo\EcommerceShop\Database\View\Collection\ProductSlugs as DbCollectionProductSlugs;
 use Demo\EcommerceShop\Database\View\Item\ProductSlug;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
+use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\CollectionNotFullyLoadedException;
 use Hilos\HilosException;
@@ -19,9 +23,8 @@ use Hilos\HilosException;
 /**
  * ProductSlugsActions - write operations for the addresses of products.
  *
- * Called by the actions of a product alone, inside their transaction: an address is recorded
- * when a product gets it. A row is never removed, and a product is never deleted, so an
- * address once given leads to its product for good.
+ * Called by the actions of a product inside their transaction. An address remains with its
+ * product through edits. The test fixture command removes all addresses of its product.
  *
  * @extends DbActions<ProductSlug, ObjectProductSlugs>
  * @property-read DbCollectionProductSlugs $collection
@@ -63,5 +66,31 @@ final class ProductSlugsActions extends DbActions
         $address->productId = $productId;
         $address->sync();
         $this->addObjectToCollection($address);
+    }
+
+    /**
+     * Removes the fixture's addresses inside its product deletion transaction.
+     *
+     * @param int $productId Id of the product fixture
+     * @throws WriteNotAllowedException When this process may not remove the addresses
+     * @throws ObjectCollectionNullException When the object collection is missing
+     * @throws CollectionNotFullyLoadedException When this process does not hold every address
+     * @throws LogicException When the collection's entity class is missing
+     * @throws DatabaseException When loading or deleting addresses fails
+     * @throws InvalidArgumentException When the DB sync signal cannot be named
+     * @throws SourceChangeSubscriberException When a subscriber to the removal announcement fails
+     */
+    public function deleteFixtureAddresses(int $productId): void
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        $addresses = $this->objectCollection;
+        foreach ($addresses as $key => $address) {
+            if ($address->productId !== $productId) {
+                continue;
+            }
+            $address->delete();
+            unset($addresses[$key]);
+        }
     }
 }

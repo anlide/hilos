@@ -1,9 +1,13 @@
 // The categories admin actions: mutations dispatched as tracked actions over the
 // connection. An added category returns separately over the live categories
 // table.
-import { z, type ActionHandle } from '@hilos/core/base'
+import { type ActionHandle } from '@hilos/core/base'
 
 import { actions } from '../../bootstrap/connection.js'
+import {
+  catalogPictureReplySchema,
+  type CatalogPictureReply,
+} from '../../catalog/catalogPictureReply.js'
 import { type CategoryAddDraft } from './categoryAddDraft.js'
 
 /** Action name on the server (EcommerceShopSignalConstants::CATEGORY_MOVE_UP). */
@@ -18,17 +22,8 @@ export const CATEGORY_CREATE = 'category_create'
  */
 export const CATEGORY_PICTURE_PUBLISH = 'category_picture_publish'
 
-// Reply keys `fileId` and `picture` correspond to server-side
-// CategoryPicturePublishReplyDTO::fileId / ::picture.
-const categoryPicturePublishReplySchema = z.object({
-  fileId: z.number(),
-  picture: z.string(),
-})
-
-/** What publishing a picture answers: the file and its catalog_sm copy. */
-export type CategoryPicturePublishReply = z.infer<
-  typeof categoryPicturePublishReplySchema
->
+/** What publishing a category picture answers. */
+export type CategoryPicturePublishReply = CatalogPictureReply
 
 /**
  * Move a category one place up in the catalog.
@@ -75,6 +70,6 @@ export function sendCategoryPicturePublish(
   return actions.dispatch(
     CATEGORY_PICTURE_PUBLISH,
     { clientUploadId },
-    { replySchema: categoryPicturePublishReplySchema },
+    { replySchema: catalogPictureReplySchema },
   )
 }

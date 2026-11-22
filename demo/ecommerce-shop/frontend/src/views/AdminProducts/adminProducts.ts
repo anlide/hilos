@@ -208,12 +208,15 @@ export const PRODUCTS_COLUMNS: HilosTableColumnOf<ProductRow>[] = [
  * Declare the standard table frame; the section head names the table.
  *
  * @param categoryOptionsOf Getter read reactively when filter options change.
+ * @param addProduct Open the Add product dialog.
  */
 export function productsFrame(
   categoryOptionsOf: () => readonly HilosTableFilterOption[],
+  addProduct: () => void,
 ): HilosTableFrame {
   return {
     search: { placeholder: 'Search products' },
+    mainAction: { label: 'Add product', press: addProduct },
     filters: [
       {
         kind: 'select',

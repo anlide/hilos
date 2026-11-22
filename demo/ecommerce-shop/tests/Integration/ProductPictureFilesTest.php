@@ -4,18 +4,27 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
+use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\Object\CatalogPictureUsage;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
-use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
+use Hilos\Database\DatabaseConnectionDefaults;
+use Hilos\Database\DatabaseNames;
 use Hilos\Files\FileVisibility;
 use Hilos\Files\HilosFiles;
 use Hilos\Utils\Helpers\RandomHelper;
+use mysqli;
+use mysqli_result;
+use mysqli_sql_exception;
+use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 
 /**
  * What the files library hears of a product's picture, and when: only once the write commits.
@@ -37,6 +46,9 @@ final class ProductPictureFilesTest extends IntegrationTestCase
 
     /** Category the case's products are put in, deleted when it ends. */
     private int $categoryId;
+
+    /** @var list<int> Extra categories created through the categories library */
+    private array $extraCategoryIds = [];
 
     /** @var list<int> Registry rows the case wrote, deleted when it ends */
     private array $fileIds = [];
@@ -104,7 +116,10 @@ final class ProductPictureFilesTest extends IntegrationTestCase
         Hilos::$files = $this->door;
         Database::sql('DELETE FROM product_slug WHERE id > ?', [$this->addressesBefore]);
         Database::sql('DELETE FROM product WHERE id > ?', [$this->productsBefore]);
-        Database::sql('DELETE FROM category WHERE id = ?', [$this->categoryId]);
+        foreach ([$this->categoryId, ...$this->extraCategoryIds] as $id) {
+            Database::sql('DELETE FROM category_slug WHERE category_id = ?', [$id]);
+            Database::sql('DELETE FROM category WHERE id = ?', [$id]);
+        }
         foreach ($this->fileIds as $fileId) {
             Database::sql('DELETE FROM hilos_file WHERE id = ?', [$fileId]);
         }
@@ -120,6 +135,151 @@ final class ProductPictureFilesTest extends IntegrationTestCase
         $this->createProduct($picture);
 
         self::assertSame([['markBound', [$picture], false]], $this->recorder->calls);
+    }
+
+    /**
+     * The two owners read their own contexts and commit for real. The files door holds back bind,
+     * so only the committed catalog link can tell the second owner the picture is taken.
+     *
+     * @param bool $productFirst Whether Products takes the file before Categories attempts it
+     * @param bool $replace Whether the losing action tries to replace an existing picture
+     */
+    #[DataProvider('pictureContenders')]
+    public function testOnlyOneCatalogOwnerCanTakeAnUnboundPicture(bool $productFirst, bool $replace): void
+    {
+        $products = new ProductsLibraryAgent();
+        $categories = new CategoriesLibraryAgent();
+        $productsContext = Hilos::$db;
+        $categoriesContext = new EcommerceShopDbContext();
+        $categoriesContext->configure();
+        TruthSourceRegistry::unregisterAgent(self::TEST_AGENT_ID);
+        try {
+            $this->startAgent($products);
+            Hilos::$db = $categoriesContext;
+            $this->startAgent($categories);
+            $category = Hilos::$db->categories[$this->categoryId];
+            $former = $category->pictureFileId;
+
+            $picture = $this->pictureFile();
+            Hilos::$db = $productsContext;
+            $productId = !$productFirst && $replace
+                ? $this->underAgent($products, fn () => $this->createProduct($this->pictureFile()))
+                : null;
+            if ($productId !== null) {
+                $former = Hilos::$db->products[$productId]->pictureFileId;
+            }
+            $this->recorder->calls = [];
+
+            if ($productFirst) {
+                $this->underAgent($products, fn () => $this->createProduct($picture));
+                Hilos::$db = $categoriesContext;
+            } else {
+                Hilos::$db = $categoriesContext;
+                $this->underAgent($categories, fn () => $this->createCategory($picture));
+                Hilos::$db = $productsContext;
+            }
+
+            self::assertFalse((bool)Database::sql('SELECT bound FROM hilos_file WHERE id = ?', [$picture])->field('bound'));
+            try {
+                if ($productFirst) {
+                    $this->underAgent($categories, fn () => $replace
+                        ? $category->actions->update($category->name, 'Garden roses', $picture)
+                        : $this->createCategory($picture));
+                } else {
+                    $this->underAgent($products, fn () => $productId === null
+                        ? $this->createProduct($picture)
+                        : Hilos::$db->products[$productId]->actions->update(
+                            'Blue vase', $this->categoryId, ProductKind::UNIQUE, 450_000, 'Glazed vase', $picture,
+                        ));
+                }
+                self::fail('A picture already used by the other owner must be refused');
+            } catch (ValidationException $e) {
+                self::assertSame('This file is gone; upload it again', $e->getMessage());
+            }
+
+            self::assertSame([['markBound', [$picture], false]], $this->recorder->calls);
+            self::assertSame($productFirst, Database::sql('SELECT id FROM product WHERE picture_file_id = ?', [$picture])->rows() !== []);
+            self::assertSame(!$productFirst, Database::sql('SELECT id FROM category WHERE picture_file_id = ?', [$picture])->rows() !== []);
+            if ($replace) {
+                self::assertSame($former, $productId === null ? $category->pictureFileId : Hilos::$db->products[$productId]->pictureFileId);
+            }
+        } finally {
+            Hilos::$db = $productsContext;
+            TruthSourceRegistry::unregisterAgent($products->getId());
+            TruthSourceRegistry::unregisterAgent($categories->getId());
+        }
+    }
+
+    /** @return array<string, array{bool, bool}> */
+    public static function pictureContenders(): array
+    {
+        return [
+            'product before category create' => [true, false],
+            'category before product create' => [false, false],
+            'product before category replacement' => [true, true],
+            'category before product replacement' => [false, true],
+        ];
+    }
+
+    /** The registry lock excludes another SQL session until rollback, without waiting on a timer. */
+    public function testAnotherConnectionCannotLockThePictureUntilRollback(): void
+    {
+        $picture = $this->pictureFile();
+        $primary = Database::getConnectionConfig(DatabaseConnectionDefaults::PRIMARY_INDEX);
+        // A standalone client gives the probe its own SQL session without registering another Hilos connection.
+        $peer = new mysqli(
+            $primary->host, $primary->user, $primary->password, $primary->database, $primary->port, $primary->socket,
+        );
+        try {
+            $peerRead = static function () use ($peer, $picture): int {
+                $result = $peer->execute_query('SELECT id FROM hilos_file WHERE id = ? FOR UPDATE NOWAIT', [$picture]);
+                self::assertInstanceOf(mysqli_result::class, $result);
+
+                return (int)$result->fetch_column();
+            };
+            $abort = new RuntimeException('Rollback the picture claim');
+            try {
+                Database::transaction(DatabaseNames::PRIMARY, static function () use ($picture, $peerRead, $abort): void {
+                    CatalogPictureUsage::lockFresh($picture, null);
+                    try {
+                        $peerRead();
+                        self::fail('A second connection acquired the registry lock');
+                    } catch (mysqli_sql_exception $e) {
+                        self::assertSame(1205, $e->getCode());
+                    }
+                    throw $abort;
+                });
+            } catch (RuntimeException $e) {
+                self::assertSame($abort, $e);
+            }
+            self::assertSame($picture, $peerRead());
+            self::assertSame([], $this->recorder->calls);
+        } finally {
+            $peer->close();
+        }
+
+        $this->createProduct($picture);
+        self::assertSame([['markBound', [$picture], false]], $this->recorder->calls);
+    }
+
+    /** Fixture removal sends only the fixture's picture to the files library, outside the transaction. */
+    public function testFixtureCleanupRemovesItsPictureAfterTheCommit(): void
+    {
+        $picture = $this->pictureFile();
+        $fixture = Hilos::$db->products->actions->create(
+            'e2e product abcdef012345',
+            $this->categoryId,
+            ProductKind::UNIQUE,
+            450_000,
+            'Hand-thrown vase',
+            $picture,
+        );
+        $this->createProduct($this->pictureFile());
+        $this->recorder->calls = [];
+
+        $fixture->actions->deleteFixture();
+
+        self::assertSame([['remove', [$picture], false]], $this->recorder->calls);
     }
 
     /** An edit with a new file binds the new one and removes the former one, both after the commit. */
@@ -176,18 +336,17 @@ final class ProductPictureFilesTest extends IntegrationTestCase
     }
 
     /**
-     * A creation the database refuses inside its transaction - a file the registry does not hold - binds
-     * nothing and stores neither a product nor an address.
+     * A missing registry file is refused inside the transaction before the product or its address is written.
      */
-    public function testACreateTheDatabaseRefusesBindsNothingAndStoresNothing(): void
+    public function testACreateWithAMissingPictureBindsNothingAndStoresNothing(): void
     {
         $missing = $this->missingFile();
 
         try {
             Hilos::$db->products->actions->create('Blue vase', $this->categoryId, ProductKind::UNIQUE, 450_000, 'Hand-thrown vase', $missing);
-            self::fail('A file the registry does not hold must be refused by the database');
-        } catch (ForeignKeyConstraintException $e) {
-            self::assertSame(ForeignKeyConstraintException::class, $e::class);
+            self::fail('A file the registry does not hold must be refused');
+        } catch (ValidationException $e) {
+            self::assertSame('This file is gone; upload it again', $e->getMessage());
         }
 
         self::assertSame([], $this->recorder->calls);
@@ -195,10 +354,9 @@ final class ProductPictureFilesTest extends IntegrationTestCase
     }
 
     /**
-     * An edit the database refuses inside its transaction - a new file the registry does not hold - binds
-     * nothing, removes nothing and leaves the product showing its picture, in the row and in memory.
+     * An edit with a missing registry file binds nothing, removes nothing and keeps the old picture.
      */
-    public function testAnEditTheDatabaseRefusesBindsNothingAndKeepsThePicture(): void
+    public function testAnEditWithAMissingPictureBindsNothingAndKeepsTheFormerPicture(): void
     {
         $picture = $this->pictureFile();
         $id = $this->createProduct($picture);
@@ -207,9 +365,9 @@ final class ProductPictureFilesTest extends IntegrationTestCase
 
         try {
             Hilos::$db->products[$id]->actions->update('Blue vase', $this->categoryId, ProductKind::UNIQUE, 520_000, 'Glazed vase', $missing);
-            self::fail('A file the registry does not hold must be refused by the database');
-        } catch (ForeignKeyConstraintException $e) {
-            self::assertSame(ForeignKeyConstraintException::class, $e::class);
+            self::fail('A file the registry does not hold must be refused');
+        } catch (ValidationException $e) {
+            self::assertSame('This file is gone; upload it again', $e->getMessage());
         }
 
         self::assertSame([], $this->recorder->calls);
@@ -236,6 +394,14 @@ final class ProductPictureFilesTest extends IntegrationTestCase
         self::assertNotNull($id);
 
         return $id;
+    }
+
+    /** @param int $picture Registry file the new category shows */
+    private function createCategory(int $picture): void
+    {
+        $id = Hilos::$db->categories->actions->create('Contender ' . RandomHelper::hex(8), 'Garden roses', $picture)->id;
+        self::assertNotNull($id);
+        $this->extraCategoryIds[] = $id;
     }
 
     /**

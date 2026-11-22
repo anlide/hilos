@@ -7,6 +7,7 @@ namespace Demo\EcommerceShop\Database\Actions\Collection;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Actions\ProductFields;
 use Demo\EcommerceShop\Database\Entity\Item\Category;
+use Demo\EcommerceShop\Database\Object\CatalogPictureUsage;
 use Demo\EcommerceShop\Database\Object\Collection\Products as ObjectProducts;
 use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
 use Demo\EcommerceShop\Database\View\Collection\Products as DbCollectionProducts;
@@ -52,11 +53,12 @@ final class ProductsActions extends DbActions
      * @param int $price Price in kopecks
      * @param string $description Text describing the product
      * @param int $pictureFileId Registry file the product shows, published for it alone
+     * @param ?int $pictureOwnerUserId Expected publisher for a browser request, null for an internal call
      * @return Product Created product Db item
      * @throws EmptyValueException When the name or the description is empty, or no category is chosen
      * @throws ValueTooLongException When the name or the description is longer than its column
-     * @throws ValidationException When the price is out of range or the category no longer exists
-     * @throws LogicException When another product already shows the picture, or the files door is missing
+     * @throws ValidationException When the price is out of range, the category is gone or the picture is unavailable
+     * @throws LogicException When the address or the files door cannot be used
      * @throws CollectionNotFullyLoadedException When this process does not hold every product and address
      * @throws CreateNotAllowedException When this process may not add a product or its address
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
@@ -71,6 +73,7 @@ final class ProductsActions extends DbActions
         int $price,
         string $description,
         int $pictureFileId,
+        ?int $pictureOwnerUserId = null,
     ): Product {
         $this->ensureCanCreate();
 
@@ -78,7 +81,6 @@ final class ProductsActions extends DbActions
         $categoryId = ProductFields::category($categoryId);
         $price = ProductFields::price($price);
         $description = ProductFields::description($description);
-        $pictureFileId = ProductFields::picture($pictureFileId, null);
         $slug = ProductFields::slug($name, null);
         $files = Hilos::$files ?? throw new LogicException('The files door is missing');
 
@@ -86,7 +88,10 @@ final class ProductsActions extends DbActions
         try {
             Database::transaction(
                 DatabaseNames::PRIMARY,
-                function () use ($product, $name, $categoryId, $kind, $price, $description, $pictureFileId, $slug, $files): void {
+                function () use (
+                    $product, $name, $categoryId, $kind, $price, $description, $pictureFileId, $pictureOwnerUserId, $slug, $files,
+                ): void {
+                    CatalogPictureUsage::lockFresh($pictureFileId, $pictureOwnerUserId);
                     $product->name = $name;
                     $product->categoryId = $categoryId;
                     $product->kind = $kind->value;

@@ -4,26 +4,37 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
-use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserList;
+use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Constants\ProductAvailability;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Object\Item\Category as ObjectCategory;
+use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
+use Demo\EcommerceShop\Database\Object\Item\ProductSlug as ObjectProductSlug;
 use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminProductsPage;
+use Demo\EcommerceShop\Pages\DTO\ProductPicturePublishActionDTO;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\Product\ProductTableRow;
 use Hilos\AdminViewMode\HiddenValue;
 use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Agent\Exception\AgentException;
+use Hilos\Core\Agent\Exception\InvalidCommandPayloadException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
@@ -31,21 +42,21 @@ use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Database\DbSyncApplicator;
+use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\HilosFiles;
+use Hilos\Socket\Command\DTO\CommandReplyDTO;
+use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Testing\IntegrationTest;
-use Hilos\Users\AccountStandingResolver;
 use Hilos\Utils\Helpers\RandomHelper;
+use PHPUnit\Framework\Attributes\DataProvider;
 
-/** The products page exposes its table and live category options to viewers, with the admin gate still closed when view mode is off. */
+/** The products page and its actions under the products library and the admin gate. */
 #[IntegrationTest]
-final class AdminProductsPageTest extends AdminProductsPageEnvironment
+final class AdminProductsPageTest extends AdminProductsPageActionEnvironment
 {
     private const string GUEST_KEY = 'admin-products-guest';
-    private const string VISITOR_KEY = 'admin-products-visitor';
-    private const string ADMIN_KEY = 'admin-products-admin';
 
-    private int $categoryId;
     private int $categoryPosition;
     private string $categoryName;
     private int $pictureFileId;
@@ -65,13 +76,10 @@ final class AdminProductsPageTest extends AdminProductsPageEnvironment
         $this->pictureFileId = (int)Database::sql('SELECT picture_file_id FROM product WHERE id = ?', [$this->productId])
             ->field('picture_file_id');
         self::holdCatalog();
-        $visitorId = self::person('Products visitor', false);
-        $adminId = self::person('Products admin', true);
-        self::unattended(static function () use ($visitorId, $adminId): void {
+        self::unattended(static function (): void {
             Hilos::$rt->connections->actions->register(self::GUEST_KEY, null);
-            Hilos::$rt->connections->actions->register(self::VISITOR_KEY, $visitorId);
-            Hilos::$rt->connections->actions->register(self::ADMIN_KEY, $adminId);
         });
+        $this->connectProductPageUsers();
     }
 
     /** A viewer receives the product and category options together in the first answer, with every field shown. */
@@ -179,21 +187,287 @@ final class AdminProductsPageTest extends AdminProductsPageEnvironment
         ], self::slotFor($updates[0][PagePayload::items], PagePayload::itemKey, $this->categoryId, EcommerceShopDbContext::categories));
     }
 
-    /**
-     * Writes a person past the users library and drops a verdict an earlier case of this process may have
-     * remembered for the same id.
-     *
-     * @param string $name Name of the person
-     * @param bool $admin Whether the person is an administrator
-     * @return int Id of the new person
-     */
-    private static function person(string $name, bool $admin): int
+    /** Two outstanding picture publications acknowledge the right requests even when answered in reverse order. */
+    public function testPicturePublicationAcknowledgesSuccessAndRefusalByRequestId(): void
     {
-        Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, ?, 0)', [$name, (int)$admin]);
-        $userId = Database::lastInsertId();
-        AccountStandingResolver::forget($userId);
+        $action = EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISH;
+        $this->dispatchAction($action, [ProductPicturePublishActionDTO::clientUploadId => 'upload-vase'], 'req-vase');
+        $this->dispatchAction($action, [ProductPicturePublishActionDTO::clientUploadId => 'upload-pot'], 'req-pot');
+        self::assertSame([
+            [self::ADMIN_KEY, 'catalog_picture', ['upload-vase'], 'product_picture_published'],
+            [self::ADMIN_KEY, 'catalog_picture', ['upload-pot'], 'product_picture_published'],
+        ], $this->recorder->published);
+        self::assertSame([], $this->actionFrames(self::ADMIN_KEY));
 
-        return $userId;
+        $this->answer(FilesPublishedSignalData::refused(self::ADMIN_KEY, ['upload-pot'], 'This file has not finished uploading'));
+        [$error] = $this->actionFrames(self::ADMIN_KEY, 1);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-pot', $error->requestId);
+        self::assertSame($action, $error->action);
+        self::assertSame('This file has not finished uploading', $error->reason);
+
+        $fileId = self::ownPictureFile($this->adminId);
+        $this->answer(new FilesPublishedSignalData(self::ADMIN_KEY, ['upload-vase'], [$fileId], null));
+        [$success] = $this->actionFrames(self::ADMIN_KEY, 1);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        self::assertSame('req-vase', $success->requestId);
+        self::assertSame($action, $success->action);
+        self::assertSame([
+            'fileId' => $fileId,
+            'picture' => HilosFiles::downloadPath($fileId, CatalogPictureUploadTarget::VARIANT_SM),
+        ], $success->reply);
+    }
+
+    /** @param ?string $firstRequestId Tracked correlation or an untracked first request */
+    #[DataProvider('publicationCorrelations')]
+    public function testRepeatedPublicationKeepsTheFirstRequest(?string $firstRequestId): void
+    {
+        $action = EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISH;
+        $payload = [ProductPicturePublishActionDTO::clientUploadId => 'upload-vase'];
+        $this->dispatchAction($action, $payload, $firstRequestId);
+        $this->dispatchAction($action, $payload, $firstRequestId);
+        self::assertSame([], $this->actionFrames(self::ADMIN_KEY));
+
+        $this->dispatchAction($action, $payload, 'req-second');
+        [$refusal] = $this->actionFrames(self::ADMIN_KEY, 1);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $refusal);
+        self::assertSame('req-second', $refusal->requestId);
+        self::assertSame($action, $refusal->action);
+        self::assertSame('This picture is already being published', $refusal->reason);
+        self::assertSame([
+            [self::ADMIN_KEY, 'catalog_picture', ['upload-vase'], 'product_picture_published'],
+        ], $this->recorder->published);
+
+        $fileId = self::ownPictureFile($this->adminId);
+        $this->answer(new FilesPublishedSignalData(self::ADMIN_KEY, ['upload-vase'], [$fileId], null));
+        $frames = $this->actionFrames(self::ADMIN_KEY, $firstRequestId === null ? 0 : 1);
+        if ($firstRequestId !== null) {
+            [$success] = $frames;
+            self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+            self::assertSame($firstRequestId, $success->requestId);
+            self::assertSame($action, $success->action);
+            self::assertSame([
+                'fileId' => $fileId,
+                'picture' => HilosFiles::downloadPath($fileId, CatalogPictureUploadTarget::VARIANT_SM),
+            ], $success->reply);
+        }
+
+        $this->dispatchAction($action, $payload, 'req-retry');
+        $this->answer(FilesPublishedSignalData::refused(self::ADMIN_KEY, ['upload-vase'], 'This file has not finished uploading'));
+        [$retry] = $this->actionFrames(self::ADMIN_KEY, 1);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $retry);
+        self::assertSame('req-retry', $retry->requestId);
+        self::assertSame('This file has not finished uploading', $retry->reason);
+    }
+
+    /** @return array<string, array{?string}> */
+    public static function publicationCorrelations(): array
+    {
+        return ['tracked first' => ['req-first'], 'untracked first' => [null]];
+    }
+
+    /**
+     * An administrator creates each product kind with a price in kopecks and no warehouse rows.
+     *
+     * @param ProductKind $kind Product kind as chosen on the form
+     * @param ProductAvailability $availability Initial availability shown on the products table
+     */
+    #[DataProvider('productKinds')]
+    public function testAnAdminCreatesAProductWithoutStock(ProductKind $kind, ProductAvailability $availability): void
+    {
+        $input = $this->productInput('Blue vase');
+        $input[ObjectProduct::kind] = $kind->value;
+        $this->dispatchAction(EcommerceShopSignalConstants::PRODUCT_CREATE, $input, 'req-create');
+
+        [$success] = $this->actionFrames(self::ADMIN_KEY, 1);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        self::assertSame('req-create', $success->requestId);
+        self::assertSame(EcommerceShopSignalConstants::PRODUCT_CREATE, $success->action);
+        self::assertSame('Product “Blue vase” added.', $success->message);
+        self::assertNull($success->reply);
+
+        $stored = Database::sql('SELECT * FROM product WHERE name = ?', ['Blue vase'])->rows();
+        self::assertCount(1, $stored);
+        $product = $stored[0];
+        $id = (int)$product['id'];
+        self::assertSame($this->categoryId, (int)$product['category_id']);
+        self::assertSame($kind->value, $product['kind']);
+        self::assertSame(210_050, (int)$product['price']);
+        self::assertSame($input[ObjectProduct::description], $product['description']);
+        self::assertSame($input[ObjectProduct::pictureFileId], (int)$product['picture_file_id']);
+        self::assertGreaterThan(0, (int)$product['changed_at']);
+        self::assertSame('blue-vase', $product['slug']);
+        self::assertSame(
+            'blue-vase',
+            Database::sql('SELECT slug FROM product_slug WHERE product_id = ?', [$id])->field('slug'),
+        );
+        self::assertSame([], Database::sql('SELECT id FROM product_warehouse_stock WHERE product_id = ?', [$id])->rows());
+
+        $page = $this->subscribe(self::ADMIN_KEY)[0][PageResponseSignalData::payload];
+        $slot = self::slotFor(
+            $page[PagePayload::windows][EcommerceShopTableContext::products][TableWindowSignalData::rows],
+            PagePayload::rowKey,
+            $id,
+            'product',
+        );
+        self::assertSame(0, $slot[ProductTableRow::units]);
+        self::assertSame($availability->value, $slot[ProductTableRow::availability]);
+    }
+
+    /** @return array<string, array{ProductKind, ProductAvailability}> The two kinds and their availability with no stock */
+    public static function productKinds(): array
+    {
+        return [
+            'unique' => [ProductKind::UNIQUE, ProductAvailability::NOT_PLACED],
+            'stock' => [ProductKind::STOCK, ProductAvailability::OUT_OF_STOCK],
+        ];
+    }
+
+    /**
+     * Invalid create fields produce a correlated domain refusal and no product.
+     *
+     * @param string $field Invalid field in the create payload
+     * @param string|int|null $value Invalid field value, or null to use another person's picture
+     * @param string $reason Person-facing refusal
+     */
+    #[DataProvider('invalidCreateFields')]
+    public function testARefusedCreateWritesNoProduct(string $field, string|int|null $value, string $reason): void
+    {
+        $input = $this->productInput('Refused product');
+        $input[$field] = $value ?? self::ownPictureFile($this->visitorId);
+
+        $this->dispatchAction(EcommerceShopSignalConstants::PRODUCT_CREATE, $input, 'req-refused');
+        [$error] = $this->actionFrames(self::ADMIN_KEY, 1);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-refused', $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::PRODUCT_CREATE, $error->action);
+        self::assertSame($reason, $error->reason);
+        self::assertSame([], Database::sql('SELECT id FROM product WHERE name = ?', ['Refused product'])->rows());
+    }
+
+    /** @return array<string, array{string, string|int|null, string}> Invalid create inputs and their refusal messages */
+    public static function invalidCreateFields(): array
+    {
+        return [
+            'price' => [ObjectProduct::price, '2,100', 'Write at most two digits after the point'],
+            'missing category' => [ObjectProduct::categoryId, 0, 'This category no longer exists'],
+            'foreign picture' => [ObjectProduct::pictureFileId, null, 'This file is gone; upload it again'],
+            'kind' => [ObjectProduct::kind, 'other', 'Choose a product kind'],
+        ];
+    }
+
+    /** A guest or non-admin in view mode cannot publish a file or create a product, even with a valid payload. */
+    public function testViewModeRefusesBothProductActions(): void
+    {
+        $input = $this->productInput('Viewer product');
+        foreach ([self::GUEST_KEY, self::VISITOR_KEY] as $key) {
+            foreach ([
+                EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISH => [ProductPicturePublishActionDTO::clientUploadId => 'upload-vase'],
+                EcommerceShopSignalConstants::PRODUCT_CREATE => $input,
+            ] as $action => $payload) {
+                $this->dispatchAction($action, $payload, 'req-viewer', $key);
+                [$error] = $this->actionFrames($key, 1);
+                self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+                self::assertSame($action, $error->action);
+                self::assertSame('req-viewer', $error->requestId);
+                self::assertSame(ActionViewModeException::ERROR_CODE, $error->errorCode);
+            }
+        }
+        self::assertSame([], $this->recorder->published);
+        self::assertSame([], Database::sql('SELECT id FROM product WHERE name = ?', ['Viewer product'])->rows());
+    }
+
+    /** The fixture command refuses ambiguity, removes just the requested product and addresses, and can be repeated. */
+    public function testFixtureCleanupIsExactAndRepeatable(): void
+    {
+        $name = 'e2e product ab' . RandomHelper::hex(5);
+        $input = $this->productInput($name);
+        $this->dispatchAction(EcommerceShopSignalConstants::PRODUCT_CREATE, $input, 'req-fixture');
+        [$success] = $this->actionFrames(self::ADMIN_KEY, 1);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        $id = (int)Database::sql('SELECT id FROM product WHERE name = ?', [$name])->field('id');
+        $this->asProductsLibrary(static function () use ($id): void {
+            Hilos::$db->productSlugs->actions->record('former-fixture-address', $id);
+        });
+
+        $other = $this->asProductsLibrary(fn () => Hilos::$db->products->actions->create(
+            $name,
+            $this->categoryId,
+            ProductKind::STOCK,
+            41000,
+            'Another product',
+            self::ownPictureFile($this->adminId),
+        ));
+        try {
+            $this->runFixtureCleanup($name);
+            self::fail('Ambiguous fixture names must be refused');
+        } catch (AgentException $e) {
+            self::assertSame('Multiple products have that fixture name', $e->getMessage());
+        }
+        self::assertNotEmpty(Database::sql('SELECT id FROM product WHERE id = ?', [$id])->rows());
+        $this->asProductsLibrary(fn () => $other->actions->update(
+            strtoupper($name),
+            $this->categoryId,
+            ProductKind::STOCK,
+            $other->price,
+            $other->description,
+            null,
+        ));
+
+        self::assertSame([EcommerceShopCommandConstants::deleted => true], $this->runFixtureCleanup($name));
+        self::assertSame([], Database::sql('SELECT id FROM product WHERE id = ?', [$id])->rows());
+        self::assertSame([], Database::sql('SELECT id FROM product_slug WHERE product_id = ?', [$id])->rows());
+        self::assertFalse(isset(Hilos::$db->products[$id]));
+        self::assertCount(0, Hilos::$db->productSlugs->whereColumnIs(ObjectProductSlug::productId, $id));
+        self::assertSame([EcommerceShopCommandConstants::deleted => false], $this->runFixtureCleanup($name));
+
+        self::assertSame(strtoupper($name), Database::sql('SELECT name FROM product WHERE id = ?', [$other->id])->field('name'));
+        self::assertNotEmpty(Database::sql('SELECT id FROM product_slug WHERE product_id = ?', [$other->id])->rows());
+        self::assertSame($this->productName, Database::sql('SELECT name FROM product WHERE id = ?', [$this->productId])->field('name'));
+        self::assertNotEmpty(Database::sql('SELECT id FROM hilos_file WHERE id = ?', [$this->pictureFileId])->rows());
+        // The rollback root holds the removal until commit. ProductPictureFilesTest proves that it is then sent.
+        self::assertNotEmpty(Database::sql('SELECT id FROM hilos_file WHERE id = ?', [$input[ObjectProduct::pictureFileId]])->rows());
+
+        $this->expectException(InvalidCommandPayloadException::class);
+        $this->runFixtureCleanup($this->productName);
+    }
+
+    /**
+     * @param FilesPublishedSignalData $answer Files door reply
+     */
+    private function answer(FilesPublishedSignalData $answer): void
+    {
+        $this->asProductsLibrary(fn () => $this->library->onSignalAgent(
+            new AgentSignalData($answer),
+            'agent',
+            EcommerceShopSignalConstants::PRODUCT_PICTURE_PUBLISHED,
+        ));
+    }
+
+    /**
+     * @param string $name Reserved fixture name
+     * @return array<string, mixed> Payload of the single successful command reply
+     */
+    private function runFixtureCleanup(string $name): array
+    {
+        $command = EcommerceShopCommandConstants::PRODUCT_TEST_DELETE;
+        $request = Hilos::$sr->createCommandPayloadDTO(
+            $command,
+            new CommandRequestDTO('fixture-cleanup', $command, [EcommerceShopCommandConstants::name => $name]),
+        );
+        $this->asProductsLibrary(fn () => $this->library->onSignalCommand($request, 'command', $command));
+
+        $replies = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if ($signal->data instanceof CommandReplyDTO) {
+                $replies[] = $signal->data;
+            }
+        }
+        self::assertCount(1, $replies);
+        self::assertSame('fixture-cleanup', $replies[0]->correlationId);
+        self::assertTrue($replies[0]->isOk());
+
+        return $replies[0]->payload;
     }
 
     /**
@@ -212,8 +486,8 @@ final class AdminProductsPageTest extends AdminProductsPageEnvironment
             new WebSocketPageSubscribeSignalDTO($acceptKey, AdminProductsPage::PAGE, [], $windows),
         );
         Hilos::$sr->reportTableWindows($acceptKey, $windows);
-        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), static function () use ($acceptKey): void {
-            new AdminProductsPage(new ProductsLibraryAgent())->onSubscribe($acceptKey, new PageRouteParams([]));
+        ExecutionContext::run(new ExecutionFrame(acceptKey: $acceptKey), function () use ($acceptKey): void {
+            new AdminProductsPage($this->library)->onSubscribe($acceptKey, new PageRouteParams([]));
         });
 
         $payloads = [];

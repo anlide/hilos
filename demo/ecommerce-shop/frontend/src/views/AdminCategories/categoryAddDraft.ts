@@ -3,13 +3,10 @@
 // test reads it in node. Both verdicts go by the raw value: trimming and the
 // length limits are the server's (rules-and-violations.md, section E).
 
-/** A picture already published for the draft: its file and its preview copy. */
-export interface CategoryAddPicture {
-  /** The published file the category is created with. */
-  readonly fileId: number
-  /** Address of the file's catalog_sm copy, drawn as the preview. */
-  readonly url: string
-}
+import { type CatalogPicture } from '../../catalog/catalogPictureReply.js'
+
+/** A picture already published for the category draft. */
+export type CategoryAddPicture = CatalogPicture
 
 /** The fields an Add category dialog collects. */
 export interface CategoryAddDraft {

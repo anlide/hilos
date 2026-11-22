@@ -4,12 +4,7 @@
 // carries a record bearing an `id`, so the normalizer stores each category as an
 // entity of the page scope and leaves a reference in the slot; the fields are
 // read back through the resolver the caller hands in.
-import {
-  readNumber,
-  readString,
-  type HilosTableFilterOption,
-  type ListItem,
-} from '@hilos/core/base'
+import { readNumber, readString, type ListItem } from '@hilos/core/base'
 
 import {
   slotFields,
@@ -53,7 +48,7 @@ export function kindText(kind: string): string {
 export function categoryOptions(
   items: readonly ListItem[],
   fieldsOf: EntityFieldsResolver,
-): HilosTableFilterOption[] {
+): { value: number; label: string }[] {
   return items
     .map((item) => slotFields(item.slots[CATEGORY_SLOT], fieldsOf))
     .filter((category) => typeof category[CATEGORY_ID_FIELD] === 'number')

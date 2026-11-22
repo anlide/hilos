@@ -7,16 +7,20 @@ namespace Demo\EcommerceShop\Database\Actions\Item;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Actions\ProductFields;
 use Demo\EcommerceShop\Database\Entity\Item\Category;
+use Demo\EcommerceShop\Database\Object\CatalogPictureUsage;
 use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
 use Demo\EcommerceShop\Database\View\Item\Product;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Exception\EmptyValueException;
+use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
@@ -30,9 +34,8 @@ use Throwable;
 /**
  * ProductActions - write operations for a single Product item.
  *
- * A product is never deleted. An edit runs in one transaction, and a refused one leaves the
- * product and the addresses as they were: the rollback puts the object and the collections
- * back. The files library hears of a picture only once the edit commits.
+ * Edits and fixture cleanup each run in one transaction. A rollback restores the product and
+ * its addresses, and the files library hears of a picture change only after a commit.
  *
  * @extends DbActions<Product, ObjectProduct>
  * @property-read ObjectProduct $object
@@ -56,11 +59,12 @@ final class ProductActions extends DbActions
      * @param int $price New price in kopecks
      * @param string $description New text describing the product
      * @param ?int $pictureFileId Registry file to show instead, null to keep the current one
+     * @param ?int $pictureOwnerUserId Expected publisher when the browser supplies a replacement
      * @throws ItemNotFoundForUpdateException If the product id is null (not persisted)
-     * @throws ValidationException When the kind differs, the price is out of range or the category no longer exists
+     * @throws ValidationException When the kind differs, the price is out of range, the category is gone or the picture is unavailable
      * @throws EmptyValueException When the name or the description is empty, or no category is chosen
      * @throws ValueTooLongException When the name or the description is longer than its column
-     * @throws LogicException When another product already shows the picture, or the files door is missing
+     * @throws LogicException When the address or the files door cannot be used
      * @throws CollectionNotFullyLoadedException When this process does not hold every product and address
      * @throws WriteNotAllowedException When this process may not write the product
      * @throws CreateNotAllowedException When this process may not record the new address
@@ -75,6 +79,7 @@ final class ProductActions extends DbActions
         int $price,
         string $description,
         ?int $pictureFileId,
+        ?int $pictureOwnerUserId = null,
     ): void {
         $this->ensureCanWrite();
 
@@ -91,9 +96,8 @@ final class ProductActions extends DbActions
         $slug = ProductFields::slug($name, $productId);
         $slugChanged = $slug !== $this->object->slug;
         $formerPictureFileId = $this->object->pictureFileId;
-        $pictureFileId = $pictureFileId === null || $pictureFileId === $formerPictureFileId
-            ? $formerPictureFileId
-            : ProductFields::picture($pictureFileId, $productId);
+        $pictureFileId ??= $formerPictureFileId;
+        $pictureChanged = $pictureFileId !== $formerPictureFileId;
 
         if (
             $name === $this->object->name
@@ -101,7 +105,7 @@ final class ProductActions extends DbActions
             && $price === $this->object->price
             && $description === $this->object->description
             && !$slugChanged
-            && $pictureFileId === $formerPictureFileId
+            && !$pictureChanged
         ) {
             return;
         }
@@ -120,8 +124,13 @@ final class ProductActions extends DbActions
                     $slugChanged,
                     $pictureFileId,
                     $formerPictureFileId,
+                    $pictureOwnerUserId,
+                    $pictureChanged,
                     $files,
                 ): void {
+                    if ($pictureChanged) {
+                        CatalogPictureUsage::lockFresh($pictureFileId, $pictureOwnerUserId);
+                    }
                     $this->object->name = $name;
                     $this->object->categoryId = $categoryId;
                     $this->object->price = $price;
@@ -134,7 +143,7 @@ final class ProductActions extends DbActions
                     if ($slugChanged) {
                         Hilos::$db->productSlugs->actions->record($slug, $productId);
                     }
-                    if ($pictureFileId !== $formerPictureFileId) {
+                    if ($pictureChanged) {
                         // Two announcements, so that a failed bind does not keep the former file.
                         Database::afterCommit(static fn () => $files->markBound([$pictureFileId]));
                         Database::afterCommit(static fn () => $files->remove([$formerPictureFileId]));
@@ -148,5 +157,44 @@ final class ProductActions extends DbActions
 
             throw new ValidationException('This category no longer exists', previous: $e);
         }
+    }
+
+    /**
+     * Removes the product selected by the test fixture command and all its addresses.
+     *
+     * References from stock or carts can refuse the removal. The picture is handed to the files
+     * library once the transaction commits.
+     *
+     * @throws WriteNotAllowedException When this process may not remove the product or its addresses
+     * @throws ItemNotFoundForDeleteException When the product has no persisted id
+     * @throws ObjectCollectionNullException When the product collection is missing
+     * @throws LogicException When the files door is missing
+     * @throws CollectionNotFullyLoadedException When this process does not hold every address
+     * @throws DatabaseException When deleting a row or committing fails
+     * @throws HilosException When the database, ownership guard or an announcement refuses a write
+     * @throws Throwable Whatever the transaction raises, preserved through its rollback
+     */
+    public function deleteFixture(): void
+    {
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        $productId = $this->object->id
+            ?? throw new ItemNotFoundForDeleteException('Product not found for fixture cleanup');
+        $products = $this->getObjectCollection() ?? throw new ObjectCollectionNullException('Object collection is null');
+        $files = Hilos::$files ?? throw new LogicException('The files door is missing');
+        $pictureFileId = $this->object->pictureFileId;
+
+        Database::transaction(
+            DatabaseNames::PRIMARY,
+            function () use ($productId, $products, $files, $pictureFileId): void {
+                Hilos::$db->productSlugs->actions->deleteFixtureAddresses($productId);
+
+                $key = $this->object->getIdString();
+                $this->object->delete();
+                unset($products[$key]);
+
+                Database::afterCommit(static fn () => $files->remove([$pictureFileId]));
+            },
+        );
     }
 }

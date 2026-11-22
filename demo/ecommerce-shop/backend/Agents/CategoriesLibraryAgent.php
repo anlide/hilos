@@ -18,6 +18,7 @@ use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\TruthSource\TruthSourceOperation;
@@ -98,6 +99,7 @@ final class CategoriesLibraryAgent extends AbstractAgent
      * @throws FeatureNotDeclaredException When the project keeps no files or takes no uploads
      * @throws InvalidFormatException When the upload id is one the wire does not allow
      * @throws InvalidArgumentException When the publish signal cannot be named or queued
+     * @throws ValidationException When another request is already publishing this upload
      */
     public function publishPicture(string $acceptKey, string $clientUploadId, ?string $requestId): void
     {

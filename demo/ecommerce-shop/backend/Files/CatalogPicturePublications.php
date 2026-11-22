@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Files;
 
 use Demo\EcommerceShop\Hilos;
-use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishReplyDTO;
+use Demo\EcommerceShop\Pages\DTO\CatalogPicturePublishReplyDTO;
 use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Exception\LogicException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Feature\Exception\FeatureNotDeclaredException;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Files\HilosFiles;
@@ -27,6 +28,9 @@ final class CatalogPicturePublications
 {
     /** Refusal of an answer that does not carry exactly one file for the one upload asked. */
     private const string NOT_KEPT = 'Cannot keep the file';
+
+    /** Refusal of a second action that tries to publish an upload already in flight. */
+    private const string ALREADY_PUBLISHING = 'This picture is already being published';
 
     /** Separator of the connection and the upload in a key of a waiting request. */
     private const string KEY_SEPARATOR = "\0";
@@ -47,7 +51,8 @@ final class CatalogPicturePublications
     /**
      * Remembers the request and hands the upload to the files door.
      *
-     * A refusal of the door forgets the request and goes on, so the page answers it the usual way.
+     * An identical request waits for the first answer. A different request for the same upload is
+     * refused by the page while the first keeps its place. A refusal of the door forgets its request.
      *
      * @param string $acceptKey Accept key of the connection the upload belongs to
      * @param string $clientUploadId Id the browser gave the upload
@@ -56,11 +61,20 @@ final class CatalogPicturePublications
      * @throws FeatureNotDeclaredException When the project keeps no files or takes no uploads
      * @throws InvalidFormatException When the upload id is one the wire does not allow
      * @throws InvalidArgumentException When the publish signal cannot be named or queued
+     * @throws ValidationException When another request is already publishing this upload
      */
     public function ask(string $acceptKey, string $clientUploadId, ?string $requestId): void
     {
-        $files = Hilos::$files ?? throw new LogicException('The files door is missing');
         $key = self::key($acceptKey, $clientUploadId);
+        if (array_key_exists($key, $this->waiting)) {
+            if ($this->waiting[$key] !== $requestId) {
+                throw new ValidationException(self::ALREADY_PUBLISHING);
+            }
+
+            return;
+        }
+
+        $files = Hilos::$files ?? throw new LogicException('The files door is missing');
         $this->waiting[$key] = $requestId;
         try {
             $files->publishUploads($acceptKey, CatalogPictureUploadTarget::NAME, [$clientUploadId], $this->replySignal);
@@ -113,7 +127,7 @@ final class CatalogPicturePublications
             $answer->acceptKey,
             $this->action,
             $requestId,
-            new CategoryPicturePublishReplyDTO($fileId, HilosFiles::downloadPath($fileId, CatalogPictureUploadTarget::VARIANT_SM)),
+            new CatalogPicturePublishReplyDTO($fileId, HilosFiles::downloadPath($fileId, CatalogPictureUploadTarget::VARIANT_SM)),
         );
     }
 

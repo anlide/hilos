@@ -31,16 +31,18 @@ import {
   stockText,
 } from './adminProducts.js'
 import { createProductsTable, type ProductsTable } from './adminProductsPage.js'
+import { ProductAddModal } from './ProductAddModal.js'
 
-/** The Products administration page, read only. */
+/** The Products administration page with its live table and Add product dialog. */
 export default function AdminProducts() {
   const router = useContext(HilosRouterContext)
   const [products, setProducts] = useState<ProductsTable | null>(null)
+  const [adding, setAdding] = useState(false)
   useSignal(hilosTimeZone)
 
   useLayoutEffect(() => {
     // Disposal is permanent; each setup, including StrictMode replay, owns one.
-    const table = createProductsTable()
+    const table = createProductsTable(() => setAdding(true))
     table.start()
     setProducts(table)
     return () => table.dispose()
@@ -129,6 +131,7 @@ export default function AdminProducts() {
           }}
         />
       )}
+      {adding && <ProductAddModal onClose={() => setAdding(false)} />}
     </HilosAdminPage>
   )
 }

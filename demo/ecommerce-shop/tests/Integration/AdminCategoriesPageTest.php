@@ -14,7 +14,6 @@ use Demo\EcommerceShop\Files\CatalogPictureUploadTarget;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
-use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishReplyDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\Category\CategoriesTable;
 use Demo\EcommerceShop\Tables\Category\CategoryTableRow;
@@ -363,8 +362,8 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
         self::assertSame('req-picture-publish', $success->requestId);
         self::assertSame(EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH, $success->action);
         self::assertSame([
-            CategoryPicturePublishReplyDTO::fileId => $fileId,
-            CategoryPicturePublishReplyDTO::picture => HilosFiles::downloadPath($fileId, 'catalog_sm'),
+            'fileId' => $fileId,
+            'picture' => HilosFiles::downloadPath($fileId, 'catalog_sm'),
         ], $success->reply);
     }
 

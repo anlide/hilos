@@ -13,6 +13,7 @@ final class EcommerceShopCommandConstants
 {
     public const string WAREHOUSE_TEST_DELETE = 'test:ecommerce-shop:warehouse-delete';
     public const string CATEGORY_TEST_DELETE = 'test:ecommerce-shop:category-delete';
+    public const string PRODUCT_TEST_DELETE = 'test:ecommerce-shop:product-delete';
     public const string name = 'name';
     public const string deleted = 'deleted';
 }

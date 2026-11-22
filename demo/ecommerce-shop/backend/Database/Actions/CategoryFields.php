@@ -85,26 +85,4 @@ final class CategoryFields
 
         return CatalogSlug::pick(CatalogSlug::fromName($name, 'category'), $holders, $categoryId);
     }
-
-    /**
-     * Checks that no other category shows this picture and returns it.
-     *
-     * Not a person's mistake: the caller is to publish a new file for every category it saves,
-     * so a file shown twice is a defect of the caller.
-     *
-     * @param int $pictureFileId Id of the registry file to show
-     * @param ?int $categoryId Id of the category, null for one not saved yet
-     * @return int The same file id
-     * @throws LogicException When another category already shows the file
-     */
-    public static function picture(int $pictureFileId, ?int $categoryId): int
-    {
-        foreach (Hilos::$db->categories as $category) {
-            if ($category->pictureFileId === $pictureFileId && $category->id !== $categoryId) {
-                throw new LogicException("Picture file {$pictureFileId} already belongs to category {$category->id}");
-            }
-        }
-
-        return $pictureFileId;
-    }
 }

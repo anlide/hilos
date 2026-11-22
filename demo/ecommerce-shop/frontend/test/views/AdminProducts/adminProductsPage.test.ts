@@ -67,7 +67,7 @@ function category(id: number, name: string, position: number): void {
 }
 
 function mount(): ProductsTable {
-  const table = createProductsTable()
+  const table = createProductsTable(vi.fn())
   mounted.push(table)
   table.start()
   return table

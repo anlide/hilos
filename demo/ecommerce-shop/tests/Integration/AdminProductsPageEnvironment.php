@@ -11,6 +11,7 @@ use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Files\HilosFiles;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
 use Hilos\TruthSource\RtTruthSourceRegistry;
 
@@ -25,10 +26,14 @@ abstract class AdminProductsPageEnvironment extends ProductsTableEnvironment
 {
     private const string TEST_AGENT = 'admin-products-page-test';
 
+    /** @var HilosFiles&object{published: list<array{string, string, list<string>, string}>} Files door recording publication requests */
+    protected HilosFiles $recorder;
+
     private ?SignalRouter $previousRouter = null;
     private bool $claimed = false;
+    private ?HilosFiles $door = null;
 
-    /** Mounts the browser, router, connections claim and view mode over the libraries beneath. */
+    /** Mounts the browser, router, connections claim, view mode and recording files door. */
     protected function prepareIntegrationEnvironment(): void
     {
         $this->previousRouter = Hilos::$sr;
@@ -42,15 +47,34 @@ abstract class AdminProductsPageEnvironment extends ProductsTableEnvironment
             Hilos::$rt->connections->actions->clear();
             Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(true);
         });
+        $this->door = Hilos::$files;
+        self::assertNotNull($this->door);
+        $this->recorder = new class ($this->door->storage) extends HilosFiles {
+            /** @var list<array{string, string, list<string>, string}> Connection, target, uploads and reply signal for each request */
+            public array $published = [];
+
+            /**
+             * @param string $acceptKey Connection the uploads belong to
+             * @param string $target Upload target
+             * @param list<string> $clientUploadIds Requested uploads
+             * @param string $replySignal Publication answer name
+             */
+            public function publishUploads(string $acceptKey, string $target, array $clientUploadIds, string $replySignal): void
+            {
+                $this->published[] = [$acceptKey, $target, $clientUploadIds, $replySignal];
+            }
+        };
+        Hilos::$files = $this->recorder;
     }
 
-    /**
-     * Turns the view mode off and forgets the connections if they were claimed, restores the router and
-     * the browser, then releases beneath, in every outcome of the preparation.
-     */
+    /** Restores the files door, releases runtime claims and restores the router and browser. */
     protected function releaseIntegrationEnvironment(): void
     {
         try {
+            if ($this->door !== null) {
+                Hilos::$files = $this->door;
+                $this->door = null;
+            }
             if ($this->claimed) {
                 $this->claimed = false;
                 self::unattended(static function (): void {

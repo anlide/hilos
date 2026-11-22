@@ -137,27 +137,4 @@ final class ProductFields
 
         return CatalogSlug::pick(CatalogSlug::fromName($name, 'product'), $holders, $productId);
     }
-
-    /**
-     * Checks that no other product shows this picture and returns it.
-     *
-     * Not a person's mistake: the caller is to publish a new file for every product it saves,
-     * so a file shown twice is a defect of the caller.
-     *
-     * @param int $pictureFileId Id of the registry file to show
-     * @param ?int $productId Id of the product, null for one not saved yet
-     * @return int The same file id
-     * @throws LogicException When another product already shows the file
-     * @throws HilosException When this process does not hold every product
-     */
-    public static function picture(int $pictureFileId, ?int $productId): int
-    {
-        foreach (Hilos::$db->products as $product) {
-            if ($product->pictureFileId === $pictureFileId && $product->id !== $productId) {
-                throw new LogicException("Picture file {$pictureFileId} already belongs to product {$product->id}");
-            }
-        }
-
-        return $pictureFileId;
-    }
 }
