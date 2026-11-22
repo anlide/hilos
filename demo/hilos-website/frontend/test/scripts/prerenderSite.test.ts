@@ -111,6 +111,7 @@ describe('renderSite', () => {
     expect(files['sitemap.xml'].match(/<loc>[^<]+<\/loc>/g)?.sort()).toEqual([
       '<loc>https://hilos-dev.org/</loc>',
       '<loc>https://hilos-dev.org/about</loc>',
+      '<loc>https://hilos-dev.org/history</loc>',
       '<loc>https://hilos-dev.org/license</loc>',
       '<loc>https://hilos-dev.org/privacy</loc>',
       '<loc>https://hilos-dev.org/terms</loc>',
@@ -120,10 +121,27 @@ describe('renderSite', () => {
       'terms.html',
       'privacy.html',
       'license.html',
+      'history.html',
     ]) {
       expect(files[filename]).toContain('<div id="app"><')
     }
     expect(files['index.html']).toBeUndefined()
+    expect(document.querySelector('#app a[href="/history"]')).not.toBeNull()
+    await window.happyDOM.close()
+  })
+
+  it('renders the history text without browser globals', async () => {
+    const files = await renderSite(TEMPLATE, 'https://hilos-dev.org')
+    const window = new Window()
+    window.document.write(files['history.html'])
+    const document = window.document
+
+    expect(document.title).toBe('History · Hilos')
+    expect(document.querySelector('#app h1')?.textContent?.trim()).toBe(
+      'History',
+    )
+    expect(document.querySelectorAll('#app h2')).toHaveLength(6)
+    expect(document.querySelector('#app blockquote')).not.toBeNull()
     await window.happyDOM.close()
   })
 

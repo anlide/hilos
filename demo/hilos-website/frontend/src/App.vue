@@ -27,8 +27,9 @@ import type { Component } from 'vue'
 import AuthSurface from './auth/AuthSurface.vue'
 import { connection } from './bootstrap/connection.js'
 import { currentUserName } from './bootstrap/session.js'
-import { PAGE_MAIN } from './pages/keys.js'
+import { PAGE_HISTORY, PAGE_MAIN } from './pages/keys.js'
 import About from './views/About/About.vue'
+import History from './views/History/History.vue'
 import License from './views/License/License.vue'
 import LicenseDependencies from './views/LicenseDependencies/LicenseDependencies.vue'
 import Main from './views/Main/Main.vue'
@@ -46,17 +47,18 @@ import TermsHistory from './views/TermsHistory/TermsHistory.vue'
 // project's AuthSurface to the outlet so a 401 shows sign-in in place.
 const props = defineProps<{ authGate: AuthGate }>()
 
-// The page-key → view map HilosView renders from: the home, the framework admin
-// defaults (hilosAdminViews, of which only the dashboard is served by this
-// backend), and then exactly the other pages the backend serves (Hilos.php
-// PAGES): the Analytics and Settings sections and the delivery journal — mapped
-// by the site itself, because those pages need the project's context and
-// hilosAdminViews leaves them out — the profile pages, and the footer pages whose
-// text is this site's.
+// The page-key → view map HilosView renders from: the home, the site's own
+// history page, the framework admin defaults (hilosAdminViews, of which only the
+// dashboard is served by this backend), and then exactly the other pages the
+// backend serves (Hilos.php PAGES): the Analytics and Settings sections and the
+// delivery journal — mapped by the site itself, because those pages need the
+// project's context and hilosAdminViews leaves them out — the profile pages, and
+// the footer pages whose text is this site's.
 // Each descriptor is created once for this App instance; selecting a page
 // loads only its project wrapper and SDK section. The prose pages stay eager.
 const pages: Record<string, PageView<Component>> = {
   [PAGE_MAIN]: Main,
+  [PAGE_HISTORY]: History,
   ...hilosAdminViews(),
   [HilosPages.SETTINGS]: lazyPage(() =>
     import('./views/Hilos/Settings/Settings.vue').then((m) => m.default),

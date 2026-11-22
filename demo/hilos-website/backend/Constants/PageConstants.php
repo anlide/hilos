@@ -21,4 +21,7 @@ final class PageConstants
 
     /** @var string HilosWebsite main page */
     public const string MAIN = 'main';
+
+    /** @var string HilosWebsite history page */
+    public const string HISTORY = 'history';
 }

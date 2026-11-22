@@ -17,6 +17,9 @@ A Vue site on Hilos:
   show demo signs; and link previews of the home page carry the logo image.
   There is no sign-in button. Static brand assets come from
   `docs/demo-brand/README.md` (see "Installed copies").
+- **History** at `/history` tells the story of Hilos, from the first task
+  sheet of 2009 to v2. The home page links to it from the line under its
+  heading. The text lives in `frontend/src/views/History/History.vue`.
 - **Demo catalog**: two groups — working demos (Chat and E-commerce shop),
   followed by ten application starters. Each entry carries its demo sign,
   a description, its frontend, a source link and, where available, an "Open
@@ -29,8 +32,9 @@ A Vue site on Hilos:
   missing, the player frame shows a placeholder.
 - **Search engines**: `/` is prerendered into `home.html`, with the story and
   catalog available without JavaScript, a description, Open Graph metadata
-  and a canonical URL. About, Terms, Privacy and License are prerendered too;
-  Privacy explains visit recording. Deep links receive the `index.html` SPA
+  and a canonical URL. History, About, Terms, Privacy and License are
+  prerendered too and listed in `sitemap.xml`; Privacy explains visit
+  recording. Deep links receive the `index.html` SPA
   shell. `robots.txt`, `sitemap.xml` and home metadata use `HILOS_SITE_ORIGIN`
   from the build environment: `https://localhost` by default and
   `https://hilos-dev.org` in the production compose file.

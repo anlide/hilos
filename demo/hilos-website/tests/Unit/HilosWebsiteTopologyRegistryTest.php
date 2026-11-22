@@ -69,6 +69,7 @@ use Demo\HilosWebsite\Pages\Hilos\LicensePage;
 use Demo\HilosWebsite\Pages\Hilos\PrivacyPage;
 use Demo\HilosWebsite\Pages\Hilos\SettingsPage;
 use Demo\HilosWebsite\Pages\Hilos\TermsPage;
+use Demo\HilosWebsite\Pages\HistoryPage;
 use Demo\HilosWebsite\Pages\MainPage;
 use Demo\HilosWebsite\Runtime\View\Context\HilosWebsiteRtContext;
 use Demo\HilosWebsite\Tables\HilosWebsiteTableContext;
@@ -276,6 +277,7 @@ final class HilosWebsiteTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             MainPage::PAGE => MainPage::class,
+            HistoryPage::PAGE => HistoryPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
             BrowserSessionsPage::PAGE => BrowserSessionsPage::class,
@@ -380,6 +382,12 @@ final class HilosWebsiteTopologyRegistryTest extends TestCase
         $this->assertTrue((new HilosWebsiteAgentDaemon())->requiresMonopolisticProcess());
     }
 
+    public function testHistoryPageIsOwnedByTheAppAgent(): void
+    {
+        $this->assertSame(HistoryPage::class, Hilos::PAGES[PageConstants::HISTORY]);
+        $this->assertSame(AgentType::WEBSITE, HistoryPage::SUBSCRIPTION_AGENT_TYPE);
+    }
+
     public function testHilosPagesAreOwnedByTheIndexAgent(): void
     {
         $hilosPages = [
@@ -414,6 +422,8 @@ final class HilosWebsiteTopologyRegistryTest extends TestCase
         // library does not send it.
         $this->assertSame([], MainPage::ACTIONS);
         $this->assertSame([], MainPage::SIGNALS);
+        $this->assertSame([], HistoryPage::ACTIONS);
+        $this->assertSame([], HistoryPage::SIGNALS);
         $this->assertSame(
             [HilosSignalConstants::HILOS_SESSION_STATE => SessionStateSignalData::class],
             HilosWebsiteAgent::AGENT_SIGNALS,

@@ -7,7 +7,7 @@ import {
   type HilosRouteDeclaration,
 } from '@hilos/core/base'
 
-import { PAGE_MAIN } from './keys.js'
+import { PAGE_HISTORY, PAGE_MAIN } from './keys.js'
 
 /**
  * The demo's own pages keyed to the URL path template each answers and whether
@@ -16,6 +16,7 @@ import { PAGE_MAIN } from './keys.js'
  */
 const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
   [PAGE_MAIN]: { path: '/', admin: false },
+  [PAGE_HISTORY]: { path: '/history', admin: false },
 }
 
 /**

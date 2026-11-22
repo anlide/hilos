@@ -7,9 +7,11 @@ import {
 import { createSSRApp, h, type Component } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 
-import { PAGE_MAIN } from '../src/pages/keys.js'
+import { PAGE_HISTORY, PAGE_MAIN } from '../src/pages/keys.js'
 import { appName, pageTitles } from '../src/pages/pageTitles.js'
+import { router } from '../src/pages/routes.js'
 import About from '../src/views/About/About.vue'
+import History from '../src/views/History/History.vue'
 import License from '../src/views/License/License.vue'
 import Main from '../src/views/Main/Main.vue'
 import Privacy from '../src/views/Privacy/Privacy.vue'
@@ -20,6 +22,11 @@ const publicPages: Record<string, Component> = {
   [HilosPages.TERMS]: Terms,
   [HilosPages.PRIVACY]: Privacy,
   [HilosPages.LICENSE]: License,
+}
+
+/** The site's own static pages, prerendered like the footer pages. */
+const projectPages: Record<string, Component> = {
+  [PAGE_HISTORY]: History,
 }
 
 /** Resolve the build-time origin used by search-engine metadata. */
@@ -37,6 +44,24 @@ function escapeAttribute(value: string): string {
     .replaceAll("'", '&#39;')
 }
 
+/** Render one static page into the template under its document title. */
+async function renderStaticPage(
+  template: string,
+  page: string,
+  component: Component,
+): Promise<string> {
+  const body = await renderToString(
+    createSSRApp({ render: () => h(component) }),
+  )
+  const title = resolvePageTitle(page, pageTitles, appName, undefined, true)
+  return template
+    .replace('<div id="app"></div>', () => `<div id="app">${body}</div>`)
+    .replace(
+      /<title>[^<]*<\/title>/,
+      () => `<title>${escapeAttribute(title)}</title>`,
+    )
+}
+
 /** Render the site's public files without browser globals or filesystem I/O. */
 export async function renderSite(
   template: string,
@@ -52,16 +77,25 @@ export async function renderSite(
       continue
     }
 
-    const body = await renderToString(
-      createSSRApp({ render: () => h(component) }),
+    files[`${route.replace(/^\//, '')}.html`] = await renderStaticPage(
+      template,
+      page,
+      component,
     )
-    const title = resolvePageTitle(page, pageTitles, appName, undefined, true)
-    files[`${route.replace(/^\//, '')}.html`] = template
-      .replace('<div id="app"></div>', () => `<div id="app">${body}</div>`)
-      .replace(
-        /<title>[^<]*<\/title>/,
-        () => `<title>${escapeAttribute(title)}</title>`,
-      )
+    prerenderedRoutes.push(route)
+  }
+
+  for (const [page, component] of Object.entries(projectPages)) {
+    const route = router.path(page)
+    if (route === undefined) {
+      continue
+    }
+
+    files[`${route.replace(/^\//, '')}.html`] = await renderStaticPage(
+      template,
+      page,
+      component,
+    )
     prerenderedRoutes.push(route)
   }
 

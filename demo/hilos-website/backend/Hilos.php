@@ -47,6 +47,7 @@ use Demo\HilosWebsite\Pages\Hilos\ProfileSignInPage;
 use Demo\HilosWebsite\Pages\Hilos\SettingsPage;
 use Demo\HilosWebsite\Pages\Hilos\TermsPage;
 use Demo\HilosWebsite\Pages\Hilos\TermsHistoryPage;
+use Demo\HilosWebsite\Pages\HistoryPage;
 use Demo\HilosWebsite\Pages\MainPage;
 use Demo\HilosWebsite\Runtime\View\Context\HilosWebsiteRtContext;
 use Demo\HilosWebsite\Tables\HilosWebsiteTableContext;
@@ -108,6 +109,7 @@ final class Hilos extends HilosFacade
 {
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
+        HistoryPage::PAGE => HistoryPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
         BrowserSessionsPage::PAGE => BrowserSessionsPage::class,

@@ -1,9 +1,15 @@
 <!-- The public introduction and demo catalog, independent of the session. -->
 <script setup lang="ts">
+import { HilosLink } from '@hilos/vue/base'
+
+import { PAGE_HISTORY } from '../../pages/keys.js'
+import { router } from '../../pages/routes.js'
 import DemoCatalog from './DemoCatalog.vue'
 import HomeVideo from './HomeVideo.vue'
 
 defineOptions({ name: 'MainPage' })
+
+const historyHref = router.path(PAGE_HISTORY) ?? ''
 </script>
 
 <template>
@@ -12,6 +18,9 @@ defineOptions({ name: 'MainPage' })
       <h1>Hilos</h1>
       <p class="lead mb-0">
         A PHP framework for applications that update in real time.
+      </p>
+      <p class="text-body-secondary mt-2 mb-0">
+        Since 2009 — <HilosLink :to="historyHref">read its history</HilosLink>.
       </p>
     </header>
 
