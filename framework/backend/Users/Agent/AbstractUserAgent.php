@@ -955,7 +955,7 @@ abstract class AbstractUserAgent extends AbstractAgent
                     $this->getId(),
                 ));
                 if (!$this->shouldStop()) {
-                    $this->stopOrContinueMerge();
+                    $this->continueMergeFinishing();
                 }
 
                 return;
@@ -1328,7 +1328,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($ask->userId, $name);
                 $this->sendToAgent($ask->replySignal, $this->legalHoldForgetAnswer($ask));
-                $this->stopOrContinueMerge();
+                $this->continueMergeFinishing();
 
                 return;
 
@@ -1397,7 +1397,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($restrict->userId, $name);
                 $this->sendToAgent($restrict->replySignal, $this->restrictTrustsAnswer($restrict));
-                $this->stopOrContinueMerge();
+                $this->continueMergeFinishing();
 
                 return;
 
@@ -1542,7 +1542,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($gone->userId, $name);
                 $this->applyPushEndpointGone($gone);
-                $this->stopOrContinueMerge();
+                $this->continueMergeFinishing();
 
                 return;
 
@@ -1554,7 +1554,7 @@ abstract class AbstractUserAgent extends AbstractAgent
 
                 $this->refuseAnotherPerson($release->userId, $name);
                 $this->sendToAgent($release->replySignal, $this->releasePushAnswer($release));
-                $this->stopOrContinueMerge();
+                $this->continueMergeFinishing();
 
                 return;
 
@@ -1595,7 +1595,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     public function onSignalDbSyncCreated(DbSyncCreatedSignalData $data, string $source, string $name): void
     {
         if ($data->collectionKey === HilosDbContext::userMerges && $this->isThisPerson($data->idString)) {
-            $this->stopOrContinueMerge();
+            $this->continueMergeFinishing();
         }
     }
 
@@ -1809,7 +1809,7 @@ abstract class AbstractUserAgent extends AbstractAgent
     }
 
     /** Restores the loser's prepared finishing context; cleanup owns its eventual stop. */
-    private function stopOrContinueMerge(): void
+    private function continueMergeFinishing(): void
     {
         try {
             $this->refreshMergeFinishing();
