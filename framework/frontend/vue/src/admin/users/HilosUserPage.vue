@@ -950,7 +950,7 @@ function submit(): void {
                     {{ row.hint }}
                   </p>
                 </div>
-                <div>
+                <div class="ms-auto text-end">
                   <LoadingButton
                     class="btn-sm"
                     :class="
@@ -1092,7 +1092,7 @@ function submit(): void {
                   {{ impersonation.hint }}
                 </p>
               </div>
-              <div>
+              <div class="ms-auto text-end">
                 <LoadingButton
                   class="btn-sm btn-primary"
                   opens-window
