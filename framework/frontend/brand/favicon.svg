@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
   <title id="title">Hilos</title>
-  <desc id="desc">A yellow zigzag line of a lightning bolt in a blue circle.</desc>
+  <desc id="desc">A yellow lightning bolt with two bends in a blue circle.</desc>
   <!-- HIL-2151: original geometry, the small variant of the Hilos logo:
-       the bolt as a thin zigzag line. MIT; see ../README.md. -->
+       the bolt of the large variant, two bends since HIL-2261. MIT; see ../README.md. -->
   <circle id="hilos-circle" cx="16" cy="16" r="16" fill="#0288D1"/>
-  <path id="hilos-bolt" fill="none" stroke="#FFD500" stroke-width="3" stroke-linejoin="miter" stroke-miterlimit="10" d="M19.5 5.5L11.5 16H20.5L12.5 26.5"/>
+  <path id="hilos-bolt" fill="#FFD500" d="M19.5 4L9.5 17.5H15.2L12.5 28L22.5 14.5H16.8Z"/>
 </svg>

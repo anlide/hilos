@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
   <title id="title">Hilos Flowers — flower</title>
-  <desc id="desc">A pink flower with five petals. In the bottom-right corner, the Hilos logo, a blue circle with a yellow zigzag line.</desc>
+  <desc id="desc">A pink flower with five petals. In the bottom-right corner, the Hilos logo, a blue circle with the yellow bolt of the main logo, two bends.</desc>
   <!-- HIL-2151: the medium sign of the ecommerce-shop demo.
        Redrawn in HIL-2261 with the mark in the bottom-right corner.
        Symbol: original geometry for HIL-2261, a five-petal flower.
@@ -15,7 +15,7 @@
   <g id="hilos-mark">
     <g transform="matrix(0.4375 0 0 0.4375 18 18)">
       <circle cx="16" cy="16" r="16" fill="#0288D1"/>
-      <path fill="none" stroke="#FFD500" stroke-width="3" stroke-linejoin="miter" d="M19.5 5.5L11.5 16H20.5L12.5 26.5"/>
+      <path fill="#FFD500" d="M19.5 4L9.5 17.5H15.2L12.5 28L22.5 14.5H16.8Z"/>
     </g>
   </g>
 </svg>

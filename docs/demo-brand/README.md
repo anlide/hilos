@@ -17,8 +17,11 @@ The owner's decisions for this system:
   classic one, as on a usual lightning icon: sharp ends at the top and the
   bottom, a medium slant, a filled silhouette, two bends. The stepped bolt with
   two ledges is rejected, and so is any pair of equal parallel bolts.
-- The ladder simplifies the bolt as the logo gets smaller: two bends, then one
-  bend, then a thin zigzag line, then a plain dot without a bolt.
+- Every logo file, and every corner mark that carries a bolt, carries this
+  one bolt with two bends. The thinner bolts the ladder of HIL-2151 gave the
+  smaller sizes — one bend, then a thin zigzag line — read as a broken bolt
+  (the owner, 2026-11-21 and 2026-11-22, HIL-2261) and left the system. Below
+  10 px the logo is a plain dot without a bolt.
 - The circle is `#0288D1` and the bolt `#FFD500`. The former node blue
   `#32C5FF` leaves the system.
 - A demo's sign carries the logo in miniature as a mark in its bottom-right
@@ -40,19 +43,19 @@ and export".
 
 ## The ladder and its boundaries
 
-One ladder serves the logo and the corner mark alike. A variant is chosen by
-the diameter of the blue circle as displayed, in CSS pixels. For the logo that
-diameter is the logo's own size, since its circle fills the whole viewBox; for
-the mark it is the mark's diameter inside a demo sign (next section). The rule
-is "if it fits": a variant is used down to the smallest diameter at which its
-bolt still reads as a bolt and not as a smudge, and the next simpler variant
-takes over below that.
+The ladder names the logo file a surface links to. A variant is chosen by the
+diameter of the blue circle as displayed, in CSS pixels: the logo's own size,
+since its circle fills the whole viewBox. Since HIL-2261 the three files carry
+the same two-bend bolt, so the ladder no longer changes the bolt; it keeps the
+file names every installation links to, and below 10 px the circle stands
+alone. The corner mark of a demo sign carries the same bolt or a dot (next
+section).
 
 | Circle diameter, CSS px | Variant | Bolt | Logo source |
 |---|---|---|---|
 | 48 and up | large | Filled, two bends | [hilos-large.svg](sources/hilos-large.svg) |
-| 20 to below 48 | medium | Filled, one bend | [hilos-medium.svg](sources/hilos-medium.svg) |
-| 10 to below 20 | small | Thin zigzag line | [hilos-small.svg](sources/hilos-small.svg) |
+| 20 to below 48 | medium | Filled, two bends | [hilos-medium.svg](sources/hilos-medium.svg) |
+| 10 to below 20 | small | Filled, two bends | [hilos-small.svg](sources/hilos-small.svg) |
 | Below 10 | dot | None | The `hilos-circle` element of any variant, alone |
 
 | Surface | Displayed size | Logo source |
@@ -68,20 +71,18 @@ The same choice applies on a high-density screen: a 16 CSS px tab icon is
 `hilos-small.svg` whatever the device pixel ratio. Density changes the raster
 pixel count, not which variant it is.
 
-The boundaries come from rasterizing the three files at 8, 10, 12, 14, 16, 18,
-20, 24, 32, 48, 64 and 180 px on `#FFFFFF` and `#212529` and enlarging the
-small ones with nearest-neighbor pixels:
+The boundaries of HIL-2151 came from rasterizing the three files at 8 to 180
+px on `#FFFFFF` and `#212529` and enlarging the small ones with
+nearest-neighbor pixels. That run found the horizontal step of the two-bend
+bolt closing at 20 px and below, and gave the smaller sizes the one-bend bolt
+and the zigzag line instead. On review both read as a broken bolt, while the
+logo itself was right (the owner, HIL-2151 and HIL-2261), so on 2026-11-22
+every file took the two-bend bolt. Rasterized again at 16, 20, 24 and 32 px
+with nearest-neighbor pixels:
 
-- The two-bend bolt reads at 32 px and up. At 24 its horizontal step between
-  the two halves is a pixel or two, and at 20 and below the step closes and the
-  bolt turns into a cross-shaped smudge. From 20 to 32 the one-bend bolt is the
-  bolder and clearer of the two, so the large variant starts at 48, where the
-  step is several pixels wide.
-- The one-bend bolt is a broad upper body with one notch and a narrow lower
-  point. It reads from 20 to 32 px; at 16 the notch closes and the body is a
-  yellow blot.
-- The zigzag line reads at 16 and 12 px. At 10 it is at its limit, a line of
-  about one pixel with its corners merged; at 8 it is a smudge.
+- The two-bend bolt reads as a bolt from 20 px up and is sharp from 32.
+- At 16 its middle step merges: it reads as a small bolt with a cross-like
+  middle. The owner accepted that on the preview on 2026-11-22.
 - Below 10 px no bolt fits, and the circle stands alone.
 
 ### Logo geometry
@@ -94,17 +95,14 @@ contains exactly two elements, in paint order:
 |---|---|
 | `hilos-circle` | Circle at `(16, 16)`, radius `16`, fill `#0288D1`; it fills the viewBox edge to edge |
 | `hilos-bolt` in `hilos-large.svg` | `M19.5 4L9.5 17.5H15.2L12.5 28L22.5 14.5H16.8Z`, fill `#FFD500` |
-| `hilos-bolt` in `hilos-medium.svg` | `M19.5 4L9 18.5H15.5L12.5 28L22.5 13.5Z`, fill `#FFD500` |
-| `hilos-bolt` in `hilos-small.svg` | `M19.5 5.5L11.5 16H20.5L12.5 26.5`, no fill, stroke `#FFD500`, width `3`, miter joins, butt ends |
+| `hilos-bolt` in `hilos-medium.svg` | The same path and fill as in `hilos-large.svg` (since HIL-2261) |
+| `hilos-bolt` in `hilos-small.svg` | The same path and fill as in `hilos-large.svg` (since HIL-2261) |
 
-The two filled bolts share their tips, `(19.5, 4)` and `(12.5, 28)`, and their
-slant. The two-bend bolt is point-symmetric about `(16, 16)`: its upper and
-lower halves are offset by a horizontal step of `5.7` on each side. The
-one-bend bolt keeps that step on the left side only, at `y = 18.5`, and joins
-its right side in one corner at `(22.5, 13.5)`. The zigzag follows the same
-path as the two-bend bolt — down to the left, across to the right, down to the
-left — and is point-symmetric about `(16, 16)` too. Nothing else is painted:
-no gradient, no opacity, no outline.
+The bolt runs from the tip `(19.5, 4)` to the tip `(12.5, 28)` and is
+point-symmetric about `(16, 16)`: its upper and lower halves are offset by a
+horizontal step of `5.7` on each side. Until HIL-2261 the medium file carried a
+one-bend bolt and the small file a zigzag line of the same slant; both are
+gone. Nothing else is painted: no gradient, no opacity, no outline.
 
 These three files are original constructions for HIL-2151 under the
 repository's [MIT license](../../LICENSE). No third-party icon paths, fonts,
@@ -160,26 +158,28 @@ Every `id` is unique within its file. In a sign whose mark is a dot, the
 without the transform. If a sign is embedded inline, namespace its ids per
 instance as for any inline SVG.
 
-Each sign file shows its mark at a range of sizes, but one file carries one
-bolt. The bolt is the one the ladder gives at the **smallest** size the file is
-used at: a simpler bolt stays legible when it is displayed larger than its
-range, while a richer bolt turns into a smudge below its range. The sign
-files' own size ranges are chosen so that this smallest mark fits its bolt:
+Each sign file shows its mark at a range of sizes, and one file carries one
+bolt. The `-medium` and `-large` files carry the bolt of the main logo,
+`hilos-large.svg`, with two bends. The thinner bolts of the ladder — the
+zigzag line and the one-bend bolt — read as a broken bolt inside the mark
+(the owner, 2026-11-22, on the acceptance of HIL-2261), while the two-bend
+bolt reads as a bolt from a 10.5 px mark up. The `-small` file carries a dot:
 
 | Sign file | Surfaces | Sign size, CSS px | Mark diameter, CSS px | Bolt in the mark |
 |---|---|---|---|---|
 | `<demo>-small.svg` | Browser tab, 16 | Below 24 | 7 at 16; under 10.5 in the whole range | None: a dot |
-| `<demo>-medium.svg` | Header, 32 | 24 to below 48 | 10.5 at 24, 14 at 32, up to 21 | Thin zigzag line, the bolt of `hilos-small.svg` |
-| `<demo>-large.svg` | 64 and up: phone tile 180, manifest 192 and 512 | 48 and up | 21 at 48, 28 at 64, 78.75 at 180, 224 at 512 | One bend, the bolt of `hilos-medium.svg` |
+| `<demo>-medium.svg` | Header, 32 | 24 to below 48 | 10.5 at 24, 14 at 32, up to 21 | Two bends, the bolt of `hilos-large.svg` |
+| `<demo>-large.svg` | 64 and up: phone tile 180, manifest 192 and 512 | 48 and up | 21 at 48, 28 at 64, 78.75 at 180, 224 at 512 | Two bends, the bolt of `hilos-large.svg` |
 
-So `<demo>-large.svg` carries the one-bend bolt even at 180 and 512 px, where
-the mark alone would qualify for two bends; no sign carries the two-bend bolt.
-The construction was checked on the 36 sign files of the 2026-11-21 run
-("Source choice and export"). Each file was rasterized at 1280 px: the ring
-between radius 7 and radius 9 around `(25, 25)` is unpainted in every file, and
-the mark circle is painted whole. The exports were viewed on both backgrounds:
-at 16 the gap keeps the dot apart from every symbol; at 32 the zigzag reads;
-at 64 and 180 the one-bend bolt reads.
+So every `-medium` and `-large` sign carries the same two-bend bolt as the main
+logo, from a 10.5 px mark up to 224 px. The construction was checked on the 36
+sign files of the 2026-11-21 export run, before the bolt changed on 2026-11-22;
+the mask is the same. Each file was rasterized at 1280 px: the ring between
+radius 7 and radius 9 around `(25, 25)` is unpainted in every file, and the mark
+circle is painted whole. The exports were viewed on both backgrounds: at 16 the
+gap keeps the dot apart from every symbol. On 2026-11-22 the two-bend bolt was
+checked in the `-medium` files at 32, 48 and 64 and in the `-large` files at 64
+and 180, on both backgrounds: it reads as a bolt.
 
 ## Demo signs
 
@@ -235,7 +235,7 @@ One subject, three levels of detail, in the spirit of the ladder:
 
 ### Viewing criteria and observed limits
 
-The exports of the 2026-11-21 run ("Source choice and export") were viewed on
+The exports of the 2026-11-21 run were viewed on
 `#FFFFFF` and on `#212529`, at their own pixels and enlarged with
 nearest-neighbor pixels: each file at the size it serves — `-small` at 16,
 `-medium` at 32, `-large` at 64 and 180 — and the logo at the same sizes. The
@@ -244,9 +244,9 @@ apart from the symbol; the mark carries the bolt of its row in the sign-file
 table; and the symbol neither disappears on the dark background nor needs a
 second file for it.
 
-- **Logo.** At 16 the zigzag of `hilos-small.svg` reads as a bolt, a soft line
-  about two pixels wide. At 32 the one-bend bolt reads clearly; at 64 and 180
-  the two-bend bolt is sharp.
+- **Logo.** Since 2026-11-22 every file carries the two-bend bolt: at 16 it
+  reads as a small bolt with a cross-like middle, from 20 it reads, and at 32,
+  64 and 180 it is sharp.
 - **16, `-small`.** The bitcoin sign, the chat bubble with its three dots,
   the ticket with the notches on its sides, the flower with five petals and
   its open middle, the mortarboard with the tassel on the left, the letter P,
@@ -256,16 +256,16 @@ second file for it.
   buttons are light spots, and the gallery picture, a one-pixel frame with a
   square sun and a step of mountains. The dot mark stands apart from every
   symbol on both backgrounds: the one-pixel gap holds.
-- **32, `-medium`.** All twelve symbols read, and so does the zigzag in the
-  mark. The ticket's perforation and the controller's cross and buttons are
-  the finest detail at this size and still read. In the stack of pictures the
-  mark covers the bottom-right corner of the front picture; its mountain and
-  sun stay in view.
+- **32, `-medium`.** All twelve symbols read, and so does the two-bend bolt in
+  the mark (2026-11-22). The ticket's perforation and the controller's cross
+  and buttons are the finest detail at this size and still read. In the stack
+  of pictures the mark covers the bottom-right corner of the front picture; its
+  mountain and sun stay in view.
 - **64 and 180, `-large`.** All twelve read, the outline icons included: the
   lines of `chat`, `online-testing` and `roblox-game-server` are 2.9 to 3.5
   pixels wide at 64. At the scale `1.36` the rays of `sun-fill` are about 2.7
   pixels at 64 and the joints of `flower1` about 1.4; they read, and they are
-  sharp at 180. The one-bend bolt in the mark reads at 64 and is sharp at 180.
+  sharp at 180. The two-bend bolt in the mark reads at 64 and is sharp at 180.
 - **Phone tiles.** On the white 180 × 180 tiles every symbol and mark stays
   clear of the corners, checked with a 40-pixel rounded mask laid over the PNG:
   the sign covers pixels 20 to 160, and its point nearest a corner, `(20, 20)`,
@@ -531,7 +531,7 @@ label. A standalone meaningful image needs its own descriptive `alt`. If
 embedding inline, namespace its title/description and group IDs per instance to
 avoid duplicate IDs on the page.
 
-For PNG and ICO output, the recipe below was executed on 2026-11-21 with:
+For PNG and ICO output, the recipe below was executed on 2026-11-22 with:
 
 | Tool | Version |
 |---|---|
@@ -581,11 +581,11 @@ each PNG has the requested dimensions; a transparent PNG has both fully
 transparent and painted pixels; the tile and preview tile have no pixel that is
 not fully opaque; and the ICO is read back from its own header — two entries, 16
 and 32, each pointing at a PNG of that size, the offsets and lengths adding up
-to the file's length. The 2026-11-21 run wrote 195 files: 156 transparent PNGs
+to the file's length. The 2026-11-22 run wrote 195 files: 156 transparent PNGs
 (13 names × 3 variants × the default sizes 16, 32, 64 and 180), 13 phone tiles
-180 of 5.1 to 11.2 KB, 13 preview tiles 512 of 18.0 to 38.0 KB and 13 ICO
-files of 1.0 to 2.1 KB. An independent reader, `file`, recognized each ICO as an icon
-resource with two PNG images, 16 × 16 and 32 × 32.
+180 of 5.1 to 11.2 KB, 13 preview tiles 512 of 17.9 to 37.9 KB and 13 ICO
+files of 1.0 to 2.0 KB. An independent reader, `file`, recognized each ICO as an
+icon resource with two PNG images, 16 × 16 and 32 × 32.
 
 Give the sizes after the output directory to replace the default `16 32 64
 180`, as any integers from 16 to 4096: `192 512` for a manifest, or `32 64 128`
