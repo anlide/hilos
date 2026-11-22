@@ -1166,8 +1166,9 @@ describe('profile sign-in page locks a pressed button at once and the others by 
     const save = node('profile-add-password-save') as HTMLButtonElement
     expect(save.disabled).toBe(true)
     expect(save.hasAttribute('aria-busy')).toBe(false)
+    fill('profile-add-password-new', '1234567')
+    expect(save.disabled).toBe(true)
     fill('profile-add-password-new', 'new-secret')
-    fill('profile-add-password-confirm', 'new-secret')
     expect(save.disabled).toBe(false)
     const setting = held()
     dispatch.mockImplementationOnce(() => setting.answer)
@@ -1361,21 +1362,18 @@ describe('profile sign-in add modal busy body', () => {
     node('profile-sign-in-choose-password').click()
     fixture.detectChanges()
     const password = node('profile-add-password-new') as HTMLInputElement
-    const confirm = node('profile-add-password-confirm') as HTMLInputElement
     const fields = password.closest('fieldset')
     const save = node('profile-add-password-save') as HTMLButtonElement
     const back = node('profile-sign-in-add-back') as HTMLButtonElement
     const live = node('profile-sign-in-add-live')
     const room = node('profile-add-password-error-slot')
     fill('profile-add-password-new', 'new-secret')
-    fill('profile-add-password-confirm', 'new-secret')
     expect(document.activeElement).toBe(password)
     const pending = held()
     dispatch.mockImplementationOnce(() => pending.answer)
     save.click()
     fixture.detectChanges()
     expect(password.matches(':disabled')).toBe(true)
-    expect(confirm.matches(':disabled')).toBe(true)
     expect(save.matches(':disabled')).toBe(false)
     expect(save.getAttribute('aria-busy')).toBe('true')
     expect(back.matches(':disabled')).toBe(true)
@@ -1395,14 +1393,9 @@ describe('profile sign-in add modal busy body', () => {
     )
     await flush(fixture)
     expect(node('profile-add-password-new')).toBe(password)
-    expect(node('profile-add-password-confirm')).toBe(confirm)
     expect(password.closest('fieldset')).toBe(fields)
-    expect([password.value, confirm.value]).toEqual([
-      'new-secret',
-      'new-secret',
-    ])
+    expect(password.value).toBe('new-secret')
     expect(password.matches(':disabled')).toBe(false)
-    expect(confirm.matches(':disabled')).toBe(false)
     expect(back.matches(':disabled')).toBe(false)
     expect(node('modal-close').matches(':disabled')).toBe(false)
     expect(node('profile-add-password-error').textContent).toContain(
@@ -1411,11 +1404,11 @@ describe('profile sign-in add modal busy body', () => {
     expect(node('profile-sign-in-add-live')).toBe(live)
     expect(node('profile-add-password-error-slot')).toBe(room)
     expect(node('modal-confirm')).toBeNull()
-    fill('profile-add-password-confirm', '')
+    fill('profile-add-password-new', 'short')
     expect(save.matches(':disabled')).toBe(true)
     password.form!.dispatchEvent(new Event('submit', { cancelable: true }))
     expect(sends()).toHaveLength(1)
-    fill('profile-add-password-confirm', 'new-secret')
+    fill('profile-add-password-new', 'new-secret')
     save.click()
     await flush(fixture)
     expect(sends()).toHaveLength(2)
@@ -1469,7 +1462,6 @@ describe('profile sign-in add modal busy body', () => {
       const phone = action === 'profile_add_sms_request'
       if (!phone) {
         fill('profile-add-password-new', 'new-secret')
-        fill('profile-add-password-confirm', 'new-secret')
       }
       const drafts = inputs.map((field) => field.value)
       const confirmation = held()

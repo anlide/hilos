@@ -130,8 +130,7 @@ export const HILOS_PROFILE_SIGN_IN_COPY = {
   phoneDescription: 'Link a phone number and receive a code.',
   providerDescription: 'Sign in through this provider.',
   passkeyDescription: 'Use a key on this device.',
-  passwordHint:
-    'At least 8 characters. Enter the same password in both fields.',
+  passwordHint: 'At least 8 characters.',
   passwordChanged: 'Password changed.',
   passkeyAdded: 'Passkey added. You can now sign in with it.',
   failed: 'The action failed. Please try again.',

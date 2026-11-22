@@ -205,7 +205,6 @@ const addDraft = ref({
   phone: '',
   code: '',
   newPassword: '',
-  confirm: '',
 })
 const addBody = ref<HTMLElement | null>(null)
 const addOpen = computed({
@@ -226,7 +225,6 @@ function openAdd(way?: HilosProfileAddableWay): void {
     phone: '',
     code: '',
     newPassword: '',
-    confirm: '',
   }
   void flow.open(way)
 }
@@ -292,13 +290,6 @@ const addFields = computed(() => {
           autocomplete: 'new-password',
           dataId: 'profile-add-password-new',
         },
-        {
-          key: 'confirm' as const,
-          label: 'Confirm new password',
-          type: 'password',
-          autocomplete: 'new-password',
-          dataId: 'profile-add-password-confirm',
-        },
       ]
     default:
       return []
@@ -316,8 +307,7 @@ const addValid = computed(() => {
   return (
     !step.value.startsWith('password-') ||
     step.value === 'password-email' ||
-    (addDraft.value.newPassword.length >= PASSWORD_MIN &&
-      addDraft.value.newPassword === addDraft.value.confirm)
+    addDraft.value.newPassword.length >= PASSWORD_MIN
   )
 })
 const submitId = computed(() =>
@@ -559,11 +549,7 @@ onUnmounted(() => {
                 }}</span>
               </div>
               <div
-                v-for="label in [
-                  'Code',
-                  'New password',
-                  'Confirm new password',
-                ]"
+                v-for="label in ['Code', 'New password']"
                 :key="label"
                 class="mb-3"
               >

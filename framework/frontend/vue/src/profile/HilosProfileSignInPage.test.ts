@@ -95,6 +95,18 @@ const passkeyOnly = resolveHilosProfileSignInMethods(
   ],
   [],
 )
+const magicLink = resolveHilosProfileSignInMethods(
+  [
+    {
+      id: 4,
+      type: 'magic_link',
+      identifier: 'a@example.test',
+      verified: true,
+      provider: null,
+    },
+  ],
+  [],
+)
 
 /**
  * Write one normalized identity row to the page's ordinary entity scope.
@@ -746,6 +758,24 @@ describe('profile sign-in page dialogs', () => {
       signOutOthers: true,
     })
     expect(byId('profile-password-outcome')).toBeDefined()
+  })
+  it('adds a password with one field once it has eight characters', async () => {
+    const world = setup(NO_STEP, magicLink)
+    await world.wrapper.get('[data-id="profile-sign-in-add"]').trigger('click')
+    await flushPromises()
+    byId('profile-sign-in-choose-password').click()
+    await flushPromises()
+    const save = byId('profile-add-password-save') as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    await fill('profile-add-password-new', 'short')
+    expect(save.disabled).toBe(true)
+    await fill('profile-add-password-new', 'new-secret')
+    expect(save.disabled).toBe(false)
+    save.click()
+    await flushPromises()
+    expect(world.dispatch).toHaveBeenCalledWith('profile_set_password', {
+      newPassword: 'new-secret',
+    })
   })
   it('moves from phone to code in one dialog and focuses the new field', async () => {
     const world = setup()

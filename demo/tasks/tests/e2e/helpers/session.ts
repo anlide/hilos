@@ -72,7 +72,6 @@ export async function addPasswordFromAddressStep(
     await waitForMailCode(email, 'Confirm your email address'),
   )
   await typeInto(page.getByTestId('profile-add-password-new'), PASSWORD)
-  await typeInto(page.getByTestId('profile-add-password-confirm'), PASSWORD)
   await clickSubmit(expect, page.getByTestId('profile-add-password-save'))
   await expect(page.getByTestId('profile-sign-in-add-modal')).toHaveCount(0)
 }

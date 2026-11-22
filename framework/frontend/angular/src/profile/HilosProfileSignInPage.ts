@@ -61,7 +61,6 @@ const emptyDraft = () => ({
   phone: '',
   code: '',
   newPassword: '',
-  confirm: '',
 })
 let signInSequence = 0
 
@@ -286,10 +285,7 @@ let signInSequence = 0
                     sendAgainLabel
                   }}</span>
                 </div>
-                @for (
-                  label of ['Code', 'New password', 'Confirm new password'];
-                  track label
-                ) {
+                @for (label of ['Code', 'New password']; track label) {
                   <div class="mb-3">
                     <div class="form-label">{{ label }}</div>
                     <div class="form-control">&nbsp;</div>
@@ -741,13 +737,6 @@ export class HilosProfileSignInPage {
         autocomplete: 'new-password',
         dataId: 'profile-add-password-new',
       },
-      {
-        key: 'confirm' as const,
-        label: 'Confirm new password',
-        type: 'password',
-        autocomplete: 'new-password',
-        dataId: 'profile-add-password-confirm',
-      },
     ]
     const codeField = {
       key: 'code' as const,
@@ -797,8 +786,7 @@ export class HilosProfileSignInPage {
       ) &&
       (!this.step().startsWith('password-') ||
         this.step() === 'password-email' ||
-        (this.draft().newPassword.length >= PASSWORD_MIN &&
-          this.draft().newPassword === this.draft().confirm)),
+        this.draft().newPassword.length >= PASSWORD_MIN),
   )
   protected readonly submitId = computed(() =>
     this.step() === 'phone-number'

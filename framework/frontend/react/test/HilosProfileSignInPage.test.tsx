@@ -613,9 +613,6 @@ it('adds a password under StrictMode and removes every listener on unmount', asy
   fireEvent.change(node('profile-add-password-new'), {
     target: { value: 'new-secret' },
   })
-  fireEvent.change(node('profile-add-password-confirm'), {
-    target: { value: 'new-secret' },
-  })
   await act(async () => {
     fireEvent.click(node('profile-add-password-save'))
   })
@@ -1068,9 +1065,10 @@ describe('profile sign-in page locks a pressed button at once and the others by 
     expect(save.disabled).toBe(true)
     expect(save.hasAttribute('aria-busy')).toBe(false)
     fireEvent.change(node('profile-add-password-new'), {
-      target: { value: 'new-secret' },
+      target: { value: '1234567' },
     })
-    fireEvent.change(node('profile-add-password-confirm'), {
+    expect(save.disabled).toBe(true)
+    fireEvent.change(node('profile-add-password-new'), {
       target: { value: 'new-secret' },
     })
     expect(save.disabled).toBe(false)
@@ -1256,18 +1254,15 @@ describe('profile sign-in add modal busy body', () => {
     await act(async () => fireEvent.click(node('profile-sign-in-add')))
     fireEvent.click(node('profile-sign-in-choose-password'))
     const password = node('profile-add-password-new') as HTMLInputElement
-    const confirm = node('profile-add-password-confirm') as HTMLInputElement
     const fields = password.closest('fieldset')
     const save = node('profile-add-password-save') as HTMLButtonElement
     const back = node('profile-sign-in-add-back') as HTMLButtonElement
     fireEvent.change(password, { target: { value: 'new-secret' } })
-    fireEvent.change(confirm, { target: { value: 'new-secret' } })
     const pending = held()
     dispatch.mockImplementationOnce(() => pending.answer)
     await act(async () => fireEvent.click(save))
     expect(fields?.className).toBe('m-0 p-0 border-0')
     expect(password.matches(':disabled')).toBe(true)
-    expect(confirm.matches(':disabled')).toBe(true)
     expect(save.matches(':disabled')).toBe(false)
     expect(save.getAttribute('aria-busy')).toBe('true')
     expect(back.disabled).toBe(true)
@@ -1290,12 +1285,8 @@ describe('profile sign-in add modal busy body', () => {
       ),
     )
     expect(node('profile-add-password-new')).toBe(password)
-    expect(node('profile-add-password-confirm')).toBe(confirm)
     expect(password.closest('fieldset')).toBe(fields)
-    expect([password.value, confirm.value]).toEqual([
-      'new-secret',
-      'new-secret',
-    ])
+    expect(password.value).toBe('new-secret')
     expect(password.matches(':disabled')).toBe(false)
     expect(back.disabled).toBe(false)
     expect(node('modal-close').matches(':disabled')).toBe(false)
@@ -1303,13 +1294,13 @@ describe('profile sign-in add modal busy body', () => {
       'Choose another password.',
     )
     expect(node('modal-confirm')).toBeNull()
-    fireEvent.change(confirm, { target: { value: '' } })
+    fireEvent.change(password, { target: { value: 'short' } })
     expect(save.disabled).toBe(true)
     await act(async () => fireEvent.submit(password.form!))
     expect(
       dispatch.mock.calls.filter(([key]) => key === 'profile_set_password'),
     ).toHaveLength(1)
-    fireEvent.change(confirm, { target: { value: 'new-secret' } })
+    fireEvent.change(password, { target: { value: 'new-secret' } })
     await act(async () => fireEvent.click(save))
     expect(
       dispatch.mock.calls.filter(([key]) => key === 'profile_set_password'),

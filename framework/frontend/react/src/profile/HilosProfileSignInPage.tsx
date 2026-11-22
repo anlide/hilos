@@ -46,7 +46,6 @@ const emptyDraft = () => ({
   phone: '',
   code: '',
   newPassword: '',
-  confirm: '',
 })
 
 function wayKey(way: HilosProfileAddableWay): string {
@@ -226,13 +225,6 @@ export function HilosProfileSignInPage({
       autocomplete: 'new-password',
       dataId: 'profile-add-password-new',
     },
-    {
-      key: 'confirm' as const,
-      label: 'Confirm new password',
-      type: 'password',
-      autocomplete: 'new-password',
-      dataId: 'profile-add-password-confirm',
-    },
   ]
   const codeField = {
     key: 'code' as const,
@@ -281,8 +273,7 @@ export function HilosProfileSignInPage({
     ) &&
     (!step.startsWith('password-') ||
       step === 'password-email' ||
-      (draft.newPassword.length >= PASSWORD_MIN &&
-        draft.newPassword === draft.confirm))
+      draft.newPassword.length >= PASSWORD_MIN)
   const submitId =
     step === 'phone-number'
       ? 'profile-add-sms-request'
@@ -582,14 +573,12 @@ export function HilosProfileSignInPage({
                     {SEND_AGAIN_LABEL}
                   </span>
                 </div>
-                {['Code', 'New password', 'Confirm new password'].map(
-                  (label) => (
-                    <div key={label} className="mb-3">
-                      <div className="form-label">{label}</div>
-                      <div className="form-control">&nbsp;</div>
-                    </div>
-                  ),
-                )}
+                {['Code', 'New password'].map((label) => (
+                  <div key={label} className="mb-3">
+                    <div className="form-label">{label}</div>
+                    <div className="form-control">&nbsp;</div>
+                  </div>
+                ))}
                 <div className="form-text">
                   {HILOS_PROFILE_SIGN_IN_COPY.passwordHint}
                 </div>
