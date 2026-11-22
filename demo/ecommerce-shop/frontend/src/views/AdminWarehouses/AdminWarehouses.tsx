@@ -1,10 +1,16 @@
 // The shop's Warehouses admin page: every warehouse with the number of products
 // and units it keeps, the counts redrawn live as stock changes. The table sits
 // under the section head of its own dashboard group; its main action opens the
-// Add warehouse dialog, mounted inside the admin page so the view mode reaches
-// its submit. Bootstrap classes only (styling-rules.md).
+// Add warehouse dialog, and the pencil in a row opens the Edit warehouse dialog
+// on that row; both are mounted inside the admin page so the view mode reaches
+// their submit. Bootstrap classes only (styling-rules.md).
 import { useEffect, useMemo, useState } from 'react'
-import { HilosAdminPage, HilosViewportTable } from '@hilos/react/base'
+import { HILOS_TABLE_ACTIONS_KEY } from '@hilos/core/base'
+import {
+  HilosAdminPage,
+  HilosViewportTable,
+  useSignal,
+} from '@hilos/react/base'
 
 import { PAGE_ADMIN_WAREHOUSES } from '../../pages/keys.js'
 import {
@@ -14,7 +20,10 @@ import {
   WAREHOUSE_UNIT_COUNT_FIELD,
   createWarehousesTable,
 } from './adminWarehousesPage.js'
+import { type WarehouseRow } from './types/tables/WarehouseRow.js'
 import { WarehouseAddModal } from './WarehouseAddModal.js'
+import { createWarehouseEdit } from './warehouseEdit.js'
+import { WarehouseEditModal } from './WarehouseEditModal.js'
 
 /** Whether the Add warehouse dialog is open, and the key of its latest opening. */
 interface AddOpening {
@@ -22,7 +31,7 @@ interface AddOpening {
   readonly key: number
 }
 
-/** The warehouses admin page: the live table and its Add warehouse dialog. */
+/** The warehouses admin page: the live table, its Add and Edit warehouse dialogs. */
 export default function AdminWarehouses() {
   const [adding, setAdding] = useState<AddOpening>({ open: false, key: 0 })
   // The setter is stable, so the table is made once. Every opening takes a new
@@ -34,14 +43,33 @@ export default function AdminWarehouses() {
       ),
     [],
   )
+  const edit = useMemo(
+    () => createWarehouseEdit(warehouses.controller),
+    [warehouses],
+  )
+  const editing = useSignal(edit.opened)
+  // Every opening of the edit takes a new key too: one window per opening.
+  const [editKey, setEditKey] = useState(0)
 
   // Bind the table on mount, consuming its initial page window, and release its
-  // listeners on unmount.
+  // listeners on unmount; the edit listens for the merge's steps over the same
+  // span.
   useEffect(() => {
     warehouses.start()
+    edit.start()
 
-    return () => warehouses.dispose()
-  }, [warehouses])
+    return () => {
+      edit.dispose()
+      warehouses.dispose()
+    }
+  }, [warehouses, edit])
+
+  // A row already gone opens no window.
+  function openEdit(row: WarehouseRow): void {
+    if (edit.open(String(row.id))) {
+      setEditKey((key) => key + 1)
+    }
+  }
 
   return (
     <HilosAdminPage page={PAGE_ADMIN_WAREHOUSES} headKind="section">
@@ -57,6 +85,19 @@ export default function AdminWarehouses() {
           ),
           [WAREHOUSE_PRODUCT_COUNT_FIELD]: (row) => row.productCount,
           [WAREHOUSE_UNIT_COUNT_FIELD]: (row) => row.unitCount,
+          // Only opens the dialog, so it stays live in the view mode, as Add
+          // warehouse does.
+          [HILOS_TABLE_ACTIONS_KEY]: (row) => (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-secondary"
+              aria-label={`Edit · ${row.name}`}
+              data-id="admin-warehouses-edit-open"
+              onClick={() => openEdit(row)}
+            >
+              <i className="bi bi-pencil" aria-hidden="true" />
+            </button>
+          ),
         }}
       />
       {adding.open ? (
@@ -65,6 +106,7 @@ export default function AdminWarehouses() {
           onClose={() => setAdding((opening) => ({ ...opening, open: false }))}
         />
       ) : null}
+      {editing ? <WarehouseEditModal key={editKey} edit={edit} /> : null}
     </HilosAdminPage>
   )
 }

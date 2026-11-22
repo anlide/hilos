@@ -62,6 +62,7 @@ use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
 use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Core\Agent\Daemon\EcommerceShopAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\DemoHilosAgentDaemon;
@@ -1267,7 +1268,10 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
         ], PageCatalog::pages()[PageConstants::ADMIN_WAREHOUSES]);
         self::assertSame(
-            [EcommerceShopSignalConstants::WAREHOUSE_CREATE => WarehouseCreateActionDTO::class],
+            [
+                EcommerceShopSignalConstants::WAREHOUSE_CREATE => WarehouseCreateActionDTO::class,
+                EcommerceShopSignalConstants::WAREHOUSE_UPDATE => WarehouseUpdateActionDTO::class,
+            ],
             AdminWarehousesPage::ACTIONS,
         );
         self::assertSame('admin_warehouses', Hilos::getPageActionRoutes()[EcommerceShopSignalConstants::WAREHOUSE_CREATE]);
@@ -1276,6 +1280,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             Hilos::getActionAgentRoutes()[EcommerceShopSignalConstants::WAREHOUSE_CREATE],
         );
         self::assertSame('warehouse_create', EcommerceShopSignalConstants::WAREHOUSE_CREATE);
+        self::assertSame('admin_warehouses', Hilos::getPageActionRoutes()[EcommerceShopSignalConstants::WAREHOUSE_UPDATE]);
+        self::assertSame(
+            AgentType::WAREHOUSES_LIBRARY,
+            Hilos::getActionAgentRoutes()[EcommerceShopSignalConstants::WAREHOUSE_UPDATE],
+        );
+        self::assertSame('warehouse_update', EcommerceShopSignalConstants::WAREHOUSE_UPDATE);
     }
 
     /** The dashboard's shop group lists the shop's admin pages in the order their cards stand. */

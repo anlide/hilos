@@ -14,12 +14,14 @@ import {
 } from '../../../../../framework/frontend/e2e/index.js'
 import { createStandCommandChannel } from '../../../../../framework/frontend/scripts/standCommand.mjs'
 
-// spec-owner: demo — proves the shop's own warehouse_create action on its Warehouses page.
+// spec-owner: demo — proves the shop's own warehouse_create and warehouse_update actions on its Warehouses page.
 
 // Warehouses admin e2e: an admin adds a warehouse from the table's main action,
-// the row reaches a second tab of the same admin over the live table, and a name
-// already taken is refused inside the dialog, which keeps what was typed. The
-// test-only command removes the reserved warehouse whatever the outcome.
+// the row reaches a second tab of the same admin over the live table, the pencil
+// in the row opens the edit dialog filled with the row and its saved address
+// reaches the second tab too, and a name already taken is refused inside the
+// dialog, which keeps what was typed. The test-only command removes the reserved
+// warehouse whatever the outcome.
 
 const test = base.extend<{ cleanup: TestCleanup }>({ cleanup: cleanupFixtures })
 
@@ -30,7 +32,7 @@ const WAREHOUSE_DELETE_COMMAND = 'test:ecommerce-shop:warehouse-delete'
 
 const command = createStandCommandChannel({ timeoutMs: 5_000 })
 
-test('shop.warehouses-add: an admin adds a warehouse, a second tab sees it arrive, and a taken name is refused in the window', async ({
+test('shop.warehouses-add: an admin adds a warehouse, a second tab sees it arrive and sees its edited address, and a taken name is refused in the window', async ({
   page,
   cleanup,
 }) => {
@@ -68,6 +70,24 @@ test('shop.warehouses-add: an admin adds a warehouse, a second tab sees it arriv
 
   await test.step('the second tab sees the row arrive without a reload', async () => {
     await expect(rowsOf(second)).toHaveCount(1)
+  })
+
+  // Only the address changes: the name keeps the row's place, so the edit
+  // lands at once without Apply, and the cleanup finds the row by it.
+  await test.step('the first tab edits the address and the second tab shows it', async () => {
+    await rowsOf(page).getByTestId('admin-warehouses-edit-open').click()
+    const dialog = page.getByTestId('admin-warehouses-edit')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.getByTestId('admin-warehouses-edit-name')).toHaveValue(
+      name,
+    )
+    await typeInto(
+      dialog.getByTestId('admin-warehouses-edit-address'),
+      '3 Test Street',
+    )
+    await clickSubmit(expect, page.getByTestId('admin-warehouses-edit-submit'))
+    await expect(dialog).toBeHidden()
+    await expect(rowsOf(second)).toContainText('3 Test Street')
   })
 
   await test.step('the same name again is refused inside the dialog', async () => {

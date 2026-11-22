@@ -15,15 +15,13 @@ import {
 import { sendWarehouseCreate } from './adminWarehousesActions.js'
 import {
   EMPTY_WAREHOUSE_DRAFT,
-  canAddWarehouse,
+  isWarehouseDraftComplete,
   isWarehouseDraftDirty,
-  type WarehouseAddDraft,
-} from './warehouseAddDraft.js'
+  type WarehouseDraft,
+} from './warehouseDraft.js'
+import { WarehouseFormFields } from './WarehouseFormFields.js'
 
 const FORM_ID = 'admin-warehouses-add-form'
-const NAME_ID = 'admin-warehouses-add-name'
-const NAME_HINT_ID = 'admin-warehouses-add-name-hint'
-const ADDRESS_ID = 'admin-warehouses-add-address'
 
 /**
  * One opening of the Add warehouse dialog; it closes itself on the backend's
@@ -32,12 +30,12 @@ const ADDRESS_ID = 'admin-warehouses-add-address'
  * @param onClose Close the dialog — on Cancel, on dismissal and after success.
  */
 export function WarehouseAddModal({ onClose }: { onClose: () => void }) {
-  const [draft, setDraft] = useState<WarehouseAddDraft>(EMPTY_WAREHOUSE_DRAFT)
+  const [draft, setDraft] = useState<WarehouseDraft>(EMPTY_WAREHOUSE_DRAFT)
   const action = useTrackedAction()
   const { locked } = useLookOnly()
 
   async function submit(): Promise<void> {
-    if (locked || !canAddWarehouse(draft)) return
+    if (locked || !isWarehouseDraftComplete(draft)) return
     if (await action.run(sendWarehouseCreate(draft))) {
       onClose()
     }
@@ -47,6 +45,7 @@ export function WarehouseAddModal({ onClose }: { onClose: () => void }) {
     <HilosModal
       open
       title="Add warehouse"
+      initialFocus="inner"
       onClose={onClose}
       confirmOnClose={isWarehouseDraftDirty(draft)}
       busy={action.busy}
@@ -66,7 +65,7 @@ export function WarehouseAddModal({ onClose }: { onClose: () => void }) {
             type="submit"
             form={FORM_ID}
             loading={action.busy}
-            disabled={!canAddWarehouse(draft)}
+            disabled={!isWarehouseDraftComplete(draft)}
             data-id="admin-warehouses-add-submit"
           >
             Add
@@ -88,41 +87,11 @@ export function WarehouseAddModal({ onClose }: { onClose: () => void }) {
             void submit()
           }}
         >
-          <div className="mb-3">
-            <label className="form-label" htmlFor={NAME_ID}>
-              Name
-            </label>
-            <input
-              id={NAME_ID}
-              type="text"
-              className="form-control"
-              value={draft.name}
-              aria-describedby={NAME_HINT_ID}
-              data-id="admin-warehouses-add-name"
-              data-autofocus
-              onChange={(event) =>
-                setDraft({ ...draft, name: event.target.value })
-              }
-            />
-            <div id={NAME_HINT_ID} className="form-text">
-              Buyers never see it; admins pick it when setting stock.
-            </div>
-          </div>
-          <div>
-            <label className="form-label" htmlFor={ADDRESS_ID}>
-              Address
-            </label>
-            <input
-              id={ADDRESS_ID}
-              type="text"
-              className="form-control"
-              value={draft.address}
-              data-id="admin-warehouses-add-address"
-              onChange={(event) =>
-                setDraft({ ...draft, address: event.target.value })
-              }
-            />
-          </div>
+          <WarehouseFormFields
+            idPrefix="admin-warehouses-add"
+            draft={draft}
+            onChange={(patch) => setDraft({ ...draft, ...patch })}
+          />
         </form>
       </div>
     </HilosModal>

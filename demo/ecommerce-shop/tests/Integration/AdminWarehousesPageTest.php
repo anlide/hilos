@@ -12,6 +12,7 @@ use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\Object\Item\Warehouse as ObjectWarehouse;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
+use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
@@ -132,8 +133,8 @@ abstract class AdminWarehousesPageEnvironment extends WarehousesTableEnvironment
 /**
  * The warehouses admin page in the admin view mode: a guest and a signed-in person without admin rights
  * see every field of a warehouse in the first answer, an administrator sees no mark at all, and with the
- * mode off the page is closed to whoever is not an administrator. An administrator adds a warehouse through
- * the page, a viewer may not, and the test-only command removes a warehouse by its name.
+ * mode off the page is closed to whoever is not an administrator. An administrator adds and edits a warehouse
+ * through the page, a viewer may do neither, and the test-only command removes a warehouse by its name.
  *
  * Warehouses are rows written straight into their table, as the warehouses table's own test does; so are the
  * two people, before any read warms the users collection. The rollback scope proves reads of written rows.
@@ -213,7 +214,7 @@ final class AdminWarehousesPageTest extends AdminWarehousesPageEnvironment
     public function testAnAdminAddsAWarehouse(): void
     {
         $name = 'Warehouse ' . RandomHelper::hex(8);
-        $this->dispatchAction(self::ADMIN_KEY, [
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_CREATE, [
             ObjectWarehouse::name => "  {$name} ",
             ObjectWarehouse::address => "\tKhreshchatyk St, 22 \n",
         ], 'req-warehouse-create');
@@ -232,7 +233,7 @@ final class AdminWarehousesPageTest extends AdminWarehousesPageEnvironment
     /** A name another warehouse already carries is refused with the library's sentence, and no second row is written. */
     public function testAnAdminIsRefusedATakenName(): void
     {
-        $this->dispatchAction(self::ADMIN_KEY, [
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_CREATE, [
             ObjectWarehouse::name => $this->warehouseName,
             ObjectWarehouse::address => self::WAREHOUSE_ADDRESS,
         ], 'req-warehouse-create-taken');
@@ -257,6 +258,98 @@ final class AdminWarehousesPageTest extends AdminWarehousesPageEnvironment
             }
         }
         self::assertSame(1, self::storedCount());
+    }
+
+    /** An administrator edits the case's warehouse: the row is stored trimmed, and the success names it. */
+    public function testAnAdminEditsAWarehouse(): void
+    {
+        $name = 'Warehouse ' . RandomHelper::hex(8);
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_UPDATE, [
+            ObjectWarehouse::id => $this->warehouseId,
+            ObjectWarehouse::name => "  {$name} ",
+            ObjectWarehouse::address => "\tKhreshchatyk St, 22 \n",
+            WarehouseUpdateActionDTO::expectedName => $this->warehouseName,
+            WarehouseUpdateActionDTO::expectedAddress => self::WAREHOUSE_ADDRESS,
+        ], 'req-warehouse-update');
+
+        $success = $this->acknowledgement(SignalConstants::ACTION_SUCCESS, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        self::assertSame('req-warehouse-update', $success->requestId);
+        self::assertSame(EcommerceShopSignalConstants::WAREHOUSE_UPDATE, $success->action);
+        self::assertSame(sprintf('Warehouse “%s” saved.', $name), $success->message);
+        self::assertSame([['name' => $name, 'address' => 'Khreshchatyk St, 22']], $this->storedWarehouse());
+    }
+
+    /** An edit opened over values the warehouse no longer holds is refused, and the warehouse stays as it was. */
+    public function testAnAdminIsRefusedAnEditOverStaleValues(): void
+    {
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_UPDATE, [
+            ObjectWarehouse::id => $this->warehouseId,
+            ObjectWarehouse::name => 'Warehouse ' . RandomHelper::hex(8),
+            ObjectWarehouse::address => 'Khreshchatyk St, 22',
+            WarehouseUpdateActionDTO::expectedName => 'Warehouse ' . RandomHelper::hex(8),
+            WarehouseUpdateActionDTO::expectedAddress => self::WAREHOUSE_ADDRESS,
+        ], 'req-warehouse-update-stale');
+
+        $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-warehouse-update-stale', $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::WAREHOUSE_UPDATE, $error->action);
+        self::assertSame('The warehouse changed elsewhere. Review the current values and save again.', $error->reason);
+        self::assertSame([['name' => $this->warehouseName, 'address' => self::WAREHOUSE_ADDRESS]], $this->storedWarehouse());
+    }
+
+    /** An edit of a warehouse that is gone is refused with the page's sentence. */
+    public function testAnAdminIsRefusedAnEditOfAMissingWarehouse(): void
+    {
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_UPDATE, [
+            ObjectWarehouse::id => $this->warehouseId + 1000,
+            ObjectWarehouse::name => 'Warehouse ' . RandomHelper::hex(8),
+            ObjectWarehouse::address => self::WAREHOUSE_ADDRESS,
+            WarehouseUpdateActionDTO::expectedName => $this->warehouseName,
+            WarehouseUpdateActionDTO::expectedAddress => self::WAREHOUSE_ADDRESS,
+        ], 'req-warehouse-update-missing');
+
+        $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-warehouse-update-missing', $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::WAREHOUSE_UPDATE, $error->action);
+        self::assertSame('This warehouse no longer exists', $error->reason);
+    }
+
+    /** A rename to the name of another warehouse is refused with the library's sentence, and the warehouse stays as it was. */
+    public function testAnAdminIsRefusedARenameToATakenName(): void
+    {
+        $takenName = 'Warehouse ' . RandomHelper::hex(8);
+        self::warehouse($takenName);
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::WAREHOUSE_UPDATE, [
+            ObjectWarehouse::id => $this->warehouseId,
+            ObjectWarehouse::name => $takenName,
+            ObjectWarehouse::address => self::WAREHOUSE_ADDRESS,
+            WarehouseUpdateActionDTO::expectedName => $this->warehouseName,
+            WarehouseUpdateActionDTO::expectedAddress => self::WAREHOUSE_ADDRESS,
+        ], 'req-warehouse-update-taken');
+
+        $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-warehouse-update-taken', $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::WAREHOUSE_UPDATE, $error->action);
+        self::assertSame('A warehouse with this name already exists', $error->reason);
+        self::assertSame([['name' => $this->warehouseName, 'address' => self::WAREHOUSE_ADDRESS]], $this->storedWarehouse());
+    }
+
+    /** With the admin view mode on, the edit action is refused to a guest and a non-admin viewer, and the warehouse stays as it was. */
+    public function testAGuestAndANonAdminAreRefusedTheEditWhenTheViewModeIsOn(): void
+    {
+        foreach ([self::GUEST_KEY, self::VISITOR_KEY] as $acceptKey) {
+            try {
+                PageAccessGate::assertAction(AdminWarehousesPage::class, $acceptKey, EcommerceShopSignalConstants::WAREHOUSE_UPDATE);
+                self::fail("Expected ActionViewModeException for {$acceptKey}");
+            } catch (ActionViewModeException) {
+                // Expected
+            }
+        }
+        self::assertSame([['name' => $this->warehouseName, 'address' => self::WAREHOUSE_ADDRESS]], $this->storedWarehouse());
     }
 
     /** The test-only command removes the warehouse of the given name, and answers a repeat that nothing was removed. */
@@ -319,13 +412,14 @@ final class AdminWarehousesPageTest extends AdminWarehousesPageEnvironment
     }
 
     /**
-     * Sends one warehouse create frame through the real page router under the warehouses library.
+     * Sends one warehouse action frame through the real page router under the warehouses library.
      *
      * @param string $acceptKey Acting connection
+     * @param string $action Warehouse action name
      * @param array<string, mixed> $payload Action payload
      * @param string $requestId Client-minted request id
      */
-    private function dispatchAction(string $acceptKey, array $payload, string $requestId): void
+    private function dispatchAction(string $acceptKey, string $action, array $payload, string $requestId): void
     {
         while (Hilos::$sr->getNextQueuedSignal() !== null) {
         }
@@ -339,7 +433,7 @@ final class AdminWarehousesPageTest extends AdminWarehousesPageEnvironment
         ExecutionContext::run(
             new ExecutionFrame(agentId: $agent->getId(), acceptKey: $acceptKey),
             static fn () => $router->dispatchAction(
-                new WebSocketActionSignalDTO($acceptKey, EcommerceShopSignalConstants::WAREHOUSE_CREATE, $payload, $requestId),
+                new WebSocketActionSignalDTO($acceptKey, $action, $payload, $requestId),
                 'websocket',
             ),
         );
@@ -405,6 +499,12 @@ final class AdminWarehousesPageTest extends AdminWarehousesPageEnvironment
     private static function storedCount(): int
     {
         return (int)Database::sql('SELECT COUNT(*) AS n FROM warehouse')->field('n');
+    }
+
+    /** @return list<array<string, mixed>> Name and address of the case's warehouse, read past the ORM */
+    private function storedWarehouse(): array
+    {
+        return Database::sql('SELECT name, address FROM warehouse WHERE id = ?', [$this->warehouseId])->rows();
     }
 
     /**

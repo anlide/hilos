@@ -23,6 +23,9 @@ final class EcommerceShopSignalConstants
     /** @var string Warehouse create action name */
     public const string WAREHOUSE_CREATE = 'warehouse_create';
 
+    /** @var string Warehouse update action name */
+    public const string WAREHOUSE_UPDATE = 'warehouse_update';
+
     /** @var string Subscription page admin categories signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_CATEGORIES = 'subscription_page_admin_categories';
 

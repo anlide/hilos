@@ -6,6 +6,7 @@
 // reference in the row: the row is read through that reference. The view reads
 // the controller, never a raw store.
 import {
+  HILOS_TABLE_ACTIONS_KEY,
   TableViewportController,
   bindTableViewport,
   type HilosTableColumnOf,
@@ -100,7 +101,9 @@ export interface WarehousesTable {
 }
 
 // Only the name sorts: it is the order field the server knows. The counts read
-// to the right, as numbers do.
+// to the right, as numbers do. The last column holds the pencil that opens the
+// Edit warehouse dialog; it stays on the narrow-screen card too, and it reads
+// the name its label carries.
 const WAREHOUSES_COLUMNS: HilosTableColumnOf<WarehouseRow>[] = [
   {
     key: WAREHOUSE_NAME_FIELD,
@@ -120,6 +123,13 @@ const WAREHOUSES_COLUMNS: HilosTableColumnOf<WarehouseRow>[] = [
     label: 'Units',
     headerClass: 'text-end',
     cellClass: 'text-end',
+  },
+  {
+    key: HILOS_TABLE_ACTIONS_KEY,
+    label: '',
+    headerClass: 'text-end',
+    cellClass: 'text-end',
+    reads: [WAREHOUSE_NAME_FIELD],
   },
 ]
 
