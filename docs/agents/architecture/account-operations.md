@@ -1,6 +1,9 @@
 # Account Operations: Erasure And Merge Across Owners
 
-Read this before designing or cutting work on account erasure and merge across owners, before giving a library, a channel or the sessions holder a write it would hold only for one of those operations, and before deciding who the single writer of a person's row is after that row has been created.
+Read this before designing or cutting work on account erasure and merge across
+owners, before giving a library, a channel or the sessions holder a write it
+would hold only for one of those operations, and before deciding who the single
+writer of a person's row is after that row has been created.
 
 **This document preserves the approved research of HIL-1675 and now records
 the three implementation phases agreed in HIL-1888, HIL-1889 and HIL-1890.**
