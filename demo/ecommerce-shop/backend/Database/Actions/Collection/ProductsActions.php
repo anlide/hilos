@@ -6,6 +6,7 @@ namespace Demo\EcommerceShop\Database\Actions\Collection;
 
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Actions\ProductFields;
+use Demo\EcommerceShop\Database\Entity\Item\Category;
 use Demo\EcommerceShop\Database\Object\Collection\Products as ObjectProducts;
 use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
 use Demo\EcommerceShop\Database\View\Collection\Products as DbCollectionProducts;
@@ -22,6 +23,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\CollectionNotFullyLoadedException;
+use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 use Throwable;
@@ -41,7 +43,8 @@ final class ProductsActions extends DbActions
      * Everything is checked and derived before the first write: the fields, the category, the
      * picture and the address. The row and its address are written in one transaction, and the
      * picture is bound only once it commits. Two products may share a name; the address tells
-     * them apart.
+     * them apart. A category deleted after the check is refused by the database's reference to it,
+     * in the same words as the check.
      *
      * @param string $name Product name
      * @param ?int $categoryId Category the product is in, null when none is chosen
@@ -80,27 +83,35 @@ final class ProductsActions extends DbActions
         $files = Hilos::$files ?? throw new LogicException('The files door is missing');
 
         $product = ObjectProduct::create();
-        Database::transaction(
-            DatabaseNames::PRIMARY,
-            function () use ($product, $name, $categoryId, $kind, $price, $description, $pictureFileId, $slug, $files): void {
-                $product->name = $name;
-                $product->categoryId = $categoryId;
-                $product->kind = $kind->value;
-                $product->price = $price;
-                $product->description = $description;
-                $product->pictureFileId = $pictureFileId;
-                $product->slug = $slug;
-                $product->changedAt = TimeHelper::nowMs();
-                $product->sync();
-                $this->addObjectToCollection($product);
+        try {
+            Database::transaction(
+                DatabaseNames::PRIMARY,
+                function () use ($product, $name, $categoryId, $kind, $price, $description, $pictureFileId, $slug, $files): void {
+                    $product->name = $name;
+                    $product->categoryId = $categoryId;
+                    $product->kind = $kind->value;
+                    $product->price = $price;
+                    $product->description = $description;
+                    $product->pictureFileId = $pictureFileId;
+                    $product->slug = $slug;
+                    $product->changedAt = TimeHelper::nowMs();
+                    $product->sync();
+                    $this->addObjectToCollection($product);
 
-                Hilos::$db->productSlugs->actions->record(
-                    $slug,
-                    $product->id ?? throw new LogicException('The saved product has no id'),
-                );
-                Database::afterCommit(static fn () => $files->markBound([$pictureFileId]));
-            },
-        );
+                    Hilos::$db->productSlugs->actions->record(
+                        $slug,
+                        $product->id ?? throw new LogicException('The saved product has no id'),
+                    );
+                    Database::afterCommit(static fn () => $files->markBound([$pictureFileId]));
+                },
+            );
+        } catch (ForeignKeyConstraintException $e) {
+            if ($e->referencedTable() !== Category::_table) {
+                throw $e;
+            }
+
+            throw new ValidationException('This category no longer exists', previous: $e);
+        }
 
         return $this->createDbItemFromObject($product);
     }

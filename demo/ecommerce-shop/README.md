@@ -111,9 +111,10 @@ The rules:
 
 - **The kind is chosen once.**
 - **Only the empty is deleted**: a warehouse with no unit of any product in
-  it, a category with no product in it. A write that lands in the same moment
-  as the delete does not slip past the check — one of the two is refused.
-  There is no deleting a product.
+  it, a category with no product in it. The judge of empty is the database's
+  own reference: a stock row that names the warehouse, a product that names
+  the category, refuses the delete. Of a write and a delete that land in the
+  same moment, the database refuses one. There is no deleting a product.
 - **An address follows the name**: renaming a category or a product moves its
   address. Its library keeps the former addresses of that record and never
   gives them to another one, so an old link never leads to something else —
@@ -123,11 +124,11 @@ One entity, one library — the framework's rule,
 [docs/agents/architecture/entity-libraries.md](../../docs/agents/architecture/entity-libraries.md).
 Each library is one per cluster, and the cluster picks its node.
 
-| Library | Owns | Asks before deleting |
+| Library | Owns | A delete is refused while |
 |---|---|---|
-| warehouses | warehouses | the stock library: is anything kept in this warehouse? |
-| categories | categories, their order and their former addresses | the products library: is any product in this category? |
-| products | products, their kind and their former addresses | — (products are not deleted) |
+| warehouses | warehouses | a stock row still names it — the database refuses |
+| categories | categories, their order and their former addresses | a product is still in it — the database refuses |
+| products | products, their kind and their former addresses | — |
 | stock | the units per product and warehouse; product totals and each warehouse's counts of products and units come from here | — |
 
 Stock is a library of its own because it is the number that changes most —

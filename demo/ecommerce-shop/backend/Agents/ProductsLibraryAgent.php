@@ -35,7 +35,8 @@ final class ProductsLibraryAgent extends AbstractAgent
 
     /**
      * @var list<string> The categories a product is put in: the categories library owns them,
-     *     and a product's write only checks that its category still exists
+     *     and a product's write only checks that its category still exists; a category deleted after
+     *     that check is refused by the database's reference to it
      */
     public const array READS_DB = [
         EcommerceShopDbContext::categories,

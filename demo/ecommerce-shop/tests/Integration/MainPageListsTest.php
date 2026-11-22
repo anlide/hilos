@@ -137,7 +137,7 @@ final class MainPageListsTest extends MainPageEnvironment
         $bulk = self::productIn($roses, ProductKind::STOCK);
         $unplaced = self::productIn($roses, ProductKind::UNIQUE);
         $placed = self::productIn($tulips, ProductKind::UNIQUE);
-        self::stock($placed, 1);
+        self::stockInAWarehouseOfItsOwn($placed, 1);
 
         $lists = $this->snapshot(self::VISITOR_KEY);
 
@@ -164,7 +164,7 @@ final class MainPageListsTest extends MainPageEnvironment
     {
         $roses = self::category();
         self::productIn($roses, ProductKind::STOCK);
-        self::stock(self::productIn($roses, ProductKind::UNIQUE), 1);
+        self::stockInAWarehouseOfItsOwn(self::productIn($roses, ProductKind::UNIQUE), 1);
 
         self::assertSame($this->snapshot(self::VISITOR_KEY), $this->snapshot(self::GUEST_KEY));
     }
@@ -325,7 +325,7 @@ final class MainPageListsTest extends MainPageEnvironment
         $piece = self::productIn($roses, ProductKind::UNIQUE);
         $this->subscribe();
 
-        $stockId = self::stock($piece, 1);
+        $stockId = self::stockInAWarehouseOfItsOwn($piece, 1);
         $this->deliver(SourceChange::dbCreated(
             EcommerceShopDbContext::productWarehouseStocks,
             (string)$stockId,
@@ -345,7 +345,7 @@ final class MainPageListsTest extends MainPageEnvironment
     {
         $roses = self::category();
         $bulk = self::productIn($roses, ProductKind::STOCK);
-        $stockId = self::stock($bulk, 3);
+        $stockId = self::stockInAWarehouseOfItsOwn($bulk, 3);
         $this->subscribe();
 
         Database::sql('UPDATE product_warehouse_stock SET units = ? WHERE id = ?', [7, $stockId]);
@@ -400,7 +400,7 @@ final class MainPageListsTest extends MainPageEnvironment
      * @param int $units Units kept
      * @return int Id of the new stock row
      */
-    private static function stock(int $productId, int $units): int
+    private static function stockInAWarehouseOfItsOwn(int $productId, int $units): int
     {
         Database::sql(
             'INSERT INTO product_warehouse_stock (product_id, warehouse_id, units) VALUES (?, ?, ?)',

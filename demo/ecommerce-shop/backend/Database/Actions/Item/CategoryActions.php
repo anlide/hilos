@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Database\Actions\Item;
 
 use Demo\EcommerceShop\Database\Actions\CategoryFields;
+use Demo\EcommerceShop\Database\Entity\Item\Product;
 use Demo\EcommerceShop\Database\Object\Item\Category as ObjectCategory;
 use Demo\EcommerceShop\Database\View\Item\Category;
 use Demo\EcommerceShop\Hilos;
@@ -24,6 +25,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
+use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
 use Hilos\HilosException;
 use Throwable;
 
@@ -150,9 +152,15 @@ final class CategoryActions extends DbActions
      * The addresses stay, belonging to nobody, so none of them is ever given to another
      * category. The picture is removed once the delete commits.
      *
+     * Only an empty category goes, and the database judges what empty is: its reference from the
+     * products refuses the delete while a product is still in the category, so the products are
+     * not read first and a product written a moment before the delete still holds the category.
+     * The refusal rolls the retired addresses back, and the picture stays.
+     *
      * @throws ItemNotFoundForDeleteException If the category id is null (not persisted)
      * @throws ObjectCollectionNullException If object collection is null
      * @throws LogicException When the files door is missing
+     * @throws ValidationException When a product is still in the category
      * @throws WriteNotAllowedException When this process may not remove the category or write its addresses
      * @throws DatabaseException When the delete or the commit fails
      * @throws HilosException On database error
@@ -170,17 +178,25 @@ final class CategoryActions extends DbActions
         $files = Hilos::$files ?? throw new LogicException('The files door is missing');
         $pictureFileId = $this->object->pictureFileId;
 
-        Database::transaction(
-            DatabaseNames::PRIMARY,
-            function () use ($categoryId, $objectCollection, $files, $pictureFileId): void {
-                Hilos::$db->categorySlugs->actions->retire($categoryId);
+        try {
+            Database::transaction(
+                DatabaseNames::PRIMARY,
+                function () use ($categoryId, $objectCollection, $files, $pictureFileId): void {
+                    Hilos::$db->categorySlugs->actions->retire($categoryId);
 
-                $idString = $this->object->getIdString();
-                $this->object->delete();
-                unset($objectCollection[$idString]);
+                    $idString = $this->object->getIdString();
+                    $this->object->delete();
+                    unset($objectCollection[$idString]);
 
-                Database::afterCommit(static fn () => $files->remove([$pictureFileId]));
-            },
-        );
+                    Database::afterCommit(static fn () => $files->remove([$pictureFileId]));
+                },
+            );
+        } catch (ForeignKeyConstraintException $e) {
+            if ($e->referencingTable() !== Product::_table) {
+                throw $e;
+            }
+
+            throw new ValidationException('This category has products and cannot be deleted', previous: $e);
+        }
     }
 }

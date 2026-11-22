@@ -6,6 +6,7 @@ namespace Demo\EcommerceShop\Database\Actions\Item;
 
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Actions\ProductFields;
+use Demo\EcommerceShop\Database\Entity\Item\Category;
 use Demo\EcommerceShop\Database\Object\Item\Product as ObjectProduct;
 use Demo\EcommerceShop\Database\View\Item\Product;
 use Demo\EcommerceShop\Hilos;
@@ -21,6 +22,7 @@ use Hilos\Database\Database;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\DatabaseNames;
 use Hilos\Database\Exception\CollectionNotFullyLoadedException;
+use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
 use Hilos\HilosException;
 use Hilos\Utils\Helpers\TimeHelper;
 use Throwable;
@@ -44,7 +46,9 @@ final class ProductActions extends DbActions
      * the first field is assigned: the fields, the category, the address and the picture. An
      * edit that changes nothing writes nothing: no row, no journal line, no word to the files
      * library. A new address is recorded beside the old ones, which keep leading here. A new
-     * picture is bound once the edit commits, and the former one is removed then.
+     * picture is bound once the edit commits, and the former one is removed then. A category
+     * deleted after the check is refused by the database's reference to it, in the same words as
+     * the check.
      *
      * @param string $name New product name
      * @param ?int $categoryId Category the product is in, null when none is chosen
@@ -103,38 +107,46 @@ final class ProductActions extends DbActions
         }
         $files = Hilos::$files ?? throw new LogicException('The files door is missing');
 
-        Database::transaction(
-            DatabaseNames::PRIMARY,
-            function () use (
-                $productId,
-                $name,
-                $categoryId,
-                $price,
-                $description,
-                $slug,
-                $slugChanged,
-                $pictureFileId,
-                $formerPictureFileId,
-                $files,
-            ): void {
-                $this->object->name = $name;
-                $this->object->categoryId = $categoryId;
-                $this->object->price = $price;
-                $this->object->description = $description;
-                $this->object->slug = $slug;
-                $this->object->pictureFileId = $pictureFileId;
-                $this->object->changedAt = TimeHelper::nowMs();
-                $this->object->sync();
+        try {
+            Database::transaction(
+                DatabaseNames::PRIMARY,
+                function () use (
+                    $productId,
+                    $name,
+                    $categoryId,
+                    $price,
+                    $description,
+                    $slug,
+                    $slugChanged,
+                    $pictureFileId,
+                    $formerPictureFileId,
+                    $files,
+                ): void {
+                    $this->object->name = $name;
+                    $this->object->categoryId = $categoryId;
+                    $this->object->price = $price;
+                    $this->object->description = $description;
+                    $this->object->slug = $slug;
+                    $this->object->pictureFileId = $pictureFileId;
+                    $this->object->changedAt = TimeHelper::nowMs();
+                    $this->object->sync();
 
-                if ($slugChanged) {
-                    Hilos::$db->productSlugs->actions->record($slug, $productId);
-                }
-                if ($pictureFileId !== $formerPictureFileId) {
-                    // Two announcements, so that a failed bind does not keep the former file.
-                    Database::afterCommit(static fn () => $files->markBound([$pictureFileId]));
-                    Database::afterCommit(static fn () => $files->remove([$formerPictureFileId]));
-                }
-            },
-        );
+                    if ($slugChanged) {
+                        Hilos::$db->productSlugs->actions->record($slug, $productId);
+                    }
+                    if ($pictureFileId !== $formerPictureFileId) {
+                        // Two announcements, so that a failed bind does not keep the former file.
+                        Database::afterCommit(static fn () => $files->markBound([$pictureFileId]));
+                        Database::afterCommit(static fn () => $files->remove([$formerPictureFileId]));
+                    }
+                },
+            );
+        } catch (ForeignKeyConstraintException $e) {
+            if ($e->referencedTable() !== Category::_table) {
+                throw $e;
+            }
+
+            throw new ValidationException('This category no longer exists', previous: $e);
+        }
     }
 }

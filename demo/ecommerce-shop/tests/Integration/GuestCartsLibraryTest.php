@@ -358,21 +358,6 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
     }
 
     /**
-     * Writes a stock row past the stock library.
-     *
-     * @param int $productId Product the units are of
-     * @param int $warehouseId Warehouse that keeps them
-     * @param int $units How many, one at least
-     */
-    private static function stock(int $productId, int $warehouseId, int $units): void
-    {
-        Database::sql(
-            'INSERT INTO product_warehouse_stock (product_id, warehouse_id, units) VALUES (?, ?, ?)',
-            [$productId, $warehouseId, $units],
-        );
-    }
-
-    /**
      * Runs a write that must be refused, and checks the refusal reaches the person word for word.
      *
      * @param string $sentence The sentence the person is shown

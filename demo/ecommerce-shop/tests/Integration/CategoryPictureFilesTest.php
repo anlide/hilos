@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Exception\DuplicateValueException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Database\Context\HilosDbContext;
@@ -34,6 +36,9 @@ final class CategoryPictureFilesTest extends IntegrationTestCase
 
     /** @var list<int> Categories the case created, deleted when it ends */
     private array $categoryIds = [];
+
+    /** @var list<int> Products the case put in a category, deleted when it ends, before the categories */
+    private array $productIds = [];
 
     /** @var list<int> Registry rows the case wrote, deleted when it ends */
     private array $fileIds = [];
@@ -72,7 +77,7 @@ final class CategoryPictureFilesTest extends IntegrationTestCase
     }
 
     /**
-     * Puts the door back and takes out every row the case committed, the addresses first.
+     * Puts the door back and takes out every row the case committed, the products and the addresses first.
      *
      * The rows go past the ORM, so the loaded collections forget them too: the next case reads
      * the tables cold.
@@ -81,6 +86,9 @@ final class CategoryPictureFilesTest extends IntegrationTestCase
     {
         Hilos::$files = $this->door;
         Database::sql('DELETE FROM category_slug WHERE id > ?', [$this->addressesBefore]);
+        foreach ($this->productIds as $productId) {
+            Database::sql('DELETE FROM product WHERE id = ?', [$productId]);
+        }
         foreach ($this->categoryIds as $categoryId) {
             Database::sql('DELETE FROM category WHERE id = ?', [$categoryId]);
         }
@@ -157,6 +165,25 @@ final class CategoryPictureFilesTest extends IntegrationTestCase
         self::assertSame([['remove', [$picture], false]], $this->recorder->calls);
     }
 
+    /** A category with a product in it is refused by the database: the files library hears nothing and the category stays. */
+    public function testDeleteRefusedByTheDatabaseSaysNothingAndKeepsTheCategory(): void
+    {
+        $id = $this->createCategory('Roses', $this->pictureFile());
+        $this->createProductIn($id);
+        $this->recorder->calls = [];
+
+        try {
+            Hilos::$db->categories[$id]->actions->delete();
+            self::fail('A category with a product in it must be refused');
+        } catch (ValidationException $e) {
+            self::assertSame('This category has products and cannot be deleted', $e->getMessage());
+        }
+
+        self::assertSame([], $this->recorder->calls);
+        self::assertSame(1, (int)Database::sql('SELECT COUNT(*) AS stored FROM category WHERE id = ?', [$id])->field('stored'));
+        self::assertTrue(isset(Hilos::$db->categories[$id]));
+    }
+
     /** A refused creation binds nothing and records no address. */
     public function testARefusedCreateBindsNothingAndRecordsNoAddress(): void
     {
@@ -190,6 +217,22 @@ final class CategoryPictureFilesTest extends IntegrationTestCase
         $this->categoryIds[] = $id;
 
         return $id;
+    }
+
+    /**
+     * Puts a product in a category with one insert past the products library, and remembers it for the end of the case.
+     *
+     * @param int $categoryId Category the product is put in
+     */
+    private function createProductIn(int $categoryId): void
+    {
+        $slug = 'product-' . RandomHelper::hex(8);
+        Database::sql(
+            'INSERT INTO product (name, category_id, kind, price, description, picture_file_id, slug, changed_at) '
+            . 'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [$slug, $categoryId, ProductKind::UNIQUE->value, 12_000, 'Product of the case', $this->pictureFile(), $slug, 1000],
+        );
+        $this->productIds[] = Database::lastInsertId();
     }
 
     /**

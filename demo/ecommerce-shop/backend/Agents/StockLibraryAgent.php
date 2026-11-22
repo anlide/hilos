@@ -35,7 +35,8 @@ final class StockLibraryAgent extends AbstractAgent
 
     /**
      * @var list<string> The products and the warehouses the stock is kept of and in: their own libraries
-     *     write them, and a stock write only checks the kind of its product and that its warehouse still exists
+     *     write them, and a stock write only checks the kind of its product and that its warehouse still exists;
+     *     a warehouse deleted after that check is refused by the database's reference to it
      */
     public const array READS_DB = [
         EcommerceShopDbContext::products,

@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Database\Actions\Item;
 
 use Demo\EcommerceShop\Database\Actions\WarehouseFields;
+use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock;
 use Demo\EcommerceShop\Database\Object\Item\Warehouse as ObjectWarehouse;
 use Demo\EcommerceShop\Database\View\Item\Warehouse;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
+use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
@@ -19,6 +21,7 @@ use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
+use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
 use Hilos\HilosException;
 
 /**
@@ -68,8 +71,13 @@ final class WarehouseActions extends DbActions
     /**
      * Deletes the warehouse.
      *
+     * Only an empty warehouse goes, and the database judges what empty is: its reference from the
+     * stock refuses the delete while a stock row still names the warehouse, so the stock is not
+     * read first and a row written a moment before the delete still holds the warehouse.
+     *
      * @throws ItemNotFoundForDeleteException If the warehouse id is null (not persisted)
      * @throws ObjectCollectionNullException If object collection is null
+     * @throws ValidationException When a stock row still names the warehouse
      * @throws WriteNotAllowedException When this process may not remove the warehouse
      * @throws DatabaseException When the delete fails
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
@@ -87,7 +95,15 @@ final class WarehouseActions extends DbActions
             ?? throw new ObjectCollectionNullException('Object collection is null');
 
         $idString = $this->object->getIdString();
-        $this->object->delete();
+        try {
+            $this->object->delete();
+        } catch (ForeignKeyConstraintException $e) {
+            if ($e->referencingTable() !== ProductWarehouseStock::_table) {
+                throw $e;
+            }
+
+            throw new ValidationException('This warehouse keeps stock and cannot be deleted', previous: $e);
+        }
         unset($objectCollection[$idString]);
     }
 }

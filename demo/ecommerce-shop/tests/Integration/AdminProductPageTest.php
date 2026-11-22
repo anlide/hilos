@@ -111,7 +111,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
                 $this->pictureFileOf($this->bulbs),
                 CatalogPictureUploadTarget::VARIANT_LG,
             ),
-            AdminProductBrowserData::FIELD_STOCK => self::stock(42, 2, null),
+            AdminProductBrowserData::FIELD_STOCK => self::stockField(42, 2, null),
         ], $payload[PagePayload::data][AdminProductBrowserData::DATA]);
         self::assertStringContainsString(
             '"kind":"stock"',
@@ -151,7 +151,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
     public function testAStockProductWithoutStockIsZeroUnitsInZeroWarehouses(): void
     {
         self::assertSame(
-            self::stock(0, 0, null),
+            self::stockField(0, 0, null),
             $this->cardOf($this->subscribe(self::ADMIN_KEY, $this->seeds))[AdminProductBrowserData::FIELD_STOCK],
         );
     }
@@ -160,11 +160,11 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
     public function testAUniquePieceNamesItsWarehouseOnlyWhilePlaced(): void
     {
         self::assertSame(
-            self::stock(1, 1, $this->lviv),
+            self::stockField(1, 1, $this->lviv),
             $this->cardOf($this->subscribe(self::ADMIN_KEY, $this->vase))[AdminProductBrowserData::FIELD_STOCK],
         );
         self::assertSame(
-            self::stock(0, 0, null),
+            self::stockField(0, 0, null),
             $this->cardOf($this->subscribe(self::ADMIN_KEY, $this->jug))[AdminProductBrowserData::FIELD_STOCK],
         );
     }
@@ -211,7 +211,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
 
         self::assertSame($this->bulbsName, $card['name']);
         self::assertSame(41000, $card['price']);
-        self::assertSame(self::stock(42, 2, null), $card[AdminProductBrowserData::FIELD_STOCK]);
+        self::assertSame(self::stockField(42, 2, null), $card[AdminProductBrowserData::FIELD_STOCK]);
         foreach ($card as $field => $value) {
             self::assertFalse(HiddenValue::isMark($value), "field {$field} is a mark for the viewer");
         }
@@ -230,7 +230,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         ));
         $cards = $this->sentCards(self::ADMIN_KEY);
         self::assertCount(1, $cards);
-        self::assertSame(self::stock(50, 3, null), $cards[0][AdminProductBrowserData::FIELD_STOCK]);
+        self::assertSame(self::stockField(50, 3, null), $cards[0][AdminProductBrowserData::FIELD_STOCK]);
 
         Hilos::$db->productWarehouseStocks->actions->setUnits($this->seeds, $this->kyiv, 5);
         self::deliver(SourceChange::dbCreated(
@@ -288,7 +288,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
         $card = $this->cardOf($responses[0]);
         self::assertSame($this->vase, $card[AdminProductBrowserData::productId]);
         self::assertSame('Blue vase', $card['name']);
-        self::assertSame(self::stock(1, 1, $this->lviv), $card[AdminProductBrowserData::FIELD_STOCK]);
+        self::assertSame(self::stockField(1, 1, $this->lviv), $card[AdminProductBrowserData::FIELD_STOCK]);
         $lists = $responses[0]->payload->toArray()[PagePayload::lists];
         self::assertArrayHasKey(EcommerceShopBrowserList::ADMIN_PRODUCT_CATEGORIES, $lists);
         self::assertArrayHasKey(EcommerceShopBrowserList::ADMIN_PRODUCT_WAREHOUSES, $lists);
@@ -300,7 +300,7 @@ final class AdminProductPageTest extends AdminProductsPageEnvironment
      * @param ?int $warehouseId Warehouse of a placed unique piece
      * @return array<string, int|null> The stock field of the card
      */
-    private static function stock(int $units, int $warehouses, ?int $warehouseId): array
+    private static function stockField(int $units, int $warehouses, ?int $warehouseId): array
     {
         return [
             AdminProductBrowserData::STOCK_UNITS => $units,

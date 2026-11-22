@@ -15,11 +15,21 @@ class ForeignKeyConstraintException extends DatabaseRuntimeException
     /** @var int MySQL ER_ROW_IS_REFERENCED_2: a parent row is still referenced by a child row */
     public const int ROW_IS_REFERENCED_ERROR_CODE = 1451;
 
+    /** @var int MySQL ER_NO_REFERENCED_ROW_2: a child row names a parent row that does not exist */
+    public const int NO_REFERENCED_ROW_ERROR_CODE = 1452;
+
     /** @var list<int> */
-    public const array MYSQL_ERROR_CODES = [self::ROW_IS_REFERENCED_ERROR_CODE, 1452];
+    public const array MYSQL_ERROR_CODES = [self::ROW_IS_REFERENCED_ERROR_CODE, self::NO_REFERENCED_ROW_ERROR_CODE];
 
     /** First `db`.`table` of a refused parent delete or update: the table whose row still references it. */
     private const string REFERENCING_TABLE_PATTERN = '/a foreign key constraint fails \(`[^`]*`\.`([^`]*)`/';
+
+    /**
+     * The table after REFERENCES in a refused child insert or update: the parent the child row names.
+     * A schema qualifier, written when the parent lives in another schema, is skipped.
+     */
+    private const string REFERENCED_TABLE_PATTERN = '/a foreign key constraint fails \(`[^`]*`\.`[^`]*`, '
+        . 'CONSTRAINT `[^`]*` FOREIGN KEY \([^)]*\) REFERENCES (?:`[^`]*`\.)?`([^`]*)`/';
 
     /** A table name safe to keep and show: letters, digits and underscores only. */
     private const string SAFE_TABLE_NAME_PATTERN = '/\A[A-Za-z0-9_]+\z/';
@@ -36,6 +46,25 @@ class ForeignKeyConstraintException extends DatabaseRuntimeException
     {
         if ($this->getMysqlErrorCode() !== self::ROW_IS_REFERENCED_ERROR_CODE
             || preg_match(self::REFERENCING_TABLE_PATTERN, $this->getMysqlErrorMessage(), $match) !== 1
+            || preg_match(self::SAFE_TABLE_NAME_PATTERN, $match[1]) !== 1) {
+            return null;
+        }
+
+        return $match[1];
+    }
+
+    /**
+     * The table of the parent row that a refused child insert or update named and did not find.
+     *
+     * Read only from a 1452 refusal; a refused parent delete or update (1451) names no missing parent.
+     *
+     * @return ?string Parent table name, or null when the refusal is not 1452, its text names no
+     *     table, or the name holds anything but letters, digits and underscores
+     */
+    public function referencedTable(): ?string
+    {
+        if ($this->getMysqlErrorCode() !== self::NO_REFERENCED_ROW_ERROR_CODE
+            || preg_match(self::REFERENCED_TABLE_PATTERN, $this->getMysqlErrorMessage(), $match) !== 1
             || preg_match(self::SAFE_TABLE_NAME_PATTERN, $match[1]) !== 1) {
             return null;
         }

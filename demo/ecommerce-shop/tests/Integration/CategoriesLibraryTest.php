@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Action\ActionFailureReason;
@@ -31,6 +32,8 @@ use Hilos\Utils\Helpers\RandomHelper;
 #[IntegrationTest]
 final class CategoriesLibraryTest extends CategoriesLibraryEnvironment
 {
+    use CatalogFixtureRows;
+
     /** A new category is stored trimmed, first in the catalog, under the address of its name, and the next ones follow it. */
     public function testCreateStoresTheTrimmedFieldsAtTheEndOfTheCatalogUnderTheAddressOfItsName(): void
     {
@@ -177,6 +180,24 @@ final class CategoriesLibraryTest extends CategoriesLibraryEnvironment
         $again = Hilos::$db->categories->actions->create('Roses', 'Garden roses', self::pictureFile())->id;
 
         self::assertSame('roses-2', self::storedSlug($again));
+    }
+
+    /** A category with a product in it is refused by the database, and the row and its addresses stay. */
+    public function testDeletingACategoryWithAProductInItIsRefusedAndKeepsItsAddresses(): void
+    {
+        $picture = self::pictureFile();
+        $id = Hilos::$db->categories->actions->create('Roses', 'Fresh cut roses', $picture)->id;
+        self::product(ProductKind::UNIQUE, $id);
+
+        self::assertRefused(
+            ValidationException::class,
+            'This category has products and cannot be deleted',
+            static fn () => Hilos::$db->categories[$id]->actions->delete(),
+        );
+
+        self::assertStoredUnchanged($id, 1, $picture);
+        self::assertSame(['roses' => $id], self::storedAddresses());
+        self::assertSame(['roses' => $id], self::loadedAddresses());
     }
 
     /** A name or a description of nothing but spaces is refused in words the person reads, and nothing is stored. */
@@ -423,6 +444,19 @@ final class CategoriesLibraryTest extends CategoriesLibraryEnvironment
         $addresses = [];
         foreach (Database::sql('SELECT slug, category_id FROM category_slug ORDER BY id')->rows() as $row) {
             $addresses[(string)$row['slug']] = $row['category_id'] === null ? null : (int)$row['category_id'];
+        }
+
+        return $addresses;
+    }
+
+    /**
+     * @return array<string, ?int> Every address the addresses in memory hold, to its category or to null once out of use
+     */
+    private static function loadedAddresses(): array
+    {
+        $addresses = [];
+        foreach (Hilos::$db->categorySlugs as $address) {
+            $addresses[$address->slug] = $address->categoryId;
         }
 
         return $addresses;

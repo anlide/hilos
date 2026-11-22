@@ -6,6 +6,7 @@ namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
+use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Action\ActionFailureReason;
@@ -73,6 +74,8 @@ abstract class WarehousesLibraryEnvironment extends RollbackIntegrationTestCase
 #[IntegrationTest]
 final class WarehousesLibraryTest extends WarehousesLibraryEnvironment
 {
+    use CatalogFixtureRows;
+
     /** A new warehouse is stored with its name and address trimmed, under the id the action returns. */
     public function testCreateStoresTheTrimmedNameAndAddress(): void
     {
@@ -100,6 +103,39 @@ final class WarehousesLibraryTest extends WarehousesLibraryEnvironment
         Hilos::$db->warehouses[$id]->actions->delete();
 
         self::assertSame([], self::storedRows($id));
+    }
+
+    /**
+     * A warehouse that keeps units of a stock item or a unique piece is refused, and both the row and the
+     * collection keep it; once its stock row is gone, the same warehouse is deleted.
+     *
+     * The stock row was written first, so the database's reference from the stock is what refuses.
+     */
+    public function testAWarehouseThatKeepsStockIsRefusedUntilItsStockIsGone(): void
+    {
+        $bulkWarehouse = Hilos::$db->warehouses->actions->create('Kyiv · Podil', 'Volodymyrska St, 1')->id;
+        $pieceWarehouse = Hilos::$db->warehouses->actions->create('Lviv · Rynok', 'Rynok Sq, 10')->id;
+        $bulbs = self::product(ProductKind::STOCK);
+        self::stock($bulbs, $bulkWarehouse, 12);
+        $vase = self::product(ProductKind::UNIQUE);
+        self::stock($vase, $pieceWarehouse, 1);
+
+        foreach ([$bulkWarehouse, $pieceWarehouse] as $id) {
+            $stored = self::storedRows($id);
+            self::assertRefused(
+                ValidationException::class,
+                'This warehouse keeps stock and cannot be deleted',
+                static fn () => Hilos::$db->warehouses[$id]->actions->delete(),
+            );
+            self::assertSame($stored, self::storedRows($id));
+            self::assertTrue(isset(Hilos::$db->warehouses[$id]));
+        }
+
+        Database::sql('DELETE FROM product_warehouse_stock WHERE product_id = ?', [$bulbs]);
+        Hilos::$db->warehouses[$bulkWarehouse]->actions->delete();
+
+        self::assertSame([], self::storedRows($bulkWarehouse));
+        self::assertFalse(isset(Hilos::$db->warehouses[$bulkWarehouse]));
     }
 
     /** A name or an address of nothing but spaces is refused in words the person reads, and nothing is stored. */

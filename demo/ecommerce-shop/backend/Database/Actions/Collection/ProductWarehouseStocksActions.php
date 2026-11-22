@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Database\Actions\Collection;
 
 use Demo\EcommerceShop\Constants\ProductKind;
+use Demo\EcommerceShop\Database\Entity\Item\Warehouse;
 use Demo\EcommerceShop\Database\Object\Collection\ProductWarehouseStocks as ObjectProductWarehouseStocks;
 use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProductWarehouseStock;
 use Demo\EcommerceShop\Database\View\Collection\ProductWarehouseStocks as DbCollectionProductWarehouseStocks;
@@ -17,6 +18,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
 use Hilos\HilosException;
 
 /**
@@ -28,6 +30,10 @@ use Hilos\HilosException;
  * in. Every check comes before any write, so a refused call leaves nothing behind, and a call
  * that changes nothing writes nothing - neither a row nor a line of the journal. Each write is
  * one statement, so no transaction is opened.
+ *
+ * The warehouse is checked twice: against the warehouses read in memory first, and by the
+ * database's reference last. A warehouse deleted after the first check refuses a row that names
+ * it with the same words.
  *
  * @extends DbActions<ProductWarehouseStock, ObjectProductWarehouseStocks>
  * @property-read DbCollectionProductWarehouseStocks $collection
@@ -131,7 +137,7 @@ final class ProductWarehouseStocksActions extends DbActions
         $this->ensureCanWrite(TruthSourceOperation::Update);
         $stock = $piece->getObject();
         $stock->warehouseId = $warehouseId;
-        $stock->sync();
+        $this->syncNamingWarehouse($stock);
     }
 
     /**
@@ -140,6 +146,7 @@ final class ProductWarehouseStocksActions extends DbActions
      * @param int $productId Id of the product
      * @param int $warehouseId Id of the warehouse
      * @param int $units Units the warehouse keeps, one at least
+     * @throws ValidationException When the warehouse no longer exists in the database
      * @throws CreateNotAllowedException When this process may not add a row
      * @throws DatabaseException When the insert fails
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
@@ -153,8 +160,34 @@ final class ProductWarehouseStocksActions extends DbActions
         $stock->productId = $productId;
         $stock->warehouseId = $warehouseId;
         $stock->units = $units;
-        $stock->sync();
+        $this->syncNamingWarehouse($stock);
         $this->addObjectToCollection($stock);
+    }
+
+    /**
+     * Saves a row that names its warehouse anew, the database judging whether the warehouse is still there.
+     *
+     * A refused save leaves the row as it was stored, and a refused new row is not stored at all.
+     *
+     * @param ObjectProductWarehouseStock $stock Row to insert, or row moved to another warehouse
+     * @throws ValidationException When the database has no row of the warehouse the stock row names
+     * @throws CreateNotAllowedException When this process may not add a row
+     * @throws WriteNotAllowedException When this process may not change a row
+     * @throws DatabaseException When the database refuses the save for another reason
+     * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
+     * @throws HilosException When the right, the database or the announcement refuses the save
+     */
+    private function syncNamingWarehouse(ObjectProductWarehouseStock $stock): void
+    {
+        try {
+            $stock->sync();
+        } catch (ForeignKeyConstraintException $e) {
+            if ($e->referencedTable() !== Warehouse::_table) {
+                throw $e;
+            }
+
+            throw new ValidationException('This warehouse no longer exists', previous: $e);
+        }
     }
 
     /**

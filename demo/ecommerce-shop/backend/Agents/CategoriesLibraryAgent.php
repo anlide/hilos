@@ -36,6 +36,9 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
  * under its claim. One instance runs per cluster, and the placement policy chooses its node
  * (docs/agents/architecture/entity-libraries.md).
  *
+ * Only an empty category is deleted: the database's reference from the products refuses the delete
+ * while a product is still in the category, and the library asks nobody first (HIL-2161).
+ *
  * The picture of a new category is published as soon as it is uploaded: the request waits in the
  * library's memory until the files door answers, and the answer acknowledges the browser action that
  * asked for it.

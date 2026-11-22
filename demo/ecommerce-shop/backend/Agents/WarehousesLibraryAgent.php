@@ -24,6 +24,9 @@ use Hilos\Socket\Command\DTO\CommandRequestDTO;
  * warehouse writes in the library's own process, under its claim. One instance runs
  * per cluster, and the placement policy chooses its node (docs/agents/architecture/entity-libraries.md).
  *
+ * Only an empty warehouse is deleted: the database's reference from the stock refuses the delete while
+ * a stock row still names the warehouse, and the library asks nobody first (HIL-2161).
+ *
  * It also answers the test-only warehouse delete command, by which an e2e removes the warehouse it added.
  */
 final class WarehousesLibraryAgent extends AbstractAgent
