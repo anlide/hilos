@@ -75,7 +75,7 @@ use Throwable;
  * removes ended sessions, it tells this library which, and their carts go. It also tells every
  * tab of a session its cart ({@see CartGroup}).
  *
- * SCAFFOLD: The browser cart actions and payload will use the voucher methods when voucher controls are wired.
+ * SCAFFOLD: Browser cart actions will call the voucher methods when the voucher controls are wired.
  */
 final class GuestCartsLibraryAgent extends AbstractAgent
 {
@@ -205,7 +205,7 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * @throws SourceChangeSubscriberException When a binding change subscriber fails
      * @throws DuplicateIdException When the collection already holds the binding key
      * @throws TableNameUndeterminedException When the binding table is unknown
-     * @throws HilosException When the binding collection refuses a reload after database replacement
+     * @throws HilosException When the binding collection refuses a reload or the cart snapshot cannot be read
      */
     public function applyVoucher(int $sessionId, string $code): void
     {
@@ -216,13 +216,16 @@ final class GuestCartsLibraryAgent extends AbstractAgent
         $voucherId = CartVoucherRules::voucherForCode($code)->id
             ?? throw new LogicException('A catalog voucher must have an ID');
         $binding = Hilos::$db->sessionVoucherCarts[$sessionId] ?? null;
+        $previousVoucherId = $binding?->voucherId;
         if ($binding === null) {
             Hilos::$db->sessionVoucherCarts->actions->create($sessionId, $voucherId);
-
-            return;
+        } else {
+            $binding->actions->setVoucher($voucherId);
         }
 
-        $binding->actions->setVoucher($voucherId);
+        if ($previousVoucherId !== $voucherId) {
+            $this->publishCart($sessionId);
+        }
     }
 
     /**
@@ -238,11 +241,17 @@ final class GuestCartsLibraryAgent extends AbstractAgent
      * @throws ObjectCollectionNullException When the binding has no backing collection
      * @throws ObjectGetIdStringNotImplementedException When the binding cannot be keyed
      * @throws SourceChangeSubscriberException When a binding change subscriber fails
+     * @throws HilosException When the cart snapshot cannot be read
      */
     public function removeVoucher(int $sessionId): void
     {
         $binding = Hilos::$db->sessionVoucherCarts[$sessionId] ?? null;
-        $binding?->actions->remove();
+        if ($binding === null) {
+            return;
+        }
+
+        $binding->actions->remove();
+        $this->publishCart($sessionId);
     }
 
     /**
@@ -395,8 +404,8 @@ final class GuestCartsLibraryAgent extends AbstractAgent
     /**
      * Sends the whole cart of one session to every tab of it.
      *
-     * The lines are read in the order they were put in and leave after the commit, as
-     * {@see AbstractSessionsLibraryAgent} sends a session's toasts.
+     * The snapshot includes the lines in insertion order and the saved voucher ID.
+     * It leaves after the commit, as {@see AbstractSessionsLibraryAgent} sends a session's toasts.
      *
      * @param int $sessionId Row of the session whose cart is told
      * @throws InvalidArgumentException When the frame cannot be named or queued outside a transaction
@@ -410,7 +419,11 @@ final class GuestCartsLibraryAgent extends AbstractAgent
         }
         ksort($lines);
 
-        $frame = new CartStateSignalData(null, array_values($lines));
+        $frame = new CartStateSignalData(
+            null,
+            array_values($lines),
+            (Hilos::$db->sessionVoucherCarts[$sessionId] ?? null)?->voucherId,
+        );
         Database::afterCommit(fn () => $this->sendToGroup(EcommerceShopSignalConstants::CART_STATE, CartGroup::forSession($sessionId), $frame));
     }
 }

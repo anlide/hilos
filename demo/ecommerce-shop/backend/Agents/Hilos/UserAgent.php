@@ -50,7 +50,7 @@ use Hilos\WiringRefusal;
  * Person agent bound to the ecommerce-shop project.
  *
  * Owns the person's product lines and voucher binding, and erases both in its assigned part
- * of account erasure. It reads the cart on demand and sends its product lines to the person's
+ * of account erasure. It reads the cart on demand and sends the whole cart to the person's
  * tabs and devices through {@see CartGroup}.
  */
 final class UserAgent extends AbstractUserAgent
@@ -141,7 +141,7 @@ final class UserAgent extends AbstractUserAgent
      * @throws SourceChangeSubscriberException When a binding change subscriber fails
      * @throws DuplicateIdException When the collection already holds the binding key
      * @throws TableNameUndeterminedException When the binding table is unknown
-     * @throws HilosException When the binding collection refuses a reload after database replacement
+     * @throws HilosException When the binding collection refuses a reload or the cart snapshot cannot be read
      */
     public function applyVoucher(string $code): void
     {
@@ -151,13 +151,16 @@ final class UserAgent extends AbstractUserAgent
         $voucherId = CartVoucherRules::voucherForCode($code)->id
             ?? throw new LogicException('A catalog voucher must have an ID');
         $binding = Hilos::$db->userVoucherCarts[$userId] ?? null;
+        $previousVoucherId = $binding?->voucherId;
         if ($binding === null) {
             Hilos::$db->userVoucherCarts->actions->create($userId, $voucherId);
-
-            return;
+        } else {
+            $binding->actions->setVoucher($voucherId);
         }
 
-        $binding->actions->setVoucher($voucherId);
+        if ($previousVoucherId !== $voucherId) {
+            $this->publishCart($userId);
+        }
     }
 
     /**
@@ -175,13 +178,20 @@ final class UserAgent extends AbstractUserAgent
      * @throws ObjectCollectionNullException When the binding has no backing collection
      * @throws ObjectGetIdStringNotImplementedException When the binding cannot be keyed
      * @throws SourceChangeSubscriberException When a binding change subscriber fails
+     * @throws HilosException When the cart snapshot cannot be read
      */
     public function removeVoucher(): void
     {
         $userId = (int)$this->getIndex();
         AddressablePerson::require($userId);
 
-        (Hilos::$db->userVoucherCarts[$userId] ?? null)?->actions->remove();
+        $binding = Hilos::$db->userVoucherCarts[$userId] ?? null;
+        if ($binding === null) {
+            return;
+        }
+
+        $binding->actions->remove();
+        $this->publishCart($userId);
     }
 
     /**
@@ -202,7 +212,7 @@ final class UserAgent extends AbstractUserAgent
 
     /**
      * Deletes the person's product lines and voucher binding inside the assigned erasure step.
-     * Removing product lines tells the person's tabs about the empty cart once the erasure commits.
+     * If any cart rows were removed, the person's tabs learn the cart is empty once the erasure commits.
      *
      * @param int $userId Person whose account is being erased
      * @return AccountErasure Deleted rows by cart table, with no registry files
@@ -216,7 +226,7 @@ final class UserAgent extends AbstractUserAgent
      * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
      * @throws DatabaseException When the rows cannot be read, or the database refuses the delete
      * @throws SourceChangeSubscriberException Whatever a subscriber to the store announcement raises
-     * @throws HilosException When the right, the database or the collection refuses the delete
+     * @throws HilosException When a cart deletion or the snapshot read fails
      */
     protected function eraseProjectChildren(int $userId): AccountErasure
     {
@@ -232,7 +242,7 @@ final class UserAgent extends AbstractUserAgent
             $deletedRows[UserVoucherCart::_table] = 1;
         }
 
-        if ($lines > 0) {
+        if ($deletedRows !== []) {
             $this->publishCart($userId);
         }
 
@@ -258,10 +268,10 @@ final class UserAgent extends AbstractUserAgent
     }
 
     /**
-     * Sends the person's product lines to every tab and device of the person.
+     * Sends the person's whole cart to every tab and device of the person.
      *
-     * A tab added to the person's group receives those lines too. They are read now, in the
-     * order they were added, and leave after the commit.
+     * A tab added to the person's group receives the current cart. Its lines are
+     * read in the order they were added. The snapshot leaves after the commit.
      *
      * @param int $userId Person whose cart is told
      * @throws InvalidArgumentException When the frame cannot be named or queued outside a transaction
@@ -275,7 +285,11 @@ final class UserAgent extends AbstractUserAgent
         }
         ksort($lines);
 
-        $frame = new CartStateSignalData($userId, array_values($lines));
+        $frame = new CartStateSignalData(
+            $userId,
+            array_values($lines),
+            (Hilos::$db->userVoucherCarts[$userId] ?? null)?->voucherId,
+        );
         Database::afterCommit(fn () => $this->sendToGroup(EcommerceShopSignalConstants::CART_STATE, CartGroup::forUser($userId), $frame));
     }
 }

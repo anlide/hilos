@@ -22,16 +22,22 @@ final class CartStateSignalData extends SignalData implements SignalDataInterfac
     public const string LINES = 'lines';
     public const string PRODUCT_ID = 'productId';
     public const string QUANTITY = 'quantity';
+    public const string VOUCHER_ID = 'voucherId';
+
+    /** Largest integer the browser can carry as an exact ID. */
+    private const int MAX_SAFE_VOUCHER_ID = 9_007_199_254_740_991;
 
     /**
      * @param ?int $userId Person whose cart it is, null for the cart of a guest session
      * @param list<array{productId: int, quantity: int}> $lines Every line, in the order the owner gave: the order they were put in
+     * @param ?int $voucherId Saved voucher ID, or null when the cart has no voucher
      */
     public function __construct(
         public readonly ?int $userId,
         public readonly array $lines,
+        public readonly ?int $voucherId,
     ) {
-        parent::__construct([self::USER_ID => $userId, self::LINES => $lines]);
+        parent::__construct([self::USER_ID => $userId, self::LINES => $lines, self::VOUCHER_ID => $voucherId]);
     }
 
     /**
@@ -39,7 +45,7 @@ final class CartStateSignalData extends SignalData implements SignalDataInterfac
      *
      * @param array<string, mixed> $data Serialized payload
      * @return static DTO instance
-     * @throws InvalidFormatException When the person is absent or not an id, or the lines are not a list of whole lines
+     * @throws InvalidFormatException When the owner, lines, or voucher field is missing or invalid
      */
     public static function fromArray(array $data): static
     {
@@ -50,8 +56,15 @@ final class CartStateSignalData extends SignalData implements SignalDataInterfac
         if (!array_is_list($lines)) {
             throw new InvalidFormatException('Payload carries no list under key ' . self::LINES);
         }
+        if (!array_key_exists(self::VOUCHER_ID, $data)) {
+            throw new InvalidFormatException('Payload carries no voucher id field');
+        }
+        $voucherId = self::optionalInt($data, self::VOUCHER_ID);
+        if ($voucherId !== null && ($voucherId <= 0 || $voucherId > self::MAX_SAFE_VOUCHER_ID)) {
+            throw new InvalidFormatException('Payload carries no positive safe integer under key ' . self::VOUCHER_ID);
+        }
 
-        return new static(self::optionalInt($data, self::USER_ID), array_map(self::readLine(...), $lines));
+        return new static(self::optionalInt($data, self::USER_ID), array_map(self::readLine(...), $lines), $voucherId);
     }
 
     /**

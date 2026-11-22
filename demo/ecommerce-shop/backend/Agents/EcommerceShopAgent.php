@@ -72,10 +72,10 @@ final class EcommerceShopAgent extends AbstractAgent
      * THE ORDER IS THE MECHANISM: the connection rows are written first, so that everything
      * read against them - the page re-decision above all - sees who the socket belongs to
      * now; the identity follows, stamped by the framework with the server clock; each socket
-     * is then put in the group of the cart it holds now - after the row, whose change of
-     * person ends every group it held - and the cart's owner is asked to tell the group the
-     * cart, behind every join; and the action that was waiting is answered last, behind the
-     * identity it announces (HIL-622).
+     * is then put in the group of the cart it holds now. A change of person or replacement
+     * of an anonymous session ends the old memberships before the identity is sent. The cart's
+     * owner is asked to tell the group the cart, behind every join and the rotation ticket;
+     * the action that was waiting is answered last, behind the identity it announces (HIL-622).
      *
      * @param SessionStateSignalData $frame What the session is now, and whom to answer
      * @throws InvalidArgumentException When a signal of the answer cannot be named
@@ -131,7 +131,7 @@ final class EcommerceShopAgent extends AbstractAgent
      * @param string $acceptKey Accept key of the connection being brought up to date
      * @param SessionStateSignalData $frame What the session is now
      * @throws HilosException On runtime failure
-     * @throws InvalidArgumentException When the queued runtime-sync signal cannot be named
+     * @throws InvalidArgumentException When the runtime sync or group leave cannot be named
      */
     private function settleConnection(string $acceptKey, SessionStateSignalData $frame): void
     {
@@ -144,7 +144,8 @@ final class EcommerceShopAgent extends AbstractAgent
                 $frame->sessionId,
             );
         } else {
-            if ($connection->sessionToken !== $frame->sessionToken || $connection->sessionId !== $frame->sessionId) {
+            $sessionChanged = $connection->sessionId !== $frame->sessionId;
+            if ($connection->sessionToken !== $frame->sessionToken || $sessionChanged) {
                 Hilos::$rt->connections->actions->repointSessionToken(
                     $acceptKey,
                     $frame->sessionToken,
@@ -153,6 +154,8 @@ final class EcommerceShopAgent extends AbstractAgent
             }
             if ($connection->userId !== $frame->userId) {
                 $connection->actions->bindUser($frame->userId);
+            } elseif ($frame->userId === null && $sessionChanged) {
+                GroupMembership::leaveAll($acceptKey);
             }
         }
     }

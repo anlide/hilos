@@ -13,6 +13,8 @@ use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Constants\HilosSignalConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Group\GroupMembership;
 use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Router\AgentSignalData;
 use Hilos\Core\Router\SignalDataInterface;
@@ -198,6 +200,86 @@ final class EcommerceShopAgentHandshakeTest extends IntegrationTestCase
             [[EcommerceShopSignalConstants::GUEST_CART_SEND, new GuestCartSendSignalData($sessionId)]],
             $this->cartAsks(),
         );
+    }
+
+    /** An anonymous browser's replacement session owns a different cart on the same socket. */
+    public function testReplacingAnAnonymousSessionMovesTheSocketToTheNewCart(): void
+    {
+        $acceptKey = 'ecommerce-shop-cart-replace-ak';
+        $this->handshake(RandomHelper::hex(16), $acceptKey);
+        $connection = Hilos::$rt->connections[$acceptKey];
+        self::assertNotNull($connection);
+        self::assertNull($connection->userId);
+        self::assertNotNull($connection->sessionId);
+        $oldGroup = CartGroup::forSession($connection->sessionId);
+        self::assertSame($oldGroup, Hilos::$sr->groupSubscriptionName($acceptKey, $oldGroup));
+        $replacement = Hilos::$db->sessions->actions->createAnonymous(RandomHelper::hex(16));
+        $this->drainSignals();
+
+        $this->sessionState(new SessionStateSignalData(
+            $replacement->token,
+            $replacement->id,
+            null,
+            [$acceptKey],
+            rotationTicket: 'replacement-ticket',
+        ));
+
+        self::assertNull($connection->userId);
+        self::assertSame($replacement->id, $connection->sessionId);
+        self::assertSame($replacement->token, $connection->sessionToken);
+        self::assertNull(Hilos::$sr->groupSubscriptionName($acceptKey, $oldGroup));
+        $newGroup = CartGroup::forSession($replacement->id);
+        self::assertSame($newGroup, Hilos::$sr->groupSubscriptionName($acceptKey, $newGroup));
+
+        $expected = [
+            SignalTypeConstants::GROUP_LEAVE_ALL,
+            EcommerceShopSignalConstants::HANDSHAKE_RESPONSE,
+            SignalTypeConstants::GROUP_JOIN,
+            HilosSignalConstants::HILOS_SESSION_ROTATE,
+            EcommerceShopSignalConstants::GUEST_CART_SEND,
+        ];
+        $sent = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $name = $signal->signalName->getName();
+            if (in_array($name, $expected, true)) {
+                $sent[] = $name;
+            }
+            if ($name === EcommerceShopSignalConstants::GUEST_CART_SEND) {
+                self::assertInstanceOf(AgentSignalData::class, $signal->data);
+                self::assertEquals(new GuestCartSendSignalData($replacement->id), $signal->data->data);
+            }
+        }
+        self::assertSame($expected, $sent);
+    }
+
+    /** Repeated identity and an in-place token rotation preserve memberships. */
+    public function testRestatingAnAnonymousSessionOrRotatingItsTokenKeepsGroups(): void
+    {
+        $acceptKey = 'ecommerce-shop-cart-rotate-ak';
+        $token = RandomHelper::hex(16);
+        $this->handshake($token, $acceptKey);
+        $connection = Hilos::$rt->connections[$acceptKey];
+        self::assertNotNull($connection);
+        $sessionId = $connection->sessionId;
+        self::assertNotNull($sessionId);
+        $cartGroup = CartGroup::forSession($sessionId);
+        $otherGroup = 'guest-fixture';
+        GroupMembership::join($acceptKey, $otherGroup, (new EcommerceShopAgent())->getAgentSignalSource());
+        $this->drainSignals();
+
+        foreach ([$token, RandomHelper::hex(16)] as $sessionToken) {
+            $this->sessionState(new SessionStateSignalData($sessionToken, $sessionId, null, [$acceptKey]));
+
+            self::assertNull($connection->userId);
+            self::assertSame($sessionId, $connection->sessionId);
+            self::assertSame($sessionToken, $connection->sessionToken);
+            self::assertSame($cartGroup, Hilos::$sr->groupSubscriptionName($acceptKey, $cartGroup));
+            self::assertSame($otherGroup, Hilos::$sr->groupSubscriptionName($acceptKey, $otherGroup));
+            self::assertEquals(
+                [[EcommerceShopSignalConstants::GUEST_CART_SEND, new GuestCartSendSignalData($sessionId)]],
+                $this->cartAsks(),
+            );
+        }
     }
 
     /**

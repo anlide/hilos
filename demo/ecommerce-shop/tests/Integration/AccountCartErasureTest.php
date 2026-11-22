@@ -102,10 +102,13 @@ final class AccountCartErasureTest extends IntegrationTestCase
         self::assertSame([], self::storedLines($personId));
         self::assertNull(self::storedVoucherId($personId));
         self::assertSame($kept, self::storedLines($otherId));
-        self::assertSame([[CartGroup::forUser($personId), ['userId' => $personId, 'lines' => []]]], $this->cartStates());
+        self::assertSame(
+            [[CartGroup::forUser($personId), ['userId' => $personId, 'lines' => [], 'voucherId' => null]]],
+            $this->cartStates(),
+        );
     }
 
-    /** A voucher-only cart records one erased binding, with no product frame. */
+    /** A voucher-only cart records one erased binding and tells the person's group the cart is empty. */
     public function testThePartErasesAVoucherWithoutProductLines(): void
     {
         $personId = $this->person('Voucher leaving');
@@ -123,7 +126,10 @@ final class AccountCartErasureTest extends IntegrationTestCase
         self::assertNull(self::storedVoucherId($personId));
         self::assertSame($voucherId, self::storedVoucherId($otherId));
         self::assertSame([['code' => 'ERASURE15']], Database::sql('SELECT code FROM voucher WHERE id = ?', [$voucherId])->rows());
-        self::assertSame([], $this->cartStates());
+        self::assertSame(
+            [[CartGroup::forUser($personId), ['userId' => $personId, 'lines' => [], 'voucherId' => null]]],
+            $this->cartStates(),
+        );
     }
 
     /** A person without a cart gets a part that names no family, erases nothing and tells no cart. */
