@@ -20,6 +20,7 @@ use Demo\EcommerceShop\Agents\Hilos\UsersLibraryAgent;
 use Demo\EcommerceShop\Agents\ProductAgent;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Agents\StockLibraryAgent;
+use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\Agents\WarehousesLibraryAgent;
 use Demo\EcommerceShop\Auth\EcommerceShopAccountDataOwnerDirectory;
 use Demo\EcommerceShop\Auth\EcommerceShopAuthMethodDirectory;
@@ -45,6 +46,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\Hilos\UsersLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\ProductAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\ProductsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\StockLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\VouchersLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\WarehousesLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\Pages\PageCatalog;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
@@ -425,6 +427,11 @@ final class Hilos extends HilosFacade
         GuestCartsLibraryAgent::AGENT_TYPE => [
             AgentRegistryKey::WORKER => GuestCartsLibraryAgent::class,
             AgentRegistryKey::DAEMON => GuestCartsLibraryAgentDaemon::class,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+        VouchersLibraryAgent::AGENT_TYPE => [
+            AgentRegistryKey::WORKER => VouchersLibraryAgent::class,
+            AgentRegistryKey::DAEMON => VouchersLibraryAgentDaemon::class,
             AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
         ],
         ProductAgent::AGENT_TYPE => [

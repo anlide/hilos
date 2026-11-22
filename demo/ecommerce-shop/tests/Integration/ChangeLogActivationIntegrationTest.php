@@ -47,6 +47,7 @@ final class ChangeLogActivationIntegrationTest extends IntegrationTestCase
         'hilos_user',
         'product',
         'product_warehouse_stock',
+        'voucher',
         'warehouse',
     ];
 

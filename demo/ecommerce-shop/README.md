@@ -50,10 +50,11 @@ library, the backup agent, the files library with the uploads and image-copy
 agents, and the framework sign-in libraries. It keeps tables of its own: the
 warehouses, the categories with every address a category has had, the
 products with every address a product has had, the stock — the units of each
-product in each warehouse — and the guests' carts — the products a browser
-session without an account has put in its cart. Each is held whole by its own
-library — the warehouses library, the categories library, the products
-library, the stock library, the guest carts library — one for the whole
+product in each warehouse — the guests' carts — the products a browser
+session without an account has put in its cart — and the vouchers that hold
+the shop's discount codes. Each is held whole by its own library — the
+warehouses library, the categories library, the products library, the stock
+library, the guest carts library, the vouchers library — one for the whole
 cluster, on the node the cluster picks. The carts of the people with an
 account — the products a person who signed in has put in their cart — are
 the one table held not by a library but by the agent of each person: one
@@ -436,8 +437,8 @@ Both sides are checked by one table of examples, `tests/money-cases.json`.
 ## Change Log
 
 The demo declares `CHANGE_LOG` and journals exactly `hilos_user`, `hilos_identity`,
-`hilos_second_factor`, `hilos_setting`, `warehouse`, `category`, `product` and
-`product_warehouse_stock`, the shop's own tables.
+`hilos_second_factor`, `hilos_setting`, `warehouse`, `category`, `product`,
+`product_warehouse_stock` and `voucher`, the shop's own tables.
 The journal is the primary database name plus `-change-log`, on the same MariaDB server with the same host, port, user,
 password and charset. No additional environment keys are needed. The primary
 migration track creates its six tables; connection 1 runs no separate migrator.

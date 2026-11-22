@@ -11,9 +11,11 @@ use Demo\EcommerceShop\Database\Actions\Collection\ProductSlugsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\ProductWarehouseStocksActions;
 use Demo\EcommerceShop\Database\Actions\Collection\SessionProductCartsActions;
 use Demo\EcommerceShop\Database\Actions\Collection\UserProductCartsActions;
+use Demo\EcommerceShop\Database\Actions\Collection\VouchersActions;
 use Demo\EcommerceShop\Database\Actions\Collection\WarehousesActions;
 use Demo\EcommerceShop\Database\Actions\Item\CategoryActions;
 use Demo\EcommerceShop\Database\Actions\Item\ProductActions;
+use Demo\EcommerceShop\Database\Actions\Item\VoucherActions;
 use Demo\EcommerceShop\Database\Actions\Item\WarehouseActions;
 use Demo\EcommerceShop\Database\Object\Collection\Categories as ObjectCategories;
 use Demo\EcommerceShop\Database\Object\Collection\CategorySlugs as ObjectCategorySlugs;
@@ -22,6 +24,7 @@ use Demo\EcommerceShop\Database\Object\Collection\ProductSlugs as ObjectProductS
 use Demo\EcommerceShop\Database\Object\Collection\ProductWarehouseStocks as ObjectProductWarehouseStocks;
 use Demo\EcommerceShop\Database\Object\Collection\SessionProductCarts as ObjectSessionProductCarts;
 use Demo\EcommerceShop\Database\Object\Collection\UserProductCarts as ObjectUserProductCarts;
+use Demo\EcommerceShop\Database\Object\Collection\Vouchers as ObjectVouchers;
 use Demo\EcommerceShop\Database\Object\Collection\Warehouses as ObjectWarehouses;
 use Demo\EcommerceShop\Database\View\Collection\Categories;
 use Demo\EcommerceShop\Database\View\Collection\CategorySlugs;
@@ -30,6 +33,7 @@ use Demo\EcommerceShop\Database\View\Collection\ProductSlugs;
 use Demo\EcommerceShop\Database\View\Collection\ProductWarehouseStocks;
 use Demo\EcommerceShop\Database\View\Collection\SessionProductCarts;
 use Demo\EcommerceShop\Database\View\Collection\UserProductCarts;
+use Demo\EcommerceShop\Database\View\Collection\Vouchers;
 use Demo\EcommerceShop\Database\View\Collection\Warehouses;
 use Hilos\Database\Context\HilosDbContext;
 use Hilos\Database\Exception\CollectionAlreadyMountedException;
@@ -46,7 +50,7 @@ use Hilos\Database\Object\Objects;
  * People, their sessions and every table of signing in are the framework's. The shop's own
  * tables are its warehouses, the categories of its catalog, its products, every address a
  * category or a product has had, and the stock: the units of each product in each warehouse.
- * The warehouses, the categories and their addresses are a few rows each, read whole by
+ * The warehouses, the categories and their addresses, and the vouchers are a few rows each, read whole by
  * everything that reads them at all, so each of those collections loads its table on its first
  * read in any process, the way the language catalog does. The catalog of products grows, and
  * the stock with it, so the products, their addresses and the stock load lazily by key: the
@@ -67,6 +71,7 @@ use Hilos\Database\Object\Objects;
  * @property-read ProductWarehouseStocks $productWarehouseStocks
  * @property-read SessionProductCarts $sessionProductCarts
  * @property-read UserProductCarts $userProductCarts
+ * @property-read Vouchers $vouchers
  */
 final class EcommerceShopDbContext extends HilosDbContext
 {
@@ -78,6 +83,7 @@ final class EcommerceShopDbContext extends HilosDbContext
     public const string productWarehouseStocks = 'productWarehouseStocks';
     public const string sessionProductCarts = 'sessionProductCarts';
     public const string userProductCarts = 'userProductCarts';
+    public const string vouchers = 'vouchers';
 
     /**
      * Configures database context with object collections and view representations.
@@ -101,6 +107,7 @@ final class EcommerceShopDbContext extends HilosDbContext
         $this->mountObjectCollection(ObjectProductWarehouseStocks::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectSessionProductCarts::class, Objects::LAZY_STRATEGY_KEY);
         $this->mountObjectCollection(ObjectUserProductCarts::class, Objects::LAZY_STRATEGY_KEY);
+        $this->mountObjectCollection(ObjectVouchers::class, Objects::LAZY_STRATEGY_NONE);
 
         $this->setRepresent(self::warehouses, Warehouses::class, WarehousesActions::class, WarehouseActions::class);
         $this->setRepresent(self::categories, Categories::class, CategoriesActions::class, CategoryActions::class);
@@ -110,5 +117,6 @@ final class EcommerceShopDbContext extends HilosDbContext
         $this->setRepresent(self::productWarehouseStocks, ProductWarehouseStocks::class, ProductWarehouseStocksActions::class);
         $this->setRepresent(self::sessionProductCarts, SessionProductCarts::class, SessionProductCartsActions::class);
         $this->setRepresent(self::userProductCarts, UserProductCarts::class, UserProductCartsActions::class);
+        $this->setRepresent(self::vouchers, Vouchers::class, VouchersActions::class, VoucherActions::class);
     }
 }

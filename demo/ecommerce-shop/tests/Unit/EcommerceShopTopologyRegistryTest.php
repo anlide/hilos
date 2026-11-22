@@ -59,6 +59,7 @@ use Demo\EcommerceShop\Agents\ProductAgent;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Agents\StockLibraryAgent;
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
+use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
@@ -79,6 +80,7 @@ use Demo\EcommerceShop\Core\Agent\Daemon\ProductAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\ProductsLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\StockLibraryAgentDaemon;
 use Demo\EcommerceShop\Core\Agent\Daemon\GuestCartsLibraryAgentDaemon;
+use Demo\EcommerceShop\Core\Agent\Daemon\VouchersLibraryAgentDaemon;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Settings\EcommerceShopSettingsCatalog;
 use Demo\EcommerceShop\Core\Router\DTO\AccountCartSendSignalData;
@@ -1115,6 +1117,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AgentType::PRODUCTS_LIBRARY,
             AgentType::STOCK_LIBRARY,
             AgentType::GUEST_CARTS_LIBRARY,
+            AgentType::VOUCHERS_LIBRARY,
             AgentType::PRODUCT,
             AgentType::HILOS_INDEX,
             AgentType::HILOS_ANALYTICS,
@@ -1252,6 +1255,21 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             ],
             GuestCartsLibraryAgent::AGENT_SIGNALS,
         );
+    }
+
+    /** The vouchers library runs once on the policy-selected node and may only add and update vouchers. */
+    public function testVouchersLibraryIsPolicyPlacedMonopolisticAndOnlyAddsAndUpdatesVouchers(): void
+    {
+        $entry = Hilos::AGENTS[AgentType::VOUCHERS_LIBRARY];
+        self::assertSame(VouchersLibraryAgent::class, AgentRegistry::workerClass($entry));
+        self::assertSame(VouchersLibraryAgentDaemon::class, AgentRegistry::daemonClass($entry));
+        self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
+        self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
+        self::assertTrue((new VouchersLibraryAgentDaemon())->requiresMonopolisticProcess());
+        $claims = OwnershipDeclaration::dbCollectionsOf(VouchersLibraryAgent::class);
+        self::assertSame([EcommerceShopDbContext::vouchers], array_keys($claims));
+        self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Update], $claims[EcommerceShopDbContext::vouchers]->asList());
+        self::assertSame([], VouchersLibraryAgent::readDbCollections());
     }
 
     /** The warehouses table is registered under its key, for the page that binds it. */
