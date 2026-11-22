@@ -1,17 +1,12 @@
 # Account Operations: Erasure And Merge Across Owners
 
-Read this before designing or cutting the split erasure and merge of an
-account — the two operations that today run as one transaction at the sessions
-holder across tables other agents own — before giving a library, a channel or
-the sessions holder a write it would hold only for one of those operations, and
-before deciding who the single writer of a person's row is after that row has
-been created.
+Read this before designing or cutting work on account erasure and merge across owners, before giving a library, a channel or the sessions holder a write it would hold only for one of those operations, and before deciding who the single writer of a person's row is after that row has been created.
 
 **This document preserves the approved research of HIL-1675 and now records
 the three implementation phases agreed in HIL-1888, HIL-1889 and HIL-1890.**
 The detailed erasure and merge norms are recorded here, separately from the
-leaves that prepare their mechanisms and their single live switches. Neither
-terminal protocol is code.
+leaves that prepare their mechanisms and their single live switches. Erasure has
+run through its owners since HIL-1952, and merge since HIL-1999.
 This documentation adds no callable API, right, table or frame. The
 erasure and the merge that run in the tree are the ones described in
 [The Erasure](account-deletion.md#the-erasure),
@@ -459,11 +454,9 @@ own assignment handler in the process, with the frame the coordinator would
 have sent, so the step, the outcome and the answer to the holder are the
 handler's own. A failed read of one kind is logged and does not hide duties of
 the other kind; a failed duty is logged and does not prevent the remaining
-duties from running. No frame is sent to the agent itself: a merged account's
-personal agent stops after each assignment frame, and a frame to itself would
-wake it again for a duty its step keeps refusing. The resume stops once the
-agent asks to stop and leaves the rest to the coordinator. It never throws; the
-start goes on.
+duties from running. No frame is sent to the agent itself. Once the agent
+requests a stop, resume leaves the remaining duties to the coordinator. It
+never throws, and the start goes on.
 
 Doubles are the accepted cost. An owner woken by the frame itself runs the duty
 at its start and answers that frame again with the saved result, and at a daemon
@@ -473,23 +466,18 @@ coordinator keeps such doubles harmless: a repeated answer records nothing new,
 and the successors that still have no result are assigned again, each a double
 of the same kind ([Recovery](#recovery)).
 
-**The stop.** `AbstractUserAgent` (`Users/Agent/AbstractUserAgent.php`) stops
-itself the moment its person row is deleted (`onSignalDbSyncDeleted()`) or a
-merge row keyed by its person appears (`onSignalDbSyncCreated()`, HIL-1410).
-Both are immediate: the agent is gone before anything of its own could run.
-Under the target protocol the loser's agent is the one that gives its rows
-away and the erased person's agent is the one that deletes its part, so this
-stop is in the wrong place by construction: either the agent's own work is
-done before the final fact, or the agent runs on in a mode that only finishes
-the operation (question 3). `AddressablePerson::require()`
-(`Users/AddressablePerson.php`) refuses a missing, folded or erasing person
-before the hop and the agent repeats the check; the service continuation of a
-future operation must not become a general way around that refusal. The begun
-request does not stop the agent: it goes on in the state *The closed account*
-describes, and stops only on the two facts above and, in an erasure, after its
-own final (*The erasure final*): `finishAccountErasure()` stops it once the final
-has committed or its saved result was returned, and a refusal or a wait leaves it
-running. The stop on the deleted row stays as the second line.
+**The stop.** `AbstractUserAgent` requests a stop when its own person row is
+deleted (`onSignalDbSyncDeleted()`). When the loser's merge row appears,
+`onSignalDbSyncCreated()` restores the finishing context, and [source
+cleanup](agent-lifecycle.md#idle-stop-an-agent-that-lives-as-long-as-it-is-spoken-to)
+requests the stop after its result commits or a saved result is returned.
+`AddressablePerson::require()` (`Users/AddressablePerson.php`) refuses a
+missing, folded or erasing person before the hop, and the agent repeats the
+check. Service continuation is limited to the operation's own work. When
+erasure begins, the agent keeps running in the state described in *The closed
+account*. In *The erasure final*, `finishAccountErasure()` requests a stop after
+the final commits or a saved result is returned. A refusal or a wait leaves the
+agent running, and deletion of its person row remains a second stop trigger.
 
 **The write guard.** A claim over a set covers a write only when every set key
 the write touches is its own (`TruthSourceKeys::coversRow()`,
@@ -497,10 +485,12 @@ the write touches is its own (`TruthSourceKeys::coversRow()`,
 into two sets and asks the collection door, which only the holder of the whole
 table passes (`DbWriteGuard::guardSetWrite()`,
 `Core/TruthSource/DbWriteGuard.php`;
-[A Claim Over A Set](truth-source.md#a-claim-over-a-set)). This is why the
-merge is the holder's today and why the target needs a narrow transfer right
-by operation, not a wider ordinary `Update`. A set claim with no `Add` is a
-borrowed claim and waits for the state at start.
+[A Claim Over A Set](truth-source.md#a-claim-over-a-set)). The merge
+coordinator dispatches the work to the owners. Moving existing sign-in or
+protection rows between account sets uses the operation-scoped right in [The
+Transfer Right](#the-transfer-right) through `AccountMergeTransfer::run()`
+(HIL-1991). Ordinary `Update` still requires the normal claim. A set claim with
+no `Add` is a borrowed claim and waits for the state at start.
 
 **The person's agent's claims.** `OWNS_DB_ROWS` holds its own `users` row with
 `Update` alone; `OWNS_DB_SET` holds sixteen child sets, borrowed except the

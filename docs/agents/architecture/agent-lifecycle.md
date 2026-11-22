@@ -69,10 +69,12 @@ Agent can request its own removal: `$this->selfStop()`.
 `onStop()` will be called at the start of the next tick.
 
 An instance agent also stops when its own instance disappears. It hears the
-sync frame of its own row: the chat bot stops when its bot row is deleted or
-switched off, and a person's agent stops when their people row is deleted or a
-merge row appears under their id. A frame the worker reads after that stop is
-lost, with the log line `handleAgentMessage - agent not found`
+sync frame of its own row. The chat bot stops when its bot row is deleted or
+switched off, and a person's agent requests a stop when their own person row is
+deleted. A new merge row restores the loser's finishing context. [Source
+cleanup](#idle-stop-an-agent-that-lives-as-long-as-it-is-spoken-to) requests the
+stop after the cleanup result commits or a saved result is returned. A frame the
+worker reads after that stop is lost, with the log line `handleAgentMessage - agent not found`
 (`WorkerManager.php`). That window is one tick and belongs to every stop.
 
 ## Idle stop: an agent that lives as long as it is spoken to
