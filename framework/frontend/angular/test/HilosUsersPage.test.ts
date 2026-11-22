@@ -921,11 +921,9 @@ describe('HilosUsersPage merge (HIL-2011)', () => {
     expect(caption(1, 'expected')?.textContent?.trim()).toBe(
       'Expected: chat; files · #2',
     )
-    expect(caption(1, 'expected')?.querySelectorAll('code')).toHaveLength(2)
     expect(caption(1, 'waits')?.textContent?.trim()).toBe(
-      'Waiting for an owner: sessions · #2; delivery',
+      'Waiting for an owner: Close source sessions · #2; delivery',
     )
-    expect(caption(1, 'waits')?.querySelectorAll('code')).toHaveLength(2)
     expect(caption(1, 'refusal')).toBeNull()
   })
 

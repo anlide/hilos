@@ -1120,9 +1120,8 @@ describe('HilosUsersPage merge (HIL-2010)', () => {
     expect(caption(1, 'expected')?.textContent).toBe(
       'Expected: chat; files · #2; auth · #2',
     )
-    expect(caption(1, 'expected')?.querySelectorAll('code')).toHaveLength(3)
     expect(caption(1, 'waits')?.textContent).toBe(
-      'Waiting for an owner: sessions · #2; delivery',
+      'Waiting for an owner: Close source sessions · #2; delivery',
     )
     expect(caption(1, 'refusal')).toBeNull()
   })
@@ -1186,7 +1185,7 @@ describe('HilosUsersPage merge (HIL-2010)', () => {
         ?.getAttribute('aria-valuenow'),
     ).toBe('100')
     expect(caption(2, 'waits')?.textContent).toBe(
-      'Waiting for an owner: sessions; delivery',
+      'Waiting for an owner: Close source sessions; delivery',
     )
     expect(hilosToasts.toasts.get()).toEqual([])
   })
@@ -1215,9 +1214,8 @@ describe('HilosUsersPage merge (HIL-2010)', () => {
       'Expected: chat; files · #2; auth · #2; +2 more',
     )
     expect(caption(1, 'waits')?.textContent).toBe(
-      'Waiting for an owner: sessions · #2; delivery; backup · #2; +1 more',
+      'Waiting for an owner: Close source sessions · #2; delivery; backup · #2; +1 more',
     )
-    expect(caption(1, 'waits')?.querySelectorAll('code')).toHaveLength(3)
     expect(caption(1, 'refusal')?.textContent).toBe(reason)
     expect(caption(1, 'refusal')?.querySelector('img')).toBeNull()
     const open = container.querySelector('[data-id="hilos-table-row-1"] a')

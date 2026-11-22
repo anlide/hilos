@@ -222,9 +222,8 @@ const erasingBadge = hilosStandingBadge('erasing')
               <template
                 v-for="(part, index) in caption.expected.shown"
                 :key="part.key"
-                ><template v-if="index > 0">; </template
-                ><code>{{ part.participant }}</code
-                ><template v-if="part.account !== null">
+                ><template v-if="index > 0">; </template>{{ part.participant
+                }}<template v-if="part.account !== null">
                   · #{{ part.account }}</template
                 ></template
               ><template v-if="caption.expected.more !== null"
@@ -239,9 +238,8 @@ const erasingBadge = hilosStandingBadge('erasing')
               <template
                 v-for="(wait, index) in caption.waits.shown"
                 :key="wait.key"
-                ><template v-if="index > 0">; </template
-                ><code>{{ wait.participant }}</code
-                ><template v-if="wait.account !== null">
+                ><template v-if="index > 0">; </template>{{ wait.participant
+                }}<template v-if="wait.account !== null">
                   · #{{ wait.account }}</template
                 ></template
               ><template v-if="caption.waits.more !== null"

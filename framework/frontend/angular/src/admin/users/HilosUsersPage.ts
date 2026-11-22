@@ -221,9 +221,8 @@ export interface UsersRowActionsContext {
                   let index = $index
                 ) {
                   <ng-container
-                    >{{ index > 0 ? '; ' : ''
-                    }}<code>{{ part.participant }}</code
-                    >{{
+                    >{{ index > 0 ? '; ' : '' }}{{ part.participant
+                    }}{{
                       part.account !== null ? ' · #' + part.account : ''
                     }}</ng-container
                   >
@@ -244,9 +243,8 @@ export interface UsersRowActionsContext {
                   let index = $index
                 ) {
                   <ng-container
-                    >{{ index > 0 ? '; ' : ''
-                    }}<code>{{ wait.participant }}</code
-                    >{{
+                    >{{ index > 0 ? '; ' : '' }}{{ wait.participant
+                    }}{{
                       wait.account !== null ? ' · #' + wait.account : ''
                     }}</ng-container
                   >

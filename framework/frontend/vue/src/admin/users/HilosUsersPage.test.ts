@@ -1077,9 +1077,8 @@ describe('HilosUsersPage merge (HIL-2005)', () => {
     expect(caption(1, 'expected').text()).toBe(
       'Expected: chat; files · #2; auth · #2',
     )
-    expect(caption(1, 'expected').findAll('code')).toHaveLength(3)
     expect(caption(1, 'waits').text()).toBe(
-      'Waiting for an owner: sessions · #2; delivery',
+      'Waiting for an owner: Close source sessions · #2; delivery',
     )
     expect(caption(1, 'refusal').exists()).toBe(false)
   })
@@ -1211,12 +1210,10 @@ describe('HilosUsersPage merge (HIL-2005)', () => {
     expect(caption(1, 'expected').text()).toBe(
       'Expected: chat; files · #2; auth · #2; +2 more',
     )
-    expect(caption(1, 'expected').findAll('code')).toHaveLength(3)
 
     expect(caption(1, 'waits').text()).toBe(
-      'Waiting for an owner: sessions · #2; delivery; backup · #2; +1 more',
+      'Waiting for an owner: Close source sessions · #2; delivery; backup · #2; +1 more',
     )
-    expect(caption(1, 'waits').findAll('code')).toHaveLength(3)
 
     expect(caption(1, 'refusal').text()).toBe(
       'Another merge already active on candidate',

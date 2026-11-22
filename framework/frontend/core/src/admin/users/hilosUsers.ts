@@ -96,6 +96,7 @@ import { TableViewportController } from '../../table/TableViewportController.js'
 import { ANALYTICS_PERSON_ROUTE_PARAM } from '../analytics/hilosAnalyticsPerson.js'
 import { hiddenAsWord } from '../../state/viewMode.js'
 import { readableHilosAccountMergeProgress } from './hilosAccountMergePrivacy.js'
+import { hilosUserMergeSection } from './hilosUserMergeSection.js'
 
 export {
   SIGNAL_ACCOUNT_STANDING_STATE,
@@ -2390,6 +2391,7 @@ export const HILOS_USERS_MERGE_LIMIT = 3
 /** One item line in an account merge progress caption (HIL-2005). */
 export interface HilosUsersMergeLine {
   readonly key: string
+  /** The duty's name, or the server's own words for any other participant. */
   readonly participant: string
   readonly account: number | null
 }
@@ -2411,8 +2413,10 @@ export interface HilosUsersMergeCaption {
 /**
  * The caption above a users-list row's merge bar, or `null` when the bar is about
  * other work. Only what stands in the way is listed: unfinished parts, owners
- * awaited, refusal. A null or unreadable merge detail keeps the summary alone and
- * empty lists.
+ * awaited, refusal. A known duty is named in the words of the card's section
+ * ({@link hilosUserMergeSection}), and any other participant in the server's
+ * own words. A null or unreadable merge detail keeps the summary alone and empty
+ * lists.
  *
  * @param progress The row's bar, as the table's viewport controller holds it.
  * @param rowId The account the row shows.
@@ -2453,25 +2457,12 @@ export function hilosUsersMergeCaption(
     )
   }
 
-  const expectedLines: HilosUsersMergeLine[] = merge.parts
-    .filter((part) => !part.done)
-    .map((part) => ({
-      key: JSON.stringify([part.participant, part.owner, part.userId]),
-      participant: part.participant,
-      account:
-        part.userId !== null && part.userId !== rowId ? part.userId : null,
-    }))
-
-  const waitsLines: HilosUsersMergeLine[] = merge.waits.map((wait) => ({
-    key: JSON.stringify([wait.participant, wait.userId]),
-    participant: wait.participant,
-    account: wait.userId !== null && wait.userId !== rowId ? wait.userId : null,
-  }))
+  const section = hilosUserMergeSection(merge, rowId)
 
   return {
     summary: summaryParts.join(' · '),
-    expected: mergeList(expectedLines),
-    waits: mergeList(waitsLines),
+    expected: mergeList(section?.pendingParts ?? []),
+    waits: mergeList(section?.waits ?? []),
     refusal: merge.refusal?.reason ?? null,
   }
 }

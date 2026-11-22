@@ -67,6 +67,7 @@ import {
   type HilosAccountMergeRefusal,
   HILOS_USERS_MERGE_COPY,
   HILOS_USERS_MERGE_LIMIT,
+  hilosUserMergeSection,
   hilosUsersMergeCaption,
   type HilosUsersMergeCaption,
   USER_OPEN_SESSION_COUNT_FIELD,
@@ -2135,6 +2136,46 @@ describe('hilosUsersMergeCaption (HIL-2005)', () => {
     const cap2 = hilosUsersMergeCaption(bar(null), 7, nullReason)
     expect(cap2?.summary).toBe('Merge refused')
     expect(cap2?.refusal).toBeNull()
+  })
+
+  it('names known merge duties with card section words and preserves server words for other participants', () => {
+    const merge: HilosAccountMergeProgress = {
+      ...baseMerge,
+      parts: [
+        {
+          participant: 'prepare_loser',
+          owner: 'user',
+          userId: 74,
+          done: false,
+        },
+        { participant: 'chat', owner: 'room', userId: 7, done: false },
+      ],
+      waits: [{ participant: 'sessions', userId: 74 }],
+    }
+    const caption = hilosUsersMergeCaption(bar(null), 7, merge)
+    const section = hilosUserMergeSection(merge, 7)
+
+    expect(caption?.expected.shown).toEqual([
+      {
+        key: JSON.stringify(['prepare_loser', 'user', 74]),
+        participant: 'Prepare source account',
+        account: 74,
+      },
+      {
+        key: JSON.stringify(['chat', 'room', 7]),
+        participant: 'chat',
+        account: null,
+      },
+    ])
+    expect(caption?.waits.shown).toEqual([
+      {
+        key: JSON.stringify(['sessions', 74]),
+        participant: 'Close source sessions',
+        account: 74,
+      },
+    ])
+    expect(caption?.expected.shown).toEqual(section?.pendingParts)
+    expect(caption?.waits.shown).toEqual(section?.waits)
   })
 })
 

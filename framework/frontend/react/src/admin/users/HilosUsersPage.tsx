@@ -158,7 +158,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
                   {mergeCaption.expected.shown.map((part, index) => (
                     <Fragment key={part.key}>
                       {index > 0 ? '; ' : null}
-                      <code>{part.participant}</code>
+                      {part.participant}
                       {part.account !== null ? ` · #${part.account}` : null}
                     </Fragment>
                   ))}
@@ -173,7 +173,7 @@ export function HilosUsersPage({ context, rowActions }: HilosUsersPageProps) {
                   {mergeCaption.waits.shown.map((wait, index) => (
                     <Fragment key={wait.key}>
                       {index > 0 ? '; ' : null}
-                      <code>{wait.participant}</code>
+                      {wait.participant}
                       {wait.account !== null ? ` · #${wait.account}` : null}
                     </Fragment>
                   ))}
