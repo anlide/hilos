@@ -35,7 +35,7 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
             <div
               class="card-footer bg-transparent d-flex flex-column align-items-start gap-2"
             >
-              <a href="https://chat-demo.hleb.studio/">
+              <a href="https://chat-demo.hilos-dev.org/">
                 Open demo<span class="visually-hidden"> Chat</span>
               </a>
               <a :href="`${SOURCE_TREE}/demo/chat`">
@@ -68,7 +68,7 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
             <div
               class="card-footer bg-transparent d-flex flex-column align-items-start gap-2"
             >
-              <a href="https://shop-demo.hleb.studio/">
+              <a href="https://shop-demo.hilos-dev.org/">
                 Open demo<span class="visually-hidden"> E-commerce shop</span>
               </a>
               <a :href="`${SOURCE_TREE}/demo/ecommerce-shop`">
@@ -110,7 +110,7 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
             <div
               class="card-footer bg-transparent d-flex flex-column align-items-start gap-2"
             >
-              <a href="https://btc-demo.hleb.studio/">
+              <a href="https://btc-demo.hilos-dev.org/">
                 Open demo<span class="visually-hidden"> BTC tracker</span>
               </a>
               <a :href="`${SOURCE_TREE}/demo/binance-btc-tracker`">
@@ -267,7 +267,7 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
             <div
               class="card-footer bg-transparent d-flex flex-column align-items-start gap-2"
             >
-              <a href="https://tasks-demo.hleb.studio/">
+              <a href="https://tasks-demo.hilos-dev.org/">
                 Open demo<span class="visually-hidden"> Tasks</span>
               </a>
               <a :href="`${SOURCE_TREE}/demo/tasks`">
@@ -330,7 +330,7 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
             <div
               class="card-footer bg-transparent d-flex flex-column align-items-start gap-2"
             >
-              <a href="https://testing-demo.hleb.studio/">
+              <a href="https://testing-demo.hilos-dev.org/">
                 Open demo<span class="visually-hidden"> Online testing</span>
               </a>
               <a :href="`${SOURCE_TREE}/demo/online-testing`">
@@ -363,7 +363,7 @@ const SOURCE_TREE = 'https://github.com/anlide/hilos/tree/total-refac'
             <div
               class="card-footer bg-transparent d-flex flex-column align-items-start gap-2"
             >
-              <a href="https://polls-demo.hleb.studio/">
+              <a href="https://polls-demo.hilos-dev.org/">
                 Open demo<span class="visually-hidden"> Polls</span>
               </a>
               <a :href="`${SOURCE_TREE}/demo/polls`">

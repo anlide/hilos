@@ -59,17 +59,17 @@ describe('DemoCatalog', () => {
   })
 
   it.each([
-    ['Chat', 'chat', 'https://chat-demo.hleb.studio/'],
-    ['E-commerce shop', 'ecommerce-shop', 'https://shop-demo.hleb.studio/'],
-    ['BTC tracker', 'binance-btc-tracker', 'https://btc-demo.hleb.studio/'],
+    ['Chat', 'chat', 'https://chat-demo.hilos-dev.org/'],
+    ['E-commerce shop', 'ecommerce-shop', 'https://shop-demo.hilos-dev.org/'],
+    ['BTC tracker', 'binance-btc-tracker', 'https://btc-demo.hilos-dev.org/'],
     ['PMD', 'pmd', null],
     ['Roblox game server', 'roblox-game-server', null],
     ['File gallery manager', 'file-gallery-manager', null],
     ['Solar system model', 'solar-system-model', null],
-    ['Tasks', 'tasks', 'https://tasks-demo.hleb.studio/'],
+    ['Tasks', 'tasks', 'https://tasks-demo.hilos-dev.org/'],
     ['Concert tickets', 'concert-tickets', null],
-    ['Online testing', 'online-testing', 'https://testing-demo.hleb.studio/'],
-    ['Polls', 'polls', 'https://polls-demo.hleb.studio/'],
+    ['Online testing', 'online-testing', 'https://testing-demo.hilos-dev.org/'],
+    ['Polls', 'polls', 'https://polls-demo.hilos-dev.org/'],
     ['Preferans', 'preferans', null],
   ])(
     'offers the source and the available public address for %s',
