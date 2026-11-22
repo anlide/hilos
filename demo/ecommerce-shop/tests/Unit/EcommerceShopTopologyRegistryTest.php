@@ -172,6 +172,7 @@ use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
 use Demo\EcommerceShop\Pages\AdminProductsPage;
 use Demo\EcommerceShop\Pages\AdminProductPage;
+use Demo\EcommerceShop\Pages\AdminProductStockPage;
 use Demo\EcommerceShop\Browser\Data\AdminProductBrowserData;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserData;
 use Demo\EcommerceShop\Browser\EcommerceShopBrowserSource;
@@ -871,6 +872,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AdminCategoriesPage::PAGE => AdminCategoriesPage::class,
             AdminProductsPage::PAGE => AdminProductsPage::class,
             AdminProductPage::PAGE => AdminProductPage::class,
+            AdminProductStockPage::PAGE => AdminProductStockPage::class,
             AboutPage::PAGE => AboutPage::class,
             TermsPage::PAGE => TermsPage::class,
             PrivacyPage::PAGE => PrivacyPage::class,
@@ -1560,6 +1562,36 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         ] as $source) {
             self::assertContains($source, $sources);
         }
+    }
+
+    /** The products library serves the Stock tab with the product card and the warehouse stock window. */
+    public function testTheProductStockPageUsesTheCardAndStockWindowUnderTheProductHead(): void
+    {
+        self::assertSame('admin_product_stock', AdminProductStockPage::PAGE);
+        self::assertSame(PageReach::ROUTE, AdminProductStockPage::REACH);
+        self::assertSame(PageAccessLevel::ADMIN, AdminProductStockPage::ACCESS_LEVEL);
+        self::assertSame(AgentType::PRODUCTS_LIBRARY, Hilos::getPageRoutes()[AdminProductStockPage::PAGE]);
+        self::assertSame([BrowserConfigKey::SIGNAL => 'subscription_page_admin_product_stock'], AdminProductStockPage::BROWSER);
+        self::assertSame([
+            PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Stock',
+            PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Units of this product by warehouse.',
+            PageCatalogConstants::CATALOG_ENTRY_PARENT => PageConstants::ADMIN_PRODUCT,
+            PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Stock',
+        ], PageCatalog::pages()[AdminProductStockPage::PAGE]);
+        self::assertSame(
+            [AdminProductBrowserData::DATA => AdminProductBrowserData::BINDING],
+            Hilos::PAGE_DATA[AdminProductStockPage::PAGE],
+        );
+        self::assertSame([EcommerceShopTableContext::productStock => []], Hilos::PAGE_TABLES[AdminProductStockPage::PAGE]);
+        self::assertArrayNotHasKey(AdminProductStockPage::PAGE, Hilos::PAGE_LISTS);
+
+        $browser = new EcommerceShopBrowserContext();
+        $browser->bindHilosFacade(Hilos::class);
+        self::assertEqualsCanonicalizing([
+            EcommerceShopDbContext::products,
+            EcommerceShopDbContext::warehouses,
+            EcommerceShopDbContext::productWarehouseStocks,
+        ], $browser->dbSourceKeysOfPage(AdminProductStockPage::PAGE));
     }
 
     /** The stock table of one product is registered under its key, for the page that binds it. */

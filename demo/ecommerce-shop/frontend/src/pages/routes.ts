@@ -15,6 +15,7 @@ import {
 import {
   PAGE_ADMIN_CATEGORIES,
   PAGE_ADMIN_PRODUCT,
+  PAGE_ADMIN_PRODUCT_STOCK,
   PAGE_ADMIN_PRODUCTS,
   PAGE_ADMIN_WAREHOUSES,
   PAGE_MAIN,
@@ -47,6 +48,11 @@ const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
     path: '/hilos/app/product/{productId}',
     admin: true,
     icon: 'bi-box',
+  },
+  [PAGE_ADMIN_PRODUCT_STOCK]: {
+    path: '/hilos/app/product/{productId}/stock',
+    admin: true,
+    icon: 'bi-boxes',
   },
 }
 

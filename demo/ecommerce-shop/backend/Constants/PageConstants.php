@@ -37,6 +37,9 @@ final class PageConstants
     /** @var string Shop administration: one product's page, addressed by its id */
     public const string ADMIN_PRODUCT = 'admin_product';
 
+    /** @var string Shop administration: one stock product's units by warehouse */
+    public const string ADMIN_PRODUCT_STOCK = 'admin_product_stock';
+
     /** @var string EcommerceShop main page */
     public const string MAIN = 'main';
 

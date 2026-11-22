@@ -20,6 +20,8 @@ use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
+use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageAccountFrozenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
 use Hilos\Core\Page\Exception\PageMovedException;
@@ -33,6 +35,7 @@ use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalSourceInterface;
 use Hilos\Core\Router\SignalType;
+use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\DTO\TableBulkAcceptedReplyDTO;
@@ -594,6 +597,21 @@ abstract class AbstractPage implements ActionHostInterface
      */
     public function onUpdateSubscription(string $acceptKey, PageRouteParams $params): void
     {
+    }
+
+    /**
+     * Lets a page with route-scoped windows discard a request for an address it has left.
+     * The router checks this before storing a viewport. Delivery still runs its own access guards.
+     *
+     * @param string $acceptKey Connection requesting the window
+     * @param TableViewportSubscription $viewport Requested viewport
+     * @return bool Whether the viewport belongs to the current page address
+     * @throws InvalidPageRouteParamException When the current address is malformed
+     * @throws MissingPageRouteParamException When the current address is missing a required param
+     */
+    public function acceptsTableViewport(string $acceptKey, TableViewportSubscription $viewport): bool
+    {
+        return true;
     }
 
     /**

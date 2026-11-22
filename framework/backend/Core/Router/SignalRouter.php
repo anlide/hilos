@@ -956,6 +956,17 @@ class SignalRouter
     }
 
     /**
+     * Releases one viewport and the table state held alongside it.
+     *
+     * @param string $acceptKey Client accept key
+     * @param string $tableKey Table key
+     */
+    public function forgetTableViewport(string $acceptKey, string $tableKey): void
+    {
+        $this->subscriptions->forgetTableViewport($acceptKey, $tableKey);
+    }
+
+    /**
      * Stores or replaces the options a connection asked counts beside, for one table's filters.
      *
      * @param string $acceptKey Client accept key

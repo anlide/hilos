@@ -59,6 +59,7 @@ use Demo\EcommerceShop\Legal\EcommerceShopLegalCatalog;
 use Demo\EcommerceShop\Notification\EcommerceShopDeliveryChannelRegistry;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
 use Demo\EcommerceShop\Pages\AdminProductPage;
+use Demo\EcommerceShop\Pages\AdminProductStockPage;
 use Demo\EcommerceShop\Pages\AdminProductsPage;
 use Demo\EcommerceShop\Pages\AdminWarehousesPage;
 use Demo\EcommerceShop\Pages\Hilos\AboutPage;
@@ -383,6 +384,7 @@ final class Hilos extends HilosFacade
         AdminCategoriesPage::PAGE => AdminCategoriesPage::class,
         AdminProductsPage::PAGE => AdminProductsPage::class,
         AdminProductPage::PAGE => AdminProductPage::class,
+        AdminProductStockPage::PAGE => AdminProductStockPage::class,
         AboutPage::PAGE => AboutPage::class,
         TermsPage::PAGE => TermsPage::class,
         PrivacyPage::PAGE => PrivacyPage::class,
@@ -686,6 +688,9 @@ final class Hilos extends HilosFacade
         AdminProductPage::PAGE => [
             AdminProductBrowserData::DATA => AdminProductBrowserData::BINDING,
         ],
+        AdminProductStockPage::PAGE => [
+            AdminProductBrowserData::DATA => AdminProductBrowserData::BINDING,
+        ],
     ];
 
     public const array PAGE_TABLES = [
@@ -757,6 +762,9 @@ final class Hilos extends HilosFacade
         ],
         AdminProductsPage::PAGE => [
             EcommerceShopTableContext::products => [],
+        ],
+        AdminProductStockPage::PAGE => [
+            EcommerceShopTableContext::productStock => [],
         ],
         LanguagesListPage::PAGE => [
             EcommerceShopTableContext::hilosI18nLanguages => [],

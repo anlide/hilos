@@ -91,6 +91,12 @@ final class PageCatalog implements PageCatalogProviderInterface
                 PageCatalogConstants::CATALOG_ENTRY_ENTITY => true,
                 PageCatalogConstants::CATALOG_ENTRY_PAGE_HEAD => true,
             ],
+            PageConstants::ADMIN_PRODUCT_STOCK => [
+                PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Stock',
+                PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Units of this product by warehouse.',
+                PageCatalogConstants::CATALOG_ENTRY_PARENT => PageConstants::ADMIN_PRODUCT,
+                PageCatalogConstants::CATALOG_ENTRY_BREADCRUMB => 'Stock',
+            ],
         ];
     }
 

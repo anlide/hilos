@@ -29,6 +29,7 @@ import { currentUserName } from './bootstrap/session.js'
 import {
   PAGE_ADMIN_CATEGORIES,
   PAGE_ADMIN_PRODUCT,
+  PAGE_ADMIN_PRODUCT_STOCK,
   PAGE_ADMIN_PRODUCTS,
   PAGE_ADMIN_WAREHOUSES,
   PAGE_MAIN,
@@ -68,6 +69,11 @@ const pages: Record<string, PageView<ComponentType>> = {
   ),
   [PAGE_ADMIN_PRODUCT]: lazyPage(() =>
     import('./views/AdminProduct/AdminProduct.js').then((m) => m.default),
+  ),
+  [PAGE_ADMIN_PRODUCT_STOCK]: lazyPage(() =>
+    import('./views/AdminProductStock/AdminProductStock.js').then(
+      (m) => m.default,
+    ),
   ),
   // The framework Change Log section: the framework owns the feed, the tables
   // viewport, the history and the receipt reader; the project binds its

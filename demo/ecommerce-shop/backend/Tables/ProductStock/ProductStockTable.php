@@ -12,6 +12,7 @@ use Demo\EcommerceShop\Database\Object\Item\ProductWarehouseStock as ObjectProdu
 use Demo\EcommerceShop\Database\Object\Item\Warehouse as ObjectWarehouse;
 use Demo\EcommerceShop\Database\View\Item\Warehouse;
 use Demo\EcommerceShop\Hilos;
+use Demo\EcommerceShop\Pages\DTO\AdminProductPageSubscribeParams;
 use Hilos\AdminViewMode\WireField;
 use Hilos\Core\Browser\Config\BrowserTableConfigKey;
 use Hilos\Core\Browser\Config\BrowserTableFieldKey;
@@ -19,6 +20,9 @@ use Hilos\Core\Browser\DTO\BrowserPageSignalData;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
+use Hilos\Core\Page\PageRouteParams;
 use Hilos\Core\Source\SourceChange;
 use Hilos\Core\Table\Definition\TableDefinition;
 use Hilos\Core\Table\Definition\WindowScopedViewportTable;
@@ -41,10 +45,11 @@ use Hilos\HilosException;
 /**
  * The stock of one product: a row for every warehouse of the shop and the units of the product it keeps.
  *
- * The product is the window's subject, preset by the page in the {@see self::FILTER_PRODUCT} filter. Only a
- * stock item has units in warehouses; a window opened on a unique piece, on a product that does not exist,
- * or on no product at all is an empty set. A warehouse that keeps none of the product is a row with zero
- * units, so a row stands for every warehouse while the warehouse stands.
+ * The window's subject is preset from the page address by {@see self::defaultFilter()} in the
+ * {@see self::FILTER_PRODUCT} filter. Only a stock item has units in warehouses. A window opened on a
+ * unique piece, on a product that does not exist, or on no product at all is an empty set. A warehouse
+ * that keeps none of the product is a row with zero units, so a row stands for every warehouse while
+ * the warehouse stands.
  *
  * The same warehouse is a different row in the window of each product, so a change is built for one
  * window at a time ({@see WindowScopedViewportTable}): a new, edited or removed warehouse adds, updates or
@@ -96,6 +101,17 @@ final class ProductStockTable extends TableDefinition implements WindowScopedVie
     public function defaultSort(): ?TableSortOrderDTO
     {
         return TableSortOrderDTO::of(new TableSortDTO(ProductStockTableRow::warehouseName));
+    }
+
+    /**
+     * @param PageRouteParams $params Route params of the product opening this window
+     * @return array{product: int} Product scope of the first window
+     * @throws MissingPageRouteParamException When the product id is absent or empty
+     * @throws InvalidPageRouteParamException When the product id is not a positive integer
+     */
+    public function defaultFilter(PageRouteParams $params): array
+    {
+        return [self::FILTER_PRODUCT => AdminProductPageSubscribeParams::fromPageRouteParams($params)->productId];
     }
 
     /**

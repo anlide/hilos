@@ -1,14 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { Scope, ingest, type EntityRef } from '@hilos/core/base'
+import {
+  Scope,
+  ScopeManager,
+  createSignal,
+  ingest,
+  type EntityRef,
+  type PageRouteMatch,
+} from '@hilos/core/base'
 
-import { PAGE_ADMIN_PRODUCT } from '../../../src/pages/keys.js'
+import {
+  ADMIN_PRODUCT_DATA,
+  createAdminProductCardSignals,
+  resolveAdminProduct,
+} from '../../../src/catalog/adminProductCard.js'
+import {
+  PAGE_ADMIN_PRODUCT,
+  PAGE_ADMIN_PRODUCT_STOCK,
+} from '../../../src/pages/keys.js'
+import { type AdminProduct } from '../../../src/types/AdminProduct.js'
 import {
   ADMIN_PRODUCT_WAREHOUSES_LIST,
-  resolveAdminProduct,
   stockParts,
   warehouseNameOf,
 } from '../../../src/views/AdminProduct/adminProduct.js'
-import { type AdminProduct } from '../../../src/views/AdminProduct/types/AdminProduct.js'
 
 function warehousesScope(): Scope {
   const scope = new Scope('page', PAGE_ADMIN_PRODUCT)
@@ -60,6 +74,50 @@ describe('one product admin page', () => {
 
   it('resolves no card without a product id', () => {
     expect(resolveAdminProduct({ ...pot, productId: undefined })).toBeNull()
+  })
+
+  it('shares the card only when its scope, page and product address match', () => {
+    const scopes = new ScopeManager()
+    const route = createSignal<PageRouteMatch>({
+      page: PAGE_ADMIN_PRODUCT,
+      params: { productId: String(pot.productId) },
+      admin: true,
+    })
+    const overview = createAdminProductCardSignals(
+      scopes,
+      route,
+      PAGE_ADMIN_PRODUCT,
+    )
+    const stock = createAdminProductCardSignals(
+      scopes,
+      route,
+      PAGE_ADMIN_PRODUCT_STOCK,
+    )
+    const answer = { data: { [ADMIN_PRODUCT_DATA]: pot } }
+
+    ingest(scopes.openPage(PAGE_ADMIN_PRODUCT), answer)
+    expect(overview.product.get()).toEqual(pot)
+    expect(stock.name.get()).toBeUndefined()
+
+    route.set({
+      page: PAGE_ADMIN_PRODUCT_STOCK,
+      params: { productId: `+0${pot.productId}` },
+      admin: true,
+    })
+    expect(overview.name.get()).toBeUndefined()
+    expect(stock.product.get()).toBeNull()
+
+    ingest(scopes.openPage(PAGE_ADMIN_PRODUCT_STOCK), answer)
+    expect(stock.product.get()).toEqual(pot)
+    expect(stock.name.get()).toBe(pot.name)
+    expect(overview.product.get()).toBeNull()
+
+    route.set({
+      ...route.get(),
+      params: { productId: String(vase.productId) },
+    })
+    expect(stock.product.get()).toBeNull()
+    expect(stock.name.get()).toBeUndefined()
   })
 
   it.each([

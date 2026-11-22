@@ -42,6 +42,8 @@ use Hilos\Core\Page\Exception\ActionImpersonationException;
 use Hilos\Core\Page\Exception\ActionRateLimitedException;
 use Hilos\Core\Page\Exception\ActionUnauthorizedException;
 use Hilos\Core\Page\Exception\ActionViewModeException;
+use Hilos\Core\Page\Exception\InvalidPageRouteParamException;
+use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageAccountFrozenException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
@@ -937,6 +939,14 @@ class PageSignalRouter
             pageIndex: $data->pageIndex,
             rendered: $data->rendered,
         );
+        try {
+            if ($this->resolvePage($name, reportFailure: false)?->acceptsTableViewport($data->acceptKey, $viewport) === false) {
+                return;
+            }
+        } catch (InvalidPageRouteParamException | MissingPageRouteParamException) {
+            return;
+        }
+
         // A viewer of the admin view mode holds the window narrowed to what they may be served, so the
         // window held and the window served are one window (HIL-1250).
         $viewport = Hilos::$browser?->viewportForViewer($name, $data->acceptKey, $viewport) ?? $viewport;
