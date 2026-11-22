@@ -1,18 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
   <title id="title">Hilos Solar System — sun</title>
-  <desc id="desc">An orange sun. In the top-right corner, the Hilos logo, a blue circle with a yellow zigzag line.</desc>
+  <desc id="desc">An orange sun. In the bottom-right corner, the Hilos logo, a blue circle with a yellow zigzag line.</desc>
   <!-- HIL-2151: the medium sign of the solar-system-model demo.
-       Symbol: bootstrap-icons 1.13.2, icons/sun-fill.svg, MIT.
+       Redrawn in HIL-2261 with the mark in the bottom-right corner.
+       Symbol: original geometry for HIL-2261, a disk and eight rays after icons/sun-fill.svg.
        Corner mark: the Hilos logo, original geometry. MIT; see ../README.md. -->
   <mask id="hilos-mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
     <rect width="32" height="32" fill="#fff"/>
-    <circle cx="25" cy="7" r="9" fill="#000"/>
+    <circle cx="25" cy="25" r="9" fill="#000"/>
   </mask>
   <g id="demo-symbol" fill="#E37400" mask="url(#hilos-mark-gap)">
-    <path transform="matrix(1.75 0 0 1.75 0 4)" d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8M8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0m0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13m8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5M3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8m10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0m-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0m9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707M4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708"/>
+    <circle cx="11" cy="11" r="5.5"/>
+    <path fill="none" stroke="#E37400" stroke-width="2.5" stroke-linecap="round" d="M19 11L20.5 11M16.66 16.66L17.72 17.72M11 19L11 20.5M5.34 16.66L4.28 17.72M3 11L1.5 11M5.34 5.34L4.28 4.28M11 3L11 1.5M16.66 5.34L17.72 4.28"/>
   </g>
   <g id="hilos-mark">
-    <g transform="matrix(0.4375 0 0 0.4375 18 0)">
+    <g transform="matrix(0.4375 0 0 0.4375 18 18)">
       <circle cx="16" cy="16" r="16" fill="#0288D1"/>
       <path fill="none" stroke="#FFD500" stroke-width="3" stroke-linejoin="miter" d="M19.5 5.5L11.5 16H20.5L12.5 26.5"/>
     </g>

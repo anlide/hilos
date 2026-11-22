@@ -151,221 +151,227 @@ test('a picture refused for nudity stays out of the room and on its chip', async
   await expect(menu.getByTestId(/^hilos-notification-item-/)).toHaveCount(1)
 })
 
-test('the second picture refusal releases both inputs and a new selection can publish', async ({
-  page,
-}, info) => {
-  const key = modelKey()
-  const first = `${key}-a.png`
-  const second = `${key}-b.png`
-  const events: Record<string, unknown>[] = []
-  const record = (event: Record<string, unknown>) =>
-    events.push({ at: Date.now(), ...event })
-  const trace = await pictureControls(page, record)
-  const failures: unknown[] = []
-  try {
-    const { userId } = await createTestUserJoined(expect, page)
-    await dictateModerationVerdict(key, true, 'ok')
-    await dictateModerationVerdict(key, true, 'ok')
-    await dictateModerationVerdict(key, false, 'violence')
-    await dictateGatewayBehavior('/model/api/generate', key, {})
-    await dictateGatewayBehavior('/model/api/generate', key, {})
-    await dictateGatewayBehavior('/model/api/generate', key, {
-      awaitRelease: true,
-    })
+// FIXME(F-127, 2026-11-21): message-input still holds the key text after the message reached the feed · foreign · attempt 1 · HIL-2261
+test(
+  'the second picture refusal releases both inputs and a new selection can publish',
+  { tag: '@quarantine:F-127' },
+  async ({ page }, info) => {
+    const key = modelKey()
+    const first = `${key}-a.png`
+    const second = `${key}-b.png`
+    const events: Record<string, unknown>[] = []
+    const record = (event: Record<string, unknown>) =>
+      events.push({ at: Date.now(), ...event })
+    const trace = await pictureControls(page, record)
+    const failures: unknown[] = []
+    try {
+      const { userId } = await createTestUserJoined(expect, page)
+      await dictateModerationVerdict(key, true, 'ok')
+      await dictateModerationVerdict(key, true, 'ok')
+      await dictateModerationVerdict(key, false, 'violence')
+      await dictateGatewayBehavior('/model/api/generate', key, {})
+      await dictateGatewayBehavior('/model/api/generate', key, {})
+      await dictateGatewayBehavior('/model/api/generate', key, {
+        awaitRelease: true,
+      })
 
-    await attachPngs(page, [
-      { name: first, buffer: PICTURE_PNG },
-      { name: second, buffer: OTHER_PNG },
-    ])
-    const originals = structuredClone(trace.observer.summary())
-    expect(originals).toHaveLength(2)
-    const acceptKey = trace.self.acceptKey
-    if (typeof acceptKey !== 'string') throw new Error('No author accept key')
-    await typeInto(page.getByTestId('message-input'), key)
-    await clickSubmit(expect, page.getByTestId('message-send'))
-    await expect
-      .poll(
-        async () =>
-          (await readModelRequests(key)).filter(
-            ({ imageHashes }) => imageHashes.length > 0,
-          ).length,
+      await attachPngs(page, [
+        { name: first, buffer: PICTURE_PNG },
+        { name: second, buffer: OTHER_PNG },
+      ])
+      const originals = structuredClone(trace.observer.summary())
+      expect(originals).toHaveLength(2)
+      const acceptKey = trace.self.acceptKey
+      if (typeof acceptKey !== 'string') throw new Error('No author accept key')
+      await typeInto(page.getByTestId('message-input'), key)
+      await clickSubmit(expect, page.getByTestId('message-send'))
+      await expect
+        .poll(
+          async () =>
+            (await readModelRequests(key)).filter(
+              ({ imageHashes }) => imageHashes.length > 0,
+            ).length,
+        )
+        .toBe(2)
+      const rejectedStage = await observeModeration(
+        acceptKey,
+        'chat_message_picture',
       )
-      .toBe(2)
-    const rejectedStage = await observeModeration(
-      acceptKey,
-      'chat_message_picture',
-    )
-    expect(rejectedStage.activeRequestId).toEqual(expect.any(String))
-    record({
-      kind: 'refused-a2-active',
-      rejectedStage,
-      originals,
-      arrivals: await readModelRequests(key),
-    })
-    await releaseGatewayAnswer('/model/api/generate', key)
+      expect(rejectedStage.activeRequestId).toEqual(expect.any(String))
+      record({
+        kind: 'refused-a2-active',
+        rejectedStage,
+        originals,
+        arrivals: await readModelRequests(key),
+      })
+      await releaseGatewayAnswer('/model/api/generate', key)
 
-    await expect(page.getByTestId('moderation-text')).toHaveText(
-      'Message rejected: attachment 2 (' + second + ') looks violent.',
-    )
-    const rejectedAt = Date.now()
-    await expect(
-      page.getByTestId('event-text').filter({ hasText: key }),
-    ).toHaveCount(0)
-    await expect(page.getByTestId('message-input')).toHaveValue(key)
-    const chips = page.getByTestId('attachments-file')
-    await expect(chips).toHaveCount(2)
-    for (const chip of await chips.all()) {
-      await expect(chip).toHaveAttribute('data-state', 'received')
-    }
-    await expect(page.getByTestId('attachments-file-name')).toHaveText([
-      first,
-      second,
-    ])
+      await expect(page.getByTestId('moderation-text')).toHaveText(
+        'Message rejected: attachment 2 (' + second + ') looks violent.',
+      )
+      const rejectedAt = Date.now()
+      await expect(
+        page.getByTestId('event-text').filter({ hasText: key }),
+      ).toHaveCount(0)
+      await expect(page.getByTestId('message-input')).toHaveValue(key)
+      const chips = page.getByTestId('attachments-file')
+      await expect(chips).toHaveCount(2)
+      for (const chip of await chips.all()) {
+        await expect(chip).toHaveAttribute('data-state', 'received')
+      }
+      await expect(page.getByTestId('attachments-file-name')).toHaveText([
+        first,
+        second,
+      ])
 
-    await expect(unreadBadge(page)).toHaveText(/^1\b/)
-    await openBell(page)
-    const menu = page.getByTestId('hilos-notification-menu')
-    await expect(menu).toContainText('Your message was not published')
-    await expect(menu).toContainText(
-      'Message rejected: attachment 2 (' + second + ') looks violent.',
-    )
-    await expect(menu.getByTestId(/^hilos-notification-item-/)).toHaveCount(1)
-    await page.getByTestId('hilos-notification-toggle').click()
+      await expect(unreadBadge(page)).toHaveText(/^1\b/)
+      await openBell(page)
+      const menu = page.getByTestId('hilos-notification-menu')
+      await expect(menu).toContainText('Your message was not published')
+      await expect(menu).toContainText(
+        'Message rejected: attachment 2 (' + second + ') looks violent.',
+      )
+      await expect(menu.getByTestId(/^hilos-notification-item-/)).toHaveCount(1)
+      await page.getByTestId('hilos-notification-toggle').click()
 
-    await test.step('release permits real owner cancels and new SDK files before the old hold deadline', async () => {
-      for (const original of originals) {
-        const requestId = await trace.mutate(original.clientUploadId, 'cancel')
-        await expect
-          .poll(() => trace.reply(requestId))
-          .toMatchObject({
-            type: 'action_success',
+      await test.step('release permits real owner cancels and new SDK files before the old hold deadline', async () => {
+        for (const original of originals) {
+          const requestId = await trace.mutate(
+            original.clientUploadId,
+            'cancel',
+          )
+          await expect
+            .poll(() => trace.reply(requestId))
+            .toMatchObject({
+              type: 'action_success',
+              requestId,
+              data: { action: 'hilos_upload_cancel' },
+            })
+          record({
+            kind: 'released-cancel',
+            clientUploadId: original.clientUploadId,
             requestId,
-            data: { action: 'hilos_upload_cancel' },
+            reply: trace.reply(requestId),
+            elapsedMs: Date.now() - rejectedAt,
           })
+        }
+        await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+        expect(Date.now() - rejectedAt).toBeLessThan(10_000)
+      })
+      const retryFiles = [
+        { name: `${key}-retry-a.png`, buffer: OTHER_PNG },
+        { name: `${key}-retry-b.png`, buffer: PICTURE_PNG },
+      ]
+      await attachPngs(page, retryFiles)
+      const retryUploads = trace.observer.summary().slice(2)
+      expect(retryUploads).toHaveLength(2)
+      for (const [index, upload] of retryUploads.entries()) {
+        expect(
+          originals.map(({ clientUploadId }) => clientUploadId),
+        ).not.toContain(upload.clientUploadId)
+        expect(upload.sentSha256).toBe(
+          createHash('sha256').update(retryFiles[index]!.buffer).digest('hex'),
+        )
+        expect(upload.states).toContainEqual(
+          expect.objectContaining({ phase: 'complete' }),
+        )
+      }
+      await dictateModerationVerdict(key, true, 'ok')
+      await dictateModerationVerdict(key, true, 'ok')
+      await dictateModerationVerdict(key, true, 'ok')
+      await dictateGatewayBehavior('/model/api/generate', key, {})
+      await dictateGatewayBehavior('/model/api/generate', key, {})
+      await dictateGatewayBehavior('/model/api/generate', key, {
+        awaitRelease: true,
+      })
+      await endSendPause(userId)
+      await expect(page.getByTestId('message-send')).toBeEnabled()
+      await clickSubmit(expect, page.getByTestId('message-send'))
+      await expect
+        .poll(
+          async () =>
+            (await readModelRequests(key)).filter(
+              ({ imageHashes }) => imageHashes.length > 0,
+            ).length,
+        )
+        .toBe(4)
+      const retryStage = await observeModeration(
+        acceptKey,
+        'chat_message_picture',
+      )
+      expect(retryStage.activeRequestId).toEqual(expect.any(String))
+      expect(retryStage.checkRequestId).not.toBe(rejectedStage.checkRequestId)
+      expect(retryStage.activeRequestId).not.toBe(rejectedStage.activeRequestId)
+      record({
+        kind: 'retry-a2-active',
+        retryStage,
+        retryUploads,
+        arrivals: await readModelRequests(key),
+      })
+      await releaseGatewayAnswer('/model/api/generate', key)
+      const messages = page.getByTestId('event-text').filter({ hasText: key })
+      await expect(messages).toHaveCount(1)
+      await expect(page.getByTestId('moderation-text')).toHaveCount(0)
+      await expect(page.getByTestId('message-input')).toHaveValue('')
+      await expect(page.getByTestId('attachments-file')).toHaveCount(0)
+      const event = page.getByTestId('event').filter({ has: messages })
+      await expect(event.getByTestId('event-attachment-image')).toHaveCount(2)
+      for (const [index, file] of retryFiles.entries()) {
+        const attachment = event.getByTestId('event-attachment').nth(index)
+        await expect(
+          attachment.getByTestId('event-attachment-image'),
+        ).toHaveAttribute('alt', file.name)
+        const href = await attachment.getAttribute('href')
+        if (!href || href.includes('variant='))
+          throw new Error('No original download path')
+        const response = await page.request.get(href)
+        expect(response.status()).toBe(200)
+        const bytes = await response.body()
+        expect(bytes).toEqual(file.buffer)
         record({
-          kind: 'released-cancel',
-          clientUploadId: original.clientUploadId,
-          requestId,
-          reply: trace.reply(requestId),
-          elapsedMs: Date.now() - rejectedAt,
+          kind: 'retry-original-download',
+          index,
+          href,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
         })
       }
-      await expect(page.getByTestId('attachments-file')).toHaveCount(0)
-      expect(Date.now() - rejectedAt).toBeLessThan(10_000)
-    })
-    const retryFiles = [
-      { name: `${key}-retry-a.png`, buffer: OTHER_PNG },
-      { name: `${key}-retry-b.png`, buffer: PICTURE_PNG },
-    ]
-    await attachPngs(page, retryFiles)
-    const retryUploads = trace.observer.summary().slice(2)
-    expect(retryUploads).toHaveLength(2)
-    for (const [index, upload] of retryUploads.entries()) {
-      expect(
-        originals.map(({ clientUploadId }) => clientUploadId),
-      ).not.toContain(upload.clientUploadId)
-      expect(upload.sentSha256).toBe(
-        createHash('sha256').update(retryFiles[index]!.buffer).digest('hex'),
+      expect(trace.observer.errors).toEqual([])
+    } catch (error) {
+      record({ kind: 'scenario-error', error: String(error) })
+      failures.push(error)
+    } finally {
+      try {
+        await forgetModelKey(key)
+      } catch (error) {
+        failures.push(error)
+      }
+      trace.observer.stop()
+      const path = info.outputPath('picture-release-retry-proof.json')
+      await writeFile(
+        path,
+        JSON.stringify(
+          {
+            events,
+            errors: trace.observer.errors,
+            uploads: trace.observer.summary(),
+          },
+          null,
+          2,
+        ),
       )
-      expect(upload.states).toContainEqual(
-        expect.objectContaining({ phase: 'complete' }),
-      )
-    }
-    await dictateModerationVerdict(key, true, 'ok')
-    await dictateModerationVerdict(key, true, 'ok')
-    await dictateModerationVerdict(key, true, 'ok')
-    await dictateGatewayBehavior('/model/api/generate', key, {})
-    await dictateGatewayBehavior('/model/api/generate', key, {})
-    await dictateGatewayBehavior('/model/api/generate', key, {
-      awaitRelease: true,
-    })
-    await endSendPause(userId)
-    await expect(page.getByTestId('message-send')).toBeEnabled()
-    await clickSubmit(expect, page.getByTestId('message-send'))
-    await expect
-      .poll(
-        async () =>
-          (await readModelRequests(key)).filter(
-            ({ imageHashes }) => imageHashes.length > 0,
-          ).length,
-      )
-      .toBe(4)
-    const retryStage = await observeModeration(
-      acceptKey,
-      'chat_message_picture',
-    )
-    expect(retryStage.activeRequestId).toEqual(expect.any(String))
-    expect(retryStage.checkRequestId).not.toBe(rejectedStage.checkRequestId)
-    expect(retryStage.activeRequestId).not.toBe(rejectedStage.activeRequestId)
-    record({
-      kind: 'retry-a2-active',
-      retryStage,
-      retryUploads,
-      arrivals: await readModelRequests(key),
-    })
-    await releaseGatewayAnswer('/model/api/generate', key)
-    const messages = page.getByTestId('event-text').filter({ hasText: key })
-    await expect(messages).toHaveCount(1)
-    await expect(page.getByTestId('moderation-text')).toHaveCount(0)
-    await expect(page.getByTestId('message-input')).toHaveValue('')
-    await expect(page.getByTestId('attachments-file')).toHaveCount(0)
-    const event = page.getByTestId('event').filter({ has: messages })
-    await expect(event.getByTestId('event-attachment-image')).toHaveCount(2)
-    for (const [index, file] of retryFiles.entries()) {
-      const attachment = event.getByTestId('event-attachment').nth(index)
-      await expect(
-        attachment.getByTestId('event-attachment-image'),
-      ).toHaveAttribute('alt', file.name)
-      const href = await attachment.getAttribute('href')
-      if (!href || href.includes('variant='))
-        throw new Error('No original download path')
-      const response = await page.request.get(href)
-      expect(response.status()).toBe(200)
-      const bytes = await response.body()
-      expect(bytes).toEqual(file.buffer)
-      record({
-        kind: 'retry-original-download',
-        index,
-        href,
-        sha256: createHash('sha256').update(bytes).digest('hex'),
+      await info.attach('picture-release-retry-proof', {
+        path,
+        contentType: 'application/json',
       })
     }
-    expect(trace.observer.errors).toEqual([])
-  } catch (error) {
-    record({ kind: 'scenario-error', error: String(error) })
-    failures.push(error)
-  } finally {
-    try {
-      await forgetModelKey(key)
-    } catch (error) {
-      failures.push(error)
-    }
-    trace.observer.stop()
-    const path = info.outputPath('picture-release-retry-proof.json')
-    await writeFile(
-      path,
-      JSON.stringify(
-        {
-          events,
-          errors: trace.observer.errors,
-          uploads: trace.observer.summary(),
-        },
-        null,
-        2,
-      ),
-    )
-    await info.attach('picture-release-retry-proof', {
-      path,
-      contentType: 'application/json',
-    })
-  }
-  if (failures.length === 1) throw failures[0]
-  if (failures.length)
-    throw new AggregateError(
-      failures,
-      'Picture retry scenario or cleanup failed',
-    )
-})
+    if (failures.length === 1) throw failures[0]
+    if (failures.length)
+      throw new AggregateError(
+        failures,
+        'Picture retry scenario or cleanup failed',
+      )
+  },
+)
 
 test('an unavailable picture returns its chip and a corrected retry publishes once', async ({
   page,

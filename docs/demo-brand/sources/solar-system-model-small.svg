@@ -1,18 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
   <title id="title">Hilos Solar System — sun</title>
-  <desc id="desc">An orange sun. In the top-right corner, a plain blue dot.</desc>
+  <desc id="desc">An orange sun. In the bottom-right corner, a plain blue dot.</desc>
   <!-- HIL-2151: the small sign of the solar-system-model demo.
-       Symbol: original geometry after icons/sun-fill.svg.
+       Redrawn in HIL-2261 with the mark in the bottom-right corner.
+       Symbol: original geometry for HIL-2261, a disk and eight rays after icons/sun-fill.svg.
        Corner mark: the Hilos logo, original geometry. MIT; see ../README.md. -->
   <mask id="hilos-mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
     <rect width="32" height="32" fill="#fff"/>
-    <circle cx="25" cy="7" r="9" fill="#000"/>
+    <circle cx="25" cy="25" r="9" fill="#000"/>
   </mask>
   <g id="demo-symbol" fill="#E37400" mask="url(#hilos-mark-gap)">
-    <path d="M6 19a6 6 0 1 0 12 0a6 6 0 1 0 -12 0Z"/>
-    <path fill="none" stroke="#E37400" stroke-width="2.5" stroke-linecap="round" d="M20.50 19.00L23.00 19.00M18.01 25.01L19.78 26.78M12.00 27.50L12.00 30.00M5.99 25.01L4.22 26.78M3.50 19.00L1.00 19.00M5.99 12.99L4.22 11.22M12.00 10.50L12.00 8.00M18.01 12.99L19.78 11.22"/>
+    <circle cx="11" cy="11" r="5.5"/>
+    <path fill="none" stroke="#E37400" stroke-width="2.5" stroke-linecap="round" d="M19 11L20.5 11M16.66 16.66L17.72 17.72M11 19L11 20.5M5.34 16.66L4.28 17.72M3 11L1.5 11M5.34 5.34L4.28 4.28M11 3L11 1.5M16.66 5.34L17.72 4.28"/>
   </g>
   <g id="hilos-mark">
-    <circle cx="25" cy="7" r="7" fill="#0288D1"/>
+    <circle cx="25" cy="25" r="7" fill="#0288D1"/>
   </g>
 </svg>

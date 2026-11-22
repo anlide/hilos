@@ -1,17 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
   <title id="title">Hilos Flowers — flower</title>
-  <desc id="desc">A pink flower. In the top-right corner, a plain blue dot.</desc>
+  <desc id="desc">A pink flower with five petals. In the bottom-right corner, a plain blue dot.</desc>
   <!-- HIL-2151: the small sign of the ecommerce-shop demo.
-       Symbol: original geometry, a five-petal flower.
+       Redrawn in HIL-2261 with the mark in the bottom-right corner.
+       Symbol: original geometry for HIL-2261, a five-petal flower.
        Corner mark: the Hilos logo, original geometry. MIT; see ../README.md. -->
   <mask id="hilos-mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
     <rect width="32" height="32" fill="#fff"/>
-    <circle cx="25" cy="7" r="9" fill="#000"/>
+    <circle cx="25" cy="25" r="9" fill="#000"/>
   </mask>
   <g id="demo-symbol" fill="#E64980" mask="url(#hilos-mark-gap)">
-    <path d="M7.00 13.00a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM13.66 17.84a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM11.11 25.66a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM2.89 25.66a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM0.34 17.84a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z"/>
+    <path d="M13.41 12.6a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM7.6 18.41a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM0.26 14.68a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM1.55 6.55a5 5 0 1 0 10 0a5 5 0 1 0 -10 0ZM9.68 5.26a5 5 0 1 0 10 0a5 5 0 1 0 -10 0Z"/>
   </g>
   <g id="hilos-mark">
-    <circle cx="25" cy="7" r="7" fill="#0288D1"/>
+    <circle cx="25" cy="25" r="7" fill="#0288D1"/>
   </g>
 </svg>

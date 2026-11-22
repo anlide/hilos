@@ -3,7 +3,8 @@
 Research artifacts for **HIL-2151**, the new system of Hilos marks: the Hilos
 logo in three variants, the ladder that picks a variant by its size on screen,
 the corner mark that puts the logo into a demo's sign, the signs of the twelve
-demos with a frontend, and the palette. Open [preview.html](preview.html)
+demos with a frontend, and the palette. **HIL-2261** redrew the demo signs with
+the mark in the bottom-right corner. Open [preview.html](preview.html)
 directly from disk: it shows the three logo files and the logo at 16, 32, 64 and
 180 CSS pixels, then every demo sign at the same four sizes, on white and dark
 backgrounds, each size labeled with the file it uses, and the phone
@@ -20,11 +21,15 @@ The owner's decisions for this system:
   bend, then a thin zigzag line, then a plain dot without a bolt.
 - The circle is `#0288D1` and the bolt `#FFD500`. The former node blue
   `#32C5FF` leaves the system.
-- A demo's sign carries the logo in miniature as a mark in its top-right
-  corner, separated from the demo's symbol by a transparent gap.
+- A demo's sign carries the logo in miniature as a mark in its bottom-right
+  corner, separated from the demo's symbol by a transparent gap. The top-right
+  corner of an icon is where apps put a badge for something new, and a bare
+  blue dot there in a browser tab read as unread messages (the owner,
+  2026-11-21, HIL-2261). The bottom-right corner is where an icon shows a trait
+  of the thing itself, such as a work profile or the status on an avatar.
 - A demo's symbol is free in shape and color, several colors included. The one
   requirement: the sign reads from a single file on a light and on a dark
-  background, with no switch by theme. The right upper quarter belongs to the
+  background, with no switch by theme. The right lower quarter belongs to the
   mark. The limits of HIL-1539 — one color, one fill, a shared palette — no
   longer apply.
 
@@ -108,10 +113,10 @@ embedded bitmaps or remote references were used.
 ## Mark construction and gap
 
 The mark is the logo in miniature — the blue circle and the yellow bolt, one
-construction — placed in the top-right corner of a demo's sign. A sign is a
+construction — placed in the bottom-right corner of a demo's sign. A sign is a
 file of its own, `sources/<demo>-{large,medium,small}.svg`, with
-`viewBox="0 0 32 32"` like the logo, and the right upper quarter of that
-viewBox, `x` 16 to 32 and `y` 0 to 16, belongs to the mark. Around the mark
+`viewBox="0 0 32 32"` like the logo, and the right lower quarter of that
+viewBox, `x` 16 to 32 and `y` 16 to 32, belongs to the mark. Around the mark
 runs a transparent gap: the demo's symbol is cut away by a mask, not covered
 by a white ring, so the gap shows whatever background the sign is on, light or
 dark. Without the gap, at 16 px the mark merges with the symbol.
@@ -121,28 +126,29 @@ sign files:
 
 | Part | Value |
 |---|---|
-| Mark circle | Center `(25, 7)`, radius `7`, diameter `14`, fill `#0288D1` |
+| Mark circle | Center `(25, 25)`, radius `7`, diameter `14`, fill `#0288D1` |
 | Gap | Width `2` around the mark circle |
-| Cut-out circle of the mask | Center `(25, 7)`, radius `9`; it touches `x = 16` and `y = 16`, the inner edges of the quarter |
-| Logo-to-mark transform | `matrix(0.4375 0 0 0.4375 18 0)`: scale `7/16` and shift by `(18, 0)` map the logo circle `(16, 16)`, radius `16`, onto the mark circle |
+| Cut-out circle of the mask | Center `(25, 25)`, radius `9`; it touches `x = 16` and `y = 16`, the inner edges of the quarter |
+| Logo-to-mark transform | `matrix(0.4375 0 0 0.4375 18 18)`: scale `7/16` and shift by `(18, 18)` map the logo circle `(16, 16)`, radius `16`, onto the mark circle |
 | Mark circle on screen | `14/32` of the sign's displayed size: 7 px at 16, 14 px at 32, 28 px at 64, 78.75 px at 180 |
 | Gap on screen | `2/32` of the sign's size: 1 px at 16, 2 px at 32, 4 px at 64 |
 
 The demo's symbol keeps out of the quarter as far as it can; the mask
-guarantees the gap wherever it does reach in. The mask is the only place where
+guarantees the gap wherever it does reach in (see "Placement" for where it
+does). The mask is the only place where
 white and black appear in a sign file, and they are mask luminance, not paint.
 Paint order: the masked symbol group first, the mark group last. In markup:
 
 ```svg
 <mask id="hilos-mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
   <rect width="32" height="32" fill="#fff"/>
-  <circle cx="25" cy="7" r="9" fill="#000"/>
+  <circle cx="25" cy="25" r="9" fill="#000"/>
 </mask>
 <g id="demo-symbol" fill="…" mask="url(#hilos-mark-gap)">
   <!-- the demo's symbol -->
 </g>
 <g id="hilos-mark">
-  <g transform="matrix(0.4375 0 0 0.4375 18 0)">
+  <g transform="matrix(0.4375 0 0 0.4375 18 18)">
     <circle cx="16" cy="16" r="16" fill="#0288D1"/>
     <!-- the hilos-bolt path of the chosen logo variant, copied unchanged -->
   </g>
@@ -150,7 +156,7 @@ Paint order: the masked symbol group first, the mark group last. In markup:
 ```
 
 Every `id` is unique within its file. In a sign whose mark is a dot, the
-`hilos-mark` group holds only `<circle cx="25" cy="7" r="7" fill="#0288D1"/>`,
+`hilos-mark` group holds only `<circle cx="25" cy="25" r="7" fill="#0288D1"/>`,
 without the transform. If a sign is embedded inline, namespace its ids per
 instance as for any inline SVG.
 
@@ -168,10 +174,12 @@ files' own size ranges are chosen so that this smallest mark fits its bolt:
 
 So `<demo>-large.svg` carries the one-bend bolt even at 180 and 512 px, where
 the mark alone would qualify for two bends; no sign carries the two-bend bolt.
-The construction was checked with a sample sign — a plain square symbol in all
-three files — rasterized at 16, 24, 32, 48, 64 and 180 px on both backgrounds:
-at 16 the gap keeps the dot apart from the symbol, which it does not without
-the mask; at 32 the zigzag reads; at 64 and 180 the one-bend bolt reads.
+The construction was checked on the 36 sign files of the 2026-11-21 run
+("Source choice and export"). Each file was rasterized at 1280 px: the ring
+between radius 7 and radius 9 around `(25, 25)` is unpainted in every file, and
+the mark circle is painted whole. The exports were viewed on both backgrounds:
+at 16 the gap keeps the dot apart from every symbol; at 32 the zigzag reads;
+at 64 and 180 the one-bend bolt reads.
 
 ## Demo signs
 
@@ -185,39 +193,49 @@ Icons 1.13.2; "Source provenance and license" gives the file of each.
 | Demo | Subject | Symbol in the three files | Color | Files |
 |---|---|---|---|---|
 | `binance-btc-tracker` | Bitcoin sign: the header icon `currency-bitcoin`, also the demo's favicon | `currency-bitcoin` in all three | `#F76707` | [large](sources/binance-btc-tracker-large.svg) · [medium](sources/binance-btc-tracker-medium.svg) · [small](sources/binance-btc-tracker-small.svg) |
-| `chat` | Speech bubble: the header icon `chat-dots` | Large `chat-dots`; medium `chat-dots-fill`; small the HIL-1316 bubble without dots | `#845EF7` | [large](sources/chat-large.svg) · [medium](sources/chat-medium.svg) · [small](sources/chat-small.svg) |
+| `chat` | Speech bubble: the header icon `chat-dots` | Large `chat-dots`; medium `chat-dots-fill`; small an original wide speech bubble with three dots | `#845EF7` | [large](sources/chat-large.svg) · [medium](sources/chat-medium.svg) · [small](sources/chat-small.svg) |
 | `concert-tickets` | Ticket: the header icon `ticket-perforated-fill`, also the favicon | Large and medium `ticket-perforated-fill`; small `ticket-fill` | `#E03131` | [large](sources/concert-tickets-large.svg) · [medium](sources/concert-tickets-medium.svg) · [small](sources/concert-tickets-small.svg) |
-| `ecommerce-shop` | Flower: the header icon `flower1` | Large and medium `flower1`; small an original five-petal flower | `#E64980` | [large](sources/ecommerce-shop-large.svg) · [medium](sources/ecommerce-shop-medium.svg) · [small](sources/ecommerce-shop-small.svg) |
-| `file-gallery-manager` | Pictures: the header icon `images` | Large and medium `images`; small `image-fill` | `#0CA678` | [large](sources/file-gallery-manager-large.svg) · [medium](sources/file-gallery-manager-medium.svg) · [small](sources/file-gallery-manager-small.svg) |
-| `online-testing` | Graduation cap: the header icon `mortarboard` | Large `mortarboard`; medium and small `mortarboard-fill` | `#B58B00` | [large](sources/online-testing-large.svg) · [medium](sources/online-testing-medium.svg) · [small](sources/online-testing-small.svg) |
+| `ecommerce-shop` | Flower: the header icon `flower1` | Large `flower1`; medium and small an original five-petal flower | `#E64980` | [large](sources/ecommerce-shop-large.svg) · [medium](sources/ecommerce-shop-medium.svg) · [small](sources/ecommerce-shop-small.svg) |
+| `file-gallery-manager` | Pictures: the header icon `images` | Large and medium `images`; small an original single picture: a frame, a sun and mountains | `#0CA678` | [large](sources/file-gallery-manager-large.svg) · [medium](sources/file-gallery-manager-medium.svg) · [small](sources/file-gallery-manager-small.svg) |
+| `online-testing` | Graduation cap: the header icon `mortarboard` | Large `mortarboard`; medium and small `mortarboard-fill`; mirrored in all three, the tassel on the left | `#B58B00` | [large](sources/online-testing-large.svg) · [medium](sources/online-testing-medium.svg) · [small](sources/online-testing-small.svg) |
 | `pmd` | Letter P: the header shows the name as text, so the symbol is the P of the demo's favicon | The favicon's rounded square and letter in all three | Square `#A9682F`, letter `#FFFFFF` | [large](sources/pmd-large.svg) · [medium](sources/pmd-medium.svg) · [small](sources/pmd-small.svg) |
-| `polls` | Bar chart: the header icon `bar-chart`, mirrored | Large `bar-chart`; medium and small `bar-chart-fill` | `#AE3EC9` | [large](sources/polls-large.svg) · [medium](sources/polls-medium.svg) · [small](sources/polls-small.svg) |
+| `polls` | Bar chart: the header icon `bar-chart` | Three original bars after `bar-chart-fill` in all three, rising from left to right as in the header; small on the 16-pixel grid | `#AE3EC9` | [large](sources/polls-large.svg) · [medium](sources/polls-medium.svg) · [small](sources/polls-small.svg) |
 | `preferans` | Spade: the header icon `suit-spade-fill`, also the favicon | `suit-spade-fill` in all three | `#868E96` | [large](sources/preferans-large.svg) · [medium](sources/preferans-medium.svg) · [small](sources/preferans-small.svg) |
-| `roblox-game-server` | Game controller: the header icon `controller`, also the favicon | Large `controller`; medium and small its outer contour filled, with the cross and the buttons cut out | `#5C940D` | [large](sources/roblox-game-server-large.svg) · [medium](sources/roblox-game-server-medium.svg) · [small](sources/roblox-game-server-small.svg) |
-| `solar-system-model` | Sun: the header icon `sun-fill` | Large and medium `sun-fill`; small an original sun, a disk and eight thick rays | `#E37400` | [large](sources/solar-system-model-large.svg) · [medium](sources/solar-system-model-medium.svg) · [small](sources/solar-system-model-small.svg) |
-| `tasks` | Check box: the header icon `check2-square` | Large `check2-square`; medium and small `check-square-fill` | `#2F9E44` | [large](sources/tasks-large.svg) · [medium](sources/tasks-medium.svg) · [small](sources/tasks-small.svg) |
+| `roblox-game-server` | Game controller: the header icon `controller`, also the favicon | Large `controller`; medium and small its outer contour filled, with the cross and the buttons cut out; tilted by 30° in all three | `#5C940D` | [large](sources/roblox-game-server-large.svg) · [medium](sources/roblox-game-server-medium.svg) · [small](sources/roblox-game-server-small.svg) |
+| `solar-system-model` | Sun: the header icon `sun-fill` | Large `sun-fill`; medium and small an original sun, a disk and eight thick rays | `#E37400` | [large](sources/solar-system-model-large.svg) · [medium](sources/solar-system-model-medium.svg) · [small](sources/solar-system-model-small.svg) |
+| `tasks` | Check box: the header icon `check2-square` | `check-square-fill` in all three | `#2F9E44` | [large](sources/tasks-large.svg) · [medium](sources/tasks-medium.svg) · [small](sources/tasks-small.svg) |
 
 ### Where the three files differ
 
 One subject, three levels of detail, in the spirit of the ladder:
 
-- `<demo>-large.svg` keeps the header icon as it is drawn, outline where the
-  header has an outline. At 64 px and up its lines are four pixels wide.
+- `<demo>-large.svg` keeps the header icon as it is drawn where its outline
+  survives the cut-out: `chat`, `online-testing` and `roblox-game-server` are
+  outlines, and `flower1` and `sun-fill` are drawn at the scale `1.36` of
+  "Placement". `polls` and `tasks` are filled in all three files instead of
+  the outline of their header icons: the cut-out opened the foot of the third
+  bar of `bar-chart` into two prongs, and of the right side of `check2-square`
+  it left a stub above the cut-out.
 - `<demo>-medium.svg` takes the filled form of the same icon where the outline
-  is thinner than two pixels at 32 px and turns pale: chat, online-testing,
-  polls, roblox-game-server and tasks. The ticket's perforation, the flower's
-  petals, the pictures, the sun's rays, the spade, the bitcoin sign and the P
-  read at 32 as they are, so medium equals large there.
-- `<demo>-small.svg` drops what is below a pixel at 16 px: the dots of the chat
-  bubble, the perforation of the ticket, the second picture of the gallery, the
-  twelve thin petals of the flower and the thin rays of the sun. The flower and
-  the sun are redrawn with fewer and bolder parts; the chat bubble is the
-  rounded rectangle of HIL-1316, which reads at 16 better than the round
-  bubble with the mask's bite out of it.
+  turns pale at 32 px: `chat`, `online-testing` and `roblox-game-server`. It
+  takes the simplified geometry of the small file where the icon at the scale
+  `1.36` has lines thinner than one and a half pixels at 32: the flower, whose
+  `flower1` joints are about 0.7 px, and the sun, whose `sun-fill` rays are
+  about 1.4 px. So the medium file of `ecommerce-shop` and of
+  `solar-system-model` equals the small one. The ticket's perforation, the
+  pictures, the spade, the bitcoin sign, the P, the bars and the check box read
+  at 32 as they are, so medium equals large there.
+- `<demo>-small.svg` drops what is below a pixel at 16 px: the perforation of
+  the ticket, the second picture of the gallery, the twelve thin petals of the
+  flower and the thin rays of the sun. The flower and the sun are redrawn with
+  fewer and bolder parts, and the gallery shows one picture of its own. The
+  chat bubble is an original wide bubble whose three dots are 2 × 2 pixels on
+  the 16-pixel grid, so at 16 the dots stay. The bars of `polls` are aligned to
+  the 16-pixel grid.
 
 ### Viewing criteria and observed limits
 
-The exports of the 2026-11-19 run ("Source choice and export") were viewed on
+The exports of the 2026-11-21 run ("Source choice and export") were viewed on
 `#FFFFFF` and on `#212529`, at their own pixels and enlarged with
 nearest-neighbor pixels: each file at the size it serves — `-small` at 16,
 `-medium` at 32, `-large` at 64 and 180 — and the logo at the same sizes. The
@@ -229,59 +247,106 @@ second file for it.
 - **Logo.** At 16 the zigzag of `hilos-small.svg` reads as a bolt, a soft line
   about two pixels wide. At 32 the one-bend bolt reads clearly; at 64 and 180
   the two-bend bolt is sharp.
-- **16, `-small`.** The bitcoin sign, the ticket, the letter P, the polls bars,
-  the spade, the sun with its disk and rays and the check box read clearly. At
-  their limit, readable by outline rather than by detail: the chat bubble is a
-  plain purple shape with its tail, the flower a pink blot with five lobes, the
-  mortarboard a cap and a tassel, the gallery picture a green frame with the
-  mountain half closed, and the controller a green body whose cross and buttons
-  are barely visible. The dot mark stands apart from every symbol on both
-  backgrounds: the one-pixel gap holds.
+- **16, `-small`.** The bitcoin sign, the chat bubble with its three dots,
+  the ticket with the notches on its sides, the flower with five petals and
+  its open middle, the mortarboard with the tassel on the left, the letter P,
+  the three rising bars, the spade, the sun with its disk and eight rays and
+  the check box read clearly. At their limit, readable by outline rather than
+  by detail: the controller, a tilted green body with two grips whose cross and
+  buttons are light spots, and the gallery picture, a one-pixel frame with a
+  square sun and a step of mountains. The dot mark stands apart from every
+  symbol on both backgrounds: the one-pixel gap holds.
 - **32, `-medium`.** All twelve symbols read, and so does the zigzag in the
-  mark. The flower's twelve petals and the ticket's perforation are the finest
-  detail at this size and still read.
-- **64 and 180, `-large`.** All twelve read, the outline icons included: their
-  lines are four pixels wide at 64. The one-bend bolt in the mark reads at 64
-  and is sharp at 180.
+  mark. The ticket's perforation and the controller's cross and buttons are
+  the finest detail at this size and still read. In the stack of pictures the
+  mark covers the bottom-right corner of the front picture; its mountain and
+  sun stay in view.
+- **64 and 180, `-large`.** All twelve read, the outline icons included: the
+  lines of `chat`, `online-testing` and `roblox-game-server` are 2.9 to 3.5
+  pixels wide at 64. At the scale `1.36` the rays of `sun-fill` are about 2.7
+  pixels at 64 and the joints of `flower1` about 1.4; they read, and they are
+  sharp at 180. The one-bend bolt in the mark reads at 64 and is sharp at 180.
 - **Phone tiles.** On the white 180 × 180 tiles every symbol and mark stays
-  clear of the corners, checked with a 40-pixel rounded mask laid over the PNG.
-  The light symbols — the spade `#868E96`, the mortarboard `#B58B00` — keep
-  their contrast of 3:1 and more against the white tile.
+  clear of the corners, checked with a 40-pixel rounded mask laid over the PNG:
+  the sign covers pixels 20 to 160, and its point nearest a corner, `(20, 20)`,
+  lies 11.7 pixels inside the rounding. The light symbols — the spade
+  `#868E96`, the mortarboard `#B58B00` — keep their contrast of 3:1 and more
+  against the white tile.
 - **ICO.** Both images decode: the 16 × 16 image is `-small` at 16, and the
   32 × 32 one is the same small file at 32, with a dot for the mark, as the
-  ladder gives for a 16 CSS px tab on a 2× screen.
+  ladder gives for a 16 CSS px tab on a 2× screen. Both are byte for byte the
+  `-small` exports at 16 and 32. At 32 every small file reads.
 
 What only a device shows, the owner checks when the ticket is ready: the tab in
 Chromium and Firefox, light and dark, at 100% zoom and on a 2× screen, and the
-home-screen icon on iOS and Android. At 16 the controller, the gallery and the
-flower are the signs to look at first: they are at the limit above.
+home-screen icon on iOS and Android. At 16 the controller and the gallery are
+the signs to look at first: they are at the limit above.
 
 ### Placement
 
 A Bootstrap icon is drawn on a 16 × 16 grid. A sign places it with
-`matrix(1.75 0 0 1.75 0 4)`: 28 units, flush with the left and bottom edges of
-the viewBox, so a full-size icon covers `x` 0 to 28 and `y` 4 to 32. Whatever
-reaches into the mark's quarter is cut away by the mask. The departures, all in
-viewBox units:
+`matrix(1.75 0 0 1.75 0 0)`: 28 units, flush with the left and top edges of
+the viewBox, so a full-size icon covers `x` 0 to 28 and `y` 0 to 28. Where the
+cut-out would take a characteristic part of the symbol — a ray, a petal, a
+grip, a lobe, a corner of the ticket — the symbol is drawn smaller or turned
+so that it stays whole; the cut-out is left to bite only the corner of a solid
+rectangle (`file-gallery-manager`, `pmd`, `tasks`) and the foot of the tallest
+bar (`polls`). The placement of each demo, all in viewBox units:
 
-- `binance-btc-tracker`: `matrix(1.875 0 0 1.875 -2 3)`. The bitcoin sign is
-  narrow, so it is drawn larger.
-- `concert-tickets`: `matrix(1.75 0 0 1.75 0 8)`. The ticket is wide and low;
-  set lower, it keeps more of its right corner out of the cut-out.
-- `polls`: `matrix(-1.75 0 0 1.75 28 4)`, mirrored. In the header's order the
-  tallest bar stands under the mark, and the cut-out took its top, so the bar
-  read as a "U"; mirrored, the shortest bar stands there and keeps its whole
-  shape.
-- `roblox-game-server` medium and small: `matrix(1.75 0 0 1.75 0 6)`, lower for
-  the same reason as the ticket.
-- `pmd`: the rounded square is `24 × 24` at `(0, 8)`, radius `4.5`, and the
-  favicon's letter path is placed with `matrix(0.75 0 0 0.75 0 8)`.
-- `chat` small: the HIL-1316 bubble with `matrix(2.4 0 0 2.4 -26.4 -21.8)`,
-  `x` 0 to 24, `y` 5.8 to 31.
-- `ecommerce-shop` small: five circles of radius `5` whose centers lie at
-  distance `7` from `(12, 20)`, the first straight up.
-- `solar-system-model` small: a disk of radius `6` at `(12, 19)` and eight rays
-  from radius `8.5` to `11`, stroke width `2.5`, round caps.
+- `binance-btc-tracker`, all three: `matrix(1.875 0 0 1.875 -4.5 -2.8)`. The
+  bitcoin sign is narrow, so it is drawn larger; it covers `x` 1.6 to 18.93
+  and `y` 0 to 24.4 and clears the cut-out.
+- `chat` large and medium: `matrix(1.45 0 0 1.45 0 -1.45)`, `x` 0 to 23.2 and
+  `y` 0 to 21.65 with the tail; clear of the cut-out.
+- `chat` small: a rounded rectangle `x` 0 to 28, `y` 0 to 16, radius `4`; a
+  tail from its lower edge between `x` 4 and 12 down to `(4, 24)`; three dots
+  of radius `2` at `(6, 8)`, `(14, 8)` and `(22, 8)`, cut out even-odd. Clear
+  of the cut-out.
+- `concert-tickets`, all three: `matrix(1.6 0 0 1.6 0 -4.8)`. The ticket is
+  wide and low and lies in the upper half, `x` 0 to 25.6 and `y` 0 to 16; its
+  lower edge at `y = 16` touches the cut-out.
+- `ecommerce-shop` large: `matrix(1.36 0 0 1.36 0 0)`, `x` and `y` 0 to 21.76.
+- `ecommerce-shop` medium and small: five circles of radius `5` whose centers
+  lie at distance `7` from `(11.5, 11.5)`, the first at 9° clockwise from the
+  `x` axis: the opening between two petals faces the mark, and the flower is
+  symmetric about the diagonal.
+- `file-gallery-manager` large and medium: `matrix(1.75 0 0 1.75 0 -1.75)`,
+  since the `images` icon starts at `y = 1`; `x` 0 to 28 and `y` 0 to 24.5.
+  The cut-out takes the bottom-right corner of the front picture.
+- `file-gallery-manager` small: a frame `28 × 24` at `(0, 0)`, outer radius
+  `3`, width `2`; the sky is cut out even-odd above the ridge `(2, 18) (8, 12)
+  (12, 16) (18, 10) (26, 18)`, and the sun is a circle of radius `2` at
+  `(6, 6)`. The cut-out takes the bottom-right corner of the frame.
+- `online-testing`, all three: `matrix(-1.7 0 0 1.7 27.2 -3.4)`, mirrored so
+  that the tassel hangs on the left and not under the mark, and raised by the
+  empty band above the cap; `x` 0 to 27.2 and `y` 0 to 23.8.
+- `pmd`, all three: the rounded square is `24 × 24` at `(0, 0)`, radius `4.5`,
+  and the favicon's letter path is placed with `matrix(0.75 0 0 0.75 0 0)`.
+  The cut-out takes the bottom-right corner of the square, not the letter.
+- `polls` large and medium: three bars of width `7` at `x` 0, 9 and 18, their
+  tops at `y` 18, 9 and 0, all standing on `y = 28`, corner radius `1.75`. The
+  bars rise from left to right as in the header; the cut-out takes the foot of
+  the third, tallest bar, and the right edge of the middle bar, `x = 16`, only
+  touches it.
+- `polls` small: the same on the 16-pixel grid, two units to a pixel: width
+  `6`, `x` 0, 8 and 16, tops at `y` 18, 10 and 0, corner radius `1`.
+- `preferans`, all three: `matrix(1.5 0 0 1.5 -1.5 0)`, `x` 0 to 21 and `y` 0
+  to 22.5.
+- `roblox-game-server`, all three: `translate(12.25 12.25) rotate(-30)
+  scale(1.75) translate(-8 -8)`: the default size, turned 30°
+  counterclockwise about the icon's center, so that both grips stay whole and
+  the mark stands between them.
+- `solar-system-model` large: `matrix(1.36 0 0 1.36 0 0)`, `x` and `y` 0 to
+  21.76.
+- `solar-system-model` medium and small: a disk of radius `5.5` at `(11, 11)`
+  and eight rays from radius `8` to `9.5`, stroke width `2.5`, round caps that
+  reach `10.75`.
+- `tasks`, all three: the default `matrix(1.75 0 0 1.75 0 0)`. The cut-out
+  takes the bottom-right corner of the square, not the check mark.
+
+The scale `1.36` of the radial icons, the flower and the sun, comes from a
+circle of radius 8 grid units set flush with the left and top edges: it stays
+out of the cut-out while `8·s·(1 + √½) ≤ 25 − 9·√½`, that is `s ≤ 1.364`.
 
 The symbols use one color each, except `pmd`, whose letter is white on its
 colored square. The colors are chosen so that the symbol's fill reads on both
@@ -304,10 +369,11 @@ frontend comes to life, and any further demo the same way:
    relative luminance of about 0.15 to 0.30); where it does not get there, say
    so in "Palette and contrast" with what carries it instead, such as a second
    color or an outline. Keep away from blues near the mark's `#0288D1`.
-3. Leave the right upper quarter to the mark: build the file exactly as in
+3. Leave the right lower quarter to the mark: build the file exactly as in
    "Mark construction and gap" — the mask, the `demo-symbol` group first, the
    `hilos-mark` group last. The symbol may reach into the quarter; the mask cuts
-   the gap.
+   the gap. Where the cut-out would take a characteristic part of the symbol,
+   draw it smaller or turn it, as in "Placement".
 4. Draw three files, `sources/<demo>-large.svg`, `-medium.svg` and
    `-small.svg`, each with the mark of its row in the sign-file table. Each has
    `viewBox="0 0 32 32"`, intrinsic dimensions of 32 × 32, a transparent
@@ -465,7 +531,7 @@ label. A standalone meaningful image needs its own descriptive `alt`. If
 embedding inline, namespace its title/description and group IDs per instance to
 avoid duplicate IDs on the page.
 
-For PNG and ICO output, the recipe below was executed on 2026-11-19 with:
+For PNG and ICO output, the recipe below was executed on 2026-11-21 with:
 
 | Tool | Version |
 |---|---|
@@ -479,7 +545,7 @@ The first command installs only export tooling into `/tmp`; it needs network
 access on first use. Nothing is added to a demo's dependencies or build.
 
 ```bash
-brand_output=/tmp/HIL-2151
+brand_output=/tmp/HIL-2261
 mkdir -p "$brand_output/tools"
 docker run --rm \
   --user "$(id -u):$(id -g)" \
@@ -498,7 +564,7 @@ docker run --rm --network none \
 ```
 
 The script reads the three files of `hilos` and of each of the twelve demos and
-writes to `/tmp/HIL-2151/png`:
+writes to `/tmp/HIL-2261/png`:
 
 - `<name>-<variant>-<size>.png` for every variant — `small`, `medium`,
   `large` — and every requested size: transparent PNGs, drawn on a transparent
@@ -517,8 +583,8 @@ not fully opaque; and the ICO is read back from its own header — two entries, 
 and 32, each pointing at a PNG of that size, the offsets and lengths adding up
 to the file's length. The 2026-11-21 run wrote 195 files: 156 transparent PNGs
 (13 names × 3 variants × the default sizes 16, 32, 64 and 180), 13 phone tiles
-180 of 5 to 13 KB, 13 preview tiles 512 of 18 to 41 KB and 13 ICO files of 1.2
-to 2.1 KB. An independent reader, `file`, recognized each ICO as an icon
+180 of 5.1 to 11.2 KB, 13 preview tiles 512 of 18.0 to 38.0 KB and 13 ICO
+files of 1.0 to 2.1 KB. An independent reader, `file`, recognized each ICO as an icon
 resource with two PNG images, 16 × 16 and 32 × 32.
 
 Give the sizes after the output directory to replace the default `16 32 64
@@ -532,7 +598,7 @@ read at a size, the size belongs to another variant.
 The logo files are original constructions for HIL-2151; see the end of "Logo
 geometry". The mark in every sign file is the same logo geometry, scaled.
 
-The demo symbols come from four kinds of source:
+The demo symbols come from three kinds of source:
 
 - **Bootstrap Icons 1.13.2**, MIT. The geometry is the file
   `bootstrap-icons/icons/<name>.svg` of the npm package `bootstrap-icons`,
@@ -543,25 +609,23 @@ The demo symbols come from four kinds of source:
   that notice with the files below when redistributing them.
 - **A demo's favicon**, a file of this repository under its
   [MIT license](../../LICENSE).
-- **The HIL-1316 geometry**, original paths drawn for the previous masters and
-  covered by the repository's MIT license.
-- **Original geometry for HIL-2151**, under the repository's MIT license.
+- **Original geometry for HIL-2261**, under the repository's MIT license.
 
 | Demo | Large | Medium | Small |
 |---|---|---|---|
 | `binance-btc-tracker` | `bootstrap-icons/icons/currency-bitcoin.svg`; the same icon is the demo's favicon, `demo/binance-btc-tracker/frontend/public/favicon.svg`, recolored | as large | as large |
-| `chat` | `bootstrap-icons/icons/chat-dots.svg` | `bootstrap-icons/icons/chat-dots-fill.svg` | The HIL-1316 speech bubble, the `demo-symbol` path of the former `sources/chat.svg` |
+| `chat` | `bootstrap-icons/icons/chat-dots.svg` | `bootstrap-icons/icons/chat-dots-fill.svg` | Original geometry for HIL-2261: a wide speech bubble with three dots (see "Placement") |
 | `concert-tickets` | `bootstrap-icons/icons/ticket-perforated-fill.svg`, also `demo/concert-tickets/frontend/public/favicon.svg`, which paints it in `currentColor` | as large | `bootstrap-icons/icons/ticket-fill.svg` |
-| `ecommerce-shop` | `bootstrap-icons/icons/flower1.svg` | as large | Original: five circles (see "Placement") |
-| `file-gallery-manager` | `bootstrap-icons/icons/images.svg` | as large | `bootstrap-icons/icons/image-fill.svg` |
-| `online-testing` | `bootstrap-icons/icons/mortarboard.svg` | `bootstrap-icons/icons/mortarboard-fill.svg` | as medium |
+| `ecommerce-shop` | `bootstrap-icons/icons/flower1.svg` | Original geometry for HIL-2261: five circles (see "Placement") | as medium |
+| `file-gallery-manager` | `bootstrap-icons/icons/images.svg` | as large | Original geometry for HIL-2261: one picture after `images.svg` (see "Placement") |
+| `online-testing` | `bootstrap-icons/icons/mortarboard.svg`, mirrored | `bootstrap-icons/icons/mortarboard-fill.svg`, mirrored | as medium |
 | `pmd` | The rounded square and the letter path of `demo/pmd/frontend/public/favicon.svg`, recolored and scaled | as large | as large |
-| `polls` | `bootstrap-icons/icons/bar-chart.svg`, mirrored | `bootstrap-icons/icons/bar-chart-fill.svg`, mirrored | as medium |
+| `polls` | Original geometry for HIL-2261: three bars after `bootstrap-icons/icons/bar-chart-fill.svg` (see "Placement") | as large | The same on the 16-pixel grid |
 | `preferans` | `bootstrap-icons/icons/suit-spade-fill.svg`, also `demo/preferans/frontend/public/favicon.svg`, which paints it in `currentColor` | as large | as large |
-| `roblox-game-server` | `bootstrap-icons/icons/controller.svg`, also `demo/roblox-game-server/frontend/public/favicon.svg`, recolored | The same icon's subpaths: its outer contour and its cross and buttons, filled even-odd; its inner contour is left out | as medium |
-| `solar-system-model` | `bootstrap-icons/icons/sun-fill.svg` | as large | Original: a disk and eight rays after the same icon (see "Placement") |
-| `tasks` | `bootstrap-icons/icons/check2-square.svg` | `bootstrap-icons/icons/check-square-fill.svg` | as medium |
+| `roblox-game-server` | `bootstrap-icons/icons/controller.svg`, also `demo/roblox-game-server/frontend/public/favicon.svg`, recolored; tilted | The same icon's subpaths: its outer contour and its cross and buttons, filled even-odd; its inner contour is left out; tilted | as medium |
+| `solar-system-model` | `bootstrap-icons/icons/sun-fill.svg` | Original geometry for HIL-2261: a disk and eight rays after the same icon (see "Placement") | as medium |
+| `tasks` | `bootstrap-icons/icons/check-square-fill.svg` | as large | as large |
 
 No fonts, embedded bitmaps or remote references are used in any sign. The
-owner's decisions are recorded with the interviews of HIL-1316, HIL-1539 and
-HIL-2151.
+owner's decisions are recorded with the interviews of HIL-1316, HIL-1539,
+HIL-2151 and HIL-2261.

@@ -1,19 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
   <title id="title">PMD — letter P</title>
-  <desc id="desc">A white letter P on a brown rounded square. In the top-right corner, the Hilos logo, a blue circle with a yellow bolt with one bend.</desc>
+  <desc id="desc">A white letter P on a brown rounded square. In the bottom-right corner, the Hilos logo, a blue circle with a yellow bolt with one bend.</desc>
   <!-- HIL-2151: the large sign of the pmd demo.
+       Redrawn in HIL-2261 with the mark in the bottom-right corner.
        Symbol: demo/pmd/frontend/public/favicon.svg.
        Corner mark: the Hilos logo, original geometry. MIT; see ../README.md. -->
   <mask id="hilos-mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
     <rect width="32" height="32" fill="#fff"/>
-    <circle cx="25" cy="7" r="9" fill="#000"/>
+    <circle cx="25" cy="25" r="9" fill="#000"/>
   </mask>
   <g id="demo-symbol" fill="#A9682F" mask="url(#hilos-mark-gap)">
-    <rect x="0" y="8" width="24" height="24" rx="4.5"/>
-    <path fill="#FFFFFF" transform="matrix(0.75 0 0 0.75 0 8)" d="M10 25V7h7a6 6 0 0 1 0 12h-3v6zm4-10h3a2 2 0 0 0 0-4h-3z"/>
+    <rect x="0" y="0" width="24" height="24" rx="4.5"/>
+    <path fill="#FFFFFF" transform="matrix(0.75 0 0 0.75 0 0)" d="M10 25V7h7a6 6 0 0 1 0 12h-3v6zm4-10h3a2 2 0 0 0 0-4h-3z"/>
   </g>
   <g id="hilos-mark">
-    <g transform="matrix(0.4375 0 0 0.4375 18 0)">
+    <g transform="matrix(0.4375 0 0 0.4375 18 18)">
       <circle cx="16" cy="16" r="16" fill="#0288D1"/>
       <path fill="#FFD500" d="M19.5 4L9 18.5H15.5L12.5 28L22.5 13.5Z"/>
     </g>

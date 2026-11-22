@@ -1,18 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-labelledby="title desc">
   <title id="title">Hilos Concert Tickets — perforated ticket</title>
-  <desc id="desc">A red perforated ticket. In the top-right corner, the Hilos logo, a blue circle with a yellow bolt with one bend.</desc>
+  <desc id="desc">A red perforated ticket. In the bottom-right corner, the Hilos logo, a blue circle with a yellow bolt with one bend.</desc>
   <!-- HIL-2151: the large sign of the concert-tickets demo.
+       Redrawn in HIL-2261 with the mark in the bottom-right corner.
        Symbol: bootstrap-icons 1.13.2, icons/ticket-perforated-fill.svg, MIT.
        Corner mark: the Hilos logo, original geometry. MIT; see ../README.md. -->
   <mask id="hilos-mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
     <rect width="32" height="32" fill="#fff"/>
-    <circle cx="25" cy="7" r="9" fill="#000"/>
+    <circle cx="25" cy="25" r="9" fill="#000"/>
   </mask>
   <g id="demo-symbol" fill="#E03131" mask="url(#hilos-mark-gap)">
-    <path transform="matrix(1.75 0 0 1.75 0 8)" d="M0 4.5A1.5 1.5 0 0 1 1.5 3h13A1.5 1.5 0 0 1 16 4.5V6a.5.5 0 0 1-.5.5 1.5 1.5 0 0 0 0 3 .5.5 0 0 1 .5.5v1.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 11.5V10a.5.5 0 0 1 .5-.5 1.5 1.5 0 1 0 0-3A.5.5 0 0 1 0 6zm4-1v1h1v-1zm1 3v-1H4v1zm7 0v-1h-1v1zm-1-2h1v-1h-1zm-6 3H4v1h1zm7 1v-1h-1v1zm-7 1H4v1h1zm7 1v-1h-1v1zm-8 1v1h1v-1zm7 1h1v-1h-1z"/>
+    <path transform="matrix(1.6 0 0 1.6 0 -4.8)" d="M0 4.5A1.5 1.5 0 0 1 1.5 3h13A1.5 1.5 0 0 1 16 4.5V6a.5.5 0 0 1-.5.5 1.5 1.5 0 0 0 0 3 .5.5 0 0 1 .5.5v1.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 11.5V10a.5.5 0 0 1 .5-.5 1.5 1.5 0 1 0 0-3A.5.5 0 0 1 0 6zm4-1v1h1v-1zm1 3v-1H4v1zm7 0v-1h-1v1zm-1-2h1v-1h-1zm-6 3H4v1h1zm7 1v-1h-1v1zm-7 1H4v1h1zm7 1v-1h-1v1zm-8 1v1h1v-1zm7 1h1v-1h-1z"/>
   </g>
   <g id="hilos-mark">
-    <g transform="matrix(0.4375 0 0 0.4375 18 0)">
+    <g transform="matrix(0.4375 0 0 0.4375 18 18)">
       <circle cx="16" cy="16" r="16" fill="#0288D1"/>
       <path fill="#FFD500" d="M19.5 4L9 18.5H15.5L12.5 28L22.5 13.5Z"/>
     </g>
