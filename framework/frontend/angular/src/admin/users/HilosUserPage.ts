@@ -349,7 +349,7 @@ function focusWindow(body: HTMLElement | undefined): void {
                     </h3>
                     <p class="small text-body-secondary mb-0">{{ row.hint }}</p>
                   </div>
-                  <div>
+                  <div class="ms-auto text-end">
                     <button
                       hilosLoadingButton
                       class="btn-sm"
@@ -508,7 +508,7 @@ function focusWindow(body: HTMLElement | undefined): void {
                     {{ section.hint }}
                   </p>
                 </div>
-                <div>
+                <div class="ms-auto text-end">
                   <button
                     hilosLoadingButton
                     class="btn-sm btn-primary"
