@@ -1,5 +1,4 @@
 // One category's storefront in Tiles and Table views.
-// SCAFFOLD: the category page mounts and names this table in HIL-2193.
 import { useLayoutEffect, useState } from 'react'
 import { HilosLink, HilosViewportTable } from '@hilos/react/base'
 

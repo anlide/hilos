@@ -17,6 +17,9 @@ final class EcommerceShopSignalConstants
     /** @var string Subscription page main signal name */
     public const string SUBSCRIPTION_PAGE_MAIN = 'subscription_page_main';
 
+    /** @var string Subscription page category signal name */
+    public const string SUBSCRIPTION_PAGE_CATEGORY = 'subscription_page_category';
+
     /** @var string Subscription page admin warehouses signal name */
     public const string SUBSCRIPTION_PAGE_ADMIN_WAREHOUSES = 'subscription_page_admin_warehouses';
 

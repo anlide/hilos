@@ -9,8 +9,8 @@ carts and deliveries that move on every open page at once.
 
 ### Today
 
-The empty shell of the shop, and the smallest complete Hilos project on React
-— the one to copy (`docs/new-project/README.md`):
+A shop with a public storefront and the smallest complete Hilos project on
+React. See `docs/new-project/README.md` to start a project from it.
 
 - **Sign-in** by password, on the framework surface; registration and recovery
   confirm the address with a code sent by mail.
@@ -18,6 +18,9 @@ The empty shell of the shop, and the smallest complete Hilos project on React
   each with its picture, description and how many products it has; tiles and
   numbers change by themselves, and with no category yet the page says the
   shop is being set up.
+- **Category page**. Open a category from its home tile to see its description
+  and live product catalog. Browse as tiles or a table with the same filters,
+  price order and pagination. An unknown category shows a 404 page.
 - **Admin dashboard** at `/hilos` with **Settings** (the three example keys
   and the file and upload limits), **Users** (the list and a person's card:
   rename, takeover and rights; no account merge), **Backup** (database
@@ -41,7 +44,6 @@ The empty shell of the shop, and the smallest complete Hilos project on React
 - **Public pages** About, Terms, Privacy and License, prerendered into the build.
 - **Example catalog**: after a database reset the shop holds Hilos Flowers —
   3 warehouses, 6 categories and 30 products with their pictures and stock.
-  The storefront has no catalog pages yet; the shop administration shows it.
 
 The backend is the base set: one app agent owning the connections and the
 home page, the Hilos index agent with the dashboard, Maintenance, Backup,
@@ -67,9 +69,8 @@ registry of files stay the framework's.
 
 ### What it is going to show
 
-- **Storefront**: flower categories as tiles, a category as a table or as
-  tiles, with filters and an order; a one-of-a-kind item sold to somebody else
-  leaves every open page at once.
+- **Storefront**: a one-of-a-kind item sold to somebody else leaves every open
+  page at once.
 - **Product page**: stock, and live counters of who is looking at it right now
   and how many carts hold it.
 - **Search** at the top of every page, answering always — an AI chain first,

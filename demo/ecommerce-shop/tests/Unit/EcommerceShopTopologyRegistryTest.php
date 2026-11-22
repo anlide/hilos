@@ -167,6 +167,7 @@ use Demo\EcommerceShop\Pages\Hilos\AppearancePage;
 use Demo\EcommerceShop\Pages\Hilos\TermsPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
+use Demo\EcommerceShop\Pages\CategoryPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Pages\AdminCategoriesPage;
@@ -817,6 +818,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     {
         $this->assertSame([
             MainPage::PAGE => MainPage::class,
+            CategoryPage::PAGE => CategoryPage::class,
             ProductPage::PAGE => ProductPage::class,
             DashboardPage::PAGE => DashboardPage::class,
             AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -1456,11 +1458,25 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(ProductsTable::class, Hilos::TABLES[EcommerceShopTableContext::products]);
     }
 
-    /** The storefront table is registered under the category-products key. */
-    public function testTheCategoryProductsTableIsRegistered(): void
+    /** The public category uses the categories library and binds its products and stock window. */
+    public function testThePublicCategoryBindsTheCategoryProductsTable(): void
     {
+        self::assertSame('category', CategoryPage::PAGE);
+        self::assertSame(PageReach::ROUTE, CategoryPage::REACH);
+        self::assertSame(PageAccessLevel::PUBLIC, CategoryPage::ACCESS_LEVEL);
+        self::assertSame('subscription_page_category', EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_CATEGORY);
+        self::assertSame(
+            [BrowserConfigKey::SIGNAL => EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_CATEGORY],
+            CategoryPage::BROWSER,
+        );
+        self::assertSame(AgentType::CATEGORIES_LIBRARY, Hilos::getPageRoutes()[CategoryPage::PAGE]);
+        self::assertSame([EcommerceShopTableContext::categoryProducts => []], Hilos::PAGE_TABLES[CategoryPage::PAGE]);
         self::assertSame('categoryProducts', EcommerceShopTableContext::categoryProducts);
         self::assertSame(CategoryProductsTable::class, Hilos::TABLES[EcommerceShopTableContext::categoryProducts]);
+        self::assertSame(
+            [EcommerceShopBrowserSource::DB_PRODUCTS, EcommerceShopBrowserSource::DB_PRODUCT_WAREHOUSE_STOCKS],
+            CategoryProductsTable::BROWSER[BrowserTableConfigKey::SOURCES],
+        );
     }
 
     /**

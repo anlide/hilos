@@ -18,6 +18,7 @@ import {
   PAGE_ADMIN_PRODUCT_STOCK,
   PAGE_ADMIN_PRODUCTS,
   PAGE_ADMIN_WAREHOUSES,
+  PAGE_CATEGORY,
   PAGE_MAIN,
 } from './keys.js'
 
@@ -29,6 +30,7 @@ import {
  */
 const APP_ROUTES: Record<string, HilosRouteDeclaration> = {
   [PAGE_MAIN]: { path: '/', admin: false },
+  [PAGE_CATEGORY]: { path: '/category/{slug}', admin: false },
   [PAGE_ADMIN_WAREHOUSES]: {
     path: '/hilos/app/warehouses',
     admin: true,

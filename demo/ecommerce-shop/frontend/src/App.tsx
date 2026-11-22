@@ -32,9 +32,11 @@ import {
   PAGE_ADMIN_PRODUCT_STOCK,
   PAGE_ADMIN_PRODUCTS,
   PAGE_ADMIN_WAREHOUSES,
+  PAGE_CATEGORY,
   PAGE_MAIN,
 } from './pages/keys.js'
 import About from './views/About/About.js'
+import CategorySkeleton from './views/Category/CategorySkeleton.js'
 import License from './views/License/License.js'
 import LicenseDependencies from './views/LicenseDependencies/LicenseDependencies.js'
 import Main from './views/Main/Main.js'
@@ -51,6 +53,9 @@ import TermsHistory from './views/TermsHistory/TermsHistory.js'
 // server, and the outlet draws that refusal instead.
 const pages: Record<string, PageView<ComponentType>> = {
   [PAGE_MAIN]: Main,
+  [PAGE_CATEGORY]: lazyPage(() =>
+    import('./views/Category/Category.js').then((m) => m.default),
+  ),
   // The Hilos admin section. The framework ships a real default page for every
   // admin key (hilosAdminViews) — including the dashboard — so the demo maps only
   // the pages it implements itself; the rest render the framework default, never
@@ -300,6 +305,7 @@ const pages: Record<string, PageView<ComponentType>> = {
 // first answer (HIL-983); every other page gets the outlet's default skeleton.
 const pageSkeletons: Record<string, ComponentType> = {
   [PAGE_MAIN]: MainSkeleton,
+  [PAGE_CATEGORY]: CategorySkeleton,
 }
 
 export interface AppProps {

@@ -43,6 +43,9 @@ final class PageConstants
     /** @var string EcommerceShop main page */
     public const string MAIN = 'main';
 
+    /** @var string Storefront category page, addressed by the category's slug */
+    public const string CATEGORY = 'category';
+
     /** @var string EcommerceShop product page, addressed by the product's slug */
     public const string PRODUCT = 'product';
 }

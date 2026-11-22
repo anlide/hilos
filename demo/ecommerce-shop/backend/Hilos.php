@@ -130,6 +130,7 @@ use Demo\EcommerceShop\Pages\Hilos\TermsPage;
 use Demo\EcommerceShop\Pages\Hilos\TermsHistoryPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UserPage;
 use Demo\EcommerceShop\Pages\Hilos\Users\UsersPage;
+use Demo\EcommerceShop\Pages\CategoryPage;
 use Demo\EcommerceShop\Pages\MainPage;
 use Demo\EcommerceShop\Pages\ProductPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
@@ -329,6 +330,7 @@ final class Hilos extends HilosFacade
 
     public const array PAGES = [
         MainPage::PAGE => MainPage::class,
+        CategoryPage::PAGE => CategoryPage::class,
         ProductPage::PAGE => ProductPage::class,
         DashboardPage::PAGE => DashboardPage::class,
         AnalyticsPage::PAGE => AnalyticsPage::class,
@@ -694,6 +696,9 @@ final class Hilos extends HilosFacade
     ];
 
     public const array PAGE_TABLES = [
+        CategoryPage::PAGE => [
+            EcommerceShopTableContext::categoryProducts => [],
+        ],
         TermsHistoryPage::PAGE => [
             EcommerceShopTableContext::hilosTermsHistory => [],
         ],
