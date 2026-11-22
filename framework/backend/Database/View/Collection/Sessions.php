@@ -36,6 +36,19 @@ class Sessions extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectSessions::class;
 
     /**
+     * Reads persisted guest status independently of the worker's session mirror.
+     *
+     * @param int $sessionId Session primary key
+     * @return bool True when the stored session exists and has no bound user
+     * @throws DatabaseException When the primary-key read fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function isStoredGuest(int $sessionId): bool
+    {
+        return $this->objectCollection->isStoredGuest($sessionId);
+    }
+
+    /**
      * Finds a session by its cookie token.
      *
      * @param string $token Session cookie token (empty string returns null)

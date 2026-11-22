@@ -190,6 +190,7 @@ use Demo\EcommerceShop\Tables\Product\CategoryProductsTable;
 use Demo\EcommerceShop\Tables\Product\ProductsTable;
 use Demo\EcommerceShop\Tables\ProductStock\ProductStockTable;
 use Demo\EcommerceShop\Tables\Warehouse\WarehousesTable;
+use Hilos\Auth\AccountOperation\AccountErasureExemption;
 use Hilos\Auth\Session\DTO\SessionStateSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
 use Hilos\Auth\Throttle\AuthThrottleSettings;
@@ -1059,15 +1060,24 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     public function testPersonAgentOwnsTheCartReadsProductsAndStockAndTheDirectoryNamesTheCart(): void
     {
         self::assertSame(
-            [...AbstractUserAgent::OWNS_DB_SET, EcommerceShopDbContext::userProductCarts => TruthSourceOperation::ALL],
+            [
+                ...AbstractUserAgent::OWNS_DB_SET,
+                EcommerceShopDbContext::userProductCarts => TruthSourceOperation::ALL,
+                EcommerceShopDbContext::userVoucherCarts => TruthSourceOperation::ALL,
+            ],
             UserAgent::OWNS_DB_SET,
         );
         self::assertSame(
-            [...AbstractUserAgent::READS_DB, EcommerceShopDbContext::products, EcommerceShopDbContext::productWarehouseStocks],
+            [
+                ...AbstractUserAgent::READS_DB,
+                EcommerceShopDbContext::products,
+                EcommerceShopDbContext::productWarehouseStocks,
+                EcommerceShopDbContext::vouchers,
+            ],
             UserAgent::READS_DB,
         );
         self::assertSame(
-            [EcommerceShopDbContext::userProductCarts],
+            [EcommerceShopDbContext::userProductCarts, EcommerceShopDbContext::userVoucherCarts],
             EcommerceShopAccountDataOwnerDirectory::declaredPersonal(),
         );
     }
@@ -1262,11 +1272,21 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
         self::assertTrue((new GuestCartsLibraryAgentDaemon())->requiresMonopolisticProcess());
         $claims = OwnershipDeclaration::dbCollectionsOf(GuestCartsLibraryAgent::class);
-        self::assertSame([EcommerceShopDbContext::sessionProductCarts], array_keys($claims));
+        self::assertSame([EcommerceShopDbContext::sessionProductCarts, EcommerceShopDbContext::sessionVoucherCarts], array_keys($claims));
         self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::sessionProductCarts]->asList());
+        self::assertSame(TruthSourceOperation::ALL, $claims[EcommerceShopDbContext::sessionVoucherCarts]->asList());
         self::assertSame(
-            [EcommerceShopDbContext::products, EcommerceShopDbContext::productWarehouseStocks],
+            [
+                EcommerceShopDbContext::products,
+                EcommerceShopDbContext::productWarehouseStocks,
+                EcommerceShopDbContext::vouchers,
+                HilosDbContext::sessions,
+            ],
             GuestCartsLibraryAgent::readDbCollections(),
+        );
+        self::assertSame(
+            AccountErasureExemption::OutsideAccount,
+            EcommerceShopAccountDataOwnerDirectory::declaredExemptions()[EcommerceShopDbContext::sessionVoucherCarts],
         );
         self::assertSame(
             [

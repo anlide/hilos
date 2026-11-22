@@ -4,33 +4,55 @@ declare(strict_types=1);
 
 namespace Demo\EcommerceShop\Tests\Integration;
 
+use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
+use Demo\EcommerceShop\Agents\Hilos\SessionsLibraryAgent;
+use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
+use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
+use Demo\EcommerceShop\Database\Actions\VoucherFields;
 use Demo\EcommerceShop\Database\Database;
+use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\View\Item\Voucher;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Auth\Session\DTO\SessionRotateSignalData;
 use Hilos\Auth\Session\DTO\SessionsSweptSignalData;
+use Hilos\Auth\Session\SessionToken;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Core\Action\ActionFailureReason;
+use Hilos\Core\Agent\AbstractAgent;
 use Hilos\Core\Agent\Exception\InvalidAgentSignalPayloadException;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Router\AgentSignalData;
+use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\SourceMirrorSubscriberInterface;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\HilosException;
 use Hilos\Testing\IntegrationTest;
+use RuntimeException;
 
 /**
  * The real shop schema and the guest cart actions under their library's claim; the rollback scope proves writes, not commit.
  *
  * Warehouses, products of either kind and their stock are rows written straight into their tables past their
- * libraries, before the first cart action of a case reads them; a case that lowers the stock after that does it
- * through the stock library. A session is only a number here: the cart has no foreign key on the session row. The
- * carts and the stock are read back past the ORM.
+ * libraries, before the first cart action of a case reads them. Stock changes, voucher catalog writes and session
+ * writes run under their respective owners. Product-only cases use session numbers; voucher cases create real
+ * sessions. The stored carts and stock are read back past the ORM.
  */
 #[IntegrationTest]
 final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
@@ -242,6 +264,282 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::assertSame(0, Hilos::$db->sessionProductCarts->actions->deleteForSessions([]));
     }
 
+    /** An empty cart can accept or replace a voucher. A refusal keeps the last selection. */
+    public function testApplyingAndRemovingAVoucherKeepsASingleSlot(): void
+    {
+        $sessionId = self::guestSessionId();
+        $first = self::createVoucher('SPRING10', 10, true);
+        $second = self::createVoucher('AUTUMN20', 20, true);
+        self::createVoucher('WINTER30', 30, false);
+
+        $this->carts()->applyVoucher($sessionId, '  spring10 ');
+        self::assertSame($first->id, self::storedVoucherId($sessionId));
+        self::assertSame([], self::storedLines($sessionId));
+
+        $this->carts()->applyVoucher($sessionId, 'AUTUMN20');
+        $this->carts()->applyVoucher($sessionId, 'autumn20');
+        self::assertSame($second->id, self::storedVoucherId($sessionId));
+
+        $refusals = [
+            [' ', 'Voucher code cannot be empty', EmptyValueException::class],
+            [
+                str_repeat('A', VoucherFields::CODE_MAX_LENGTH + 1),
+                'Voucher code exceeds maximum length of 32 characters',
+                ValueTooLongException::class,
+            ],
+            ['AUTUMN-20', 'Voucher code may only contain Latin letters and digits', ValidationException::class],
+            ['UNKNOWN', 'Voucher code was not found', ValidationException::class],
+            ['WINTER30', 'This voucher is inactive', ValidationException::class],
+        ];
+        foreach ($refusals as [$code, $message, $exception]) {
+            self::assertRefused($message, fn () => $this->carts()->applyVoucher($sessionId, $code), $exception);
+            self::assertSame($second->id, self::storedVoucherId($sessionId));
+        }
+
+        $this->carts()->removeVoucher($sessionId);
+        self::assertNull(self::storedVoucherId($sessionId));
+        $this->carts()->removeVoucher($sessionId);
+        self::assertNull(self::storedVoucherId($sessionId));
+        self::assertSame('AUTUMN20', Hilos::$db->vouchers[$second->id]->code);
+        self::assertTrue(Hilos::$db->vouchers[$second->id]->active);
+    }
+
+    /** A cart keeps the voucher ID and uses the current catalog record for its discount. */
+    public function testCartVoucherFollowsCatalogChangesWithoutReapplying(): void
+    {
+        $sessionId = self::guestSessionId();
+        $voucher = self::createVoucher('SPRING10', 10, true);
+
+        self::assertNull($this->carts()->cartVoucher($sessionId));
+        self::assertSame(0, CartVoucherRules::effectiveDiscountPercent($this->carts()->cartVoucher($sessionId)));
+
+        $this->carts()->applyVoucher($sessionId, 'SPRING10');
+        self::assertSame(10, CartVoucherRules::effectiveDiscountPercent($this->carts()->cartVoucher($sessionId)));
+
+        self::asOwner(new VouchersLibraryAgent(), static fn () => $voucher->actions->update('AUTUMN20', 20, false));
+        $current = $this->carts()->cartVoucher($sessionId);
+        self::assertNotNull($current);
+        self::assertSame('AUTUMN20', $current->code);
+        self::assertSame(20, $current->discountPercent);
+        self::assertFalse($current->active);
+        self::assertSame(0, CartVoucherRules::effectiveDiscountPercent($current));
+        self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+
+        self::asOwner(new VouchersLibraryAgent(), static fn () => $voucher->actions->setActive(true));
+        self::assertSame(20, CartVoucherRules::effectiveDiscountPercent($this->carts()->cartVoucher($sessionId)));
+        self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+    }
+
+    /** Sweeping one guest removes its products and voucher. A delayed apply cannot recreate the binding. */
+    public function testSweepClearsOnlyTheEndedGuestAndRefusesALateApply(): void
+    {
+        $sweptSessionId = self::guestSessionId();
+        $keptSessionId = self::guestSessionId();
+        $voucher = self::createVoucher('SPRING10', 10, true);
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 2);
+        foreach ([$sweptSessionId, $keptSessionId] as $sessionId) {
+            Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
+            $this->carts()->applyVoucher($sessionId, 'SPRING10');
+        }
+        $keptLines = self::storedLines($keptSessionId);
+
+        self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$sweptSessionId]->actions->delete());
+        $this->sweep([$sweptSessionId]);
+        self::assertSame([], self::storedLines($sweptSessionId));
+        self::assertNull(self::storedVoucherId($sweptSessionId));
+        self::assertSame($keptLines, self::storedLines($keptSessionId));
+        self::assertSame($voucher->id, self::storedVoucherId($keptSessionId));
+
+        $this->sweep([$sweptSessionId]);
+        $this->sweep([]);
+        self::assertSame($keptLines, self::storedLines($keptSessionId));
+        self::assertSame($voucher->id, self::storedVoucherId($keptSessionId));
+        self::assertRefused(
+            'This guest session is no longer available',
+            fn () => $this->carts()->applyVoucher($sweptSessionId, 'SPRING10'),
+        );
+        self::assertNull(self::storedVoucherId($sweptSessionId));
+
+        Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 0, 0)', ['Signed-in shopper']);
+        $userId = Database::lastInsertId();
+        self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$keptSessionId]->actions->bindUser($userId));
+        self::assertRefused(
+            'This guest session is no longer available',
+            fn () => $this->carts()->applyVoucher($keptSessionId, 'SPRING10'),
+        );
+        self::assertSame($voucher->id, self::storedVoucherId($keptSessionId));
+    }
+
+    /** A swept session may still be held by the guest worker while its deletion frame is in flight. */
+    public function testLateVoucherApplyRefusesADeletedSessionBeforeSync(): void
+    {
+        $sessionId = self::guestSessionId();
+        self::createVoucher('SPRING10', 10, true);
+        self::assertNull(Hilos::$db->sessions[$sessionId]->userId);
+
+        Database::sql('DELETE FROM hilos_session WHERE id = ?', [$sessionId]);
+        self::assertNotNull(Hilos::$db->sessions[$sessionId] ?? null);
+
+        self::assertRefused('This guest session is no longer available', fn () => $this->carts()->applyVoucher($sessionId, 'SPRING10'));
+        self::assertNull(self::storedVoucherId($sessionId));
+    }
+
+    /** A bind landed in storage while the guest worker still holds the anonymous session. */
+    public function testLateVoucherApplyRefusesABoundSessionBeforeSync(): void
+    {
+        $sessionId = self::guestSessionId();
+        $voucher = self::createVoucher('SPRING10', 10, true);
+        self::createVoucher('AUTUMN20', 20, true);
+        $this->carts()->applyVoucher($sessionId, 'SPRING10');
+        self::assertNull(Hilos::$db->sessions[$sessionId]->userId);
+
+        Database::sql('INSERT INTO hilos_user (name, admin, block) VALUES (?, 0, 0)', ['Signed-in shopper']);
+        Database::sql('UPDATE hilos_session SET user_id = ? WHERE id = ?', [Database::lastInsertId(), $sessionId]);
+        self::assertNull(Hilos::$db->sessions[$sessionId]->userId);
+
+        self::assertRefused('This guest session is no longer available', fn () => $this->carts()->applyVoucher($sessionId, 'AUTUMN20'));
+        self::assertSame($voucher->id, self::storedVoucherId($sessionId));
+    }
+
+    /** A restarted owner can recover both cart families from storage after the one-shot sweep failed. */
+    public function testFailedSweepRollsBackBothFamiliesAndTheNextOwnerRecoversThem(): void
+    {
+        $sweptSessionId = self::guestSessionId();
+        $keptSessionId = self::guestSessionId();
+        $voucher = self::createVoucher('SPRING10', 10, true);
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 2);
+        foreach ([$sweptSessionId, $keptSessionId] as $sessionId) {
+            Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
+            $this->carts()->applyVoucher($sessionId, 'SPRING10');
+        }
+        $sweptLines = self::storedLines($sweptSessionId);
+        $keptLines = self::storedLines($keptSessionId);
+        self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$sweptSessionId]->actions->delete());
+
+        self::assertRemovalFails(
+            EcommerceShopDbContext::sessionVoucherCarts,
+            $sweptSessionId,
+            fn () => $this->sweep([$sweptSessionId]),
+        );
+        self::assertSame($sweptLines, self::storedLines($sweptSessionId));
+        self::assertSame($voucher->id, self::storedVoucherId($sweptSessionId));
+
+        $nextOwner = new GuestCartsLibraryAgent();
+        $nextOwner->onStart();
+        $nextOwner->onTick();
+
+        self::assertSame([], self::storedLines($sweptSessionId));
+        self::assertNull(self::storedVoucherId($sweptSessionId));
+        self::assertSame($keptLines, self::storedLines($keptSessionId));
+        self::assertSame($voucher->id, self::storedVoucherId($keptSessionId));
+    }
+
+    /** One oversized orphan cart spans a failed retry, several bounded ticks and an owner restart. */
+    public function testRecoveryResumesAnOversizedCartByItsRemainingRows(): void
+    {
+        $leftSessionId = self::guestSessionId();
+        $orphanSessionId = self::guestSessionId();
+        $rightSessionId = self::guestSessionId();
+        $category = self::category();
+        $warehouse = self::warehouse();
+        $neighborProduct = self::product(ProductKind::STOCK, $category);
+        self::stock($neighborProduct, $warehouse, 1);
+        Hilos::$db->sessionProductCarts->actions->add($leftSessionId, $neighborProduct);
+        for ($i = 0; $i < 75; $i++) {
+            $product = self::product(ProductKind::STOCK, $category);
+            self::stock($product, $warehouse, 1);
+            Hilos::$db->sessionProductCarts->actions->add($orphanSessionId, $product);
+        }
+        Hilos::$db->sessionProductCarts->actions->add($rightSessionId, $neighborProduct);
+        $leftLines = self::storedLines($leftSessionId);
+        $rightLines = self::storedLines($rightSessionId);
+        self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$orphanSessionId]->actions->delete());
+
+        [$throughLineId] = Hilos::$db->sessionProductCarts->cartRecoveryHorizons();
+        [$linePage] = Hilos::$db->sessionProductCarts->cartRowAbsencesAfter(0, $throughLineId, 0, 0, 25);
+        $orphanIds = array_column(array_slice(self::storedLines($orphanSessionId), 0, 24), 'id');
+        self::assertSame([$leftLines[0]['id'] => false] + array_fill_keys($orphanIds, true), $linePage);
+
+        $this->carts()->onTick();
+        $remaining = self::storedLines($orphanSessionId);
+        self::assertCount(51, $remaining);
+        self::assertRemovalFails(
+            EcommerceShopDbContext::sessionProductCarts,
+            $remaining[1]['id'],
+            fn () => self::runRecoveryTick($this->carts()),
+        );
+        self::assertSame($remaining, self::storedLines($orphanSessionId));
+
+        self::runRecoveryTick($this->carts());
+        self::assertSame(array_slice($remaining, 25), self::storedLines($orphanSessionId));
+
+        $nextOwner = new GuestCartsLibraryAgent();
+        $nextOwner->onStart();
+        $nextOwner->onTick();
+        self::assertCount(2, self::storedLines($orphanSessionId));
+        self::runRecoveryTick($nextOwner);
+
+        self::assertSame([], self::storedLines($orphanSessionId));
+        self::assertSame($leftLines, self::storedLines($leftSessionId));
+        self::assertSame($rightLines, self::storedLines($rightSessionId));
+    }
+
+    /** A scheduled pass also finds a voucher-only cart whose session disappeared after the owner started. */
+    public function testScheduledRecoveryFindsAVoucherWithoutProductLines(): void
+    {
+        $this->carts()->onTick();
+        $sessionId = self::guestSessionId();
+        self::createVoucher('SPRING10', 10, true);
+        $this->carts()->applyVoucher($sessionId, 'SPRING10');
+
+        self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$sessionId]->actions->delete());
+        self::assertNotNull(self::storedVoucherId($sessionId));
+        self::runRecoveryTick($this->carts());
+
+        self::assertNull(self::storedVoucherId($sessionId));
+    }
+
+    /** Both cursors return to the start of their original pass while new pages of cart rows are still arriving. */
+    public function testRecoveryWrapsAtTheOriginalLastCartEvenWhenNewCartsArrive(): void
+    {
+        $voucher = self::createVoucher('SPRING10', 10, true);
+        $product = self::product(ProductKind::STOCK);
+        self::stock($product, self::warehouse(), 1);
+        $firstSessionId = self::guestSessionId();
+        Hilos::$db->sessionProductCarts->actions->add($firstSessionId, $product);
+        $this->carts()->applyVoucher($firstSessionId, 'SPRING10');
+        for ($i = 1; $i < 60; $i++) {
+            $sessionId = self::guestSessionId();
+            Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
+            $this->carts()->applyVoucher($sessionId, 'SPRING10');
+        }
+        $this->carts()->onTick();
+
+        self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$firstSessionId]->actions->delete());
+        $lateOrphanId = self::guestSessionId();
+        Hilos::$db->sessionProductCarts->actions->add($lateOrphanId, $product);
+        $this->carts()->applyVoucher($lateOrphanId, 'SPRING10');
+        self::asOwner(new SessionsLibraryAgent(), static fn () => Hilos::$db->sessions[$lateOrphanId]->actions->delete());
+
+        for ($page = 0; $page < 3; $page++) {
+            for ($i = 0; $i < 25; $i++) {
+                $sessionId = self::guestSessionId();
+                Hilos::$db->sessionProductCarts->actions->add($sessionId, $product);
+                $this->carts()->applyVoucher($sessionId, 'SPRING10');
+            }
+            self::assertCount(1, self::storedLines($firstSessionId));
+            self::assertSame($voucher->id, self::storedVoucherId($firstSessionId));
+            self::runRecoveryTick($this->carts());
+            self::assertCount(1, self::storedLines($lateOrphanId));
+            self::assertSame($voucher->id, self::storedVoucherId($lateOrphanId));
+        }
+
+        self::assertSame([], self::storedLines($firstSessionId));
+        self::assertNull(self::storedVoucherId($firstSessionId));
+    }
+
     /** A sweep frame carrying another payload is a contract fault, and no cart is touched. */
     public function testASweepFrameWithAnotherPayloadIsRefused(): void
     {
@@ -339,6 +637,102 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
         self::assertSame($stored, self::storedLines(101));
     }
 
+    /** @param GuestCartsLibraryAgent $owner Library whose current cron rule is due */
+    private static function runRecoveryTick(GuestCartsLibraryAgent $owner): void
+    {
+        self::assertNotNull($owner->armCronRuleForTest('guest_cart_sweep_recovery'));
+        $owner->onTick();
+    }
+
+    /**
+     * @param string $sourceKey Collection whose removal should fail
+     * @param int $sourceId Row whose remove announcement should fail
+     * @param callable(): void $remove Handler expected to surface the failure
+     */
+    private static function assertRemovalFails(string $sourceKey, int $sourceId, callable $remove): void
+    {
+        $subscriber = new class ($sourceKey, (string)$sourceId) implements SourceMirrorSubscriberInterface {
+            public bool $armed = true;
+
+            public function __construct(private readonly string $sourceKey, private readonly string $sourceId)
+            {
+            }
+
+            public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+            {
+                if ($this->armed && $change->sourceKey === $this->sourceKey
+                    && $change->sourceId === $this->sourceId && $change->mutationType === TableMutationType::Delete
+                ) {
+                    $this->armed = false;
+                    throw new RuntimeException('Injected guest cart deletion failure');
+                }
+            }
+        };
+        SourceChangeBus::subscribe($subscriber);
+        try {
+            $remove();
+            self::fail('The injected failure must reach the caller');
+        } catch (SourceChangeSubscriberException $failure) {
+            self::assertStringContainsString('Injected guest cart deletion failure', $failure->getMessage());
+        } finally {
+            $subscriber->armed = false;
+        }
+    }
+
+    /** @return int ID of a real anonymous session */
+    private static function guestSessionId(): int
+    {
+        $session = self::asOwner(
+            new SessionsLibraryAgent(),
+            static fn () => Hilos::$db->sessions->actions->createAnonymous(SessionToken::mint()),
+        );
+
+        return $session->id ?? self::fail('The session was not persisted');
+    }
+
+    /**
+     * @param string $code Catalog code
+     * @param int $discountPercent Whole percent
+     * @param bool $active Whether the code can be applied
+     * @return Voucher Persisted catalog fixture
+     */
+    private static function createVoucher(string $code, int $discountPercent, bool $active): Voucher
+    {
+        return self::asOwner(
+            new VouchersLibraryAgent(),
+            static fn () => Hilos::$db->vouchers->actions->create($code, $discountPercent, $active),
+        );
+    }
+
+    /**
+     * @template T
+     * @param AbstractAgent $owner Library that owns the fixture
+     * @param callable(): T $write Fixture operation
+     * @return T Result from the operation
+     */
+    private static function asOwner(AbstractAgent $owner, callable $write): mixed
+    {
+        try {
+            OwnershipDeclaration::claimAll($owner);
+
+            return ExecutionContext::run(new ExecutionFrame(agentId: $owner->getId()), $write);
+        } finally {
+            TruthSourceRegistry::unregisterAgent($owner->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($owner->getId()));
+        }
+    }
+
+    /**
+     * @param int $sessionId Browser session ID
+     * @return ?int Stored voucher ID, or null for an empty slot
+     */
+    private static function storedVoucherId(int $sessionId): ?int
+    {
+        $rows = Database::sql('SELECT voucher_id FROM session_voucher_cart WHERE session_id = ?', [$sessionId])->rows();
+
+        return $rows === [] ? null : (int)$rows[0]['voucher_id'];
+    }
+
     /**
      * Hands the library the frame the sessions library sends after a sweep.
      *
@@ -362,13 +756,14 @@ final class GuestCartsLibraryTest extends GuestCartsLibraryEnvironment
      *
      * @param string $sentence The sentence the person is shown
      * @param callable(): mixed $write Write to refuse
+     * @param class-string<ValidationException> $expected Refusal class
      */
-    private static function assertRefused(string $sentence, callable $write): void
+    private static function assertRefused(string $sentence, callable $write, string $expected = ValidationException::class): void
     {
         try {
             $write();
         } catch (ValidationException $e) {
-            self::assertSame(ValidationException::class, $e::class);
+            self::assertSame($expected, $e::class);
             self::assertSame($sentence, $e->getMessage());
             self::assertSame($sentence, ActionFailureReason::forClient($e));
 

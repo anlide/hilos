@@ -102,6 +102,9 @@ class Database
     /** @var array<int, true> Connection indices whose last statement or connect did not reach the server */
     private static array $unreachable = [];
 
+    /** @var array<int, true> Connections with reconnect retries disabled for the current synchronous operation */
+    private static array $reconnectWithoutRetry = [];
+
     /** How many times in this process a connection that did not reach the server then ran a statement; only grows */
     private static int $returnsAfterLoss = 0;
 
@@ -549,6 +552,12 @@ class Database
             throw new DatabaseConnectionException("Not connected to database at index {$index}");
         }
 
+        if (isset(self::$reconnectWithoutRetry[$index])) {
+            self::connect($index);
+
+            return self::getConnection($index);
+        }
+
         $config = self::$configurations[$index];
         $delayMs = max($config->reconnectDelay, DatabaseConnectionPolicy::RECONNECT_DELAY_MIN_MS);
         $maxAttempts = max(1, min(
@@ -593,7 +602,7 @@ class Database
     {
         if (MysqlClientErrorCode::isRetriedOnReconnect($errno)) {
             self::$unreachable[$index] = true;
-            if (self::$testRollbackScope !== null) {
+            if (self::$testRollbackScope !== null || isset(self::$reconnectWithoutRetry[$index])) {
                 self::dropLink($index);
             }
         }
@@ -637,6 +646,30 @@ class Database
     public static function returnsAfterLoss(): int
     {
         return self::$returnsAfterLoss;
+    }
+
+    /**
+     * Disables automatic reconnect retries for the selected links during synchronous work.
+     *
+     * A statement reports a lost link without replaying. The next statement may open the empty
+     * slot with one connection attempt, subject to the usual explicit-close and transaction guards.
+     * Explicit connect calls keep their own policy.
+     *
+     * @template T
+     * @param Closure(): T $operation Work that runs with reconnect retries disabled
+     * @param int ...$indices Connection indices to which the scope applies
+     * @return T Result of the operation
+     * @throws Throwable Whatever the operation raises
+     */
+    public static function withoutReconnectRetries(Closure $operation, int ...$indices): mixed
+    {
+        $previous = self::$reconnectWithoutRetry;
+        self::$reconnectWithoutRetry += array_fill_keys($indices, true);
+        try {
+            return $operation();
+        } finally {
+            self::$reconnectWithoutRetry = $previous;
+        }
     }
 
     /**
@@ -708,6 +741,7 @@ class Database
         }
         $mysqli = self::openLink($index, $tryReconnect);
         $config = self::$configurations[$index];
+        $tryReconnect = $tryReconnect && !isset(self::$reconnectWithoutRetry[$index]);
 
         // Clear cached ResultSet before new query (new query = new result set)
         self::$resultSets[$index] = null;
@@ -934,9 +968,10 @@ class Database
                 return true;
             }
         } catch (mysqli_sql_exception $e) {
+            $sql = self::$lastSql[$index];
             self::markUnreachable($index, $e->getCode());
             self::$resultSets[$index] = null;
-            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), self::$lastSql[$index]);
+            MysqlExceptionMapper::runtimeException($e->getCode(), $e->getMessage(), $sql);
         }
 
         // No more result sets

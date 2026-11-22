@@ -18,6 +18,7 @@ use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Collection\DbActions;
 use Hilos\Database\DatabaseException;
+use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\Database\Exception\View\CollectionNotManualException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 use Hilos\HilosException;
@@ -176,6 +177,30 @@ final class SessionProductCartsActions extends DbActions
         }
 
         return count($lines);
+    }
+
+    /**
+     * Removes a recovery batch by primary key without walking the mirror or a whole session's cart.
+     *
+     * @param list<int> $lineIds Persisted orphan line IDs selected for this recovery batch
+     * @throws WriteNotAllowedException When this process may not remove a line
+     * @throws ItemNotFoundException When a selected line does not resolve by key
+     * @throws LogicException When collection class constants are not configured
+     * @throws InvalidArgumentException When a loaded object does not match its collection
+     * @throws DatabaseException When a row cannot be read or deleted
+     * @throws SourceChangeSubscriberException When a change subscriber fails
+     * @throws HilosException When the collection refuses the delete
+     */
+    public function deleteRecoveryLines(array $lineIds): void
+    {
+        if ($lineIds === []) {
+            return;
+        }
+
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+        foreach ($lineIds as $lineId) {
+            $this->deleteLine($this->collection[$lineId]->getObject());
+        }
     }
 
     /**

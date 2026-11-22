@@ -36,6 +36,21 @@ class Sessions extends Objects
     public const string COLLECTION_KEY = HilosDbContext::sessions;
 
     /**
+     * Checks persisted guest status before a delayed request can use an older session mirror.
+     *
+     * @param int $sessionId Session primary key
+     * @return bool True when storage still holds the session without a bound user
+     * @throws DatabaseException When the primary-key read fails
+     * @throws InvalidArgumentException When the entity query is invalid
+     */
+    public function isStoredGuest(int $sessionId): bool
+    {
+        $session = static::entityClass()::getById($sessionId);
+
+        return $session !== null && $session->user_id === null;
+    }
+
+    /**
      * Finds a session by its cookie token.
      *
      * @param string $token Session cookie token (empty string returns null)

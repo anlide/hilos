@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
+use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Source\Interest\SourceConsumer;
@@ -27,12 +29,12 @@ abstract class GuestCartsLibraryEnvironment extends StockLibraryEnvironment
     private ?int $executionToken = null;
 
     /**
-     * The carts library claims what it owns and pushes its own frame, which stays on top of the stock library's
-     * for the case.
+     * The carts library starts with the keyed mount's cold holding, claims what it owns and pushes its own frame.
      */
     protected function prepareIntegrationEnvironment(): void
     {
         parent::prepareIntegrationEnvironment();
+        Hilos::$db->forgetHoldingForTest(EcommerceShopDbContext::sessionProductCarts);
         $this->carts = new GuestCartsLibraryAgent();
         OwnershipDeclaration::claimAll($this->carts);
         $this->executionToken = ExecutionContext::push(new ExecutionFrame(agentId: $this->carts->getId()));

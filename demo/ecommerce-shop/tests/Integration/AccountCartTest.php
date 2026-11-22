@@ -5,17 +5,27 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\Hilos\UserAgent;
+use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Actions\CartLineRules;
+use Demo\EcommerceShop\Database\Actions\CartVoucherRules;
+use Demo\EcommerceShop\Database\Actions\VoucherFields;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Hilos;
 use Hilos\Core\Action\ActionFailureReason;
+use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\ValidationException;
+use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Source\Interest\SourceConsumer;
+use Hilos\Core\Source\Interest\SourceInterestRegistry;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\OwnershipDeclaration;
+use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\HilosException;
 use Hilos\Testing\IntegrationTest;
 
@@ -349,6 +359,126 @@ final class AccountCartTest extends AccountCartEnvironment
         self::assertSame($stored, self::storedLines($other));
     }
 
+    /** A person can replace or clear their single voucher slot even when the cart has no products. */
+    public function testAnAccountCartKeepsOneVoucherAndReadsTheCurrentCatalog(): void
+    {
+        $agent = $this->agent();
+        $userId = $this->personId();
+        [$first, $second] = self::asOwner(new VouchersLibraryAgent(), static fn (): array => [
+            Hilos::$db->vouchers->actions->create('SPRING10', 10, true),
+            Hilos::$db->vouchers->actions->create('AUTUMN20', 20, true),
+            Hilos::$db->vouchers->actions->create('WINTER30', 30, false),
+        ]);
+
+        self::assertNull($agent->cartVoucher());
+        self::assertSame(0, CartVoucherRules::effectiveDiscountPercent($agent->cartVoucher()));
+        $agent->applyVoucher('  spring10 ');
+        self::assertSame($first->id, self::storedVoucherId($userId));
+        self::assertSame([], self::storedLines($userId));
+        self::assertSame(10, CartVoucherRules::effectiveDiscountPercent($agent->cartVoucher()));
+
+        $agent->applyVoucher('AUTUMN20');
+        $agent->applyVoucher('autumn20');
+        self::assertSame($second->id, self::storedVoucherId($userId));
+
+        foreach ([
+            [' ', 'Voucher code cannot be empty', EmptyValueException::class],
+            [
+                str_repeat('A', VoucherFields::CODE_MAX_LENGTH + 1),
+                'Voucher code exceeds maximum length of 32 characters',
+                ValueTooLongException::class,
+            ],
+            ['AUTUMN-20', 'Voucher code may only contain Latin letters and digits', ValidationException::class],
+            ['UNKNOWN', 'Voucher code was not found', ValidationException::class],
+            ['WINTER30', 'This voucher is inactive', ValidationException::class],
+        ] as [$code, $message, $exception]) {
+            self::assertRefused($message, static fn () => $agent->applyVoucher($code), $exception);
+            self::assertSame($second->id, self::storedVoucherId($userId));
+        }
+
+        self::asOwner(new VouchersLibraryAgent(), static fn () => $second->actions->update('AUTUMN25', 25, false));
+        $current = $agent->cartVoucher();
+        self::assertNotNull($current);
+        self::assertSame('AUTUMN25', $current->code);
+        self::assertSame(25, $current->discountPercent);
+        self::assertFalse($current->active);
+        self::assertSame(0, CartVoucherRules::effectiveDiscountPercent($current));
+        self::assertSame($second->id, self::storedVoucherId($userId));
+
+        self::asOwner(new VouchersLibraryAgent(), static fn () => $second->actions->setActive(true));
+        self::assertSame(25, CartVoucherRules::effectiveDiscountPercent($agent->cartVoucher()));
+
+        $agent->removeVoucher();
+        self::assertNull(self::storedVoucherId($userId));
+        $agent->removeVoucher();
+        self::assertNull(self::storedVoucherId($userId));
+        self::assertNull($agent->cartVoucher());
+        self::assertSame('AUTUMN25', Hilos::$db->vouchers[$second->id]->code);
+        self::assertTrue(Hilos::$db->vouchers[$second->id]->active);
+    }
+
+    /** Each person's agent can change only their own binding, even in the presence of another user's set. */
+    public function testVoucherBindingsAreIsolatedByPersonAndRefuseAnotherWriter(): void
+    {
+        $agent = $this->agent();
+        $userId = $this->personId();
+        $otherId = $this->otherPersonId();
+        $otherAgent = new UserAgent((string)$otherId);
+        [$first, $second] = self::asOwner(new VouchersLibraryAgent(), static fn (): array => [
+            Hilos::$db->vouchers->actions->create('SPRING10', 10, true),
+            Hilos::$db->vouchers->actions->create('AUTUMN20', 20, true),
+        ]);
+
+        self::asOwner($otherAgent, static function () use ($agent, $otherAgent, $first, $second): void {
+            self::assertRefusedTo($otherAgent->getId(), CreateNotAllowedException::class, static fn () => $agent->applyVoucher($first->code));
+            $otherAgent->applyVoucher($second->code);
+            self::assertSame($second->id, $otherAgent->cartVoucher()?->id);
+        });
+        self::assertNull($agent->cartVoucher());
+
+        $agent->applyVoucher($first->code);
+        self::asOwner($otherAgent, static function () use ($agent, $otherAgent, $first, $second): void {
+            self::assertRefusedTo($otherAgent->getId(), WriteNotAllowedException::class, static fn () => $agent->applyVoucher($second->code));
+            self::assertRefusedTo($otherAgent->getId(), WriteNotAllowedException::class, static fn () => $agent->applyVoucher($first->code));
+            self::assertRefusedTo($otherAgent->getId(), WriteNotAllowedException::class, $agent->removeVoucher(...));
+        });
+        self::assertSame($first->id, self::storedVoucherId($userId));
+        self::assertSame($second->id, self::storedVoucherId($otherId));
+
+        $agent->removeVoucher();
+        self::assertNull(self::storedVoucherId($userId));
+        self::assertSame($second->id, self::storedVoucherId($otherId));
+    }
+
+    /**
+     * @template T
+     * @param AbstractAgent $owner Agent whose set or catalog the fixture writes
+     * @param callable(): T $write Fixture operation
+     * @return T Result of the operation
+     */
+    private static function asOwner(AbstractAgent $owner, callable $write): mixed
+    {
+        try {
+            OwnershipDeclaration::claimAll($owner);
+
+            return ExecutionContext::run(new ExecutionFrame(agentId: $owner->getId()), $write);
+        } finally {
+            TruthSourceRegistry::unregisterAgent($owner->getId());
+            SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($owner->getId()));
+        }
+    }
+
+    /**
+     * @param int $userId Person whose cart is read
+     * @return ?int Stored voucher ID, or null for an empty slot
+     */
+    private static function storedVoucherId(int $userId): ?int
+    {
+        $rows = Database::sql('SELECT voucher_id FROM user_voucher_cart WHERE user_id = ?', [$userId])->rows();
+
+        return $rows === [] ? null : (int)$rows[0]['voucher_id'];
+    }
+
     /**
      * Writes a cart line past the agent of the person whose cart it is.
      *
@@ -369,13 +499,14 @@ final class AccountCartTest extends AccountCartEnvironment
      *
      * @param string $sentence The sentence the person is shown
      * @param callable(): mixed $write Write to refuse
+     * @param class-string<ValidationException> $expected Exact refusal class
      */
-    private static function assertRefused(string $sentence, callable $write): void
+    private static function assertRefused(string $sentence, callable $write, string $expected = ValidationException::class): void
     {
         try {
             $write();
         } catch (ValidationException $e) {
-            self::assertSame(ValidationException::class, $e::class);
+            self::assertSame($expected, $e::class);
             self::assertSame($sentence, $e->getMessage());
             self::assertSame($sentence, ActionFailureReason::forClient($e));
 
