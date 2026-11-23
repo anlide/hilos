@@ -320,278 +320,259 @@ test('Dashboard, cold entry and F5 at each Status address show this project from
   }
 })
 
-// FIXME(F-081, 2026-11-08): строка сервиса не появилась после смены фильтра · чужой · указание владельца 08.11 · HIL-2080
-test(
-  'links, tabs, Back and Forward stay on one document and socket, and Components searches and filters without writing',
-  { tag: '@quarantine:F-081' },
-  async ({ page }) => {
-    await grantAdminToSelf(expect, page)
-    const wire = watchDeliveryFrames(page)
-    try {
-      await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
-      await expectAnswerShown(page, wire, OVERVIEW_PAGE, 0)
-      expect(wire.connections).toHaveLength(1)
-      const [{ socket: opened }] = wire.connections
-      await markDocument(page)
-      const sentBefore = wire.sent.length
-      const tab = (pageKey: string) =>
-        page.getByTestId(`hilos-page-tab-${pageKey}`)
-      const visit = async (
-        move: () => Promise<unknown>,
-        path: string,
-        pageKey: string,
-      ) => {
-        const since = wire.packets.length
-        await move()
-        await expectPageReady(expect, page)
-        await expect(page).toHaveURL(new RegExp(`${path}$`))
-        return expectAnswerShown(page, wire, pageKey, since)
-      }
+test('links, tabs, Back and Forward stay on one document and socket, and Components searches and filters without writing', async ({
+  page,
+}) => {
+  await grantAdminToSelf(expect, page)
+  const wire = watchDeliveryFrames(page)
+  try {
+    await gotoPage(expect, page, STATUS_PATH, PAGE_READY)
+    await expectAnswerShown(page, wire, OVERVIEW_PAGE, 0)
+    expect(wire.connections).toHaveLength(1)
+    const [{ socket: opened }] = wire.connections
+    await markDocument(page)
+    const sentBefore = wire.sent.length
+    const tab = (pageKey: string) =>
+      page.getByTestId(`hilos-page-tab-${pageKey}`)
+    const visit = async (
+      move: () => Promise<unknown>,
+      path: string,
+      pageKey: string,
+    ) => {
+      const since = wire.packets.length
+      await move()
+      await expectPageReady(expect, page)
+      await expect(page).toHaveURL(new RegExp(`${path}$`))
+      return expectAnswerShown(page, wire, pageKey, since)
+    }
 
-      const components = await visit(
-        () => page.getByTestId('hilos-status-components-link').click(),
-        STATUS_COMPONENTS_PATH,
-        COMPONENTS_PAGE,
+    const components = await visit(
+      () => page.getByTestId('hilos-status-components-link').click(),
+      STATUS_COMPONENTS_PATH,
+      COMPONENTS_PAGE,
+    )
+    await test.step('Components searches and filters by state, read only', async () => {
+      const [row] = firstWindow(components, 'hilosStatusComponents').rows
+      const state = String(
+        deliveryObject(deliveryObject(row.slots).component).state,
+      ) as (typeof STATES)[number]
+      const table = page.getByTestId('hilos-status-components-table')
+      const service = shownByTestId(
+        table,
+        `hilos-status-component-${SERVICE.componentKey}`,
       )
-      await test.step('Components searches and filters by state, read only', async () => {
-        const [row] = firstWindow(components, 'hilosStatusComponents').rows
-        const state = String(
-          deliveryObject(deliveryObject(row.slots).component).state,
-        ) as (typeof STATES)[number]
-        const table = page.getByTestId('hilos-status-components-table')
-        const service = shownByTestId(
+      const noMatches = shownByTestId(table, 'hilos-table-no-matches')
+      // A read-only surface: no creation, bulk action or row selection.
+      await expect(
+        table.getByTestId(/^hilos-table-(main-action|actions|action-|select-)/),
+      ).toHaveCount(0)
+
+      const search = page.getByTestId('hilos-table-search')
+      await typeInto(search, 'no-such-status-component')
+      await expect(noMatches).toBeVisible()
+      await expect(service).toHaveCount(0)
+      await typeInto(search, SERVICE.agentType)
+      await expect(service).toBeVisible()
+      await page.getByTestId('hilos-table-search-clear').click()
+      await expect(search).toHaveValue('')
+      await expect(service).toBeVisible()
+
+      const filter = page.getByTestId('hilos-table-filter-state')
+      const current = STATES.indexOf(state)
+      const other = STATES.indexOf(
+        state === 'major_outage' ? 'operational' : 'major_outage',
+      )
+      await filter.getByTestId('hilos-dropdown-toggle').click()
+      await filter.getByTestId(`hilos-dropdown-option-${other}`).click()
+      await expect(noMatches).toBeVisible()
+      await expect(service).toHaveCount(0)
+      await filter.getByTestId('hilos-dropdown-toggle').click()
+      await filter.getByTestId(`hilos-dropdown-option-${current}`).click()
+      await expect(service).toBeVisible()
+      await expect(
+        shownByTestId(
           table,
-          `hilos-status-component-${SERVICE.componentKey}`,
-        )
-        const noMatches = shownByTestId(table, 'hilos-table-no-matches')
-        // A read-only surface: no creation, bulk action or row selection.
-        await expect(
-          table.getByTestId(
-            /^hilos-table-(main-action|actions|action-|select-)/,
-          ),
-        ).toHaveCount(0)
+          `hilos-status-component-state-${SERVICE.componentKey}`,
+        ),
+      ).toHaveText(STATE_LABELS[state])
+    })
 
-        const search = page.getByTestId('hilos-table-search')
-        await typeInto(search, 'no-such-status-component')
-        await expect(noMatches).toBeVisible()
-        await expect(service).toHaveCount(0)
-        await typeInto(search, SERVICE.agentType)
-        await expect(service).toBeVisible()
-        await page.getByTestId('hilos-table-search-clear').click()
-        await expect(search).toHaveValue('')
-        await expect(service).toBeVisible()
+    await visit(
+      () => tab(SUBSCRIBERS_PAGE).click(),
+      STATUS_SUBSCRIBERS_PATH,
+      SUBSCRIBERS_PAGE,
+    )
+    await visit(
+      () => tab(STATUS_HISTORY_PAGE).click(),
+      STATUS_HISTORY_PATH,
+      STATUS_HISTORY_PAGE,
+    )
+    await visit(() => tab(WORKS_PAGE).click(), STATUS_WORKS_PATH, WORKS_PAGE)
+    await visit(() => page.goBack(), STATUS_HISTORY_PATH, STATUS_HISTORY_PAGE)
+    await visit(() => page.goBack(), STATUS_SUBSCRIBERS_PATH, SUBSCRIBERS_PAGE)
+    await visit(
+      () => page.goForward(),
+      STATUS_HISTORY_PATH,
+      STATUS_HISTORY_PAGE,
+    )
+    await visit(() => tab(OVERVIEW_PAGE).click(), STATUS_PATH, OVERVIEW_PAGE)
 
-        const filter = page.getByTestId('hilos-table-filter-state')
-        const current = STATES.indexOf(state)
-        const other = STATES.indexOf(
-          state === 'major_outage' ? 'operational' : 'major_outage',
-        )
-        await filter.getByTestId('hilos-dropdown-toggle').click()
-        await filter.getByTestId(`hilos-dropdown-option-${other}`).click()
-        await expect(noMatches).toBeVisible()
-        await expect(service).toHaveCount(0)
-        await filter.getByTestId('hilos-dropdown-toggle').click()
-        await filter.getByTestId(`hilos-dropdown-option-${current}`).click()
-        await expect(service).toBeVisible()
-        await expect(
-          shownByTestId(
-            table,
-            `hilos-status-component-state-${SERVICE.componentKey}`,
-          ),
-        ).toHaveText(STATE_LABELS[state])
-      })
-
-      await visit(
-        () => tab(SUBSCRIBERS_PAGE).click(),
-        STATUS_SUBSCRIBERS_PATH,
+    await expectDocumentUnchanged(expect, page)
+    expect(wire.connections.map((connection) => connection.socket)).toEqual([
+      opened,
+    ])
+    expect(
+      wire.sent
+        .slice(sentBefore)
+        .map(({ socket, wire: frame }) => ({
+          socket,
+          frame: deliveryObject(frame),
+        }))
+        .filter(({ frame }) => frame.type === 'page_subscribe')
+        .map(({ socket, frame }) => ({ socket, page: frame.page })),
+    ).toEqual(
+      [
+        COMPONENTS_PAGE,
         SUBSCRIBERS_PAGE,
-      )
-      await visit(
-        () => tab(STATUS_HISTORY_PAGE).click(),
-        STATUS_HISTORY_PATH,
         STATUS_HISTORY_PAGE,
-      )
-      await visit(() => tab(WORKS_PAGE).click(), STATUS_WORKS_PATH, WORKS_PAGE)
-      await visit(() => page.goBack(), STATUS_HISTORY_PATH, STATUS_HISTORY_PAGE)
-      await visit(
-        () => page.goBack(),
-        STATUS_SUBSCRIBERS_PATH,
+        WORKS_PAGE,
+        STATUS_HISTORY_PAGE,
         SUBSCRIBERS_PAGE,
-      )
-      await visit(
-        () => page.goForward(),
-        STATUS_HISTORY_PATH,
         STATUS_HISTORY_PAGE,
-      )
-      await visit(() => tab(OVERVIEW_PAGE).click(), STATUS_PATH, OVERVIEW_PAGE)
+        OVERVIEW_PAGE,
+      ].map((pageKey) => ({ socket: opened, page: pageKey })),
+    )
+    expectNoActions(wire)
+  } finally {
+    await test.info().attach('status-navigation-wire', {
+      body: JSON.stringify(wire),
+      contentType: 'application/json',
+    })
+    wire.stop()
+  }
+})
 
-      await expectDocumentUnchanged(expect, page)
-      expect(wire.connections.map((connection) => connection.socket)).toEqual([
-        opened,
+test('public /status reads its two files with no subscription and keeps reading through a dropped socket and its recovery', async ({
+  page,
+}) => {
+  // A guest: the reader needs no account, page answer or handshake.
+  const socket = await controlSocketReconnect(page)
+  const log = watchPublicStatus(page)
+  const recovery: Record<string, number> = {}
+  try {
+    await test.step('the first look reads both files and shows this project', async () => {
+      await gotoPublicStatus(expect, page)
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
+      const first = await expectPublicStatusPair(expect, page, log)
+      expect(first.status.components).toEqual([
+        expect.objectContaining({
+          componentKey: SERVICE.componentKey,
+          name: SERVICE.name,
+        }),
       ])
-      expect(
-        wire.sent
-          .slice(sentBefore)
-          .map(({ socket, wire: frame }) => ({
-            socket,
-            frame: deliveryObject(frame),
-          }))
-          .filter(({ frame }) => frame.type === 'page_subscribe')
-          .map(({ socket, frame }) => ({ socket, page: frame.page })),
-      ).toEqual(
-        [
-          COMPONENTS_PAGE,
-          SUBSCRIBERS_PAGE,
-          STATUS_HISTORY_PAGE,
-          WORKS_PAGE,
-          STATUS_HISTORY_PAGE,
-          SUBSCRIBERS_PAGE,
-          STATUS_HISTORY_PAGE,
-          OVERVIEW_PAGE,
-        ].map((pageKey) => ({ socket: opened, page: pageKey })),
+      await expect(page.getByTestId('public-status-components')).toContainText(
+        SERVICE.name,
       )
-      expectNoActions(wire)
-    } finally {
-      await test.info().attach('status-navigation-wire', {
-        body: JSON.stringify(wire),
-        contentType: 'application/json',
-      })
-      wire.stop()
-    }
-  },
-)
+      await expect(page.getByTestId('public-status-subscribe')).toBeVisible()
+    })
 
-// FIXME(F-088, 2026-11-09): F5 без сокета не дождался новой пары файлов · чужой · попытка 1 · HIL-2081
-test(
-  'public /status reads its two files with no subscription and keeps reading through a dropped socket and its recovery',
-  { tag: '@quarantine:F-088' },
-  async ({ page }) => {
-    // A guest: the reader needs no account, page answer or handshake.
-    const socket = await controlSocketReconnect(page)
-    const log = watchPublicStatus(page)
-    const recovery: Record<string, number> = {}
-    try {
-      await test.step('the first look reads both files and shows this project', async () => {
-        await gotoPublicStatus(expect, page)
-        await expect(page.getByTestId('conn-state')).toHaveText('connected')
-        const first = await expectPublicStatusPair(expect, page, log)
-        expect(first.status.components).toEqual([
-          expect.objectContaining({
-            componentKey: SERVICE.componentKey,
-            name: SERVICE.name,
-          }),
-        ])
-        await expect(
-          page.getByTestId('public-status-components'),
-        ).toContainText(SERVICE.name)
-        await expect(page.getByTestId('public-status-subscribe')).toBeVisible()
-      })
-
-      await test.step('a publication hint over the live socket rereads the files', async () => {
-        // The receipt is a floor: a newer publication may have replaced it.
-        const { aliveAt } = await beatStatusHeartbeat()
-        await expectPublicStatusPair(
-          expect,
-          page,
-          log,
-          (pair) => pair.heartbeat.aliveAt >= aliveAt,
-        )
-        expect(
-          log.wire.packets.some((packet) =>
-            packet.frames.some(
-              ({ wire }) =>
-                deliveryObject(wire).type === 'status_files_changed',
-            ),
+    await test.step('a publication hint over the live socket rereads the files', async () => {
+      // The receipt is a floor: a newer publication may have replaced it.
+      const { aliveAt } = await beatStatusHeartbeat()
+      await expectPublicStatusPair(
+        expect,
+        page,
+        log,
+        (pair) => pair.heartbeat.aliveAt >= aliveAt,
+      )
+      expect(
+        log.wire.packets.some((packet) =>
+          packet.frames.some(
+            ({ wire }) => deliveryObject(wire).type === 'status_files_changed',
           ),
-        ).toBe(true)
-      })
+        ),
+      ).toBe(true)
+    })
 
-      await test.step('a dropped socket keeps the facts and the page usable', async () => {
-        const banner = await page
-          .getByTestId('public-status-banner')
-          .innerText()
-        const states = await page
-          .getByTestId('public-status-component-state')
-          .allInnerTexts()
-        await markDocument(page)
-        await socket.drop()
-        await expect(page.getByTestId('conn-state')).not.toHaveText('connected')
-        await expect(page.getByTestId('public-status-connection')).toHaveText(
-          'Your live connection to the site is lost — the system is up',
-        )
-        await expect(page.getByTestId('public-status-banner')).toHaveText(
-          banner,
-        )
-        await expect(
-          page.getByTestId('public-status-component-state'),
-        ).toHaveText(states)
-        await expect(page.getByTestId('public-status-subscribe')).toHaveCount(0)
-        // The shell neither covers the reader nor disables its controls: the
-        // oldest day answers a click (the detail starts on today).
-        const day = page
-          .getByTestId('public-status-days-90')
-          .getByRole('button')
-          .first()
-        await expect(day).toBeEnabled()
-        await day.click()
-        await expect(page.getByTestId('public-status-day-detail')).toHaveText(
-          (await day.getAttribute('aria-label'))!,
-        )
-        await expectDocumentUnchanged(expect, page)
-      })
+    await test.step('a dropped socket keeps the facts and the page usable', async () => {
+      const banner = await page.getByTestId('public-status-banner').innerText()
+      const states = await page
+        .getByTestId('public-status-component-state')
+        .allInnerTexts()
+      await markDocument(page)
+      await socket.drop()
+      await expect(page.getByTestId('conn-state')).not.toHaveText('connected')
+      await expect(page.getByTestId('public-status-connection')).toHaveText(
+        'Your live connection to the site is lost — the system is up',
+      )
+      await expect(page.getByTestId('public-status-banner')).toHaveText(banner)
+      await expect(
+        page.getByTestId('public-status-component-state'),
+      ).toHaveText(states)
+      await expect(page.getByTestId('public-status-subscribe')).toHaveCount(0)
+      // The shell neither covers the reader nor disables its controls: the
+      // oldest day answers a click (the detail starts on today).
+      const day = page
+        .getByTestId('public-status-days-90')
+        .getByRole('button')
+        .first()
+      await expect(day).toBeEnabled()
+      await day.click()
+      await expect(page.getByTestId('public-status-day-detail')).toHaveText(
+        (await day.getAttribute('aria-label'))!,
+      )
+      await expectDocumentUnchanged(expect, page)
+    })
 
-      await test.step('F5 without a socket reads the files a publication changed', async () => {
-        const { aliveAt } = await beatStatusHeartbeat()
-        const packets = log.wire.packets.length
-        await page.reload()
-        await expect(page.getByTestId('public-status-components')).toBeVisible()
-        await expectPublicStatusPair(
-          expect,
-          page,
-          log,
-          (pair) => pair.heartbeat.aliveAt >= aliveAt,
-        )
-        await expect(page.getByTestId('public-status-connection')).toHaveText(
-          'Your live connection to the site is lost — the system is up',
-        )
-        await expect(page.getByTestId('conn-state')).not.toHaveText('connected')
-        expect(log.wire.packets.slice(packets)).toEqual([])
-      })
+    await test.step('F5 without a socket reads the files a publication changed', async () => {
+      const { aliveAt } = await beatStatusHeartbeat()
+      const packets = log.wire.packets.length
+      await page.reload()
+      await expect(page.getByTestId('public-status-components')).toBeVisible()
+      await expectPublicStatusPair(
+        expect,
+        page,
+        log,
+        (pair) => pair.heartbeat.aliveAt >= aliveAt,
+      )
+      await expect(page.getByTestId('public-status-connection')).toHaveText(
+        'Your live connection to the site is lost — the system is up',
+      )
+      await expect(page.getByTestId('conn-state')).not.toHaveText('connected')
+      expect(log.wire.packets.slice(packets)).toEqual([])
+    })
 
-      await test.step('recovery rereads at once, before the next poll', async () => {
-        const { aliveAt } = await beatStatusHeartbeat()
-        const before = log.reads[0].length
-        const last = log.reads[0].at(-1)!
-        const pair = log.displayed.at(-1)!
-        recovery.lastReadAt = last.requestedAt
-        recovery.releasedAt = performance.now()
-        await socket.release()
-        await expect(page.getByTestId('conn-state')).toHaveText('connected')
-        await expect.poll(() => log.reads[0].length).toBeGreaterThan(before)
-        recovery.rereadAt = log.reads[0][before].requestedAt
-        expect(recovery.rereadAt).toBeLessThan(
-          recovery.lastReadAt + pair.status.config.pollIntervalSeconds * 1000,
-        )
-        await expectPublicStatusPair(
-          expect,
-          page,
-          log,
-          (read) => read.heartbeat.aliveAt >= aliveAt,
-        )
-        await expect(page.getByTestId('public-status-connection')).toHaveCount(
-          0,
-        )
-        await expect(page.getByTestId('public-status-subscribe')).toBeVisible()
-      })
+    await test.step('recovery rereads at once, before the next poll', async () => {
+      const { aliveAt } = await beatStatusHeartbeat()
+      const before = log.reads[0].length
+      const last = log.reads[0].at(-1)!
+      const pair = log.displayed.at(-1)!
+      recovery.lastReadAt = last.requestedAt
+      recovery.releasedAt = performance.now()
+      await socket.release()
+      await expect(page.getByTestId('conn-state')).toHaveText('connected')
+      await expect.poll(() => log.reads[0].length).toBeGreaterThan(before)
+      recovery.rereadAt = log.reads[0][before].requestedAt
+      expect(recovery.rereadAt).toBeLessThan(
+        recovery.lastReadAt + pair.status.config.pollIntervalSeconds * 1000,
+      )
+      await expectPublicStatusPair(
+        expect,
+        page,
+        log,
+        (read) => read.heartbeat.aliveAt >= aliveAt,
+      )
+      await expect(page.getByTestId('public-status-connection')).toHaveCount(0)
+      await expect(page.getByTestId('public-status-subscribe')).toBeVisible()
+    })
 
-      expectPublicStatusReadOnly(expect, log)
-    } finally {
-      await log.stop()
-      await socket.dispose()
-      await test.info().attach('public-status-drop-and-recovery', {
-        body: JSON.stringify({ public: log, recovery }),
-        contentType: 'application/json',
-      })
-    }
-  },
-)
+    expectPublicStatusReadOnly(expect, log)
+  } finally {
+    await log.stop()
+    await socket.dispose()
+    await test.info().attach('public-status-drop-and-recovery', {
+      body: JSON.stringify({ public: log, recovery }),
+      contentType: 'application/json',
+    })
+  }
+})
