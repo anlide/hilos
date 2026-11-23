@@ -11,14 +11,16 @@ import {
   VOUCHER_DISCOUNT_PERCENT_FIELD,
 } from './adminVouchers.js'
 import { createVouchersTable, type VouchersTable } from './adminVouchersPage.js'
+import { VoucherAddModal } from './VoucherAddModal.js'
 
-/** The Vouchers administration page with its live table. */
+/** The Vouchers administration page with its live table and Add dialog. */
 export default function AdminVouchers() {
   const [vouchers, setVouchers] = useState<VouchersTable | null>(null)
+  const [adding, setAdding] = useState(false)
 
   useLayoutEffect(() => {
     // Disposal is permanent; each setup, including StrictMode replay, owns one.
-    const table = createVouchersTable()
+    const table = createVouchersTable(() => setAdding(true))
     table.start()
     setVouchers(table)
     return () => table.dispose()
@@ -40,6 +42,7 @@ export default function AdminVouchers() {
           }}
         />
       )}
+      {adding && <VoucherAddModal onClose={() => setAdding(false)} />}
     </HilosAdminPage>
   )
 }

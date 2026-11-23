@@ -248,6 +248,23 @@ final class VouchersTableTest extends VouchersLibraryEnvironment
         )));
     }
 
+    /** A DB Delete still identifies the table row after the voucher is gone. */
+    public function testDeletionBuildsAMutationForAnAbsentVoucher(): void
+    {
+        $code = 'ZZE2EV' . strtoupper(RandomHelper::hex(12));
+        $voucher = Hilos::$db->vouchers->actions->create($code, 15, true);
+        $voucherId = self::voucherId($voucher);
+        $voucher->actions->deleteFixture();
+        self::assertFalse(isset(Hilos::$db->vouchers[$voucherId]));
+
+        $table = self::vouchersTable();
+        $mutation = $table->buildMutationForSourceEvent(SourceChange::dbDeleted(EcommerceShopDbContext::vouchers, (string) $voucherId));
+        self::assertNotNull($mutation);
+        self::assertSame(TableMutationType::Delete, $mutation->type);
+        self::assertSame($voucherId, $mutation->rowKey);
+        self::assertNull($mutation->row);
+    }
+
     /** @return VouchersTable Vouchers table registered on the shop */
     private static function vouchersTable(): VouchersTable
     {

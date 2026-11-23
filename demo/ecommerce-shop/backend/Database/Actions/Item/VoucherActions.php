@@ -7,19 +7,23 @@ namespace Demo\EcommerceShop\Database\Actions\Item;
 use Demo\EcommerceShop\Database\Actions\VoucherFields;
 use Demo\EcommerceShop\Database\Object\Item\Voucher as ObjectVoucher;
 use Demo\EcommerceShop\Database\View\Item\Voucher;
+use Demo\EcommerceShop\Testing\VoucherFixture;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
+use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\ValidationException;
 use Hilos\Core\Exception\ValueTooLongException;
 use Hilos\Core\Source\Exception\SourceChangeSubscriberException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
+use Hilos\Core\TruthSource\TruthSourceOperation;
 use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\Actions\Item\DbActions;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\SqlRuntime\DuplicateEntryException;
+use Hilos\Database\Exception\SqlRuntime\ForeignKeyConstraintException;
 use Hilos\Database\Object\Exception\ObjectGetIdStringNotImplementedException;
 
 /**
@@ -94,5 +98,42 @@ final class VoucherActions extends DbActions
 
         $this->object->active = $active;
         $this->object->sync();
+    }
+
+    /**
+     * The voucher's database references protect both kinds of cart during deletion.
+     *
+     * @throws ValidationException When fixture deletion is disabled, the code is invalid or a cart holds the voucher
+     * @throws EmptyValueException When the code is empty
+     * @throws ValueTooLongException When the code exceeds its column width
+     * @throws ItemNotFoundForDeleteException When the voucher has no ID
+     * @throws WriteNotAllowedException When this process may not remove the voucher
+     * @throws CreateNotAllowedException When a detached object cannot be created
+     * @throws ObjectCollectionNullException When the backing collection is missing
+     * @throws ObjectGetIdStringNotImplementedException When the object has no usable primary key
+     * @throws DatabaseException When the binding or database delete fails
+     * @throws InvalidArgumentException When the queued DB-sync signal cannot be named
+     */
+    public function deleteFixture(): void
+    {
+        if (!VoucherFixture::isAllowed()) {
+            throw new ValidationException(VoucherFixture::ENVIRONMENT_REFUSAL);
+        }
+        VoucherFixture::code($this->object->code);
+        $this->ensureCanWrite(TruthSourceOperation::Remove);
+
+        if ($this->object->id === null) {
+            throw new ItemNotFoundForDeleteException('Voucher not found for delete (id is null)');
+        }
+
+        $objectCollection = $this->getObjectCollection()
+            ?? throw new ObjectCollectionNullException('Object collection is null');
+        $idString = $this->object->getIdString();
+        try {
+            $this->object->delete();
+        } catch (ForeignKeyConstraintException $failure) {
+            throw new ValidationException('This voucher is in a cart and cannot be deleted', previous: $failure);
+        }
+        unset($objectCollection[$idString]);
     }
 }

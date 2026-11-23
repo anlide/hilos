@@ -97,6 +97,9 @@ final class VouchersTable extends TableDefinition implements ViewportTable
         if ($change->sourceKey !== EcommerceShopDbContext::vouchers) {
             return null;
         }
+        if ($change->mutationType === TableMutationType::Delete) {
+            return $this->mutation(TableMutationType::Delete, (int) $change->sourceId);
+        }
         if (
             $change->mutationType !== TableMutationType::Create
             && $change->mutationType !== TableMutationType::Update

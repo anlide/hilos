@@ -56,7 +56,7 @@ afterEach(() => {
 })
 
 function mount(): VouchersTable {
-  const table = createVouchersTable()
+  const table = createVouchersTable(vi.fn())
   mounted.push(table)
   table.start()
   return table

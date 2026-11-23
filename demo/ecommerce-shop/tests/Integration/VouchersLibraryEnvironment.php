@@ -44,4 +44,10 @@ abstract class VouchersLibraryEnvironment extends RollbackIntegrationTestCase
             $this->executionToken = null;
         }
     }
+
+    /** @return VouchersLibraryAgent Library with the voucher write claim */
+    protected function vouchersLibrary(): VouchersLibraryAgent
+    {
+        return $this->library ?? self::fail('The vouchers library is not mounted');
+    }
 }

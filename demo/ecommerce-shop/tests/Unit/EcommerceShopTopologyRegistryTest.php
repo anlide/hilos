@@ -71,6 +71,7 @@ use Demo\EcommerceShop\Pages\DTO\ProductPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductStockSetUnitsActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductUpdateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\ProductWarehousePlaceActionDTO;
+use Demo\EcommerceShop\Pages\DTO\VoucherCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseCreateActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\WarehouseUpdateActionDTO;
@@ -191,7 +192,17 @@ use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\CLI\DTO\CategoryDeleteCommandData;
 use Demo\EcommerceShop\CLI\DTO\ProductTestDeleteCommandData;
+use Demo\EcommerceShop\CLI\DTO\VoucherFixtureCodeCommandData;
+use Demo\EcommerceShop\CLI\DTO\VoucherFixtureCreateCommandData;
+use Demo\EcommerceShop\CLI\DTO\VoucherFixtureSetActiveCommandData;
+use Demo\EcommerceShop\CLI\DTO\VoucherFixtureUpdateCommandData;
 use Demo\EcommerceShop\CLI\DTO\WarehouseDeleteCommandData;
+use Demo\EcommerceShop\CLI\EcommerceShopCliManager;
+use Hilos\Constants\AppEnv;
+use Hilos\Constants\EnvConstants;
+use Hilos\Constants\ExitCode;
+use Hilos\Core\CLI\Commands\CommandExecutionSite;
+use Hilos\Environment\EnvAccessor;
 use Hilos\Files\DTO\FilesPublishedSignalData;
 use Hilos\Database\Pages\PageCatalogConstants;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
@@ -1326,8 +1337,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         );
     }
 
-    /** The vouchers library runs once on the policy-selected node and may only add and update vouchers. */
-    public function testVouchersLibraryIsPolicyPlacedMonopolisticAndOnlyAddsAndUpdatesVouchers(): void
+    /** The vouchers library runs once on the policy-selected node and gains Remove only in the test environment. */
+    public function testVouchersLibraryOwnsVouchersWithEnvironmentSpecificOperations(): void
     {
         $entry = Hilos::AGENTS[AgentType::VOUCHERS_LIBRARY];
         self::assertSame(VouchersLibraryAgent::class, AgentRegistry::workerClass($entry));
@@ -1335,10 +1346,81 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame(AgentPlacement::POLICY, AgentRegistry::placement($entry));
         self::assertSame(AgentScope::CLUSTER, AgentRegistry::scope($entry));
         self::assertTrue((new VouchersLibraryAgentDaemon())->requiresMonopolisticProcess());
-        $claims = OwnershipDeclaration::dbCollectionsOf(VouchersLibraryAgent::class);
-        self::assertSame([EcommerceShopDbContext::vouchers], array_keys($claims));
-        self::assertSame([TruthSourceOperation::Add, TruthSourceOperation::Update], $claims[EcommerceShopDbContext::vouchers]->asList());
         self::assertSame([], VouchersLibraryAgent::readDbCollections());
+
+        $ordinaryOperations = [TruthSourceOperation::Add, TruthSourceOperation::Update];
+        $previousEnv = Hilos::$env;
+        try {
+            Hilos::$env = null;
+            $claims = OwnershipDeclaration::dbCollectionsOf(VouchersLibraryAgent::class);
+            self::assertSame([EcommerceShopDbContext::vouchers], array_keys($claims));
+            self::assertSame($ordinaryOperations, $claims[EcommerceShopDbContext::vouchers]->asList());
+
+            foreach ([AppEnv::DEV->value, AppEnv::PROD->value, 'unrecognized', null, AppEnv::TEST->value] as $environment) {
+                $env = $this->createPartialMock(EnvAccessor::class, ['effectiveValueFor']);
+                $env->method('effectiveValueFor')->with(EnvConstants::APP_ENV->name)->willReturn($environment);
+                Hilos::$env = $env;
+
+                $claims = OwnershipDeclaration::dbCollectionsOf(VouchersLibraryAgent::class);
+                self::assertSame(
+                    $environment === AppEnv::TEST->value ? [...$ordinaryOperations, TruthSourceOperation::Remove] : $ordinaryOperations,
+                    $claims[EcommerceShopDbContext::vouchers]->asList(),
+                );
+            }
+        } finally {
+            Hilos::$env = $previousEnv;
+        }
+    }
+
+    /** Each exact CLI name goes to the existing library under its own typed command route. */
+    public function testVoucherFixtureCommandsAreCliRegisteredAndDaemonRouted(): void
+    {
+        $routes = [
+            'test:ecommerce-shop:voucher-fixture-create' => VoucherFixtureCreateCommandData::class,
+            'test:ecommerce-shop:voucher-fixture-get' => VoucherFixtureCodeCommandData::class,
+            'test:ecommerce-shop:voucher-fixture-update' => VoucherFixtureUpdateCommandData::class,
+            'test:ecommerce-shop:voucher-fixture-set-active' => VoucherFixtureSetActiveCommandData::class,
+            'test:ecommerce-shop:voucher-fixture-delete' => VoucherFixtureCodeCommandData::class,
+        ];
+        self::assertSame($routes, VouchersLibraryAgent::AGENT_COMMANDS);
+        $cli = new EcommerceShopCliManager(['cli.php']);
+        $classes = $cli->commandClasses();
+        $executions = $cli->executions();
+        foreach ($routes as $name => $dto) {
+            self::assertArrayHasKey($name, $classes);
+            self::assertFalse($cli->requiresDatabase($name));
+            self::assertSame(CommandExecutionSite::DAEMON, $executions[$name]->site);
+            self::assertSame(AgentType::VOUCHERS_LIBRARY, Hilos::getCommandAgentRoutes()[$name]);
+            self::assertSame($dto, Hilos::getCommandDtoRoutes()[$name]);
+        }
+    }
+
+    /** The project CLI refuses these fixtures in dev as well as in production, before reading a channel address. */
+    public function testVoucherFixtureCliRefusesOutsideTest(): void
+    {
+        $code = 'ZZE2EV000000000000000000000000';
+        $commands = [
+            [EcommerceShopCommandConstants::VOUCHER_FIXTURE_CREATE, $code, '--discount-percent=25', '--active=on'],
+            [EcommerceShopCommandConstants::VOUCHER_FIXTURE_GET, $code],
+            [EcommerceShopCommandConstants::VOUCHER_FIXTURE_UPDATE, $code, '--discount-percent=50'],
+            [EcommerceShopCommandConstants::VOUCHER_FIXTURE_SET_ACTIVE, $code, '--active=off'],
+            [EcommerceShopCommandConstants::VOUCHER_FIXTURE_DELETE, $code],
+        ];
+        $previousEnv = Hilos::$env;
+        try {
+            foreach ([AppEnv::DEV, AppEnv::PROD] as $environment) {
+                $env = $this->createPartialMock(EnvAccessor::class, ['effectiveValueFor']);
+                $env->method('effectiveValueFor')->with(EnvConstants::APP_ENV->name)->willReturn($environment->value);
+                Hilos::$env = $env;
+
+                foreach ($commands as $args) {
+                    self::assertSame(ExitCode::ERROR, new EcommerceShopCliManager(['cli.php', ...$args])->run());
+                }
+            }
+            $this->expectOutputString('');
+        } finally {
+            Hilos::$env = $previousEnv;
+        }
     }
 
     /** The warehouses table is registered under its key, for the page that binds it. */
@@ -1373,7 +1455,12 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             AdminVouchersPage::BROWSER,
         );
         self::assertSame('subscription_page_admin_vouchers', EcommerceShopSignalConstants::SUBSCRIPTION_PAGE_ADMIN_VOUCHERS);
-        self::assertSame([], AdminVouchersPage::ACTIONS);
+        $action = EcommerceShopSignalConstants::VOUCHER_CREATE;
+        self::assertSame('voucher_create', $action);
+        self::assertSame([$action => VoucherCreateActionDTO::class], AdminVouchersPage::ACTIONS);
+        self::assertSame('admin_vouchers', Hilos::getPageActionRoutes()[$action]);
+        self::assertSame('vouchers_library', Hilos::getActionAgentRoutes()[$action]);
+        self::assertSame(VoucherCreateActionDTO::class, Hilos::getActionDtoRoutes()[$action]);
         self::assertSame([
             PageCatalogConstants::CATALOG_ENTRY_LABEL => 'Vouchers',
             PageCatalogConstants::CATALOG_ENTRY_LEAD => 'Discount codes buyers enter in the cart.',

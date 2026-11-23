@@ -14,6 +14,9 @@ final class VoucherFields
     public const int DISCOUNT_PERCENT_MIN = 1;
     public const int DISCOUNT_PERCENT_MAX = 100;
 
+    private const string DISCOUNT_PERCENT_ERROR =
+        'Discount must be a whole percent from ' . self::DISCOUNT_PERCENT_MIN . ' to ' . self::DISCOUNT_PERCENT_MAX;
+
     /**
      * @param string $value Code as entered
      * @return string Trimmed uppercase code
@@ -45,11 +48,24 @@ final class VoucherFields
     public static function discountPercent(int $value): int
     {
         if ($value < self::DISCOUNT_PERCENT_MIN || $value > self::DISCOUNT_PERCENT_MAX) {
-            throw new ValidationException(
-                'Discount must be a whole percent from ' . self::DISCOUNT_PERCENT_MIN . ' to ' . self::DISCOUNT_PERCENT_MAX,
-            );
+            throw new ValidationException(self::DISCOUNT_PERCENT_ERROR);
         }
 
         return $value;
+    }
+
+    /**
+     * @param string $value Discount as entered
+     * @return int Whole percentage within the allowed range
+     * @throws ValidationException When the trimmed input is not decimal digits or is outside the allowed range
+     */
+    public static function discountPercentFromInput(string $value): int
+    {
+        $value = trim($value);
+        if (!ctype_digit($value) || $value < self::DISCOUNT_PERCENT_MIN || $value > self::DISCOUNT_PERCENT_MAX) {
+            throw new ValidationException(self::DISCOUNT_PERCENT_ERROR);
+        }
+
+        return (int)$value;
     }
 }

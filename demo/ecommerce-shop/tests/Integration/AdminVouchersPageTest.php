@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Demo\EcommerceShop\Tests\Integration;
 
 use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
+use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
 use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\Entity\Item\Voucher as EntityVoucher;
+use Demo\EcommerceShop\Database\Object\Item\Voucher as ObjectVoucher;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\AdminVouchersPage;
 use Demo\EcommerceShop\Runtime\View\Context\EcommerceShopRtContext;
@@ -15,25 +18,41 @@ use Demo\EcommerceShop\Tables\EcommerceShopTableContext;
 use Demo\EcommerceShop\Tables\Voucher\VouchersTable;
 use Demo\EcommerceShop\Tables\Voucher\VoucherTableRow;
 use Hilos\AdminViewMode\HiddenValue;
+use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
+use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageActionErrorSignalData;
+use Hilos\Core\Page\DTO\PageActionSuccessSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
+use Hilos\Core\Page\Exception\ActionViewModeException;
 use Hilos\Core\Page\Exception\PageForbiddenException;
+use Hilos\Core\Page\HilosPageFactory;
 use Hilos\Core\Page\PageAccessGate;
 use Hilos\Core\Page\PageRouteParams;
+use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Source\SourceChangeBus;
+use Hilos\Core\Source\SourceChangeProvenance;
+use Hilos\Core\Source\SourceMirrorSubscriberInterface;
 use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
+use Hilos\Core\Table\DTO\TableSortDTO;
+use Hilos\Core\Table\DTO\TableSortOrderDTO;
+use Hilos\Core\Table\DTO\TableViewportAppendDTO;
 use Hilos\Core\Table\DTO\TableViewportDeltaDTO;
+use Hilos\Core\Table\DTO\TableViewportOwnCreateDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
+use Hilos\Core\Table\Mutation\TableMutationType;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceKeys;
 use Hilos\Database\DbSyncApplicator;
 use Hilos\Runtime\State\Item\AdminViewModeRuntime;
+use Hilos\Socket\WebSocket\DTO\WebSocketActionSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Testing\IntegrationTest;
 use Hilos\TruthSource\RtTruthSourceRegistry;
@@ -206,6 +225,109 @@ final class AdminVouchersPageTest extends AdminVouchersPageEnvironment
         PageAccessGate::assert(AdminVouchersPage::class, self::VISITOR_KEY);
     }
 
+    /** The author gets the tracked success and a placed insert, and the observer gets a tail append. */
+    public function testAnAdminAddsAVoucherToBothOpenWindows(): void
+    {
+        $sort = TableSortOrderDTO::of(new TableSortDTO(VoucherTableRow::code));
+        $this->subscribe(self::ADMIN_KEY, $sort);
+        $this->subscribe(self::VISITOR_KEY, $sort);
+        $code = strtoupper('zz' . RandomHelper::hex(8));
+        $requestId = 'req-voucher-create';
+
+        $mirror = new class implements SourceMirrorSubscriberInterface {
+            public bool $armed = true;
+            public ?SourceChange $created = null;
+
+            public function onSourceChange(SourceChange $change, SourceChangeProvenance $provenance): void
+            {
+                if ($this->armed && $change->sourceKey === EcommerceShopDbContext::vouchers
+                    && $change->mutationType === TableMutationType::Create
+                ) {
+                    $this->created = $change;
+                }
+            }
+        };
+        SourceChangeBus::subscribe($mirror);
+        try {
+            $reply = $this->dispatchCreate(self::ADMIN_KEY, "  " . strtolower($code) . " \t", ' 0100 ', false, $requestId);
+        } finally {
+            $mirror->armed = false;
+        }
+
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $reply);
+        self::assertSame($requestId, $reply->requestId);
+        self::assertSame(EcommerceShopSignalConstants::VOUCHER_CREATE, $reply->action);
+        self::assertSame(sprintf('Voucher “%s” added.', $code), $reply->message);
+        $rows = Database::sql('SELECT id, code, discount_percent, active FROM voucher WHERE code = ?', [$code])->rows();
+        self::assertCount(1, $rows);
+        [$stored] = $rows;
+        self::assertSame($code, $stored[EntityVoucher::code]);
+        self::assertSame('100', $stored[EntityVoucher::discount_percent]);
+        self::assertSame('0', $stored[EntityVoucher::active]);
+
+        // The rollback scope holds browser reactions. Feed the actual ORM create fact into the browser buffer.
+        self::assertNotNull($mirror->created);
+        self::assertSame($stored[EntityVoucher::id], $mirror->created->sourceId);
+        Hilos::$browser->record($mirror->created);
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+        $frames = self::frames([
+            SignalTypeConstants::TABLE_VIEWPORT_OWN_CREATE => self::ADMIN_KEY,
+            SignalTypeConstants::TABLE_VIEWPORT_APPEND => self::VISITOR_KEY,
+        ]);
+        $ownCreate = $frames[SignalTypeConstants::TABLE_VIEWPORT_OWN_CREATE]->data;
+        $append = $frames[SignalTypeConstants::TABLE_VIEWPORT_APPEND]->data;
+        self::assertInstanceOf(TableViewportOwnCreateDTO::class, $ownCreate);
+        self::assertInstanceOf(TableViewportAppendDTO::class, $append);
+        self::assertSame($requestId, $ownCreate->requestId);
+        foreach ([$ownCreate, $append] as $frame) {
+            self::assertSame(AdminVouchersPage::PAGE, $frame->page);
+            self::assertSame(EcommerceShopTableContext::vouchers, $frame->tableKey);
+            self::assertSame((string)$stored[EntityVoucher::id], (string)$frame->row[PagePayload::rowKey]);
+            self::assertSame([
+                VoucherTableRow::id => (int)$stored[EntityVoucher::id],
+                VoucherTableRow::code => $code,
+                VoucherTableRow::discountPercent => 100,
+                VoucherTableRow::active => false,
+            ], $frame->row[PagePayload::slots][VouchersTable::ROW_SLOT]);
+        }
+    }
+
+    /** A canonical duplicate and invalid whole percentages are refused without changing the stored vouchers. */
+    public function testARefusedCreateLeavesTheVouchersIntact(): void
+    {
+        $stored = self::storedVouchers();
+        $reply = $this->dispatchCreate(self::ADMIN_KEY, strtolower($this->activeCode), '20', false, 'req-duplicate');
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
+        self::assertSame('req-duplicate', $reply->requestId);
+        self::assertSame(EcommerceShopSignalConstants::VOUCHER_CREATE, $reply->action);
+        self::assertSame('A voucher with this code already exists', $reply->reason);
+        self::assertSame($stored, self::storedVouchers());
+
+        $code = 'refused' . RandomHelper::hex(8);
+        foreach (['zero' => '0', 'above-max' => '101', 'fraction' => '1.5', 'blank' => ' ', 'overflow' => str_repeat('9', 30)] as $case => $input) {
+            $requestId = "req-discount-{$case}";
+            $reply = $this->dispatchCreate(self::ADMIN_KEY, $code, $input, true, $requestId);
+            self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
+            self::assertSame($requestId, $reply->requestId);
+            self::assertSame(EcommerceShopSignalConstants::VOUCHER_CREATE, $reply->action);
+            self::assertSame('Discount must be a whole percent from 1 to 100', $reply->reason);
+            self::assertSame($stored, self::storedVouchers());
+        }
+    }
+
+    /** A direct create from a viewer is refused even with a valid payload and an open window. */
+    public function testViewModeRefusesVoucherCreate(): void
+    {
+        $this->subscribe(self::VISITOR_KEY);
+        $stored = self::storedVouchers();
+        $reply = $this->dispatchCreate(self::VISITOR_KEY, 'viewer' . RandomHelper::hex(8), '10', true, 'req-viewer');
+        self::assertInstanceOf(PageActionErrorSignalData::class, $reply);
+        self::assertSame('req-viewer', $reply->requestId);
+        self::assertSame(EcommerceShopSignalConstants::VOUCHER_CREATE, $reply->action);
+        self::assertSame(ActionViewModeException::ERROR_CODE, $reply->errorCode);
+        self::assertSame($stored, self::storedVouchers());
+    }
+
     /**
      * A library edit of the active voucher's percent reaches the guest's open window under the same row key.
      *
@@ -268,6 +390,76 @@ final class AdminVouchersPageTest extends AdminVouchersPageEnvironment
     }
 
     /**
+     * @param string $acceptKey Acting connection
+     * @param string $code Voucher code as entered
+     * @param string $discountPercent Discount as entered
+     * @param bool $active Whether the voucher is active
+     * @param string $requestId Client-minted request id
+     * @return PageActionSuccessSignalData|PageActionErrorSignalData The single tracked acknowledgement
+     */
+    private function dispatchCreate(
+        string $acceptKey,
+        string $code,
+        string $discountPercent,
+        bool $active,
+        string $requestId,
+    ): PageActionSuccessSignalData|PageActionErrorSignalData {
+        $agent = new VouchersLibraryAgent();
+        $router = new PageSignalRouter(
+            new HilosPageFactory($agent, Hilos::class),
+            new ActionRouteConfig(Hilos::getPageActionRoutes()),
+        );
+        $frame = new WebSocketActionSignalDTO($acceptKey, EcommerceShopSignalConstants::VOUCHER_CREATE, [
+            ObjectVoucher::code => $code,
+            ObjectVoucher::discountPercent => $discountPercent,
+            ObjectVoucher::active => $active,
+        ], $requestId);
+        ExecutionContext::run(
+            new ExecutionFrame(agentId: $agent->getId(), acceptKey: $acceptKey),
+            static fn () => $router->dispatchAction($frame, 'websocket'),
+        );
+
+        $replies = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            if (in_array($signal->signalName->getName(), [SignalConstants::ACTION_SUCCESS, SignalConstants::ACTION_ERROR], true)) {
+                self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+                self::assertSame($acceptKey, $signal->data->targetAcceptKey);
+                $replies[] = $signal->data->data;
+            }
+        }
+        self::assertCount(1, $replies);
+
+        return $replies[0];
+    }
+
+    /**
+     * @param array<string, string> $targets Signal names and their expected recipients
+     * @return array<string, WebSocketSignalData> One frame per expected signal
+     */
+    private static function frames(array $targets): array
+    {
+        $frames = [];
+        while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
+            $name = $signal->signalName->getName();
+            if (isset($targets[$name])) {
+                self::assertInstanceOf(WebSocketSignalData::class, $signal->data);
+                self::assertSame($targets[$name], $signal->data->targetAcceptKey);
+                self::assertArrayNotHasKey($name, $frames);
+                $frames[$name] = $signal->data;
+            }
+        }
+        self::assertSame([], array_diff_key($targets, $frames), 'Expected frames missing from the router queue');
+
+        return $frames;
+    }
+
+    /** @return list<array<string, mixed>> Stored voucher rows in primary key order */
+    private static function storedVouchers(): array
+    {
+        return Database::sql('SELECT id, code, discount_percent, active FROM voucher ORDER BY id')->rows();
+    }
+
+    /**
      * Writes a person past the users library and drops a verdict an earlier case of this process may have
      * remembered for the same id.
      *
@@ -288,13 +480,14 @@ final class AdminVouchersPageTest extends AdminVouchersPageEnvironment
      * Subscribes one connection with an open vouchers window and reads the one page answer.
      *
      * @param string $acceptKey Subscribing connection
+     * @param ?TableSortOrderDTO $sort Sort held by the window, if any
      * @return list<array<string, mixed>> Wire arrays of the page answers, exactly one
      */
-    private function subscribe(string $acceptKey): array
+    private function subscribe(string $acceptKey, ?TableSortOrderDTO $sort = null): array
     {
         while (Hilos::$sr->getNextQueuedSignal() !== null) {
         }
-        $windows = [EcommerceShopTableContext::vouchers => new TableWindowDescriptorDTO(limit: TableConstants::NO_LIMIT)];
+        $windows = [EcommerceShopTableContext::vouchers => new TableWindowDescriptorDTO(sort: $sort, limit: TableConstants::NO_LIMIT)];
         Hilos::$sr->subscribeToPage(
             AdminVouchersPage::PAGE,
             new WebSocketPageSubscribeSignalDTO($acceptKey, AdminVouchersPage::PAGE, [], $windows),

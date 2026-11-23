@@ -26,11 +26,18 @@ export interface VouchersTable {
   dispose(): void
 }
 
-/** Create the server-windowed Vouchers table. */
-export function createVouchersTable(): VouchersTable {
+/**
+ * Create the server-windowed Vouchers table.
+ *
+ * @param openAdd Open the Add voucher dialog from the table toolbar.
+ */
+export function createVouchersTable(openAdd: () => void): VouchersTable {
   const controller = new TableViewportController<VoucherRow>({
     resolve: (row) => resolveVoucherRow(row, fieldsOf),
-    frame: vouchersFrame(),
+    frame: {
+      ...vouchersFrame(),
+      mainAction: { label: 'Add voucher', press: openAdd },
+    },
     sendViewport: (descriptor) =>
       connection.sendTableViewport(
         PAGE_ADMIN_VOUCHERS,
