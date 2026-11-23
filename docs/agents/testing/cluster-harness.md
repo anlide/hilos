@@ -438,7 +438,7 @@ reload, followed by the original cross-master sign-out; point it with
 The theme spec checks settings on all three masters, choices and reset between
 independent account sessions, new tabs, and stale Dark reconnect without adoption;
 `-- --grep 'cluster theme'` runs its three tests. Its quarantine tail runs
-protected-mode (F-016) and theme (F-069, F-072) after the main verdict. The step
+protected-mode (F-016) after the main verdict. The step
 runs after `roblox-game-server-e2e`, sharing `frontend/dist`, `tests/e2e/node_modules` and
 reports. The cluster-browser step shares the `roblox-game-server-cluster` group
 and stand with the cluster scenarios because both reset the same compose project;
