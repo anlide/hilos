@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test'
 import { test as base, expect } from '../test.js'
 import { moneyFieldLabel } from '../../../frontend/src/money/money.js'
 import {
+  PAGE_ADMIN_PRODUCT,
   PAGE_ADMIN_PRODUCT_STOCK,
   PAGE_PRODUCT,
 } from '../../../frontend/src/pages/keys.js'
@@ -143,6 +144,9 @@ test('a guest sees live price and stock changes on a product and a server refusa
   cleanup,
 }) => {
   const name = `e2e product ${randomBytes(6).toString('hex')}`
+  const renamedSuffix = randomBytes(6).toString('hex')
+  const renamedName = `e2e product ${renamedSuffix}`
+  const renamedPath = `/product/e2e-product-${renamedSuffix}`
   const categoryName = 'Pots & planters'
   const categoryPath = '/category/pots-planters'
   const description = 'A ceramic planter carried in stock.'
@@ -232,6 +236,7 @@ test('a guest sees live price and stock changes on a product and a server refusa
       await command(deleteProductCommand, { name })
     }
   })
+  cleanup.defer(() => command(deleteProductCommand, { name: renamedName }))
   cleanup.defer(async () => {
     if (!stockWrite) return
     const { path, since } = stockWrite
@@ -423,6 +428,42 @@ test('a guest sees live price and stock changes on a product and a server refusa
     await expect(heading).toHaveText(name)
     await expect(guest).toHaveURL(productPath)
     await expectDocumentUnchanged(expect, guest)
+  })
+
+  await test.step('renaming the product moves the open guest page without a reload', async () => {
+    await page.getByTestId(`hilos-page-tab-${PAGE_ADMIN_PRODUCT}`).click()
+    await expectPageReady(expect, page)
+    await page.getByTestId('admin-product-edit-open').click()
+    const dialog = page.getByRole('dialog', {
+      name: 'Edit product',
+      exact: true,
+    })
+    await typeInto(
+      dialog.getByRole('textbox', { name: 'Name', exact: true }),
+      renamedName,
+    )
+    await clickSubmit(expect, dialog.getByTestId('admin-product-edit-submit'))
+    await expect(dialog).toBeHidden()
+
+    await expect(guest).toHaveURL(renamedPath)
+    await expectPageReady(expect, guest)
+    await expect(heading).toHaveText(renamedName)
+    await expectDocumentUnchanged(expect, guest)
+  })
+
+  await test.step('opening the former product link in a new tab reaches its current address', async () => {
+    const fresh = await guestContext.newPage()
+    await gotoPage(expect, fresh, productPath, PAGE_READY)
+    await expect(fresh).toHaveURL(renamedPath)
+    await expect(fresh.getByRole('heading', { level: 1 })).toHaveText(
+      renamedName,
+    )
+    await expect(fresh.getByTestId('shop-product-price')).toHaveText(
+      '₴2,100.50',
+    )
+    await expect(fresh.getByTestId('shop-product-availability')).toHaveText(
+      'Out of stock',
+    )
   })
 
   await test.step('see the server refusal and its reason for an unknown product', async () => {

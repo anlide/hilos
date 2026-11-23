@@ -1,4 +1,4 @@
-import { useContext, useMemo } from 'react'
+import { useContext, useLayoutEffect, useMemo } from 'react'
 import {
   HilosBreadcrumb,
   HilosPageHeadingIdContext,
@@ -10,7 +10,7 @@ import { scopes } from '../../bootstrap/session.js'
 import { PAGE_CATEGORY, PAGE_MAIN } from '../../pages/keys.js'
 import CategoryProductsTable from './CategoryProductsTable.js'
 import CategorySkeleton from './CategorySkeleton.js'
-import { createCategoryDetailsSignal } from './categoryPage.js'
+import { createCategoryPage } from './categoryPage.js'
 
 const CATEGORY_HEADING_ID = 'shop-category-heading'
 
@@ -19,10 +19,11 @@ export default function Category() {
   const router = useContext(HilosRouterContext)
   if (!router) throw new Error('Category requires a provided Hilos router.')
 
-  const details = useMemo(
-    () => createCategoryDetailsSignal(scopes, router.currentRoute),
+  const { details, watchDetails } = useMemo(
+    () => createCategoryPage(scopes, router),
     [router],
   )
+  useLayoutEffect(watchDetails, [watchDetails])
   const category = useSignal(details)
   if (category === null) return <CategorySkeleton />
 

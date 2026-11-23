@@ -8,6 +8,8 @@ use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
 use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Core\Router\EcommerceShopSignalRouter;
 use Demo\EcommerceShop\Database\Database;
+use Demo\EcommerceShop\Database\EcommerceShopDbContext;
+use Demo\EcommerceShop\Database\Entity\Item\Category as EntityCategory;
 use Demo\EcommerceShop\Database\View\Item\Category;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\CategoryPage;
@@ -22,21 +24,26 @@ use Hilos\Core\Browser\Context\BrowserContext;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Page\ActionRouteConfig;
+use Hilos\Core\Page\DTO\PageMovedSignalData;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\DTO\PageResponseSignalData;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Page\HilosPageFactory;
+use Hilos\Core\Page\PageResender;
 use Hilos\Core\Page\PageSignalRouter;
 use Hilos\Core\Router\SignalRouter;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\TableViewportSubscription;
 use Hilos\Core\Router\WebSocketSignalData;
+use Hilos\Core\Source\SourceChange;
+use Hilos\Core\Sync\DTO\DbSyncUpdatedSignalData;
 use Hilos\Core\Table\DTO\TableSortDTO;
 use Hilos\Core\Table\DTO\TableSortOrderDTO;
 use Hilos\Core\Table\DTO\TableWindowDescriptorDTO;
 use Hilos\Core\Table\DTO\TableWindowSignalData;
 use Hilos\Core\Table\TableConstants;
 use Hilos\Core\TruthSource\TruthSourceKeys;
+use Hilos\Database\DbSyncApplicator;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Testing\IntegrationTest;
@@ -166,6 +173,69 @@ final class CategoryPageTest extends CategoryPageEnvironment
         $this->assertWindow(self::RECONNECTED_KEY, $this->tulips, [$this->tulip], $wanted);
     }
 
+    /** Every exact former address goes directly to the current category and its scoped window. */
+    public function testFormerCategoryAddressesMoveDirectlyToTheCurrentAddress(): void
+    {
+        $oldSlugs = ['old-tulips', 'older-tulips'];
+        foreach ($oldSlugs as $slug) {
+            Database::sql('INSERT INTO category_slug (slug, category_id) VALUES (?, ?)', [$slug, $this->tulips->id]);
+        }
+        Database::sql('INSERT INTO category_slug (slug, category_id) VALUES (?, NULL)', ['retired-tulips']);
+
+        foreach ($oldSlugs as $slug) {
+            $this->subscribe(self::GUEST_KEY, $slug);
+            $this->assertMove($slug, $this->tulips->slug);
+            self::assertNull(Hilos::$sr->pageResource(self::GUEST_KEY));
+            self::assertNull(Hilos::$sr->getTableViewport(self::GUEST_KEY, CategoryProductsTable::TABLE));
+        }
+
+        foreach (['retired-tulips', $oldSlugs[0] . ' '] as $slug) {
+            $this->subscribe(self::GUEST_KEY, $slug);
+            $refusal = $this->takePageFrame(self::GUEST_KEY, SignalConstants::SUBSCRIPTION_PAGE_ERROR);
+            self::assertInstanceOf(PageSubscriptionErrorSignalData::class, $refusal);
+            self::assertSame(HttpConstants::HTTP_NOT_FOUND, $refusal->httpCode);
+        }
+
+        $this->subscribe(self::GUEST_KEY, $this->tulips->slug);
+        $this->assertColdWindow(self::GUEST_KEY, $this->tulips, [$this->tulip, $this->tulipBundle]);
+        self::assertSame((string) $this->tulips->id, Hilos::$sr->pageResource(self::GUEST_KEY)?->idString);
+    }
+
+    /** A live rename moves just the affected category and its previous window can be reported again. */
+    public function testLiveRenameMovesOnlyTheAffectedCategory(): void
+    {
+        $resender = $this->createStub(PageResender::class);
+        $resender->method('moveRenamedResource')->willReturnCallback($this->router->moveRenamedResource(...));
+        Hilos::$browser->bindPageResender($resender);
+
+        $oldSlug = $this->tulips->slug;
+        $newSlug = 'spring-tulips';
+        $window = $this->customWindow($this->tulips->id);
+        $report = [CategoryProductsTable::TABLE => $window];
+        $this->subscribe(self::GUEST_KEY, $oldSlug, $report);
+        $this->assertWindow(self::GUEST_KEY, $this->tulips, [$this->tulip], $window);
+        $this->subscribe(self::VISITOR_KEY, $this->roses->slug);
+        $this->assertColdWindow(self::VISITOR_KEY, $this->roses, [$this->rose]);
+
+        Database::sql('UPDATE category SET slug = ? WHERE id = ?', [$newSlug, $this->tulips->id]);
+        $collection = EcommerceShopDbContext::categories;
+        $key = (string) $this->tulips->id;
+        $row = [EntityCategory::slug => $newSlug];
+        $previous = [EntityCategory::slug => $oldSlug];
+        DbSyncApplicator::applyUpdated(new DbSyncUpdatedSignalData($collection, $key, $row, previous: $previous));
+        Hilos::$browser->record(SourceChange::dbUpdated($collection, $key, $row, previous: $previous));
+        self::assertSame([], Hilos::$browser->flushToSignalRouter());
+
+        $this->assertMove($oldSlug, $newSlug);
+        self::assertNull(Hilos::$sr->pageResource(self::GUEST_KEY));
+        self::assertSame((string) $this->roses->id, Hilos::$sr->pageResource(self::VISITOR_KEY)?->idString);
+
+        $this->subscribe(self::GUEST_KEY, $newSlug, $report);
+        self::assertSame($newSlug, $this->tulips->slug);
+        $this->assertWindow(self::GUEST_KEY, $this->tulips, [$this->tulip], $window);
+        self::assertSame($key, Hilos::$sr->pageResource(self::GUEST_KEY)?->idString);
+    }
+
     public function testUnknownAndMissingSlugsReceiveOneServerRefusal(): void
     {
         foreach (['no-such-category', $this->roses->slug . ' '] as $slug) {
@@ -224,24 +294,40 @@ final class CategoryPageTest extends CategoryPageEnvironment
     /**
      * @param string $acceptKey Connection awaiting the one answer
      * @param string $name Expected signal name
-     * @return PageResponseSignalData|PageSubscriptionErrorSignalData The one answer sent to the connection
+     * @return PageResponseSignalData|PageSubscriptionErrorSignalData|PageMovedSignalData The only page answer
      */
-    private function takePageFrame(string $acceptKey, string $name): PageResponseSignalData|PageSubscriptionErrorSignalData
+    private function takePageFrame(string $acceptKey, string $name): PageResponseSignalData|PageSubscriptionErrorSignalData|PageMovedSignalData
     {
         $frames = [];
         while (($signal = Hilos::$sr->getNextQueuedSignal()) !== null) {
             if (
                 $signal->data instanceof WebSocketSignalData
-                && $signal->data->targetAcceptKey === $acceptKey
-                && ($signal->data->data instanceof PageResponseSignalData || $signal->data->data instanceof PageSubscriptionErrorSignalData)
+                && ($signal->data->data instanceof PageResponseSignalData
+                    || $signal->data->data instanceof PageSubscriptionErrorSignalData
+                    || $signal->data->data instanceof PageMovedSignalData)
             ) {
                 $frames[] = $signal;
             }
         }
         self::assertCount(1, $frames);
+        self::assertSame($acceptKey, $frames[0]->data->targetAcceptKey);
         self::assertSame($name, $frames[0]->signalName->getName());
 
         return $frames[0]->data->data;
+    }
+
+    /**
+     * @param string $oldSlug Requested or held category address
+     * @param string $newSlug Current category address
+     */
+    private function assertMove(string $oldSlug, string $newSlug): void
+    {
+        $move = $this->takePageFrame(self::GUEST_KEY, SignalConstants::PAGE_MOVED);
+        self::assertInstanceOf(PageMovedSignalData::class, $move);
+        self::assertSame(CategoryPage::PAGE, $move->page);
+        self::assertSame([CategoryPageSubscribeParams::SLUG => $oldSlug], $move->params);
+        self::assertSame(CategoryPage::PAGE, $move->targetPage);
+        self::assertSame([CategoryPageSubscribeParams::SLUG => $newSlug], $move->targetParams);
     }
 
     /**

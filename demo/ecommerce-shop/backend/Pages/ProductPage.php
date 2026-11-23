@@ -23,6 +23,7 @@ use Hilos\Core\Page\Config\PageAgentIndexSource;
 use Hilos\Core\Page\DTO\PagePayload;
 use Hilos\Core\Page\Exception\MissingPageRouteParamException;
 use Hilos\Core\Page\Exception\PageInternalErrorException;
+use Hilos\Core\Page\Exception\PageMovedException;
 use Hilos\Core\Page\Exception\PageResourceNotFoundException;
 use Hilos\Core\Page\PageAccessLevel;
 use Hilos\Core\Page\PageReach;
@@ -72,8 +73,9 @@ final class ProductPage extends AbstractPage
      * @param PageRouteParams $params Route params from page subscription
      * @return PageResourceAnswer The product card and its resource
      * @throws MissingPageRouteParamException When the slug is absent or empty
+     * @throws PageMovedException When the slug is a former address of a visible product
      * @throws PageResourceNotFoundException When the address names no visible product
-     * @throws PageInternalErrorException When the resource key is invalid
+     * @throws PageInternalErrorException When the resource or its address declaration is invalid
      * @throws InvalidArgumentException When the catalog picture variant is misconfigured
      * @throws HilosException When the catalog reading fails
      */
@@ -81,7 +83,8 @@ final class ProductPage extends AbstractPage
     {
         $reading = $this->requireReading($params);
         $product = $reading->product;
-        $resource = PageResource::db(EcommerceShopDbContext::products, $product->id);
+        $resource = PageResource::db(EcommerceShopDbContext::products, $product->id)
+            ->addressedBy(ProductPageSubscribeParams::SLUG, EntityProduct::slug);
         $basis = new ProductPageBasis($product->categoryId, $reading->fingerprint());
 
         $payload = new PagePayload(data: [
@@ -106,11 +109,12 @@ final class ProductPage extends AbstractPage
     }
 
     /**
-     * Requires the product to be at the exact requested address and visible in the storefront.
+     * Checks storefront visibility before deciding whether the requested address has moved.
      *
      * @param PageRouteParams $params Route params from page subscription
      * @return ProductReading Current public product and its category and stock
      * @throws MissingPageRouteParamException When the slug is absent or empty
+     * @throws PageMovedException When the slug is a former address of a visible product
      * @throws PageResourceNotFoundException When the address names no visible product
      * @throws HilosException When the catalog reading fails
      */
@@ -118,8 +122,11 @@ final class ProductPage extends AbstractPage
     {
         $address = ProductPageSubscribeParams::fromPageRouteParams($params);
         $reading = $this->agent instanceof ProductAgent ? $this->agent->reading() : null;
-        if ($reading === null || $reading->product->slug !== $address->slug || $reading->availability === ProductAvailability::NOT_PLACED) {
+        if ($reading === null || $reading->availability === ProductAvailability::NOT_PLACED) {
             throw new PageResourceNotFoundException('Product not found.');
+        }
+        if ($reading->product->slug !== $address->slug) {
+            throw new PageMovedException(static::PAGE, [ProductPageSubscribeParams::SLUG => $reading->product->slug]);
         }
 
         return $reading;

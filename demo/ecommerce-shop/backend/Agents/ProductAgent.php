@@ -73,8 +73,8 @@ final class ProductAgent extends AbstractAgent
     /**
      * Reads the product the address names, its category and stock, anew on every call.
      *
-     * The product whose current address it is comes first; otherwise the product that had it
-     * before a rename. The returned product's slug tells the two apart ({@see ProductReading}).
+     * Looks for an exact current address first, then an exact former address. The returned
+     * product's slug tells the two apart ({@see ProductReading}).
      *
      * @return ?ProductReading The catalog reading, or null when the address names no product
      * @throws LogicException When a collection's class constants are not configured
@@ -88,9 +88,10 @@ final class ProductAgent extends AbstractAgent
     public function reading(): ?ProductReading
     {
         $product = Hilos::$db->products->whereColumnIs(EntityProduct::slug, $this->address)->first();
-        if ($product === null) {
+        // A database comparison can match even when the route carries extra trailing spaces.
+        if ($product === null || $product->slug !== $this->address) {
             $formerAddress = Hilos::$db->productSlugs->whereColumnIs(EntityProductSlug::slug, $this->address)->first();
-            if ($formerAddress === null) {
+            if ($formerAddress === null || $formerAddress->slug !== $this->address) {
                 return null;
             }
             $product = Hilos::$db->products[$formerAddress->productId];

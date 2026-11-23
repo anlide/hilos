@@ -1,9 +1,11 @@
 import {
   computedSignal,
+  createSignal,
   readNumber,
   readStringOrNull,
-  type PageRouteMatch,
-  type ReadonlySignal,
+  subscribeSignal,
+  type HilosRouter,
+  type Scope,
   type ScopeManager,
 } from '@hilos/core/base'
 
@@ -44,20 +46,69 @@ export function resolveCategoryDetails(
 }
 
 /**
- * Follow the category snapshot as the current route and page scope change.
+ * Keep the last matching category while its subscription follows a move.
  *
  * @param scopes The application's page scope manager.
- * @param currentRoute The navigator's current route.
+ * @param router The navigator that distinguishes leaving from a same-page move.
  */
-export function createCategoryDetailsSignal(
+export function createCategoryPage(
   scopes: ScopeManager,
-  currentRoute: ReadonlySignal<PageRouteMatch>,
-): ReadonlySignal<CategoryDetails | null> {
-  const categoryData = scopes.pageDataSignal('category')
-  return computedSignal(() => {
-    const route = currentRoute.get()
-    return route.page === PAGE_CATEGORY
-      ? resolveCategoryDetails(categoryData.get(), route.params.slug)
-      : null
+  router: Pick<
+    HilosRouter,
+    'currentRoute' | 'pageLoading' | 'pageError' | 'onLeave'
+  >,
+) {
+  const details = createSignal<CategoryDetails | null>(null)
+  const current = computedSignal(() => {
+    const route = router.currentRoute.get()
+    const scope = scopes.page()
+    if (
+      route.page !== PAGE_CATEGORY ||
+      scope?.key !== PAGE_CATEGORY ||
+      router.pageLoading.get() ||
+      router.pageError.get() !== null
+    ) {
+      return null
+    }
+    return {
+      scope,
+      raw: scope.data.signal('category').get(),
+      slug: route.params.slug,
+    }
   })
+
+  return {
+    details,
+    watchDetails() {
+      let held: { scope: Scope; raw: unknown } | undefined
+      let departedScope: Scope | undefined
+      const sync = (next: ReturnType<typeof current.get>) => {
+        if (next !== null && next.scope !== departedScope) {
+          const category = resolveCategoryDetails(next.raw, next.slug)
+          if (category !== null) {
+            held = { scope: next.scope, raw: next.raw }
+            details.set(category)
+            return
+          }
+          // page_moved publishes the new slug before the repeated subscription
+          // answers. It keeps the page scope and the exact snapshot in it.
+          if (held?.scope === next.scope && held.raw === next.raw) return
+        }
+        held = undefined
+        details.set(null)
+      }
+
+      // Ordinary navigation announces departure before publishing its route.
+      const offLeave = router.onLeave(() => {
+        departedScope = scopes.page()
+        sync(null)
+      })
+      const offCurrent = subscribeSignal(current, sync)
+      sync(current.get())
+      return () => {
+        offCurrent()
+        offLeave()
+      }
+    },
+  }
 }

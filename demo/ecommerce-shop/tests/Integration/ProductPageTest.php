@@ -295,16 +295,43 @@ final class ProductPageTest extends ProductPageEnvironment
         }
     }
 
-    /** Unknown, former, inexact and unplaced addresses get a 404. Missing and empty slugs use the app fallback. */
+    /** Exact former addresses move to the product's current address, where it answers with its full card. */
+    public function testFormerProductAddressesMoveDirectlyToTheCurrentAddress(): void
+    {
+        foreach (['former-product-address', 'older-product-address'] as $slug) {
+            Database::sql('INSERT INTO product_slug (slug, product_id) VALUES (?, ?)', [$slug, $this->stock->id]);
+            $this->subscribe(self::GUEST, $slug);
+            $this->assertMove($slug, $this->stock->slug);
+            self::assertNull(Hilos::$sr->pageResource(self::GUEST));
+        }
+
+        $this->subscribe(self::GUEST, $this->stock->slug);
+        $category = Hilos::$db->categories[$this->stock->categoryId];
+        self::assertSame([
+            'id' => $this->stock->id,
+            'slug' => $this->stock->slug,
+            'name' => $this->stock->name,
+            'kind' => 'stock',
+            'price' => 12_000,
+            'description' => 'Product of the case',
+            'pictureUrl' => HilosFiles::downloadPath($this->stock->pictureFileId, CatalogPictureUploadTarget::VARIANT_LG),
+            'units' => 0,
+            'availability' => 'out_of_stock',
+            'categoryName' => $category->name,
+            'categorySlug' => $category->slug,
+        ], $this->takeCard(self::GUEST));
+        self::assertSame((string) $this->stock->id, Hilos::$sr->pageResource(self::GUEST)?->idString);
+    }
+
+    /** Unknown, inexact and unplaced addresses get a 404. Missing and empty slugs use the app fallback. */
     public function testInvalidAddressesReceiveOneOrdinarySubscriptionError(): void
     {
-        $unplaced = self::product(ProductKind::UNIQUE, $this->stock->categoryId);
-        $unplacedSlug = Database::sql('SELECT slug FROM product WHERE id = ?', [$unplaced])->field(EntityProduct::slug);
-        self::assertIsString($unplacedSlug);
         $formerSlug = 'former-product-address';
+        $formerUnplacedSlug = 'former-unplaced-address';
         Database::sql('INSERT INTO product_slug (slug, product_id) VALUES (?, ?)', [$formerSlug, $this->stock->id]);
+        Database::sql('INSERT INTO product_slug (slug, product_id) VALUES (?, ?)', [$formerUnplacedSlug, $this->unplaced->id]);
 
-        foreach (['no-such-product', $formerSlug, $unplacedSlug, $this->stock->slug . ' '] as $slug) {
+        foreach (['no-such-product', $this->unplaced->slug, $this->stock->slug . ' ', $formerSlug . ' ', $formerUnplacedSlug] as $slug) {
             $this->subscribe(self::GUEST, $slug);
             $refusal = $this->takeRefusal(self::GUEST, HttpConstants::HTTP_NOT_FOUND);
             self::assertSame('not_found', $refusal->errorCode);
@@ -669,14 +696,22 @@ final class ProductPageTest extends ProductPageEnvironment
         $expected['availability'] = 'out_of_stock';
         self::assertSame($expected, $this->takeCard(self::GUEST));
 
-        Database::sql('UPDATE product SET slug = ? WHERE id = ?', ['renamed-product', $this->stock->id]);
+        $oldSlug = $this->stock->slug;
+        $newSlug = 'renamed-product';
+        Database::sql('UPDATE product SET slug = ? WHERE id = ?', [$newSlug, $this->stock->id]);
         $this->deliver(new WorkerDbSyncUpdatedMessageDTO(new DbSyncUpdatedSignalData(
             EcommerceShopDbContext::products,
             (string) $this->stock->id,
-            [EntityProduct::slug => 'renamed-product'],
-            previous: [EntityProduct::slug => $this->stock->slug],
+            [EntityProduct::slug => $newSlug],
+            previous: [EntityProduct::slug => $oldSlug],
         )));
-        self::assertSame([], $this->takeFrames());
+        $this->assertMove($oldSlug, $newSlug);
+        self::assertNull(Hilos::$sr->pageResource(self::GUEST));
+        self::assertSame((string) $this->other->id, Hilos::$sr->pageResource(self::VISITOR)?->idString);
+
+        $this->subscribe(self::GUEST, $newSlug);
+        $expected['slug'] = $newSlug;
+        self::assertSame($expected, $this->takeCard(self::GUEST));
     }
 
     /** The registered product resource gives its open page the ordinary deletion refusal. */
@@ -842,6 +877,20 @@ final class ProductPageTest extends ProductPageEnvironment
         self::assertSame($httpCode, $frame->data->httpCode);
 
         return $frame->data;
+    }
+
+    /**
+     * @param string $oldSlug Requested or held product address
+     * @param string $newSlug Current product address
+     */
+    private function assertMove(string $oldSlug, string $newSlug): void
+    {
+        $move = $this->takeFrame(self::GUEST)->data;
+        self::assertInstanceOf(PageMovedSignalData::class, $move);
+        self::assertSame(ProductPage::PAGE, $move->page);
+        self::assertSame([ProductPageSubscribeParams::SLUG => $oldSlug], $move->params);
+        self::assertSame(ProductPage::PAGE, $move->targetPage);
+        self::assertSame([ProductPageSubscribeParams::SLUG => $newSlug], $move->targetParams);
     }
 
     /**
