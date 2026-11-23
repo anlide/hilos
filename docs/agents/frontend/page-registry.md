@@ -42,7 +42,8 @@ view files, which live in `views/<Page>/`:
   and whether the page is an **administrative surface**. The router is built with
   `createAppPageRouter` (below), which mounts the framework admin catalog under
   the app's routes — `routes.ts` never spreads `HILOS_ROUTE_DECLARATIONS` by
-  hand.
+  hand. Follow [Reserved Hilos route segments](#reserved-hilos-route-segments)
+  when choosing a project path under `/hilos`.
 
   `HilosRouteDeclaration.paramPatterns` is an optional
   `Readonly<Record<string, string>>` of regular-expression sources. Each source
@@ -102,6 +103,45 @@ view files, which live in `views/<Page>/`:
 
 Do **not** add a barrel `index.ts` inside `pages/` — import each file by its own
 path (`./pages/keys`, `./pages/routes`). The folder is small and self-contained.
+
+## Reserved Hilos route segments
+
+Hilos owns `/hilos` itself and each whole branch whose first segment is reserved.
+The reserve covers the full framework route catalog, including sections absent
+from the current kit, and explicit names held for future sections (not in the
+code yet — HIL-2285).
+
+For the current framework version, read the full
+[`HILOS_ROUTE_DECLARATIONS`](../../../framework/frontend/core/src/routing/hilosPages.ts#L172)
+map and take the first segment from every declared path under `/hilos`. Treat
+the `/hilos` root separately. Do not filter by the screens mounted in a kit or
+by `admin`; [`HILOS_PAGE_ROUTES`](../../../framework/frontend/core/src/routing/hilosPages.ts#L618)
+is derived from the declarations and is not the source for this check. Do not
+copy the current names into a second Markdown catalog. For explicit reserved
+names, use [`appPageRouter.ts`](../../../framework/frontend/core/src/routing/appPageRouter.ts#L23)
+as the entry point to find the declaration after HIL-2285. That leaf chooses the
+declaration's name, export and final location (not in the code yet — HIL-2285).
+`/hilos/mcp` is an example of a future reserved branch (not in the code yet —
+HIL-2285).
+
+In `APP_ROUTES`, use a free literal first segment directly under `/hilos` and
+put route parameters below that segment. `/hilos/{section}` does not choose a
+literal name and does not satisfy this rule. Compare whole segments:
+`/hilos/users/export` occupies the reserved `users` branch, while
+`/hilos/users-extra` and `/hilos/users-extra/{exportId}` are free neighboring
+paths under the current reserve.
+Project admin pages may also use a path outside `/hilos`. Declare `admin`
+independently of the URL.
+
+`createAppPageRouter` will reject a project declaration that enters reserved
+space and identify its page key, full declared path and occupied segment; for
+the `/hilos` root, the occupied segment is `/hilos` (not in the code yet —
+HIL-2285). This check also applies when a project declaration overrides a
+framework declaration by page key; key-based overrides with a path outside
+`/hilos` remain available. If a path is refused, including after a framework
+update, find its row in `APP_ROUTES` by page key, change `path` to a free branch
+or a path outside `/hilos`, update direct links if any, and repeat the kit's
+normal check. Keep the page key unchanged.
 
 ## Entity page keys and routes
 
@@ -254,6 +294,9 @@ every project, so a project never restates it:
   `null` is only on `page`. That miss subscribes nobody — no stand-in page, no
   URL key, and no fallback — so a typo in an administrative url is not an
   administrative surface, because the miss carries `admin: false`.
+  The reserved-path check will apply to every project declaration, including
+  one that overrides a framework declaration by key (not in the code yet —
+  HIL-2285); see [Reserved Hilos route segments](#reserved-hilos-route-segments).
   `HILOS_PAGE_ROUTES` remains the page-key → path map, derived from the
   declarations, for the readers that only ever want a URL (the shell's gear and
   footer hrefs, breadcrumb paths, the prerender entries).

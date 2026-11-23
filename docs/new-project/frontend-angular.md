@@ -94,6 +94,14 @@ The src root stays thin and the boot wiring lives in `src/app/bootstrap/`
   navigator provided as `HILOS_ROUTER` and the gate as `HILOS_AUTH_GATE`.
 - `src/app/pages/`: `keys.ts`, `routes.ts` (`createAppPageRouter`) and
   `pageTitles.ts` ([../agents/frontend/page-registry.md](../agents/frontend/page-registry.md)).
+- Before choosing a project URL, check it against
+  [Reserved Hilos route segments](../agents/frontend/page-registry.md#reserved-hilos-route-segments)
+  and declare it in `APP_ROUTES` in `src/app/pages/routes.ts` with a free
+  literal first segment under `/hilos` (or a path outside `/hilos`). If
+  `createAppPageRouter` rejects it, follow the rule's rename steps and keep the
+  page key. In the frontend CLI container, run `npm run build` and
+  `npm run check` before opening a browser. The kit's normal check will run the
+  reserved-route validator (not in the code yet — HIL-2290).
 - `src/app/app.ts`: import `HilosLayout` and `HilosPageTemplate` from
   `@hilos/angular/base` and include both in the standalone component's `imports`.
   Fill the `[brand]` and `[user]` slots (the user region projected as ONE node
