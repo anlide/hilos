@@ -223,7 +223,7 @@ export function CatalogPictureField({
           field.discard(selectedId)
           report.current.onPublicationUnknown(selectedId)
         } else if (failure.outcome === 'fail') {
-          field.remove(selectedId)
+          field.discard(selectedId)
         }
       },
     )

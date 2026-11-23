@@ -19,6 +19,9 @@ export const CATEGORY_CREATE = 'category_create'
 /** Action name on the server (EcommerceShopSignalConstants::CATEGORY_UPDATE). */
 export const CATEGORY_UPDATE = 'category_update'
 
+/** Action name on the server (EcommerceShopSignalConstants::CATEGORY_DELETE). */
+export const CATEGORY_DELETE = 'category_delete'
+
 /**
  * Action name on the server
  * (EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH).
@@ -81,6 +84,15 @@ export function sendCategoryUpdate(
   payload: CategoryUpdatePayload,
 ): ActionHandle {
   return actions.dispatch(CATEGORY_UPDATE, { ...payload })
+}
+
+/**
+ * Delete an empty category through the admin page.
+ *
+ * @param id The category id read from the focused row.
+ */
+export function sendCategoryDelete(id: number): ActionHandle {
+  return actions.dispatch(CATEGORY_DELETE, { id })
 }
 
 /**

@@ -44,6 +44,9 @@ final class EcommerceShopSignalConstants
     /** @var string Category update action name */
     public const string CATEGORY_UPDATE = 'category_update';
 
+    /** @var string Category delete action name */
+    public const string CATEGORY_DELETE = 'category_delete';
+
     /** @var string Category picture publish action name: a new or replacement picture is published once it is uploaded */
     public const string CATEGORY_PICTURE_PUBLISH = 'category_picture_publish';
 

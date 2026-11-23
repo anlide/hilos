@@ -14,6 +14,7 @@ import {
   type CategoriesTable,
 } from '../../../src/views/AdminCategories/adminCategoriesPage.js'
 import {
+  canDeleteCategoryEdit,
   canSubmitCategoryEdit,
   createCategoryEdit,
   type CategoryEdit,
@@ -349,10 +350,44 @@ describe('category edit', () => {
     expect(edit.canSave.get()).toBe(true)
   })
 
+  it('follows the saved name and product count during the same edit', () => {
+    changedElsewhere({ productCount: 0 })
+    edit.patchForm({ name: 'Dried flowers' })
+    expect(edit.live.get()).toMatchObject({
+      id: openingRow.id,
+      name: openingRow.name,
+      productCount: 0,
+    })
+
+    changedElsewhere({ name: 'Spring bouquets', productCount: 1 })
+    expect(edit.live.get()).toMatchObject({
+      id: openingRow.id,
+      name: 'Spring bouquets',
+      productCount: 1,
+    })
+
+    changedElsewhere({ name: 'Spring bouquets', productCount: 0 })
+    expect(edit.live.get()).toMatchObject({
+      id: openingRow.id,
+      name: 'Spring bouquets',
+      productCount: 0,
+    })
+    expect(edit.opened.get()).toBe(true)
+    expect(edit.form.get().name).toBe('Dried flowers')
+    expect(edit.canSave.get()).toBe(false)
+  })
+
   it('keeps the draft extractable and blocks dispatch on a real deletion', async () => {
+    changedElsewhere({ productCount: 0 })
     edit.patchForm({ name: 'Dried flowers', picture: localPicture })
+    expect(edit.live.get()).toMatchObject({
+      id: openingRow.id,
+      productCount: 0,
+    })
+
     delta({ kind: 'row_removed', reason: 'deleted' })
 
+    expect(edit.live.get()).toBeUndefined()
     expect(edit.opened.get()).toBe(true)
     expect(edit.form.get()).toEqual({
       name: 'Dried flowers',
@@ -365,6 +400,43 @@ describe('category edit', () => {
     await edit.save(run)
     expect(run).not.toHaveBeenCalled()
     expect(wire.actions.dispatch).not.toHaveBeenCalled()
+  })
+})
+
+describe('category delete verdict', () => {
+  it('waits for write access, a live empty category and idle requests', () => {
+    const uploadId = 'category-picture'
+    const readyToDelete = {
+      opened: true,
+      productCount: 0,
+      locked: false,
+      saving: false,
+      deleting: false,
+      uploadBusy: false,
+      picturePending: false,
+      selectedUploadId: null,
+      readyUploads: [uploadId],
+    }
+
+    // A published replacement can already be in the draft.
+    expect(canDeleteCategoryEdit(readyToDelete)).toBe(true)
+    const blockers = {
+      closed: { opened: false },
+      viewer: { locked: true },
+      removed: { productCount: undefined },
+      nonEmpty: { productCount: 1 },
+      saving: { saving: true },
+      deleting: { deleting: true },
+      uploading: { uploadBusy: true },
+      publishing: { picturePending: true },
+      awaitingPublication: { selectedUploadId: uploadId },
+    }
+    for (const [reason, state] of Object.entries(blockers)) {
+      expect(
+        canDeleteCategoryEdit({ ...readyToDelete, ...state }),
+        reason,
+      ).toBe(false)
+    }
   })
 })
 

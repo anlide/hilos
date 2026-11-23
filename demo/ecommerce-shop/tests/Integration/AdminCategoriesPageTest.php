@@ -7,6 +7,7 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Demo\EcommerceShop\Agents\CategoriesLibraryAgent;
 use Demo\EcommerceShop\Constants\EcommerceShopCommandConstants;
 use Demo\EcommerceShop\Constants\EcommerceShopSignalConstants;
+use Demo\EcommerceShop\Constants\ProductKind;
 use Demo\EcommerceShop\Database\Database;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\Category as EntityCategory;
@@ -488,6 +489,83 @@ final class AdminCategoriesPageTest extends AdminCategoriesPageEnvironment
             Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
         });
         $refusal = $this->refusedUpdate($this->updatePayload(), self::VISITOR_KEY);
+        self::assertSame(ActionForbiddenException::ERROR_CODE, $refusal->errorCode);
+        self::assertSame($baseline, $this->storedCategory());
+    }
+
+    /** Deletion removes the empty category and the tracked reply names it. */
+    public function testAnAdminDeletesAnEmptyCategory(): void
+    {
+        $this->dispatchAction(self::ADMIN_KEY, EcommerceShopSignalConstants::CATEGORY_DELETE, [
+            ObjectCategory::id => $this->categoryId,
+        ], 'req-category-delete');
+
+        $success = $this->acknowledgement(SignalConstants::ACTION_SUCCESS, self::ADMIN_KEY);
+        self::assertInstanceOf(PageActionSuccessSignalData::class, $success);
+        self::assertSame('req-category-delete', $success->requestId);
+        self::assertSame(EcommerceShopSignalConstants::CATEGORY_DELETE, $success->action);
+        self::assertSame(sprintf('Category “%s” deleted.', $this->categoryName), $success->message);
+        self::assertSame([], Database::sql('SELECT id FROM category WHERE id = ?', [$this->categoryId])->rows());
+    }
+
+    /** A product recorded before the request keeps both rows and the tracked reply carries the domain refusal. */
+    public function testAnAdminCannotDeleteACategoryThatHoldsAProduct(): void
+    {
+        $baseline = $this->storedCategory();
+        $productId = self::product(ProductKind::UNIQUE, $this->categoryId);
+
+        $refusal = $this->refusedDelete([ObjectCategory::id => $this->categoryId]);
+
+        self::assertSame('This category has products and cannot be deleted', $refusal->reason);
+        self::assertSame($baseline, $this->storedCategory());
+        self::assertSame(
+            $this->categoryId,
+            (int)Database::sql('SELECT category_id FROM product WHERE id = ?', [$productId])->field('category_id'),
+        );
+    }
+
+    /** An unknown ID is refused with the page's message. */
+    public function testAnAdminCannotDeleteAMissingCategory(): void
+    {
+        $baseline = $this->storedCategory();
+
+        $refusal = $this->refusedDelete([ObjectCategory::id => $this->categoryId + 1000]);
+
+        self::assertSame('This category no longer exists', $refusal->reason);
+        self::assertSame($baseline, $this->storedCategory());
+    }
+
+    /** The delete payload requires a positive integer ID before the action can run. */
+    public function testAnAdminCannotDeleteWithAnInvalidCategoryId(): void
+    {
+        $baseline = $this->storedCategory();
+        foreach ([
+            [[], 'Payload carries no integer under key id'],
+            [[ObjectCategory::id => (string)$this->categoryId], 'Payload carries no integer under key id'],
+            [[ObjectCategory::id => 0], 'The category ID must be a positive integer.'],
+            [[ObjectCategory::id => -1], 'The category ID must be a positive integer.'],
+        ] as [$payload, $reason]) {
+            self::assertSame($reason, $this->refusedDelete($payload)->reason);
+            self::assertSame($baseline, $this->storedCategory());
+        }
+    }
+
+    /** View mode and the ordinary admin gate both protect the category from deletion. */
+    public function testViewersAndANonAdminCannotDeleteTheCategory(): void
+    {
+        $baseline = $this->storedCategory();
+        $payload = [ObjectCategory::id => $this->categoryId];
+        foreach ([self::GUEST_KEY, self::VISITOR_KEY] as $acceptKey) {
+            $refusal = $this->refusedDelete($payload, $acceptKey);
+            self::assertSame(ActionViewModeException::ERROR_CODE, $refusal->errorCode);
+            self::assertSame(ActionMessages::VIEW_MODE, $refusal->reason);
+            self::assertSame($baseline, $this->storedCategory());
+        }
+
+        self::unattended(static function (): void {
+            Hilos::$rt->hilosAdminViewModeRuntime?->actions->set(false);
+        });
+        $refusal = $this->refusedDelete($payload, self::VISITOR_KEY);
         self::assertSame(ActionForbiddenException::ERROR_CODE, $refusal->errorCode);
         self::assertSame($baseline, $this->storedCategory());
     }

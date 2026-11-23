@@ -34,7 +34,9 @@ React. See `docs/new-project/README.md` to start a project from it.
   changes by itself too. An administrator adds a category there in a dialog:
   a name, a description and a JPG or PNG picture uploaded right in the dialog;
   the new category takes the last place. The edit dialog can also replace the
-  picture and offers Keep mine or Take theirs when edits conflict. Its
+  picture and offers Keep mine or Take theirs when edits conflict. From Edit,
+  an administrator can delete an empty category after confirming. If the
+  category has products, Edit explains why deletion is unavailable. Its
   **Products** page lists every product, recently
   changed first, with its category, kind, price, stock and availability; it
   filters by category, kind and availability, and the rows change by themselves.

@@ -41,6 +41,8 @@ use Hilos\Utils\Helpers\RandomHelper;
  */
 abstract class AdminCategoriesPageEnvironment extends CategoriesLibraryEnvironment
 {
+    use CatalogFixtureRows;
+
     protected const string GUEST_KEY = 'admin-categories-guest';
     protected const string VISITOR_KEY = 'admin-categories-visitor';
     protected const string ADMIN_KEY = 'admin-categories-admin';
@@ -246,6 +248,23 @@ abstract class AdminCategoriesPageEnvironment extends CategoriesLibraryEnvironme
         self::assertInstanceOf(PageActionErrorSignalData::class, $error);
         self::assertSame('req-category-update', $error->requestId);
         self::assertSame(EcommerceShopSignalConstants::CATEGORY_UPDATE, $error->action);
+
+        return $error;
+    }
+
+    /**
+     * @param array<string, mixed> $payload Delete request
+     * @param string $acceptKey Acting connection
+     * @return PageActionErrorSignalData The tracked refusal of the delete
+     */
+    protected function refusedDelete(array $payload, string $acceptKey = self::ADMIN_KEY): PageActionErrorSignalData
+    {
+        $this->dispatchAction($acceptKey, EcommerceShopSignalConstants::CATEGORY_DELETE, $payload, 'req-category-delete');
+
+        $error = $this->acknowledgement(SignalConstants::ACTION_ERROR, $acceptKey);
+        self::assertInstanceOf(PageActionErrorSignalData::class, $error);
+        self::assertSame('req-category-delete', $error->requestId);
+        self::assertSame(EcommerceShopSignalConstants::CATEGORY_DELETE, $error->action);
 
         return $error;
     }

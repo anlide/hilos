@@ -62,6 +62,7 @@ use Demo\EcommerceShop\Agents\GuestCartsLibraryAgent;
 use Demo\EcommerceShop\Agents\VouchersLibraryAgent;
 use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CategoryDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
@@ -1474,6 +1475,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH => CategoryPicturePublishActionDTO::class,
                 EcommerceShopSignalConstants::CATEGORY_CREATE => CategoryCreateActionDTO::class,
                 EcommerceShopSignalConstants::CATEGORY_UPDATE => CategoryUpdateActionDTO::class,
+                EcommerceShopSignalConstants::CATEGORY_DELETE => CategoryDeleteActionDTO::class,
             ],
             AdminCategoriesPage::ACTIONS,
         );
@@ -1483,6 +1485,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
                 EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH,
                 EcommerceShopSignalConstants::CATEGORY_CREATE,
                 EcommerceShopSignalConstants::CATEGORY_UPDATE,
+                EcommerceShopSignalConstants::CATEGORY_DELETE,
             ] as $action
         ) {
             self::assertSame('admin_categories', Hilos::getPageActionRoutes()[$action]);
@@ -1492,6 +1495,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         self::assertSame('category_picture_publish', EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH);
         self::assertSame('category_create', EcommerceShopSignalConstants::CATEGORY_CREATE);
         self::assertSame('category_update', EcommerceShopSignalConstants::CATEGORY_UPDATE);
+        self::assertSame('category_delete', EcommerceShopSignalConstants::CATEGORY_DELETE);
     }
 
     /** The products table is registered under its key, for the page that binds it. */

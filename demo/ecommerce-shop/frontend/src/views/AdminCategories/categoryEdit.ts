@@ -2,6 +2,7 @@ import {
   createHilosRowEdit,
   hilosTableRowEditSource,
   type HilosTrackedRowEdit,
+  type ReadonlySignal,
   type TableViewportController,
 } from '@hilos/core/base'
 
@@ -24,27 +25,58 @@ export type CategoryEdit = HilosTrackedRowEdit<
   CategoryRow,
   CategoryEditFields,
   CategoryForm
->
+> & {
+  readonly live: ReadonlySignal<CategoryRow | undefined>
+}
+
+interface CategoryEditWriteState {
+  readonly locked: boolean
+  readonly picturePending: boolean
+  readonly uploadBusy: boolean
+  readonly selectedUploadId: string | null
+  readonly readyUploads: readonly string[]
+}
 
 /**
  * Whether either submit path can save with the current upload and edit state.
  *
  * @param state The session verdict, permission and upload state at submission.
  */
-export function canSubmitCategoryEdit(state: {
-  readonly canSave: boolean
-  readonly locked: boolean
-  readonly picturePending: boolean
-  readonly uploadBusy: boolean
-  readonly selectedUploadId: string | null
-  readonly readyUploads: readonly string[]
-}): boolean {
+export function canSubmitCategoryEdit(
+  state: CategoryEditWriteState & { readonly canSave: boolean },
+): boolean {
+  return state.canSave && canWriteCategoryEdit(state)
+}
+
+/**
+ * Whether the live category can be deleted from this opening.
+ *
+ * @param state The live count, permission and work still in progress.
+ */
+export function canDeleteCategoryEdit(
+  state: CategoryEditWriteState & {
+    readonly opened: boolean
+    readonly productCount: number | undefined
+    readonly saving: boolean
+    readonly deleting: boolean
+  },
+): boolean {
+  return (
+    state.opened &&
+    state.productCount === 0 &&
+    !state.saving &&
+    !state.deleting &&
+    canWriteCategoryEdit(state)
+  )
+}
+
+/** Both writes wait for a selected upload to finish publishing. */
+function canWriteCategoryEdit(state: CategoryEditWriteState): boolean {
   const awaitingPublication =
     state.selectedUploadId !== null &&
     state.readyUploads.includes(state.selectedUploadId)
 
   return (
-    state.canSave &&
     !state.locked &&
     !state.picturePending &&
     !state.uploadBusy &&
@@ -116,6 +148,7 @@ export function createCategoryEdit(
 
   return {
     ...edit,
+    live: source.live,
     save: (run) =>
       edit.save((draft, row) => {
         const live = source.live.get()

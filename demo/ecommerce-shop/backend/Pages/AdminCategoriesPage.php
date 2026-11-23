@@ -11,15 +11,18 @@ use Demo\EcommerceShop\Constants\PageConstants;
 use Demo\EcommerceShop\Files\CatalogPictureFile;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\Pages\DTO\CategoryCreateActionDTO;
+use Demo\EcommerceShop\Pages\DTO\CategoryDeleteActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryMoveUpActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryPicturePublishActionDTO;
 use Demo\EcommerceShop\Pages\DTO\CategoryUpdateActionDTO;
+use Hilos\Constants\ErrorConstants;
 use Hilos\Core\Agent\Exception\AgentUnknownActionException;
 use Hilos\Core\Browser\Config\BrowserConfigKey;
 use Hilos\Core\Exception\DuplicateValueException;
 use Hilos\Core\Exception\EmptyValueException;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
+use Hilos\Core\Exception\ItemNotFoundForDeleteException;
 use Hilos\Core\Exception\ItemNotFoundForUpdateException;
 use Hilos\Core\Exception\LogicException;
 use Hilos\Core\Exception\ValidationException;
@@ -34,14 +37,16 @@ use Hilos\Core\Router\Exception\InvalidActionPayloadException;
 use Hilos\Core\TruthSource\Exception\CreateNotAllowedException;
 use Hilos\Core\TruthSource\Exception\WriteNotAllowedException;
 use Hilos\Database\Actions\Exception\CallbackNotSetException;
+use Hilos\Database\Actions\Exception\ObjectCollectionNullException;
 use Hilos\Database\DatabaseException;
 use Hilos\Database\Exception\View\Collection\ItemNotFoundException;
 use Hilos\HilosException;
+use Hilos\Utils\Logger;
 use Throwable;
 
 /**
  * The shop's categories under the head of its administration section. The page
- * carries the categories table and the actions to add, edit and move categories.
+ * carries the categories table and the actions to add, edit, move and delete categories.
  *
  * A new or replacement picture is published after upload. The library acknowledges
  * publication when the files door answers, and the save carries the published file ID.
@@ -75,6 +80,7 @@ final class AdminCategoriesPage extends AbstractPage
         EcommerceShopSignalConstants::CATEGORY_PICTURE_PUBLISH => CategoryPicturePublishActionDTO::class,
         EcommerceShopSignalConstants::CATEGORY_CREATE => CategoryCreateActionDTO::class,
         EcommerceShopSignalConstants::CATEGORY_UPDATE => CategoryUpdateActionDTO::class,
+        EcommerceShopSignalConstants::CATEGORY_DELETE => CategoryDeleteActionDTO::class,
     ];
 
     public const array BROWSER = [
@@ -82,7 +88,7 @@ final class AdminCategoriesPage extends AbstractPage
     ];
 
     /**
-     * Routes category move up, picture publication, creation and editing to their typed handlers.
+     * Routes category moves, picture publication, creation, editing and deletion to their typed handlers.
      *
      * @param string $acceptKey WebSocket accept key for the client
      * @param string $action Action name from the WebSocket envelope
@@ -90,20 +96,24 @@ final class AdminCategoriesPage extends AbstractPage
      * @return ?ActionReplyDTO Action reply DTO, or null
      * @throws AgentUnknownActionException When action is not supported by this page
      * @throws InvalidActionPayloadException When action payload does not match the action name
+     * @throws ItemNotFoundForDeleteException When the category to delete no longer exists or is not persisted
      * @throws ItemNotFoundForUpdateException When category no longer exists
      * @throws ItemNotFoundException When the collection cannot resolve a category by ID
-     * @throws ValidationException When the category is already first or changed, the picture is unavailable or publication is in flight
+     * @throws ValidationException When a category is already first, changed or still holds products,
+     *     or a picture is unavailable or its publication is in flight
      * @throws DatabaseException When collection loading, the write or the commit fails
      * @throws InvalidArgumentException When category type does not match the collection, or the publish signal cannot be queued
-     * @throws LogicException When the collection, address or files door cannot be used, or a save raises an unexpected failure
+     * @throws LogicException When the collection, address or files door cannot be used,
+     *     or saving or deleting a category raises an unexpected failure
      * @throws FeatureNotDeclaredException When the project keeps no files or takes no uploads
      * @throws InvalidFormatException When the upload id is one the wire does not allow
      * @throws EmptyValueException When the name or the description is empty
      * @throws ValueTooLongException When the name or the description is longer than its column
      * @throws DuplicateValueException When another category already has this name
      * @throws CreateNotAllowedException When this process may not add a category or its address
-     * @throws WriteNotAllowedException When this process may not write the category
+     * @throws WriteNotAllowedException When this process may not write the category or retire its addresses
      * @throws CallbackNotSetException When the collection cannot wrap the created object as a DB item
+     * @throws ObjectCollectionNullException When the category has no backing collection for deletion
      * @throws HilosException When the registry cannot be read, or the right, the database or the collection refuses the write
      */
     public function onAction(string $acceptKey, string $action, ActionPayloadDTO $dto): ?ActionReplyDTO
@@ -138,6 +148,14 @@ final class AdminCategoriesPage extends AbstractPage
                     throw new InvalidActionPayloadException($action, CategoryUpdateActionDTO::class, $dto);
                 }
                 $this->handleUpdate($acceptKey, $dto);
+
+                return null;
+
+            case EcommerceShopSignalConstants::CATEGORY_DELETE:
+                if (!$dto instanceof CategoryDeleteActionDTO) {
+                    throw new InvalidActionPayloadException($action, CategoryDeleteActionDTO::class, $dto);
+                }
+                $this->handleDelete($dto);
 
                 return null;
 
@@ -267,5 +285,45 @@ final class AdminCategoriesPage extends AbstractPage
             throw new LogicException('The category could not be saved', previous: $failure);
         }
         $this->setActionSuccessMessage(sprintf('Category “%s” saved.', $category->name));
+    }
+
+    /**
+     * Deletes a category through the library's item action, which refuses it while it holds products.
+     *
+     * @param CategoryDeleteActionDTO $dto Delete action payload
+     * @throws ItemNotFoundForDeleteException When the category no longer exists or is not persisted
+     * @throws ItemNotFoundException When the collection cannot resolve the category by ID
+     * @throws ValidationException When the category still holds products
+     * @throws WriteNotAllowedException When this process may not remove the category or retire its addresses
+     * @throws ObjectCollectionNullException When the category has no backing collection for deletion
+     * @throws LogicException When the collection or files door is not configured, or deleting the category raises an unexpected failure
+     * @throws InvalidArgumentException When a loaded category has the wrong type
+     * @throws DatabaseException When loading, deleting or committing the category fails
+     * @throws HilosException When the database refuses the delete
+     */
+    private function handleDelete(CategoryDeleteActionDTO $dto): void
+    {
+        if (!isset(Hilos::$db->categories[$dto->id])) {
+            throw new ItemNotFoundForDeleteException('This category no longer exists');
+        }
+
+        $category = Hilos::$db->categories[$dto->id];
+        $name = $category->name;
+        try {
+            $category->actions->delete();
+        } catch (HilosException $refusal) {
+            throw $refusal;
+        } catch (Throwable $failure) {
+            Logger::error(
+                'Unexpected category deletion failure, exception=' . $failure::class . ', message=' . $failure->getMessage(),
+                [
+                    ErrorConstants::CONTEXT_KEY_FILE => $failure->getFile(),
+                    ErrorConstants::CONTEXT_KEY_LINE => $failure->getLine(),
+                    ErrorConstants::CONTEXT_KEY_TRACE => $failure->getTraceAsString(),
+                ],
+            );
+            throw new LogicException('The category could not be deleted', previous: $failure);
+        }
+        $this->setActionSuccessMessage(sprintf('Category “%s” deleted.', $name));
     }
 }
