@@ -223,10 +223,9 @@ final class PageCatalogResolver
     }
 
     /**
-     * Returns the dashboard sections in display order, the framework's own first.
+     * Returns project sections before framework sections, preserving each provider's order.
      *
-     * A project's sections are appended rather than merged by title: the project is a guest in
-     * the framework's dashboard, and appending is the one order that needs no rule to read.
+     * Sections are concatenated, not merged by title, and their items retain their declared order.
      *
      * @return list<array{title: string, description: string, items: list<string>}> Dashboard sections in display order
      */
@@ -236,16 +235,16 @@ final class PageCatalogResolver
     }
 
     /**
-     * Returns the dashboard sections of a named provider, the framework's own first.
+     * Returns a named provider's sections before the framework's sections, preserving both orders.
      *
-     * The twin of {@see self::catalogOf()}, and there for the same reader.
+     * The sections are concatenated, not merged by title, and their items retain their declared order.
      *
      * @param class-string<PageCatalogProviderInterface> $provider Page catalog provider class
      * @return list<array{title: string, description: string, items: list<string>}> Dashboard sections in display order
      */
     public static function dashboardSectionsOf(string $provider): array
     {
-        return array_merge(HilosPageCatalog::DASHBOARD_SECTIONS, $provider::dashboardSections());
+        return array_merge($provider::dashboardSections(), HilosPageCatalog::DASHBOARD_SECTIONS);
     }
 
     /**

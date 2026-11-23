@@ -1304,9 +1304,8 @@ final class TopologyValidatorTest extends TestCase
     }
 
     /**
-     * The index names the position in the MERGED list, so a project section is judged after the
-     * framework ones - which is also where the append order stops being a claim and starts being
-     * a fact this test would notice changing.
+     * The index names the position in the merged list, where project sections precede framework
+     * sections.
      */
     public function testPageCatalogSectionItemWithoutAnEntryFails(): void
     {
@@ -1314,7 +1313,7 @@ final class TopologyValidatorTest extends TestCase
             static function (): void {
                 TopologyPageCatalogSectionHilos::validateTopology();
             },
-            ['PAGE_CATALOG dashboard section 6 lists an item with no catalog entry'],
+            ['PAGE_CATALOG dashboard section 0 lists an item with no catalog entry'],
         );
     }
 
@@ -1329,9 +1328,9 @@ final class TopologyValidatorTest extends TestCase
                 TopologyPageCatalogSectionHilos::validateTopology();
             },
             [
-                'PAGE_CATALOG dashboard section 7[' . PageCatalogConstants::SECTION_TITLE
+                'PAGE_CATALOG dashboard section 1[' . PageCatalogConstants::SECTION_TITLE
                     . '] must be a non-empty string',
-                'PAGE_CATALOG dashboard section 7[' . PageCatalogConstants::SECTION_DESCRIPTION
+                'PAGE_CATALOG dashboard section 1[' . PageCatalogConstants::SECTION_DESCRIPTION
                     . '] must be a non-empty string',
             ],
         );

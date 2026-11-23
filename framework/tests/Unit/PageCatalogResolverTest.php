@@ -2398,19 +2398,19 @@ final class PageCatalogResolverTest extends TestCase
         self::assertNotContains(PageHeadTestCatalog::MISSING_CHILD, array_column($head->pageTabs, 'page'));
     }
 
-    public function testProjectSectionsComeAfterTheFrameworkOnes(): void
+    public function testProjectSectionsComeBeforeTheFrameworkOnes(): void
     {
         PageCatalogResolverTestHilos::initBrowser();
 
         self::assertSame(
             [
+                'Moderation',
                 'People',
                 'Product',
                 'Platform',
                 'Observability',
                 'Intelligence',
                 'Money',
-                'Moderation',
             ],
             array_column(PageCatalogResolver::dashboardSections(), PageCatalogConstants::SECTION_TITLE),
         );
@@ -2425,10 +2425,7 @@ final class PageCatalogResolverTest extends TestCase
         Hilos::initBrowser();
 
         self::assertArrayNotHasKey(PageCatalogResolverTestCatalog::MODERATION, PageCatalogResolver::catalog());
-        self::assertNotContains(
-            'Moderation',
-            array_column(PageCatalogResolver::dashboardSections(), PageCatalogConstants::SECTION_TITLE),
-        );
+        self::assertSame(HilosPageCatalog::DASHBOARD_SECTIONS, PageCatalogResolver::dashboardSections());
     }
 
     /**
