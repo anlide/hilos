@@ -9,6 +9,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Daemon\AgentSignalHold;
 use Hilos\Core\Daemon\AgentSignalHolds;
 use Hilos\Core\Daemon\ParkedAgentSignal;
+use Hilos\Core\Daemon\PendingPageDelivery;
 use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Core\Daemon\SignalDispatchPhase;
 use Hilos\Core\Router\DTO\SignalDTO;
@@ -50,6 +51,20 @@ final class AgentSignalHoldsTest extends TestCase
         $candidates->next();
         self::assertFalse($candidates->valid());
         self::assertNotNull($holds->get($late->id));
+    }
+
+    public function testDiscardReleasesThePageDeliveryIndex(): void
+    {
+        $holds = new AgentSignalHolds();
+        $page = 'room';
+        $token = 'delivery';
+        $hold = $holds->add(new ParkedAgentSignal(new SignalDTO(new SignalSource(SignalSource::WEBSOCKET),
+            new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE), new SignalName($page),
+            new WebSocketPageSubscribeSignalDTO('browser', $page, deliveryId: $token)), 'owner', 0.0, false));
+        self::assertSame($hold, $holds->pageDeliveryHold(new PendingPageDelivery('browser', $page, $token, [], 'owner', null)));
+
+        $holds->discard();
+        self::assertSame([], new ReflectionProperty($holds, 'byPageDelivery')->getValue($holds));
     }
 
     public function testReleasedFifoKeepsItsHeadThroughCancellationAndReparking(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Core\Router\DTO\SignalDTO;
 
@@ -37,9 +38,13 @@ interface ClientMesh
      * @param string $nodeId Id of the node holding the connection
      * @param string $acceptKey Accept key of the connection to deliver to
      * @param SignalDTO $signal Signal to deliver on that node
+     * @param ?string $pageRecoveryDeliveryId Original socket token for terminal page recovery
      * @return bool True when a live link carried the frame, false when the node is unlinked
+     * @throws PeerTransportException When the recovery metadata is invalid for the signal
      */
-    public function sendSignalToClientNode(string $nodeId, string $acceptKey, SignalDTO $signal): bool;
+    public function sendSignalToClientNode(
+        string $nodeId, string $acceptKey, SignalDTO $signal, ?string $pageRecoveryDeliveryId = null,
+    ): bool;
 
     /**
      * Asks every other node to fan one signal out to the browsers it holds.

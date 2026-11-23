@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster;
 
 use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Exception\InvalidFormatException;
 use Throwable;
@@ -30,9 +31,13 @@ interface ClientSignalSink
      *
      * @param string $acceptKey Accept key of the connection to deliver to
      * @param SignalDTO $signal Signal to write to that connection
-     * @throws InvalidFormatException When a matching completion reads an invalid delivery window
+     * @param ?string $pageRecoveryDeliveryId Original socket token for terminal page recovery
+     * @throws InvalidFormatException When the delivery window or recovery parameters are malformed
+     * @throws InvalidArgumentException When the terminal recovery signal cannot be named
+     * @throws EventLoopException When the socket deadline cannot be rearmed after cancellation
+     * @throws Throwable When the exact abandoned hold fails to dispose
      */
-    public function deliverSignalToClient(string $acceptKey, SignalDTO $signal): void;
+    public function deliverSignalToClient(string $acceptKey, SignalDTO $signal, ?string $pageRecoveryDeliveryId = null): void;
 
     /**
      * Fans one signal forwarded from another node out to the browsers this node holds.

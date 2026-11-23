@@ -9,14 +9,37 @@ use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\EventLoop\ReadyWork;
 use Hilos\ProtectedMode\ClusterProtectedMode;
 use Hilos\ProtectedMode\ProtectedModeExecutor;
+use ReflectionMethod;
 use ReflectionProperty;
 use Hilos\Cluster\Leadership;
+use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncDTO;
 use Hilos\Cluster\Peer\DTO\PeerProtectedModeSyncedDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
+use Hilos\Cluster\Peer\DTO\PeerDrainDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReleaseDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimsQueryDTO;
+use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Cluster\Peer\DTO\PeerRtSyncStreamDTO;
+use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
+use Hilos\Cluster\Placement\PlacementId;
+use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementState;
+use Hilos\Cluster\Placement\ResourceProfile;
+use Hilos\Cluster\RtClaimSink;
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementExecutor;
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementMesh;
+use Hilos\Core\Sync\DTO\RtSyncCreatedSignalData;
+use Hilos\Runtime\Stream\RtSyncStreamFrame;
+use Hilos\Runtime\Stream\RtSyncStreamStatus;
 use Hilos\ProtectedMode\ProtectedModeCoordinator;
 use Hilos\Runtime\State\Item\ProtectedModeRuntime;
 use Hilos\Cluster\Exception\PeerTransportException;
@@ -47,6 +70,8 @@ use Hilos\Runtime\View\Context\RtContext;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
+require_once dirname(__DIR__) . '/Placement/ClusterPlacementTest.php';
+
 /**
  * Tests the protected-mode peer transport frames (HIL-267 slices 3 and 4).
  *
@@ -70,6 +95,351 @@ final class ProtectedModePeerFrameTest extends TestCase
     {
         $this->restoreProtectedModePeers();
         parent::tearDown();
+    }
+
+    public function testPlacementQueryFollowsQueuedPlaceAndStopOnThePeerLink(): void
+    {
+        $server = $this->protectedModePeerServer();
+        $peer = $this->protectedModePeerLink($server, 'follower', NodeRole::Slave);
+        $this->protectedModePeerFrames($peer);
+
+        $stream = $peer[0]->rtSyncStream();
+        $stream->send(new RtSyncCreatedSignalData('test_collection', 'row', ['id' => 'row']), 'node-a');
+        $order = new PeerPlaceAgentDTO('render', '9', new PlacementId('node-a', 1, 1));
+        $stop = new PeerStopAgentDTO('render', '9', 1, 'stop', $order->placementId);
+        $refused = new PeerRtClaimRefusedDTO('test_collection', [], 'render', '9', 'render:9', 'node-a', 'holder', 1);
+        $rejoin = new PeerPlacementQueryDTO('rejoin', 1);
+        self::assertTrue($server->sendToNode('follower', $order));
+        self::assertTrue($server->sendToNode('follower', $refused));
+        self::assertTrue($server->sendToNode('follower', $stop));
+        self::assertTrue($server->sendToNode('follower', $rejoin));
+
+        $frames = $this->protectedModePeerFrames($peer);
+        self::assertInstanceOf(PeerRtSyncStreamDTO::class, array_shift($frames));
+        self::assertEquals([$order, $refused, $stop, $rejoin], $frames);
+    }
+
+    /** @param bool $replaceLink Whether the queued authority announcement transfers to a successor */
+    #[DataProvider('authorityLinks')]
+    public function testAStopForAnUnrelatedAgentFollowsTheQueuedAuthorityQuery(bool $replaceLink): void
+    {
+        $server = $this->protectedModePeerServer();
+        $peer = $this->protectedModePeerLink($server, 'follower', NodeRole::Slave);
+        $this->protectedModePeerFrames($peer);
+        $stream = $peer[0]->rtSyncStream();
+        $stream->send(new RtSyncCreatedSignalData('test_collection', 'row',
+            ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]), 'node-a');
+        $query = new PeerPlacementQueryDTO('authority', 8);
+        self::assertTrue($server->sendToNode('follower', $query));
+        self::assertSame([PeerRtSyncStreamDTO::class], array_map(
+            static fn(PeerDTO $frame): string => $frame::class,
+            $this->protectedModePeerFrames($peer),
+        ));
+
+        if ($replaceLink) {
+            $peer = $this->protectedModePeerLink($server, 'follower', NodeRole::Slave);
+            $this->protectedModePeerFrames($peer);
+        }
+        $stop = new PeerStopAgentDTO('per_node', null, 8, 'stop');
+        self::assertTrue($server->sendToNode('follower', $stop));
+        self::assertSame([], $this->protectedModePeerFrames($peer));
+        $stream = $peer[0]->rtSyncStream();
+        $stream->receive(RtSyncStreamFrame::ack($stream->streamId, 1, 0, RtSyncStreamStatus::Next));
+        $frames = $this->protectedModePeerFrames($peer);
+        self::assertInstanceOf(PeerRtSyncStreamDTO::class, array_shift($frames));
+        self::assertEquals([$query, $stop], $frames);
+    }
+
+    public function testReleaseFollowsQueuedAuthorityAndStopOnThePeerLink(): void
+    {
+        $server = $this->protectedModePeerServer();
+        $peer = $this->protectedModePeerLink($server, 'follower', NodeRole::Slave);
+        $this->protectedModePeerFrames($peer);
+        $stream = $peer[0]->rtSyncStream();
+        $stream->send(new RtSyncCreatedSignalData('test_collection', 'row',
+            ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]), 'node-a');
+        $query = new PeerPlacementQueryDTO('authority', 8);
+        $stop = new PeerStopAgentDTO('per_node', null, 8, 'stop');
+        $release = new PeerPlacementReleaseDTO();
+        $server->sendToNode('follower', $query);
+        $server->sendToNode('follower', $stop);
+        $server->broadcastToNodes($release);
+        $frames = $this->protectedModePeerFrames($peer);
+        self::assertInstanceOf(PeerRtSyncStreamDTO::class, array_shift($frames));
+        self::assertSame([], $frames);
+
+        $stream->receive(RtSyncStreamFrame::ack($stream->streamId, 1, 0, RtSyncStreamStatus::Next));
+        $frames = $this->protectedModePeerFrames($peer);
+        self::assertInstanceOf(PeerRtSyncStreamDTO::class, array_shift($frames));
+        self::assertEquals([$query, $stop, $release], $frames);
+    }
+
+    public function testStopQueryRepeatsTheOrderOnTheSuccessorAfterDonorEof(): void
+    {
+        $server = $this->protectedModePeerServer();
+        $placement = new ClusterPlacement('node-a', $server, $this->createMock(PlacementExecutor::class));
+        $old = $this->protectedModePeerLink($server, 'follower', NodeRole::Slave);
+        $this->protectedModePeerFrames($old);
+        $placement->onBecameLeader(1000.0, 8);
+        foreach ($this->protectedModePeerFrames($old) as $frame) {
+            if ($frame instanceof PeerPlacementQueryDTO) {
+                $placement->onPlacementReport('follower', new PeerPlacementReportDTO([], queryId: $frame->queryId));
+            }
+        }
+        $placement->tick(1000.0);
+        $id = new PlacementId('node-a', 8, 1);
+        $placement->registry()->put(new PlacementRecord('per_node', null, 'follower', PlacementState::Started, placementId: $id));
+        $placement->stopAgentOnNode('per_node', null, 'follower');
+        $placement->tick(1001.0);
+
+        $successor = $this->protectedModePeerLink($server, 'follower', NodeRole::Slave);
+        $this->protectedModePeerFrames($successor);
+        // The old socket never writes its Stop or its drain marker.
+        self::assertTrue(socket_shutdown($old[1], STREAM_SHUT_WR));
+        $old[0]->read();
+        $this->dropProtectedModePeer($server, $old[0]);
+        $placement->tick(1017.0);
+        $frames = array_values(array_filter(
+            $this->protectedModePeerFrames($successor),
+            static fn(PeerDTO $frame): bool => $frame instanceof PeerStopAgentDTO || $frame instanceof PeerPlacementQueryDTO,
+        ));
+        self::assertCount(3, $frames);
+        [$authority, $stop, $query] = $frames;
+        self::assertInstanceOf(PeerPlacementQueryDTO::class, $authority);
+        self::assertInstanceOf(PeerStopAgentDTO::class, $stop);
+        self::assertEquals($id, $stop->placementId);
+        self::assertInstanceOf(PeerPlacementQueryDTO::class, $query);
+        $hostMesh = new FakePlacementMesh(['follower' => ['slots=10']], linked: ['node-a']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $host = new ClusterPlacement('follower', $hostMesh, $executor);
+        $host->onPlaceAgent('node-a', new PeerPlaceAgentDTO('per_node', null, $id));
+        $host->discardLocalStart('per_node', $id);
+        $hostMesh->sent = [];
+        $host->onPlacementQuery('node-a', $authority);
+        $placement->onPlacementReport('follower', $hostMesh->sent[0][1]);
+        self::assertSame('follower', $placement->registry()->get('per_node')?->nodeId);
+
+        $executor->holdStopped = $hostMesh->holdRtWritesAnswered = true;
+        $host->onStopAgent('node-a', $stop);
+        $host->onPlacementQuery('node-a', $query);
+        $executor->releaseStopped();
+        self::assertCount(1, $hostMesh->sent);
+        $hostMesh->releaseRtWritesAnswered();
+        self::assertEquals($stop->stoppedStatus(), $hostMesh->sent[1][1]);
+        $host->tick(1017.0);
+        self::assertEquals(new PeerPlacementReportDTO([], queryId: $query->queryId), $hostMesh->sent[2][1]);
+        $placement->onPlacementReport('follower', $hostMesh->sent[2][1]);
+        self::assertNull($placement->registry()->get('per_node')?->nodeId);
+    }
+
+    public function testDeferredPlacementQueriesKeepTheirIdsAcrossPeerLinkReplacement(): void
+    {
+        $server = $this->protectedModePeerServer(NodeRole::Slave);
+        $executor = $this->createMock(PlacementExecutor::class);
+        $finish = null;
+        $executor->expects(self::once())->method('revokePlacement')->willReturnCallback(
+            static function (string $type, ?string $index, Closure $stopped) use (&$finish): void {
+                $finish = $stopped;
+            },
+        );
+        $placement = new ClusterPlacement('node-a', $server, $executor);
+        new ReflectionProperty($server, 'placement')->setValue($server, $placement);
+        $loop = new EventLoop();
+        $placement->attachEventLoop($loop);
+        try {
+            $old = $this->protectedModePeerLink($server, 'leader', NodeRole::Master);
+            $this->protectedModePeerFrames($old);
+            $warm = new PeerPlacementQueryDTO('warm', 8);
+            socket_write($old[1], $warm->toJson() . "\n");
+            $old[0]->read();
+            self::assertEquals([new PeerPlacementReportDTO([], queryId: $warm->queryId)], $this->protectedModePeerFrames($old));
+
+            $stop = new PeerStopAgentDTO('per_node', null, 8, 'stop');
+            $first = new PeerPlacementQueryDTO('first', 8);
+            $second = new PeerPlacementQueryDTO('second', 8);
+            socket_write($old[1], $stop->toJson() . "\n" . $first->toJson() . "\n" . $second->toJson() . "\n");
+            $old[0]->read();
+            self::assertNotNull($finish);
+            self::assertSame([], $this->protectedModePeerFrames($old));
+
+            $finish();
+            self::assertEquals([$stop->stoppedStatus()], $this->protectedModePeerFrames($old));
+            $loop->tick();
+            $placement->dispatchReady();
+            self::assertEquals([new PeerPlacementReportDTO([], queryId: $first->queryId)], $this->protectedModePeerFrames($old));
+
+            $successor = $this->protectedModePeerLink($server, 'leader', NodeRole::Master);
+            $this->protectedModePeerFrames($successor);
+            $loop->tick();
+            $placement->dispatchReady();
+            self::assertEquals([new PeerPlacementReportDTO([], queryId: $second->queryId)], $this->protectedModePeerFrames($successor));
+        } finally {
+            $placement->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testClaimsWaitingForAnEffectLoseTheirSourceWhenTheNodeRejoins(): void
+    {
+        $server = $this->protectedModePeerServer();
+        $sink = $this->createMock(RtClaimSink::class);
+        $reports = [];
+        $sink->expects(self::exactly(3))->method('applyRemoteRtClaims')->willReturnCallback(
+            static function (string $nodeId, array $claims, ?SignalDispatch $origin, ?Closure $current) use (&$reports): void {
+                self::assertSame('source', $nodeId);
+                self::assertNotNull($current);
+                $reports[] = $current;
+            },
+        );
+        Hilos::$cluster->registerRtClaimSink($sink);
+        $first = $this->protectedModePeerLink($server, 'source', NodeRole::Slave);
+        $report = (new PeerRtClaimsDTO('source', []))->toJson() . "\n";
+        socket_write($first[1], $report);
+        $first[0]->read();
+        self::assertTrue($reports[0]());
+
+        $this->dropProtectedModePeer($server, $first[0]);
+        $rejoined = $this->protectedModePeerLink($server, 'source', NodeRole::Slave);
+        socket_write($rejoined[1], $report);
+        $rejoined[0]->read();
+        self::assertFalse($reports[0]());
+        self::assertTrue($reports[1]());
+
+        $replacement = $this->protectedModePeerLink($server, 'source', NodeRole::Slave);
+        $fresh = array_filter(
+            $this->protectedModePeerFrames($replacement),
+            static fn(PeerDTO $frame): bool => $frame instanceof PeerRtClaimsQueryDTO,
+        );
+        self::assertCount(1, $fresh);
+        socket_write($rejoined[1], (new PeerDrainDTO())->toJson() . "\n");
+        $rejoined[0]->read();
+        socket_write($replacement[1], $report);
+        $replacement[0]->read();
+        self::assertFalse($reports[1]());
+        self::assertTrue($reports[2]());
+    }
+
+    public function testQueuedStopAndRtRefusalFromThePreviousLeaderLeaveTheNewLocalOrderAlone(): void
+    {
+        $server = $this->protectedModePeerServer(NodeRole::Slave);
+        $executor = $this->createMock(PlacementExecutor::class);
+        $executor->expects(self::exactly(2))->method('revokePlacement');
+        $executor->method('placementProfile')->willReturn(ResourceProfile::none());
+        $placement = new ClusterPlacement('node-a', new FakePlacementMesh(['node-a' => ['slots=10']]), $executor);
+        Closure::bind(static function () use ($server, $placement): void {
+            $server->placement = $placement;
+        }, null, PeerServer::class)();
+        $refused = new PeerRtClaimRefusedDTO('test_collection', [], 'render', '9', 'render:9', 'node-a', 'holder', 2);
+        $sink = $this->createMock(RtClaimSink::class);
+        $sink->expects(self::once())->method('applyRtClaimRefusal')->with($refused);
+        Hilos::$cluster->registerRtClaimSink($sink);
+        $old = $this->protectedModePeerLink($server, 'previous', NodeRole::Master);
+        $new = $this->protectedModePeerLink($server, 'successor', NodeRole::Master);
+        $first = new PlacementId('previous', 1, 1);
+        $second = new PlacementId('successor', 2, 1);
+        socket_write($old[1], new PeerPlaceAgentDTO('render', '9', $first)->toJson() . "\n");
+        $old[0]->read();
+        self::assertTrue($first->equals($placement->localPlacementId('render:9')));
+        $oldStop = new PeerStopAgentDTO('render', '9', 1, 'old-stop', $first);
+        socket_write($old[1], $oldStop->toJson() . "\n");
+        $old[0]->read();
+
+        socket_write($new[1], new PeerPlaceAgentDTO('render', '9', $second)->toJson() . "\n");
+        $new[0]->read();
+        $placement->beginLocalPlacementRecovery('render:9', $second);
+        $recovery = $placement->placementRecovery('render:9');
+        self::assertNotNull($recovery);
+        $stop = new PeerStopAgentDTO('render', '9', 2, 'new-stop', $second);
+        $commands = $refused->toJson() . "\n" . $stop->toJson() . "\n";
+        socket_write($old[1], $commands);
+        $old[0]->read();
+        self::assertTrue($second->equals($placement->localPlacementId('render:9')));
+        self::assertFalse($recovery->canceled);
+
+        socket_write($new[1], $commands);
+        $new[0]->read();
+        self::assertNull($placement->localPlacementId('render:9'));
+        self::assertTrue($recovery->canceled);
+    }
+
+    /** @param bool $replaceLink Whether ready/ack replaces an active route before its inbound drain */
+    #[DataProvider('authorityLinks')]
+    public function testQueuedCommandsFromTheSameLeaderInAnEarlierTermAreIgnored(bool $replaceLink): void
+    {
+        $server = $this->protectedModePeerServer(NodeRole::Slave);
+        $executor = $this->createMock(PlacementExecutor::class);
+        $executor->expects(self::exactly(2))->method('revokePlacement');
+        $executor->method('placementProfile')->willReturn(ResourceProfile::none());
+        $mesh = new FakePlacementMesh(['node-a' => ['slots=10']], linked: ['leader']);
+        $placement = new ClusterPlacement('node-a', $mesh, $executor);
+        Closure::bind(static function () use ($server, $placement): void {
+            $server->placement = $placement;
+        }, null, PeerServer::class)();
+        $term = 7;
+        $leadership = $this->createMockForIntersectionOfInterfaces([Leadership::class, ConsensusInspection::class]);
+        $leadership->method('leaderId')->willReturn('leader');
+        $leadership->method('term')->willReturnCallback(static function () use (&$term): int {
+            return $term;
+        });
+        Hilos::$cluster->registerLeadership($leadership);
+        $sink = $this->createMock(RtClaimSink::class);
+        $sink->expects(self::exactly(2))->method('applyRtClaimRefusal')->with(self::callback(
+            static fn(PeerRtClaimRefusedDTO $frame): bool => $frame->authorityTerm === 8,
+        ));
+        Hilos::$cluster->registerRtClaimSink($sink);
+        $peer = $this->protectedModePeerLink($server, 'leader', NodeRole::Master);
+        $order = new PlacementId('leader', 7, 1);
+        $other = new PlacementId('leader', 7, 2);
+        socket_write($peer[1], new PeerPlaceAgentDTO('render', '9', $order)->toJson() . "\n"
+            . new PeerPlaceAgentDTO('render', '10', $other)->toJson() . "\n");
+        $peer[0]->read();
+        $placement->requirePlacement('lookup', null);
+        $oldAsk = $mesh->sent[array_key_last($mesh->sent)][1];
+        $oldVerdict = PeerPlacementVerdictDTO::placed('lookup', null, 'stale-host')->forRequest($oldAsk);
+
+        $oldRefusal = new PeerRtClaimRefusedDTO('test_collection', [], 'render', '9', 'render:9', 'node-a', 'holder', 7);
+        $oldStop = new PeerStopAgentDTO('render', '9', 7, 'old-stop', $order);
+        $term = 8;
+        $placement->requirePlacement('lookup', null);
+        $ask = $mesh->sent[array_key_last($mesh->sent)][1];
+        if ($replaceLink) {
+            $oldLink = $peer;
+            $peer = $this->protectedModePeerLink($server, 'leader', NodeRole::Master);
+        }
+        $source = $oldLink ?? $peer;
+        socket_write($source[1], $oldRefusal->toJson() . "\n" . $oldStop->toJson() . "\n" . $oldVerdict->toJson() . "\n");
+        $source[0]->read();
+        self::assertTrue($order->equals($placement->localPlacementId('render:9')));
+        $address = new ReflectionMethod($placement, 'hostingNode');
+        self::assertNull($address->invoke($placement, 'lookup'));
+
+        if ($replaceLink) {
+            socket_write($source[1], new PeerDrainDTO()->toJson() . "\n");
+            $source[0]->read();
+        }
+        $refusal = new PeerRtClaimRefusedDTO('test_collection', [], 'render', '9', 'render:9', 'node-a', 'holder', 8);
+        $stop = new PeerStopAgentDTO('render', '9', 8, 'current-stop', $order);
+        $verdict = PeerPlacementVerdictDTO::placed('lookup', null, 'current-host')->forRequest($ask);
+        socket_write($peer[1], $refusal->toJson() . "\n" . $stop->toJson() . "\n" . $verdict->toJson() . "\n");
+        $peer[0]->read();
+        self::assertNull($placement->localPlacementId('render:9'));
+        self::assertSame('current-host', $address->invoke($placement, 'lookup'));
+        $term = 9;
+        self::assertNull($address->invoke($placement, 'lookup'));
+        $term = 8;
+
+        $stop = new PeerStopAgentDTO('render', '10', 8, 'after-query', $other);
+        socket_write($peer[1], new PeerPlacementQueryDTO('takeover', 8)->toJson() . "\n"
+            . $refusal->toJson() . "\n" . $stop->toJson() . "\n");
+        $peer[0]->read();
+        self::assertNull($placement->localPlacementId('render:10'));
+    }
+
+    /** @return iterable<string, array{bool}> Both active route and transport replacement */
+    public static function authorityLinks(): iterable
+    {
+        yield 'preserved' => [false];
+        yield 'replaced' => [true];
     }
 
     /** @param NodeRole $role Both peer roles share the same master loop binding */
@@ -189,7 +559,7 @@ final class ProtectedModePeerFrameTest extends TestCase
         $port->expects($this->never())->method('onSync');
         $server->registerProtectedMode($port);
         $leader = $this->protectedModePeerLink($server, 'leader', NodeRole::Master);
-        socket_write($leader[1], new PeerPlacementQueryDTO()->toJson() . "\n");
+        socket_write($leader[1], new PeerPlacementQueryDTO('query', 0)->toJson() . "\n");
         $leader[0]->read();
         $this->protectedModePeerFrames($leader);
         $before = Hilos::$rt->hilosProtectedModeRuntime->toArray();
@@ -288,7 +658,7 @@ final class ProtectedModePeerFrameTest extends TestCase
         $old = $this->protectedModePeerLink($server, 'old', NodeRole::Master);
         $slave = $this->protectedModePeerLink($server, 'slave', NodeRole::Slave);
         $candidate = $this->protectedModePeerLink($server, 'candidate', NodeRole::Master, ready: false);
-        socket_write($leader[1], new PeerPlacementQueryDTO()->toJson() . "\n");
+        socket_write($leader[1], new PeerPlacementQueryDTO('query', 0)->toJson() . "\n");
         $leader[0]->read();
         $port = $this->createMock(ProtectedModeCoordinator::class);
         $port->expects($this->once())->method('onSync')->with('leader', $this->isInstanceOf(PeerProtectedModeSyncDTO::class));

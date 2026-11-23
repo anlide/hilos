@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
@@ -194,7 +195,7 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $daemon->noteOwnAgent('rooms_agent', [DaemonManagerRtSyncPeerTestRtContext::ROWS]);
         $placementMesh = new DaemonManagerRtSyncPeerTestPlacementMesh($daemon->mesh);
         $placement = new ClusterPlacement(self::LOCAL_NODE, $placementMesh, new DaemonManagerRtSyncPeerTestPlacementExecutor());
-        $placement->onPlaceAgent(self::REMOTE_NODE, new PeerPlaceAgentDTO('rooms_agent', '9'));
+        $placement->onPlaceAgent(self::REMOTE_NODE, new PeerPlaceAgentDTO('rooms_agent', '9', new PlacementId(self::REMOTE_NODE, 0, 1)));
         $cluster = new ClusterContext();
         $cluster->registerPlacement($placement);
         $previousCluster = Hilos::$cluster;
@@ -3450,6 +3451,7 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
             agentId: 'twin',
             holderNodeId: 'node-b',
             holderAgentId: 'library',
+            authorityTerm: 0,
         ));
 
         $this->assertSame(1, $daemon->inspectRtReplicas()[ClusterCommandConstants::FIELD_RT_CLAIM_REFUSALS]);
@@ -3767,8 +3769,11 @@ final class DaemonManagerRtSyncPeerTest extends TestCase
         $daemon->workerLinkClosed(DaemonManagerRtSyncPeerTestWorkerClient::WORKER_INDEX);
         $daemon->announceInterest();
 
-        $daemon->applyRemoteRtClaims('node-c', [new PeerRtClaimEntry('fleet:7', 'fleet', '7',
-            [DaemonManagerRtSyncPeerTestRtContext::ROWS], [], [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]])]);
+        $claims = [new PeerRtClaimEntry('fleet:7', 'fleet', '7',
+            [DaemonManagerRtSyncPeerTestRtContext::ROWS], [], [DaemonManagerRtSyncPeerTestRtContext::ROWS => [self::ROW_ID]])];
+        $daemon->applyRemoteRtClaims('node-c', $claims, sourceCurrent: static fn(): bool => false);
+        $this->assertTrue($collection->has(self::ROW_ID), 'A departed source cannot drop the frozen copy');
+        $daemon->applyRemoteRtClaims('node-c', $claims, sourceCurrent: static fn(): bool => true);
 
         $this->assertFalse($collection->has(self::ROW_ID), 'The claimed row is dropped');
         $this->assertTrue($collection->has(self::NEIGHBOUR_ROW_ID), 'A row nobody claimed anew stays frozen');

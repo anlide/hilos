@@ -172,6 +172,37 @@ abstract class PeerDTO extends BaseDTO
     }
 
     /**
+     * @param array<string, mixed> $data Frame payload
+     * @return int Authority term carried by the frame
+     * @throws PeerTransportException When the term is missing or malformed
+     */
+    protected static function readAuthorityTerm(array $data): int
+    {
+        $term = $data[PeerPlacementQueryDTO::FIELD_AUTHORITY_TERM] ?? null;
+        if (!is_int($term) || $term < 0) {
+            throw new PeerTransportException('Peer frame has an invalid authority term');
+        }
+
+        return $term;
+    }
+
+    /**
+     * @param array<string, mixed> $data Frame payload
+     * @param string $field Correlation field owned by the frame
+     * @return string Exact correlation id carried by the frame
+     * @throws PeerTransportException When the id is missing or malformed
+     */
+    protected static function readCorrelationId(array $data, string $field): string
+    {
+        $id = $data[$field] ?? null;
+        if (!is_string($id) || trim($id) === '') {
+            throw new PeerTransportException("Peer frame has an invalid {$field}");
+        }
+
+        return $id;
+    }
+
+    /**
      * Reads one accept-key list out of a connection-index frame.
      *
      * Shared by {@see PeerConnectionsSnapshotDTO} and {@see PeerConnectionsDeltaDTO}, the

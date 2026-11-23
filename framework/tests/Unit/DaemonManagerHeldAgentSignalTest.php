@@ -11,7 +11,26 @@ use Closure;
 use Generator;
 use Hilos\Cluster\AgentSignalMesh;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\NodeIdentity;
+use Hilos\Cluster\NodeRole;
+use Hilos\Cluster\Peer\DTO\PeerDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
+use Hilos\Cluster\Peer\DTO\PeerSignalDTO;
+use Hilos\Cluster\Peer\PeerLink;
+use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\AgentLocation;
+use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementId;
+use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementRecovery;
+use Hilos\Cluster\Placement\PlacementSnapshot;
+use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\WorkerPlacement;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HilosSignalConstants;
@@ -19,7 +38,9 @@ use Hilos\Constants\HttpConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\AbstractAgent;
+use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentScope;
 use Hilos\Core\Agent\Daemon\AbstractAgentDaemon;
 use Hilos\Core\Agent\Daemon\AgentDaemonInterface;
 use Hilos\Core\Agent\Daemon\AgentManagerDaemon;
@@ -35,7 +56,9 @@ use Hilos\Core\Daemon\SignalDispatcher;
 use Hilos\Core\Daemon\ParkedAgentSignal;
 use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Core\Daemon\SignalDispatchPhase;
+use Hilos\Core\EventLoop\EventLoop;
 use Hilos\Core\Exception\InvalidArgumentException as CoreInvalidArgumentException;
+use Hilos\Core\Http\RequestQueryParams;
 use Hilos\Core\Page\DTO\PageSubscriptionErrorSignalData;
 use Hilos\Core\Router\Destination\AgentAddressedDestination;
 use Hilos\Core\Router\Destination\AgentDestination;
@@ -56,23 +79,36 @@ use Hilos\Core\Router\WebSocketSignalData;
 use Hilos\Environment\Exception\EnvException;
 use Hilos\Hilos;
 use Hilos\HilosException;
+use Hilos\Socket\Client\Interface\WebSocketClientInterface;
+use Hilos\Socket\Client\WebSocketClient;
 use Hilos\Socket\Command\DTO\CommandRequestDTO;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Http\DTO\HttpReplyDTO;
 use Hilos\Socket\Http\DTO\HttpRequestDTO;
+use Hilos\Socket\Server\AbstractServer;
+use Hilos\Socket\Server\WebSocketServer;
 use Hilos\Socket\Server\WorkerServer;
+use Hilos\Socket\Transport\PlainSocketTransport;
+use Hilos\Socket\WebSocket\Delivery\DeliveryFrame;
 use Hilos\Socket\WebSocket\DTO\WebSocketCloseSignalDTO;
 use Hilos\Socket\WebSocket\DTO\WebSocketPageSubscribeSignalDTO;
+use Hilos\Socket\WebSocket\DTO\WebSocketPageUpdateSubscriptionSignalDTO;
 use Hilos\Socket\Worker\DTO\DaemonAgentMessageDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
 use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementExecutor;
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementMesh;
+use Hilos\Tests\Unit\Cluster\Placement\SnapshotTestLeadership;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use ReflectionGenerator;
 use ReflectionMethod;
 use ReflectionProperty;
 use RuntimeException;
+use Socket;
 use WeakReference;
 
 /**
@@ -97,6 +133,14 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
 
     /** @var string Node a case sends the agent off to, so the placing door has somewhere to forward */
     private const string OTHER_NODE = 'node-b';
+
+    private const string RECOVERY_SOURCE = 'origin-node';
+
+    private const string FIRST_PLACING_LEADER = 'leader';
+
+    private const string NEXT_PLACING_LEADER = 'successor';
+
+    private const int REPLAY_TERM = 7;
 
     /** @var string Signal name the master facade addresses the agent with */
     private const string MASTER_SIGNAL = 'master_facade_signal';
@@ -641,6 +685,497 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         );
     }
 
+    public function testReplayHoldsWaitForTheExactLocalWorkerReportAndKeepTheirOrderAfterFailure(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement] = $this->recoveringPlacement($manager);
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        $original = $placement->localPlacementId($agent);
+        $manager->workerServer->seatAgentUnderWay($agent);
+        $manager->sendToAgent($agent, null, self::MASTER_SIGNAL, new SignalData());
+        $manager->drainQueue();
+        $originalHold = $manager->agentSignalHolds()->getWatermark();
+
+        $recovery = $manager->workerServer->reportPlacementStartFailure($agent, $original, 'replay failed');
+        self::assertSame($original, $recovery?->origin);
+        $manager->reportStartFailed($agent, $recovery);
+        $ask = $this->askForVerdict($placement, $agent);
+        $placement->onPlacementVerdict(self::FIRST_PLACING_LEADER, PeerPlacementVerdictDTO::notPlaced(
+            $agent, null, PlacementState::Failed, 'replay failed',
+        )->forRequest($ask));
+        // The old compact address still points here. The second frame joins the same FIFO.
+        $manager->deliverSignalToAgent($agent, null, $this->forwardedSignal(), placementRecoveryRelay: true);
+        $manager->drainQueue();
+        self::assertSame($originalHold + 1, $manager->agentSignalHolds()->getWatermark());
+        self::assertSame($original, $manager->agentSignalHolds()->get($originalHold)->parked->recovery->origin);
+        self::assertCount(2, $manager->heldFrames());
+        self::assertSame([], $manager->workerServer->deliveries);
+
+        $retry = new PlacementId(self::FIRST_PLACING_LEADER, self::REPLAY_TERM, 2);
+        $placement->onPlaceAgent(self::FIRST_PLACING_LEADER, new PeerPlaceAgentDTO($agent, null, $retry));
+        $manager->workerServer->seatAgentUnderWay($agent);
+        $manager->reportStarted($agent);
+        $manager->workerServer->reportPlacementWorkerStarted($agent, $original);
+        $manager->drainQueue();
+        self::assertCount(2, $manager->heldFrames());
+        self::assertSame([], $manager->workerServer->deliveries);
+
+        $manager->workerServer->reportPlacementWorkerStarted($agent, $retry);
+        $manager->drainQueue();
+        $manager->drainQueue();
+        self::assertSame([self::MASTER_SIGNAL . '@' . $agent, self::FORWARDED_SIGNAL . '@' . $agent], $manager->workerServer->deliveries);
+        self::assertSame([], $manager->heldFrames());
+    }
+
+    /** @return iterable<string, array{bool}> Direct facade entry or a peer effect in the start-report drain */
+    public static function lateReplayEntries(): iterable
+    {
+        yield 'direct' => [false];
+        yield 'peer effect' => [true];
+    }
+
+    /** @param bool $peer Whether the younger frame enters the same batch as the worker report */
+    #[DataProvider('lateReplayEntries')]
+    public function testAFrameEnteringAfterWorkerProofQueuesBehindTheLiveRecoveryHold(bool $peer): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement] = $this->recoveringPlacement($manager);
+        $dispatcher = SignalDispatcherFixture::owner($manager);
+        $loop = new EventLoop();
+        new ReflectionProperty(DaemonManager::class, 'eventLoop')->setValue($manager, $loop);
+        new ReflectionMethod(DaemonManager::class, 'attachSignalDispatchEventLoop')->invoke($manager);
+        try {
+            $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+            $manager->workerServer->seatAgentUnderWay($agent);
+            $manager->sendToAgent($agent, null, HeldAgentSignalTestRouter::ORDERED_PUSH, new SignalData());
+            $manager->drainQueue();
+            self::assertCount(1, $manager->heldFrames());
+
+            $manager->workerServer->reportPlacementWorkerStarted($agent, $placement->localPlacementId($agent));
+            $manager->reportStarted($agent);
+            self::assertNull($placement->placementRecovery($agent));
+            self::assertSame([], $manager->workerServer->deliveries);
+            if ($peer) {
+                $manager->deliverSignalToAgent($agent, null, $this->forwardedSignal());
+                $signalName = self::FORWARDED_SIGNAL;
+            } else {
+                $manager->sendToAgent($agent, null, self::MASTER_SIGNAL, new SignalData());
+                $signalName = self::MASTER_SIGNAL;
+            }
+            $manager->drainQueue();
+            $manager->drainQueue();
+            self::assertSame([HeldAgentSignalTestRouter::ORDERED_PUSH . '@' . $agent, $signalName . '@' . $agent],
+                $manager->workerServer->deliveries);
+            self::assertSame([], $manager->heldFrames());
+        } finally {
+            $dispatcher->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    #[DataProvider('recoveryProjectionChanges')]
+    public function testOnlyTheAcceptedNewWorkerProofReleasesTheAddressedPeerQueue(bool $sameProjectedAddress): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement, $authority] = $this->recoveringPlacement($manager);
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        $original = $placement->localPlacementId($agent);
+        [$peer, $link, $reader] = $this->peerRecoveryRoute($manager);
+        try {
+            $manager->sendToAgent($agent, null, self::MASTER_SIGNAL, new SignalData());
+            $signal = new SignalDTO(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::AGENT_SIGNAL),
+                new SignalName(self::FORWARDED_SIGNAL), new SignalData(['kept' => true]), ['correlation' => 'replay-case']);
+            $peer->onSignalReceived($link, new PeerSignalDTO(self::OTHER_NODE, self::RECOVERY_SOURCE, $agent, null, $signal));
+            $peer->onSignalReceived($link, new PeerSignalDTO(
+                self::OTHER_NODE, self::RECOVERY_SOURCE, $agent, null, $this->forwardedSignal(), placementRecoveryRelay: true,
+            ));
+            $peer->onSignalReceived($link, new PeerSignalDTO(self::OTHER_NODE, 'wrong-target', $agent, null, $signal));
+            $manager->drainQueue();
+            self::assertCount(3, $manager->heldFrames());
+
+            $recovery = $manager->workerServer->reportPlacementStartFailure($agent, $original, 'replay failed');
+            $manager->reportStartFailed($agent, $recovery);
+            $ask = $this->askForVerdict($placement, $agent);
+            $placement->onPlacementVerdict(self::FIRST_PLACING_LEADER, PeerPlacementVerdictDTO::notPlaced(
+                $agent, null, PlacementState::Failed, 'replay failed',
+            )->forRequest($ask));
+            $this->acceptRecoveryView($placement, self::FIRST_PLACING_LEADER, self::REPLAY_TERM, 2, [], [
+                new PlacementRecord($agent, null, self::RECOVERY_SOURCE, PlacementState::Failed, 'replay failed', placementId: $original),
+            ]);
+            $manager->drainQueue();
+            self::assertFalse($link->hasPendingWrite());
+            self::assertCount(3, $manager->heldFrames());
+
+            $term = self::REPLAY_TERM + 1;
+            $authority->leader = self::NEXT_PLACING_LEADER;
+            $authority->currentTerm = $term;
+            $projection = $sameProjectedAddress ? self::OTHER_NODE : self::RECOVERY_SOURCE;
+            $stillOld = new PlacementRecord($agent, null, self::OTHER_NODE, PlacementState::Started,
+                placementId: $original, workerStarted: true);
+            $this->acceptRecoveryView($placement, self::NEXT_PLACING_LEADER, $term, 1, [$projection => [new PeerPlacedAgentEntry($agent, null)]],
+                [$stillOld]);
+            $manager->drainQueue();
+            self::assertFalse($link->hasPendingWrite(), 'A new term adopting the old order proves no new start');
+
+            $retry = new PlacementId(self::NEXT_PLACING_LEADER, $term, 1);
+            $records = [
+                new PlacementRecord($agent, null, self::OTHER_NODE, PlacementState::Placing, placementId: $retry),
+                new PlacementRecord('another_agent', null, self::OTHER_NODE, PlacementState::Started,
+                    placementId: new PlacementId(self::NEXT_PLACING_LEADER, $term, 2), workerStarted: true),
+            ];
+            $this->acceptRecoveryView($placement, self::NEXT_PLACING_LEADER, $term, 2,
+                [$projection => [new PeerPlacedAgentEntry($agent, null)]], $records);
+            $records[0] = $records[0]->withState(PlacementState::Started);
+            $this->acceptRecoveryView($placement, self::NEXT_PLACING_LEADER, $term, 3,
+                [$projection => [new PeerPlacedAgentEntry($agent, null)]], $records);
+            $manager->drainQueue();
+            self::assertCount(3, $manager->heldFrames());
+            self::assertFalse($link->hasPendingWrite(), 'Neither another agent nor an early Started releases this FIFO');
+
+            $records[0] = new PlacementRecord($agent, null, self::OTHER_NODE, PlacementState::Started,
+                placementId: $retry, workerStarted: true);
+            $this->acceptRecoveryView($placement, self::NEXT_PLACING_LEADER, $term, 2,
+                [self::OTHER_NODE => [new PeerPlacedAgentEntry($agent, null)]], $records);
+            $manager->drainQueue();
+            self::assertFalse($link->hasPendingWrite(), 'A stale complete snapshot supplies no proof');
+            $this->acceptRecoveryView($placement, self::NEXT_PLACING_LEADER, $term, 4,
+                [self::OTHER_NODE => [new PeerPlacedAgentEntry($agent, null)]], $records);
+            $manager->drainQueue();
+            self::assertSame([], $manager->heldFrames());
+            self::assertSame([], $manager->workerServer->deliveries);
+            self::assertTrue($link->hasPendingWrite());
+
+            $link->write();
+            $bytes = socket_read($reader, 8192);
+            $frames = array_map(PeerDTO::fromWire(...), explode("\n", trim($bytes)));
+            self::assertCount(2, $frames);
+            self::assertSame([self::MASTER_SIGNAL, self::FORWARDED_SIGNAL],
+                array_map(static fn(PeerSignalDTO $frame): string => $frame->signal->signalName->getName(), $frames));
+            self::assertFalse($frames[0]->placementRecoveryRelay);
+            self::assertTrue($frames[1]->placementRecoveryRelay);
+            self::assertSame(self::OTHER_NODE, $frames[1]->targetNodeId);
+            self::assertSame($agent, $frames[1]->agentType);
+            self::assertNull($frames[1]->agentIndex);
+            self::assertSame($signal->toArray(), $frames[1]->signal->toArray());
+
+            $this->acceptRecoveryView($placement, self::NEXT_PLACING_LEADER, $term, 5,
+                [self::OTHER_NODE => [new PeerPlacedAgentEntry($agent, null)]], $records);
+            [$replacement, $replacementReader] = $this->attachRecoveryPeer($peer);
+            try {
+                $ask = $this->askForVerdict($placement, $agent);
+                $placement->onPlacementVerdict(self::NEXT_PLACING_LEADER,
+                    PeerPlacementVerdictDTO::placed($agent, null, self::OTHER_NODE)->forRequest($ask));
+                $manager->drainQueue();
+                self::assertFalse($replacement->hasPendingWrite(), 'A replacement link cannot enqueue a settled hold again');
+                self::assertFalse($link->hasPendingWrite(), 'Subsequent wakeups cannot enqueue a frame a second time');
+            } finally {
+                $replacement->close();
+                socket_close($replacementReader);
+            }
+        } finally {
+            $link->close();
+            socket_close($reader);
+        }
+    }
+
+    public static function recoveryProjectionChanges(): iterable
+    {
+        yield 'compact address changes' => [false];
+        yield 'compact address already agrees' => [true];
+    }
+
+    public function testSuspendedRecoveryCannotOvertakeItsPredecessorAfterTwoAddressChanges(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement] = $this->recoveringPlacement($manager);
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        [$peer, $link, $reader] = $this->peerRecoveryRoute($manager);
+        try {
+            $manager->sendToAgent($agent, null, self::MASTER_SIGNAL, new SignalData());
+            $manager->deliverSignalToAgent($agent, null, $this->forwardedSignal());
+            $manager->drainQueue();
+            $holds = $manager->agentSignalHolds();
+            [$older, $younger] = iterator_to_array($holds->agentCandidates($agent), false);
+            $origin = $holds->get($older)->parked->recovery;
+            $dispatcher = SignalDispatcherFixture::owner($manager);
+            $state = $dispatcher->retainedState();
+            $advance = new ReflectionMethod(SignalDispatcher::class, 'advanceReleasedSignal');
+            $firstNode = 'first-host';
+            $secondNode = 'second-host';
+            $this->acceptRecoveryAddress($placement, $agent, $firstNode, 2);
+            $holds->release($older);
+            $holds->release($younger);
+            $this->advanceToRecoveryAddressYield($advance, $dispatcher, $manager, $peer);
+            self::assertSame($older, $state->released->heldId);
+            $this->acceptRecoveryAddress($placement, $agent, $secondNode, 3);
+            $advance->invoke($dispatcher, $manager->workerServer, $peer);
+            self::assertSame($origin, $holds->get($older)->parked?->recovery);
+
+            $this->advanceToRecoveryAddressYield($advance, $dispatcher, $manager, $peer);
+            self::assertSame($older, $state->released->heldId);
+            self::assertSame([$younger], $state->suspendedReleases);
+            $this->acceptRecoveryAddress($placement, $agent, self::OTHER_NODE, 4);
+            $advance->invoke($dispatcher, $manager->workerServer, $peer);
+            self::assertSame($origin, $holds->get($older)->parked?->recovery);
+            $holds->release($older);
+
+            $manager->drainQueue();
+            $this->acceptRecoveryAddress($placement, $agent, self::OTHER_NODE, 5);
+            $manager->drainQueue();
+            $link->write();
+            $wire = new PlainSocketTransport($reader)->read(65536);
+            self::assertIsString($wire);
+            $frames = array_map(PeerDTO::fromWire(...), explode("\n", trim($wire)));
+            self::assertSame([self::MASTER_SIGNAL, self::FORWARDED_SIGNAL], array_map(
+                static fn (PeerSignalDTO $frame): string => $frame->signal->signalName->getName(), $frames,
+            ));
+            self::assertSame([false, true], array_column($frames, 'placementRecoveryRelay'));
+            self::assertSame([self::OTHER_NODE, self::OTHER_NODE], array_column($frames, 'targetNodeId'));
+            self::assertSame($younger, $holds->getWatermark());
+            self::assertSame([], iterator_to_array($holds->agentCandidates($agent), false));
+        } finally {
+            $link->close();
+            socket_close($reader);
+        }
+    }
+
+    public function testAReleasedRelayReparksWithTheSameBasisAndCannotRelayAgain(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement, $authority] = $this->recoveringPlacement($manager);
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        $manager->deliverSignalToAgent($agent, null, $this->forwardedSignal(), placementRecoveryRelay: true);
+        $manager->drainQueue();
+        $holdId = $manager->agentSignalHolds()->getWatermark();
+        $original = $manager->heldFrames()[0]->recovery;
+        $manager->agentSignalHolds()->release($holdId);
+        $cursor = $manager->beginReleasedCursor();
+        $manager->advanceReleasedCursor($cursor, 1);
+        $authority->leader = self::NEXT_PLACING_LEADER;
+        $authority->currentTerm = self::REPLAY_TERM + 1;
+        $manager->advanceReleasedCursor($cursor, 25);
+
+        self::assertSame($holdId, $manager->agentSignalHolds()->getWatermark());
+        self::assertSame($original, $manager->heldFrames()[0]->recovery);
+        self::assertTrue($manager->heldFrames()[0]->placementRecoveryRelay);
+        [, $link, $reader] = $this->peerRecoveryRoute($manager);
+        try {
+            $this->acceptRecoveryView($placement, self::NEXT_PLACING_LEADER, $authority->currentTerm, 1,
+                [self::OTHER_NODE => [new PeerPlacedAgentEntry($agent, null)]], [
+                    new PlacementRecord($agent, null, self::OTHER_NODE, PlacementState::Started,
+                        placementId: new PlacementId(self::NEXT_PLACING_LEADER, $authority->currentTerm, 1), workerStarted: true),
+                ]);
+            $manager->drainQueue();
+            self::assertSame([], $manager->heldFrames());
+            self::assertFalse($link->hasPendingWrite());
+        } finally {
+            $link->close();
+            socket_close($reader);
+        }
+    }
+
+    public function testTerminalPlacementRefusalStillSettlesTheOriginalRecoveryHold(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement] = $this->recoveringPlacement($manager);
+        $this->queueSubscribe(HeldAgentSignalTestRouter::ORDERED_PAGE);
+        $manager->drainQueue();
+        self::assertCount(1, $manager->heldFrames());
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        $ask = $this->askForVerdict($placement, $agent);
+        $placement->onPlacementVerdict(self::FIRST_PLACING_LEADER, PeerPlacementVerdictDTO::notPlaced(
+            $agent, null, PlacementState::Refused, 'claim refused',
+        )->forRequest($ask));
+        $manager->drainQueue();
+        self::assertCount(1, $manager->heldFrames());
+        self::assertSame([], $manager->pageErrorFrames());
+        $this->acceptRecoveryView($placement, self::FIRST_PLACING_LEADER, self::REPLAY_TERM, 2, [], [
+            new PlacementRecord($agent, null, self::RECOVERY_SOURCE, PlacementState::Refused,
+                placementId: $placement->localPlacementId($agent)),
+        ]);
+        $manager->drainQueue();
+        self::assertSame([], $manager->heldFrames());
+        self::assertCount(1, $manager->pageErrorFrames());
+    }
+
+    public function testOldVerdictAndTerminalSnapshotCannotSettleTheNewHoldAfterItsHostedOrderFailed(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement, $authority] = $this->recoveringPlacement($manager);
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        $old = $placement->localPlacementId($agent);
+        $oldAsk = $this->askForVerdict($placement, $agent);
+        $authority->leader = self::NEXT_PLACING_LEADER;
+        $term = ++$authority->currentTerm;
+        $current = new PlacementId(self::NEXT_PLACING_LEADER, $term, 1);
+        $placement->onPlaceAgent(self::NEXT_PLACING_LEADER, new PeerPlaceAgentDTO($agent, null, $current));
+        $placement->requirePlacement($agent, null);
+        $manager->sendToAgent($agent, null, self::MASTER_SIGNAL, new SignalData());
+        $manager->drainQueue();
+        self::assertCount(1, $manager->heldFrames());
+        $id = $manager->agentSignalHolds()->getWatermark();
+        $late = PeerPlacementVerdictDTO::notPlaced($agent, null, PlacementState::Refused, 'previous order refused');
+        $placement->onPlacementVerdict(self::FIRST_PLACING_LEADER, $late->forRequest($oldAsk));
+        $this->acceptRecoveryView($placement, self::NEXT_PLACING_LEADER, $term, 1, [], [
+            new PlacementRecord($agent, null, null, PlacementState::Stopped, placementId: $old),
+        ]);
+        $recovery = $manager->workerServer->reportPlacementStartFailure($agent, $current, 'worker did not start');
+        self::assertNotNull($recovery);
+        self::assertNull($placement->localPlacementId($agent));
+        $manager->reportStartFailed($agent);
+        $manager->drainQueue();
+        self::assertSame($id, $manager->agentSignalHolds()->getWatermark());
+        self::assertSame($recovery, $manager->heldFrames()[0]->recovery);
+        self::assertFalse($placement->isPlacementRecoveryCanceled($agent, $recovery));
+
+        $this->acceptRecoveryView($placement, self::NEXT_PLACING_LEADER, $term, 2, [], [
+            new PlacementRecord($agent, null, null, PlacementState::Stopped, placementId: $current),
+        ]);
+        $manager->drainQueue();
+        self::assertSame([], $manager->heldFrames());
+    }
+
+    public function testStopWhileRefrozenKeepsTheExactPendingSubscriptionInItsOriginalHold(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement] = $this->recoveringPlacement($manager);
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        $order = $placement->localPlacementId($agent);
+        $page = HeldAgentSignalTestRouter::ORDERED_PAGE;
+        Hilos::$sr->queueSignal(new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+            new SignalName($page), new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, $page, deliveryId: 'replay-subscribe'));
+        $manager->drainQueue();
+        $id = $manager->agentSignalHolds()->getWatermark();
+        self::assertCount(1, $manager->heldFrames());
+        $manager->reportStopped($agent);
+        $manager->drainQueue();
+        self::assertSame($id, $manager->agentSignalHolds()->getWatermark());
+        self::assertCount(1, $manager->heldFrames());
+        self::assertSame($order, $manager->heldFrames()[0]->recovery->origin);
+        self::assertSame([], $manager->pageErrorFrames());
+    }
+
+    /** @return iterable<string, array{bool, bool}> Admission of the younger update relative to stop recovery */
+    public static function refreezeUpdateAdmissions(): iterable
+    {
+        yield 'already parked' => [true, false];
+        yield 'parked during client lookup' => [true, true];
+        yield 'terminal update' => [false, false];
+    }
+
+    #[DataProvider('refreezeUpdateAdmissions')]
+    public function testRefreezeRecoversAnIncompleteUpdateWithoutAbandoningTheYoungerReplay(bool $younger, bool $duringLookup): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement] = $this->recoveringPlacement($manager);
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        $page = HeldAgentSignalTestRouter::ORDERED_PAGE;
+        $index = new ReflectionMethod(DaemonManager::class, 'pendingPageIndex')->invoke($manager);
+        $pair = [];
+        self::assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $pair));
+        $client = new HeldAgentSignalTestWebSocket($pair[0], self::ACCEPT_KEY);
+        $server = new HeldAgentSignalTestWebSocketServer('127.0.0.1', 0);
+        $server->attach($client);
+        $manager->registerServer($server);
+        Hilos::$sr->subscribeToPage($page, new WebSocketPageSubscribeSignalDTO(self::ACCEPT_KEY, $page));
+        try {
+            $client->update($page, ['version' => 1]);
+            $manager->drainQueue();
+            $originalHold = $manager->heldFrames()[0];
+            $accepted = $placement->localPlacementId($agent);
+            $manager->workerServer->seatAgentUnderWay($agent);
+            $manager->reportStarted($agent);
+            $manager->workerServer->reportPlacementWorkerStarted($agent, $accepted);
+            $manager->drainQueue();
+            self::assertSame([$originalHold->signal->data], $manager->workerServer->updates);
+            self::assertSame([], $manager->heldFrames());
+            $oldToken = $originalHold->signal->data->deliveryId;
+            self::assertTrue($client->isDeliveryPending($page, $oldToken));
+            self::assertNotNull($index->get(self::ACCEPT_KEY, $oldToken));
+            $lookup = null;
+            if ($duringLookup) {
+                $candidates = array_filter(iterator_to_array($index->recoveryCandidates([$agent]), false), is_int(...));
+                self::assertCount(1, $candidates);
+                $lookup = new ReflectionMethod(DaemonManager::class, 'pendingPageRecoveryCandidate')->invoke(
+                    $manager, new SignalDispatch(null, static function (): Generator { yield; }), reset($candidates), true,
+                );
+                self::assertTrue($lookup->valid());
+            }
+
+            if ($younger) {
+                $next = new PlacementId(self::FIRST_PLACING_LEADER, self::REPLAY_TERM, 2);
+                $placement->onPlaceAgent(self::FIRST_PLACING_LEADER, new PeerPlaceAgentDTO($agent, null, $next));
+                $placement->beginLocalPlacementRecovery($agent, $next);
+                $client->update($page, ['version' => 2]);
+                $manager->drainQueue();
+                $holdId = $manager->agentSignalHolds()->getWatermark();
+                $held = $manager->heldFrames()[0];
+                self::assertSame(['version' => 2], $held->signal->data->params);
+                $token = $held->signal->data->deliveryId;
+                self::assertTrue($client->isDeliveryPending($page, $token));
+                self::assertNotNull($index->get(self::ACCEPT_KEY, $token));
+            }
+            if ($lookup !== null) {
+                $lookup->next();
+                self::assertFalse($lookup->valid());
+            } else {
+                $manager->reportStopped($agent);
+            }
+            $manager->drainQueue();
+
+            self::assertFalse($client->isDeliveryPending($page, $oldToken));
+            self::assertNull($index->get(self::ACCEPT_KEY, $oldToken));
+            self::assertInstanceOf(HeldAgentSignalTestRouter::class, Hilos::$sr);
+            if (!$younger) {
+                self::assertSame([['type' => SignalConstants::PAGE_RESUBSCRIBE, 'data' => ['page' => $page, 'params' => ['version' => 1]]]],
+                    $client->pageRecoveryFrames);
+                return;
+            }
+
+            self::assertTrue($client->isDeliveryPending($page, $token));
+            self::assertNotNull($index->get(self::ACCEPT_KEY, $token));
+            self::assertSame($held, $manager->agentSignalHolds()->get($holdId)?->parked);
+            self::assertSame([], $client->pageRecoveryFrames);
+            if (!$duringLookup) {
+                $manager->workerServer->seatAgentUnderWay($agent);
+                $manager->reportStarted($agent);
+            }
+            $manager->workerServer->reportPlacementWorkerStarted($agent, $next);
+            $manager->drainQueue();
+            self::assertSame([$originalHold->signal->data, $held->signal->data], $manager->workerServer->updates);
+            self::assertSame([], $manager->heldFrames());
+            self::assertTrue($client->isDeliveryPending($page, $token));
+        } finally {
+            $client->close();
+            socket_close($pair[1]);
+        }
+    }
+
+    public function testRefreezeKeepsTheOriginalFrameUntilAnOrdinaryPlacementStop(): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        [$placement] = $this->recoveringPlacement($manager);
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        $order = $placement->localPlacementId($agent);
+        $manager->workerServer->seatAgentUnderWay($agent);
+        $manager->sendToAgent($agent, null, self::MASTER_SIGNAL, new SignalData());
+        $manager->drainQueue();
+        $holdId = $manager->agentSignalHolds()->getWatermark();
+        $recovery = $placement->placementRecovery($agent);
+
+        $manager->onAgentStartFailed($agent, 'protected mode holds the node', $recovery);
+        $manager->drainQueue();
+        self::assertSame($recovery, $manager->agentSignalHolds()->get($holdId)?->parked?->recovery);
+        self::assertCount(1, $manager->heldFrames());
+        self::assertSame([], $manager->workerServer->deliveries);
+
+        $placement->onStopAgent(self::FIRST_PLACING_LEADER, new PeerStopAgentDTO($agent, null, self::REPLAY_TERM, 'stop', $order));
+        $manager->onAgentStartFailed($agent, 'it was stopped while waiting for its earlier stop report');
+        $manager->drainQueue();
+        self::assertSame([], $manager->heldFrames());
+        self::assertSame([], $manager->workerServer->deliveries);
+    }
+
     /** The placement view can name this node before the leader's start order reaches it. */
     public function testAFrameFromAnotherNodeAheadOfTheLeadersOrderWaitsAndReachesTheAgentAfterItsStart(): void
     {
@@ -992,6 +1527,118 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         $this->assertInstanceOf(PageSubscriptionErrorSignalData::class, $error);
         $this->assertSame('node_unreachable', $error->errorCode);
         $this->assertSame([], $manager->heldFrames());
+    }
+
+    public function testAPlacementVerdictCanExpireBetweenItsQueuedAnnouncementsAndPhysicalSend(): void
+    {
+        $this->declareGoneListeners(AgentsGoneBothTestHilos::class);
+        $manager = new HeldAgentSignalTestManager();
+        foreach ([AgentsGoneTestListener::TYPE, OAuthAgentsGoneTestListener::TYPE] as $recipient) {
+            $manager->workerServer->seatAgentUnderWay($recipient);
+            $manager->reportStarted($recipient);
+        }
+        $current = true;
+        $guard = static function () use (&$current): bool { return $current; };
+        $manager->onAgentNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT, null, 'unplaced: no fit', current: $guard);
+        self::assertSame(2, Hilos::$sr->getQueuedSignalCount());
+        $current = false;
+        $manager->drainQueue();
+        self::assertSame([], $manager->workerServer->deliveries);
+
+        $current = true;
+        $manager->onAgentNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT, null, 'unplaced: no fit', current: $guard);
+        $manager->drainQueue();
+        self::assertSame([
+            HilosSignalConstants::HILOS_AGENTS_GONE . '@' . AgentsGoneTestListener::TYPE,
+            HilosSignalConstants::HILOS_OAUTH_AGENTS_GONE . '@' . OAuthAgentsGoneTestListener::TYPE,
+        ], $manager->workerServer->deliveries);
+    }
+
+    public function testAnAdmittedPlacementRefusalLosesAuthorityWhileWaitingForItsEffect(): void
+    {
+        $this->declareGoneListeners(AgentsGoneBothTestHilos::class);
+        $manager = new HeldAgentSignalTestManager();
+        $this->queueSubscribe(HeldAgentSignalTestRouter::UNPLACED_PAGE);
+        $manager->drainQueue();
+        $held = $manager->heldFrames();
+        self::assertCount(1, $held);
+
+        SignalDispatcherFixture::owner($manager)->queueSignalEffect(static function (): Generator {
+            yield;
+        }, null);
+        $current = true;
+        $manager->onAgentNotPlaced(HeldAgentSignalTestRouter::COLD_AGENT, null, 'unplaced: no fit',
+            current: static function () use (&$current): bool { return $current; });
+        $current = false;
+        $manager->drainQueue();
+
+        self::assertSame($held, $manager->heldFrames());
+        self::assertSame([], $manager->pageErrorFrames());
+        self::assertSame([], $manager->workerServer->deliveries);
+    }
+
+    /**
+     * @param bool $answerFirst Whether the first candidate answers before the decision is superseded
+     */
+    #[TestWith([false])]
+    #[TestWith([true])]
+    public function testPlacementRefusalRechecksItsAuthorityAroundEachClientLookup(bool $answerFirst): void
+    {
+        $manager = new HeldAgentSignalTestManager();
+        $agent = HeldAgentSignalTestRouter::COLD_AGENT;
+        $page = HeldAgentSignalTestRouter::COLD_PAGE;
+        foreach (['first', 'second'] as $acceptKey) {
+            $manager->deliverSignalToAgent($agent, null, new SignalDTO(
+                new SignalSource(SignalSource::WEBSOCKET), new SignalType(SignalTypeConstants::PAGE_SUBSCRIBE),
+                new SignalName($page), new WebSocketPageSubscribeSignalDTO($acceptKey, $page),
+            ));
+        }
+        self::assertCount(2, $manager->heldFrames());
+        $manager->registerServer(new HeldAgentSignalTestWebSocketServer('127.0.0.1', 0));
+
+        $current = true;
+        $guard = static function () use (&$current): bool { return $current; };
+        $dispatch = SignalDispatcherFixture::direct();
+        $candidates = $manager->agentSignalHolds()->agentCandidates($agent);
+        $work = new ReflectionMethod(DaemonManager::class, 'refuseHeldSignalCandidates')->invoke(
+            $manager, $dispatch, $candidates, ' no fit', 'no fit', true, true, null, $guard,
+        );
+        $work->rewind();
+        $work->next();
+        self::assertSame('first', $dispatch->clientAcceptKey);
+        self::assertFalse($dispatch->clientResolved);
+        if ($answerFirst) {
+            $work->next();
+            self::assertTrue($dispatch->clientResolved);
+            self::assertCount(1, $manager->pageErrorFrames());
+        }
+        $current = false;
+        $work->next();
+        self::assertFalse($work->valid());
+        self::assertCount($answerFirst ? 1 : 2, $manager->heldFrames());
+        self::assertCount($answerFirst ? 1 : 0, $manager->pageErrorFrames());
+    }
+
+    public function testPlacementLossRechecksAuthorityBetweenTheTwoAnnouncementQueues(): void
+    {
+        $this->declareGoneListeners(AgentsGoneBothTestHilos::class);
+        $manager = new HeldAgentSignalTestManager();
+        $current = true;
+        $guard = static function () use (&$current): bool { return $current; };
+        $work = new ReflectionMethod(DaemonManager::class, 'agentsGoneAnnouncement')->invoke(
+            $manager, [HeldAgentSignalTestRouter::COLD_AGENT], AgentsGoneSignalData::REASON_NOT_PLACED, $guard,
+        );
+        $work->rewind();
+        $work->next();
+        $work->next();
+        self::assertSame(1, Hilos::$sr->getQueuedSignalCount());
+
+        $current = false;
+        $work->next();
+        self::assertFalse($work->valid());
+        $announcements = $this->namedGoneFrames();
+        self::assertSame([HilosSignalConstants::HILOS_AGENTS_GONE], array_keys($announcements));
+        self::assertFalse(Hilos::$sr->isSignalApplicable($announcements[HilosSignalConstants::HILOS_AGENTS_GONE]));
     }
 
     /** The real hold-before-ask path receives its negative verdict on the asking stack. */
@@ -1817,6 +2464,127 @@ final class DaemonManagerHeldAgentSignalTest extends TestCase
         Hilos::$cluster = $context;
     }
 
+    /** Reads the ask sent by the isolated placement fixture before simulating its verdict. */
+    private function askForVerdict(ClusterPlacement $placement, string $agent): PeerPlacementRequestDTO
+    {
+        $placement->requirePlacement($agent, null);
+        $mesh = new ReflectionProperty($placement, 'mesh')->getValue($placement);
+        $frames = array_column($mesh->sent, 1);
+        foreach (array_reverse($frames) as $frame) {
+            if ($frame instanceof PeerPlacementRequestDTO && $frame->agentType === $agent) {
+                return $frame;
+            }
+        }
+        self::fail('The placement fixture did not send an ask');
+    }
+
+    /** @return array{ClusterPlacement, SnapshotTestLeadership} Local coordinator and the independent leader knowledge */
+    private function recoveringPlacement(HeldAgentSignalTestManager $manager): array
+    {
+        $this->declareGoneListeners(HeldRecoveryTestHilos::class);
+        Hilos::$cluster = new ClusterContext();
+        $authority = new SnapshotTestLeadership(self::FIRST_PLACING_LEADER, self::REPLAY_TERM);
+        Hilos::$cluster->registerLeadership($authority);
+        $placement = new ClusterPlacement(
+            self::RECOVERY_SOURCE,
+            new FakePlacementMesh([self::RECOVERY_SOURCE => ['slots=10']]),
+            new FakePlacementExecutor(),
+        );
+        Hilos::$cluster->registerPlacement($placement);
+        Hilos::$cluster->registerWorkerPlacement($placement);
+        Hilos::$cluster->registerPlacementVerdictSink($manager);
+        Hilos::$cluster->registerAgentSignalSink($manager);
+        $agent = HeldAgentSignalTestRouter::ORDERED_AGENT;
+        $order = new PlacementId(self::FIRST_PLACING_LEADER, self::REPLAY_TERM, 1);
+        $placement->onPlacementQuery(self::FIRST_PLACING_LEADER, new PeerPlacementQueryDTO('query', self::REPLAY_TERM));
+        $placement->onPlaceAgent(self::FIRST_PLACING_LEADER, new PeerPlaceAgentDTO($agent, null, $order));
+        $placement->beginLocalPlacementRecovery($agent, $order);
+        $this->acceptRecoveryView($placement, self::FIRST_PLACING_LEADER, self::REPLAY_TERM, 1,
+            [self::RECOVERY_SOURCE => [new PeerPlacedAgentEntry($agent, null)]],
+            [new PlacementRecord($agent, null, self::RECOVERY_SOURCE, PlacementState::Started, placementId: $order)]);
+
+        return [$placement, $authority];
+    }
+
+    /**
+     * @param array<string, list<PeerPlacedAgentEntry>> $addresses Compact projection published beside the records
+     * @param list<PlacementRecord> $records Complete records to accept
+     */
+    private function acceptRecoveryView(ClusterPlacement $placement, string $leader, int $term, int $revision,
+        array $addresses, array $records): void
+    {
+        $placement->onPlacementView($leader, new PeerPlacementViewDTO($leader, $addresses,
+            new PlacementSnapshot($leader, $term, $revision, $records)));
+    }
+
+    /**
+     * @param ClusterPlacement $placement Recovery coordinator being handed confirmed worker proof
+     * @param string $agent Original addressed agent
+     * @param string $node Current serving node
+     * @param int $revision Snapshot revision and matching assignment sequence
+     */
+    private function acceptRecoveryAddress(ClusterPlacement $placement, string $agent, string $node, int $revision): void
+    {
+        $this->acceptRecoveryView($placement, self::FIRST_PLACING_LEADER, self::REPLAY_TERM, $revision,
+            [$node => [new PeerPlacedAgentEntry($agent, null)]], [
+                new PlacementRecord($agent, null, $node, PlacementState::Started,
+                    placementId: new PlacementId(self::FIRST_PLACING_LEADER, self::REPLAY_TERM, $revision), workerStarted: true),
+            ]);
+    }
+
+    /**
+     * @param ReflectionMethod $advance Production release selection and continuation
+     * @param SignalDispatcher $dispatcher Original owner of the release slot
+     * @param HeldAgentSignalTestManager $manager Original worker owner
+     * @param PeerServer $peer Original peer queue owner
+     */
+    private function advanceToRecoveryAddressYield(ReflectionMethod $advance, SignalDispatcher $dispatcher,
+        HeldAgentSignalTestManager $manager, PeerServer $peer): void
+    {
+        $work = new ReflectionProperty(SignalDispatch::class, 'work');
+        for ($step = 0; $step < 20; $step++) {
+            $advance->invoke($dispatcher, $manager->workerServer, $peer);
+            $cursor = $dispatcher->retainedState()->released;
+            if ($cursor === null) {
+                continue;
+            }
+            $executing = new ReflectionGenerator($work->getValue($cursor))->getExecutingGenerator();
+            if (new ReflectionGenerator($executing)->getFunction()->getName() === 'walkAddressedDelivery'
+                && $executing->key() === 1) {
+                return;
+            }
+        }
+        self::fail('The release did not reach its final addressed peer yield');
+    }
+
+    /** @return array{PeerServer, PeerLink, Socket} Local addressed queue and its controlled peer socket */
+    private function peerRecoveryRoute(HeldAgentSignalTestManager $manager): array
+    {
+        $peer = new ReflectionClass(PeerServer::class)->newInstanceWithoutConstructor();
+        $identity = NodeIdentity::of(self::RECOVERY_SOURCE, 'Source', NodeRole::Master, []);
+        new ReflectionProperty(PeerServer::class, 'localIdentity')->setValue($peer, $identity);
+        [$link, $reader] = $this->attachRecoveryPeer($peer);
+        $manager->registerServer($peer);
+        $peer->setClientSocketAttacher(static function (): void {});
+
+        return [$peer, $link, $reader];
+    }
+
+    /** @return array{PeerLink, Socket} Current peer slot and its controlled peer socket */
+    private function attachRecoveryPeer(PeerServer $peer): array
+    {
+        $identity = new ReflectionProperty(PeerServer::class, 'localIdentity')->getValue($peer);
+        self::assertTrue(socket_create_pair(AF_UNIX, SOCK_STREAM, 0, $sockets));
+        socket_set_nonblock($sockets[0]);
+        socket_set_nonblock($sockets[1]);
+        $link = new PeerLink($sockets[0], $peer, $identity, false, new PlainSocketTransport($sockets[0]));
+        $link->activate(NodeIdentity::of(self::OTHER_NODE, 'Destination', NodeRole::Master, []));
+        new ReflectionMethod(AbstractServer::class, 'addClient')->invoke($peer, $link);
+        new ReflectionMethod(PeerServer::class, 'attachClient')->invoke($peer, $link);
+        new ReflectionProperty(PeerServer::class, 'activeLinks')->setValue($peer, [self::OTHER_NODE => $link]);
+        return [$link, $sockets[1]];
+    }
+
     /**
      * @return SignalDTO One frame shaped the way the peer transport hands one over
      */
@@ -2086,10 +2854,11 @@ final class HeldAgentSignalTestManager extends DaemonManager
      *
      * @param string $agentType Agent whose start failed
      */
-    public function reportStartFailed(string $agentType): void
+    public function reportStartFailed(string $agentType, ?PlacementRecovery $recovery = null): void
     {
         $this->agentManagerDaemon->handleAgentStartFailed(
             new WorkerAgentStartFailedDTO($agentType, $agentType, null, 'the state it reads did not arrive'),
+            $recovery,
         );
     }
 
@@ -2401,6 +3170,9 @@ final class HeldAgentSignalTestWorkerServer extends WorkerServer
     /** @var list<string> Deliveries as `<signal name>@<agent type>`, in order */
     public array $deliveries = [];
 
+    /** @var list<WebSocketPageUpdateSubscriptionSignalDTO> Updates queued to the worker, awaiting its completion */
+    public array $updates = [];
+
     /** @var list<string> Agent types the freeze stopped and the lift has not asked back yet */
     public array $awaitingResume = [];
 
@@ -2478,10 +3250,67 @@ final class HeldAgentSignalTestWorkerServer extends WorkerServer
     ): void
     {
         $this->deliveries[] = $messageDto->signal->signalName->getName() . '@' . $agentType;
+        if ($messageDto->signal->data instanceof WebSocketPageUpdateSubscriptionSignalDTO) {
+            $this->updates[] = $messageDto->signal->data;
+        }
     }
 
     protected function onStart(): void
     {
+    }
+}
+
+/** A real socket delivery lifetime driven through the frame parser without a listener. */
+final class HeldAgentSignalTestWebSocket extends WebSocketClient
+{
+    /** @var list<array<string, mixed>> Recovery controls admitted to the browser transport */
+    public array $pageRecoveryFrames = [];
+
+    public function __construct(Socket $socket, string $acceptKey)
+    {
+        parent::__construct($socket);
+        $this->handshakeCompleted = true;
+        $this->acceptKey = $acceptKey;
+    }
+
+    /** @param array<string, int> $params Original browser update parameters */
+    public function update(string $page, array $params): void
+    {
+        $this->onFrame(json_encode(['type' => 'page_update_subscription', 'page' => $page, 'params' => $params], JSON_THROW_ON_ERROR));
+    }
+
+    /** @param DeliveryFrame $frame Browser frame arriving at the socket queue */
+    public function sendDeliveryFrame(DeliveryFrame $frame): void
+    {
+        parent::sendDeliveryFrame($frame);
+        if ($frame->getType() === SignalConstants::PAGE_RESUBSCRIBE) {
+            $this->pageRecoveryFrames[] = json_decode($frame->json, true, flags: JSON_THROW_ON_ERROR);
+        }
+    }
+
+    protected function onHandshake(array $headers, string $acceptKey, array $cookies, ?string $clientIp, RequestQueryParams $queryParams): void
+    {
+    }
+
+    protected function onClose(): void
+    {
+    }
+}
+
+final class HeldAgentSignalTestWebSocketServer extends WebSocketServer
+{
+    public function attach(WebSocketClient $client): void
+    {
+        $this->addClient($client);
+    }
+
+    protected function onStart(): void
+    {
+    }
+
+    protected function onCreateClient($socket): WebSocketClientInterface
+    {
+        return new HeldAgentSignalTestWebSocket($socket, 'browser');
     }
 }
 
@@ -2569,4 +3398,14 @@ abstract class OAuthAgentsGoneTestHilos extends Hilos
 abstract class NoAgentsGoneTestHilos extends Hilos
 {
     public const array AGENTS = [];
+}
+
+abstract class HeldRecoveryTestHilos extends Hilos
+{
+    public const array AGENTS = [
+        HeldAgentSignalTestRouter::ORDERED_AGENT => [
+            AgentRegistryKey::SCOPE => AgentScope::CLUSTER,
+            AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY,
+        ],
+    ];
 }

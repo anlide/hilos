@@ -12,6 +12,7 @@ use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
 use Hilos\Core\Router\SignalSource;
 use Hilos\Core\Router\SignalType;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -44,6 +45,35 @@ final class PeerSignalDTOTest extends TestCase
         $this->assertSame(SignalSource::AGENT, $parsed->signal->signalSource->getSource());
         $this->assertSame('chat_message', $parsed->signal->signalName->getName());
         $this->assertSame(['text' => 'hi'], $parsed->signal->data->toArray());
+    }
+
+    public function testPlacementRecoveryRelayIsOptionalAndRoundTripsOnlyWhenTrue(): void
+    {
+        $frame = new PeerSignalDTO('node-A', 'node-B', 'chat_agent', '42', $this->signal());
+        $wire = $frame->toArray();
+        $this->assertArrayNotHasKey('placementRecoveryRelay', $wire);
+        $this->assertArrayNotHasKey('placementRecoveryRelay', PeerSignalDTO::fromArray($wire + ['placementRecoveryRelay' => false])->toArray());
+
+        $relay = PeerSignalDTO::fromArray($wire + ['placementRecoveryRelay' => true]);
+
+        $this->assertSame($wire + ['placementRecoveryRelay' => true], PeerDTO::fromWire($relay->toJson())->toArray());
+    }
+
+    #[DataProvider('invalidPlacementRecoveryRelays')]
+    public function testRejectsNonBooleanPlacementRecoveryRelay(mixed $value): void
+    {
+        $frame = new PeerSignalDTO('node-A', 'node-B', 'chat_agent', '42', $this->signal());
+        $this->expectException(PeerTransportException::class);
+
+        PeerSignalDTO::fromArray($frame->toArray() + ['placementRecoveryRelay' => $value]);
+    }
+
+    public static function invalidPlacementRecoveryRelays(): iterable
+    {
+        yield 'explicit null' => [null];
+        yield 'integer' => [1];
+        yield 'string' => ['true'];
+        yield 'array' => [[]];
     }
 
     public function testPreservesNullAgentIndex(): void

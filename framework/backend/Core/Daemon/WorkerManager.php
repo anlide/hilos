@@ -4079,9 +4079,10 @@ abstract class WorkerManager extends BaseManager implements PageResender
 
             $frames = $this->parkedFrames[$consumerId];
             unset($this->parkedSources[$consumerId], $this->parkedSince[$consumerId], $this->parkedFrames[$consumerId]);
-            $this->reportSourceInterestWait($sources, $ready, $now - $since);
+            $reportedSources = self::describeSources($ready ? $sources : $this->missingSources($sources));
+            $this->reportSourceInterestWait($reportedSources, $ready, $now - $since);
             if (!$ready && $consumerId === self::PARKED_LINK_KEY) {
-                Logger::error('Worker started without the sources it reads: ' . self::describeSources($sources));
+                Logger::error('Worker started without the sources it reads: ' . $reportedSources);
             }
 
             // Only the frame that parked the consumer is past its wait. A later frame of the same
@@ -4178,14 +4179,13 @@ abstract class WorkerManager extends BaseManager implements PageResender
      * late answer, the owner of the state sees nothing at all - and every wait here spans at least
      * one loop pass, so every one of them is worth its line.
      *
-     * @param array<string, list<string>> $collectionKeysByKind Collections the wait was for
+     * @param string $sources Description of the sources waited for on success or still missing on timeout
      * @param bool $ready Whether the state landed, rather than the deadline passing
      * @param float $waitedSeconds How long the wait lasted
      */
-    private function reportSourceInterestWait(array $collectionKeysByKind, bool $ready, float $waitedSeconds): void
+    private function reportSourceInterestWait(string $sources, bool $ready, float $waitedSeconds): void
     {
         $waitedMs = (int)round($waitedSeconds * TimeConstants::MS_PER_SECOND);
-        $sources = self::describeSources($collectionKeysByKind);
         if (!$ready) {
             Logger::warning("Source interest: gave up after {$waitedMs}ms without {$sources}");
 
@@ -4211,6 +4211,24 @@ abstract class WorkerManager extends BaseManager implements PageResender
         }
 
         return true;
+    }
+
+    /**
+     * @param array<string, list<string>> $collectionKeysByKind Collections the wait was for, by kind
+     * @return array<string, list<string>> Collections still missing at the deadline, in input order
+     */
+    private function missingSources(array $collectionKeysByKind): array
+    {
+        $missing = [];
+        foreach ($collectionKeysByKind as $kind => $collectionKeys) {
+            foreach ($collectionKeys as $collectionKey) {
+                if (!SourceInterestRegistry::isReady($kind, $collectionKey)) {
+                    $missing[$kind][] = $collectionKey;
+                }
+            }
+        }
+
+        return $missing;
     }
 
     /**
@@ -4336,9 +4354,7 @@ abstract class WorkerManager extends BaseManager implements PageResender
     }
 
     /**
-     * Renders both halves of a wait for the one line that reports it went unanswered.
-     *
-     * @param array<string, list<string>> $collectionKeysByKind Collections waited for, by kind
+     * @param array<string, list<string>> $collectionKeysByKind Collections to report, by kind
      * @return string Collections named by kind, for a log line
      */
     private static function describeSources(array $collectionKeysByKind): string

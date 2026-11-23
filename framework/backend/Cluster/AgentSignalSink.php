@@ -35,8 +35,16 @@ interface AgentSignalSink
      * @param string $agentType Target agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param SignalDTO $signal Signal to deliver
+     * @param bool $placementRecoveryRelay Whether a previous receiver relayed the frame
+     * @param bool $linkBoundUpload Whether its upload reservation belongs to the inbound link
      * @throws InvalidArgumentException When a tracked subscription refusal cannot be named
      * @throws InvalidFormatException When the tracked delivery has an invalid completion address
      */
-    public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void;
+    public function deliverSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        SignalDTO $signal,
+        bool $placementRecoveryRelay = false,
+        bool $linkBoundUpload = false,
+    ): void;
 }

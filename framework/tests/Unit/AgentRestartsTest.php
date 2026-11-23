@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementMesh;
+use Hilos\Tests\Unit\Cluster\Placement\PlacementQueryFixture;
 use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Hilos\Cluster\ClusterContext;
@@ -19,6 +21,7 @@ use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Cluster\Placement\PlacementRecord;
 use Hilos\Cluster\Placement\PlacementRestartSink;
 use Hilos\Cluster\Placement\PlacementState;
@@ -508,10 +511,11 @@ final class AgentRestartsTest extends TestCase
     {
         [$placement, $mesh] = $this->installCluster(true, ['self' => [], 'remote' => [], 'target' => ['slots=10']]);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('remote', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('target', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'remote', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'target', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
-        $placement->registry()->put(new PlacementRecord('policy', null, 'remote', PlacementState::Started));
+        $order = new PlacementId('self', 0, 1);
+        $placement->registry()->put(new PlacementRecord('policy', null, 'remote', PlacementState::Started, placementId: $order));
 
         $this->restarts->request($this->request('policy'));
         self::assertSame('remote', $mesh->sent[0][0]);
@@ -520,9 +524,9 @@ final class AgentRestartsTest extends TestCase
         self::assertSame(['policy'], array_column($this->restarts->restartingAgents(), 'id'));
         self::assertNull(Hilos::$sr?->getNextQueuedSignal());
 
-        $placement->onAgentStatus('remote', PeerAgentStatusDTO::stopped('policy', null));
+        $placement->onAgentStatus('remote', $mesh->sent[0][1]->stoppedStatus());
         self::assertSame('target', $placement->registry()->get('policy')?->nodeId);
-        $placement->onAgentStatus('target', PeerAgentStatusDTO::started('policy', null, 1));
+        FakePlacementMesh::status($placement, 'target', PeerAgentStatusDTO::started('policy', null, 1));
         $reply = $this->nextReply();
         self::assertSame(CommandConstants::STATUS_OK, $reply->status);
         self::assertSame('target', $reply->payload[CommandConstants::FIELD_NODE_ID]);
@@ -1065,6 +1069,8 @@ final class AgentRestartsTestLeadership implements Leadership
 /** Placement peer facts kept separate from restart forwarding. */
 final class AgentRestartsTestMesh implements PlacementMesh
 {
+    use PlacementQueryFixture;
+
     /** @var list<array{string, PeerDTO}> */
     public array $sent = [];
 
@@ -1076,11 +1082,13 @@ final class AgentRestartsTestMesh implements PlacementMesh
     public function sendToNode(string $nodeId, PeerDTO $frame): bool
     {
         $this->sent[] = [$nodeId, $frame];
+        $this->captureFixtureQuery($frame, $nodeId);
         return true;
     }
 
     public function broadcastToNodes(PeerDTO $frame): void
     {
+        $this->captureFixtureQuery($frame);
     }
 
     public function nodeCapabilities(string $nodeId): ?array

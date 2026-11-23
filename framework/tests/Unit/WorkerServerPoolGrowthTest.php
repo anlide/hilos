@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Placement\PlacementRecovery;
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Leadership;
 use Hilos\Constants\AgentConstants;
@@ -879,7 +881,12 @@ final class PoolGrowthTestWorkerClient extends WorkerClient
      * @param ?string $agentIndex Agent index to start
      * @param list<string> $liveAcceptKeys Accept keys of the node's live sockets; unused here
      */
-    public function sendAgentStart(string $agentType, ?string $agentIndex = null, array $liveAcceptKeys = []): void
+    public function sendAgentStart(
+        string $agentType,
+        ?string $agentIndex = null,
+        array $liveAcceptKeys = [],
+        ?PlacementId $placementId = null,
+    ): void
     {
         $this->startedAgentTypes[] = $agentType;
         $this->startedAgentIndexes[] = $agentIndex;
@@ -922,7 +929,7 @@ final class PoolGrowthTestStartSink implements AgentStartSink
      * @param string $agentId Agent whose start failed
      * @param string $reason Why; unused here
      */
-    public function onAgentStartFailed(string $agentId, string $reason): void
+    public function onAgentStartFailed(string $agentId, string $reason, ?PlacementRecovery $recovery = null): void
     {
         $this->failedAgentIds[] = $agentId;
     }

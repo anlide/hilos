@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Client;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
 use Hilos\Constants\SignalTypeConstants;
@@ -152,6 +153,9 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
 
     /** @var array<string, true> Agents this link was sent agent_stop for, not yet reported stopped by the worker */
     private array $stopsAwaitingReport = [];
+
+    /** @var array<string, ?PlacementId> Outstanding starts sent on this exact connection */
+    private array $startsAwaitingReport = [];
 
     /** The production master supplies the same pool sink to both transport servers. */
     private ?UploadMemoryPoolSink $uploadMemoryPoolSink = null;
@@ -657,12 +661,35 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
      * @throws AgentDaemonCreationFailedException If agent creation fails
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws InvalidFormatException When the stop completion address is invalid
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function handleAgentStartedMessage(WorkerAgentStartedDTO $dto): void
     {
+        $agentId = $dto->agentId;
+        $agent = $this->agentManager->getAgent($agentId);
+        $placementId = $this->startsAwaitingReport[$agentId] ?? null;
+        if ($placementId !== null && ($agent?->hasWorkerClient() !== true || $agent->getWorkerClient() !== $this)) {
+            unset($this->startsAwaitingReport[$agentId]);
+            $this->workerServer->stopOrphanedPlacement($this, AgentId::fromId($agentId), $placementId);
+            return;
+        }
+        if ($agent?->hasWorkerClient() === true && ($agent->getWorkerClient() !== $this || $this->agentManager->isAgentStarted($agentId))) {
+            return;
+        }
+        unset($this->startsAwaitingReport[$agentId]);
         try {
-            $this->agentManager->handleAgentStarted($dto);
+            $this->agentManager->handleAgentStarted(
+                $dto,
+                $placementId === null ? null : fn(): bool => $this->workerServer->acceptsPlacementStartReport($agentId, $placementId),
+            );
+            if ($placementId !== null && $agent !== null && $this->agentManager->getAgent($agentId) === $agent) {
+                if ($this->agentManager->isAgentStarted($agentId)) {
+                    $this->workerServer->reportPlacementWorkerStarted($agentId, $placementId);
+                } else {
+                    $this->workerServer->rejectPlacementStartReport($agentId, $placementId);
+                }
+            }
         } catch (AgentDaemonNotRegisteredException $notRegistered) {
             // Kept loud: the roster missing an agent a worker just started is worth a line
             // whichever of the two cases produced it.
@@ -685,11 +712,31 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      *
      * @param WorkerAgentStartFailedDTO $dto DTO naming the agent whose start did not finish, and why
      * @throws InvalidArgumentException When the master cannot name an answer it owes a held frame
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
     private function handleAgentStartFailedMessage(WorkerAgentStartFailedDTO $dto): void
     {
-        $this->agentManager->handleAgentStartFailed($dto);
+        $agentId = $dto->agentId;
+        $agent = $this->agentManager->getAgent($agentId);
+        $pending = array_key_exists($agentId, $this->startsAwaitingReport);
+        $placementId = $this->startsAwaitingReport[$agentId] ?? null;
+        unset($this->startsAwaitingReport[$agentId]);
+        if ($pending && $this->awaitsStopReport($agentId)) {
+            // A failed start left no worker instance to answer the stop sent behind it.
+            unset($this->stopsAwaitingReport[$agentId]);
+            $this->workerServer->noteWorkerStopReport($this, $agentId);
+        }
+        if ($agent?->hasWorkerClient() !== true || $agent->getWorkerClient() !== $this
+            || $this->agentManager->getAgent($agentId) !== $agent || $this->agentManager->isAgentStarted($agentId)) {
+            return;
+        }
+
+        $recovery = $this->workerServer->reportPlacementStartFailure($agentId, $placementId, $dto->reason);
+        if ($this->agentManager->getAgent($agentId) === $agent) {
+            $this->agentManager->handleAgentStartFailed($dto, $recovery);
+        }
         Hilos::$cluster?->protectedModeEntryGate()?->dispatchReady();
     }
 
@@ -705,9 +752,15 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      */
     private function handleAgentStoppedMessage(WorkerAgentStoppedDTO $dto): void
     {
+        $agent = $this->agentManager->getAgent($dto->agentId);
         $awaited = $this->awaitsStopReport($dto->agentId);
-        unset($this->stopsAwaitingReport[$dto->agentId]);
+        unset($this->stopsAwaitingReport[$dto->agentId], $this->startsAwaitingReport[$dto->agentId]);
         $this->workerServer->noteWorkerStopReport($this, $dto->agentId);
+        // A completion may seat the replacement synchronously, even on this connection.
+        if ($this->agentManager->getAgent($dto->agentId) !== $agent
+            || ($agent?->hasWorkerClient() === true && $agent->getWorkerClient() !== $this)) {
+            return;
+        }
         if ($awaited && !$this->agentManager->hasAgent($dto->agentId)) {
             Logger::info("Agent '{$dto->agentId}' stopped on worker #{$this->workerIndex}");
         }
@@ -1374,9 +1427,14 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index (optional)
      * @param list<string> $liveAcceptKeys Accept keys of the node's live sockets, for the roster reconcile (HIL-664)
+     * @param ?PlacementId $placementId Managed order tied to the resulting report on this link
      */
-    public function sendAgentStart(string $agentType, ?string $agentIndex = null, array $liveAcceptKeys = []): void
-    {
+    public function sendAgentStart(
+        string $agentType,
+        ?string $agentIndex = null,
+        array $liveAcceptKeys = [],
+        ?PlacementId $placementId = null,
+    ): void {
         // external-boundary: the neutral element of the agent id — a singleton is the bare type
         $agentId = $agentType . ($agentIndex !== null ? ":{$agentIndex}" : '');
         Logger::debug("Sending agent_start signal to worker [agentId={$agentId}] [agentType={$agentType}]"
@@ -1387,6 +1445,7 @@ class WorkerClient extends AbstractClient implements WorkerClientInterface
             liveAcceptKeys: $liveAcceptKeys,
         );
 
+        $this->startsAwaitingReport[$agentId] = $placementId;
         $this->sendInTurn($dto->toJson(), $agentId);
     }
 

@@ -37,6 +37,8 @@ final class PeerRtClaimRefusedDTO extends PeerDTO
     /** @var string Payload key: agent of that node that holds them */
     public const string FIELD_HOLDER_AGENT_ID = 'holderAgentId';
 
+    public const string FIELD_AUTHORITY_TERM = PeerPlacementQueryDTO::FIELD_AUTHORITY_TERM;
+
     /**
      * @param string $collectionKey RT collection the refused claim is over
      * @param list<string> $stateIds Rows the refusal is over; empty for the whole collection
@@ -45,6 +47,7 @@ final class PeerRtClaimRefusedDTO extends PeerDTO
      * @param string $agentId Id of that agent, as its own node keys it
      * @param string $holderNodeId Node that holds the rows already
      * @param string $holderAgentId Agent of that node that holds them
+     * @param int $authorityTerm Leader term in which the claim was judged
      */
     public function __construct(
         public readonly string $collectionKey,
@@ -54,6 +57,7 @@ final class PeerRtClaimRefusedDTO extends PeerDTO
         public readonly string $agentId,
         public readonly string $holderNodeId,
         public readonly string $holderAgentId,
+        public readonly int $authorityTerm,
     ) {
     }
 
@@ -83,6 +87,7 @@ final class PeerRtClaimRefusedDTO extends PeerDTO
             AgentConstants::FIELD_AGENT_ID => $this->agentId,
             self::FIELD_HOLDER_NODE_ID => $this->holderNodeId,
             self::FIELD_HOLDER_AGENT_ID => $this->holderAgentId,
+            self::FIELD_AUTHORITY_TERM => $this->authorityTerm,
         ];
     }
 
@@ -96,7 +101,7 @@ final class PeerRtClaimRefusedDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored refusal
-     * @throws PeerTransportException When the frame names no collection, no agent, or no holder
+     * @throws PeerTransportException When the frame names no collection, agent, holder, or valid authority
      */
     public static function fromArray(array $data): static
     {
@@ -119,6 +124,7 @@ final class PeerRtClaimRefusedDTO extends PeerDTO
             agentId: self::readName($data, AgentConstants::FIELD_AGENT_ID, 'refused agent id'),
             holderNodeId: self::readName($data, self::FIELD_HOLDER_NODE_ID, 'holder node'),
             holderAgentId: self::readName($data, self::FIELD_HOLDER_AGENT_ID, 'holder agent'),
+            authorityTerm: self::readAuthorityTerm($data),
         );
     }
 

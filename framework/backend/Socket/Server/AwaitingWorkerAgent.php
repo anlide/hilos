@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Core\Daemon\ParkedAgentSignal;
 
 /**
@@ -29,6 +30,8 @@ final readonly class AwaitingWorkerAgent
      *     seats it must carry again - a policy-placed agent is refused without it off the leader
      * @param float $deadline Monotonic seconds after which the agent gives up and its start is refused
      * @param bool $requiresMonopolistic Whether the agent waits for a monopolistic worker rather than a regular one
+     * @param ?PlacementId $placementId Exact managed order, if the start has one
+     * @param bool $protectedModeReplay Whether this wait belongs to the freeze replay
      */
     public function __construct(
         public string $agentId,
@@ -37,6 +40,8 @@ final readonly class AwaitingWorkerAgent
         public bool $placedByLeader,
         public float $deadline,
         public bool $requiresMonopolistic,
+        public ?PlacementId $placementId = null,
+        public bool $protectedModeReplay = false,
     ) {
     }
 }

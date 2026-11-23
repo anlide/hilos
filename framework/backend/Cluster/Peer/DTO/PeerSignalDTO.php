@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Files\Upload\DTO\UploadMemoryReservationData;
 use Throwable;
@@ -15,9 +16,9 @@ use Throwable;
  * The sending node resolves the final target ({@see $agentType} + {@see $agentIndex}) and
  * puts it in the frame alongside the serialized application {@see SignalDTO}; the receiving
  * node checks {@see $targetNodeId} matches its own id, then delivers the resolved target
- * directly — it never re-routes, which structurally rules out a forward loop or a second
- * fan-out. Routing is one hop: the sender resolves, the receiver executes; multi-hop is out
- * of scope. The inner {@see SignalDTO} is reused verbatim through its own
+ * directly. A held frame can make one addressed placement recovery relay after the new
+ * host is confirmed. The receiver of that relay can only deliver locally.
+ * The inner {@see SignalDTO} is reused verbatim through its own
  * {@see SignalDTO::toArray()} / {@see SignalDTO::fromArray()}, so the application signal
  * contract is unchanged by this transport.
  *
@@ -43,6 +44,9 @@ final class PeerSignalDTO extends PeerDTO
     /** @var string Payload key: the serialized application signal */
     public const string FIELD_SIGNAL = 'signal';
 
+    /** @var string Payload key for the single addressed recovery relay */
+    public const string FIELD_PLACEMENT_RECOVERY_RELAY = 'placementRecoveryRelay';
+
     /**
      * @param string $originNodeId Id of the node that resolved and sent the signal (trace only)
      * @param string $targetNodeId Id of the node the signal is addressed to
@@ -50,6 +54,7 @@ final class PeerSignalDTO extends PeerDTO
      * @param ?string $agentIndex Resolved target agent index, or null for a singleton agent
      * @param SignalDTO $signal Application signal to deliver on the target node
      * @param ?UploadMemoryReservationData $uploadReservation Pre-granted receiver window, omitted for ordinary signals
+     * @param bool $placementRecoveryRelay Whether a prior receiver relayed this frame after recovery
      */
     public function __construct(
         public readonly string $originNodeId,
@@ -58,6 +63,7 @@ final class PeerSignalDTO extends PeerDTO
         public readonly ?string $agentIndex,
         public readonly SignalDTO $signal,
         public readonly ?UploadMemoryReservationData $uploadReservation = null,
+        public readonly bool $placementRecoveryRelay = false,
     ) {
     }
 
@@ -86,6 +92,7 @@ final class PeerSignalDTO extends PeerDTO
             self::FIELD_AGENT_INDEX => $this->agentIndex,
             self::FIELD_SIGNAL => $this->signal->toArray(),
             ...($this->uploadReservation === null ? [] : ['uploadReservation' => $this->uploadReservation->toArray()]),
+            ...($this->placementRecoveryRelay ? [self::FIELD_PLACEMENT_RECOVERY_RELAY => true] : []),
         ];
     }
 
@@ -119,6 +126,13 @@ final class PeerSignalDTO extends PeerDTO
         }
 
         try {
+            $placementRecoveryRelay = array_key_exists(self::FIELD_PLACEMENT_RECOVERY_RELAY, $data)
+                && self::requireBool($data, self::FIELD_PLACEMENT_RECOVERY_RELAY);
+        } catch (InvalidFormatException $e) {
+            throw new PeerTransportException('Peer signal has an invalid placement recovery relay flag: ' . $e->getMessage());
+        }
+
+        try {
             $signal = SignalDTO::fromArray($signalRaw);
             $uploadReservation = array_key_exists('uploadReservation', $data)
                 ? UploadMemoryReservationData::fromArray(self::requireArray($data, 'uploadReservation'))
@@ -136,6 +150,7 @@ final class PeerSignalDTO extends PeerDTO
             agentIndex: is_string($agentIndex) && $agentIndex !== '' ? $agentIndex : null,
             signal: $signal,
             uploadReservation: $uploadReservation,
+            placementRecoveryRelay: $placementRecoveryRelay,
         );
     }
 }

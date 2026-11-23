@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Cluster\Placement\PlacementRecovery;
 use Hilos\Core\Daemon\SignalDispatch;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Closure;
@@ -513,11 +514,12 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * Runs the daemon-side onStart hook for an already-registered agent, records it as started, and logs it.
      *
      * @param WorkerAgentStartedDTO $dto DTO with agent started data
+     * @param ?Closure(): bool $allowsStart Report sanction to check around the daemon's start hook
      * @throws AgentDaemonNotRegisteredException When the roster does not name the agent reported
      * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function handleAgentStarted(WorkerAgentStartedDTO $dto): void
+    public function handleAgentStarted(WorkerAgentStartedDTO $dto, ?Closure $allowsStart = null): void
     {
         $agentId = $dto->agentId;
 
@@ -527,11 +529,14 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
         // was, and what to do about it, belongs to the caller that holds the link
         // ({@see WorkerClient::handleAgentStartedMessage()}); raising it any further than that
         // would cost the whole worker for one stale line.
-        if (!$this->hasAgent($agentId)) {
-            throw new AgentDaemonNotRegisteredException($agentId);
+        $agent = $this->getAgent($agentId) ?? throw new AgentDaemonNotRegisteredException($agentId);
+        if ($allowsStart !== null && !$allowsStart()) {
+            return;
         }
-
-        $this->getAgent($agentId)?->onStart();
+        $agent->onStart();
+        if ($allowsStart !== null && ($this->getAgent($agentId) !== $agent || !$allowsStart())) {
+            return;
+        }
         $wasStarted = isset($this->startedAgentIds[$agentId]);
         $this->startedAgentIds[$agentId] = true;
         $this->rosterRevision++;
@@ -557,15 +562,16 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * scratch, the way an agent stopped for idleness is started again (HIL-629).
      *
      * @param WorkerAgentStartFailedDTO $dto DTO naming the agent whose start did not finish, and why
+     * @param ?PlacementRecovery $recovery Replay obligation captured before removing the failed assignment
      * @throws InvalidArgumentException When the start sink cannot name an answer it owes a held frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function handleAgentStartFailed(WorkerAgentStartFailedDTO $dto): void
+    public function handleAgentStartFailed(WorkerAgentStartFailedDTO $dto, ?PlacementRecovery $recovery = null): void
     {
         Logger::warning("Agent '{$dto->agentId}' did not start: {$dto->reason}");
 
-        $this->reportAgentStartFailed($dto->agentId, $dto->reason);
+        $this->reportAgentStartFailed($dto->agentId, $dto->reason, recovery: $recovery);
     }
 
     /**
@@ -579,15 +585,20 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
      * @param string $agentId Id of the agent whose start failed, in the `type` or `type:index` form
      * @param string $reason Why the start did not finish
      * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
+     * @param ?PlacementRecovery $recovery Live replay obligation that can outlast the failure
      * @throws InvalidArgumentException When the start sink cannot name an answer it owes a held frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function reportAgentStartFailed(string $agentId, string $reason, ?AgentStartSink $immediateStartSink = null): void
-    {
+    public function reportAgentStartFailed(
+        string $agentId,
+        string $reason,
+        ?AgentStartSink $immediateStartSink = null,
+        ?PlacementRecovery $recovery = null,
+    ): void {
         $this->removeAgent($agentId);
 
-        ($immediateStartSink ?? $this->agentStartSink)?->onAgentStartFailed($agentId, $reason);
+        ($immediateStartSink ?? $this->agentStartSink)?->onAgentStartFailed($agentId, $reason, $recovery);
     }
 
     /**
@@ -628,23 +639,14 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 
         $workerIndex = $this->getAgentWorkerInfo($dto->agentId)?->workerIndex ?? 'unknown';
         $this->getAgent($dto->agentId)?->onStop();
+        $this->clearPlacementWorkerProof($dto->agentId);
         $this->removeAgent($dto->agentId);
+        $this->notePlacementAgentStopped($dto->agentId);
 
         // Told after the removal, so a sink that looks at the roster finds it already gone. The
         // one sink there is watches a freeze whose initiator may legally start again, which is
         // why this fact has to travel as an event and not as something re-read later (HIL-482).
         $this->agentStopSink?->onAgentStopped($dto->agentId);
-
-        // The placement map is told separately rather than through that sink, which belongs to
-        // the freeze watchdog alone: an agent that stopped itself after its declared silence
-        // (HIL-628) leaves a map naming a host it no longer runs on, and a second meaning inside
-        // one seam is how the freeze would start reacting to ordinary idleness. It is told behind
-        // the writes read before the report, once they are handed to the peers: the leader places
-        // the agent anew on this note, and the old instance's last write goes out ahead of it.
-        $stopped = AgentId::fromId($dto->agentId);
-        $this->afterStreamedWrites(static function () use ($stopped): void {
-            Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
-        });
 
         Logger::info("Agent '{$dto->agentId}' stopped on worker #{$workerIndex}");
         $this->reportAgentStopped($dto->agentId);
@@ -1495,13 +1497,10 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
                     "Stop hook failed for an agent lost with its worker: {$e->getMessage()}",
                 );
             }
+            $this->clearPlacementWorkerProof($agentId);
             $this->removeAgent($agentId);
+            $this->notePlacementAgentStopped($agentId);
             $this->agentStopSink?->onAgentStopped($agentId);
-
-            $stopped = AgentId::fromId($agentId);
-            $this->afterStreamedWrites(static function () use ($stopped): void {
-                Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index);
-            });
         }
 
         // Told once for the worker rather than once per agent: what a reader can act on is that a
@@ -1514,6 +1513,7 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
 
         return $agentIds;
     }
+
 
     /**
      * Returns what this node owns, as its workers have reported it.
@@ -1557,5 +1557,27 @@ abstract class AgentManagerDaemon implements ReHydrateBarrierSink
     public function workerReaderMap(): SourceReaderMap
     {
         return $this->workerReaderMap ??= new SourceReaderMap();
+    }
+
+    /**
+     * Capture the placement before a new start or takeover can change its order. Its completed
+     * stop still waits for the writes read before the worker's report or departure.
+     *
+     * @param string $agentId Agent whose worker stopped or left
+     */
+    private function notePlacementAgentStopped(string $agentId): void
+    {
+        $stopped = AgentId::fromId($agentId);
+        Hilos::$cluster?->placement()?->noteAgentStopped($stopped->type, $stopped->index, $this->afterStreamedWrites(...));
+    }
+
+    /** @param string $agentId Agent whose worker can no longer prove it runs */
+    private function clearPlacementWorkerProof(string $agentId): void
+    {
+        $placement = Hilos::$cluster?->placement();
+        $placementId = $placement?->localPlacementId($agentId);
+        if ($placementId !== null) {
+            $placement->suspendLocalPlacement($agentId, $placementId, publishAddress: false);
+        }
     }
 }

@@ -36,6 +36,8 @@ final class AgentSignalHold
 
     public readonly bool $subscribe;
 
+    public readonly ?string $deliveryId;
+
     /**
      * @param int $id Monotonic owner-local identity, never reused
      * @param ParkedAgentSignal $parked Newly blocked envelope
@@ -46,10 +48,11 @@ final class AgentSignalHold
         $this->agentId = $parked->agentId;
         $payload = $parked->signal->data;
         $this->correlationId = $payload instanceof CommandRequestDTO || $payload instanceof HttpRequestDTO ? $payload->correlationId : null;
-        $this->acceptKey = $payload instanceof WebSocketPageSubscribeSignalDTO || $payload instanceof WebSocketPageUpdateSubscriptionSignalDTO
-            ? $payload->acceptKey : null;
+        $pageDelivery = $payload instanceof WebSocketPageSubscribeSignalDTO || $payload instanceof WebSocketPageUpdateSubscriptionSignalDTO;
+        $this->acceptKey = $pageDelivery ? $payload->acceptKey : null;
         $this->page = $this->acceptKey !== null ? ($payload->page ?? $parked->signal->signalName->getName()) : null;
         $this->subscribe = $payload instanceof WebSocketPageSubscribeSignalDTO;
+        $this->deliveryId = $pageDelivery ? $payload->deliveryId : null;
     }
 
     /** @return bool Whether the obligation is blocked, rather than released or executing */

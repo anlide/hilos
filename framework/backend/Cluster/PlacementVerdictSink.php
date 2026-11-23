@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Cluster;
 
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
+use Closure;
+use Hilos\Cluster\Placement\PlacementRecovery;
 use Hilos\Core\Exception\InvalidArgumentException;
 use Hilos\Core\Exception\InvalidFormatException;
 
@@ -25,8 +27,16 @@ interface PlacementVerdictSink
      * @param string $agentType Agent type that was not placed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $reason Why the agent was not placed, including the record state
+     * @param ?PlacementRecovery $recovery Live replay obligation that can outlast this refusal
+     * @param ?Closure(): bool $current Whether the admitted placement decision can still take effect
      * @throws InvalidArgumentException When an answer the listener owes a waiting frame cannot be named
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      */
-    public function onAgentNotPlaced(string $agentType, ?string $agentIndex, string $reason): void;
+    public function onAgentNotPlaced(
+        string $agentType,
+        ?string $agentIndex,
+        string $reason,
+        ?PlacementRecovery $recovery = null,
+        ?Closure $current = null,
+    ): void;
 }

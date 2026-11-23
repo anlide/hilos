@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
@@ -38,12 +40,12 @@ final class ClusterPlacementRestartTest extends TestCase
         self::assertInstanceOf(PeerStopAgentDTO::class, $mesh->sent[0][1]);
         self::assertSame([], $sink->placed);
 
-        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
         self::assertSame(self::TARGET, $placement->registry()->get('chat:7')?->nodeId);
         self::assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[1][1]);
         self::assertSame([], $sink->placed);
 
-        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3));
+        FakePlacementMesh::status($placement, self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3));
         self::assertSame([['chat', '7', self::TARGET]], $sink->placed);
         self::assertSame([], $sink->notPlaced);
     }
@@ -54,11 +56,11 @@ final class ClusterPlacementRestartTest extends TestCase
         $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
         unset($mesh->capabilities[self::TARGET]);
 
-        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
 
         self::assertSame(self::HOST, $placement->registry()->get('chat:7')?->nodeId);
         self::assertSame(self::HOST, $mesh->sent[1][0]);
-        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::started('chat', '7', 4));
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::started('chat', '7', 4));
         self::assertSame([['chat', '7', self::HOST]], $sink->placed);
     }
 
@@ -68,7 +70,7 @@ final class ClusterPlacementRestartTest extends TestCase
         $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
         $mesh->capabilities = [];
 
-        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
 
         self::assertSame(PlacementState::Unplaced, $placement->registry()->get('chat:7')?->state);
         self::assertNull($placement->registry()->get('chat:7')?->nodeId);
@@ -79,8 +81,8 @@ final class ClusterPlacementRestartTest extends TestCase
     {
         [$placement, , $sink] = $this->fixture();
         $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
-        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
-        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::failed('chat', '7', 'start refused'));
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        FakePlacementMesh::status($placement, self::TARGET, PeerAgentStatusDTO::failed('chat', '7', 'start refused'));
 
         self::assertSame([['chat', '7', 'start refused']], $sink->notPlaced);
     }
@@ -91,11 +93,11 @@ final class ClusterPlacementRestartTest extends TestCase
         $mesh->capabilities['leader'] = [self::SLOTS];
         $placement->restartElsewhere('chat', '7', self::HOST, 'leader');
 
-        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
         self::assertSame([], $sink->placed);
         self::assertSame(PlacementState::Started, $placement->registry()->get('chat:7')?->state);
 
-        $placement->noteAgentStarted('chat', '7');
+        $placement->noteAgentStarted('chat', '7', placementId: $placement->localPlacementId('chat:7'));
         self::assertSame([['chat', '7', 'leader']], $sink->placed);
     }
 
@@ -117,7 +119,7 @@ final class ClusterPlacementRestartTest extends TestCase
         $placement->onLostLeadership();
         $mesh->sent = [];
 
-        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
 
         self::assertSame([], $mesh->sent);
         self::assertSame([], $sink->placed);
@@ -127,12 +129,12 @@ final class ClusterPlacementRestartTest extends TestCase
     {
         [$placement, , $sink] = $this->fixture();
         $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
-        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
 
         $placement->noteNodeOffline(self::HOST, 100.0);
         self::assertSame([], $sink->notPlaced);
 
-        $placement->onAgentStatus(self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3));
+        FakePlacementMesh::status($placement, self::TARGET, PeerAgentStatusDTO::started('chat', '7', 3));
         self::assertSame([['chat', '7', self::TARGET]], $sink->placed);
     }
 
@@ -140,13 +142,13 @@ final class ClusterPlacementRestartTest extends TestCase
     {
         $mesh = new RestartTestMesh([self::HOST => [self::SLOTS]]);
         $placement = new ClusterPlacement(self::HOST, $mesh, new RestartTestExecutor());
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('chat', '7'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('chat', '7', new PlacementId('leader', 0, 1)));
         $mesh->sent = [];
 
         $placement->beginInPlaceRestart('chat', '7');
         $placement->noteAgentStopped('chat', '7');
         self::assertSame([], $mesh->sent);
-        $placement->onPlacementQuery('leader');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
         self::assertInstanceOf(PeerPlacementReportDTO::class, $mesh->sent[0][1]);
         self::assertSame('chat', $mesh->sent[0][1]->agents[0]->agentType);
         $mesh->sent = [];
@@ -164,7 +166,7 @@ final class ClusterPlacementRestartTest extends TestCase
         $placement->restartElsewhere('chat', '7', self::HOST, self::TARGET);
         $placement->registry()->put(new PlacementRecord('chat', '7', self::HOST, PlacementState::Refused));
 
-        $placement->onAgentStatus(self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
+        FakePlacementMesh::status($placement, self::HOST, PeerAgentStatusDTO::stopped('chat', '7'));
 
         self::assertSame(PlacementState::Refused, $placement->registry()->get('chat:7')?->state);
         self::assertCount(1, $mesh->sent);
@@ -181,8 +183,8 @@ final class ClusterPlacementRestartTest extends TestCase
         $sink = new RestartTestSink();
         $placement = new ClusterPlacement('leader', $mesh, new RestartTestExecutor(), restartSink: $sink);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport(self::HOST, new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport(self::TARGET, new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, self::HOST, new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, self::TARGET, new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->registry()->put(new PlacementRecord('chat', '7', self::HOST, PlacementState::Started));
 
@@ -193,6 +195,8 @@ final class ClusterPlacementRestartTest extends TestCase
 /** Peer links and capabilities mutable at the stop boundary. */
 final class RestartTestMesh implements PlacementMesh
 {
+    use PlacementQueryFixture;
+
     /** @var list<array{string, PeerDTO}> */
     public array $sent = [];
 
@@ -207,11 +211,13 @@ final class RestartTestMesh implements PlacementMesh
     public function sendToNode(string $nodeId, PeerDTO $frame): bool
     {
         $this->sent[] = [$nodeId, $frame];
+        $this->captureFixtureQuery($frame, $nodeId);
         return !in_array($nodeId, $this->silent, true);
     }
 
     public function broadcastToNodes(PeerDTO $frame): void
     {
+        $this->captureFixtureQuery($frame);
     }
 
     public function nodeCapabilities(string $nodeId): ?array

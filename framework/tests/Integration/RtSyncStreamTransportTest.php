@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Integration;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Hilos\Core\Daemon\SignalDispatch;
 use Closure;
@@ -21,6 +22,7 @@ use Hilos\Cluster\Peer\DTO\PeerHeartbeatDTO;
 use Hilos\Cluster\Peer\DTO\PeerHelloDTO;
 use Hilos\Cluster\Peer\DTO\PeerPingDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyAckDTO;
 use Hilos\Cluster\Peer\DTO\PeerReadyDTO;
@@ -34,6 +36,8 @@ use Hilos\Cluster\Peer\DTO\PeerWelcomeDTO;
 use Hilos\Cluster\Peer\PeerLink;
 use Hilos\Cluster\Peer\PeerServer;
 use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
@@ -1757,8 +1761,8 @@ final class RtSyncStreamTransportTest extends TestCase
             ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]), 'node-b');
         $there->sendFrame($this->signalToReader());
         $there->sendFrame(new PeerAgentRestartDTO('cid-1', 'node-b', RtSyncStreamTransportTestAgent::AGENT_TYPE, null, null, false));
-        $there->sendFrame(new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, null));
-        $there->sendFrame(new PeerStopAgentDTO('stream_bystander', null));
+        $there->sendFrame(new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, null, 0, 'stop-1'));
+        $there->sendFrame(new PeerStopAgentDTO('stream_bystander', null, 0, 'stop-2'));
         $there->write();
 
         $atOnce = $this->wireDtos($socket);
@@ -1785,17 +1789,22 @@ final class RtSyncStreamTransportTest extends TestCase
 
         $there->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1',
             ['blob' => str_repeat('x', RtSyncStreamFrame::MAX_PART_BYTES)]), 'node-b');
-        $there->sendFrame(new PeerPlaceAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, null));
-        $there->sendFrame(new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, null));
+        $order = new PlacementId('node-b', 0, 1);
+        $there->sendFrame(new PeerPlaceAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, null, $order));
+        $there->sendFrame(new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, null, 0, 'stop-3', $order));
+        $there->sendFrame(new PeerPlacementQueryDTO('acknowledgement', 0));
         $there->write();
 
-        $this->assertSame([PeerRtSyncStreamDTO::class], $this->wireFrames($socket), 'The order and the stop wait for the write\'s last part');
+        $this->assertSame([PeerRtSyncStreamDTO::class], $this->wireFrames($socket), 'The placement frames wait for the last part');
 
         $there->rtSyncStream()->receive(RtSyncStreamFrame::ack($there->rtSyncStream()->streamId, 1, 0, RtSyncStreamStatus::Next));
         $there->write();
 
-        $this->assertSame([PeerRtSyncStreamDTO::class, PeerPlaceAgentDTO::class, PeerStopAgentDTO::class], $this->wireFrames($socket),
-            'The order behind the write\'s last part, the stop behind the order');
+        $this->assertSame(
+            [PeerRtSyncStreamDTO::class, PeerPlaceAgentDTO::class, PeerStopAgentDTO::class, PeerPlacementQueryDTO::class],
+            $this->wireFrames($socket),
+            'The absence query follows the order and stop it is meant to judge',
+        );
     }
 
     /**
@@ -2267,9 +2276,9 @@ final class RtSyncStreamTransportTest extends TestCase
         $donor->sendFrame($secondSignal);
         $new = $this->replacementPair($a, $b, true);
         $new[1][0]->rtSyncStream()->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-3', ['owner' => null]), 'node-b');
-        $stop = new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, null);
+        $stop = new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, null, 0, 'stop-4');
         $restart = new PeerAgentRestartDTO('cid-1', 'node-b', RtSyncStreamTransportTestAgent::AGENT_TYPE, null, null, false);
-        $secondStop = new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, 'other');
+        $secondStop = new PeerStopAgentDTO(RtSyncStreamTransportTestAgent::AGENT_TYPE, 'other', 0, 'stop-5');
         $donor->sendPackedFrame($stop, $stop->toJson());
         $donor->sendFrame($restart);
         $donor->sendFrame($secondStop);
@@ -2638,16 +2647,20 @@ final class RtSyncStreamTransportTest extends TestCase
         $b->setRtSyncStreamWake(static function (): void {
         });
         $old = $this->replacementPair($a, $b, false);
+        $placement = new ClusterPlacement('node-b', $b, $this->master->worker);
+        $placement->onPlacementQuery('node-a', new PeerPlacementQueryDTO('takeover', 7));
+        $this->relayReplacement($old[1], $old[0]);
         $donor = $old[1][0]->rtSyncStream();
         $donor->send(new RtSyncCreatedSignalData(self::COLLECTION, 'row-1', ['owner' => null]), 'node-b');
         $answered = 0;
         $b->afterRtWritesAnswered(static function () use (&$answered): void {
             ++$answered;
         });
-        $placement = new ClusterPlacement('node-b', $b, $this->master->worker);
-        new ReflectionProperty(ClusterPlacement::class, 'hosted')->setValue($placement, [RtSyncStreamTransportTestAgent::AGENT_TYPE => 2]);
-        new ReflectionProperty(ClusterPlacement::class, 'placingLeaderId')->setValue($placement, 'node-a');
-        $placement->noteAgentStopped(RtSyncStreamTransportTestAgent::AGENT_TYPE, null);
+        $agentType = RtSyncStreamTransportTestAgent::AGENT_TYPE;
+        new ReflectionProperty(ClusterPlacement::class, 'hosted')->setValue($placement, [
+            $agentType => new PlacementRecord($agentType, null, 'node-b', PlacementState::Started),
+        ]);
+        $placement->noteAgentStopped($agentType, null);
         $this->answerRtWrite($links['node-c']);
         $this->answerRtWrite($links['node-d']);
         $new = $this->replacementPair($a, $b, true);

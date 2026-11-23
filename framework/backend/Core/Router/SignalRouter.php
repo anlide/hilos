@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Hilos\Core\Router;
 
 use Closure;
+use WeakMap;
 use Generator;
 use Hilos\API\Router\Exception\GroupSubscriptionNotFoundException;
 use Hilos\API\Router\Exception\PageSubscriptionMismatchException;
 use Hilos\API\Router\Exception\PageSubscriptionNotFoundException;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Placement\AgentLocationKind;
+use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Constants\HilosSignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -164,6 +166,12 @@ class SignalRouter
     /** @var SplQueue<SignalDTO|LocalClientSignalBatch> Original FIFO; local batches occupy one finite obligation */
     private SplQueue $queuedSignals;
 
+    /** @var WeakMap<SignalDTO, Closure(): bool> Authority of locally queued effects */
+    private WeakMap $signalGuards;
+
+    /** @var WeakMap<AgentAddressedDestination, true> Addresses resolved by placement, eligible for a fresh lookup */
+    private WeakMap $placementDestinations;
+
     /** @var ?Closure(): void Local dispatch cue; worker routers leave it unbound */
     private ?Closure $queueWake = null;
 
@@ -209,6 +217,8 @@ class SignalRouter
     public function __construct()
     {
         $this->queuedSignals = new SplQueue();
+        $this->signalGuards = new WeakMap();
+        $this->placementDestinations = new WeakMap();
         $this->subscriptions = new SubscriptionRegistry();
         $this->emitter = RandomHelper::hex(self::EMITTER_RANDOM_BYTES);
     }
@@ -421,6 +431,24 @@ class SignalRouter
         SignalNameInterface $signalName,
         SignalDataInterface $signalData,
     ): void {
+        $this->enqueueSignal($signalSource, $signalType, $signalName, $signalData);
+    }
+
+    /**
+     * @param SignalSourceInterface $signalSource Source of the signal
+     * @param SignalTypeInterface $signalType Signal transport
+     * @param SignalNameInterface $signalName Signal to deliver
+     * @param SignalDataInterface $signalData Signal payload
+     * @param ?Closure(): bool $current Local authority that follows the original envelope
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    private function enqueueSignal(
+        SignalSourceInterface $signalSource,
+        SignalTypeInterface $signalType,
+        SignalNameInterface $signalName,
+        SignalDataInterface $signalData,
+        ?Closure $current = null,
+    ): void {
         if ($signalType->getType() === SignalTypeConstants::AGENT_SIGNAL && $signalData instanceof AgentSignalData) {
             $receiptId = JournalReceiptScope::stampHandover();
             if ($receiptId !== null) {
@@ -436,8 +464,49 @@ class SignalRouter
             $signalData,
             Hilos::$ac?->captureSignalMeta() ?? [],
         );
+        if ($current !== null) {
+            $this->signalGuards[$signal] = $current;
+        }
         $this->queuedSignals->enqueue($signal);
         $this->queueWake?->__invoke();
+    }
+
+    /**
+     * @param SignalSourceInterface $source Source of the local effect
+     * @param SignalTypeInterface $type Signal transport
+     * @param SignalNameInterface $name Signal to deliver
+     * @param SignalDataInterface $data Signal payload
+     * @param Closure(): bool $current Whether the effect is still authorized at delivery
+     * @throws InvalidArgumentException When the signal name is empty
+     */
+    public function queueGuardedSignal(
+        SignalSourceInterface $source,
+        SignalTypeInterface $type,
+        SignalNameInterface $name,
+        SignalDataInterface $data,
+        Closure $current,
+    ): void {
+        $this->enqueueSignal($source, $type, $name, $data, $current);
+    }
+
+    /**
+     * @param SignalDTO $signal Original signal still queued or held here
+     * @return bool Whether it can still take effect
+     */
+    public function isSignalApplicable(SignalDTO $signal): bool
+    {
+        $current = $this->signalGuards[$signal] ?? null;
+
+        return $current === null || $current();
+    }
+
+    /**
+     * @param AgentAddressedDestination $destination Originally resolved address
+     * @return bool Whether it was resolved by the placement lookup
+     */
+    public function isPlacementDestination(AgentAddressedDestination $destination): bool
+    {
+        return isset($this->placementDestinations[$destination]);
     }
 
     /**
@@ -1404,16 +1473,14 @@ class SignalRouter
             }
 
             $location = $placement->locate($destination->agentType, $destination->agentIndex);
-            if ($location->kind === AgentLocationKind::Here) {
-                continue;
+            if ($location->kind !== AgentLocationKind::Here) {
+                $destinations[$index] = $location->nodeId !== null
+                    ? new RemoteAgentDestination($location->nodeId, $destination->agentType, $destination->agentIndex)
+                    : new UnknownAgentDestination($destination->agentType, $destination->agentIndex);
             }
-
-            // A location naming a node carries its id and no other location does, so reading the
-            // id is how the remaining two cases are told apart - not a second opinion about what
-            // the lookup already answered.
-            $destinations[$index] = $location->nodeId !== null
-                ? new RemoteAgentDestination($location->nodeId, $destination->agentType, $destination->agentIndex)
-                : new UnknownAgentDestination($destination->agentType, $destination->agentIndex);
+            if ($placement instanceof ClusterPlacement) {
+                $this->placementDestinations[$destinations[$index]] = true;
+            }
         }
 
         return $destinations;

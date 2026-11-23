@@ -45,12 +45,53 @@ final class PlacementAsks
     /**
      * @param string $agentId Address whose request is being sent
      * @param float $deadline Existing suppression deadline, calculated by the coordinator
+     * @param ?string $leaderNodeId Destination of the request, if it has one
+     * @param ?int $authorityTerm Authority of the destination, where a term is known
+     * @param ?string $requestId Wire identity, absent for unsent asks
      */
-    public function remember(string $agentId, float $deadline): void
-    {
-        $ask = new PlacementAsk($agentId, $deadline);
+    public function remember(
+        string $agentId,
+        float $deadline,
+        ?string $leaderNodeId = null,
+        ?int $authorityTerm = null,
+        ?string $requestId = null,
+    ): void {
+        $ask = new PlacementAsk($agentId, $deadline, $leaderNodeId, $authorityTerm, $requestId);
         $this->pending[$agentId] = $ask;
         $this->expirations->insert($ask, -$deadline);
+    }
+
+    /**
+     * @param string $agentId Address whose verdict arrived
+     * @param ?string $leaderNodeId Leader currently responsible for the verdict
+     * @param ?int $authorityTerm Leader's current term, when known
+     * @return bool Whether this authority owns the existing ask
+     */
+    public function matchesAuthority(string $agentId, ?string $leaderNodeId, ?int $authorityTerm): bool
+    {
+        $ask = $this->pending[$agentId] ?? null;
+
+        return $ask !== null && $ask->leaderNodeId === $leaderNodeId && $ask->authorityTerm === $authorityTerm;
+    }
+
+    /**
+     * @param string $agentId Address whose verdict arrived
+     * @param string $leaderNodeId Leader that answered
+     * @param int $authorityTerm Term carried by the answer
+     * @param string $requestId Exact ask answered
+     * @param float $now Current suppression-clock moment
+     * @return ?PlacementAsk Consumed request when the reply exactly answers a live ask
+     */
+    public function takeVerdict(string $agentId, string $leaderNodeId, int $authorityTerm, string $requestId, float $now): ?PlacementAsk
+    {
+        if (!$this->isPending($agentId, $now) || !$this->matchesAuthority($agentId, $leaderNodeId, $authorityTerm)
+            || $this->pending[$agentId]->requestId !== $requestId) {
+            return null;
+        }
+        $ask = $this->pending[$agentId];
+        $this->forget($agentId);
+
+        return $ask;
     }
 
     /** @param string $agentId Address explicitly canceled or answered negatively */

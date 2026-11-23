@@ -6,6 +6,7 @@ namespace Hilos\Core\Daemon;
 
 use Closure;
 use Generator;
+use Hilos\Cluster\Placement\PlacementRecovery;
 use Hilos\Core\Exception\LogicException;
 use Throwable;
 
@@ -31,6 +32,9 @@ final class AgentSignalHolds
     /** @var array<string, SignalHoldIndex> Pending identities by addressed agent */
     private array $byAgent = [];
 
+    /** @var array<string, SignalHoldIndex> Recovery identities across parking, release and repark */
+    private array $byRecoveryAgent = [];
+
     /** @var array<string, SignalHoldIndex> Pending identities by caller correlation */
     private array $byCorrelation = [];
 
@@ -42,6 +46,9 @@ final class AgentSignalHolds
 
     /** @var array<string, array<string, SignalHoldIndex>> Page obligation identities by connection and page */
     private array $byPage = [];
+
+    /** @var array<string, array<string, array<string, int>>> Exact held page deliveries by connection, delivery, and agent */
+    private array $byPageDelivery = [];
 
     /** @var array<string, int> Whole-connection invalidations awaiting indexed physical cleanup */
     private array $canceledConnections = [];
@@ -65,7 +72,7 @@ final class AgentSignalHolds
     /** @var array<int, true> Parked protected-resume identities */
     private array $resumeWaits = [];
 
-    /** @param ?Closure(AgentSignalHold): void $changed Actual obligation mutation, never a delivery callback */
+    /** @param ?Closure(AgentSignalHold, ?int): void $changed Obligation mutation and successor of a settled recovery head */
     public function __construct(private readonly ?Closure $changed = null)
     {
         $this->pending = new SignalHoldIndex();
@@ -92,12 +99,18 @@ final class AgentSignalHolds
             }
         }
         ($this->byAgent[$hold->agentId] ??= new SignalHoldIndex())->add($hold->id);
+        if ($parked->recovery !== null) {
+            ($this->byRecoveryAgent[$hold->agentId] ??= new SignalHoldIndex())->add($hold->id);
+        }
         if ($hold->correlationId !== null) {
             ($this->byCorrelation[$hold->correlationId] ??= new SignalHoldIndex())->add($hold->id);
         }
         if ($hold->acceptKey !== null) {
             ($this->byAcceptKey[$hold->acceptKey] ??= new SignalHoldIndex())->add($hold->id);
             ($this->byPage[$hold->acceptKey][$hold->page] ??= new SignalHoldIndex())->add($hold->id);
+        }
+        if ($hold->acceptKey !== null && $hold->deliveryId !== null) {
+            $this->byPageDelivery[$hold->acceptKey][$hold->deliveryId][$hold->agentId] = $hold->id;
         }
         $this->parkedCount++;
         $this->notifyChanged($hold);
@@ -112,6 +125,18 @@ final class AgentSignalHolds
     public function get(int $id): ?AgentSignalHold
     {
         return $this->entries[$id] ?? null;
+    }
+
+    /**
+     * @param PendingPageDelivery $delivery Exact selected subscription attempt
+     * @return ?AgentSignalHold Original obligation, including release still in dispatch
+     */
+    public function pageDeliveryHold(PendingPageDelivery $delivery): ?AgentSignalHold
+    {
+        $id = $this->byPageDelivery[$delivery->acceptKey][$delivery->deliveryId][$delivery->agentId] ?? null;
+        $hold = $id === null ? null : $this->get($id);
+
+        return $hold?->page === $delivery->page ? $hold : null;
     }
 
     /**
@@ -249,6 +274,9 @@ final class AgentSignalHolds
         if ($hold->isParked() && $hold->parked === $parked) {
             return;
         }
+        if ($parked->recovery !== null && ($hold->parked ?? $hold->dispatch?->release)?->recovery === null) {
+            ($this->byRecoveryAgent[$hold->agentId] ??= new SignalHoldIndex())->add($id);
+        }
         if (!$hold->isParked()) {
             $this->parkedCount++;
         }
@@ -257,6 +285,34 @@ final class AgentSignalHolds
         $hold->released = false;
         $hold->dispatch = null;
         $this->notifyChanged($hold);
+    }
+
+    /**
+     * Attach recovery to the existing envelope without changing its current release slot.
+     *
+     * @param int $id Original live obligation
+     * @param PlacementRecovery $recovery Placement proof owed to this obligation
+     * @throws Throwable When updating a parked obligation fails
+     */
+    public function retainRecovery(int $id, PlacementRecovery $recovery): void
+    {
+        $hold = $this->entries[$id] ?? null;
+        $parked = $hold?->parked ?? $hold?->dispatch?->release;
+        if ($parked === null || $parked->recovery !== null) {
+            return;
+        }
+        $parked = $parked->withRecovery($recovery);
+        if ($hold->isParked()) {
+            $this->park($hold->id, $parked);
+            return;
+        }
+
+        ($this->byRecoveryAgent[$hold->agentId] ??= new SignalHoldIndex())->add($hold->id);
+        if ($hold->released) {
+            $hold->parked = $parked;
+        } else {
+            $hold->dispatch->release = $parked;
+        }
     }
 
     /**
@@ -292,6 +348,17 @@ final class AgentSignalHolds
         if ($this->byAgent[$hold->agentId]->isEmpty()) {
             unset($this->byAgent[$hold->agentId]);
         }
+        $nextRecoveryId = null;
+        $recoveryOrder = $this->byRecoveryAgent[$hold->agentId] ?? null;
+        if ($recoveryOrder !== null) {
+            if ($recoveryOrder->successor(null) === $id) {
+                $nextRecoveryId = $recoveryOrder->successor($id);
+            }
+            $recoveryOrder->remove($id);
+            if ($recoveryOrder->isEmpty()) {
+                unset($this->byRecoveryAgent[$hold->agentId]);
+            }
+        }
         if ($hold->correlationId !== null) {
             $this->byCorrelation[$hold->correlationId]->remove($id);
             if ($this->byCorrelation[$hold->correlationId]->isEmpty()) {
@@ -303,6 +370,16 @@ final class AgentSignalHolds
             if ($this->byAcceptKey[$hold->acceptKey]->isEmpty()) {
                 unset($this->byAcceptKey[$hold->acceptKey]);
             }
+            $delivery = $hold->deliveryId;
+            if ($delivery !== null && ($this->byPageDelivery[$hold->acceptKey][$delivery][$hold->agentId] ?? null) === $id) {
+                unset($this->byPageDelivery[$hold->acceptKey][$delivery][$hold->agentId]);
+                if ($this->byPageDelivery[$hold->acceptKey][$delivery] === []) {
+                    unset($this->byPageDelivery[$hold->acceptKey][$delivery]);
+                }
+                if ($this->byPageDelivery[$hold->acceptKey] === []) {
+                    unset($this->byPageDelivery[$hold->acceptKey]);
+                }
+            }
             $this->byPage[$hold->acceptKey][$hold->page]->remove($id);
             if ($this->byPage[$hold->acceptKey][$hold->page]->isEmpty()) {
                 unset($this->byPage[$hold->acceptKey][$hold->page]);
@@ -312,7 +389,7 @@ final class AgentSignalHolds
             }
         }
         try {
-            $this->notifyChanged($hold);
+            $this->notifyChanged($hold, $nextRecoveryId);
         } catch (Throwable $changeFailure) {
             $failure ??= $changeFailure;
         }
@@ -331,13 +408,23 @@ final class AgentSignalHolds
         return ($this->byAgent[$agentId] ?? new SignalHoldIndex())->candidates($watermark);
     }
 
+    /**
+     * @param string $agentId Addressed agent
+     * @return ?AgentSignalHold Oldest unsettled recovery, including a release already being walked
+     */
+    public function recoveryHead(string $agentId): ?AgentSignalHold
+    {
+        $id = ($this->byRecoveryAgent[$agentId] ?? null)?->successor(null);
+        return $id === null ? null : $this->entries[$id];
+    }
+
     /** @return Generator<int, int> Finite original unresolved placement obligations */
     public function placementCandidates(): Generator
     {
         return $this->placement->candidates();
     }
 
-    /** @return Generator<int, int> Finite original protected-resume obligations */
+    /** @return Generator<int, int> Finite original protected-resume and placement recovery obligations */
     public function resumeCandidates(): Generator
     {
         return $this->resume->candidates();
@@ -430,10 +517,12 @@ final class AgentSignalHolds
         $this->pending = new SignalHoldIndex();
         $this->byPrefix = [];
         $this->byAgent = [];
+        $this->byRecoveryAgent = [];
         $this->byCorrelation = [];
         $this->canceledCorrelations = [];
         $this->byAcceptKey = [];
         $this->byPage = [];
+        $this->byPageDelivery = [];
         $this->canceledConnections = [];
         $this->canceledPages = [];
         $this->released = [];
@@ -448,8 +537,11 @@ final class AgentSignalHolds
         }
     }
 
-    /** @param AgentSignalHold $hold Obligation after an actual state transition */
-    private function notifyChanged(AgentSignalHold $hold): void
+    /**
+     * @param AgentSignalHold $hold Obligation after an actual state transition
+     * @param ?int $nextRecoveryId Successor of a settled recovery head
+     */
+    private function notifyChanged(AgentSignalHold $hold, ?int $nextRecoveryId = null): void
     {
         $placement = $hold->isParked() && $hold->parked->awaitingPlacement;
         if ($placement && !isset($this->placementWaits[$hold->id])) {
@@ -463,7 +555,7 @@ final class AgentSignalHolds
             }
             $this->placement->remove($hold->id);
         }
-        $resume = $hold->isParked() && $hold->parked->awaitingResume;
+        $resume = $hold->isParked() && ($hold->parked->awaitingResume || $hold->parked->recovery !== null);
         if ($resume && !isset($this->resumeWaits[$hold->id])) {
             $this->resumeWaits[$hold->id] = true;
             $this->resume->add($hold->id);
@@ -471,7 +563,7 @@ final class AgentSignalHolds
             unset($this->resumeWaits[$hold->id]);
             $this->resume->remove($hold->id);
         }
-        ($this->changed)?->__invoke($hold);
+        ($this->changed)?->__invoke($hold, $nextRecoveryId);
     }
 
     /**

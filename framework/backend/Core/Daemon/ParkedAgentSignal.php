@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Daemon;
 
+use Hilos\Cluster\Placement\PlacementRecovery;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\GroupOperationAuthority;
 
@@ -28,10 +29,9 @@ use Hilos\Core\Router\GroupOperationAuthority;
  * A policy-placed agent whose view names this node waits for the leader's start order (HIL-2121).
  * Once the order starts it here, the hold waits for the ordinary start report.
  *
- * A frame that arrived over the peer mesh is marked, because the sender already decided which
- * node hosts the agent and a hold must not reopen that question: released back into the placing
- * walk it could be forwarded a second time, and two nodes disagreeing about the host would pass
- * it back and forth. Such a frame is delivered here or dropped with a line, never sent on.
+ * A peer frame keeps its original address and normally delivers only here. A live recovery
+ * can relay it once to a confirmed replacement host. A relay keeps that hop accounted for
+ * across every repark. Link-bound uploads keep their ordinary local delivery lifetime.
  *
  * The whole signal is kept, not a closure over it, for the reason its sibling gives. It is held
  * for ONE agent, though, not for the signal's whole destination list: the walk has already
@@ -45,10 +45,13 @@ final readonly class ParkedAgentSignal
      * @param string $agentId Agent the signal waits for
      * @param float $parkedAt Unix seconds the hold began at, which the release line reports the age from
      * @param bool $awaitingPlacement Whether the wait is for a placement verdict rather than a start here
-     * @param bool $localOnly Whether this frame already crossed the mesh, so it is never placed again
+     * @param bool $localOnly Whether this frame arrived already addressed over the peer mesh
      * @param bool $awaitingResume Whether the frame is a connection's close waiting for the protected-mode lift to bring its agent back
      * @param bool $awaitingPlacementOrder Whether this node awaits the leader's order to start the agent here
      * @param ?GroupOperationAuthority $groupOperation Original prepared authority, never recaptured at release
+     * @param ?PlacementRecovery $recovery Replay obligation with its original placement
+     * @param bool $placementRecoveryRelay Whether the frame already used its recovery hop
+     * @param bool $linkBoundUpload Whether the bytes belong to an existing upload reservation
      */
     public function __construct(
         public SignalDTO $signal,
@@ -59,7 +62,31 @@ final readonly class ParkedAgentSignal
         public bool $awaitingResume = false,
         public bool $awaitingPlacementOrder = false,
         public ?GroupOperationAuthority $groupOperation = null,
+        public ?PlacementRecovery $recovery = null,
+        public bool $placementRecoveryRelay = false,
+        public bool $linkBoundUpload = false,
     ) {
+    }
+
+    /**
+     * @param PlacementRecovery $recovery Live recovery observed after this frame was parked
+     * @return self This original obligation with its replay basis
+     */
+    public function withRecovery(PlacementRecovery $recovery): self
+    {
+        return new self(
+            $this->signal,
+            $this->agentId,
+            $this->parkedAt,
+            false,
+            $this->localOnly,
+            false,
+            false,
+            $this->groupOperation,
+            $recovery,
+            $this->placementRecoveryRelay,
+            $this->linkBoundUpload,
+        );
     }
 
     /**
@@ -76,6 +103,9 @@ final readonly class ParkedAgentSignal
             $this->awaitingResume,
             $this->awaitingPlacementOrder,
             $this->groupOperation,
+            $this->recovery,
+            $this->placementRecoveryRelay,
+            $this->linkBoundUpload,
         );
     }
 
@@ -93,6 +123,9 @@ final readonly class ParkedAgentSignal
             false,
             $this->awaitingPlacementOrder,
             $this->groupOperation,
+            $this->recovery,
+            $this->placementRecoveryRelay,
+            $this->linkBoundUpload,
         );
     }
 
@@ -110,6 +143,9 @@ final readonly class ParkedAgentSignal
             $this->awaitingResume,
             false,
             $this->groupOperation,
+            $this->recovery,
+            $this->placementRecoveryRelay,
+            $this->linkBoundUpload,
         );
     }
 }

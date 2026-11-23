@@ -97,7 +97,7 @@ final class ProbeFleetSupervisorTest extends TestCase
         $supervisor->tick();
         $this->assertSame([], $executor->executed, 'A fresh leader first adopts what the mesh already runs');
 
-        $placement->onPlacementReport(self::PEER, new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, self::PEER, new PeerPlacementReportDTO([]));
         $supervisor->tick();
         $this->assertSame([], $executor->executed, 'The final report still waits for snapshot inheritance on tick');
         $placement->setHoldWake($supervisor->noteChanged(...));
@@ -124,6 +124,7 @@ final class ProbeFleetSupervisorTest extends TestCase
         $supervisor->tick();
         $executor->executed = [];
         $placement = Hilos::$cluster->placement();
+        $order = $placement->registry()->get(HilosAgentType::HILOS_PROBE_FLEET . ':3')->placementId;
         $placement->stopAgentOnNode(HilosAgentType::HILOS_PROBE_FLEET, '3', self::SELF);
 
         $supervisor->tick();
@@ -132,7 +133,7 @@ final class ProbeFleetSupervisorTest extends TestCase
         $this->assertSame([], $executor->executed);
         $this->assertCount(10, $placement->registry()->all());
         $this->assertEquals(
-            new PlacementRecord(HilosAgentType::HILOS_PROBE_FLEET, '3', null, PlacementState::Stopped),
+            new PlacementRecord(HilosAgentType::HILOS_PROBE_FLEET, '3', null, PlacementState::Stopped, placementId: $order),
             $placement->registry()->get(HilosAgentType::HILOS_PROBE_FLEET . ':3'),
         );
     }

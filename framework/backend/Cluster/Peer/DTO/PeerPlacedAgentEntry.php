@@ -6,15 +6,11 @@ namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\BaseDTO;
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Placement\PlacementId;
+use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementState;
 
-/**
- * Wire form of one placed agent inside a {@see PeerPlacementReportDTO}.
- *
- * Carries just the identity of a hosted agent — its type and optional index — so a node
- * can tell a fresh leader which agents it is running. Liveness and worker placement are
- * node-local and not reported; the leader only needs the set of agents to rebuild its
- * placement view. Mirrors {@see PeerNodeEntry}'s role for membership gossip.
- */
+/** An address entry in a view, or a hosted order and its start status in a report. */
 final class PeerPlacedAgentEntry extends BaseDTO
 {
     /** @var string Payload key: agent type */
@@ -23,13 +19,25 @@ final class PeerPlacedAgentEntry extends BaseDTO
     /** @var string Payload key: agent index */
     public const string FIELD_AGENT_INDEX = 'agentIndex';
 
+    public const string FIELD_PLACEMENT_ID = PlacementRecord::FIELD_PLACEMENT_ID;
+
+    public const string FIELD_STATE = PlacementRecord::FIELD_STATE;
+
+    public const string FIELD_WORKER_STARTED = PlacementRecord::FIELD_WORKER_STARTED;
+
     /**
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?PlacementId $placementId Hosted order, when reporting a managed placement
+     * @param ?PlacementState $state Placing or Started, when reporting a managed placement
+     * @param bool $workerStarted Whether the worker reported a completed start
      */
     public function __construct(
         public readonly string $agentType,
         public readonly ?string $agentIndex,
+        public readonly ?PlacementId $placementId = null,
+        public readonly ?PlacementState $state = null,
+        public readonly bool $workerStarted = false,
     ) {
     }
 
@@ -43,7 +51,9 @@ final class PeerPlacedAgentEntry extends BaseDTO
         return [
             self::FIELD_AGENT_TYPE => $this->agentType,
             self::FIELD_AGENT_INDEX => $this->agentIndex,
-        ];
+        ] + ($this->placementId === null ? [] : [self::FIELD_PLACEMENT_ID => $this->placementId->toArray()])
+            + ($this->state === null ? [] : [self::FIELD_STATE => $this->state->value])
+            + ($this->workerStarted ? [self::FIELD_WORKER_STARTED => true] : []);
     }
 
     /**
@@ -51,7 +61,7 @@ final class PeerPlacedAgentEntry extends BaseDTO
      *
      * @param array<string, mixed> $data Entry payload
      * @return static Restored entry
-     * @throws PeerTransportException When the agent type is missing
+     * @throws PeerTransportException When the agent type, hosted order or start status is invalid
      */
     public static function fromArray(array $data): static
     {
@@ -61,7 +71,24 @@ final class PeerPlacedAgentEntry extends BaseDTO
             throw new PeerTransportException('Peer placed-agent entry is missing the agent type');
         }
 
-        return new static($agentType, self::readAgentIndex($data[self::FIELD_AGENT_INDEX] ?? null));
+        $placementId = array_key_exists(self::FIELD_PLACEMENT_ID, $data)
+            ? PlacementId::fromWire($data[self::FIELD_PLACEMENT_ID]) : null;
+        $state = null;
+        if (array_key_exists(self::FIELD_STATE, $data)) {
+            $rawState = $data[self::FIELD_STATE];
+            $state = is_string($rawState) ? PlacementState::tryFrom($rawState) : null;
+            if ($state === null || !$state->hostsAgent()) {
+                throw new PeerTransportException('Peer placed-agent entry has an invalid hosted state');
+            }
+        }
+
+        return new static(
+            $agentType,
+            self::readAgentIndex($data[self::FIELD_AGENT_INDEX] ?? null),
+            $placementId,
+            $state,
+            PlacementRecord::readWorkerStarted($data, $state, $placementId),
+        );
     }
 
     /**

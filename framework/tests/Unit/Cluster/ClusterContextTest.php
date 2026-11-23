@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster;
 
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\ClusterCommandConstants;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\ClusterNode;
@@ -597,9 +598,9 @@ final class ClusterContextTest extends TestCase
         $this->enableClusterNode();
         [$context, $placement] = $this->contextWithALeader();
         $refusal = PlacementRefusal::insufficientCapacity('node-b', ['slots' => ['cost' => 1.0, 'free' => 0.0]]);
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
         $placement->placeAgentOnNode('render', '9', 'node-b');
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'node-b is full', [$refusal]));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '9', 'node-b is full', [$refusal]));
 
         $rows = [];
         foreach ($context->inspect()[ClusterCommandConstants::FIELD_PLACEMENTS] as $row) {
@@ -656,7 +657,7 @@ final class ClusterContextTest extends TestCase
     {
         $this->enableClusterNode();
         [$context, $placement] = $this->contextWithALeader(nodeB: ['worker']);
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
 
         $this->assertNull($placement->placeAgentOnBestNode('render', '9'));
         $inspection = $context->inspect();
@@ -695,7 +696,7 @@ final class ClusterContextTest extends TestCase
     {
         $this->enableClusterNode();
         [$context, $placement] = $this->contextWithALeader(nodeB: ['worker']);
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
 
         try {
             $placement->placeAgentOnNode('render', '9', 'node-b');
@@ -724,7 +725,7 @@ final class ClusterContextTest extends TestCase
     {
         $this->enableClusterNode();
         [$context, $placement] = $this->contextWithALeader(nodeB: ['worker']);
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
         $this->assertNull($placement->placeAgentOnBestNode('render', '9'));
         $this->assertCount(1, $context->inspect()[ClusterCommandConstants::FIELD_PLACEMENT_REFUSALS_SNAPSHOT]);
 
@@ -758,7 +759,7 @@ final class ClusterContextTest extends TestCase
             Hilos::$cluster = $context = new ClusterContext();
             $placement = new ClusterPlacement('node-a', new FakePlacementMesh([]), new FakePlacementExecutor());
             $context->registerPlacement($placement);
-            $placement->onPlacementQuery('leader');
+            $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 7));
             $snapshot = new PlacementSnapshot('leader', 7, 19, [
                 new PlacementRecord('render', 'waiting', null, PlacementState::Unplaced, 'no room'),
                 new PlacementRecord('render', 'canceled', null, PlacementState::Stopped),
@@ -805,8 +806,8 @@ final class ClusterContextTest extends TestCase
         );
         $placement = new ClusterPlacement('node-a', $mesh, new FakePlacementExecutor(['worker']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $context = new ClusterContext();
         $context->registerPlacement($placement);

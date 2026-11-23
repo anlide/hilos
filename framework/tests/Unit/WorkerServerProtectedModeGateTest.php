@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Constants\WorkerConstants;
 
 use Closure;
@@ -811,7 +812,12 @@ final class FreezeGateTestRosterWorkerClient extends WorkerClient
      * @param ?string $agentIndex Instance index, or null for a singleton
      * @param list<string> $liveAcceptKeys Unused browser roster
      */
-    public function sendAgentStart(string $agentType, ?string $agentIndex = null, array $liveAcceptKeys = []): void
+    public function sendAgentStart(
+        string $agentType,
+        ?string $agentIndex = null,
+        array $liveAcceptKeys = [],
+        ?PlacementId $placementId = null,
+    ): void
     {
         $this->started[] = $agentIndex === null ? $agentType : $agentType . ':' . $agentIndex;
     }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Cluster\ClusterContext;
@@ -180,7 +182,7 @@ final class ClusterPlacementViewTest extends TestCase
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 1));
 
         $placement->onPlacementView('other', $this->view(['node-c' => [['render', '9']]], 'other'));
 
@@ -192,7 +194,7 @@ final class ClusterPlacementViewTest extends TestCase
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 1));
 
         $placement->tick(1.0);
 
@@ -209,7 +211,7 @@ final class ClusterPlacementViewTest extends TestCase
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', 'running', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', 'running', 1));
         foreach ([PlacementState::Failed, PlacementState::Unplaced, PlacementState::Stopped] as $state) {
             $placement->registry()->put(new PlacementRecord('render', $state->value, null, $state));
             $placement->registry()->put(new PlacementRecord('render', $state->value . '-old', 'node-b', $state));
@@ -223,8 +225,8 @@ final class ClusterPlacementViewTest extends TestCase
         $this->assertCount(1, $view->agents['node-b']);
         $this->assertCount(7, $view->placementSnapshot->records, 'Every hosted, waiting and canceled record survives the full projection');
         $this->assertSame('running', $view->agents['node-b'][0]->agentIndex);
-        $follower = $this->follower();
-        $follower->onPlacementQuery(self::SELF);
+        $follower = new ClusterPlacement('observer', new PlacementViewTestMesh(), new PlacementViewTestExecutor());
+        $follower->onPlacementQuery(self::SELF, new PeerPlacementQueryDTO('query', 0));
         $follower->onPlacementView(self::SELF, $view);
         $this->assertSame('node-b', $follower->locate('render', 'running')->nodeId);
         foreach ([PlacementState::Failed, PlacementState::Unplaced, PlacementState::Stopped] as $state) {
@@ -249,7 +251,7 @@ final class ClusterPlacementViewTest extends TestCase
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 1));
         $placement->tick(1.0);
         $published = count($this->views($mesh));
 
@@ -268,10 +270,10 @@ final class ClusterPlacementViewTest extends TestCase
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 1));
         $placement->tick(1.0);
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::stopped('render', '9'));
         $placement->tick(2.0);
 
         $this->assertSame([], $this->lastView($mesh)->agents);
@@ -287,7 +289,7 @@ final class ClusterPlacementViewTest extends TestCase
         $mesh = new PlacementViewTestMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 1));
 
         $placement->onPeerHandshaked('node-c');
 
@@ -381,13 +383,13 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $leaderMesh = new PlacementViewTestMesh();
         $leader = new ClusterPlacement('leader', $leaderMesh, new PlacementViewTestExecutor());
-        $leader->onBecameLeader(1000.0);
-        $leader->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+        $leader->onBecameLeader(1000.0, 1);
+        FakePlacementMesh::status($leader, 'node-b', PeerAgentStatusDTO::started('render', '9', 1));
         $mesh = new PlacementViewTestMesh();
         $placement = $this->hosting($mesh, ['render', '9']);
 
         $placement->onPlacementView('leader', $this->view(['node-b' => [['render', '9']]]));
-        $leader->onPlacementReport(self::SELF, $this->reports($mesh)[0][1]);
+        FakePlacementMesh::reply($leader, self::SELF, $this->reports($mesh)[0][1]);
 
         $this->assertCount(1, $leaderMesh->sent);
         [$nodeId, $stop] = $leaderMesh->sent[0];
@@ -410,13 +412,13 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $leaderMesh = new PlacementViewTestMesh();
         $leader = new ClusterPlacement('leader', $leaderMesh, new PlacementViewTestExecutor());
-        $leader->onBecameLeader(1000.0);
-        $leader->onAgentStatus(self::SELF, PeerAgentStatusDTO::started('render', '9', 1));
+        $leader->onBecameLeader(1000.0, 1);
+        FakePlacementMesh::status($leader, self::SELF, PeerAgentStatusDTO::started('render', '9', 1));
         $mesh = new PlacementViewTestMesh();
         $placement = $this->hosting($mesh, ['render', '9']);
 
         $placement->onPlacementView('leader', $this->view(['node-b' => [['render', '9']]]));
-        $leader->onPlacementReport(self::SELF, $this->reports($mesh)[0][1]);
+        FakePlacementMesh::reply($leader, self::SELF, $this->reports($mesh)[0][1]);
 
         $stops = array_filter($leaderMesh->sent, static fn(array $sent): bool => $sent[1] instanceof PeerStopAgentDTO);
         $this->assertSame([], $stops, 'No stop for the copy the registry names');
@@ -431,7 +433,7 @@ final class ClusterPlacementViewTest extends TestCase
     private function follower(): ClusterPlacement
     {
         $placement = new ClusterPlacement(self::SELF, new PlacementViewTestMesh(), new PlacementViewTestExecutor());
-        $placement->onPlacementQuery('leader');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 1));
 
         return $placement;
     }
@@ -448,7 +450,7 @@ final class ClusterPlacementViewTest extends TestCase
     {
         $placement = new ClusterPlacement(self::SELF, $mesh, new PlacementViewTestExecutor());
         foreach ($agents as [$agentType, $agentIndex]) {
-            $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO($agentType, $agentIndex));
+            $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO($agentType, $agentIndex, new PlacementId('leader', 1, count($mesh->sent) + 1)));
         }
         $mesh->sent = [];
 

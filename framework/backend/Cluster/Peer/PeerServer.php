@@ -1310,15 +1310,15 @@ final class PeerServer extends AbstractTlsServer implements
         }
         $this->sendRoster($link, $registry);
 
+        // Put the authority query in the peer turn before a join callback can send placement commands.
+        $this->placement?->onPeerHandshaked($remote->nodeId);
+
         if ($changed) {
             Logger::info("Peer joined: {$remote->nodeId} role={$remote->role->value}");
             $this->notifyJoined($remote, $now);
             $this->broadcastAnnounce(PeerNodeEntry::fromIdentity($remote), $link);
         }
 
-        // Reconcile-on-rejoin: report the agents this node still hosts so a leader on the
-        // other end can stop any that it has already re-placed elsewhere (a no-op otherwise).
-        $this->placement?->onPeerHandshaked($remote->nodeId);
         if ($remote->role === NodeRole::Slave) {
             $this->protectedMode?->onSlaveConnected($remote->nodeId);
         }
@@ -1524,6 +1524,10 @@ final class PeerServer extends AbstractTlsServer implements
                 $this->announcedDbInterest,
                 $this->announcedInterestNumber,
             ));
+            // A new transport refreshes claims still queued against its donor.
+            if (Hilos::$cluster?->rtClaimSink() !== null) {
+                $link->sendFrame(new PeerRtClaimsQueryDTO());
+            }
             if ($remote->role === NodeRole::Slave) {
                 $this->protectedMode?->onSlaveConnected($remote->nodeId);
             }
@@ -1669,6 +1673,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerLink $link Link the request arrived on
      * @param PeerPlaceAgentDTO $frame Received place-agent frame
      * @throws InvalidFormatException When an abandoned start has an invalid stop completion address
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      * @throws EventLoopException When the existing executor cannot arm an abandoned start stop deadline
      */
     public function onPlaceAgentReceived(PeerLink $link, PeerPlaceAgentDTO $frame): void
@@ -1716,13 +1721,14 @@ final class PeerServer extends AbstractTlsServer implements
      * Routes a received placement query to the placement coordinator to answer.
      *
      * @param PeerLink $link Link the query arrived on
+     * @param PeerPlacementQueryDTO $frame Received query
      * @throws PeerTransportException When the placement snapshot metadata is invalid
      */
-    public function onPlacementQueryReceived(PeerLink $link): void
+    public function onPlacementQueryReceived(PeerLink $link, PeerPlacementQueryDTO $frame): void
     {
         $from = $link->remoteIdentity()?->nodeId;
         if ($from !== null) {
-            $this->placement?->onPlacementQuery($from);
+            $this->placement?->onPlacementQuery($from, $frame);
         }
     }
 
@@ -1790,6 +1796,7 @@ final class PeerServer extends AbstractTlsServer implements
      * @param PeerPlacementReportDTO $frame Received placement-report frame
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     public function onPlacementReportReceived(PeerLink $link, PeerPlacementReportDTO $frame): void
     {
@@ -1832,16 +1839,24 @@ final class PeerServer extends AbstractTlsServer implements
     /**
      * Routes a received claim report to the local claim sink for the leader to judge.
      *
-     * The node id is taken from the frame rather than from the link, for the reason the RT sync
-     * frames do it: what a node calls itself is what the map is keyed by everywhere else,
-     * including on the leader folding in its own report, where there is no link to read.
+     * The report names the authenticated sender. A queued report keeps that exact route
+     * through copy removal and claim folding. A successor asks for a fresh report.
      *
      * @param PeerLink $link Link the report arrived on
      * @param PeerRtClaimsDTO $frame Received RT-claims frame
      */
     public function onRtClaimsReceived(PeerLink $link, PeerRtClaimsDTO $frame): void
     {
-        Hilos::$cluster?->rtClaimSink()?->applyRemoteRtClaims($frame->nodeId, $frame->claims);
+        $nodeId = $link->remoteIdentity()?->nodeId;
+        if ($nodeId === null || $nodeId !== $frame->nodeId || ($this->activeLinks[$nodeId] ?? null) !== $link) {
+            return;
+        }
+        $route = $this->nodeRouteGuard($nodeId);
+        $owner = WeakReference::create($this);
+        Hilos::$cluster?->rtClaimSink()?->applyRemoteRtClaims(
+            $nodeId, $frame->claims,
+            sourceCurrent: static fn(): bool => $route() && $owner->get()?->nodeHasLeftTheMesh($nodeId) === false,
+        );
     }
 
     /**
@@ -1884,10 +1899,13 @@ final class PeerServer extends AbstractTlsServer implements
      *
      * @param PeerLink $link Link the verdict arrived on
      * @param PeerRtClaimRefusedDTO $frame Received RT-claim-refused frame
+     * @throws InvalidFormatException When a tracked stop completion address is invalid
+     * @throws EventLoopException When the executor cannot arm the stop deadline
      */
     public function onRtClaimRefusedReceived(PeerLink $link, PeerRtClaimRefusedDTO $frame): void
     {
-        if ($link->remoteIdentity()?->nodeId !== null) {
+        $from = $link->remoteIdentity()?->nodeId;
+        if ($from !== null && $this->placement?->acceptsLeaderCommand($from, $frame->authorityTerm) === true) {
             Hilos::$cluster?->rtClaimSink()?->applyRtClaimRefusal($frame);
         }
     }
@@ -2991,11 +3009,21 @@ final class PeerServer extends AbstractTlsServer implements
      * @param string $agentType Resolved target agent type
      * @param ?string $agentIndex Resolved target agent index, or null for a singleton agent
      * @param SignalDTO $signal Signal to deliver on the target node
-     * @return bool True when a live link carried the frame, false when the node is unlinked
+     * @param bool $placementRecoveryRelay Whether this frame has already crossed to an earlier placement
+     * @return bool True when a live peer queue accepted the frame, false otherwise
      */
-    public function sendSignalToNode(string $targetNodeId, string $agentType, ?string $agentIndex, SignalDTO $signal): bool
+    public function sendSignalToNode(
+        string $targetNodeId,
+        string $agentType,
+        ?string $agentIndex,
+        SignalDTO $signal,
+        bool $placementRecoveryRelay = false,
+    ): bool
     {
         if ($signal->data instanceof WebSocketFrameBinarySignalDTO && $this->uploadMemory?->isBudgeted($signal->data)) {
+            if ($placementRecoveryRelay) {
+                return false;
+            }
             $link = $this->activeLinkToNode($targetNodeId);
             if ($link === null) {
                 return false;
@@ -3015,6 +3043,7 @@ final class PeerServer extends AbstractTlsServer implements
             $agentType,
             $agentIndex,
             $signal,
+            placementRecoveryRelay: $placementRecoveryRelay,
         ));
     }
 
@@ -3022,8 +3051,8 @@ final class PeerServer extends AbstractTlsServer implements
      * Delivers a received cross-node signal to the resolved agent on this node.
      *
      * Verifies the frame is addressed to this node, then hands the already-resolved target
-     * straight to the local delivery sink — no re-routing, which structurally rules out a
-     * forward loop or a second fan-out (F2). A mismatched target, an unregistered sink, or a
+     * straight to the local delivery sink with its relay and link-bound upload state.
+     * A mismatched target, an unregistered sink, or a
      * delivery failure is dropped and logged, keeping a bad forward from tearing down the
      * daemon loop (F1).
      *
@@ -3053,7 +3082,13 @@ final class PeerServer extends AbstractTlsServer implements
                 Logger::warning("Dropping peer signal for agent '{$frame->agentType}': no local agent signal sink registered");
                 return;
             }
-            $sink->deliverSignalToAgent($frame->agentType, $frame->agentIndex, $frame->signal);
+            $sink->deliverSignalToAgent(
+                $frame->agentType,
+                $frame->agentIndex,
+                $frame->signal,
+                $frame->placementRecoveryRelay,
+                $frame->uploadReservation !== null,
+            );
         } catch (Throwable $e) {
             Logger::warning("Failed to deliver peer signal to agent '{$frame->agentType}': {$e->getMessage()}");
         }
@@ -3805,15 +3840,19 @@ final class PeerServer extends AbstractTlsServer implements
      * @param string $nodeId Id of the node holding the connection
      * @param string $acceptKey Accept key of the connection to deliver to
      * @param SignalDTO $signal Signal to deliver on that node
+     * @param ?string $pageRecoveryDeliveryId Original socket token for terminal page recovery
      * @return bool True when a live link carried the frame, false when the node is unlinked
+     * @throws PeerTransportException When the recovery metadata is invalid for the signal
      */
-    public function sendSignalToClientNode(string $nodeId, string $acceptKey, SignalDTO $signal): bool
-    {
+    public function sendSignalToClientNode(
+        string $nodeId, string $acceptKey, SignalDTO $signal, ?string $pageRecoveryDeliveryId = null,
+    ): bool {
         return $this->sendToNode($nodeId, new PeerClientSignalDTO(
             $this->localIdentity->nodeId,
             $nodeId,
             $acceptKey,
             $signal,
+            $pageRecoveryDeliveryId,
         ));
     }
 
@@ -3847,7 +3886,7 @@ final class PeerServer extends AbstractTlsServer implements
         }
 
         try {
-            $sink->deliverSignalToClient($frame->acceptKey, $frame->signal);
+            $sink->deliverSignalToClient($frame->acceptKey, $frame->signal, $frame->pageRecoveryDeliveryId);
         } catch (Throwable $e) {
             Logger::warning("Failed to deliver peer client signal to '{$frame->acceptKey}': {$e->getMessage()}");
         }

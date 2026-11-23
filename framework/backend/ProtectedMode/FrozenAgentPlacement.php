@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\ProtectedMode;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Core\Agent\AgentId;
 
 /**
@@ -27,10 +28,12 @@ final readonly class FrozenAgentPlacement
     /**
      * @param AgentId $agent Agent the freeze stopped
      * @param ?int $workerId Worker it was stopped on, negative for a monopolistic one; null when it was linked to none
+     * @param ?PlacementId $placementId Exact managed order, if the start has one
      */
     public function __construct(
         public AgentId $agent,
         public ?int $workerId,
+        public ?PlacementId $placementId = null,
     ) {
     }
 }

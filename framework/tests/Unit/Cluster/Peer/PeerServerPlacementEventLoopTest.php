@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Error;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\NodeIdentity;
@@ -160,7 +161,7 @@ final class PeerServerPlacementEventLoopTest extends TestCase
     private function host(?NativePlacementExecutor $executor = null): ClusterPlacement
     {
         $placement = new ClusterPlacement('host', new NativePlacementMesh(), $executor ?? new NativePlacementExecutor());
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
         $this->owners[] = $placement;
 
         return $placement;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Leadership;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
@@ -105,7 +106,7 @@ final class ClusterPlacementLocateTest extends TestCase
         Hilos::$cluster?->registerLeadership(new PendingLeadership());
         $this->assertSame(AgentLocationKind::Unknown, $placement->locate('chat', null)->kind);
 
-        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null, new PlacementId('node-b', 0, 1)));
 
         $this->assertSame('node-b', $placement->locate('chat', null)->nodeId);
     }
@@ -131,9 +132,9 @@ final class ClusterPlacementLocateTest extends TestCase
         foreach ($leaderMesh->sent as [$nodeId, $frame]) {
             $this->assertSame(self::SELF, $nodeId);
             match (true) {
-                $frame instanceof PeerPlacementQueryDTO => $slave->onPlacementQuery('node-b'),
+                $frame instanceof PeerPlacementQueryDTO => $slave->onPlacementQuery('node-b', $frame),
                 $frame instanceof PeerPlacementViewDTO => $slave->onPlacementView('node-b', $frame),
-                $frame instanceof PeerPlacementReportDTO => $slave->onPlacementReport('node-b', $frame),
+                $frame instanceof PeerPlacementReportDTO => FakePlacementMesh::reply($slave, 'node-b', $frame),
                 default => $this->fail('An idle handshake must not place work'),
             };
         }
@@ -152,7 +153,7 @@ final class ClusterPlacementLocateTest extends TestCase
     {
         $placement = $this->follower(leaderId: null);
         Hilos::$cluster?->registerLeadership(new PendingLeadership());
-        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null, new PlacementId('node-b', 0, 1)));
 
         $placement->onPlacementRelease('node-b', 1000.0);
 
@@ -163,7 +164,7 @@ final class ClusterPlacementLocateTest extends TestCase
     {
         $placement = $this->follower(leaderId: null);
         Hilos::$cluster?->registerLeadership(new PendingLeadership());
-        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null, new PlacementId('node-b', 0, 1)));
 
         $placement->onPlacementRelease('node-c', 1000.0);
 
@@ -260,7 +261,7 @@ final class ClusterPlacementLocateTest extends TestCase
     {
         $placement = $this->follower(leaderId: self::SELF);
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('library', null, 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('library', null, 1));
 
         $this->assertSame('node-b', $placement->locate('library', null)->nodeId);
     }

@@ -10,11 +10,19 @@ import signal
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import control
-from account_operations import HOLDER, AccountOperationRun, journal_segment, log_entries, payload
+from account_operations import HOLDER, AccountOperationRun, StandUnusable, journal_segment, log_entries, payload
 
 
+USERS_LIBRARY = "hilos_users_library"
+USERS_LIBRARY_LIFECYCLE = re.compile(rf"Agent '{USERS_LIBRARY}' (started|stopped) on worker #(\d+|unknown)")
+WORKER_LIFECYCLE = re.compile(r"Worker #(\d+) (started|stopped|disconnected) \[type=\w+\]")
+WORKER_AGENTS_LOST = re.compile(r"Worker #(\d+) died hosting \d+ agent\(s\): (.*)")
+FULL_FREEZE = "Protected mode: froze this node for hilos_backup,"
+DAEMON_BOOT = "Daemon started with epoll"
+PLACEMENT_RELEASE = "Placement release: this node no longer leads,"
 FIXTURE_PASSWORD_HASH = "$2y$10$abcdefghijklmnopqrstuuCj7fyLDJytXL.TfOiOeiv0fQvSOK1/2"
 TRANSFER_TABLES = {
     "identities": "hilos_identity",
@@ -38,9 +46,54 @@ SURVIVOR_WAIT_DAYS = 14
 class SenderLifecycle:
     node: str
     worker: int
-    worker_started: tuple[str, int]
+    worker_started: tuple[str, int] | None
     started: tuple[str, int]
     stopped: tuple[str, int] | None = None
+
+    def has_known_generation(self, workers, last_unknown):
+        return (self.worker_started is not None and workers.get(self.worker) == self.worker_started
+                and self.started[1] > last_unknown)
+
+
+@dataclass
+class LifecycleHistory:
+    instances: list[SenderLifecycle]
+    workers: dict[int, tuple[str, int]]
+    running: dict[int, SenderLifecycle]
+    overlap: tuple[SenderLifecycle, SenderLifecycle] | None
+    uncertain_overlap: bool
+    last_unknown: int
+
+
+@dataclass(frozen=True)
+class LibraryPlacement:
+    leader: str
+    term: int
+    revision: int
+    record: dict
+    requested_ns: int
+    received_ns: int
+    authority_agrees: bool
+
+    def spans_cut(self, after, cut_ms, leader_journal):
+        if (after is None or leader_journal is None or not self.authority_agrees or not after.authority_agrees
+                or (self.leader, self.term, self.revision, self.record) != (after.leader, after.term, after.revision, after.record)
+                or self.received_ns >= cut_ms * 1_000_000 or after.requested_ns < (cut_ms + 1) * 1_000_000):
+            return False
+        lower = utc_millisecond(self.requested_ns // 1_000_000)
+        upper = utc_millisecond(after.received_ns // 1_000_000)
+        return not any(lower <= stamp <= upper and line.startswith(PLACEMENT_RELEASE) for stamp, line in leader_journal)
+
+    def describe(self):
+        start = utc_millisecond(self.requested_ns // 1_000_000)
+        end = utc_millisecond((self.received_ns + 999_999) // 1_000_000)
+        return (f"Placement observed between {start} and {end}: {self.leader} "
+                f"term {self.term} revision {self.revision}, {self.record.get('state', 'absent')}, "
+                f"node={self.record.get('nodeId')}, workerStarted={self.record.get('workerStarted', False)}")
+
+
+def utc_millisecond(epoch_ms):
+    return datetime.fromtimestamp(epoch_ms / 1000, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 class MergeRun(AccountOperationRun):
@@ -101,7 +154,7 @@ class MergeRun(AccountOperationRun):
     def prepare(self):
         self.s.wait_converge(self.nodes)
         self.wait(self.s.fleet_started, "the original fleet before merge")
-        for agent in (HOLDER, "hilos_users_library", "hilos_backup"):
+        for agent in (HOLDER, USERS_LIBRARY, "hilos_backup"):
             self.placed(agent)
         self.s.wait_protected_mode(lambda row: row.get("phase") == "inactive",
                                    "every node open before merge", nodes=self.nodes)
@@ -312,37 +365,292 @@ class MergeRun(AccountOperationRun):
         self.s.log_time(stamps[0])
         return stamps[0]
 
+    def users_library_before_restore(self):
+        views = self.s.inspect_all(self.nodes)
+        leaders = self.s.leaders(views)
+        placement = self.s.placement_row(views, USERS_LIBRARY)
+        node = placement.get("nodeId")
+        print(f"    merge 61 UsersLibrary before FULL: leaders={leaders}, "
+              f"node={node}, state={placement.get('state')}", flush=True)
+        if len(leaders) != 1 or not views.get(node) or placement.get("state") != "started":
+            return None, "no unique leader reporting a started UsersLibrary on a reachable node"
+        if node == leaders[0]:
+            return None, f"UsersLibrary was on leader {node} before FULL"
+        try:
+            journal = self.read_backup_stream(node, "daemon.log")
+        except StandUnusable as failure:
+            return None, str(failure)
+        events = [(i, stamp, match) for i, (stamp, line) in enumerate(journal.entries[journal.origin:], journal.origin)
+                  if (match := USERS_LIBRARY_LIFECYCLE.fullmatch(line))]
+        if not events or events[-1][2][1] != "started" or events[-1][2][2] == "unknown":
+            return None, f"no current UsersLibrary start report on {node} before FULL"
+        position, started, match = events[-1]
+        return (node, position, started, int(match[2])), None
+
+    def users_library_placement(self, masters):
+        views = {}
+        bounds = {}
+        for master in masters:
+            requested = time.time_ns()
+            views[master] = self.s.inspect(master)
+            bounds[master] = requested, time.time_ns()
+        leaders = self.s.leaders(views)
+        if len(leaders) != 1:
+            return None
+        leader, = leaders
+        view = views[leader]
+        snapshot = view.get("placementSnapshot") or {}
+        term, revision = snapshot.get("term"), snapshot.get("revision")
+        records = snapshot.get("records")
+        if not (view.get("hasQuorum") is True and view.get("localNodeId") == view.get("leaderId") == leader
+                and snapshot.get("leaderNodeId") == leader and view.get("term") == term
+                and type(term) is int and type(revision) is int and isinstance(records, list)):
+            return None
+        rows = [row for row in records if row.get("agentType") == USERS_LIBRARY and row.get("agentIndex") is None]
+        if len(rows) > 1:
+            return None
+        # A rebuilt master can still expose its donor snapshot. Even an
+        # original snapshot is only a local observation if authority differs.
+        agrees = all(peer and peer.get("localNodeId") == master and peer.get("leaderId") == leader
+                     and peer.get("term") == term for master, peer in views.items())
+        requested, received = bounds[leader]
+        return LibraryPlacement(leader, term, revision, rows[0] if rows else {}, requested, received, agrees)
+
+    def users_library_at_cut(self, node, entries, request_start, observed_at, limits):
+        end = next((position for position, (stamp, _) in enumerate(entries) if stamp >= observed_at), len(entries))
+        if any(stamp < observed_at for stamp, _ in entries[end:]):
+            limits.append(f"journal timestamps on {node} cross the common journal cut {observed_at} out of order")
+            return []
+        history = self.restored_lifecycles(USERS_LIBRARY, node, entries[:end], overlap_from=request_start)
+        ambiguous = set()
+        for stamp, line in entries[end:]:
+            if stamp != observed_at:
+                continue
+            if match := USERS_LIBRARY_LIFECYCLE.fullmatch(line):
+                ambiguous.add(int(match[2]) if match[2] != "unknown" else None)
+            elif match := WORKER_LIFECYCLE.fullmatch(line):
+                if int(match[1]) in history.running:
+                    ambiguous.add(int(match[1]))
+            elif match := WORKER_AGENTS_LOST.fullmatch(line):
+                if USERS_LIBRARY in match[2].split(", "):
+                    ambiguous.add(int(match[1]))
+        if ambiguous:
+            limits.append(f"UsersLibrary lifecycle on {node} shares the common journal cut {observed_at}")
+        known = [instance for instance in history.running.values()
+                 if instance.has_known_generation(history.workers, history.last_unknown)]
+        if len(known) != len(history.running):
+            limits.append(f"UsersLibrary on {node} has no identifiable current worker generation")
+        if history.last_unknown >= request_start:
+            limits.append(f"UsersLibrary lifecycle on {node} has no worker index before the common cut")
+        if history.uncertain_overlap or any(instance.worker_started is None and instance.started[1] >= request_start
+                                            for instance in history.instances):
+            limits.append(f"UsersLibrary on {node} had an unidentified worker generation in this request")
+        return [instance for instance in known if None not in ambiguous and instance.worker not in ambiguous]
+
+    def users_library_restore_evidence(self, before, replayed_at, views):
+        old_node, old_position, old_start, old_worker = before
+        attempt = self.restore_attempt
+        boundary = f"FULL {attempt.backup_id} on {attempt.node} imported at {replayed_at}"
+        window_limits = []
+        cut_limits = []
+        at_cut = []
+        confirmed_starts = []
+        leader_journal = None
+        local_duplicates = None
+        early_start = None
+        old_stop = None
+        # The sender poll supplies only an inspection order. On a multi-master
+        # stand, peer reads put the leader reads away from the cut millisecond.
+        leaders = self.s.leaders(views)
+        masters = sorted(self.s.MASTERS, key=lambda node: node not in leaders)
+        before_placement = self.users_library_placement(masters)
+        cut_ms = time.time_ns() // 1_000_000
+        observed_at = utc_millisecond(cut_ms)
+        after_placement = self.users_library_placement(reversed(masters))
+        for node in self.nodes:
+            key = node, "daemon.log"
+            journal, mark = attempt.marks.get(key, (None, None))
+            if (journal is None or journal is not self.backup_journal.get(key)
+                    or not 0 <= journal.origin < mark <= len(journal.entries)
+                    or journal.entries[journal.origin][1] != DAEMON_BOOT):
+                cut_limits.append(f"request journal mark was lost on {node}: daemon.log")
+                continue
+            complete = True
+            try:
+                self.read_backup_stream(node, "daemon.log")
+            except StandUnusable as failure:
+                cut_limits.append(str(failure))
+                complete = False
+            # A failed refresh leaves the last confirmed prefix available for
+            # historical events, with no proof of coverage through the cut.
+            entries = journal.entries[journal.origin:]
+            request_start = mark - journal.origin
+            restart = next((position for position, (_, line) in enumerate(entries)
+                            if position > 0 and line == DAEMON_BOOT), len(entries))
+            if restart < request_start:
+                cut_limits.append(f"daemon on {node} restarted before the FULL request mark")
+                continue
+            if restart == len(entries):
+                if complete and before_placement is not None and node == before_placement.leader:
+                    leader_journal = entries[request_start:]
+            elif entries[restart][0] <= observed_at:
+                cut_limits.append(f"daemon on {node} restarted after the FULL request mark")
+                complete = False
+            entries = entries[:restart]
+            window_start = attempt.windows.get(node)
+            entered_at = utc_millisecond(window_start) if window_start is not None else None
+            freezes = [(position, stamp) for position, (stamp, line) in enumerate(entries[request_start:], request_start)
+                       if line.startswith(FULL_FREEZE) and entered_at is not None and entered_at <= stamp < replayed_at]
+            freeze_position, frozen_at = freezes[0] if len(freezes) == 1 else (None, None)
+            if frozen_at is None:
+                window_limits.append(f"no unique freeze before FULL import on {node} in this request window")
+
+            history = self.restored_lifecycles(USERS_LIBRARY, node, entries, overlap_from=request_start)
+            if history.overlap:
+                local_duplicates = history.overlap
+            for instance in history.instances:
+                stamp, position = instance.started
+                if position < request_start or instance.worker_started is None:
+                    continue
+                if stamp > replayed_at:
+                    confirmed_starts.append(instance)
+                elif entered_at is not None and entered_at <= stamp < replayed_at:
+                    # The stop walk can finish after the window opened. Its
+                    # own line can order an event in the entry millisecond.
+                    if stamp > entered_at or (freeze_position is not None and position > freeze_position):
+                        early_start = (f"UsersLibrary started on {node} worker #{instance.worker} during FULL "
+                                       f"{attempt.backup_id} at {stamp}, after entry at {entered_at} "
+                                       f"and before import at {replayed_at}")
+                    else:
+                        window_limits.append(f"UsersLibrary start on {node} shares the FULL entry millisecond {stamp}")
+            if any(stamp == replayed_at and USERS_LIBRARY_LIFECYCLE.fullmatch(line)
+                   for stamp, line in entries[request_start:]):
+                window_limits.append(f"UsersLibrary lifecycle on {node} shares the FULL import millisecond {replayed_at}")
+
+            if complete:
+                at_cut.extend(self.users_library_at_cut(node, entries, request_start, observed_at, cut_limits))
+            if node == old_node and frozen_at is not None:
+                prior = next((instance for instance in history.instances
+                              if instance.started == (old_start, old_position - journal.origin)
+                              and instance.worker == old_worker), None)
+                if not journal.origin <= old_position < mark or any(
+                    USERS_LIBRARY_LIFECYCLE.fullmatch(line) for _, line in journal.entries[old_position + 1:mark]
+                ):
+                    window_limits.append(f"UsersLibrary changed on {old_node} before the FULL request mark")
+                elif prior and prior.worker_started is not None and prior.stopped:
+                    stopped_at, stop_position = prior.stopped
+                    if (stop_position >= request_start and stopped_at < replayed_at
+                            and (stopped_at > entered_at
+                                 or (stopped_at == entered_at and stop_position > freeze_position))):
+                        old_stop = (f"{old_node} finished the stop walk at {frozen_at}, old worker #{old_worker} "
+                                    f"reported start at {old_start} and stop at {stopped_at}")
+
+        if old_stop is not None:
+            boundary = f"{boundary}; {old_stop}"
+        if early_start is not None:
+            raise AssertionError(f"{early_start}. {boundary}")
+        overlapping = local_duplicates or at_cut
+        if len(overlapping) > 1:
+            hosts = ", ".join(f"{instance.node} worker #{instance.worker} at {instance.started[0]}"
+                              for instance in overlapping)
+            point = f" at the common cut {observed_at}" if local_duplicates is None else ""
+            raise AssertionError(f"multiple running UsersLibrary instances in the journals{point} for {boundary}: {hosts}")
+        if old_stop is None:
+            window_limits.append(f"no unique stop of the prior UsersLibrary on {old_node} worker #{old_worker} in this freeze")
+        if not at_cut and any(instance.started[0] >= observed_at for instance in confirmed_starts):
+            cut_limits.append(f"UsersLibrary start observed at or after the common journal cut {observed_at}")
+
+        reports = [boundary]
+        reports.extend(f"Confirmed WorkerAgentStarted on {instance.node} worker #{instance.worker} at {instance.started[0]}"
+                       for instance in confirmed_starts)
+        if not cut_limits and at_cut:
+            instance, = at_cut
+            reports.append(f"One UsersLibrary instance in the journals at the common cut {observed_at}: "
+                           f"{instance.node} worker #{instance.worker}, started at {instance.started[0]}")
+
+        limits = cut_limits + window_limits
+        comparable = before_placement is not None and before_placement.spans_cut(after_placement, cut_ms, leader_journal)
+        if not comparable:
+            limits.append(f"Placement at the common cut is unconfirmed ({observed_at})")
+        else:
+            placement = before_placement.record
+            node = placement.get("nodeId")
+            if placement.get("state") == "started":
+                if node not in self.nodes:
+                    limits.append(f"UsersLibrary placement on {node} cannot be observed")
+                if placement.get("workerStarted") is not True or not placement.get("placementId"):
+                    limits.append(f"UsersLibrary placement on {node} has no exact worker start confirmation")
+            if not limits:
+                assert placement.get("state") == "started", f"UsersLibrary has no started placement at {observed_at}: {boundary}"
+                assert at_cut and at_cut[0].node == node and any(
+                    start.node == node and start.started == at_cut[0].started for start in confirmed_starts
+                ), \
+                    f"no new UsersLibrary start report on {node} at {observed_at}: {boundary}"
+                reports.append(f"Placement at the common cut agrees on {node}: {before_placement.leader} "
+                               f"term {before_placement.term} revision {before_placement.revision}")
+        reports.extend(observation.describe() for observation in (before_placement, after_placement) if observation is not None)
+        evidence = ". ".join(reports)
+        return f"limit: {'; '.join(limits)}. {evidence}" if limits else evidence
+
     def restored_sender_lifecycles(self, agent, node, mark, replayed_at):
         path = control.node_log_path(self.stand.node(node))
         _, since_mark = journal_segment(path, mark)
-        freezes = [stamp for stamp, line in since_mark if line.startswith("Protected mode: froze this node for hilos_backup,")]
+        freezes = [stamp for stamp, line in since_mark if line.startswith(FULL_FREEZE)]
         if len(freezes) != 1 or freezes[0] >= replayed_at:
             return None
         _, entries = journal_segment(path, control.LogMark(mark.inode, 0))
+        history = self.restored_lifecycles(agent, node, entries, replayed_at)
+        if any(instance.worker_started is None for instance in history.instances):
+            return None
+        return history.instances, history.workers
+
+    @staticmethod
+    def restored_lifecycles(agent, node, entries, replayed_at=None, *, overlap_from=None):
         workers = {}
         instances = []
-        lifecycle = re.compile(rf"Agent '{re.escape(agent)}' (started|stopped) on worker #(\d+)")
+        running = {}
+        overlap = None
+        uncertain_overlap = False
+        last_unknown = -1
+        lifecycle = re.compile(rf"Agent '{re.escape(agent)}' (started|stopped) on worker #(\d+|unknown)")
         for position, (stamp, line) in enumerate(entries):
             event = stamp, position
-            if match := re.fullmatch(r"Worker #(\d+) (started|stopped) \[type=\w+\]", line):
+            if match := WORKER_LIFECYCLE.fullmatch(line):
                 worker = int(match[1])
+                if match[2] != "disconnected":
+                    running.pop(worker, None)
                 if match[2] == "started":
                     workers[worker] = event
                 else:
                     workers.pop(worker, None)
-            if stamp <= replayed_at or not (match := lifecycle.fullmatch(line)):
+            if match := WORKER_AGENTS_LOST.fullmatch(line):
+                if agent in match[2].split(", "):
+                    # Link loss leaves liveness uncertain until the worker exits.
+                    workers.pop(int(match[1]), None)
+            if (replayed_at is not None and stamp <= replayed_at) or not (match := lifecycle.fullmatch(line)):
+                continue
+            if match[2] == "unknown":
+                last_unknown = position
                 continue
             worker = int(match[2])
             generation = workers.get(worker)
             if match[1] == "started":
-                if generation is None:
-                    return None
-                instances.append(SenderLifecycle(node, worker, generation, event))
-            elif instances:
-                instance = instances[-1]
-                if instance.stopped is None and (instance.worker, instance.worker_started) == (worker, generation):
-                    instance.stopped = event
-        return instances, workers
+                instance = SenderLifecycle(node, worker, generation, event)
+                if overlap_from is not None and position >= overlap_from and overlap is None:
+                    for prior in running.values():
+                        if prior.worker == worker:
+                            continue
+                        if (instance.has_known_generation(workers, last_unknown)
+                                and prior.has_known_generation(workers, last_unknown)):
+                            overlap = prior, instance
+                            break
+                        uncertain_overlap = True
+                instances.append(instance)
+                running[worker] = instance
+            elif (instance := running.get(worker)) and instance.worker_started == generation:
+                instance.stopped = event
+                del running[worker]
+        return LifecycleHistory(instances, workers, running, overlap, uncertain_overlap, last_unknown)
 
     def restored_sender_stopped(self, agent, marks, replayed_at, views):
         placement = self.s.placement_row(views, agent)
@@ -534,6 +842,7 @@ def scenario_61_merge_survives_sender_death_and_full_restore(s):
         run.clean_probes()
         run.probes.clear()
         restore_marks = {node: s.node_log_mark(node) for node in run.nodes}
+        library_before, library_limit = run.users_library_before_restore()
         restore_started_at = run.restore_full_archive()
         replayed_at = run.restore_replayed_at()
         run.wait(lambda _: run.completed(), "ordinary startup and recovery completed the restored merge")
@@ -558,8 +867,11 @@ def scenario_61_merge_survives_sender_death_and_full_restore(s):
         phase = "finished replay"
         # Recovery can place A again after its restored cleanup stops it. Require
         # that stop even if the leader already has a later, fully started A.
-        run.wait(lambda views: run.restored_sender_stopped(sender, restore_marks, replayed_at, views),
-                 "restored sender finished and stopped before replay placement")
+        views = run.wait(lambda views: run.restored_sender_stopped(sender, restore_marks, replayed_at, views),
+                         "restored sender finished and stopped before replay placement")
+        evidence = (run.users_library_restore_evidence(library_before, replayed_at, views)
+                    if library_before else f"limit: {library_limit}; FULL imported at {replayed_at}")
+        print(f"    merge 61 UsersLibrary after FULL: {evidence}", flush=True)
         sender_worker = run.place(sender)
         recipient_worker = run.place(recipient)
         replay_source = run.incarnation(sender)

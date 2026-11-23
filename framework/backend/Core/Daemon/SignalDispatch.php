@@ -57,6 +57,10 @@ final class SignalDispatch
 
     public ?string $peerApplyContext = null;
 
+    public bool $placementRecoveryRelay = false;
+
+    public bool $linkBoundUpload = false;
+
     public ?RtReplicaConfirmation $rtConfirmation = null;
 
     public ?GroupOperationAuthority $groupOperation = null;
@@ -110,6 +114,8 @@ final class SignalDispatch
     {
         $this->signal = $signal;
         $this->groupOperation = $release?->groupOperation;
+        $this->placementRecoveryRelay = $release?->placementRecoveryRelay ?? false;
+        $this->linkBoundUpload = $release?->linkBoundUpload ?? false;
         $this->work = $workFactory($this);
     }
 

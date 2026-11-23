@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Core\Agent\Daemon;
 
+use Hilos\Cluster\Placement\PlacementRecovery;
 use Hilos\Core\EventLoop\Exception\EventLoopException;
 use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Core\Daemon\DaemonManager;
@@ -45,11 +46,12 @@ interface AgentStartSink
      *
      * @param string $agentId Id of the agent whose start failed, in the `type` or `type:index` form
      * @param string $reason Why the start did not finish, as the failure said it
+     * @param ?PlacementRecovery $recovery Live replay obligation that can outlast this refusal
      * @throws InvalidArgumentException When an answer the listener owes a waiting frame cannot be named
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    public function onAgentStartFailed(string $agentId, string $reason): void;
+    public function onAgentStartFailed(string $agentId, string $reason, ?PlacementRecovery $recovery = null): void;
 
     /**
      * Reports that an agent stopped on this node, ending any startup wait it satisfied.

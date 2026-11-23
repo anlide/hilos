@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Closure;
 
@@ -1450,7 +1451,12 @@ final class QueueLoopWorkerClient extends WorkerClient
      * @param ?string $agentIndex Instance addressed, null for a singleton
      * @param list<string> $liveAcceptKeys Browser identities carried by the real start
      */
-    public function sendAgentStart(string $agentType, ?string $agentIndex = null, array $liveAcceptKeys = []): void
+    public function sendAgentStart(
+        string $agentType,
+        ?string $agentIndex = null,
+        array $liveAcceptKeys = [],
+        ?PlacementId $placementId = null,
+    ): void
     {
         parent::sendAgentStart($agentType, $agentIndex, $liveAcceptKeys);
         ($this->afterStart)?->__invoke();

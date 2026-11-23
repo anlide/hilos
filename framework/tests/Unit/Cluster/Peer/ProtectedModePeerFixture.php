@@ -121,6 +121,17 @@ trait ProtectedModePeerFixture
     }
 
     /**
+     * @param PeerServer $server Owner of the authenticated test link
+     * @param PeerLink $link Link whose socket closes before fixture teardown
+     */
+    private function dropProtectedModePeer(PeerServer $server, PeerLink $link): void
+    {
+        $socket = $link->getSocket();
+        $this->peerSockets = array_values(array_filter($this->peerSockets, static fn(Socket $item): bool => $item !== $socket));
+        $server->dropClient($link);
+    }
+
+    /**
      * @param array{PeerLink, Socket} $pair Link to flush and its far socket
      * @return list<PeerDTO> Complete frames delivered since the previous flush
      */

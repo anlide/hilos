@@ -257,6 +257,9 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     /** Monotonic within this accepted connection; browser input never supplies this counter. */
     private int $deliverySequence = 0;
 
+    /** Latest admitted page intent, retained after its completion for the lifetime of this socket. */
+    private ?string $latestPageDeliveryId = null;
+
     /** @var array<string, WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO> Accepted pending requests */
     private array $deliveryRequests = [];
 
@@ -1549,6 +1552,52 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
     }
 
     /**
+     * @param string $page Page named by the request
+     * @param string $deliveryId Master-minted token
+     * @return WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|null Live request admitted on this socket
+     */
+    public function pendingPageDeliveryRequest(
+        string $page, string $deliveryId,
+    ): WebSocketPageSubscribeSignalDTO|WebSocketPageUpdateSubscriptionSignalDTO|null {
+        return $this->isDeliveryPending($page, $deliveryId) ? $this->deliveryRequests[$deliveryId] : null;
+    }
+
+    /**
+     * @param string $deliveryId Original server-minted token
+     * @return bool Whether this was the latest page request admitted by this socket
+     */
+    public function isLatestPageDelivery(string $deliveryId): bool
+    {
+        return $this->latestPageDeliveryId === $deliveryId;
+    }
+
+    /**
+     * @param string $page Page named by the requests
+     * @return bool Whether the socket still awaits a delivery on this page
+     */
+    public function hasPendingDeliveries(string $page): bool
+    {
+        return isset($this->deliveryRequestPages[$page]);
+    }
+
+    /**
+     * Abandons one delivery while leaving sibling updates and their transport state intact.
+     *
+     * @param string $page Page named by the request
+     * @param string $deliveryId Exact socket-minted request token
+     * @throws EventLoopException When the next protocol deadline cannot be armed
+     */
+    public function cancelDelivery(string $page, string $deliveryId): void
+    {
+        if (!$this->isDeliveryPending($page, $deliveryId)) {
+            return;
+        }
+        $this->forgetDeliveryRequest($page, $deliveryId);
+        $this->deliveryQueue?->cancelDelivery($deliveryId);
+        $this->rearmSocketWork();
+    }
+
+    /**
      * The accepted subscribe can precede its dispatch and the router's subscription record.
      * It cancels earlier requests on admission, so a still-pending subscribe is always first.
      *
@@ -1880,6 +1929,7 @@ abstract class WebSocketClient extends AbstractClient implements WebSocketClient
                 if ($dto instanceof WebSocketPageSubscribeSignalDTO) {
                     $this->pendingSubscribe = $dto;
                 }
+                $this->latestPageDeliveryId = $deliveryId;
                 Hilos::$sr->queueSignal(
                     new SignalSource(SignalSource::WEBSOCKET),
                     new SignalType($type),

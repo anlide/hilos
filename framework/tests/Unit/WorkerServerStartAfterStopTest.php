@@ -4,8 +4,30 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Placement\PlacementRecovery;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartFailedDTO;
+use Hilos\Socket\Worker\DTO\WorkerAgentStartedDTO;
+use Hilos\Tests\Unit\Cluster\Placement\FakePlacementMesh;
+use Hilos\Core\Agent\Config\AgentRegistryKey;
+use Hilos\Core\Agent\Config\AgentPlacement;
+use Hilos\Cluster\Placement\PlacementState;
+use Hilos\Cluster\Placement\ClusterPlacement;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
+use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
+use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
+use Hilos\Cluster\Placement\AgentLocationKind;
+use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementSnapshot;
+use Hilos\Constants\WorkerConstants;
+use Hilos\Core\Process;
+use Hilos\Cluster\Placement\PlacementId;
 use Closure;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\PendingLeadership;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\HilosAgentType;
 use Hilos\Core\Sync\DTO\RtSyncUpdatedSignalData;
@@ -35,6 +57,7 @@ use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
+use ReflectionMethod;
 use ReflectionProperty;
 
 /**
@@ -140,6 +163,33 @@ final class WorkerServerStartAfterStopTest extends TestCase
             Logger::setWriteLevel($previousWriteLevel);
             unlink($logFile);
         }
+    }
+
+    /** @param bool $failed Whether the first worker request ended with StartFailed instead of Stopped */
+    #[DataProvider('settledStopReports')]
+    public function testStopCompletionCannotRemoveAReplacementSeatedOnTheReportingLink(bool $failed): void
+    {
+        [$server, $manager, $worker] = $this->runningAgent();
+        if (!$failed) {
+            $worker->reportStarted();
+        }
+        $server->revokePlacement(self::AGENT_TYPE, null, $server->startPublic(...));
+
+        if ($failed) {
+            $worker->reportFailure('source wait failed');
+        } else {
+            $worker->reportStop();
+        }
+        self::assertSame([self::AGENT_TYPE, self::AGENT_TYPE], $worker->startedAgentTypes);
+        self::assertSame($worker, $manager->getAgent(self::AGENT_TYPE)?->getWorkerClient());
+        $worker->reportStarted();
+        self::assertTrue($manager->isAgentStarted(self::AGENT_TYPE));
+    }
+
+    public static function settledStopReports(): iterable
+    {
+        yield 'worker stopped' => [false];
+        yield 'failed start discharged the stop' => [true];
     }
 
     public function testPlacementAcceptedDuringStopWaitKeepsItsSanction(): void
@@ -564,6 +614,469 @@ final class WorkerServerStartAfterStopTest extends TestCase
         ], $lines[0]);
     }
 
+    public function testCurrentPolicyReplayReportsASynchronousFailureOnce(): void
+    {
+        [$server, $manager, $worker, $placement, $mesh, $id] = $this->managedAgent();
+        $worker->reportStarted();
+        $this->close($server);
+        $server->rosterStepPublic();
+        $worker->reportStop();
+        $server->disconnectWorker(self::ORIGINAL_WORKER);
+        $mesh->sent = [];
+
+        $this->lift($server);
+        $server->rosterStepPublic();
+        $worker->reportFailure('late worker refusal');
+
+        self::assertFalse($manager->hasAgent(self::AGENT_TYPE));
+        self::assertNull($placement->localPlacementId(self::AGENT_TYPE));
+        self::assertCount(1, $mesh->sent);
+        [$leader, $failed] = $mesh->sent[0];
+        self::assertSame('leader', $leader);
+        self::assertInstanceOf(PeerAgentStatusDTO::class, $failed);
+        self::assertSame(PlacementState::Failed, $failed->state);
+        self::assertNull($failed->workerId);
+        self::assertSame([], $failed->refusals);
+        self::assertTrue($id->equals($failed->placementId));
+        self::assertSame(7, $failed->authorityTerm);
+        self::assertSame($id, $placement->placementRecovery(self::AGENT_TYPE)?->origin);
+    }
+
+    public function testOnlyTheCurrentWorkerReportsProofAndFailureForAReplay(): void
+    {
+        [$server, $manager, $worker, $placement, $mesh, $id] = $this->managedAgent();
+        self::assertFalse($mesh->sent[0][1]->workerStarted, 'The early worker address is provisional');
+        $worker->reportStarted();
+        self::assertTrue($mesh->sent[1][1]->workerStarted);
+
+        $this->close($server);
+        $server->rosterStepPublic();
+        $this->lift($server);
+        $server->rosterStepPublic();
+        $worker->reportStop();
+        $server->disconnectWorker(self::ORIGINAL_WORKER);
+        $replacement = $server->addWorker(self::ORIGINAL_WORKER);
+        $server->advancePublic();
+        $mesh->sent = [];
+        $worker->reportStarted();
+        $worker->reportFailure('old link');
+        self::assertSame($replacement, $manager->getAgent(self::AGENT_TYPE)?->getWorkerClient());
+        self::assertSame([], $mesh->sent);
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('during-replay', 7));
+        self::assertSame(PlacementState::Placing, $mesh->sent[0][1]->agents[0]->state);
+        self::assertFalse($mesh->sent[0][1]->agents[0]->workerStarted);
+
+        $sink = new StartAfterStopTestStartSink();
+        $manager->registerAgentStartSink($sink);
+        $replacement->reportFailure('source did not arrive');
+        $replacement->reportFailure('duplicate failure');
+        self::assertCount(2, $mesh->sent);
+        $failed = $mesh->sent[1][1];
+        self::assertSame(PlacementState::Failed, $failed->state);
+        self::assertSame('source did not arrive', $failed->error);
+        self::assertSame([$id], $sink->failedRecoveryOrders);
+        self::assertTrue($id->equals($failed->placementId));
+        self::assertNull($placement->localPlacementId(self::AGENT_TYPE));
+    }
+
+    public function testRevokingAFrozenPolicyOrderCancelsItsReplayWithoutFailure(): void
+    {
+        [$server, , $worker, $placement, $mesh] = $this->managedAgent();
+        $worker->reportStarted();
+        $this->close($server);
+        $server->rosterStepPublic();
+        $this->lift($server);
+        $server->rosterStepPublic();
+        $placement->onStopAgent('leader', new PeerStopAgentDTO(self::AGENT_TYPE, null, 7, 'stop', $placement->localPlacementId(self::AGENT_TYPE)));
+        $mesh->sent = [];
+        $worker->reportStop();
+        $server->advancePublic();
+
+        self::assertNull($placement->localPlacementId(self::AGENT_TYPE));
+        self::assertSame([self::AGENT_TYPE], $worker->startedAgentTypes);
+        self::assertCount(1, $mesh->sent);
+        self::assertSame(PlacementState::Stopped, $mesh->sent[0][1]->state);
+    }
+
+    /** @param bool $waitForWorker Whether the replay already reached the worker-connection queue */
+    #[DataProvider('interruptedReplayWaits')]
+    public function testAReplayThatLosesAuthorityWhileWaitingLeavesNoHostedOrderOrFailure(bool $waitForWorker): void
+    {
+        [$server, $manager, $worker, $placement, $mesh, $order] = $this->managedAgent();
+        $worker->reportStarted();
+        $this->close($server);
+        $server->rosterStepPublic();
+        $this->lift($server);
+        $server->rosterStepPublic();
+        if ($waitForWorker) {
+            $this->holdReplayForConnectingWorker($server, $worker);
+        } else {
+            self::assertTrue($server->isAgentAwaitingStopReport(self::AGENT_TYPE));
+        }
+        $sink = new StartAfterStopTestStartSink();
+        $manager->registerAgentStartSink($sink);
+        $placement->onPlacementRelease('leader', 1000.0);
+        $mesh->sent = [];
+        $mesh->holdRtWritesAnswered = true;
+
+        if ($waitForWorker) {
+            $replacement = $server->addWorker(self::OTHER_WORKER);
+            $server->advanceWorkerWaitPublic();
+            self::assertSame([], $replacement->startedAgentTypes);
+        } else {
+            $worker->reportStop();
+            $server->advancePublic();
+        }
+        self::assertSame([$order], $sink->failedRecoveryOrders);
+        self::assertSame([], $mesh->sent);
+        self::assertNull($placement->localPlacementId(self::AGENT_TYPE));
+        self::assertSame([self::AGENT_TYPE], $worker->startedAgentTypes);
+
+        $placement->onPlacementQuery('successor', new PeerPlacementQueryDTO('query-in-new-term', 8));
+        self::assertSame([], $mesh->sent);
+        $mesh->releaseRtWritesAnswered();
+        self::assertSame([], $mesh->sent);
+        $placement->tick(1000.0);
+        self::assertEquals([['successor', new PeerPlacementReportDTO([], queryId: 'query-in-new-term')]], $mesh->sent);
+    }
+
+    public function testConfirmedTerminalViewRevokesReplayBeforeTheStopArrives(): void
+    {
+        [$server, , $worker, $placement, $mesh, $order] = $this->managedAgent();
+        $worker->reportStarted();
+        $this->close($server);
+        $server->rosterStepPublic();
+        $this->lift($server);
+        $server->rosterStepPublic();
+        self::assertTrue($server->isAgentAwaitingStopReport(self::AGENT_TYPE));
+
+        $terminal = new PlacementRecord(self::AGENT_TYPE, null, 'follower', PlacementState::Stopped, placementId: $order);
+        $placement->onPlacementView('leader', new PeerPlacementViewDTO('leader', [], new PlacementSnapshot('leader', 7, 1, [$terminal])));
+        $mesh->sent = [];
+        $worker->reportStop();
+        $server->advancePublic();
+        self::assertSame([self::AGENT_TYPE], $worker->startedAgentTypes);
+        self::assertSame([], $mesh->sent, 'The addressable stop has not arrived and no failure is due');
+    }
+
+    /** @param PlacementState $state State of the confirmed successor order */
+    #[DataProvider('successorStartStates')]
+    public function testConfirmedRemoteReplacementTakesLocalStartSanctionAndKeepsRecovery(PlacementState $state): void
+    {
+        [$server, , $worker, $placement, $mesh, $order] = $this->managedAgent();
+        $worker->reportStarted();
+        $this->close($server);
+        $server->rosterStepPublic();
+        $recovery = $placement->placementRecovery(self::AGENT_TYPE);
+        self::assertNotNull($recovery);
+        $placement->onPlacementQuery('successor', new PeerPlacementQueryDTO('takeover', 8));
+        $new = new PlacementId('successor', 8, 1);
+        $next = new PlacementRecord(self::AGENT_TYPE, null, 'other', $state, placementId: $new);
+        $placement->onPlacementView('successor', new PeerPlacementViewDTO('successor', [],
+            new PlacementSnapshot('successor', 8, 1, [$next])));
+        self::assertFalse($placement->isLocalPlacementCurrent(self::AGENT_TYPE, $order));
+        $this->lift($server);
+        $server->rosterStepPublic();
+        $worker->reportStop();
+        $server->advancePublic();
+        self::assertSame([self::AGENT_TYPE], $worker->startedAgentTypes);
+        $placement->onStopAgent('successor', new PeerStopAgentDTO(self::AGENT_TYPE, null, 8, 'stop', $order));
+        self::assertFalse($placement->isPlacementRecoveryCanceled(self::AGENT_TYPE, $recovery));
+        self::assertNull($placement->startedPlacementRecovery(self::AGENT_TYPE, $recovery));
+
+        $proof = new PlacementRecord(self::AGENT_TYPE, null, 'other', PlacementState::Started, placementId: $new, workerStarted: true);
+        $placement->onPlacementView('successor', new PeerPlacementViewDTO('successor', [],
+            new PlacementSnapshot('successor', 8, 2, [$proof])));
+        self::assertSame(AgentLocationKind::Node, $placement->startedPlacementRecovery(self::AGENT_TYPE, $recovery)?->kind);
+    }
+
+    public static function successorStartStates(): iterable
+    {
+        yield 'pending successor' => [PlacementState::Placing];
+        yield 'started without worker proof' => [PlacementState::Started];
+    }
+
+    public function testFreshAndAdoptedOrdersCanReplayWithAnEarlierTerminalView(): void
+    {
+        [$server, $manager, $worker, $placement, $mesh, $order] = $this->managedAgent();
+        $earlier = new PlacementId('leader', 6, $order->sequence);
+        $record = new PlacementRecord(self::AGENT_TYPE, null, null, PlacementState::Stopped, placementId: $earlier);
+        $placement->onPlacementView('leader', new PeerPlacementViewDTO('leader', [], new PlacementSnapshot('leader', 7, 1, [$record])));
+        $worker->reportStarted();
+
+        $this->close($server);
+        $server->rosterStepPublic();
+        $placement->onPlacementRelease('leader', 1000.0);
+        $mesh->sent = [];
+        $placement->onPlacementQuery('successor', new PeerPlacementQueryDTO('rebuild', 8));
+        $report = $mesh->sent[0][1];
+        self::assertInstanceOf(PeerPlacementReportDTO::class, $report);
+        self::assertTrue($order->equals($report->agents[0]->placementId));
+        self::assertSame(PlacementState::Placing, $report->agents[0]->state);
+
+        $this->lift($server);
+        $server->rosterStepPublic();
+        $worker->reportStop();
+        $server->advancePublic();
+        $worker->reportStarted();
+        self::assertTrue($manager->isAgentStarted(self::AGENT_TYPE));
+        $started = array_last($mesh->sent)[1];
+        self::assertInstanceOf(PeerAgentStatusDTO::class, $started);
+        self::assertTrue($started->workerStarted);
+        self::assertTrue($order->equals($started->placementId));
+        self::assertSame(8, $started->authorityTerm);
+    }
+
+    /** @param bool $waitForWorker Whether the next replay waits for a worker instead of its earlier stop report */
+    #[DataProvider('interruptedReplayWaits')]
+    public function testRefreezeKeepsTheCurrentPolicyRecoveryUntilTheNextWorkerReport(bool $waitForWorker): void
+    {
+        [$server, $manager, $worker, $placement, $mesh, $order] = $this->managedAgent();
+        $worker->reportStarted();
+        $this->close($server);
+        $server->rosterStepPublic();
+        $this->lift($server);
+        $server->rosterStepPublic();
+
+        if ($waitForWorker) {
+            $this->holdReplayForConnectingWorker($server, $worker);
+        } else {
+            self::assertTrue($server->isAgentAwaitingStopReport(self::AGENT_TYPE));
+        }
+        $sink = new StartAfterStopTestStartSink();
+        $manager->registerAgentStartSink($sink);
+        $recovery = $placement->placementRecovery(self::AGENT_TYPE);
+        $mesh->sent = [];
+
+        $this->close($server);
+        $server->rosterStepPublic();
+        if (!$waitForWorker) {
+            $worker->reportStop();
+            $server->advancePublic();
+        }
+        self::assertSame([$order], $sink->failedRecoveryOrders);
+        self::assertSame($recovery, $placement->placementRecovery(self::AGENT_TYPE));
+        self::assertSame([], $mesh->sent);
+        if ($waitForWorker) {
+            $worker = $server->addWorker(self::OTHER_WORKER);
+        }
+
+        $this->lift($server);
+        $server->rosterStepPublic();
+        self::assertFalse($manager->isAgentStarted(self::AGENT_TYPE));
+        $worker->reportStarted();
+        self::assertTrue($manager->isAgentStarted(self::AGENT_TYPE));
+        self::assertSame(AgentLocationKind::Here, $placement->startedPlacementRecovery(self::AGENT_TYPE, $recovery)?->kind);
+    }
+
+    /** @return iterable<string, array{bool}> Queues whose replay must survive a second freeze */
+    public static function interruptedReplayWaits(): iterable
+    {
+        yield 'earlier stop report' => [false];
+        yield 'worker connection' => [true];
+    }
+
+    /** @param bool $freeze Whether to close the start gate while authority remains current */
+    #[DataProvider('closedStartSanctions')]
+    public function testStartedWithoutSanctionCannotSetTheRosterOrBecomeHostedProof(bool $freeze): void
+    {
+        [$server, $manager, $worker, $placement, $mesh, $order] = $this->managedAgent();
+        $worker->reportStarted();
+        $this->close($server);
+        $server->rosterStepPublic();
+        $this->lift($server);
+        $server->rosterStepPublic();
+        $worker->reportStop();
+        $server->advancePublic();
+        self::assertCount(2, $worker->startedAgentTypes);
+        $recovery = $placement->placementRecovery(self::AGENT_TYPE);
+        $sink = new StartAfterStopTestStartSink();
+        $manager->registerAgentStartSink($sink);
+
+        if ($freeze) {
+            $this->close($server);
+        } else {
+            $placement->onPlacementRelease('leader', 1000.0);
+        }
+        $mesh->sent = [];
+        $worker->reportStarted();
+        self::assertFalse($manager->isAgentStarted(self::AGENT_TYPE));
+        self::assertSame([], $sink->startedAgentIds);
+        self::assertSame([], $mesh->sent);
+        $mesh->holdRtWritesAnswered = true;
+        $placement->onPlacementQuery('successor', new PeerPlacementQueryDTO('query-in-new-term', 8));
+        self::assertNull($placement->startedPlacementRecovery(self::AGENT_TYPE, $recovery));
+        self::assertTrue($worker->awaitsStopReport(self::AGENT_TYPE));
+        if (!$freeze) {
+            self::assertSame([], $mesh->sent);
+            self::assertNull($placement->localPlacementId(self::AGENT_TYPE));
+            $worker->reportStop();
+            self::assertSame([], $mesh->sent);
+            $mesh->releaseRtWritesAnswered();
+            self::assertSame([], $mesh->sent);
+            $placement->tick(1000.0);
+            self::assertEquals([['successor', new PeerPlacementReportDTO([], queryId: 'query-in-new-term')]], $mesh->sent);
+        } else {
+            self::assertInstanceOf(PeerPlacementReportDTO::class, $mesh->sent[0][1] ?? null);
+            self::assertSame(PlacementState::Placing, $mesh->sent[0][1]->agents[0]->state);
+            self::assertFalse($mesh->sent[0][1]->agents[0]->workerStarted);
+            self::assertTrue($order->equals($placement->localPlacementId(self::AGENT_TYPE)));
+        }
+    }
+
+    /** @return iterable<string, array{bool}> Distinct ways a pending worker loses permission to complete */
+    public static function closedStartSanctions(): iterable
+    {
+        yield 'leader released the placement authority' => [false];
+        yield 'the freeze gate closed before stopping the roster' => [true];
+    }
+
+    public function testARefusedRtClaimRevokesTheLocallyKnownOrderBeforeTheLeadersStop(): void
+    {
+        [$server, $manager, $worker, $placement, $mesh, $order] = $this->managedAgent();
+        $daemon = new StartAfterStopTestDaemonManager();
+        $daemon->registerServer($server);
+        $worker->reportStarted();
+        $mesh->sent = [];
+        $mesh->holdRtWritesAnswered = true;
+
+        $daemon->applyRtClaimRefusal(new PeerRtClaimRefusedDTO(
+            'test_collection', [], self::AGENT_TYPE, null, self::AGENT_TYPE, 'follower', 'holder', 7,
+        ));
+        self::assertNull($placement->localPlacementId(self::AGENT_TYPE));
+        self::assertTrue($worker->awaitsStopReport(self::AGENT_TYPE));
+        self::assertTrue(new ReflectionMethod($server, 'rtClaimRefusesStart')->invoke($server, self::AGENT_TYPE, null));
+        $stop = new PeerStopAgentDTO(self::AGENT_TYPE, null, 7, 'exact-stop', $order);
+        $placement->onStopAgent('leader', $stop);
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('after-stop', 7));
+        self::assertSame([], $mesh->sent);
+        $worker->reportStop();
+        self::assertFalse($manager->hasAgent(self::AGENT_TYPE));
+        self::assertSame([], $mesh->sent);
+
+        $mesh->releaseRtWritesAnswered();
+        self::assertEquals([['leader', $stop->stoppedStatus()]], $mesh->sent);
+        $placement->tick(1000.0);
+        self::assertEquals([
+            ['leader', $stop->stoppedStatus()],
+            ['leader', new PeerPlacementReportDTO([], queryId: 'after-stop')],
+        ], $mesh->sent);
+    }
+
+    public function testLateWorkerFailureAfterAuthorityReleaseKeepsTheOriginalRecovery(): void
+    {
+        [$server, $manager, $worker, $placement, $mesh, $order] = $this->managedAgent();
+        $worker->reportStarted();
+        $this->close($server);
+        $server->rosterStepPublic();
+        $this->lift($server);
+        $server->rosterStepPublic();
+        $worker->reportStop();
+        $server->advancePublic();
+        $sink = new StartAfterStopTestStartSink();
+        $manager->registerAgentStartSink($sink);
+        $placement->onPlacementRelease('leader', 1000.0);
+        $mesh->sent = [];
+        $worker->reportFailure('source did not arrive');
+        self::assertSame([], $mesh->sent);
+        self::assertSame([$order], $sink->failedRecoveryOrders);
+        self::assertNull($placement->localPlacementId(self::AGENT_TYPE));
+    }
+
+    public function testLocalPolicyRetryPublishesProofOnlyAfterTheWorkerStarts(): void
+    {
+        [$server, , $worker] = $this->serverWithWorker();
+        $mesh = new FakePlacementMesh(['leader' => ['slots=10']], online: ['leader']);
+        $placement = new ClusterPlacement('leader', $mesh, $server);
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerLeadership(new PendingLeadership());
+        Hilos::$cluster->registerPlacement($placement);
+        $this->mountProtectedMode();
+        $placement->onBecameLeader(1000.0, 7);
+        $placement->placeAgentOnNode(self::AGENT_TYPE, null, 'leader');
+        $old = $placement->registry()->get(self::AGENT_TYPE);
+        self::assertFalse($old->workerStarted);
+        $worker->reportFailure('source wait failed');
+
+        self::assertSame(PlacementState::Failed, $placement->registry()->get(self::AGENT_TYPE)?->state);
+        $due = new ReflectionProperty(ClusterPlacement::class, 'retryAt')->getValue($placement)[self::AGENT_TYPE];
+        $placement->tick($due);
+        $replacement = $placement->placementSnapshot()?->records[0];
+        self::assertSame(PlacementState::Started, $replacement?->state);
+        self::assertFalse($replacement->workerStarted);
+        self::assertFalse($old->placementId->equals($replacement->placementId));
+        $worker->reportStarted();
+
+        $proven = $placement->placementSnapshot()?->records[0];
+        self::assertTrue($proven?->workerStarted);
+        self::assertTrue($replacement->placementId->equals($proven->placementId));
+    }
+
+    public function testRefreezeConsumesTheOldWorkerFailureAsAStopAndKeepsThePolicyOrderForLift(): void
+    {
+        [$server, $manager, $worker, $placement, $mesh, $order] = $this->managedAgent();
+        $worker->reportStarted();
+        $this->close($server);
+        $server->rosterStepPublic();
+        $worker->reportStop();
+        $this->lift($server);
+        $server->rosterStepPublic();
+        self::assertCount(2, $worker->startedAgentTypes);
+
+        $this->close($server);
+        $server->rosterStepPublic();
+        $mesh->sent = [];
+        $worker->reportFailure('late refusal behind refreeze');
+        $server->advancePublic();
+        self::assertSame([], $mesh->sent);
+        self::assertTrue($order->equals($placement->localPlacementId(self::AGENT_TYPE)));
+        self::assertFalse($manager->hasAgent(self::AGENT_TYPE));
+
+        $this->lift($server);
+        $server->rosterStepPublic();
+        self::assertCount(3, $worker->startedAgentTypes, 'The failed worker no longer owes a stop report');
+        $worker->reportStarted();
+        self::assertCount(1, $mesh->sent);
+        self::assertTrue($mesh->sent[0][1]->workerStarted);
+        self::assertTrue($order->equals($mesh->sent[0][1]->placementId));
+    }
+
+    /** @return array{StartAfterStopTestWorkerServer, StartAfterStopTestAgentManagerDaemon, StartAfterStopTestWorkerClient,
+     *     ClusterPlacement, FakePlacementMesh, PlacementId} One managed order on a real master roster */
+    private function managedAgent(): array
+    {
+        [$server, $manager, $worker] = $this->serverWithWorker();
+        $mesh = new FakePlacementMesh(['follower' => ['slots=10']], linked: ['leader']);
+        $placement = new ClusterPlacement('follower', $mesh, $server);
+        Hilos::$cluster = new ClusterContext();
+        Hilos::$cluster->registerLeadership(new PendingLeadership());
+        Hilos::$cluster->registerPlacement($placement);
+        $this->mountProtectedMode();
+        $id = new PlacementId('leader', 7, 1);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO(self::AGENT_TYPE, null, $id));
+
+        return [$server, $manager, $worker, $placement, $mesh, $id];
+    }
+
+    /**
+     * @param StartAfterStopTestWorkerServer $server Real owner of both replay waits
+     * @param StartAfterStopTestWorkerClient $worker Worker whose earlier stop was still pending
+     */
+    private function holdReplayForConnectingWorker(StartAfterStopTestWorkerServer $server, StartAfterStopTestWorkerClient $worker): void
+    {
+        $worker->reportStop();
+        $server->disconnectWorker(self::ORIGINAL_WORKER);
+        new ReflectionProperty(WorkerServer::class, 'workers')->setValue($server, [
+            WorkerConstants::TYPE_REGULAR . WorkerConstants::KEY_SEPARATOR . self::OTHER_WORKER => [
+                WorkerConstants::FIELD_WORKER_PROCESS => $this->createStub(Process::class),
+                WorkerConstants::FIELD_WORKER_TYPE => WorkerConstants::TYPE_REGULAR,
+                WorkerConstants::FIELD_WORKER_INDEX => self::OTHER_WORKER,
+            ],
+        ]);
+        $server->advancePublic();
+        self::assertTrue($server->isAgentAwaitingWorker(self::AGENT_TYPE));
+    }
+
     /** Mounts the production phase row without unrelated application runtime data. */
     private function mountProtectedMode(): void
     {
@@ -698,12 +1211,18 @@ final class WorkerServerStartAfterStopTest extends TestCase
      */
     private function runningAgent(?string $agentIndex = null): array
     {
+        $running = $this->serverWithWorker();
+        $running[0]->startPublic($agentIndex);
+        return $running;
+    }
+
+    /** @return array{StartAfterStopTestWorkerServer, StartAfterStopTestAgentManagerDaemon, StartAfterStopTestWorkerClient} Empty roster */
+    private function serverWithWorker(): array
+    {
         $manager = new StartAfterStopTestAgentManagerDaemon();
         $server = new ReflectionClass(StartAfterStopTestWorkerServer::class)->newInstanceWithoutConstructor();
         new ReflectionProperty(WorkerServer::class, 'agentManager')->setValue($server, $manager);
         $original = $server->addWorker(self::ORIGINAL_WORKER);
-        $server->startPublic($agentIndex);
-
         return [$server, $manager, $original];
     }
 }
@@ -725,6 +1244,11 @@ final class StartAfterStopTestWorkerServer extends WorkerServer
     public function advancePublic(): void
     {
         new ReflectionClass(WorkerServer::class)->getMethod('advanceAgentsAwaitingStopReport')->invoke($this);
+    }
+
+    public function advanceWorkerWaitPublic(): void
+    {
+        $this->advanceAgentsAwaitingWorker();
     }
 
     /** Advances one production roster portion without a clock or a second process. */
@@ -786,10 +1310,16 @@ final class StartAfterStopTestWorkerClient extends WorkerClient
      * @param ?string $agentIndex Instance actually sent, or null for the singleton
      * @param list<string> $liveAcceptKeys Unused browser roster
      */
-    public function sendAgentStart(string $agentType, ?string $agentIndex = null, array $liveAcceptKeys = []): void
+    public function sendAgentStart(
+        string $agentType,
+        ?string $agentIndex = null,
+        array $liveAcceptKeys = [],
+        ?PlacementId $placementId = null,
+    ): void
     {
         $this->startedAgentTypes[] = $agentType;
         $this->startedAgents[] = [$agentType, $agentIndex];
+        parent::sendAgentStart($agentType, $agentIndex, $liveAcceptKeys, $placementId);
         $this->onAgentStart?->__invoke($agentType, $agentIndex);
     }
 
@@ -807,6 +1337,21 @@ final class StartAfterStopTestWorkerClient extends WorkerClient
 
     public function send(string $message): void
     {
+    }
+
+    public function reportStarted(): void
+    {
+        $type = StartAfterStopTestAgentDaemon::AGENT_TYPE;
+        new ReflectionClass(WorkerClient::class)->getMethod('processMessage')->invoke($this, new WorkerAgentStartedDTO($type, $type)->toJson());
+    }
+
+    /** @param string $reason Reason supplied by the worker */
+    public function reportFailure(string $reason): void
+    {
+        $type = StartAfterStopTestAgentDaemon::AGENT_TYPE;
+        new ReflectionClass(WorkerClient::class)->getMethod('processMessage')->invoke(
+            $this, new WorkerAgentStartFailedDTO($type, $type, reason: $reason)->toJson(),
+        );
     }
 
     /**
@@ -859,7 +1404,9 @@ final class StartAfterStopTestAgentDaemon extends AbstractAgentDaemon
 
 abstract class StartAfterStopTestHilos extends Hilos
 {
-    public const array AGENTS = [StartAfterStopTestAgentDaemon::AGENT_TYPE => []];
+    public const array AGENTS = [
+        StartAfterStopTestAgentDaemon::AGENT_TYPE => [AgentRegistryKey::PLACEMENT => AgentPlacement::POLICY],
+    ];
 }
 
 final class StartAfterStopTestDaemonManager extends DaemonManager
@@ -877,16 +1424,26 @@ final class StartAfterStopTestDaemonManager extends DaemonManager
 
 final class StartAfterStopTestStartSink implements AgentStartSink
 {
+    /** @var list<string> Agents whose start reached the generic sink */
+    public array $startedAgentIds = [];
+
     /** @var list<string> Agents whose start failed */
     public array $failedAgentIds = [];
 
+    /** @var list<PlacementId> Replay origins handed to the general start-failure sink */
+    public array $failedRecoveryOrders = [];
+
     public function onAgentStarted(string $agentId): void
     {
+        $this->startedAgentIds[] = $agentId;
     }
 
-    public function onAgentStartFailed(string $agentId, string $reason): void
+    public function onAgentStartFailed(string $agentId, string $reason, ?PlacementRecovery $recovery = null): void
     {
         $this->failedAgentIds[] = $agentId;
+        if ($recovery !== null) {
+            $this->failedRecoveryOrders[] = $recovery->origin;
+        }
     }
 
     public function onAgentStopped(string $agentId): void

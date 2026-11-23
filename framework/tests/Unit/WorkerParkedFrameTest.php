@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Closure;
 use Hilos\Constants\AgentConstants;
 use Hilos\Constants\SignalConstants;
 use Hilos\Constants\SignalTypeConstants;
@@ -45,6 +46,8 @@ use Hilos\Socket\Worker\DTO\WorkerRegisteredDTO;
 use Hilos\Socket\Worker\DTO\WorkerRtSyncStreamDTO;
 use Hilos\Socket\Worker\WorkerDTO;
 use Hilos\Socket\Worker\WorkerDaemonClient;
+use Hilos\Utils\LogLevel;
+use Hilos\Utils\Logger;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use ReflectionProperty;
@@ -247,6 +250,42 @@ final class WorkerParkedFrameTest extends TestCase
         $this->assertCount(1, $this->manager->failures);
     }
 
+    /** Registration reports the same outstanding sources at warning and error level. */
+    public function testInitialSourceTimeoutNamesOnlyTheMissingSources(): void
+    {
+        $states = new ReflectionProperty(SourceInterestRegistry::class, 'states');
+        $previousStates = $states->getValue();
+        try {
+            foreach ([SourceChange::KIND_RT, SourceChange::KIND_DB] as $kind) {
+                foreach (SourceInterestRegistry::collections($kind) as $collection) {
+                    SourceInterestRegistry::markReady($kind, $collection);
+                }
+            }
+            SourceInterestRegistry::register(SourceChange::KIND_RT, 'unitBootstrapShared', self::BOOTSTRAP_CONSUMER);
+            SourceInterestRegistry::register(SourceChange::KIND_RT, 'unitBootstrapReady', self::BOOTSTRAP_CONSUMER);
+            SourceInterestRegistry::register(SourceChange::KIND_DB, 'unitBootstrapZeta', self::BOOTSTRAP_CONSUMER);
+            SourceInterestRegistry::register(SourceChange::KIND_DB, 'unitBootstrapShared', self::BOOTSTRAP_CONSUMER);
+            SourceInterestRegistry::register(SourceChange::KIND_DB, 'unitBootstrapAlpha', self::BOOTSTRAP_CONSUMER);
+            $this->manager->handleDaemonMessage(new WorkerRegisteredDTO(1));
+            $askedBy = microtime(true);
+
+            SourceInterestRegistry::markReady(SourceChange::KIND_RT, 'unitBootstrapReady');
+            SourceInterestRegistry::markReady(SourceChange::KIND_DB, 'unitBootstrapShared');
+            $log = $this->captureLogs(function () use ($askedBy): void {
+                $this->manager->pass($askedBy + self::DATA_WAIT_SECONDS + self::DATA_WAIT_MARGIN_SECONDS);
+            });
+
+            $missing = preg_quote('rt [unitBootstrapShared], db [unitBootstrapZeta, unitBootstrapAlpha]', '/');
+            $this->assertMatchesRegularExpression(
+                '/\[WARNING\] Source interest: gave up after \d+ms without ' . $missing . '\R'
+                . '\[[^\r\n]+\] \[ERROR\] Worker started without the sources it reads: ' . $missing . '\R/',
+                $log,
+            );
+        } finally {
+            $states->setValue(null, $previousStates);
+        }
+    }
+
     public function testAParkedSubscriptionRunsOnceItsStateLandsAndTheReplacedPageLetsGoOnce(): void
     {
         $this->manager->handleDaemonMessage(new AgentStartDTO(WorkerParkedFrameTestAgent::AGENT_TYPE));
@@ -368,6 +407,38 @@ final class WorkerParkedFrameTest extends TestCase
             SourceInterestRegistry::consumersOf(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION),
         );
         $this->assertFalse(SourceInterestRegistry::isDeclared(SourceChange::KIND_RT, WorkerParkedFrameTestReader::COLLECTION));
+    }
+
+    /**
+     * @param Closure(): void $work Worker pass whose log is observed
+     * @return string Log produced during that pass
+     */
+    private function captureLogs(Closure $work): string
+    {
+        $logFile = tempnam(sys_get_temp_dir(), 'hilos-source-wait-');
+        $this->assertNotFalse($logFile);
+        $previousLogFile = new ReflectionProperty(Logger::class, 'logFile')->getValue();
+        $previousShowLogLevel = new ReflectionProperty(Logger::class, 'showLogLevel')->getValue();
+        $previousWriteLevel = Logger::writeLevel();
+        Logger::setLogFile($logFile);
+        Logger::setShowLogLevel(true);
+        Logger::setWriteLevel(LogLevel::Warning);
+        try {
+            $work();
+            $log = file_get_contents($logFile);
+            $this->assertNotFalse($log);
+
+            return $log;
+        } finally {
+            if ($previousLogFile === null) {
+                Logger::resetLogFile();
+            } else {
+                Logger::setLogFile($previousLogFile);
+            }
+            Logger::setShowLogLevel($previousShowLogLevel);
+            Logger::setWriteLevel($previousWriteLevel);
+            unlink($logFile);
+        }
     }
 
     /**

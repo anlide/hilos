@@ -1034,7 +1034,13 @@ final class UploadPoolSignalSink implements AgentSignalSink
 
     public int $delivered = 0;
 
-    public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
+    public function deliverSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        SignalDTO $signal,
+        bool $placementRecoveryRelay = false,
+        bool $linkBoundUpload = false,
+    ): void
     {
         $this->signals[] = $signal;
         $this->delivered++;

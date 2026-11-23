@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Cluster;
 
+use Closure;
 use Hilos\Core\Daemon\SignalDispatch;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimEntry;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerRtClaimsDTO;
@@ -27,14 +30,19 @@ interface RtClaimSink
     /**
      * Leader side: folds one node's whole ownership report into the cluster-wide map and judges it.
      *
-     * Ignored on a node that does not lead: the map is the leader's, and a second judge would
-     * refuse claims nobody asked it about.
+     * Every node can drop copies it no longer reads. The leader alone judges the claims.
      *
      * @param string $nodeId Node whose agents hold the claims
      * @param list<PeerRtClaimEntry> $claims What each agent of that node owns
      * @param ?SignalDispatch $origin Causal operation, or null for an independent fact
+     * @param ?Closure(): bool $sourceCurrent Original authenticated peer route, absent for the local fold
      */
-    public function applyRemoteRtClaims(string $nodeId, array $claims, ?SignalDispatch $origin = null): void;
+    public function applyRemoteRtClaims(
+        string $nodeId,
+        array $claims,
+        ?SignalDispatch $origin = null,
+        ?Closure $sourceCurrent = null,
+    ): void;
 
     /**
      * Node side: reports everything this node's agents own, to one node or to the whole mesh.
@@ -52,6 +60,8 @@ interface RtClaimSink
      * Node side: acts on the leader's refusal of one claim made here.
      *
      * @param PeerRtClaimRefusedDTO $refusal What was claimed, by which agent, and who holds it
+     * @throws InvalidFormatException When a tracked stop completion address is invalid
+     * @throws EventLoopException When the executor cannot arm the stop deadline
      */
     public function applyRtClaimRefusal(PeerRtClaimRefusedDTO $refusal): void;
 }

@@ -327,7 +327,13 @@ final class DaemonManagerAgentSignalPeerTestMesh implements AgentSignalMesh
      * @param SignalDTO $signal Signal to deliver on the target node
      * @return bool True unless this case declared the link dead
      */
-    public function sendSignalToNode(string $targetNodeId, string $agentType, ?string $agentIndex, SignalDTO $signal): bool
+    public function sendSignalToNode(
+        string $targetNodeId,
+        string $agentType,
+        ?string $agentIndex,
+        SignalDTO $signal,
+        bool $placementRecoveryRelay = false,
+    ): bool
     {
         $this->frames[] = [
             'targetNodeId' => $targetNodeId,

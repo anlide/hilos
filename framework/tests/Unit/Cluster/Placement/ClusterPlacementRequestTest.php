@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Closure;
+use Hilos\Cluster\Placement\PlacementRecovery;
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Constants\TimeConstants;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
@@ -23,6 +27,7 @@ use Hilos\Cluster\PlacementVerdictSink;
 use Hilos\Cluster\PendingLeadership;
 use Hilos\Hilos;
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
 use ReflectionProperty;
 use WeakReference;
 
@@ -80,7 +85,7 @@ final class ClusterPlacementRequestTest extends TestCase
         $reference = WeakReference::create($immediate);
         unset($immediate);
         self::assertNull($reference->get(), 'A pending placement must not retain its asking operation');
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
         self::assertSame([['render', '9', 'failed: no worker']], $root->notPlaced);
     }
 
@@ -206,7 +211,7 @@ final class ClusterPlacementRequestTest extends TestCase
         $mesh = $this->hostingMesh();
         $placement = $this->follower($mesh, leaderId: null);
         Hilos::$cluster->registerLeadership(new PendingLeadership());
-        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null, new PlacementId('node-b', 0, 1)));
         $mesh->sent = [];
 
         $placement->requirePlacement('mail', '1');
@@ -223,7 +228,7 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->hostingMesh();
         $placement = $this->follower($mesh, leaderId: null);
-        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null));
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('library', null, new PlacementId('node-b', 0, 1)));
         $mesh->sent = [];
 
         $placement->requirePlacement('mail', '1');
@@ -239,7 +244,7 @@ final class ClusterPlacementRequestTest extends TestCase
         $mesh = $this->mesh();
         $placement = $this->settledLeader($mesh);
 
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
 
         [$nodeId, $frame] = $this->lastSent($mesh);
         $this->assertSame('node-b', $nodeId);
@@ -254,7 +259,7 @@ final class ClusterPlacementRequestTest extends TestCase
             $placement = $this->settledLeader($mesh);
             $placement->registry()->put(new PlacementRecord('render', '9', null, $state));
 
-            $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+            $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
 
             if ($state !== PlacementState::Stopped) {
                 $this->assertSame([], $this->placeFrames($mesh));
@@ -273,8 +278,10 @@ final class ClusterPlacementRequestTest extends TestCase
             $this->assertSame([], $this->verdictFrames($mesh), 'No success may name an absent host');
             $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:9')?->state);
 
-            $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
-            $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+            FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 1));
+            if ($state !== PlacementState::Stopped) {
+                $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'retry'));
+            }
 
             $verdicts = $this->verdictFrames($mesh);
             $this->assertCount(1, $verdicts);
@@ -295,7 +302,7 @@ final class ClusterPlacementRequestTest extends TestCase
         $placement->onBecameLeader(1000.0);
         $mesh->sent = [];
 
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
 
         [$nodeId, $frame] = $this->lastSent($mesh);
         $this->assertSame('node-c', $nodeId);
@@ -317,10 +324,10 @@ final class ClusterPlacementRequestTest extends TestCase
             online: [self::SELF, 'node-b'],
         );
         $placement = $this->settledLeader($mesh);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
         $mesh->sent = [];
 
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
 
         $this->assertCount(1, $mesh->sent, 'No place frame, only the verdict');
         [$nodeId, $frame] = $mesh->sent[0];
@@ -343,10 +350,10 @@ final class ClusterPlacementRequestTest extends TestCase
             online: [self::SELF, 'node-b', 'node-c'],
         );
         $placement = $this->settledLeader($mesh);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
         $mesh->sent = [];
 
-        $placement->onPlacementRequest('node-d', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-d', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
 
         [$nodeId, $frame] = $this->lastSent($mesh);
         $this->assertSame('node-d', $nodeId);
@@ -383,7 +390,7 @@ final class ClusterPlacementRequestTest extends TestCase
         $mesh = new FakePlacementMesh(capabilities: [], online: []);
         $placement = $this->settledLeader($mesh);
 
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
 
         [, $frame] = $this->lastSent($mesh);
         $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $frame);
@@ -402,11 +409,11 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->mesh();
         $placement = $this->settledLeader($mesh);
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
         $mesh->sent = [];
         $refusal = PlacementRefusal::insufficientCapacity('node-b', ['slots' => ['cost' => 1.0, 'free' => 0.0]]);
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'node-b is full', [$refusal]));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '9', 'node-b is full', [$refusal]));
 
         $verdicts = $this->verdictFrames($mesh);
         $this->assertCount(1, $verdicts);
@@ -429,10 +436,10 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->mesh();
         $placement = $this->settledLeader($mesh);
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
         $mesh->sent = [];
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
 
         [[, $verdict]] = $this->verdictFrames($mesh);
         $this->assertSame('no worker', $verdict->reason);
@@ -443,10 +450,10 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->mesh();
         $placement = $this->settledLeader($mesh);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
         $mesh->sent = [];
 
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
 
         [[, $verdict]] = $this->verdictFrames($mesh);
         $this->assertSame(PlacementState::Started, $verdict->state);
@@ -462,17 +469,74 @@ final class ClusterPlacementRequestTest extends TestCase
         $mesh = $this->mesh();
         $placement = $this->settledLeader($mesh);
 
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'first-ask'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'current-ask'));
         $mesh->sent = [];
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
 
         $verdicts = $this->verdictFrames($mesh);
         $this->assertCount(1, $verdicts);
         $this->assertSame('node-c', $verdicts[0][0]);
+        $this->assertSame('current-ask', $verdicts[0][1]->requestId);
+        $this->assertSame(0, $verdicts[0][1]->authorityTerm);
         $this->assertSame(PlacementState::Failed, $verdicts[0][1]->state);
         $this->assertSame('no worker', $verdicts[0][1]->reason);
+    }
+
+    public function testDeferredStartedVerdictEchoesBothPeerRequests(): void
+    {
+        $mesh = $this->mesh();
+        $placement = $this->settledLeader($mesh);
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'first'));
+        $placement->onPlacementRequest('node-d', new PeerPlacementRequestDTO('render', '9', 0, 'second'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 1, 'wrong-term'));
+        self::assertSame([], $this->verdictFrames($mesh));
+
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 3));
+        [[$firstNode, $first], [$secondNode, $second]] = $this->verdictFrames($mesh);
+        self::assertSame(['node-c', 0, 'first', 'node-b'], [$firstNode, $first->authorityTerm, $first->requestId, $first->nodeId]);
+        self::assertSame(['node-d', 0, 'second', 'node-b'], [$secondNode, $second->authorityTerm, $second->requestId, $second->nodeId]);
+        self::assertFalse($placement->registry()->get('render:9')->workerStarted);
+    }
+
+    public function testOnlyTheCurrentAskConsumesAPlacementVerdictInTheSameTerm(): void
+    {
+        $mesh = $this->mesh();
+        $placement = $this->follower($mesh, 'node-b');
+        $sink = new FakePlacementVerdictSink();
+        Hilos::$cluster->registerPlacementVerdictSink($sink);
+        $placement->requirePlacement('render', '9');
+        $first = $mesh->sent[0][1];
+        $placement->invalidateOnDemandAsk('render:9');
+        $placement->requirePlacement('render', '9');
+        $second = $mesh->sent[1][1];
+        self::assertSame($first->authorityTerm, $second->authorityTerm);
+        self::assertNotSame($first->requestId, $second->requestId);
+
+        $old = PeerPlacementVerdictDTO::placed('render', '9', 'old-host')->forRequest($first);
+        $placement->onPlacementVerdict('node-b', $old);
+        $address = new ReflectionMethod($placement, 'hostingNode');
+        self::assertNull($address->invoke($placement, 'render:9'));
+        $failed = PeerPlacementVerdictDTO::notPlaced('render', '9', PlacementState::Unplaced, 'no fit')->forRequest($second);
+        $placement->onPlacementVerdict('other', $failed);
+        self::assertSame([], $sink->notPlaced);
+        $placement->onPlacementVerdict('node-b', $failed);
+        $placement->onPlacementVerdict('node-b', $failed);
+        self::assertSame([['render', '9', 'unplaced: no fit']], $sink->notPlaced);
+        self::assertTrue(($sink->current[0])());
+
+        $placement->requirePlacement('render', '9');
+        $third = $mesh->sent[2][1];
+        $placed = PeerPlacementVerdictDTO::placed('render', '9', 'new-host')->forRequest($third);
+        $placement->onPlacementVerdict('node-b', $failed);
+        $placement->onPlacementVerdict('node-b', $placed);
+        self::assertSame('new-host', $address->invoke($placement, 'render:9'));
+        self::assertFalse(($sink->current[0])());
+        self::assertNull($placement->placementSnapshot());
+        self::assertCount(1, $sink->notPlaced);
+        $placement->onPlacementQuery('node-b', new PeerPlacementQueryDTO('next-term', 1));
+        self::assertNull($address->invoke($placement, 'render:9'));
     }
 
     /**
@@ -508,11 +572,11 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->mesh();
         $placement = $this->settledLeader($mesh);
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
         $placement->onLostLeadership();
         $mesh->sent = [];
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
 
         $this->assertSame([], $this->verdictFrames($mesh));
     }
@@ -526,9 +590,9 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->mesh();
         $placement = $this->settledLeader($mesh);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 1));
 
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
 
         $this->assertSame([], $this->placeFrames($mesh), 'An already-placed agent is left where it is');
     }
@@ -542,7 +606,7 @@ final class ClusterPlacementRequestTest extends TestCase
         $mesh = $this->mesh();
         $placement = $this->follower($mesh, leaderId: 'node-b');
 
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
 
         $this->assertSame([], $mesh->sent);
     }
@@ -555,7 +619,7 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->hostingMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('render', '9', new PlacementId('node-b', 0, 1)));
 
         $placement->noteAgentStopped('render', '9');
 
@@ -564,7 +628,7 @@ final class ClusterPlacementRequestTest extends TestCase
         $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
         $this->assertSame(PlacementState::Stopped, $frame->state);
 
-        $placement->onPlacementQuery('node-b');
+        $placement->onPlacementQuery('node-b', new PeerPlacementQueryDTO('query', 0));
         [, $report] = $this->lastSent($mesh);
         $this->assertInstanceOf(PeerPlacementReportDTO::class, $report);
         $this->assertSame([], $report->agents, 'A stopped agent is no longer reported as hosted');
@@ -577,8 +641,8 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->hostingMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('render', '9'));
-        $placement->onPlacementQuery('node-c');
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('render', '9', new PlacementId('node-b', 0, 1)));
+        $placement->onPlacementQuery('node-c', new PeerPlacementQueryDTO('query', 1));
 
         $placement->noteAgentStopped('render', '9');
 
@@ -619,7 +683,7 @@ final class ClusterPlacementRequestTest extends TestCase
     {
         $mesh = $this->hostingMesh();
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
-        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('node-b', new PeerPlaceAgentDTO('render', '9', new PlacementId('node-b', 0, 1)));
         $mesh->sent = [];
 
         $placement->noteAgentStopped('presence', null);
@@ -682,7 +746,7 @@ final class ClusterPlacementRequestTest extends TestCase
         $placement->onBecameLeader(1000.0);
         foreach ($mesh->online as $nodeId) {
             if ($nodeId !== self::SELF) {
-                $placement->onPlacementReport($nodeId, new PeerPlacementReportDTO([]));
+                FakePlacementMesh::reply($placement, $nodeId, new PeerPlacementReportDTO([]));
             }
         }
         $placement->tick(1000.0);
@@ -704,7 +768,12 @@ final class ClusterPlacementRequestTest extends TestCase
         $context->registerLeadership(new LocateTestLeadership($leaderId, false));
         Hilos::$cluster = $context;
 
-        return new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
+        if ($leaderId !== null) {
+            $placement->onPlacementQuery($leaderId, new PeerPlacementQueryDTO('authority', 0));
+            $mesh->sent = [];
+        }
+        return $placement;
     }
 
     /**
@@ -755,13 +824,23 @@ final class FakePlacementVerdictSink implements PlacementVerdictSink
     /** @var list<array{0: string, 1: ?string, 2: string}> Not-placed calls, as [type, index, reason] */
     public array $notPlaced = [];
 
+    /** @var list<?Closure> Deferred authority for each received decision */
+    public array $current = [];
+
     /**
      * @param string $agentType Agent type that was not placed
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $reason Why the agent was not placed
      */
-    public function onAgentNotPlaced(string $agentType, ?string $agentIndex, string $reason): void
+    public function onAgentNotPlaced(
+        string $agentType,
+        ?string $agentIndex,
+        string $reason,
+        ?PlacementRecovery $recovery = null,
+        ?Closure $current = null,
+    ): void
     {
         $this->notPlaced[] = [$agentType, $agentIndex, $reason];
+        $this->current[] = $current;
     }
 }

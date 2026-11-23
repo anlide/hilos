@@ -91,7 +91,7 @@ final class DaemonManagerDeclarationNativeTest extends TestCase
         self::assertFalse($this->runnable());
         self::assertNull($this->retry($this->policy()));
         self::assertNull($this->retry($this->fleet()));
-        $this->native(fn() => $placement->onPlacementReport('peer', new PeerPlacementReportDTO([])));
+        $this->native(fn() => FakePlacementMesh::reply($placement, 'peer', new PeerPlacementReportDTO([])));
         self::assertSame($revision, $placement->registry()->revision());
         self::assertFalse($this->runnable(), 'receipt alone does not settle the complete import');
         self::assertSame([], $executor->executed, 'native callbacks never declare');
@@ -110,7 +110,7 @@ final class DaemonManagerDeclarationNativeTest extends TestCase
         $this->attach();
         $placement->onBecameLeader(hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND);
         $this->guard();
-        $this->native(fn() => $placement->onPlacementReport('peer', PeerPlacementReportDTO::fromArray(
+        $this->native(fn() => FakePlacementMesh::reply($placement, 'peer', PeerPlacementReportDTO::fromArray(
             new PeerPlacementReportDTO([])->toArray(),
         )));
         $this->guard();

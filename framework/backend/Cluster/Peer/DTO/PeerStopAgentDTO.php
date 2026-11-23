@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Placement\PlacementId;
+use Hilos\Cluster\Placement\PlacementRecord;
 
 /**
  * Placement frame a leader sends to ask a node to stop a placed agent.
@@ -24,14 +26,32 @@ final class PeerStopAgentDTO extends PeerDTO
     /** @var string Payload key: agent index */
     public const string FIELD_AGENT_INDEX = 'agentIndex';
 
+    public const string FIELD_AUTHORITY_TERM = PeerPlacementQueryDTO::FIELD_AUTHORITY_TERM;
+
+    public const string FIELD_STOP_ID = 'stopId';
+
+    public const string FIELD_PLACEMENT_ID = PlacementRecord::FIELD_PLACEMENT_ID;
+
     /**
      * @param string $agentType Agent type to stop
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param int $authorityTerm Term when the command was issued
+     * @param string $stopId Correlation of this logical stop
+     * @param ?PlacementId $placementId Assignment to stop, absent for an ordinary agent
      */
     public function __construct(
         public readonly string $agentType,
         public readonly ?string $agentIndex,
+        public readonly int $authorityTerm,
+        public readonly string $stopId,
+        public readonly ?PlacementId $placementId = null,
     ) {
+    }
+
+    /** @return PeerAgentStatusDTO Receipt carrying the exact command's coordinates */
+    public function stoppedStatus(): PeerAgentStatusDTO
+    {
+        return PeerAgentStatusDTO::stopped($this->agentType, $this->agentIndex, $this->placementId, $this->authorityTerm, $this->stopId);
     }
 
     /**
@@ -55,7 +75,9 @@ final class PeerStopAgentDTO extends PeerDTO
             self::TYPE => self::MESSAGE_TYPE,
             self::FIELD_AGENT_TYPE => $this->agentType,
             self::FIELD_AGENT_INDEX => $this->agentIndex,
-        ];
+            self::FIELD_AUTHORITY_TERM => $this->authorityTerm,
+            self::FIELD_STOP_ID => $this->stopId,
+        ] + ($this->placementId === null ? [] : [self::FIELD_PLACEMENT_ID => $this->placementId->toArray()]);
     }
 
     /**
@@ -63,7 +85,7 @@ final class PeerStopAgentDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the agent type is missing
+     * @throws PeerTransportException When the agent address, authority or correlation is malformed
      */
     public static function fromArray(array $data): static
     {
@@ -73,6 +95,12 @@ final class PeerStopAgentDTO extends PeerDTO
             throw new PeerTransportException('Peer stop-agent frame is missing the agent type');
         }
 
-        return new static($agentType, PeerPlacedAgentEntry::readAgentIndex($data[self::FIELD_AGENT_INDEX] ?? null));
+        return new static(
+            $agentType,
+            PeerPlacedAgentEntry::readAgentIndex($data[self::FIELD_AGENT_INDEX] ?? null),
+            self::readAuthorityTerm($data),
+            self::readCorrelationId($data, self::FIELD_STOP_ID),
+            array_key_exists(self::FIELD_PLACEMENT_ID, $data) ? PlacementId::fromWire($data[self::FIELD_PLACEMENT_ID]) : null,
+        );
     }
 }

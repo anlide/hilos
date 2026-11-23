@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Constants\TimeConstants;
@@ -26,6 +27,7 @@ use Hilos\Cluster\Placement\PlacementMesh;
 use Hilos\Cluster\Placement\PlacementObserver;
 use Hilos\Cluster\Placement\PlacementPolicy;
 use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementSnapshot;
 use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementRefusalCode;
 use Hilos\Cluster\Placement\PlacementState;
@@ -34,6 +36,9 @@ use Hilos\Constants\AgentConstants;
 use Hilos\Core\Agent\Config\AgentPlacement;
 use Hilos\Core\Agent\Config\AgentRegistryKey;
 use Hilos\Core\Agent\Exception\NoSuitableWorkerException;
+use Hilos\Core\EventLoop\EventLoop;
+use Hilos\Core\EventLoop\Exception\EventLoopException;
+use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Hilos;
 use Hilos\Utils\Logger;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -180,7 +185,7 @@ final class ClusterPlacementTest extends TestCase
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $this->assertSame([['render', '9']], $executor->executed);
         [$nodeId, $frame] = $mesh->sent[0];
@@ -205,19 +210,22 @@ final class ClusterPlacementTest extends TestCase
         $executor->waitsForWorker = true;
         $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null, new PlacementId('leader', 0, 1)));
         $placement->tick((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND));
 
         $this->assertSame([], $mesh->sent, 'Nothing is answered while the agent waits for its worker');
-        $placement->onPlacementQuery('leader');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
         $report = $mesh->sent[0][1];
         $this->assertInstanceOf(PeerPlacementReportDTO::class, $report);
-        $this->assertSame([], $report->agents, 'An agent waiting for its worker is not hosted yet');
+        $this->assertCount(1, $report->agents);
+        $this->assertSame(PlacementState::Placing, $report->agents[0]->state);
+        $this->assertFalse($report->agents[0]->workerStarted);
+        $this->assertEquals($placement->localPlacementId('render'), $report->agents[0]->placementId);
         $mesh->sent = [];
 
         $executor->seatedWorkerId = $seatedWorkerId;
-        $placement->noteAgentStarted('render', null);
-        $placement->noteAgentStarted('render', null);
+        $placement->noteAgentStarted('render', null, placementId: $placement->localPlacementId('render'));
+        $placement->noteAgentStarted('render', null, placementId: $placement->localPlacementId('render'));
 
         $this->assertCount(1, $mesh->sent);
         [$nodeId, $frame] = $mesh->sent[0];
@@ -242,14 +250,14 @@ final class ClusterPlacementTest extends TestCase
         $executor->waitsForWorker = true;
         $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null, new PlacementId('leader', 0, 1)));
         $placement->tick((hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND) + 60.0);
 
         $this->assertSame([], $mesh->sent, 'A deferred placement is not answered by a clock');
 
-        $placement->noteAgentStartFailed('render', null, 'its worker never came up');
+        $placement->noteAgentStartFailed('render', null, 'its worker never came up', placementId: $placement->localPlacementId('render'));
         $executor->seatedWorkerId = $seatedWorkerId;
-        $placement->noteAgentStarted('render', null);
+        $placement->noteAgentStarted('render', null, placementId: $placement->localPlacementId('render'));
 
         $this->assertCount(1, $mesh->sent);
         $frame = $mesh->sent[0][1];
@@ -269,11 +277,13 @@ final class ClusterPlacementTest extends TestCase
         $executor->waitsForWorker = true;
         $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
-        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', null));
-        $placement->noteAgentStartFailed('render', null, 'it was stopped while waiting for its worker to connect');
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null, new PlacementId('leader', 0, 1)));
+        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', null, 0, 'stop', $placement->localPlacementId('render')));
+        $placement->noteAgentStartFailed(
+            'render', null, 'it was stopped while waiting for its worker to connect', placementId: $placement->localPlacementId('render'),
+        );
         $executor->seatedWorkerId = $seatedWorkerId;
-        $placement->noteAgentStarted('render', null);
+        $placement->noteAgentStarted('render', null, placementId: $placement->localPlacementId('render'));
 
         $this->assertCount(1, $mesh->sent);
         $frame = $mesh->sent[0][1];
@@ -298,7 +308,7 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('chat')?->state);
 
         $executor->seatedWorkerId = $seatedWorkerId;
-        $placement->noteAgentStarted('chat', null);
+        $placement->noteAgentStarted('chat', null, placementId: $placement->localPlacementId('chat'));
 
         $this->assertSame(PlacementState::Started, $placement->registry()->get('chat')?->state);
         $this->assertSame([], $mesh->sent, 'A local placement sends no frame');
@@ -325,9 +335,9 @@ final class ClusterPlacementTest extends TestCase
 
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('chat')?->state);
 
-        $placement->noteAgentStartFailed('chat', null, 'its worker never came up');
+        $placement->noteAgentStartFailed('chat', null, 'its worker never came up', placementId: $placement->localPlacementId('chat'));
         $executor->seatedWorkerId = $seatedWorkerId;
-        $placement->noteAgentStarted('chat', null);
+        $placement->noteAgentStarted('chat', null, placementId: $placement->localPlacementId('chat'));
 
         $this->assertSame(PlacementState::Failed, $placement->registry()->get('chat')?->state);
     }
@@ -350,7 +360,9 @@ final class ClusterPlacementTest extends TestCase
         $placement->placeAgentOnNode('chat', null, self::SELF);
 
         $placement->refusePlacement('chat', null, self::SELF);
-        $placement->noteAgentStartFailed('chat', null, 'it was stopped while waiting for its worker to connect');
+        $placement->noteAgentStartFailed(
+            'chat', null, 'it was stopped while waiting for its worker to connect', placementId: $placement->localPlacementId('chat'),
+        );
 
         $this->assertSame(
             PlacementState::Refused,
@@ -359,7 +371,7 @@ final class ClusterPlacementTest extends TestCase
         );
 
         $executor->seatedWorkerId = $seatedWorkerId;
-        $placement->noteAgentStarted('chat', null);
+        $placement->noteAgentStarted('chat', null, placementId: $placement->localPlacementId('chat'));
 
         $this->assertSame(
             PlacementState::Refused,
@@ -379,7 +391,7 @@ final class ClusterPlacementTest extends TestCase
         $executor->waitsForWorker = true;
         $placement = new ClusterPlacement('slave', $mesh, $executor);
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $this->assertSame([], $executor->executed, 'Nothing is started on a node with no room');
         $this->assertCount(1, $mesh->sent);
@@ -392,7 +404,7 @@ final class ClusterPlacementTest extends TestCase
             $frame->error,
         );
 
-        $placement->noteAgentStarted('render', '9');
+        $placement->noteAgentStarted('render', '9', placementId: $placement->localPlacementId('render:9'));
         $this->assertCount(1, $mesh->sent, 'Nothing was deferred, so no later start answers the refused frame');
     }
 
@@ -402,9 +414,9 @@ final class ClusterPlacementTest extends TestCase
         $executor = new FakePlacementExecutor(['gpu']);
         $placement = new ClusterPlacement('slave', $mesh, $executor);
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
         $mesh->capabilities['slave'] = ['gpu'];
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2', new PlacementId('leader', 0, 2)));
 
         $this->assertSame([], $executor->executed);
         $this->assertSame(
@@ -421,10 +433,10 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => ['slots=1']], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
 
         $mesh->capabilities['slave'] = ['slots=2'];
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2', new PlacementId('leader', 0, 2)));
 
         $this->assertSame([['render', '1'], ['render', '2']], $executor->executed);
     }
@@ -439,16 +451,18 @@ final class ClusterPlacementTest extends TestCase
         $executor = new FakePlacementExecutor();
         $executor->waitsForWorker = true;
         $placement = new ClusterPlacement('slave', $mesh, $executor);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2', new PlacementId('leader', 0, 2)));
 
         $this->assertSame([['render', '1']], $executor->executed, 'The waiting start holds the only slot');
         $this->assertSame(PlacementState::Failed, $mesh->sent[0][1]->state);
 
-        $placement->noteAgentStartFailed('render', '1', 'the monopolistic worker never came up');
+        $placement->noteAgentStartFailed(
+            'render', '1', 'the monopolistic worker never came up', placementId: $placement->localPlacementId('render:1'),
+        );
         $mesh->sent = [];
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2', new PlacementId('leader', 0, 3)));
 
         $this->assertSame([['render', '1'], ['render', '2']], $executor->executed, 'The failed start gave its slot back');
         $this->assertSame([], $mesh->sent, 'render:2 now waits for its worker in its turn');
@@ -459,16 +473,16 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => ['slots=2']], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
         $executor->waitsForWorker = true;
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2'));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '3'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2', new PlacementId('leader', 0, 2)));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '3', new PlacementId('leader', 0, 3)));
         $this->assertCount(2, $executor->executed, 'One hosted and one waiting agent fill slots=2');
 
-        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '1'));
-        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '2'));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '3'));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '4'));
+        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '1', 0, 'stop-1', new PlacementId('leader', 0, 1)));
+        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '2', 0, 'stop-2', new PlacementId('leader', 0, 2)));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '3', new PlacementId('leader', 0, 4)));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '4', new PlacementId('leader', 0, 5)));
 
         $this->assertSame([['render', '1'], ['render', '2'], ['render', '3'], ['render', '4']], $executor->executed);
     }
@@ -482,12 +496,12 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => ['slots=2']], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
         $executor->waitsForWorker = true;
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 2)));
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2'));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '3'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2', new PlacementId('leader', 0, 3)));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '3', new PlacementId('leader', 0, 4)));
 
         $this->assertSame([['render', '1'], ['render', '1'], ['render', '2']], $executor->executed);
         $failed = array_values(array_filter(
@@ -506,7 +520,7 @@ final class ClusterPlacementTest extends TestCase
         $executor->failWith = new NoSuitableWorkerException('regular', false);
         $placement = new ClusterPlacement('gpu-node', $mesh, $executor);
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null, new PlacementId('leader', 0, 1)));
 
         $frame = $mesh->sent[0][1];
         $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
@@ -519,7 +533,7 @@ final class ClusterPlacementTest extends TestCase
         $placement = new ClusterPlacement(self::SELF, new FakePlacementMesh([]), new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
 
-        $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::started('render', '9', 5));
+        FakePlacementMesh::status($placement, 'gpu-node', PeerAgentStatusDTO::started('render', '9', 5));
 
         $record = $placement->registry()->get('render:9');
         $this->assertSame('gpu-node', $record?->nodeId);
@@ -530,9 +544,9 @@ final class ClusterPlacementTest extends TestCase
     {
         $placement = new ClusterPlacement(self::SELF, new FakePlacementMesh([]), new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::started('render', '9', 5));
+        FakePlacementMesh::status($placement, 'gpu-node', PeerAgentStatusDTO::started('render', '9', 5));
 
-        $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'gpu-node', PeerAgentStatusDTO::stopped('render', '9'));
 
         $this->assertNull($placement->registry()->get('render:9'));
     }
@@ -561,9 +575,9 @@ final class ClusterPlacementTest extends TestCase
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(), failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
         foreach (['2001', '2003', '2011'] as $index) {
-            $placement->onPlacementRequest('caller', new PeerPlacementRequestDTO('render', $index));
+            $placement->onPlacementRequest('caller', new PeerPlacementRequestDTO('render', $index, 0, 'ask'));
         }
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
 
         $hostMesh = new FakePlacementMesh(['node-b' => ['slots=2']], linked: [self::SELF]);
@@ -575,7 +589,7 @@ final class ClusterPlacementTest extends TestCase
         }
         foreach ($hostMesh->sent as [, $frame]) {
             $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
-            $placement->onAgentStatus('node-b', $frame);
+            FakePlacementMesh::status($placement, 'node-b', $frame);
         }
         foreach (['2001', '2003'] as $index) {
             $this->assertSame(PlacementState::Started, $placement->registry()->get('render:' . $index)?->state);
@@ -595,7 +609,7 @@ final class ClusterPlacementTest extends TestCase
         foreach ($hostMesh->sent as [, $frame]) {
             $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
             $this->assertSame(PlacementState::Stopped, $frame->state);
-            $placement->onAgentStatus('node-b', $frame);
+            FakePlacementMesh::status($placement, 'node-b', $frame);
         }
         $this->assertSame($revision, $placement->registry()->revision(), 'Host departure must not cancel either extra intent');
         $placement->tick(1001.499);
@@ -612,7 +626,8 @@ final class ClusterPlacementTest extends TestCase
         $mesh->online = [self::SELF, 'node-b'];
         $mesh->capabilities['node-b'] = ['slots=3'];
         $placement->noteNodeOnline('node-b', 1001.7);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        $placement->onPeerHandshaked('node-b');
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         foreach ([1001.7, 1001.71, 1001.72] as $now) {
             $placement->tick($now);
         }
@@ -643,19 +658,19 @@ final class ClusterPlacementTest extends TestCase
 
         $executor->seatedWorkerId = self::REGULAR_WORKER_ID;
         foreach (['2001', '2003', '2011'] as $index) {
-            $fresh->noteAgentStarted('render', $index);
-            $fresh->noteAgentStarted('render', $index);
+            $fresh->noteAgentStarted('render', $index, placementId: $fresh->localPlacementId('render:' . $index));
+            $fresh->noteAgentStarted('render', $index, placementId: $fresh->localPlacementId('render:' . $index));
         }
         $this->assertCount(3, $freshMesh->sent, 'One answer per seated agent');
         foreach ($freshMesh->sent as [, $frame]) {
             $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
             $this->assertSame(PlacementState::Started, $frame->state);
             $this->assertSame(self::REGULAR_WORKER_ID, $frame->workerId);
-            $placement->onAgentStatus('node-b', $frame);
+            FakePlacementMesh::status($placement, 'node-b', $frame);
         }
         $this->assertCount(3, $executor->executed, 'Every original intent starts once without a new ask');
         $freshMesh->sent = [];
-        $fresh->onPlacementQuery(self::SELF);
+        $fresh->onPlacementQuery(self::SELF, new PeerPlacementQueryDTO('query', 0));
         $this->assertInstanceOf(PeerPlacementReportDTO::class, $freshMesh->sent[0][1]);
         $this->assertCount(3, $freshMesh->sent[0][1]->agents);
         $this->assertCount(3, $placement->registry()->all());
@@ -670,7 +685,7 @@ final class ClusterPlacementTest extends TestCase
         $fresh->noteAgentStopped('render', '2001');
         foreach ($freshMesh->sent as [, $frame]) {
             $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
-            $placement->onAgentStatus('node-b', $frame);
+            FakePlacementMesh::status($placement, 'node-b', $frame);
         }
         $placement->tick(1010.0);
         $this->assertNull($placement->registry()->get('render:2001'));
@@ -683,13 +698,14 @@ final class ClusterPlacementTest extends TestCase
         $executor = new FakePlacementExecutor(['gpu']);
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
         $placement->placeAgentOnNode('render', '9', 'gpu-node');
+        $order = $placement->registry()->get('render:9')->placementId;
         $mesh->sent = [];
 
         $placement->stopAgentOnNode('render', '9', 'gpu-node');
 
         $this->assertInstanceOf(PeerStopAgentDTO::class, $mesh->sent[0][1]);
         $this->assertEquals(
-            new PlacementRecord('render', '9', 'gpu-node', PlacementState::Stopped),
+            new PlacementRecord('render', '9', 'gpu-node', PlacementState::Stopped, placementId: $order),
             $placement->registry()->get('render:9'),
         );
     }
@@ -698,10 +714,10 @@ final class ClusterPlacementTest extends TestCase
     {
         $mesh = new FakePlacementMesh(['gpu-node' => [self::SLOTS]], linked: ['leader']);
         $placement = new ClusterPlacement('gpu-node', $mesh, new FakePlacementExecutor(workerId: 5));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
         $mesh->sent = [];
 
-        $placement->onPlacementQuery('leader');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
 
         $report = $mesh->sent[0][1];
         $this->assertInstanceOf(PeerPlacementReportDTO::class, $report);
@@ -716,14 +732,14 @@ final class ClusterPlacementTest extends TestCase
         $placement->onBecameLeader(900.0);
         $mesh->broadcast = [];
         // A stale entry from a previous term must be cleared on the fresh rebuild.
-        $placement->onAgentStatus('old-node', PeerAgentStatusDTO::started('stale', null, 1));
+        FakePlacementMesh::status($placement, 'old-node', PeerAgentStatusDTO::started('stale', null, 1));
 
         $placement->onBecameLeader(1000.0);
 
         $this->assertSame(0, $placement->registry()->count(), 'The view is cleared before the rebuild');
         $this->assertInstanceOf(PeerPlacementQueryDTO::class, $mesh->broadcast[0]);
 
-        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'gpu-node', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
 
         $record = $placement->registry()->get('render:9');
         $this->assertSame('gpu-node', $record?->nodeId);
@@ -734,7 +750,7 @@ final class ClusterPlacementTest extends TestCase
     {
         $placement = new ClusterPlacement(self::SELF, new FakePlacementMesh([]), new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::started('render', '9', 5));
+        FakePlacementMesh::status($placement, 'gpu-node', PeerAgentStatusDTO::started('render', '9', 5));
 
         $this->assertSame('gpu-node', $placement->locate('render', '9')->nodeId);
     }
@@ -770,8 +786,8 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), null, failoverGraceMs: 500, slaveWorkGraceMs: 250);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $mesh->sent = [];
 
@@ -800,8 +816,8 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), null, failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $mesh->sent = [];
 
@@ -826,8 +842,8 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), null, failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
 
         // node-b is recreated: it leaves, the fleet's own supervisor restarts the agent on
@@ -863,16 +879,16 @@ final class ClusterPlacementTest extends TestCase
         $observer = new FakePlacementObserver();
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), $observer, failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
         $placement->tick(1000.0);
 
         $mesh->online = [self::SELF];
         $placement->noteNodeOffline('node-b', 1000.0);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::stopped('render', '9'));
         $mesh->online = [self::SELF, 'node-b'];
         $placement->noteNodeOnline('node-b', 1000.2);
         $placement->placeAgentOnNode('render', '9', 'node-b');
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 5));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 5));
         $mesh->sent = [];
 
         $placement->tick(1000.6);
@@ -903,14 +919,14 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), null, failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('node-d', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-d', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
 
         $mesh->online = [self::SELF, 'node-c', 'node-d'];
         $placement->noteNodeOffline('node-b', 1000.0);
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::stopped('render', '9'));
         $placement->placeAgentOnNode('render', '9', 'node-c');
         $mesh->online = [self::SELF, 'node-d'];
         $placement->noteNodeOffline('node-c', 1000.2);
@@ -938,7 +954,7 @@ final class ClusterPlacementTest extends TestCase
         $observer = new FakePlacementObserver();
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), $observer, failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
         $placement->tick(1000.0);
 
         $mesh->online = [self::SELF];
@@ -970,7 +986,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteNodeOffline('leader', 1000.0);
         $placement->tick(1000.4);
@@ -997,27 +1013,284 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
         $executor->holdStopped = true;
         $mesh->holdRtWritesAnswered = true;
 
-        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '9'));
+        $stop = new PeerStopAgentDTO('render', '9', 0, 'stop', new PlacementId('leader', 0, 1));
+        $placement->onStopAgent('leader', $stop);
         $this->assertSame([['render', '9']], $executor->revoked);
         $this->assertSame([], $mesh->heldRtWritesAnswered, 'The peers are waited for only once the instance is gone');
         $this->assertSame([], $this->stoppedStatuses($mesh));
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('stop-ack', 0));
+        $placement->onStopAgent('leader', $stop);
+        self::assertSame([], $this->placementReports($mesh));
 
         $executor->releaseStopped();
         $this->assertCount(1, $mesh->heldRtWritesAnswered);
         $this->assertSame([], $this->stoppedStatuses($mesh), 'A gone instance alone does not confirm the stop');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('rejoin', 0));
+        self::assertSame([], $this->placementReports($mesh));
 
         $mesh->releaseRtWritesAnswered();
         $this->assertSame([['leader', '9']], $this->stoppedStatuses($mesh));
+        self::assertEquals($stop->stoppedStatus(), $mesh->sent[array_key_last($mesh->sent)][1]);
+        $placement->tick(1000.0);
+        self::assertEquals(new PeerPlacementReportDTO([], queryId: 'stop-ack'), $mesh->sent[array_key_last($mesh->sent)][1]);
+        $placement->tick(1000.0);
+        self::assertEquals([
+            $stop->stoppedStatus(),
+            new PeerPlacementReportDTO([], queryId: 'stop-ack'),
+            new PeerPlacementReportDTO([], queryId: 'rejoin'),
+        ], array_slice(array_column($mesh->sent, 1), -3));
+        $placement->onStopAgent('leader', $stop);
+        self::assertSame([['leader', '9']], $this->stoppedStatuses($mesh));
 
         $executor->holdStopped = false;
         $mesh->holdRtWritesAnswered = false;
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
-        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 2)));
+        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '9', 0, 'next-stop', new PlacementId('leader', 0, 2)));
         $this->assertSame([['leader', '9'], ['leader', '9']], $this->stoppedStatuses($mesh), 'Nothing held: answered on the same stack');
+    }
+
+    public function testLateStopAndRejoinEchoCannotConsumeTheNextOrderOnTheSameHost(): void
+    {
+        $leaderMesh = new FakePlacementMesh(['host' => [self::SLOTS]], linked: ['host']);
+        $leader = new ClusterPlacement(self::SELF, $leaderMesh, new FakePlacementExecutor());
+        $followerMesh = new FakePlacementMesh(['host' => [self::SLOTS]], linked: [self::SELF]);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $follower = new ClusterPlacement('host', $followerMesh, $executor);
+        $leader->onBecameLeader(1000.0);
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $first = $leaderMesh->sent[0][1];
+        $follower->onPlaceAgent(self::SELF, $first);
+        $leader->onAgentStatus('host', $followerMesh->sent[0][1]);
+
+        $leader->stopAgentOnNode('render', '9', 'host');
+        $stop = $leaderMesh->sent[1][1];
+        $executor->holdStopped = true;
+        $followerMesh->holdRtWritesAnswered = true;
+        $follower->onStopAgent(self::SELF, $stop);
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $leader->onPeerHandshaked('host');
+        $rejoin = $leaderMesh->takeFixtureQuery('host');
+        $followerMesh->sent = [];
+        $follower->onPlacementQuery(self::SELF, $rejoin);
+        $executor->releaseStopped();
+        self::assertSame([], $followerMesh->sent);
+        $followerMesh->releaseRtWritesAnswered();
+        self::assertEquals([[self::SELF, $stop->stoppedStatus()]], $followerMesh->sent);
+        $follower->tick(1000.0);
+        self::assertCount(2, $followerMesh->sent);
+
+        $leader->onAgentStatus('host', $followerMesh->sent[0][1]);
+        $second = $leader->registry()->get('render:9')->placementId;
+        self::assertTrue($first->placementId->precedes($second));
+        $follower->onStopAgent(self::SELF, $stop);
+        self::assertCount(2, $followerMesh->sent, 'A second direct Stopped for the old order cannot enter the turn');
+        $leader->onPlacementReport('host', $followerMesh->sent[1][1]);
+        self::assertSame(PlacementState::Placing, $leader->registry()->get('render:9')->state);
+        $follower->onPlaceAgent(self::SELF, new PeerPlaceAgentDTO('render', '9', $second));
+        $leader->onAgentStatus('host', $followerMesh->sent[2][1]);
+        self::assertSame(PlacementState::Started, $leader->registry()->get('render:9')->state);
+        self::assertSame($second, $leader->registry()->get('render:9')->placementId);
+    }
+
+    public function testARepeatedStopAfterRejectedWorkerStartCannotRetireTheNextOrder(): void
+    {
+        $leaderMesh = new FakePlacementMesh(['host' => [self::SLOTS]], linked: ['host']);
+        $leader = new ClusterPlacement(self::SELF, $leaderMesh, new FakePlacementExecutor());
+        $hostMesh = new FakePlacementMesh(['host' => [self::SLOTS]], linked: [self::SELF]);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $host = new ClusterPlacement('host', $hostMesh, $executor);
+        $leader->onBecameLeader(1000.0);
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $place = $leaderMesh->sent[0][1];
+        $host->onPlaceAgent(self::SELF, $place);
+        $leader->onAgentStatus('host', $hostMesh->sent[0][1]);
+        $leader->stopAgentOnNode('render', '9', 'host');
+        $stop = $leaderMesh->sent[1][1];
+        $leader->onAgentStatus('host', $hostMesh->sent[0][1]);
+        $repeat = $leaderMesh->sent[2][1];
+        $leader->placeAgentOnNode('render', '9', 'host');
+
+        $executor->holdStopped = true;
+        $hostMesh->holdRtWritesAnswered = true;
+        $host->stopRejectedLocalStart('render', '9', $place->placementId);
+        self::assertNull($host->localPlacementId('render:9'));
+        $host->onStopAgent(self::SELF, $stop);
+        self::assertSame([], $this->stoppedStatuses($hostMesh));
+        $executor->releaseStopped();
+        self::assertSame([], $this->stoppedStatuses($hostMesh));
+        $hostMesh->releaseRtWritesAnswered();
+        $leader->onAgentStatus('host', $hostMesh->sent[1][1]);
+        $next = $leader->registry()->get('render:9');
+        self::assertTrue($place->placementId->precedes($next->placementId));
+        $executor->holdStopped = false;
+        $hostMesh->holdRtWritesAnswered = false;
+        $host->onStopAgent(self::SELF, $repeat);
+        foreach (array_slice($hostMesh->sent, 2) as [, $reply]) {
+            $leader->onAgentStatus('host', $reply);
+        }
+        self::assertSame($next, $leader->registry()->get('render:9'));
+    }
+
+    public function testAStopWithoutHostedStillWaitsForTheWorkerPortAndPeerAnswers(): void
+    {
+        $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
+        $executor = new FakePlacementExecutor(workerId: 5);
+        $host = new ClusterPlacement('slave', $mesh, $executor);
+        $order = new PlacementId('leader', 7, 1);
+        $host->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', $order));
+        $host->discardLocalStart('render:9', $order);
+        $executor->holdStopped = $mesh->holdRtWritesAnswered = true;
+        $stop = new PeerStopAgentDTO('render', '9', 7, 'stop', $order);
+
+        $host->onStopAgent('leader', $stop);
+        self::assertSame([], $this->stoppedStatuses($mesh));
+        $executor->releaseStopped();
+        self::assertSame([], $this->stoppedStatuses($mesh));
+        $mesh->releaseRtWritesAnswered();
+        self::assertEquals($stop->stoppedStatus(), $mesh->sent[1][1]);
+    }
+
+    public function testARejoinEchoBeforeAnOrderCannotCompleteItsLaterStop(): void
+    {
+        $mesh = new FakePlacementMesh(['host' => [self::SLOTS], 'next' => [self::SLOTS]], linked: ['host', 'next']);
+        $leader = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $leader->onBecameLeader(1000.0);
+        $leader->onPeerHandshaked('host');
+        $early = $mesh->takeFixtureQuery('host');
+
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $order = $leader->registry()->get('render:9');
+        $leader->placeAgentOnNode('render', '9', 'next');
+        $leader->onPlacementReport('host', new PeerPlacementReportDTO([], queryId: $early->queryId));
+        self::assertSame($order, $leader->registry()->get('render:9'));
+
+        $leader->onPeerHandshaked('host');
+        $late = $mesh->takeFixtureQuery('host');
+        $leader->onPlacementReport('host', new PeerPlacementReportDTO([], queryId: $late->queryId));
+        self::assertSame('next', $leader->registry()->get('render:9')?->nodeId);
+    }
+
+    public function testAnUndeliveredStopCannotLendItsAuthorityToAnEarlierQuery(): void
+    {
+        $mesh = new FakePlacementMesh(['host' => [self::SLOTS], 'next' => [self::SLOTS]], linked: ['host', 'next']);
+        $leader = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $leader->onBecameLeader(1000.0, 8);
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $order = $leader->registry()->get('render:9');
+        $mesh->linked = ['next'];
+        $leader->placeAgentOnNode('render', '9', 'next');
+        $leader->tick(1001.0);
+        $leader->tick(1017.0);
+
+        $mesh->linked = ['host', 'next'];
+        $mesh->sent = [];
+        $leader->onPeerHandshaked('host');
+        $query = $mesh->takeFixtureQuery('host');
+        self::assertNotNull($query);
+        [$before, $stop] = $query->orderedPrefix;
+        $leader->onPlacementReport('host', new PeerPlacementReportDTO([], queryId: $before->queryId));
+        self::assertSame($order, $leader->registry()->get('render:9'));
+        $leader->onAgentStatus('host', $stop->stoppedStatus());
+        self::assertSame('next', $leader->registry()->get('render:9')?->nodeId);
+    }
+
+    public function testOnlyTheExactStopReceiptReleasesAManagedOrder(): void
+    {
+        $mesh = new FakePlacementMesh(['host' => [self::SLOTS], 'next' => [self::SLOTS]], linked: ['host', 'next']);
+        $leader = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $leader->onBecameLeader(1000.0, 8);
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $old = $leader->registry()->get('render:9')->placementId;
+        $leader->placeAgentOnNode('render', '9', 'next');
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $stop = $mesh->sent[1][1];
+        $receipt = $stop->stoppedStatus();
+
+        $leader->onAgentStatus('other', $receipt);
+        $leader->onAgentStatus('host', PeerAgentStatusDTO::stopped('render', '9', $old, 7, $stop->stopId));
+        $leader->onAgentStatus('host', PeerAgentStatusDTO::stopped('render', '9', $old, 8, 'another-stop'));
+        $leader->onAgentStatus('host', PeerAgentStatusDTO::stopped('render', '9', $old, 8));
+        $leader->onAgentStatus('host', PeerAgentStatusDTO::stopped('render', '9'));
+        self::assertSame($old, $leader->registry()->get('render:9')->placementId);
+
+        $leader->onAgentStatus('host', $receipt);
+        $next = $leader->registry()->get('render:9')->placementId;
+        self::assertTrue($old->precedes($next));
+        $leader->onAgentStatus('host', $receipt);
+        $leader->onAgentStatus('host', PeerAgentStatusDTO::stopped('render', '9'));
+        self::assertSame($next, $leader->registry()->get('render:9')->placementId);
+        $leader->onAgentStatus('host', PeerAgentStatusDTO::started('render', '9', 5, $next, 8, true));
+        $leader->onAgentStatus('host', PeerAgentStatusDTO::stopped('render', '9', $next, 8));
+        self::assertNull($leader->registry()->get('render:9'));
+
+        $leader->onPlacementReport('host', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('ordinary', null)]));
+        self::assertSame('host', $leader->registry()->get('ordinary')?->nodeId);
+        $leader->onAgentStatus('host', PeerAgentStatusDTO::stopped('ordinary', null));
+        self::assertNull($leader->registry()->get('ordinary'));
+    }
+
+    public function testNamedDemandForTheOldHostWaitsForTheSameStop(): void
+    {
+        $mesh = new FakePlacementMesh(['host' => [self::SLOTS], 'next' => [self::SLOTS]], linked: ['host', 'next']);
+        $leader = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $leader->onBecameLeader(1000.0);
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $order = $leader->registry()->get('render:9');
+
+        $leader->placeAgentOnNode('render', '9', 'next');
+        $leader->placeAgentOnNode('render', '9', 'host');
+        self::assertSame($order, $leader->registry()->get('render:9'));
+        self::assertSame([['host', 'render', '9']], $this->placeFrames($mesh));
+
+        FakePlacementMesh::status($leader, 'host', PeerAgentStatusDTO::stopped('render', '9'));
+        $next = $leader->registry()->get('render:9');
+        self::assertSame('host', $next?->nodeId);
+        self::assertTrue($order->placementId->precedes($next?->placementId));
+    }
+
+    /** @param bool $returns Whether the old host rejoins before its isolation deadline */
+    #[DataProvider('directMoveIsolation')]
+    public function testNamedDemandFromAnOfflineHostWaitsForStopOrIsolation(bool $returns): void
+    {
+        $mesh = new FakePlacementMesh(
+            ['host' => [self::SLOTS], 'next' => [self::SLOTS]],
+            linked: ['host', 'next'],
+            online: [self::SELF, 'host', 'next'],
+        );
+        $leader = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(), failoverGraceMs: 500);
+        $leader->onBecameLeader(1000.0);
+        FakePlacementMesh::reply($leader, 'host', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($leader, 'next', new PeerPlacementReportDTO([]));
+        $leader->tick(1000.0);
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $order = $leader->registry()->get('render:9');
+        $mesh->linked = $mesh->online = ['next'];
+        $leader->noteNodeOffline('host', 1001.0);
+        $leader->placeAgentOnNode('render', '9', 'next');
+        $leader->tick(1001.4);
+        self::assertSame($order, $leader->registry()->get('render:9'));
+
+        if ($returns) {
+            $mesh->linked = $mesh->online = ['host', 'next'];
+            $leader->noteNodeOnline('host', 1001.45);
+            $leader->onPeerHandshaked('host');
+            $leader->tick(1001.6);
+            self::assertSame($order, $leader->registry()->get('render:9'));
+            FakePlacementMesh::status($leader, 'host', PeerAgentStatusDTO::stopped('render', '9'));
+        } else {
+            $leader->tick(1001.6);
+        }
+        self::assertSame('next', $leader->registry()->get('render:9')?->nodeId);
+    }
+
+    public static function directMoveIsolation(): iterable
+    {
+        yield 'host returns' => [true];
+        yield 'isolation elapses' => [false];
     }
 
     /**
@@ -1032,12 +1305,12 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
         $executor->holdStopped = $holdStopped;
         $mesh->holdRtWritesAnswered = $holdAnswers;
 
-        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '9'));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onStopAgent('leader', new PeerStopAgentDTO('render', '9', 0, 'stop', new PlacementId('leader', 0, 1)));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 2)));
         $executor->releaseStopped();
         $mesh->releaseRtWritesAnswered();
 
@@ -1056,17 +1329,22 @@ final class ClusterPlacementTest extends TestCase
     {
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(workerId: 5));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
         $mesh->holdRtWritesAnswered = true;
 
         $placement->noteAgentStopped('render', '9');
         $this->assertSame([], $this->stoppedStatuses($mesh));
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('rejoin', 0));
+        self::assertSame([], $this->placementReports($mesh));
         $mesh->releaseRtWritesAnswered();
+        self::assertInstanceOf(PeerAgentStatusDTO::class, $mesh->sent[array_key_last($mesh->sent)][1]);
+        $placement->tick(1000.0);
+        self::assertEquals(new PeerPlacementReportDTO([], queryId: 'rejoin'), $mesh->sent[array_key_last($mesh->sent)][1]);
         $this->assertSame([['leader', '9']], $this->stoppedStatuses($mesh));
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 2)));
         $placement->noteAgentStopped('render', '9');
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 3)));
         $mesh->releaseRtWritesAnswered();
         $this->assertSame([['leader', '9']], $this->stoppedStatuses($mesh), 'The agent taken back silences the earlier note');
     }
@@ -1087,6 +1365,114 @@ final class ClusterPlacementTest extends TestCase
         $this->assertNull($placement->registry()->get('render:9'));
     }
 
+    public function testOwnLateIdleStopCannotForgetARefusalOrARebuiltRemoteOrder(): void
+    {
+        $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'next' => [self::SLOTS]], linked: ['next']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader(1000.0);
+        $placement->placeAgentOnNode('render', '9', self::SELF);
+        $mesh->holdRtWritesAnswered = true;
+        $placement->noteAgentStopped('render', '9');
+        $placement->refusePlacement('render', '9', self::SELF);
+        $mesh->releaseRtWritesAnswered();
+        self::assertSame(PlacementState::Refused, $placement->registry()->get('render:9')?->state);
+
+        $placement->placeAgentOnNode('render', '10', self::SELF);
+        $placement->noteAgentStopped('render', '10');
+        $placement->onLostLeadership();
+        $mesh->online = ['next'];
+        $placement->onBecameLeader(1001.0, 2);
+        $new = new PlacementId(self::SELF, 2, 1);
+        FakePlacementMesh::reply($placement, 'next', new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('render', '10', $new, PlacementState::Started, true),
+        ]));
+        $placement->tick(1001.0);
+        self::assertTrue($new->equals($placement->registry()->get('render:10')?->placementId));
+        $mesh->releaseRtWritesAnswered();
+        $placement->tick(1001.0);
+        self::assertSame('next', $placement->registry()->get('render:10')?->nodeId);
+    }
+
+    /** @param bool $targetLost Whether the proposed target leaves before the old writes settle */
+    #[DataProvider('managedMoveTargets')]
+    public function testManagedMoveUsesTheLocalStopAndPeerWriteCompletion(bool $targetLost): void
+    {
+        $mesh = new FakePlacementMesh(
+            [self::SELF => ['gpu', self::SLOTS], 'next' => ['gpu', self::SLOTS]],
+            linked: ['next'], online: [self::SELF],
+        );
+        $executor = new FakePlacementExecutor(['gpu']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
+        $placement->onBecameLeader(1000.0);
+        $placement->placeAgentOnNode('render', '9', self::SELF);
+        $initial = $placement->registry()->get('render:9');
+        $executor->holdStopped = true;
+        $mesh->holdRtWritesAnswered = true;
+        $placement->placeAgentOnNode('render', '9', 'next');
+        self::assertSame([['render', '9']], $executor->revoked);
+        self::assertSame($initial, $placement->registry()->get('render:9'));
+        self::assertSame([], $mesh->sent);
+        $executor->releaseStopped();
+        self::assertSame([], $mesh->sent);
+        if ($targetLost) {
+            $mesh->linked = [];
+            unset($mesh->capabilities['next']);
+        }
+        $mesh->releaseRtWritesAnswered();
+        if ($targetLost) {
+            self::assertSame([], $mesh->sent);
+            self::assertSame(PlacementState::Unplaced, $placement->registry()->get('render:9')->state);
+            $executor->holdStopped = false;
+            $placement->tick(hrtime(true) / 1e9 + 10);
+            self::assertSame(self::SELF, $placement->registry()->get('render:9')->nodeId);
+        } else {
+            self::assertCount(1, $mesh->sent);
+            self::assertSame('next', $mesh->sent[0][0]);
+            self::assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[0][1]);
+            self::assertTrue($initial->placementId->precedes($mesh->sent[0][1]->placementId));
+        }
+    }
+
+    public static function managedMoveTargets(): iterable
+    {
+        yield 'target survives stop' => [false];
+        yield 'target lost during stop' => [true];
+    }
+
+    public function testSelfFenceBlocksItsOwnRebuildUntilTheLastPeerAnswer(): void
+    {
+        $mesh = new FakePlacementMesh(
+            [self::SELF => [self::SLOTS], 'next' => [self::SLOTS]], linked: ['next'], online: ['next'],
+        );
+        $executor = new FakePlacementExecutor();
+        $placement = new ClusterPlacement(self::SELF, $mesh, $executor, slaveWorkGraceMs: 500);
+        $order = new PlacementId('previous', 1, 1);
+        $placement->onPlaceAgent('previous', new PeerPlaceAgentDTO('render', '9', $order));
+        $executor->holdStopped = true;
+        $mesh->holdRtWritesAnswered = true;
+        $placement->onPlacementRelease('previous', 1000.0);
+        $placement->tick(1000.6);
+        $placement->onPlacementQuery('next', new PeerPlacementQueryDTO('first-rebuild', 2));
+        self::assertSame([], array_filter(array_column($mesh->sent, 1),
+            static fn(PeerDTO $frame): bool => $frame instanceof PeerPlacementReportDTO));
+
+        $placement->onBecameLeader(1001.0, 3);
+        FakePlacementMesh::reply($placement, 'next', new PeerPlacementReportDTO([], new PlacementSnapshot('previous', 1, 1, [
+            new PlacementRecord('render', '9', self::SELF, PlacementState::Started, placementId: $order, workerStarted: true),
+        ])));
+        $placement->placeAgentOnNode('render', '9', 'next');
+        $placement->tick(1001.0);
+        self::assertSame([], $this->placeFrames($mesh));
+        $executor->releaseStopped();
+        $placement->tick(1001.0);
+        self::assertSame([], $this->placeFrames($mesh));
+        $mesh->releaseRtWritesAnswered();
+        $placement->tick(1001.0);
+        self::assertSame([['next', 'render', '9']], $this->placeFrames($mesh));
+        self::assertSame([], array_filter(array_column($mesh->sent, 1),
+            static fn(PeerDTO $frame): bool => $frame instanceof PeerPlacementReportDTO));
+    }
+
     /**
      * A self-fenced node reports its emptied set only once every revoked instance is gone and then
      * every active link to a peer answered the RT writes handed it before (HIL-2108).
@@ -1096,8 +1482,8 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '10'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '10', new PlacementId('leader', 0, 2)));
         $executor->holdStopped = true;
         $mesh->holdRtWritesAnswered = true;
 
@@ -1109,7 +1495,9 @@ final class ClusterPlacementTest extends TestCase
         $first = array_shift($executor->heldStopped);
         $this->assertNotNull($first);
         $first();
-        $this->assertSame([], $mesh->heldRtWritesAnswered, 'One stop of two does not release the report');
+        $this->assertCount(1, $mesh->heldRtWritesAnswered, 'The first stop can settle its own writes');
+        $mesh->releaseRtWritesAnswered();
+        $this->assertSame([], $this->placementReports($mesh), 'The second worker still owes its stop');
 
         $executor->releaseStopped();
         $this->assertCount(1, $mesh->heldRtWritesAnswered);
@@ -1119,6 +1507,104 @@ final class ClusterPlacementTest extends TestCase
         $reports = $this->placementReports($mesh);
         $this->assertCount(1, $reports);
         $this->assertSame([], $reports[0]->agents);
+    }
+
+    public function testSelfFenceContinuesAfterARevokeRaisesWithAWorkerStopStillPending(): void
+    {
+        $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['next']);
+        $executor = new FakePlacementExecutor();
+        $placement = new ClusterPlacement('slave', $mesh, $executor, slaveWorkGraceMs: 500);
+        $placement->onPlaceAgent('previous', new PeerPlaceAgentDTO('render', '9', new PlacementId('previous', 1, 1)));
+        $placement->onPlaceAgent('previous', new PeerPlaceAgentDTO('render', '10', new PlacementId('previous', 1, 2)));
+        $executor->holdStopped = true;
+        $executor->raiseAfterRevoke = new InvalidFormatException('stop sink raised after the worker was asked');
+        $mesh->holdRtWritesAnswered = true;
+        $placement->onPlacementRelease('previous', hrtime(true) / 1e9 - 2.0);
+        $loop = new EventLoop();
+        $placement->attachEventLoop($loop);
+        try {
+            $loop->tick();
+            $placement->dispatchReady();
+            $query = new PeerPlacementQueryDTO('after-fence', 2);
+            $placement->onPlacementQuery('next', $query);
+            self::assertSame([['render', '9'], ['render', '10']], $executor->revoked);
+            self::assertCount(2, $executor->heldStopped);
+            $mesh->sent = [];
+            $first = array_shift($executor->heldStopped);
+            $first();
+            $mesh->releaseRtWritesAnswered();
+            $loop->tick();
+            $placement->dispatchReady();
+            self::assertSame([], $mesh->sent, 'The second worker still owes its stop');
+            $executor->releaseStopped();
+            $loop->tick();
+            $placement->dispatchReady();
+            self::assertSame([], $mesh->sent, 'The second stop still owes its RT answer');
+            $mesh->releaseRtWritesAnswered();
+            self::assertSame([], $mesh->sent, 'The full reply waits for the ready turn');
+            $loop->tick();
+            $placement->dispatchReady();
+            self::assertEquals([['next', new PeerPlacementReportDTO([], queryId: $query->queryId)]], $mesh->sent);
+        } finally {
+            $placement->detachEventLoop();
+            $loop->close();
+        }
+    }
+
+    public function testDeferredPlacementReportsUseReadyTurnsAfterTheExactStopReceiptEvenWhenOneFails(): void
+    {
+        $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
+        $executor = new FakePlacementExecutor();
+        $placement = new ClusterPlacement('slave', $mesh, $executor);
+        $loop = new EventLoop();
+        $placement->attachEventLoop($loop);
+        try {
+            $order = new PlacementId('leader', 1, 1);
+            $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', $order));
+            $executor->holdStopped = true;
+            $mesh->holdRtWritesAnswered = true;
+            $stop = new PeerStopAgentDTO('render', '9', 1, 'stop', $order);
+            $placement->onStopAgent('leader', $stop);
+            foreach (['first', 'failed', 'last'] as $queryId) {
+                $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO($queryId, 1));
+            }
+            $mesh->sent = [];
+            $mesh->refusedReport = 'failed';
+            $loop->tick();
+            $placement->dispatchReady();
+            self::assertSame([], $mesh->sent);
+            $executor->releaseStopped();
+            self::assertSame([], $mesh->sent);
+            $mesh->releaseRtWritesAnswered();
+            self::assertEquals([['leader', $stop->stoppedStatus()]], $mesh->sent);
+
+            $loop->tick();
+            $placement->dispatchReady();
+            self::assertCount(2, $mesh->sent);
+            self::assertSame('first', $mesh->sent[1][1]->queryId);
+
+            $betweenRan = false;
+            $between = $loop->createReadyWork(static function () use ($mesh, &$betweenRan): void {
+                self::assertCount(2, $mesh->sent);
+                $betweenRan = true;
+            });
+            $between->markReady();
+            $loop->tick();
+            $placement->dispatchReady();
+            self::assertTrue($betweenRan);
+            self::assertNull($mesh->refusedReport);
+            self::assertCount(2, $mesh->sent);
+            self::assertTrue($placement->hasReadyWork());
+
+            $loop->tick();
+            $placement->dispatchReady();
+            self::assertCount(3, $mesh->sent);
+            self::assertSame('last', $mesh->sent[2][1]->queryId);
+            self::assertFalse($placement->hasReadyWork());
+        } finally {
+            $placement->detachEventLoop();
+            $loop->close();
+        }
     }
 
     /**
@@ -1133,10 +1619,11 @@ final class ClusterPlacementTest extends TestCase
         $executor = new FakePlacementExecutor();
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '9', self::SELF);
         $placement->placeAgentOnNode('render', '10', self::SELF);
+        $order = $placement->registry()->get('render:10')->placementId;
         $executor->holdStopped = true;
         $mesh->holdRtWritesAnswered = true;
 
@@ -1146,7 +1633,7 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame([], $this->placeFrames($mesh), 'A gone instance alone does not let the restart move on');
         $this->assertSame(self::SELF, $placement->registry()->get('render:9')?->nodeId);
         $this->assertEquals(
-            new PlacementRecord('render', '10', self::SELF, PlacementState::Stopped),
+            new PlacementRecord('render', '10', self::SELF, PlacementState::Stopped, placementId: $order),
             $placement->registry()->get('render:10'),
             'A gone instance alone does not confirm the stop',
         );
@@ -1154,7 +1641,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh->releaseRtWritesAnswered();
         $this->assertSame([['node-b', 'render', '9']], $this->placeFrames($mesh));
         $this->assertEquals(
-            new PlacementRecord('render', '10', null, PlacementState::Stopped),
+            new PlacementRecord('render', '10', null, PlacementState::Stopped, placementId: $order),
             $placement->registry()->get('render:10'),
         );
     }
@@ -1168,10 +1655,10 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader', 'leader-b']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteNodeOffline('leader', 1000.0);
-        $placement->onPlacementQuery('leader-b');
+        $placement->onPlacementQuery('leader-b', new PeerPlacementQueryDTO('query', 1));
         $placement->tick(1000.6);
 
         $this->assertSame([], $executor->revoked);
@@ -1189,8 +1676,8 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader', 'leader-b']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
-        $placement->onPlacementQuery('leader-b');
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
+        $placement->onPlacementQuery('leader-b', new PeerPlacementQueryDTO('query', 1));
 
         $placement->noteNodeOffline('leader', 1000.0);
         $placement->tick(1000.6);
@@ -1209,10 +1696,10 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader', 'leader-b']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteNodeOffline('leader', 1000.0);
-        $placement->onPlaceAgent('leader-b', new PeerPlaceAgentDTO('render', '7'));
+        $placement->onPlaceAgent('leader-b', new PeerPlaceAgentDTO('render', '7', new PlacementId('leader-b', 1, 2)));
         $placement->tick(1000.6);
 
         $this->assertSame([], $executor->revoked);
@@ -1227,7 +1714,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteNodeOffline('leader', 1000.0);
         $placement->onBecameLeader(1000.0);
@@ -1251,7 +1738,7 @@ final class ClusterPlacementTest extends TestCase
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
 
-        $placement->onPlacementQuery('rival');
+        $placement->onPlacementQuery('rival', new PeerPlacementQueryDTO('query', 0));
         $placement->noteNodeOffline('rival', 1000.0);
 
         [$nodeId, $frame] = $mesh->sent[array_key_last($mesh->sent)];
@@ -1271,7 +1758,7 @@ final class ClusterPlacementTest extends TestCase
         $executor->waitsForWorker = true;
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null, new PlacementId('leader', 0, 1)));
         $placement->noteNodeOffline('leader', 1000.0);
         $placement->tick(1000.4);
         $this->assertSame([], $executor->revoked, 'The slave keeps the waiting placement through the grace window');
@@ -1285,7 +1772,7 @@ final class ClusterPlacementTest extends TestCase
 
         $mesh->sent = [];
         $executor->seatedWorkerId = -7;
-        $placement->noteAgentStarted('render', null);
+        $placement->noteAgentStarted('render', null, placementId: $placement->localPlacementId('render'));
         $this->assertSame([], $mesh->sent, 'A fenced deferred placement does not answer the lost leader');
     }
 
@@ -1294,7 +1781,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteNodeOffline('leader', 1000.0);
         $placement->noteNodeOnline('leader', 1000.2);
@@ -1308,7 +1795,7 @@ final class ClusterPlacementTest extends TestCase
         $logFile = $this->captureLog();
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(workerId: 5), null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteNodeOffline('leader', 1000.0);
         $placement->noteNodeOffline('leader', 1000.1);
@@ -1325,7 +1812,7 @@ final class ClusterPlacementTest extends TestCase
         $logFile = $this->captureLog();
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(workerId: 5), null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteNodeOnline('leader', 999.0);
         $placement->noteNodeOffline('leader', 1000.0);
@@ -1376,7 +1863,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['master' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('master', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteQuorumLost(1000.0);
         $placement->noteNodeOffline('leader', 1000.1);
@@ -1392,10 +1879,10 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['master' => [self::SLOTS]], linked: ['leader-a', 'leader-b']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('master', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader-a', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader-a', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader-a', 0, 1)));
 
         $placement->noteQuorumLost(1000.0);
-        $placement->onPlacementQuery('leader-b');
+        $placement->onPlacementQuery('leader-b', new PeerPlacementQueryDTO('query', 1));
         $placement->tick(1000.6);
 
         $this->assertSame([], $executor->revoked, 'A leader that took the placements over holds the work again');
@@ -1411,7 +1898,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['master' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('master', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteQuorumLost(1000.0);
         $placement->onBecameLeader(1000.2);
@@ -1447,7 +1934,7 @@ final class ClusterPlacementTest extends TestCase
     {
         $mesh = new FakePlacementMesh(['master' => [self::SLOTS]], linked: ['leader']);
         $placement = new ClusterPlacement('master', $mesh, new FakePlacementExecutor(workerId: 5), null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteQuorumLost(1000.0);
         $placement->noteNodeOnline('leader', 1000.2);
@@ -1500,7 +1987,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->onPlacementRelease('leader', 1000.0);
         $placement->tick(1000.4);
@@ -1524,7 +2011,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader', 'leader-b']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader-b', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader-b', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader-b', 1, 1)));
 
         $placement->onPlacementRelease('leader', 1000.0);
         $placement->tick(1000.6);
@@ -1545,10 +2032,10 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader', 'leader-b']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->onPlacementRelease('leader', 1000.0);
-        $placement->onPlacementQuery('leader-b');
+        $placement->onPlacementQuery('leader-b', new PeerPlacementQueryDTO('query', 1));
         $placement->tick(1000.6);
 
         $this->assertSame([], $executor->revoked, 'A leader that took the placements over holds the work again');
@@ -1564,10 +2051,13 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->onPlacementRelease('leader', 1000.0);
-        $placement->onPlacementQuery('leader');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
+        $this->assertFalse($placement->acceptsLeaderCommand('leader', 0));
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('new-term', 1));
+        $this->assertTrue($placement->acceptsLeaderCommand('leader', 1));
         $placement->tick(1000.6);
 
         $this->assertSame([], $executor->revoked, 'The former leader leading again takes the placements back');
@@ -1587,7 +2077,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->onPlacementRelease('leader', 1000.0);
         $placement->noteNodeOffline('leader', 1000.1);
@@ -1606,7 +2096,7 @@ final class ClusterPlacementTest extends TestCase
         $logFile = $this->captureLog();
         $mesh = new FakePlacementMesh([], linked: ['leader']);
         $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(), null, slaveWorkGraceMs: 500);
-        $placement->onPlacementQuery('leader');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
         $mesh->sent = [];
 
         $placement->onPlacementRelease('leader', 1000.0);
@@ -1626,7 +2116,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['master' => [self::SLOTS]], linked: ['leader']);
         $executor = new FakePlacementExecutor(workerId: 5);
         $placement = new ClusterPlacement('master', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
 
         $placement->noteQuorumLost(1000.0);
         $placement->onPlacementRelease('leader', 1000.3);
@@ -1646,7 +2136,7 @@ final class ClusterPlacementTest extends TestCase
         $executor = new FakePlacementExecutor();
         $executor->waitsForWorker = true;
         $placement = new ClusterPlacement('slave', $mesh, $executor, null, failoverGraceMs: 1000, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', null, new PlacementId('leader', 0, 1)));
 
         $placement->onPlacementRelease('leader', 1000.0);
         $placement->tick(1000.6);
@@ -1670,11 +2160,11 @@ final class ClusterPlacementTest extends TestCase
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
 
-        $placement->onPlacementReport('node-a', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-a', new PeerPlacementReportDTO([]));
         $this->assertNull($placement->placeAgentOnBestNode('render', '9'), 'node-b may still run it');
         $this->assertSame(0, $placement->registry()->count());
 
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.1);
         $this->assertNotNull($placement->placeAgentOnBestNode('render', '9'), 'Every node has reported');
 
@@ -1702,7 +2192,7 @@ final class ClusterPlacementTest extends TestCase
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(), null, failoverGraceMs: 1000);
         $placement->noteNodeOffline('old', 1000.0);
         $placement->onBecameLeader(1000.2);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
 
         $placement->tick(1000.9);
         $this->assertNull($placement->placeAgentOnBestNode('render', '9'), 'The node that left may still run it');
@@ -1726,16 +2216,16 @@ final class ClusterPlacementTest extends TestCase
         $placement->onBecameLeader(1000.0);
         $mesh->sent = [];
 
-        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('node-c', new PeerPlacementRequestDTO('render', '9', 0, 'ask'));
         $this->assertSame([], $mesh->sent, 'Neither a placement nor a verdict while the rebuild holds');
 
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.1);
         [$nodeId, $frame] = $mesh->sent[0];
         $this->assertSame('node-b', $nodeId);
         $this->assertInstanceOf(PeerPlaceAgentDTO::class, $frame);
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
         $verdict = $mesh->sent[array_key_last($mesh->sent)];
         $this->assertSame('node-c', $verdict[0], 'The node that asked is answered from the placement made after the rebuild');
         $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $verdict[1]);
@@ -1753,13 +2243,14 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-a', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-a', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        $placement->onPeerHandshaked('node-a');
         $mesh->sent = [];
 
-        $placement->onPlacementReport('node-a', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-a', new PeerPlacementReportDTO([]));
 
         $this->assertSame([], $mesh->sent, 'node-b may still carry a newer cancellation');
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $this->assertSame([], $mesh->sent, 'The last report is not the import barrier');
         $placement->tick(1000.0);
         $this->assertCount(1, $mesh->sent, 'The missing agent is placed after the complete import');
@@ -1775,7 +2266,7 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(), null, failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-a', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-a', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
         $mesh->sent = [];
 
         $mesh->online = [self::SELF, 'node-b'];
@@ -1783,7 +2274,7 @@ final class ClusterPlacementTest extends TestCase
         $placement->tick(1000.6);
 
         $this->assertSame([], $mesh->sent, 'A known host cannot bypass an unfinished donor import');
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.6);
         $this->assertSame('node-b', $mesh->sent[0][0] ?? null, 'Failover moves the known agent after inheritance');
         $this->assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[0][1]);
@@ -1795,11 +2286,11 @@ final class ClusterPlacementTest extends TestCase
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
         // The leader already re-placed render:9 onto node-c while node-b was gone.
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
         $mesh->sent = [];
 
         // node-b rejoins reporting it still hosts the moved agent.
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
 
         [$nodeId, $frame] = $mesh->sent[0];
         $this->assertSame('node-b', $nodeId);
@@ -1811,7 +2302,7 @@ final class ClusterPlacementTest extends TestCase
     {
         $mesh = new FakePlacementMesh(['slave' => [self::SLOTS]], linked: ['leader']);
         $placement = new ClusterPlacement('slave', $mesh, new FakePlacementExecutor(workerId: 5));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
         $mesh->sent = [];
 
         // On rejoin the node reports what it still hosts...
@@ -1822,7 +2313,7 @@ final class ClusterPlacementTest extends TestCase
         $this->assertSame('render', $report->agents[0]->agentType);
 
         // ...but a non-leader that receives a report folds nothing into its inert view.
-        $placement->onPlacementReport('other', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('ghost', null)]));
+        FakePlacementMesh::reply($placement, 'other', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('ghost', null)]));
         $this->assertNull($placement->registry()->get('ghost'));
     }
 
@@ -1850,13 +2341,13 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $mesh->sent = [];
 
         // node-b returns as a fresh process and says it hosts nothing.
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
 
         [, $frame] = $mesh->sent[0];
         $this->assertInstanceOf(PeerPlaceAgentDTO::class, $frame, 'The agent nobody hosts is placed again at once');
@@ -1876,13 +2367,13 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([
             new PeerPlacedAgentEntry('chat', '1'),
             new PeerPlacedAgentEntry('chat', '2'),
         ]));
 
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
 
         $this->assertSame(
             'node-b',
@@ -1896,13 +2387,13 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['node-b' => [self::SLOTS]], linked: ['node-b'], online: [self::SELF, 'node-b']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '9', 'node-b');
         $mesh->sent = [];
 
         // The report may well have crossed the place frame on the wire.
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
 
         $record = $placement->registry()->get('render:9');
         $this->assertSame(PlacementState::Placing, $record?->state, 'A placement still in flight is not taken back');
@@ -1918,7 +2409,7 @@ final class ClusterPlacementTest extends TestCase
         $placement->refusePlacement('render', '9', 'node-b');
         $mesh->sent = [];
 
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
 
         $this->assertSame(
             PlacementState::Refused,
@@ -1933,14 +2424,14 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['node-b' => [self::SLOTS]], linked: ['node-b'], online: [self::SELF, 'node-b']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([
             new PeerPlacedAgentEntry('render', '9'),
             new PeerPlacedAgentEntry('chat', '1'),
         ]));
         $mesh->sent = [];
 
         // A flap that changed nothing: the node comes back hosting exactly what it hosted.
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([
             new PeerPlacedAgentEntry('render', '9'),
             new PeerPlacedAgentEntry('chat', '1'),
         ]));
@@ -2039,7 +2530,7 @@ final class ClusterPlacementTest extends TestCase
         $cost = ResourceProfile::costs(['ram' => 3.0]);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(profile: $cost), null, failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
         $placement->tick(1000.0);
 
         $mesh->online = [self::SELF];
@@ -2121,11 +2612,11 @@ final class ClusterPlacementTest extends TestCase
         $cost = ResourceProfile::costs(['ram' => 2.0]);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(profile: $cost));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([
             new PeerPlacedAgentEntry('render', '1'),
             new PeerPlacedAgentEntry('render', '2'),
         ]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([
             new PeerPlacedAgentEntry('render', '3'),
             new PeerPlacedAgentEntry('render', '4'),
             new PeerPlacedAgentEntry('render', '5'),
@@ -2148,9 +2639,9 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']), null, failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('node-d', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-d', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $mesh->sent = [];
 
@@ -2190,10 +2681,10 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['node-b' => ['slots=2']], linked: ['node-b'], online: [self::SELF, 'node-b']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '1', 'node-b');
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '1', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '1', 1));
         $placement->placeAgentOnNode('render', '2', 'node-b');
         $mesh->sent = [];
 
@@ -2220,15 +2711,15 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['node-b' => ['slots=1']], linked: ['node-b'], online: [self::SELF, 'node-b']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '1', 'node-b');
         $this->assertNull($placement->placeAgentOnBestNode('render', '2'));
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '1', 'the node refused it'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '1', 'the node refused it'));
         $this->assertSame('node-b', $placement->placeAgentOnBestNode('render', '2'), 'A Failed record holds nothing');
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '2', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '2', 1));
         $this->assertNull($placement->placeAgentOnBestNode('render', '3'));
         $placement->stopAgentOnNode('render', '2', 'node-b');
         $this->assertSame('node-b', $placement->placeAgentOnBestNode('render', '3'), 'The stop released the slot');
@@ -2243,11 +2734,11 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([
             new PeerPlacedAgentEntry('render', '1'),
             new PeerPlacedAgentEntry('render', '2'),
         ]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([
             new PeerPlacedAgentEntry('render', '3'),
             new PeerPlacedAgentEntry('render', '4'),
         ]));
@@ -2266,7 +2757,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'gpu-node', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
         $mesh->sent = [];
@@ -2281,12 +2772,31 @@ final class ClusterPlacementTest extends TestCase
         );
     }
 
+    public function testARefusedPolicyClaimWaitsForAnExactRemoteOrderBeforePeerStop(): void
+    {
+        $mesh = new FakePlacementMesh(['host' => [self::SLOTS]], linked: ['host']);
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
+        $placement->onBecameLeader(1000.0, 8);
+
+        $placement->refusePlacement('chat', '1', 'host');
+        self::assertSame(PlacementState::Refused, $placement->registry()->get('chat:1')?->state);
+        self::assertSame([], $mesh->sent);
+
+        $id = new PlacementId(self::SELF, 8, 1);
+        $placement->onPlacementReport('host', new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('chat', '1', placementId: $id),
+        ]));
+        self::assertCount(1, $mesh->sent);
+        self::assertInstanceOf(PeerStopAgentDTO::class, $mesh->sent[0][1]);
+        self::assertEquals($id, $mesh->sent[0][1]->placementId);
+    }
+
     public function testFailoverDoesNotResurrectARefusedAgent(): void
     {
         $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'gpu-node', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
         $placement->refusePlacement('chat', '1', 'gpu-node');
@@ -2304,12 +2814,12 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'gpu-node', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
         $placement->refusePlacement('chat', '1', 'gpu-node');
 
-        $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::stopped('chat', '1'));
+        FakePlacementMesh::status($placement, 'gpu-node', PeerAgentStatusDTO::stopped('chat', '1'));
 
         $this->assertSame(
             PlacementState::Refused,
@@ -2323,13 +2833,13 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'gpu-node', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
         $placement->refusePlacement('chat', '1', 'gpu-node');
         $mesh->sent = [];
 
-        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('chat', '1')]));
+        FakePlacementMesh::reply($placement, 'gpu-node', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('chat', '1')]));
 
         $this->assertInstanceOf(PeerStopAgentDTO::class, $mesh->sent[0][1] ?? null);
         $this->assertSame(
@@ -2344,7 +2854,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh([self::SELF => [self::SLOTS], 'gpu-node' => [self::SLOTS]], ['gpu-node'], [self::SELF, 'gpu-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'gpu-node', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('chat', '1', 'gpu-node');
         $placement->refusePlacement('chat', '1', 'gpu-node');
@@ -2376,8 +2886,8 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor());
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([]));
-        $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::started('chat', '1', 1));
+        FakePlacementMesh::reply($placement, 'gpu-node', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::status($placement, 'gpu-node', PeerAgentStatusDTO::started('chat', '1', 1));
         $placement->tick(1000.0);
         $mesh->broadcast = [];
 
@@ -2405,7 +2915,7 @@ final class ClusterPlacementTest extends TestCase
         $executor = new FakePlacementExecutor();
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('gpu-node', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'gpu-node', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $record = new PlacementRecord('chat', 'old', $nodeId, $state);
         $placement->registry()->put($record);
@@ -2435,7 +2945,7 @@ final class ClusterPlacementTest extends TestCase
         $observer = new FakePlacementObserver();
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor, $observer);
         $placement->onBecameLeader(1000.0);
-        $placement->onAgentStatus('gpu-node', PeerAgentStatusDTO::started('chat', '1', 1));
+        FakePlacementMesh::status($placement, 'gpu-node', PeerAgentStatusDTO::started('chat', '1', 1));
         $placement->noteNodeOffline('gpu-node', 1000.0);
         $record = new PlacementRecord('chat', '1', $nodeId, $state);
         $placement->registry()->put($record);
@@ -2460,11 +2970,18 @@ final class ClusterPlacementTest extends TestCase
         $placement->onBecameLeader(1000.0);
         $placement->registry()->put(new PlacementRecord('chat', '1', $nodeId, $state));
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('chat', '1', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('chat', '1', 1));
 
         if ($state === PlacementState::Stopped) {
             $this->assertEquals(new PlacementRecord('chat', '1', $nodeId, PlacementState::Stopped), $placement->registry()->get('chat:1'));
-            $this->assertEquals([['node-b', new PeerStopAgentDTO('chat', '1')]], $mesh->sent);
+            self::assertCount(1, $mesh->sent);
+            [[$target, $stop]] = $mesh->sent;
+            self::assertSame('node-b', $target);
+            self::assertInstanceOf(PeerStopAgentDTO::class, $stop);
+            self::assertSame('chat', $stop->agentType);
+            self::assertSame('1', $stop->agentIndex);
+            self::assertNull($stop->placementId);
+            self::assertSame(0, $stop->authorityTerm);
             return;
         }
         $this->assertSame(PlacementState::Started, $placement->registry()->get('chat:1')?->state);
@@ -2484,11 +3001,18 @@ final class ClusterPlacementTest extends TestCase
         $placement->onBecameLeader(1000.0);
         $placement->registry()->put(new PlacementRecord('chat', '1', $nodeId, $state));
 
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('chat', '1')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('chat', '1')]));
 
         if ($state === PlacementState::Stopped) {
             $this->assertEquals(new PlacementRecord('chat', '1', $nodeId, PlacementState::Stopped), $placement->registry()->get('chat:1'));
-            $this->assertEquals([['node-b', new PeerStopAgentDTO('chat', '1')]], $mesh->sent);
+            self::assertCount(1, $mesh->sent);
+            [[$target, $stop]] = $mesh->sent;
+            self::assertSame('node-b', $target);
+            self::assertInstanceOf(PeerStopAgentDTO::class, $stop);
+            self::assertSame('chat', $stop->agentType);
+            self::assertSame('1', $stop->agentIndex);
+            self::assertNull($stop->placementId);
+            self::assertSame(0, $stop->authorityTerm);
             return;
         }
         $this->assertSame(PlacementState::Started, $placement->registry()->get('chat:1')?->state);
@@ -2539,8 +3063,8 @@ final class ClusterPlacementTest extends TestCase
             placementAckTimeoutMs: 500,
         );
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '9', 'node-b');
         $placement->tick(1000.0);
@@ -2576,15 +3100,15 @@ final class ClusterPlacementTest extends TestCase
             placementAckTimeoutMs: 500,
         );
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '9', 'node-b');
         $placement->tick(1000.0);
         $placement->tick(1000.6);
         $mesh->sent = [];
 
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
 
         $record = $placement->registry()->get('render:9');
         $this->assertSame(PlacementState::Started, $record?->state, 'The node holds it, so the status frame was merely lost');
@@ -2606,8 +3130,8 @@ final class ClusterPlacementTest extends TestCase
             placementAckTimeoutMs: 500,
         );
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '9', 'node-b');
         $placement->tick(1000.0);
@@ -2616,10 +3140,82 @@ final class ClusterPlacementTest extends TestCase
 
         // The answer to the question: the node hosts nothing, so the place frame is not in
         // flight, it is lost.
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
 
         $this->assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[0][1] ?? null, 'An asked Placing is judged like a Started one');
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:9')?->state);
+    }
+
+    /**
+     * @param PlacementState $state Whether the interrupted wait ordered a place or a stop
+     * @param bool $pending Whether the original question found an accepted but unfinished place
+     */
+    #[DataProvider('interruptedAcknowledgements')]
+    public function testRejoinSettlesAnInterruptedAcknowledgement(PlacementState $state, bool $pending): void
+    {
+        $mesh = new FakePlacementMesh(
+            capabilities: ['node-b' => ['gpu', self::SLOTS]], linked: ['node-b'], online: ['node-b'],
+        );
+        $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), placementAckTimeoutMs: 500);
+        $placement->onBecameLeader(1000.0);
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
+        $placement->tick(1000.0);
+        $placement->onPeerHandshaked('node-b');
+        $beforeOrder = $mesh->takeFixtureQuery('node-b');
+        $placement->placeAgentOnNode('render', '9', 'node-b');
+        $initialOrder = $placement->registry()->get('render:9')->placementId;
+        if ($state === PlacementState::Stopped) {
+            $placement->stopAgentOnNode('render', '9', 'node-b');
+        }
+        $placement->tick(1000.0);
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([], queryId: $beforeOrder->queryId));
+        self::assertSame($state, $placement->registry()->get('render:9')?->state);
+        self::assertSame('node-b', $placement->registry()->get('render:9')?->nodeId);
+
+        $placement->tick(1000.6);
+        $firstAck = $mesh->takeFixtureQuery('node-b');
+        self::assertInstanceOf(PeerPlacementQueryDTO::class, $firstAck);
+        if ($pending) {
+            $followerMesh = new FakePlacementMesh(['node-b' => ['gpu', self::SLOTS]], linked: [self::SELF]);
+            $executor = new FakePlacementExecutor();
+            $executor->waitsForWorker = true;
+            $follower = new ClusterPlacement('node-b', $followerMesh, $executor);
+            $follower->onPlaceAgent(self::SELF, new PeerPlaceAgentDTO('render', '9', $initialOrder));
+            $follower->onPlacementQuery(self::SELF, $firstAck);
+            $report = $followerMesh->sent[0][1];
+            self::assertInstanceOf(PeerPlacementReportDTO::class, $report);
+            self::assertSame(PlacementState::Placing, $report->agents[0]->state);
+            $placement->onPlacementReport('node-b', $report);
+            self::assertTrue($initialOrder->equals($placement->registry()->get('render:9')?->placementId));
+        }
+
+        $placement->noteNodeOffline('node-b', 1000.7);
+        $placement->noteNodeOnline('node-b', 1000.8);
+        $placement->onPeerHandshaked('node-b');
+        $rejoin = $mesh->takeFixtureQuery('node-b');
+        $mesh->sent = [];
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([], queryId: $firstAck->queryId));
+        self::assertSame([], $mesh->sent, 'The superseded link no longer decides the wait');
+        self::assertSame('node-b', $placement->registry()->get('render:9')?->nodeId);
+
+        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([], queryId: $rejoin->queryId));
+        $current = $placement->registry()->get('render:9');
+        self::assertSame($state, $current?->state);
+        if ($state === PlacementState::Stopped) {
+            self::assertNull($current->nodeId);
+            self::assertSame([], $mesh->sent);
+        } else {
+            self::assertTrue($initialOrder->precedes($current->placementId));
+            self::assertInstanceOf(PeerPlaceAgentDTO::class, $mesh->sent[0][1] ?? null);
+        }
+    }
+
+    /** @return iterable<string, array{PlacementState, bool}> Lost ACK and pending before rejoin */
+    public static function interruptedAcknowledgements(): iterable
+    {
+        yield 'lost place ACK' => [PlacementState::Placing, false];
+        yield 'lost stop ACK' => [PlacementState::Stopped, false];
+        yield 'accepted place still pending before link loss' => [PlacementState::Placing, true];
     }
 
     public function testALateStartedFromANodeTheRecordLeftIsStoppedAndIgnored(): void
@@ -2631,14 +3227,14 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '9', 'node-c');
         $mesh->sent = [];
 
         // node-b answers for a placement the leader has since moved to node-c.
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 5));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 5));
 
         $this->assertSame(['node-b'], array_column($mesh->sent, 0));
         $this->assertInstanceOf(PeerStopAgentDTO::class, $mesh->sent[0][1] ?? null, 'The second copy is taken down, as a report would');
@@ -2656,13 +3252,13 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '9', 'node-c');
         $mesh->sent = [];
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::stopped('render', '9'));
 
         $record = $placement->registry()->get('render:9');
         $this->assertSame('node-c', $record?->nodeId, 'A stop from the node it left must not erase a record naming another');
@@ -2679,7 +3275,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['plain-node' => [self::SLOTS]], linked: ['plain-node'], online: [self::SELF, 'plain-node']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('plain-node', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'plain-node', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
 
         $refused = null;
@@ -2739,9 +3335,9 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('s1', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
-        $placement->onPlacementReport('s2', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('c1', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 's1', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '1')]));
+        FakePlacementMesh::reply($placement, 's2', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'c1', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
 
         $this->assertNull($placement->placeAgentOnBestNode('render', '9'));
@@ -2798,7 +3394,7 @@ final class ClusterPlacementTest extends TestCase
         };
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['worker']), policy: $declining);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
 
         $this->assertNull($placement->placeAgentOnBestNode('render', '9'));
@@ -2819,7 +3415,7 @@ final class ClusterPlacementTest extends TestCase
         $executor = new FakePlacementExecutor(['worker']);
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
 
-        $placement->onPlaceAgent('boss', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('boss', new PeerPlaceAgentDTO('render', '9', new PlacementId('boss', 0, 1)));
 
         $this->assertSame([], $executor->executed, 'Nothing starts past a refusal');
         [$nodeId, $frame] = $mesh->sent[0];
@@ -2844,7 +3440,7 @@ final class ClusterPlacementTest extends TestCase
         $executor->failWith = new NoSuitableWorkerException('regular', false);
         $placement = new ClusterPlacement(self::SELF, $mesh, $executor);
 
-        $placement->onPlaceAgent('boss', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('boss', new PeerPlaceAgentDTO('render', '9', new PlacementId('boss', 0, 1)));
 
         [, $frame] = $mesh->sent[0];
         $this->assertInstanceOf(PeerAgentStatusDTO::class, $frame);
@@ -2857,7 +3453,7 @@ final class ClusterPlacementTest extends TestCase
         [$placement] = $this->leaderPlacingOnNodeB();
         $refusal = PlacementRefusal::insufficientCapacity('node-b', ['slots' => ['cost' => 1.0, 'free' => 0.0]]);
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'node full', [$refusal]));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '9', 'node full', [$refusal]));
 
         $record = $placement->registry()->get('render:9');
         $this->assertSame(PlacementState::Failed, $record?->state);
@@ -2876,7 +3472,7 @@ final class ClusterPlacementTest extends TestCase
     {
         [$placement] = $this->leaderPlacingOnNodeB();
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed('render', '9', 'no worker'));
 
         $record = $placement->registry()->get('render:9');
         $this->assertSame('no worker', $record?->reason);
@@ -2898,12 +3494,12 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '9', 'node-c');
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::failed(
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::failed(
             'render',
             '9',
             'old host full',
@@ -2953,7 +3549,7 @@ final class ClusterPlacementTest extends TestCase
     {
         [$placement] = $this->leaderWithARefusalOnAPlainNode();
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::started('render', '9', 1));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::started('render', '9', 1));
 
         $this->assertSame(PlacementState::Started, $placement->registry()->get('render:9')?->state);
         $this->assertSame([], $placement->placementRefusals());
@@ -2963,7 +3559,7 @@ final class ClusterPlacementTest extends TestCase
     {
         [$placement] = $this->leaderWithARefusalOnAPlainNode();
 
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
 
         $this->assertSame([], $placement->placementRefusals());
     }
@@ -2981,7 +3577,7 @@ final class ClusterPlacementTest extends TestCase
     {
         [$placement] = $this->leaderWithARefusalOnAPlainNode(hostedOnNodeB: true);
 
-        $placement->onAgentStatus('node-b', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'node-b', PeerAgentStatusDTO::stopped('render', '9'));
 
         $this->assertSame([], $placement->placementRefusals());
     }
@@ -3020,8 +3616,8 @@ final class ClusterPlacementTest extends TestCase
         $observer = new FakePlacementObserver();
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']), $observer, failoverGraceMs: 500);
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
-        $placement->onPlacementReport('node-c', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-c', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
 
         $mesh->online = [self::SELF, 'node-c'];
@@ -3067,10 +3663,10 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['node-b' => ['gpu', 'cpu=4']], linked: ['node-b'], online: [self::SELF, 'node-b']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')]));
         $placement->tick(1000.0);
 
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
 
         $record = $placement->registry()->get('render:9');
         $this->assertSame(PlacementState::Unplaced, $record?->state);
@@ -3097,11 +3693,11 @@ final class ClusterPlacementTest extends TestCase
         );
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport(
+        FakePlacementMesh::reply($placement,
             'node-b',
             new PeerPlacementReportDTO($hostedOnNodeB ? [new PeerPlacedAgentEntry('render', '9')] : []),
         );
-        $placement->onPlacementReport('plain-node', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'plain-node', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
 
         try {
@@ -3125,7 +3721,7 @@ final class ClusterPlacementTest extends TestCase
         $mesh = new FakePlacementMesh(['node-b' => ['gpu', self::SLOTS]], linked: ['node-b'], online: [self::SELF, 'node-b']);
         $placement = new ClusterPlacement(self::SELF, $mesh, new FakePlacementExecutor(['gpu']));
         $placement->onBecameLeader(1000.0);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         $placement->placeAgentOnNode('render', '9', 'node-b');
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:9')?->state);
@@ -3235,6 +3831,71 @@ final class FakePlacementMesh implements PlacementMesh
     /** @var list<array{0: string, 1: PeerDTO}> Node-addressed frames, as [nodeId, frame] */
     public array $sent = [];
 
+    use PlacementQueryFixture;
+
+    /**
+     * Responds to the latest question when the fixture simulates a reporting peer.
+     *
+     * @param ClusterPlacement $placement Leader under test
+     * @param string $nodeId Reporting peer
+     * @param PeerPlacementReportDTO $report Hosted set supplied by the fixture
+     */
+    public static function reply(ClusterPlacement $placement, string $nodeId, PeerPlacementReportDTO $report): void
+    {
+        $mesh = (new ReflectionProperty($placement, 'mesh'))->getValue($placement);
+        $query = null;
+        if (method_exists($mesh, 'takeFixtureQuery') && $report->queryId === null) {
+            $query = $mesh->takeFixtureQuery($nodeId);
+            $awaiting = (new ReflectionProperty($placement, 'rebuildAwaited'))->getValue($placement);
+            $broadcast = (new ReflectionProperty($placement, 'rebuildQueryId'))->getValue($placement);
+            if ($query?->queryId === $broadcast && !array_key_exists($nodeId, $awaiting)) {
+                $query = null;
+            }
+        }
+        $entries = [];
+        foreach ($report->agents as $entry) {
+            $record = $placement->registry()->get($entry->agentIndex === null ? $entry->agentType : "$entry->agentType:$entry->agentIndex");
+            $entries[] = $entry->placementId === null && $record?->nodeId === $nodeId && $record->placementId !== null
+                ? new PeerPlacedAgentEntry($entry->agentType, $entry->agentIndex, $record->placementId, PlacementState::Started)
+                : $entry;
+        }
+        $placement->onPlacementReport($nodeId, new PeerPlacementReportDTO(
+            $entries, $report->placementSnapshot, $report->queryId ?? $query?->queryId,
+        ));
+    }
+
+    /**
+     * Sends the fixture's status as the answer to the node's current order, if any.
+     *
+     * @param ClusterPlacement $placement Leader under test
+     * @param string $nodeId Reporting peer
+     * @param PeerAgentStatusDTO $status Simulated worker outcome or stop fact
+     */
+    public static function status(ClusterPlacement $placement, string $nodeId, PeerAgentStatusDTO $status): void
+    {
+        $agentId = $status->agentIndex === null ? $status->agentType : "$status->agentType:$status->agentIndex";
+        $order = $placement->registry()->get($agentId);
+        if ($status->state === PlacementState::Stopped && $status->stopId === null && $status->placementId === null) {
+            $stops = new ReflectionProperty($placement, 'peerStops')->getValue($placement);
+            $stop = $stops[$agentId] ?? null;
+            if ($stop?->nodeId === $nodeId) {
+                $status = $stop->order->stoppedStatus();
+            } elseif ($order?->nodeId === $nodeId && $order->placementId !== null) {
+                $status = PeerAgentStatusDTO::stopped(
+                    $status->agentType, $status->agentIndex, $order->placementId, $placement->placementSnapshot()?->term ?? $order->placementId->term,
+                );
+            }
+        }
+        if ($status->placementId === null && $order?->nodeId === $nodeId && $order->placementId !== null
+            && ($status->state === PlacementState::Started || $status->state === PlacementState::Failed)) {
+            $status = new PeerAgentStatusDTO(
+                $status->agentType, $status->agentIndex, $status->state, $status->workerId, $status->error, $status->refusals,
+                $order->placementId, $placement->placementSnapshot()?->term ?? $order->placementId->term,
+            );
+        }
+        $placement->onAgentStatus($nodeId, $status);
+    }
+
     /** @var list<PeerDTO> Broadcast frames */
     public array $broadcast = [];
 
@@ -3253,6 +3914,8 @@ final class FakePlacementMesh implements PlacementMesh
     /** @var list<Closure(): void> Waits for RT answers held so far, in the order asked */
     public array $heldRtWritesAnswered = [];
 
+    public ?string $refusedReport = null;
+
     /**
      * @param array<string, list<string>> $capabilities Advertised capabilities keyed by node id
      * @param list<string> $linked Node ids a link exists to (sendToNode succeeds)
@@ -3267,7 +3930,12 @@ final class FakePlacementMesh implements PlacementMesh
 
     public function sendToNode(string $nodeId, PeerDTO $frame): bool
     {
+        if ($frame instanceof PeerPlacementReportDTO && $this->refusedReport !== null && $frame->queryId === $this->refusedReport) {
+            $this->refusedReport = null;
+            throw new EventLoopException('report queue refused');
+        }
         $this->sent[] = [$nodeId, $frame];
+        $this->captureFixtureQuery($frame, $nodeId);
 
         return in_array($nodeId, $this->linked, true);
     }
@@ -3275,6 +3943,7 @@ final class FakePlacementMesh implements PlacementMesh
     public function broadcastToNodes(PeerDTO $frame): void
     {
         $this->broadcast[] = $frame;
+        $this->captureFixtureQuery($frame);
     }
 
     public function nodeCapabilities(string $nodeId): ?array
@@ -3349,6 +4018,8 @@ final class FakePlacementExecutor implements PlacementExecutor
     /** @var list<Closure(): void> Revokes' "stopped" held so far, in the order asked */
     public array $heldStopped = [];
 
+    public ?InvalidFormatException $raiseAfterRevoke = null;
+
     /** @var ResourceProfile Resource profile every agent type reports */
     private readonly ResourceProfile $profile;
 
@@ -3420,6 +4091,11 @@ final class FakePlacementExecutor implements PlacementExecutor
             return;
         }
         $this->heldStopped[] = $stopped;
+        if ($this->raiseAfterRevoke !== null) {
+            $failure = $this->raiseAfterRevoke;
+            $this->raiseAfterRevoke = null;
+            throw $failure;
+        }
     }
 
     /** Tells the revokes' "stopped" held so far, in the order asked; one asked meanwhile stays held */

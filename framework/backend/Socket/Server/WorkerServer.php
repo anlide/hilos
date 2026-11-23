@@ -9,10 +9,13 @@ use Generator;
 use WeakReference;
 use Closure;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
+use Hilos\Cluster\Placement\PlacementId;
+use Hilos\Cluster\Placement\PlacementRecovery;
 use Hilos\Cluster\Exception\ClusterConfigurationException;
 use Hilos\Cluster\Exception\ClusterDisabledException;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\HilosException;
+use Hilos\Runtime\Exception\Actions\RtActionsStateCollectionNullException;
 use Hilos\Runtime\Exception\RtWriteBackpressureException;
 use Hilos\Runtime\Exception\Actions\RtActionsCollectionNameNullException;
 use Hilos\Runtime\Exception\TruthSource\RtTruthSourceWriteNotAllowedException;
@@ -2417,6 +2420,7 @@ abstract class WorkerServer extends AbstractServer implements
      * @param ?int $preferredWorkerId Worker to hand it back to when that worker is still able to take it
      * @param bool $seatFromQueue True only for the queue's own seat, which takes any free worker
      * @param bool $protectedModeReplay True only when replaying the freeze's remembered set
+     * @param ?PlacementId $placementId Exact local order that sanctioned this start
      * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
      * @throws AgentDaemonCreationFailedException If agent daemon cannot be created
      * @throws NoSuitableWorkerException If no suitable worker is available
@@ -2430,9 +2434,16 @@ abstract class WorkerServer extends AbstractServer implements
         bool $seatFromQueue = false,
         bool $protectedModeReplay = false,
         ?AgentStartSink $immediateStartSink = null,
+        ?PlacementId $placementId = null,
     ): void {
-        // Build agent ID
         $agentId = $this->buildAgentId($agentType, $agentIndex);
+        $placement = Hilos::$cluster?->placement();
+        if ($placementId !== null && !$placementId->equals($placement?->localPlacementId($agentId))) {
+            return;
+        }
+        if ($protectedModeReplay && $placement !== null && $this->isPolicyPlacement($agentType) && $placementId === null) {
+            return;
+        }
 
         // Check if agent already exists and is linked
         $agentExisted = $this->agentManager->hasAgent($agentId);
@@ -2482,7 +2493,8 @@ abstract class WorkerServer extends AbstractServer implements
                 $awaiting?->preferredWorkerId ?? $preferredWorkerId,
                 $awaitedWorker->getWorkerId(),
                 $awaitedWorker,
-                $protectedModeReplay || ($awaiting?->protectedModeReplay ?? false),
+                $protectedModeReplay || ($placementId === null && ($awaiting?->protectedModeReplay ?? false)),
+                $placementId ?? $awaiting?->placementId,
             );
             $this->agentsAwaitingStopReport[$agentId] = $next;
             $this->stopReportWaiters[spl_object_id($awaitedWorker)][$agentId] = $next;
@@ -2493,10 +2505,16 @@ abstract class WorkerServer extends AbstractServer implements
                 $this->protectedModeWaitingReplays[$agentId] = new FrozenAgentPlacement(
                     $this->parseAgentId($agentId),
                     $next->preferredWorkerId,
+                    $next->placementId,
                 );
             }
             $this->agentHoldWake?->__invoke($agentId);
 
+            return;
+        }
+
+        if ($placementId !== null && $placement?->isLocalPlacementCurrent($agentId, $placementId) !== true) {
+            $placement?->stopRejectedLocalStart($agentType, $agentIndex, $placementId);
             return;
         }
 
@@ -2596,7 +2614,9 @@ abstract class WorkerServer extends AbstractServer implements
             $requiresMonopolistic = $agentDaemon->requiresMonopolisticProcess();
             if ($this->mayGrowMonopolisticPoolFor($agentDaemon, $agentIndex)) {
                 try {
-                    $this->orderMonopolisticWorkerFor($agentId, $agentType, $agentIndex, $placedByLeader);
+                    $this->startWorker(true);
+                    $this->awaitWorkerFor($agentId, $agentType, $agentIndex, $placedByLeader, true, $placementId, $protectedModeReplay);
+                    Logger::info("Monopolistic pool: worker ordered for agent {$agentId}");
 
                     return;
                 } catch (CouldNotStartException | FailedToSetNonBlockingException $e) {
@@ -2606,7 +2626,7 @@ abstract class WorkerServer extends AbstractServer implements
             } elseif ($requiresMonopolistic && $agentIndex !== null) {
                 Logger::error("Agent {$agentId} is monopolistic and indexed: the pool does not grow one worker per instance");
             } elseif (!$requiresMonopolistic && $this->regularWorkerConnecting()) {
-                $this->awaitWorkerFor($agentId, $agentType, $agentIndex, $placedByLeader, false);
+                $this->awaitWorkerFor($agentId, $agentType, $agentIndex, $placedByLeader, false, $placementId, $protectedModeReplay);
                 Logger::info("Regular pool: agent {$agentId} waits for a launched regular worker to connect");
 
                 return;
@@ -2617,6 +2637,14 @@ abstract class WorkerServer extends AbstractServer implements
             }
 
             throw new NoSuitableWorkerException($this->workerTypeName($requiresMonopolistic), $requiresMonopolistic);
+        }
+
+        if ($placementId !== null && $placement?->isLocalPlacementCurrent($agentId, $placementId) !== true) {
+            $placement?->stopRejectedLocalStart($agentType, $agentIndex, $placementId);
+            if (!$agentExisted && $this->agentManager->getAgent($agentId) === $agentDaemon) {
+                $this->agentManager->removeAgent($agentId);
+            }
+            return;
         }
 
         // Update agent daemon mapping with actual worker info
@@ -2630,7 +2658,7 @@ abstract class WorkerServer extends AbstractServer implements
         // Send agent_start with live keys from this node's sockets and the cluster index:
         // the agent coming up may strike rows left by tabs that closed while it was down,
         // but must keep rows for browsers attached to another master (HIL-664, HIL-1304).
-        $workerClient->sendAgentStart($agentType, $agentIndex, $this->liveConnectionRoster?->liveAcceptKeys() ?? []);
+        $workerClient->sendAgentStart($agentType, $agentIndex, $this->liveConnectionRoster?->liveAcceptKeys() ?? [], $placementId);
         $this->agentHoldWake?->__invoke($agentId);
     }
 
@@ -2657,39 +2685,6 @@ abstract class WorkerServer extends AbstractServer implements
         return $agentDaemon->requiresMonopolisticProcess()
             && !$this->preparingShutdown
             && $agentIndex === null;
-    }
-
-    /**
-     * Raises one monopolistic worker for an agent and records the agent as waiting for it (HIL-998).
-     *
-     * At once and off the tick: the one-worker-a-second pace of {@see ensureMinWorkers()} is the
-     * warm-up's, and a bootstrap that addresses a dozen monopolistic agents at once would see the
-     * back of that queue run out its wait before the warm-up reached it. The agent waits
-     * {@see self::WORKER_CONNECT_WAIT_SECONDS} for a worker to connect; the frames the master
-     * holds for it keep no clock of their own and end on the verdict this wait gives. The worker
-     * is not the agent's: whichever waiting agent is first when a free monopolistic worker exists
-     * takes it ({@see advanceAgentsAwaitingWorker()}), but the pool owes the queue one worker per
-     * waiter: a direct start takes a free monopolistic worker only while more are free than wait
-     * ({@see startAgentInternal()}).
-     *
-     * @param string $agentId Agent that found no worker
-     * @param string $agentType Agent type
-     * @param ?string $agentIndex Agent index, or null for a singleton agent
-     * @param bool $placedByLeader Whether the start carried the placement sanction
-     * @throws CouldNotStartException If the worker process cannot be launched
-     * @throws FailedToSetNonBlockingException If the worker's pipes cannot be made non-blocking
-     */
-    private function orderMonopolisticWorkerFor(
-        string $agentId,
-        string $agentType,
-        ?string $agentIndex,
-        bool $placedByLeader,
-    ): void {
-        $this->startWorker(true);
-
-        $this->awaitWorkerFor($agentId, $agentType, $agentIndex, $placedByLeader, true);
-
-        Logger::info("Monopolistic pool: worker ordered for agent {$agentId}");
     }
 
     /**
@@ -2754,6 +2749,8 @@ abstract class WorkerServer extends AbstractServer implements
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param bool $placedByLeader Whether the start carried the placement sanction
      * @param bool $requiresMonopolistic Whether the agent waits for a monopolistic worker rather than a regular one
+     * @param ?PlacementId $placementId Exact managed order, if any
+     * @param bool $protectedModeReplay Whether this wait belongs to the freeze replay
      */
     private function awaitWorkerFor(
         string $agentId,
@@ -2761,6 +2758,8 @@ abstract class WorkerServer extends AbstractServer implements
         ?string $agentIndex,
         bool $placedByLeader,
         bool $requiresMonopolistic,
+        ?PlacementId $placementId,
+        bool $protectedModeReplay,
     ): void {
         $type = $this->workerTypeName($requiresMonopolistic);
         $this->workerWaitCounts[$type]++;
@@ -2772,6 +2771,8 @@ abstract class WorkerServer extends AbstractServer implements
             $placedByLeader,
             hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND + self::WORKER_CONNECT_WAIT_SECONDS,
             $requiresMonopolistic,
+            $placementId,
+            $protectedModeReplay,
         );
         $this->workerWaitPending[$agentId] = $this->agentsAwaitingWorker[$agentId];
         $this->workerWaitWork?->markReady();
@@ -2841,6 +2842,7 @@ abstract class WorkerServer extends AbstractServer implements
      * The ordinary start repeats all gates and selection; blocked waits do not self-queue.
      *
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws RtActionsStateCollectionNullException When reporting a failed placement cannot reach the cluster registry
      * @throws EventLoopException When the next worker wait deadline cannot be armed
      */
     protected function advanceAgentsAwaitingWorker(): void
@@ -2870,7 +2872,9 @@ abstract class WorkerServer extends AbstractServer implements
                     $workerType = $this->workerTypeName($awaiting->requiresMonopolistic);
                     Logger::error("Agent {$agentId} waited " . self::WORKER_CONNECT_WAIT_SECONDS
                         . "s for a {$workerType} worker and did not get one");
-                    $this->refuseAwaitingAgent($agentId, new NoSuitableWorkerException($workerType, $awaiting->requiresMonopolistic));
+                    $this->refuseAwaitingAgent(
+                        $agentId, new NoSuitableWorkerException($workerType, $awaiting->requiresMonopolistic), $awaiting->placementId,
+                    );
                 }
             }
         } finally {
@@ -2910,10 +2914,12 @@ abstract class WorkerServer extends AbstractServer implements
                 $awaiting->agentIndex,
                 $awaiting->placedByLeader,
                 seatFromQueue: true,
+                protectedModeReplay: $awaiting->protectedModeReplay,
+                placementId: $awaiting->placementId,
             );
         } catch (Throwable $e) {
             Logger::error("Worker wait: agent {$awaiting->agentId} could not be seated on a {$workerType} worker: {$e->getMessage()}");
-            $this->refuseAwaitingAgent($awaiting->agentId, $e);
+            $this->refuseAwaitingAgent($awaiting->agentId, $e, $awaiting->placementId);
 
             return;
         }
@@ -2928,6 +2934,7 @@ abstract class WorkerServer extends AbstractServer implements
             $this->reportWaitEndedWithoutStart(
                 $awaiting->agentId,
                 "a gate refused the start when its {$workerType} worker came free",
+                recovery: $this->refrozenPlacementRecovery($awaiting->agentId, $awaiting->placementId, remember: true),
             );
 
             return;
@@ -2974,10 +2981,11 @@ abstract class WorkerServer extends AbstractServer implements
                         $awaiting->placedByLeader,
                         $awaiting->preferredWorkerId,
                         protectedModeReplay: $awaiting->protectedModeReplay,
+                        placementId: $awaiting->placementId,
                     );
                 } catch (Throwable $failure) {
                     Logger::error("Agent {$agentId} could not start after its earlier stop: {$failure->getMessage()}");
-                    $this->refuseAwaitingAgent($agentId, $failure);
+                    $this->refuseAwaitingAgent($agentId, $failure, $awaiting->placementId);
 
                     continue;
                 }
@@ -2989,6 +2997,7 @@ abstract class WorkerServer extends AbstractServer implements
                     $this->reportWaitEndedWithoutStart(
                         $agentId,
                         'a gate refused the start once its earlier stop was reported',
+                        recovery: $this->refrozenPlacementRecovery($agentId, $awaiting->placementId),
                     );
                 }
             }
@@ -3009,11 +3018,177 @@ abstract class WorkerServer extends AbstractServer implements
      *
      * @param string $agentId Agent whose wait ended without a worker
      * @param Throwable $failure What the start was refused with
+     * @param ?PlacementId $placementId Order invalidated by the failed wait
      */
-    private function refuseAwaitingAgent(string $agentId, Throwable $failure): void
+    private function refuseAwaitingAgent(string $agentId, Throwable $failure, ?PlacementId $placementId): void
     {
-        $this->reportWaitEndedWithoutStart($agentId, $failure->getMessage());
+        $rosterEntry = $this->agentManager->getAgent($agentId);
+        $recovery = $this->reportPlacementStartFailure($agentId, $placementId, $failure->getMessage());
+        if ($this->agentManager->getAgent($agentId) === $rosterEntry && $rosterEntry?->hasWorkerClient() !== true
+            && !$this->isAgentAwaitingWorker($agentId) && !$this->isAgentAwaitingStopReport($agentId)) {
+            $this->reportWaitEndedWithoutStart($agentId, $failure->getMessage(), recovery: $recovery);
+        }
         $this->reportContainedFailure(new ContainedFailure(MasterFailureUnit::AGENT_START, $agentId, $failure));
+    }
+
+    /**
+     * @param string $agentId Agent that still owns the worker start
+     * @param PlacementId $placementId Order attached to the worker request
+     * @return bool Whether this exact start can take effect on the master
+     */
+    public function acceptsPlacementStartReport(string $agentId, PlacementId $placementId): bool
+    {
+        $agent = $this->parseAgentId($agentId);
+
+        return $this->allowsPlacementRecovery($agent->type, $agent->index)
+            && Hilos::$cluster?->placement()?->isLocalPlacementCurrent($agentId, $placementId) === true;
+    }
+
+    /**
+     * Stops the same linked instance whose start report was refused. A refreeze can replay it again.
+     *
+     * @param string $agentId Agent that still owns the worker link
+     * @param PlacementId $placementId Order attached to the refused report
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     */
+    public function rejectPlacementStartReport(string $agentId, PlacementId $placementId): void
+    {
+        $agent = $this->parseAgentId($agentId);
+        $placement = Hilos::$cluster?->placement();
+        if ($placement?->isLocalPlacementCurrent($agentId, $placementId) === true
+            && $this->protectedModeRefusesStart($agent->type, $agent->index) && !$this->rtClaimRefusesStart($agent->type, $agent->index)) {
+            $placement->beginLocalPlacementRecovery($agentId, $placementId);
+            $this->rememberInterruptedPlacement($agentId, $placementId);
+            $this->stopAgent($agent->type, $agent->index);
+            return;
+        }
+        if ($placement !== null) {
+            $placement->stopRejectedLocalStart($agent->type, $agent->index, $placementId);
+        } else {
+            $this->stopAgent($agent->type, $agent->index);
+        }
+    }
+
+    /**
+     * @param WorkerClient $client Actual link reporting a managed start without a roster entry
+     * @param AgentId $agent Address reported by the link
+     * @param PlacementId $placementId Order attached to that worker request
+     * @throws InvalidFormatException When a tracked stop completion address is invalid
+     * @throws EventLoopException When a native stop deadline cannot be armed
+     */
+    public function stopOrphanedPlacement(WorkerClient $client, AgentId $agent, PlacementId $placementId): void
+    {
+        $placement = Hilos::$cluster?->placement();
+        if ($placement === null) {
+            $client->sendAgentStop($agent->type, $agent->index);
+            return;
+        }
+        $agentId = $this->buildAgentId($agent->type, $agent->index);
+        $placement->stopRejectedLocalStart($agent->type, $agent->index, $placementId,
+            function (Closure $stopped) use ($client, $agent, $agentId): void {
+                if (!$this->stopReportHolds($client, $agentId)) {
+                    $client->sendAgentStop($agent->type, $agent->index);
+                }
+                $this->completeWorkerStopOnLink($agentId, spl_object_id($client), $stopped);
+            },
+        );
+    }
+
+    /**
+     * @param string $agentId Agent that still owns the worker start
+     * @param PlacementId $placementId Order attached to the worker request
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When a live restart caller deadline cannot be canceled
+     */
+    public function reportPlacementWorkerStarted(string $agentId, PlacementId $placementId): void
+    {
+        if ($this->acceptsPlacementStartReport($agentId, $placementId)) {
+            $agent = $this->parseAgentId($agentId);
+            Hilos::$cluster?->placement()?->noteAgentStarted($agent->type, $agent->index, placementId: $placementId);
+        }
+    }
+
+    /**
+     * Finishes an exact failed start while its placement and the gates still permit the attempt.
+     *
+     * @param string $agentId Agent that was starting
+     * @param ?PlacementId $placementId Managed order, if any
+     * @param string $reason Reason supplied by the wait or worker
+     * @return ?PlacementRecovery Live replay obligation captured before forgetting the hosted order
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
+     */
+    public function reportPlacementStartFailure(string $agentId, ?PlacementId $placementId, string $reason): ?PlacementRecovery
+    {
+        $placement = Hilos::$cluster?->placement();
+        if ($placementId === null || !$placementId->equals($placement?->localPlacementId($agentId))) {
+            return null;
+        }
+        $agent = $this->parseAgentId($agentId);
+        if ($this->rtClaimRefusesStart($agent->type, $agent->index)) {
+            $placement->cancelPlacementRecovery($agentId);
+            $placement->discardLocalStart($agentId, $placementId);
+            return null;
+        }
+        if (!$placement->isLocalPlacementCurrent($agentId, $placementId)) {
+            $placement->discardLocalStart($agentId, $placementId);
+            return $placement->placementRecovery($agentId);
+        }
+        if ($this->protectedModeRefusesStart($agent->type, $agent->index)) {
+            return $this->refrozenPlacementRecovery($agentId, $placementId, remember: true);
+        }
+
+        $recovery = $placement->placementRecovery($agentId);
+        $placement->noteAgentStartFailed($agent->type, $agent->index, $reason, placementId: $placementId);
+
+        return $recovery;
+    }
+
+    /**
+     * @param string $agentId Agent whose wait was interrupted
+     * @param ?PlacementId $placementId Exact order kept by the wait
+     * @param bool $remember Whether the freeze still needs to retain the interrupted start for its next lift
+     * @return ?PlacementRecovery Live recovery that survives this freeze
+     */
+    private function refrozenPlacementRecovery(string $agentId, ?PlacementId $placementId, bool $remember = false): ?PlacementRecovery
+    {
+        $placement = Hilos::$cluster?->placement();
+        if ($placementId === null || $placement === null) {
+            return null;
+        }
+        $agent = $this->parseAgentId($agentId);
+        if ($this->rtClaimRefusesStart($agent->type, $agent->index)) {
+            return null;
+        }
+        if (!$placement->isLocalPlacementCurrent($agentId, $placementId)) {
+            return $placement->placementRecovery($agentId);
+        }
+        if (!$this->protectedModeRefusesStart($agent->type, $agent->index)) {
+            return null;
+        }
+
+        if ($remember) {
+            $this->rememberInterruptedPlacement($agentId, $placementId);
+        }
+        $recovery = $placement->placementRecovery($agentId);
+
+        return $recovery === null || $placement->isPlacementRecoveryCanceled($agentId, $recovery) ? null : $recovery;
+    }
+
+    /**
+     * @param string $agentId Agent interrupted before its worker reported a start
+     * @param PlacementId $placementId Order kept for the next lift
+     */
+    private function rememberInterruptedPlacement(string $agentId, PlacementId $placementId): void
+    {
+        Hilos::$cluster?->placement()?->suspendLocalPlacement($agentId, $placementId);
+        $agent = $this->parseAgentId($agentId);
+        $this->protectedModeStoppedAgents[] = new FrozenAgentPlacement(
+            $agent, $this->agentManager->getAgentWorkerId($agentId), $placementId,
+        );
     }
 
     /**
@@ -3037,12 +3212,17 @@ abstract class WorkerServer extends AbstractServer implements
      * @param string $agentId Agent whose wait ended without a start
      * @param string $reason Why it will not start, as the master reports it on
      * @param ?AgentStartSink $immediateStartSink Synchronous reports for this call only; deferred reports use the registered sink
+     * @param ?PlacementRecovery $recovery Replay obligation that survives this failed wait
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
-    private function reportWaitEndedWithoutStart(string $agentId, string $reason, ?AgentStartSink $immediateStartSink = null): void
-    {
+    private function reportWaitEndedWithoutStart(
+        string $agentId,
+        string $reason,
+        ?AgentStartSink $immediateStartSink = null,
+        ?PlacementRecovery $recovery = null,
+    ): void {
         try {
-            $this->agentManager->reportAgentStartFailed($agentId, $reason, $immediateStartSink);
+            $this->agentManager->reportAgentStartFailed($agentId, $reason, $immediateStartSink, $recovery);
         } catch (InvalidArgumentException $failure) {
             Logger::error("Worker wait: the end of agent {$agentId}'s wait"
                 . " could not be answered: {$failure->getMessage()}");
@@ -3078,11 +3258,18 @@ abstract class WorkerServer extends AbstractServer implements
      */
     public function needsPlacementOrder(string $agentType): bool
     {
-        $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
+        return $this->isPolicyPlacement($agentType) && !$this->amClusterLeader();
+    }
 
+    /**
+     * @param string $agentType Agent type being placed
+     * @return bool Whether its cluster host is chosen by policy
+     */
+    private function isPolicyPlacement(string $agentType): bool
+    {
+        $registryEntry = Hilos::appClass()::AGENTS[$agentType] ?? null;
         return AgentRegistry::scope($registryEntry) === AgentScope::CLUSTER
-            && AgentRegistry::placement($registryEntry) === AgentPlacement::POLICY
-            && !$this->amClusterLeader();
+            && AgentRegistry::placement($registryEntry) === AgentPlacement::POLICY;
     }
 
     /**
@@ -3097,7 +3284,9 @@ abstract class WorkerServer extends AbstractServer implements
      */
     public function refuseRtClaim(string $agentType, ?string $agentIndex): void
     {
-        $this->rtClaimRefused[$this->buildAgentId($agentType, $agentIndex)] = true;
+        $agentId = $this->buildAgentId($agentType, $agentIndex);
+        $this->rtClaimRefused[$agentId] = true;
+        Hilos::$cluster?->placement()?->cancelPlacementRecovery($agentId);
     }
 
     /**
@@ -3115,6 +3304,16 @@ abstract class WorkerServer extends AbstractServer implements
     private function rtClaimRefusesStart(string $agentType, ?string $agentIndex): bool
     {
         return isset($this->rtClaimRefused[$this->buildAgentId($agentType, $agentIndex)]);
+    }
+
+    /**
+     * @param string $agentType Addressed agent type
+     * @param ?string $agentIndex Addressed instance, or null for a singleton
+     * @return bool Whether this node can admit an ordinary frame to replay recovery now
+     */
+    public function allowsPlacementRecovery(string $agentType, ?string $agentIndex): bool
+    {
+        return !$this->protectedModeRefusesStart($agentType, $agentIndex) && !$this->rtClaimRefusesStart($agentType, $agentIndex);
     }
 
     /**
@@ -3715,7 +3914,11 @@ abstract class WorkerServer extends AbstractServer implements
             if ($candidate instanceof AwaitingWorkerAgent) {
                 if (($this->agentsAwaitingWorker[$agentId] ?? null) === $candidate) {
                     $this->removeWorkerWait($agentId);
-                    $this->reportWaitEndedWithoutStart($agentId, 'protected mode holds the node');
+                    $this->reportWaitEndedWithoutStart(
+                        $agentId,
+                        'protected mode holds the node',
+                        recovery: $this->refrozenPlacementRecovery($agentId, $candidate->placementId, remember: true),
+                    );
                     Logger::info("Worker wait: agent {$agentId} left its wait for a worker, protected mode holds the node");
                 }
             } elseif ($this->agentManager->hasAgent($agentId) && $this->agentManager->getAgent($agentId) === $candidate) {
@@ -3963,6 +4166,7 @@ abstract class WorkerServer extends AbstractServer implements
      * @throws RtActionsCollectionNameNullException When the switch a finished walk tells cannot name its row
      * @throws RtTruthSourceWriteNotAllowedException When that switch writes a row this master is not the truth source of
      * @throws InvalidFormatException When a tracked delivery has an invalid completion address
+     * @throws RtActionsStateCollectionNullException When reporting a failed replay cannot reach the cluster registry
      * @throws StatusComponentDeclarationException When the lift reads an invalid enabled Status catalog
      * @throws EventLoopException When a live restart caller deadline cannot be armed or canceled
      */
@@ -4023,11 +4227,20 @@ abstract class WorkerServer extends AbstractServer implements
                 // Read before the stop, not after: stopAgent() takes the agent off the roster, and with
                 // it the only record of the worker the lift should hand it back to.
                 $workerInfo = $this->agentManager->getAgentWorkerInfo($agentId);
+                $placement = Hilos::$cluster?->placement();
+                $placementId = $placement?->localPlacementId($agentId);
+                if ($placementId !== null) {
+                    if ($this->isPolicyPlacement($parsed->type)) {
+                        $placement->beginLocalPlacementRecovery($agentId, $placementId);
+                    }
+                    $placement->suspendLocalPlacement($agentId, $placementId);
+                }
                 $this->protectedModeStoppedAgents[] = new FrozenAgentPlacement(
                     $parsed,
                     $workerInfo === null
                         ? null
                         : $this->agentManager->calculateWorkerId($workerInfo->workerIndex, $workerInfo->isMonopolistic),
+                    $placementId,
                 );
                 $this->protectedModeWalkAgents++;
                 $this->stopAgent($parsed->type, $parsed->index);
@@ -4072,6 +4285,12 @@ abstract class WorkerServer extends AbstractServer implements
             $frozen = $this->protectedModeResumeQueue[$key];
             unset($this->protectedModeResumeQueue[$key]);
             $this->protectedModeWalkAgents++;
+            $agentId = $this->buildAgentId($frozen->agent->type, $frozen->agent->index);
+            if ($frozen->placementId !== null && $this->isPolicyPlacement($frozen->agent->type)
+                && !$this->protectedModeRefusesStart($frozen->agent->type, $frozen->agent->index)
+                && !$this->rtClaimRefusesStart($frozen->agent->type, $frozen->agent->index)) {
+                Hilos::$cluster?->placement()?->beginLocalPlacementRecovery($agentId, $frozen->placementId);
+            }
             try {
                 $this->startAgentInternal(
                     $frozen->agent->type,
@@ -4079,13 +4298,14 @@ abstract class WorkerServer extends AbstractServer implements
                     true,
                     $frozen->workerId,
                     protectedModeReplay: true,
+                    placementId: $frozen->placementId,
                 );
             } catch (Throwable $e) {
-                $agentId = $this->buildAgentId($frozen->agent->type, $frozen->agent->index);
                 Logger::error("Protected mode: failed to resume agent {$agentId}: {$e->getMessage()}");
+                $this->reportPlacementStartFailure($agentId, $frozen->placementId, $e->getMessage());
             } finally {
                 Hilos::$cluster?->protectedModeEntryGate()?->noteRosterChanged();
-                $this->agentHoldWake?->__invoke($this->buildAgentId($frozen->agent->type, $frozen->agent->index));
+                $this->agentHoldWake?->__invoke($agentId);
             }
         }
 
@@ -4208,9 +4428,12 @@ abstract class WorkerServer extends AbstractServer implements
      */
     public function executePlacement(string $agentType, ?string $agentIndex, ?AgentStartSink $immediateStartSink = null): ?int
     {
-        $this->startAgentInternal($agentType, $agentIndex, true, immediateStartSink: $immediateStartSink);
-
         $agentId = $this->buildAgentId($agentType, $agentIndex);
+        $this->startAgentInternal(
+            $agentType, $agentIndex, true, immediateStartSink: $immediateStartSink,
+            placementId: Hilos::$cluster?->placement()?->localPlacementId($agentId),
+        );
+
         $workerId = $this->placedWorkerId($agentType, $agentIndex);
         if ($workerId === null && !$this->isAgentAwaitingWorker($agentId) && !$this->isAgentAwaitingStopReport($agentId)) {
             throw new AgentNotLinkedToWorkerException($agentId);
@@ -4260,7 +4483,10 @@ abstract class WorkerServer extends AbstractServer implements
             throw new LogicException("Agent {$agentId} could not be stopped");
         }
 
-        $this->startAgentInternal($agentType, $agentIndex, $placedByLeader, $oldWorkerId, immediateStartSink: $immediateStartSink);
+        $this->startAgentInternal(
+            $agentType, $agentIndex, $placedByLeader, $oldWorkerId, immediateStartSink: $immediateStartSink,
+            placementId: $placedByLeader ? Hilos::$cluster?->placement()?->localPlacementId($agentId) : null,
+        );
     }
 
     /**
@@ -4298,16 +4524,29 @@ abstract class WorkerServer extends AbstractServer implements
         ?AgentStartSink $immediateStartSink = null,
     ): void
     {
-        $this->stopAgent($agentType, $agentIndex, $immediateStartSink);
-        if ($stopped === null) {
-            return;
-        }
-
         $agentId = $this->buildAgentId($agentType, $agentIndex);
-        $link = $this->stoppedInstanceLink($agentId);
+        $worker = $this->agentManager->getAgent($agentId);
+        $client = $worker?->hasWorkerClient() ? $worker->getWorkerClient() : null;
+        $link = $client === null ? $this->stoppedInstanceLink($agentId) : spl_object_id($client);
+        try {
+            $this->stopAgent($agentType, $agentIndex, $immediateStartSink);
+        } finally {
+            if ($stopped !== null) {
+                $stillWaiting = $client !== null ? $this->stopReportHolds($client, $agentId) : $link === $this->stoppedInstanceLink($agentId);
+                $this->completeWorkerStopOnLink($agentId, $stillWaiting ? $link : null, $stopped);
+            }
+        }
+    }
+
+    /**
+     * @param string $agentId Agent whose stop is outstanding
+     * @param ?int $link Exact worker connection, or null if no worker owes the stop
+     * @param Closure(): void $stopped Completion after the report and streamed writes
+     */
+    private function completeWorkerStopOnLink(string $agentId, ?int $link, Closure $stopped): void
+    {
         if ($link === null) {
             $stopped();
-
             return;
         }
         $this->stopCompletions[$link][$agentId][] = $stopped;

@@ -96,8 +96,9 @@ final class RtClusterClaimRegistry
      * @param string $nodeId Node whose report is being folded in
      * @param list<PeerRtClaimEntry> $claims What that node says its agents own
      * @return list<PeerRtClaimRefusedDTO> One verdict per claim that lost, empty when none did
+     * @param int $authorityTerm Leader term deciding these claims
      */
-    public function fold(string $nodeId, array $claims): array
+    public function fold(string $nodeId, array $claims, int $authorityTerm = 0): array
     {
         $this->evictStaleIncarnations($nodeId, $claims);
 
@@ -106,7 +107,7 @@ final class RtClusterClaimRegistry
         foreach ($claims as $claim) {
             $lost = [];
             foreach ($claim->collectionKeys as $collectionKey) {
-                $refusal = $this->findConflict($nodeId, $claim, $collectionKey);
+                $refusal = $this->findConflict($nodeId, $claim, $collectionKey, $authorityTerm);
                 if ($refusal !== null) {
                     $refusals[] = $refusal;
                     $lost[] = $collectionKey;
@@ -192,9 +193,10 @@ final class RtClusterClaimRegistry
      * @param string $nodeId Node whose report is being judged
      * @param PeerRtClaimEntry $claim Claim being judged
      * @param string $collectionKey RT collection of that claim to judge
+     * @param int $authorityTerm Leader term deciding the claim
      * @return ?PeerRtClaimRefusedDTO Verdict against the claim, or null when it stands
      */
-    private function findConflict(string $nodeId, PeerRtClaimEntry $claim, string $collectionKey): ?PeerRtClaimRefusedDTO
+    private function findConflict(string $nodeId, PeerRtClaimEntry $claim, string $collectionKey, int $authorityTerm): ?PeerRtClaimRefusedDTO
     {
         foreach ($this->byNode as $holderNodeId => $heldClaims) {
             if ($holderNodeId === $nodeId) {
@@ -215,6 +217,7 @@ final class RtClusterClaimRegistry
                     agentId: $claim->agentId,
                     holderNodeId: $holderNodeId,
                     holderAgentId: $held->agentId,
+                    authorityTerm: $authorityTerm,
                 );
             }
         }

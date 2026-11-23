@@ -32,7 +32,14 @@ interface AgentSignalMesh
      * @param string $agentType Resolved target agent type
      * @param ?string $agentIndex Resolved target agent index, or null for a singleton agent
      * @param SignalDTO $signal Signal to deliver on the target node
-     * @return bool True when a live link carried the frame, false when the node is unlinked
+     * @param bool $placementRecoveryRelay Whether this frame has already crossed to an earlier placement
+     * @return bool True when a live peer queue accepted the frame, false otherwise
      */
-    public function sendSignalToNode(string $targetNodeId, string $agentType, ?string $agentIndex, SignalDTO $signal): bool;
+    public function sendSignalToNode(
+        string $targetNodeId,
+        string $agentType,
+        ?string $agentIndex,
+        SignalDTO $signal,
+        bool $placementRecoveryRelay = false,
+    ): bool;
 }

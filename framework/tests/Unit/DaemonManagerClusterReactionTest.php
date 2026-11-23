@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Constants\TimeConstants;
 use Closure;
 
@@ -79,7 +80,7 @@ final class DaemonManagerClusterReactionTest extends TestCase
         $executor = new FakePlacementExecutor(workerId: 5);
         $mesh = new FakePlacementMesh(['master' => ['slots=10']], linked: ['leader']);
         $placement = new ClusterPlacement('master', $mesh, $executor, null, slaveWorkGraceMs: 500);
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', new PlacementId('leader', 0, 1)));
         $context = new ClusterContext();
         $context->registerPlacement($placement);
         Hilos::$cluster = $context;

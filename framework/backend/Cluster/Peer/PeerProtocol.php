@@ -36,11 +36,15 @@ namespace Hilos\Cluster\Peer;
  *      peer_source_interest_answered behind the snapshots it owed; the head of an
  *      rt_sync_snapshot names the worker's interest report it answers, null on a
  *      peer link (HIL-1817).
+ * 31 — placement orders have an identity, status carries authority and worker start proof,
+ *      hosted reports can answer a correlated query, and stops and placement requests have exact
+ *      receipts. RT claim refusals carry the deciding term, and peer_client_signal correlates
+ *      terminal page recovery with its original delivery (HIL-2273).
  */
 final class PeerProtocol
 {
     /** @var int Current peer wire-protocol version */
-    public const int VERSION = 30;
+    public const int VERSION = 31;
 
     /**
      * Reports whether a remote-declared protocol version can share this channel.

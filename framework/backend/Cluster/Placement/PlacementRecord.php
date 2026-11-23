@@ -22,6 +22,8 @@ use Hilos\Constants\AgentConstants;
  * stop-ack, and null means the stop is confirmed. It has no diagnosis or retry and remains tracked
  * until new explicit demand; ordinary idle stops leave no record. Complete snapshots carry
  * tombstones across leadership changes so inherited cancellation suppresses stale live reports.
+ * The order id can survive in a record without a host. It identifies the revoked assignment or
+ * preserves the issuance floor across rebuild while an original frame still waits for later work.
  *
  * A record of an agent that runs nowhere because its placement failed — {@see PlacementState::Failed}
  * or {@see PlacementState::Unplaced} — also says why (HIL-447): the human text of the failure and
@@ -48,6 +50,10 @@ final class PlacementRecord
     /** @var string Wire key: gate refusals behind a failed or unplaced record */
     public const string FIELD_REFUSALS = 'refusals';
 
+    public const string FIELD_PLACEMENT_ID = 'placementId';
+
+    public const string FIELD_WORKER_STARTED = 'workerStarted';
+
     /**
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -55,6 +61,8 @@ final class PlacementRecord
      * @param PlacementState $state Last-known placement state
      * @param ?string $reason Why the placement failed, or null when it did not or nobody said
      * @param list<PlacementRefusal> $refusals Gate refusals behind the failure; empty for any other failure
+     * @param ?PlacementId $placementId Identity of the order
+     * @param bool $workerStarted Whether the worker confirmed this exact order
      */
     public function __construct(
         public readonly string $agentType,
@@ -63,6 +71,8 @@ final class PlacementRecord
         public readonly PlacementState $state,
         public readonly ?string $reason = null,
         public readonly array $refusals = [],
+        public readonly ?PlacementId $placementId = null,
+        public readonly bool $workerStarted = false,
     ) {
     }
 
@@ -130,7 +140,31 @@ final class PlacementRecord
             throw new PeerTransportException("Placement record '{$state->value}' carries a failure diagnosis");
         }
 
-        return new self($agentType, $agentIndex, $nodeId, $state, $reason, $refusals);
+        $placementId = array_key_exists(self::FIELD_PLACEMENT_ID, $data)
+            ? PlacementId::fromWire($data[self::FIELD_PLACEMENT_ID]) : null;
+
+        return new self($agentType, $agentIndex, $nodeId, $state, $reason, $refusals, $placementId,
+            self::readWorkerStarted($data, $state, $placementId));
+    }
+
+    /**
+     * @param array<string, mixed> $data Wire payload that can carry a worker start confirmation
+     * @param ?PlacementState $state Wire placement state
+     * @param ?PlacementId $placementId Placement order being confirmed
+     * @return bool Whether the worker confirmed the exact order
+     * @throws PeerTransportException When the start confirmation is malformed or inconsistent
+     */
+    public static function readWorkerStarted(array $data, ?PlacementState $state, ?PlacementId $placementId): bool
+    {
+        if (!array_key_exists(self::FIELD_WORKER_STARTED, $data)) {
+            return false;
+        }
+        $value = $data[self::FIELD_WORKER_STARTED];
+        if (!is_bool($value) || ($value && ($state !== PlacementState::Started || $placementId === null))) {
+            throw new PeerTransportException('Placement worker start confirmation is invalid');
+        }
+
+        return $value;
     }
 
     /**
@@ -146,7 +180,8 @@ final class PlacementRecord
             self::FIELD_STATE => $this->state->value,
             self::FIELD_REASON => $this->reason,
             self::FIELD_REFUSALS => array_map(static fn(PlacementRefusal $refusal): array => $refusal->toArray(), $this->refusals),
-        ];
+        ] + ($this->placementId === null ? [] : [self::FIELD_PLACEMENT_ID => $this->placementId->toArray()])
+            + ($this->workerStarted ? [self::FIELD_WORKER_STARTED => true] : []);
     }
 
     /**
@@ -175,10 +210,11 @@ final class PlacementRecord
     public function withState(PlacementState $state): self
     {
         if ($state !== PlacementState::Failed && $state !== PlacementState::Unplaced) {
-            return new self($this->agentType, $this->agentIndex, $this->nodeId, $state);
+            return new self($this->agentType, $this->agentIndex, $this->nodeId, $state, placementId: $this->placementId,
+                workerStarted: $state === PlacementState::Started && $this->workerStarted);
         }
 
-        return new self($this->agentType, $this->agentIndex, $this->nodeId, $state, $this->reason, $this->refusals);
+        return new self($this->agentType, $this->agentIndex, $this->nodeId, $state, $this->reason, $this->refusals, $this->placementId);
     }
 
     /**
@@ -197,6 +233,8 @@ final class PlacementRecord
             || $this->nodeId !== $other->nodeId
             || $this->state !== $other->state
             || $this->reason !== $other->reason
+            || $this->workerStarted !== $other->workerStarted
+            || ($this->placementId === null ? $other->placementId !== null : !$this->placementId->equals($other->placementId))
             || count($this->refusals) !== count($other->refusals)
         ) {
             return false;

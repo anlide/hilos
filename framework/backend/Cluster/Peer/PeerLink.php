@@ -162,6 +162,8 @@ final class PeerLink extends AbstractClient
      *      written; transferred with their callbacks before the successor stream can wake
      */
     private array $waitingInTurn = [];
+    /** Placement announcements that a following Stop must not overtake. */
+    private int $waitingPlacementTurns = 0;
     /** Weak endpoint route shared by waiting callbacks across successive replacements */
     private readonly PeerFrameRoute $frameRoute;
 
@@ -288,13 +290,15 @@ final class PeerLink extends AbstractClient
      * and another node's claim to the same rows then stands. A command's reply: its caller acts on
      * the outcome. An access re-decision of pages, which reads who is behind a connection from the
      * RT copy. An order to place an agent: the linked node starts the new instance, which reads and
-     * writes the rows the old one wrote when it ran on this node. The answer to the linked node's
-     * announcement of what it reads: the linked node takes it as the word that every snapshot owed for
-     * that announcement is ahead of it. Every other frame - keepalive,
+     * writes the rows the old one wrote when it ran on this node. A placement query: absence can
+     * judge an order only when the query follows that Place or Stop in the stream. A placement
+     * release follows preceding commands and queries, so they cannot restore the released authority.
+     * The answer to the linked node's announcement of what it reads: the linked node takes it as the word that every
+     * snapshot owed for that announcement is ahead of it. Every other frame - keepalive,
      * consensus, membership, the drain marker, uploads, snapshots and their queries, DB sync, answers
      * to browsers and HTTP, protected mode - goes at once: none of them is read against a write sent
      * before it. A stop or a restart of an agent goes at once too, unless a frame naming the same agent
-     * still waits for its turn ({@see self::queueFrame()}).
+     * still waits for its turn ({@see self::queueFrame()}). A Stop also follows pending placement queries and releases.
      *
      * @param PeerDTO $frame Frame to send
      * @return bool Whether it goes in its turn behind the writes streamed before it
@@ -307,7 +311,9 @@ final class PeerLink extends AbstractClient
 
         return $frame instanceof PeerAgentStatusDTO || $frame instanceof PeerPlacementReportDTO || $frame instanceof PeerRtClaimsDTO
             || $frame instanceof PeerCommandReplyDTO || $frame instanceof PeerPageAccessReassessDTO
-            || $frame instanceof PeerPlaceAgentDTO || $frame instanceof PeerSourceInterestAnsweredDTO;
+            || $frame instanceof PeerRtClaimRefusedDTO || $frame instanceof PeerPlacementVerdictDTO
+            || $frame instanceof PeerPlaceAgentDTO || $frame instanceof PeerPlacementQueryDTO || $frame instanceof PeerPlacementReleaseDTO
+            || $frame instanceof PeerSourceInterestAnsweredDTO;
     }
 
     /**
@@ -322,7 +328,8 @@ final class PeerLink extends AbstractClient
     private static function agentIdOf(PeerDTO $frame): ?string
     {
         if (($frame instanceof PeerSignalDTO && $frame->uploadReservation === null) || $frame instanceof PeerAgentStatusDTO
-            || $frame instanceof PeerPlaceAgentDTO || $frame instanceof PeerStopAgentDTO || $frame instanceof PeerAgentRestartDTO) {
+            || $frame instanceof PeerPlaceAgentDTO || $frame instanceof PeerStopAgentDTO || $frame instanceof PeerAgentRestartDTO
+            || $frame instanceof PeerRtClaimRefusedDTO || $frame instanceof PeerPlacementVerdictDTO) {
             return $frame->agentIndex !== null ? $frame->agentType . AgentConstants::ID_SEPARATOR . $frame->agentIndex : $frame->agentType;
         }
 
@@ -421,7 +428,7 @@ final class PeerLink extends AbstractClient
             return;
         }
 
-        $this->queueFrame($frame, $frame->toJson());
+        $this->queueFrame($frame, self::orderedFrameJson($frame, $frame->toJson()));
     }
 
     /**
@@ -463,12 +470,28 @@ final class PeerLink extends AbstractClient
 
             return;
         }
+        $frameJson = self::orderedFrameJson($frame, $frameJson);
         if ($this->draining) {
             $this->queueOutbound($frameJson, false);
 
             return;
         }
         $this->queueFrame($frame, $frameJson);
+    }
+
+    /**
+     * @param PeerDTO $frame Original frame, with any local outbound prefix
+     * @param string $frameJson Packed frame, without the newline delimiter
+     * @return string Packed frame with any prefix carried in the same transport turn
+     */
+    private static function orderedFrameJson(PeerDTO $frame, string $frameJson): string
+    {
+        if (!$frame instanceof PeerPlacementQueryDTO || $frame->orderedPrefix === []) {
+            return $frameJson;
+        }
+        $prefix = implode("\n", array_map(static fn(PeerDTO $item): string => $item->toJson(), $frame->orderedPrefix));
+
+        return $prefix . "\n" . $frameJson;
     }
 
     /**
@@ -488,7 +511,9 @@ final class PeerLink extends AbstractClient
     {
         $agentId = self::agentIdOf($frame);
         $answers = $frame instanceof PeerSourceInterestAnsweredDTO;
-        $inTurn = self::readsBehindRtWrites($frame) || ($agentId !== null && isset($this->waitingInTurn[$agentId]));
+        $placementTurn = $frame instanceof PeerPlacementQueryDTO || $frame instanceof PeerPlacementReleaseDTO;
+        $inTurn = self::readsBehindRtWrites($frame) || ($agentId !== null && isset($this->waitingInTurn[$agentId]))
+            || ($frame instanceof PeerStopAgentDTO && $this->waitingPlacementTurns > 0);
         if ($this->rtSyncStream === null || !$inTurn) {
             $this->queueOutbound($frameJson, $frame instanceof PeerSignalDTO && $frame->uploadReservation !== null);
 
@@ -497,14 +522,20 @@ final class PeerLink extends AbstractClient
         if ($agentId !== null) {
             $this->waitingInTurn[$agentId] = ($this->waitingInTurn[$agentId] ?? 0) + 1;
         }
+        if ($placementTurn) {
+            ++$this->waitingPlacementTurns;
+        }
         $route = $this->frameRoute;
-        $this->rtSyncStream->writeInTurn(static function () use ($route, $frameJson, $agentId, $answers): void {
+        $this->rtSyncStream->writeInTurn(static function () use ($route, $frameJson, $agentId, $answers, $placementTurn): void {
             $owner = $route->current();
             if ($owner === null) {
                 return;
             }
             if ($agentId !== null && --$owner->waitingInTurn[$agentId] === 0) {
                 unset($owner->waitingInTurn[$agentId]);
+            }
+            if ($placementTurn) {
+                --$owner->waitingPlacementTurns;
             }
             if ($answers && $route->dropsAnswers) {
                 $owner->oweHandOver();
@@ -681,6 +712,8 @@ final class PeerLink extends AbstractClient
                 $successor->waitingInTurn[$agentId] = ($successor->waitingInTurn[$agentId] ?? 0) + $count;
             }
             $this->waitingInTurn = [];
+            $successor->waitingPlacementTurns += $this->waitingPlacementTurns;
+            $this->waitingPlacementTurns = 0;
         }
         if ($successor !== null && $this->rtSyncStream?->isWriting() === true) {
             try {
@@ -1337,6 +1370,9 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerPlaceAgentDTO $frame Incoming place-agent frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws InvalidFormatException When an abandoned start has an invalid stop completion address
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
+     * @throws EventLoopException When the existing executor cannot arm a stop deadline
      */
     private function onPlaceAgent(PeerPlaceAgentDTO $frame): void
     {
@@ -1379,7 +1415,7 @@ final class PeerLink extends AbstractClient
     private function onPlacementQuery(PeerPlacementQueryDTO $frame): void
     {
         $this->requireHandshaked('placement query');
-        $this->server->onPlacementQueryReceived($this);
+        $this->server->onPlacementQueryReceived($this, $frame);
     }
 
     /**
@@ -1423,6 +1459,7 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerPlacementReportDTO $frame Incoming placement-report frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws RtActionsStateCollectionNullException When the cluster registry is unavailable
      */
     private function onPlacementReport(PeerPlacementReportDTO $frame): void
     {
@@ -1459,6 +1496,8 @@ final class PeerLink extends AbstractClient
      *
      * @param PeerRtClaimRefusedDTO $frame Incoming RT-claim-refused frame
      * @throws PeerTransportException When the frame arrives before the handshake
+     * @throws InvalidFormatException When a tracked stop completion address is invalid
+     * @throws EventLoopException When the executor cannot arm the stop deadline
      */
     private function onRtClaimRefused(PeerRtClaimRefusedDTO $frame): void
     {

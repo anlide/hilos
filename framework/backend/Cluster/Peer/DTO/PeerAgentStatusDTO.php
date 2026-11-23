@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Placement\PlacementId;
+use Hilos\Cluster\Placement\PlacementRecord;
 use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementState;
 
@@ -45,6 +47,14 @@ final class PeerAgentStatusDTO extends PeerDTO
     /** @var string Payload key: placement-gate refusals behind a failure, always a list */
     public const string FIELD_REFUSALS = 'refusals';
 
+    public const string FIELD_PLACEMENT_ID = PlacementRecord::FIELD_PLACEMENT_ID;
+
+    public const string FIELD_AUTHORITY_TERM = PeerPlacementQueryDTO::FIELD_AUTHORITY_TERM;
+
+    public const string FIELD_STOP_ID = PeerStopAgentDTO::FIELD_STOP_ID;
+
+    public const string FIELD_WORKER_STARTED = PlacementRecord::FIELD_WORKER_STARTED;
+
     /**
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -52,6 +62,10 @@ final class PeerAgentStatusDTO extends PeerDTO
      * @param ?int $workerId Worker id the agent landed on, or null unless started
      * @param ?string $error Failure reason, or null unless failed
      * @param list<PlacementRefusal> $refusals Gate refusals behind a failure; empty otherwise
+     * @param ?PlacementId $placementId Identity of the order this status answers
+     * @param ?int $authorityTerm Term under which the host sends this status
+     * @param bool $workerStarted Whether the exact worker attempt confirmed its start
+     * @param ?string $stopId Correlation of the explicit Stop, absent for a spontaneous stop
      */
     public function __construct(
         public readonly string $agentType,
@@ -60,6 +74,10 @@ final class PeerAgentStatusDTO extends PeerDTO
         public readonly ?int $workerId,
         public readonly ?string $error,
         public readonly array $refusals = [],
+        public readonly ?PlacementId $placementId = null,
+        public readonly ?int $authorityTerm = null,
+        public readonly bool $workerStarted = false,
+        public readonly ?string $stopId = null,
     ) {
     }
 
@@ -69,11 +87,20 @@ final class PeerAgentStatusDTO extends PeerDTO
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param int $workerId Worker id the agent landed on
+     * @param ?PlacementId $placementId Placement order being answered
+     * @param ?int $authorityTerm Current term
+     * @param bool $workerStarted Whether the exact worker attempt confirmed its start
      * @return self Started status
      */
-    public static function started(string $agentType, ?string $agentIndex, int $workerId): self
-    {
-        return new self($agentType, $agentIndex, PlacementState::Started, $workerId, null);
+    public static function started(
+        string $agentType,
+        ?string $agentIndex,
+        int $workerId,
+        ?PlacementId $placementId = null,
+        ?int $authorityTerm = null,
+        bool $workerStarted = false,
+    ): self {
+        return new self($agentType, $agentIndex, PlacementState::Started, $workerId, null, [], $placementId, $authorityTerm, $workerStarted);
     }
 
     /**
@@ -83,11 +110,19 @@ final class PeerAgentStatusDTO extends PeerDTO
      * @param ?string $agentIndex Agent index, or null for a singleton agent
      * @param string $error Failure reason
      * @param list<PlacementRefusal> $refusals Gate refusals when the gate refused; empty for any other failure
+     * @param ?PlacementId $placementId Placement order being answered
+     * @param ?int $authorityTerm Current term
      * @return self Failed status
      */
-    public static function failed(string $agentType, ?string $agentIndex, string $error, array $refusals = []): self
-    {
-        return new self($agentType, $agentIndex, PlacementState::Failed, null, $error, $refusals);
+    public static function failed(
+        string $agentType,
+        ?string $agentIndex,
+        string $error,
+        array $refusals = [],
+        ?PlacementId $placementId = null,
+        ?int $authorityTerm = null,
+    ): self {
+        return new self($agentType, $agentIndex, PlacementState::Failed, null, $error, $refusals, $placementId, $authorityTerm);
     }
 
     /**
@@ -95,11 +130,31 @@ final class PeerAgentStatusDTO extends PeerDTO
      *
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param ?PlacementId $placementId Exact managed order that stopped
+     * @param ?int $authorityTerm Current term, absent on an ordinary spontaneous stop
+     * @param ?string $stopId Explicit command being acknowledged
      * @return self Stopped status
      */
-    public static function stopped(string $agentType, ?string $agentIndex): self
+    public static function stopped(
+        string $agentType,
+        ?string $agentIndex,
+        ?PlacementId $placementId = null,
+        ?int $authorityTerm = null,
+        ?string $stopId = null,
+    ): self {
+        return new self(
+            $agentType, $agentIndex, PlacementState::Stopped, null, null,
+            placementId: $placementId, authorityTerm: $authorityTerm, stopId: $stopId,
+        );
+    }
+
+    /**
+     * @param ?PlacementId $order Assignment reported by this status, if managed
+     * @return bool Whether both sides refer to the same order or are both ordinary
+     */
+    public function answersOrder(?PlacementId $order): bool
     {
-        return new self($agentType, $agentIndex, PlacementState::Stopped, null, null);
+        return $order === null ? $this->placementId === null : $order->equals($this->placementId);
     }
 
     /**
@@ -130,7 +185,10 @@ final class PeerAgentStatusDTO extends PeerDTO
                 static fn(PlacementRefusal $refusal): array => $refusal->toArray(),
                 $this->refusals,
             ),
-        ];
+        ] + ($this->placementId === null ? [] : [self::FIELD_PLACEMENT_ID => $this->placementId->toArray()])
+            + ($this->authorityTerm === null ? [] : [self::FIELD_AUTHORITY_TERM => $this->authorityTerm])
+            + ($this->workerStarted ? [self::FIELD_WORKER_STARTED => true] : [])
+            + ($this->stopId === null ? [] : [self::FIELD_STOP_ID => $this->stopId]);
     }
 
     /**
@@ -160,7 +218,24 @@ final class PeerAgentStatusDTO extends PeerDTO
             throw new PeerTransportException("Peer agent-status frame carries refusals in state '{$state->value}'");
         }
 
+        $hasId = array_key_exists(self::FIELD_PLACEMENT_ID, $data);
+        $hasTerm = array_key_exists(self::FIELD_AUTHORITY_TERM, $data);
+        $placementId = $hasId ? PlacementId::fromWire($data[self::FIELD_PLACEMENT_ID]) : null;
+        $term = $hasTerm ? self::readAuthorityTerm($data) : null;
+        $stopId = array_key_exists(self::FIELD_STOP_ID, $data) ? self::readCorrelationId($data, self::FIELD_STOP_ID) : null;
+        if ($hasTerm !== ($hasId || $stopId !== null)
+            || ($stopId !== null && $state !== PlacementState::Stopped)
+            || ($hasId && !in_array($state, [PlacementState::Started, PlacementState::Failed, PlacementState::Stopped], true))) {
+            throw new PeerTransportException('Peer agent-status frame has invalid placement authority');
+        }
+        if ($state !== PlacementState::Started && array_key_exists(self::FIELD_WORKER_STARTED, $data)) {
+            throw new PeerTransportException('Peer agent-status frame carries a worker started flag outside Started');
+        }
+
         $workerId = $data[self::FIELD_WORKER_ID] ?? null;
+        if ($hasTerm && ($state === PlacementState::Started ? !is_int($workerId) : $workerId !== null)) {
+            throw new PeerTransportException('Peer agent-status frame has an invalid worker address for its placement state');
+        }
         $error = $data[self::FIELD_ERROR] ?? null;
 
         return new static(
@@ -170,6 +245,10 @@ final class PeerAgentStatusDTO extends PeerDTO
             workerId: $workerId !== null ? (int)$workerId : null,
             error: $error !== null ? (string)$error : null,
             refusals: $refusals,
+            placementId: $placementId,
+            authorityTerm: $term,
+            workerStarted: PlacementRecord::readWorkerStarted($data, $state, $placementId),
+            stopId: $stopId,
         );
     }
 }

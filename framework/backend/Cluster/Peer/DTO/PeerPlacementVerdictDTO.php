@@ -46,6 +46,10 @@ final class PeerPlacementVerdictDTO extends PeerDTO
     /** @var string Payload key: placement-gate refusals behind a not-placed verdict, always a list */
     public const string FIELD_REFUSALS = 'refusals';
 
+    public const string FIELD_AUTHORITY_TERM = PeerPlacementQueryDTO::FIELD_AUTHORITY_TERM;
+
+    public const string FIELD_REQUEST_ID = PeerPlacementRequestDTO::FIELD_REQUEST_ID;
+
     /**
      * @param string $agentType Agent type
      * @param ?string $agentIndex Agent index, or null for a singleton agent
@@ -61,6 +65,8 @@ final class PeerPlacementVerdictDTO extends PeerDTO
         public readonly ?string $nodeId,
         public readonly ?string $reason,
         public readonly array $refusals = [],
+        public readonly ?int $authorityTerm = null,
+        public readonly ?string $requestId = null,
     ) {
     }
 
@@ -98,6 +104,18 @@ final class PeerPlacementVerdictDTO extends PeerDTO
     }
 
     /**
+     * @param PeerPlacementRequestDTO $request Exact peer ask receiving this outcome
+     * @return self Verdict carrying that ask's correlation
+     */
+    public function forRequest(PeerPlacementRequestDTO $request): self
+    {
+        return new self(
+            $this->agentType, $this->agentIndex, $this->state, $this->nodeId, $this->reason, $this->refusals,
+            $request->authorityTerm, $request->requestId,
+        );
+    }
+
+    /**
      * Returns the wire message type of this frame.
      *
      * @return string Message type
@@ -121,6 +139,8 @@ final class PeerPlacementVerdictDTO extends PeerDTO
             self::FIELD_STATE => $this->state->value,
             self::FIELD_NODE_ID => $this->nodeId,
             self::FIELD_REASON => $this->reason,
+            self::FIELD_AUTHORITY_TERM => $this->authorityTerm,
+            self::FIELD_REQUEST_ID => $this->requestId,
             self::FIELD_REFUSALS => array_map(
                 static fn(PlacementRefusal $refusal): array => $refusal->toArray(),
                 $this->refusals,
@@ -164,6 +184,8 @@ final class PeerPlacementVerdictDTO extends PeerDTO
 
         $refusals = self::readPlacementRefusals($data, self::FIELD_REFUSALS, 'placement-verdict');
 
+        $authorityTerm = self::readAuthorityTerm($data);
+        $requestId = self::readCorrelationId($data, self::FIELD_REQUEST_ID);
         if ($state === PlacementState::Started) {
             if ($nodeId === null) {
                 throw new PeerTransportException('Peer placement-verdict frame is missing the node id');
@@ -178,6 +200,8 @@ final class PeerPlacementVerdictDTO extends PeerDTO
                 state: $state,
                 nodeId: $nodeId,
                 reason: null,
+                authorityTerm: $authorityTerm,
+                requestId: $requestId,
             );
         }
 
@@ -192,6 +216,8 @@ final class PeerPlacementVerdictDTO extends PeerDTO
             nodeId: null,
             reason: $reason,
             refusals: $refusals,
+            authorityTerm: $authorityTerm,
+            requestId: $requestId,
         );
     }
 

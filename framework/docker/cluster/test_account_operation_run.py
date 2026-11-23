@@ -15,7 +15,7 @@ import erasure
 import scenarios
 from account_operations import AccountOperationRun, ArchiveAddress, RestoreAttempt, StandUnusable
 from erasure import EMAIL_ENABLED, ErasureRun
-from merge import MergeRun
+from merge import FULL_FREEZE, USERS_LIBRARY, MergeRun
 
 
 REAL_INCARNATION = AccountOperationRun.incarnation
@@ -1975,6 +1975,442 @@ class AccountOperationRunTest(unittest.TestCase):
                 with patch.object(run, "incarnation", return_value=(process, start_line)):
                     self.assertEqual(run.restored_sender_stopped(sender, marks, replayed_at, placement),
                                      order == "stop first")
+
+    @staticmethod
+    def library_placement_view(node="s1", *, leader="m1", term=4, revision=10, state="started", worker_started=True):
+        record = {"agentType": USERS_LIBRARY, "agentIndex": None, "nodeId": node, "state": state}
+        if state == "started":
+            record.update(placementId={"leaderNodeId": leader, "term": term, "sequence": 2},
+                          workerStarted=worker_started)
+        return {"localNodeId": leader, "consensusRole": "leader", "lifecycleState": "MasterLeader", "leaderId": leader,
+                "term": term, "hasQuorum": True, "placementSnapshot": {"leaderNodeId": leader, "term": term,
+                                                                      "revision": revision, "records": [record]}}
+
+    @staticmethod
+    def library_cut(stamp, masters=1):
+        cut = round(scenarios.log_time(stamp).timestamp() * 1000)
+        offsets = (*range(-2 * masters - 1, -1), 0, *range(1, 2 * masters + 1))
+        return patch("merge.time.time_ns", side_effect=[(cut + offset) * 1_000_000 for offset in offsets])
+
+    def users_library_restore_fixture(self, *, replace_old_worker=False, before_freeze=None):
+        run = MergeRun(self.run.s)
+        run.inspect_restore = self.run.inspect_restore
+        for path in self.logs.values():
+            (path / "daemon.log").unlink(missing_ok=True)
+            (path / "agent-hilos_backup.log").unlink(missing_ok=True)
+        self.observe(run)
+        for node in self.logs:
+            self.log(node, "daemon", "Worker #2 started [type=regular]")
+            self.log(node, "daemon", "Worker #3 started [type=regular]")
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=1)
+        before, limit = run.users_library_before_restore()
+        self.assertIsNone(limit)
+        entered_at = int(scenarios.log_time("2026-01-01T00:00:02.000Z").timestamp() * 1000)
+        windows = dict.fromkeys(self.logs, entered_at)
+        run.restore_attempt = RestoreAttempt("s1", self.backup_id, run.backup_logs(self.logs),
+                                             windows=windows, settled=True)
+        if before_freeze is not None:
+            before_freeze()
+        self.log("s1", "daemon", f"{FULL_FREEZE} stopped 5 agent(s) over 1 pass(es)", seconds=3)
+        if replace_old_worker:
+            self.log("s1", "daemon", "Worker #2 started [type=regular]", seconds=3, milliseconds=1)
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' stopped on worker #2", seconds=4)
+        self.log("m1", "daemon", f"{FULL_FREEZE} stopped 5 agent(s) over 1 pass(es)", seconds=5)
+        self.log("s1", "agent-hilos_backup", f"Restore {self.backup_id} replayed in 1s; re-reading state", seconds=6)
+        leader = self.library_placement_view()
+        run.s = SimpleNamespace(**vars(run.s))
+        run.s.leaders = scenarios.leaders
+        run.s.inspect = Mock(return_value=leader)
+        return run, before, run.restore_replayed_at(), {"m1": leader, "s1": {"online": True}}
+
+    def test_61_rejects_a_start_between_full_entry_and_the_end_of_the_stop_walk(self):
+        def during_stop_walk():
+            self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=2, milliseconds=1)
+            self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' stopped on worker #3", seconds=2, milliseconds=2)
+
+        run, before, replayed_at, views = self.users_library_restore_fixture(before_freeze=during_stop_walk)
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+        with self.assertRaisesRegex(AssertionError, "UsersLibrary started on m1 worker #3 during FULL"):
+            run.users_library_restore_evidence(before, replayed_at, views)
+
+    def test_61_rejects_a_start_after_the_nodes_freeze_and_before_full_import(self):
+        for node in self.logs:
+            with self.subTest(node=node):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                self.log(node, "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=5)
+                self.log(node, "daemon", f"Agent '{USERS_LIBRARY}' stopped on worker #3", seconds=5, milliseconds=1)
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+                with self.assertRaisesRegex(AssertionError, f"UsersLibrary started on {node} worker #3 during FULL") as error:
+                    run.users_library_restore_evidence(before, replayed_at, views)
+                self.assertIn("stop at 2026-01-01T00:00:04.000Z", str(error.exception))
+
+    def test_61_distinguishes_a_start_before_and_at_full_entry(self):
+        for seconds, milliseconds in ((1, 999), (2, 0)):
+            with self.subTest(seconds=seconds):
+                def around_entry():
+                    self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3",
+                             seconds=seconds, milliseconds=milliseconds)
+                    self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' stopped on worker #3", seconds=2, milliseconds=1)
+
+                run, before, replayed_at, views = self.users_library_restore_fixture(before_freeze=around_entry)
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+                with self.library_cut("2026-01-01T00:00:07.010Z"):
+                    evidence = run.users_library_restore_evidence(before, replayed_at, views)
+                if seconds == 1:
+                    self.assertIn("Placement at the common cut agrees on s1", evidence)
+                else:
+                    self.assertRegex(evidence, r"^limit: .*shares the FULL entry millisecond")
+                self.assertIn("Confirmed WorkerAgentStarted on s1 worker #2 at 2026-01-01T00:00:07.000Z", evidence)
+
+    def test_61_rejects_a_confirmed_early_start_when_the_same_journal_cannot_advance(self):
+        for tail in ("partial line", "changed during read", "unavailable rotation segment"):
+            with self.subTest(tail=tail):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=5)
+                journal = run.read_backup_stream("s1", "daemon.log")
+                entries = journal.entries.copy()
+                if tail == "partial line":
+                    with journal.path.open("a") as stream:
+                        stream.write(f"[2026-01-01T00:00:07.000Z] Agent '{USERS_LIBRARY}' stopped on worker #3")
+                elif tail == "unavailable rotation segment":
+                    self.rotate("s1", "daemon", 7).unlink()
+                    self.log("s1", "daemon", "new segment", seconds=7)
+
+                def append_during_read(observed, *args):
+                    if tail == "changed during read" and observed is journal:
+                        self.log("s1", "daemon", "new entry during read", seconds=7)
+                    return confirm(observed, *args)
+
+                confirm = account_operations.confirm_journal_read
+                with (patch.object(account_operations, "confirm_journal_read", side_effect=append_during_read),
+                      patch.object(run, "read_backup_stream", wraps=run.read_backup_stream) as refresh):
+                    with self.assertRaisesRegex(AssertionError, "UsersLibrary started on s1 worker #3 during FULL"):
+                        run.users_library_restore_evidence(before, replayed_at, views)
+                self.assertEqual(refresh.call_args_list.count(call("s1", "daemon.log")), 1)
+                self.assertEqual(journal.entries, entries)
+
+    def test_61_uses_only_confirmed_entries_from_the_marked_boot(self):
+        for foundation in ("unconfirmed", "foreign journal", "lost cut", "invalid origin", "boot before cut"):
+            with self.subTest(foundation=foundation):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                key = "s1", "daemon.log"
+                journal, cut = run.restore_attempt.marks[key]
+                if foundation == "boot before cut":
+                    self.log("s1", "daemon", "Daemon started with epoll", seconds=4, milliseconds=1)
+                    run.read_backup_stream(*key)
+                    run.restore_attempt.marks[key] = journal, len(journal.entries)
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=5)
+                if foundation != "unconfirmed":
+                    run.read_backup_stream(*key)
+                if foundation == "foreign journal":
+                    run.backup_journal[key] = account_operations.BackupJournal(journal.path)
+                if foundation == "lost cut":
+                    run.restore_attempt.marks[key] = journal, len(journal.entries) + 1
+                if foundation == "invalid origin":
+                    journal.origin = cut - 1
+                with journal.path.open("a") as stream:
+                    stream.write("[2026-01-01T00:00:07.000Z] partial")
+                self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views), r"^limit: ")
+
+    def test_61_ignores_freezes_outside_the_request_window(self):
+        for outside in ("before entry", "at import", "after import"):
+            with self.subTest(outside=outside):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                if outside == "before entry":
+                    entered = scenarios.log_time("2026-01-01T00:00:05.001Z")
+                    run.restore_attempt.windows["m1"] = round(entered.timestamp() * 1000)
+                    self.log("m1", "daemon", f"{FULL_FREEZE} stopped 5 agent(s) over 1 pass(es)",
+                             seconds=5, milliseconds=1)
+                self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=5, milliseconds=2)
+                if outside != "before entry":
+                    self.log("m1", "daemon", f"{FULL_FREEZE} stopped 5 agent(s) over 1 pass(es)",
+                             seconds=6 if outside == "at import" else 7)
+                with self.assertRaisesRegex(AssertionError, "UsersLibrary started on m1 worker #3 during FULL"):
+                    run.users_library_restore_evidence(before, replayed_at, views)
+
+    def test_61_limits_when_two_freezes_fit_the_window(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        self.log("m1", "daemon", f"{FULL_FREEZE} stopped 5 agent(s) over 1 pass(es)", seconds=5, milliseconds=1)
+        self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                         r"^limit: no unique freeze before FULL import on m1 in this request window")
+        self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=5, milliseconds=2)
+        with self.assertRaisesRegex(AssertionError, "UsersLibrary started on m1 worker #3 during FULL"):
+            run.users_library_restore_evidence(before, replayed_at, views)
+
+    def test_61_rejects_active_instances_on_one_or_two_nodes(self):
+        for node in self.logs:
+            with self.subTest(node=node):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+                self.log(node, "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=8)
+                observed = round(scenarios.log_time("2026-01-01T00:00:08.001Z").timestamp() * 1000)
+                with patch("merge.time.time_ns", return_value=observed * 1_000_000):
+                    with self.assertRaisesRegex(AssertionError, "multiple running UsersLibrary instances"):
+                        run.users_library_restore_evidence(before, replayed_at, views)
+
+    def test_61_limits_cross_node_starts_without_a_strict_common_cut(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+        self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=8)
+        observed = round(scenarios.log_time("2026-01-01T00:00:08.000Z").timestamp() * 1000)
+        with patch("merge.time.time_ns", return_value=observed * 1_000_000):
+            self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                             r"^limit: UsersLibrary lifecycle on m1 shares the common journal cut")
+        with (self.logs["s1"] / "daemon.log").open("a") as stream:
+            stream.write("[2026-01-01T00:00:09.000Z] partial")
+        with patch("merge.time.time_ns", return_value=(observed + 1) * 1_000_000):
+            self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                             r"^limit: .*incomplete or unstable journal entry")
+
+    def test_61_limits_one_late_start_when_the_first_node_has_already_been_read(self):
+        observed = round(scenarios.log_time("2026-01-01T00:00:07.000Z").timestamp() * 1000)
+        for milliseconds in (0, 1):
+            with self.subTest(milliseconds=milliseconds):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                read_backup_stream = run.read_backup_stream
+
+                def publish_after_first_read(node, name):
+                    journal = read_backup_stream(node, name)
+                    if node == "m1":
+                        self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3",
+                                 seconds=7, milliseconds=milliseconds)
+                        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2",
+                                 seconds=7, milliseconds=milliseconds)
+                    return journal
+
+                with (patch("merge.time.time_ns", return_value=observed * 1_000_000),
+                      patch.object(run, "read_backup_stream", side_effect=publish_after_first_read) as reads):
+                    evidence = run.users_library_restore_evidence(before, replayed_at, views)
+                self.assertEqual(reads.call_args_list, [call("m1", "daemon.log"), call("s1", "daemon.log")])
+                self.assertRegex(evidence, r"^limit: .*common journal cut")
+                self.assertIn(f"Confirmed WorkerAgentStarted on s1 worker #2 at 2026-01-01T00:00:07.{milliseconds:03d}Z",
+                              evidence)
+                self.assertNotIn("WorkerAgentStarted on m1", evidence)
+                self.assertIn("stop at 2026-01-01T00:00:04.000Z", evidence)
+
+    def test_61_rejects_a_duplicate_even_when_a_peer_stops_after_the_common_cut(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+        self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=7)
+        self.log("m1", "daemon", "Worker #3 stopped [type=regular]", seconds=8, milliseconds=1)
+        observed = round(scenarios.log_time("2026-01-01T00:00:08.000Z").timestamp() * 1000)
+        with patch("merge.time.time_ns", return_value=observed * 1_000_000):
+            with self.assertRaisesRegex(AssertionError, "multiple running UsersLibrary instances"):
+                run.users_library_restore_evidence(before, replayed_at, views)
+
+    def test_61_distinguishes_a_peer_stopping_before_or_at_the_common_cut(self):
+        for milliseconds in (0, 1):
+            with self.subTest(milliseconds=milliseconds):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+                self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=7)
+                self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' stopped on worker #3",
+                         seconds=8, milliseconds=milliseconds)
+                with self.library_cut("2026-01-01T00:00:08.001Z"):
+                    evidence = run.users_library_restore_evidence(before, replayed_at, views)
+                self.assertIn("Confirmed WorkerAgentStarted on m1 worker #3 at 2026-01-01T00:00:07.000Z", evidence)
+                if milliseconds == 0:
+                    self.assertIn("One UsersLibrary instance in the journals at the common cut "
+                                  "2026-01-01T00:00:08.001Z: s1 worker #2", evidence)
+                else:
+                    self.assertRegex(evidence, r"^limit: .*shares the common journal cut")
+                    self.assertNotIn("One UsersLibrary instance in the journals", evidence)
+
+    def test_61_rejects_overlap_before_a_stop_replacement_restart_or_incomplete_tail(self):
+        for ending in (f"Agent '{USERS_LIBRARY}' stopped on worker #3", "Worker #3 stopped [type=regular]",
+                       "Worker #3 started [type=regular]", "Daemon started with epoll", "partial line"):
+            with self.subTest(ending=ending):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=7)
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=8)
+                if ending == "partial line":
+                    journal = run.read_backup_stream("s1", "daemon.log")
+                    with journal.path.open("a") as stream:
+                        stream.write("[2026-01-01T00:00:09.000Z] partial")
+                else:
+                    self.log("s1", "daemon", ending, seconds=8)
+                with self.assertRaisesRegex(AssertionError, "multiple running UsersLibrary instances"):
+                    run.users_library_restore_evidence(before, replayed_at, views)
+
+    def test_61_limits_overlap_when_the_first_generation_is_unknown_at_the_second_start(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=7)
+        self.log("s1", "daemon", "Worker #3 disconnected [type=regular]", seconds=8)
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=8)
+        self.log("s1", "daemon", "Worker #3 stopped [type=regular]", seconds=8)
+        self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                         r"^limit: .*unidentified worker generation")
+
+    def test_61_does_not_use_starts_from_a_new_daemon_boot(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        self.log("m1", "daemon", "Daemon started with epoll", seconds=5)
+        self.log("m1", "daemon", f"{FULL_FREEZE} stopped 5 agent(s) over 1 pass(es)", seconds=5)
+        self.log("m1", "daemon", "Worker #3 started [type=regular]", seconds=5)
+        self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=5)
+        self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                         r"^limit: daemon on m1 restarted after the FULL request mark")
+
+    def test_61_confirms_one_new_start_on_the_placed_node(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        run.read_backup_stream("s1", "daemon.log")
+        self.rotate("s1", "daemon", 7)
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' stopped on worker #2", seconds=8)
+        with self.library_cut("2026-01-01T00:00:07.010Z"):
+            evidence = run.users_library_restore_evidence(before, replayed_at, views)
+        self.assertIn("Confirmed WorkerAgentStarted on s1 worker #2 at 2026-01-01T00:00:07.000Z", evidence)
+        self.assertIn(f"FULL {self.backup_id} on s1 imported at {replayed_at}", evidence)
+        self.assertIn("stop at 2026-01-01T00:00:04.000Z", evidence)
+        self.assertIn("One UsersLibrary instance in the journals at the common cut 2026-01-01T00:00:07.010Z: "
+                      "s1 worker #2, started at 2026-01-01T00:00:07.000Z", evidence)
+        self.assertIn("Placement at the common cut agrees on s1: m1 term 4 revision 10", evidence)
+        self.assertIn("Placement observed between 2026-01-01T00:00:07.007Z and 2026-01-01T00:00:07.008Z", evidence)
+        self.assertIn("Placement observed between 2026-01-01T00:00:07.011Z and 2026-01-01T00:00:07.012Z", evidence)
+
+    def test_61_keeps_the_journal_cut_when_the_poll_placement_becomes_stale(self):
+        for initial, current in (("s1", "refused"), ("m1", "started")):
+            with self.subTest(initial=initial, current=current):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+                views["m1"] = self.library_placement_view(initial)
+                later = self.library_placement_view(revision=11, state=current)
+                run.s.inspect.side_effect = [views["m1"], later]
+                with self.library_cut("2026-01-01T00:00:08.000Z"):
+                    evidence = run.users_library_restore_evidence(before, replayed_at, views)
+                self.assertIn("Confirmed WorkerAgentStarted on s1 worker #2 at 2026-01-01T00:00:07.000Z", evidence)
+                self.assertIn("One UsersLibrary instance in the journals at the common cut 2026-01-01T00:00:08.000Z",
+                              evidence)
+                self.assertIn("Placement at the common cut is unconfirmed", evidence)
+                self.assertIn("m1 term 4 revision 10, started", evidence)
+                self.assertIn(f"m1 term 4 revision 11, {current}", evidence)
+                self.assertNotIn("Placement at the common cut agrees", evidence)
+
+    def test_61_keeps_the_journal_cut_across_a_leadership_change(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+        run.s.MASTERS = ["m1", "s1"]
+        original = views["m1"]
+        new_leader = self.library_placement_view(leader="s1", term=5)
+        run.s.inspect.side_effect = [original, {"localNodeId": "s1", "leaderId": "m1", "term": 4},
+                                     new_leader, {"localNodeId": "m1", "leaderId": "s1", "term": 5}]
+        with self.library_cut("2026-01-01T00:00:08.000Z", masters=2):
+            evidence = run.users_library_restore_evidence(before, replayed_at, views)
+        self.assertEqual(run.s.inspect.call_args_list, [call("m1"), call("s1"), call("s1"), call("m1")])
+        self.assertIn("One UsersLibrary instance in the journals at the common cut 2026-01-01T00:00:08.000Z", evidence)
+        self.assertIn("Placement at the common cut is unconfirmed", evidence)
+        self.assertIn("m1 term 4 revision 10, started", evidence)
+        self.assertIn("s1 term 5 revision 10, started", evidence)
+
+    def test_61_requires_original_placement_and_exact_worker_confirmation(self):
+        for reason in ("retained donor", "no worker confirmation", "same millisecond", "leadership release"):
+            with self.subTest(reason=reason):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+                placement = run.s.inspect.return_value
+                if reason == "retained donor":
+                    placement["placementSnapshot"]["term"] -= 1
+                elif reason == "no worker confirmation":
+                    placement["placementSnapshot"]["records"][0]["workerStarted"] = False
+                elif reason == "leadership release":
+                    self.log("m1", "daemon", "Placement release: this node no longer leads, telling every linked node",
+                             seconds=8)
+                clock = self.library_cut("2026-01-01T00:00:08.000Z")
+                if reason == "same millisecond":
+                    observed = round(scenarios.log_time("2026-01-01T00:00:08.000Z").timestamp() * 1000)
+                    clock = patch("merge.time.time_ns", return_value=observed * 1_000_000)
+                with clock:
+                    evidence = run.users_library_restore_evidence(before, replayed_at, views)
+                self.assertRegex(evidence, r"^limit: ")
+                self.assertIn("One UsersLibrary instance in the journals at the common cut 2026-01-01T00:00:08.000Z",
+                              evidence)
+                self.assertNotIn("Placement at the common cut agrees", evidence)
+
+    def test_61_keeps_a_confirmed_start_when_a_journal_tail_is_incomplete(self):
+        for node in self.logs:
+            with self.subTest(node=node):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+                run.read_backup_stream("s1", "daemon.log")
+                with (self.logs[node] / "daemon.log").open("a") as stream:
+                    stream.write("[2026-01-01T00:00:08.000Z] partial")
+                evidence = run.users_library_restore_evidence(before, replayed_at, views)
+                self.assertRegex(evidence, r"^limit: .*incomplete or unstable journal entry")
+                self.assertIn("Confirmed WorkerAgentStarted on s1 worker #2 at 2026-01-01T00:00:07.000Z", evidence)
+
+    def test_61_requires_the_stop_of_the_original_worker_generation(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture(replace_old_worker=True)
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+        self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                         r"^limit: no unique stop of the prior UsersLibrary on s1 worker #2")
+
+    def test_61_limits_a_start_at_the_import_millisecond(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=6)
+        self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                         r"^limit: .*shares the FULL import millisecond")
+
+    def test_61_cannot_prove_a_freeze_at_the_import_millisecond(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        entered = scenarios.log_time(replayed_at)
+        run.restore_attempt.windows["m1"] = round(entered.timestamp() * 1000)
+        self.log("m1", "daemon", f"{FULL_FREEZE} stopped 5 agent(s) over 1 pass(es)", seconds=6)
+        self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=6)
+        self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                         r"^limit: no unique freeze before FULL import on m1 in this request window")
+
+    def test_61_does_not_use_another_windows_freeze(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        entered_at = scenarios.log_time("2026-01-01T00:00:05.001Z")
+        run.restore_attempt.windows["m1"] = round(entered_at.timestamp() * 1000)
+        self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=5)
+        self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                         r"^limit: no unique freeze before FULL import on m1 in this request window")
+
+    def test_61_excludes_stopped_or_replaced_workers(self):
+        for stopped in (f"Agent '{USERS_LIBRARY}' stopped on worker #3", "Worker #3 stopped [type=regular]",
+                        "Worker #3 started [type=regular]"):
+            with self.subTest(stopped=stopped):
+                run, before, replayed_at, views = self.users_library_restore_fixture()
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=7)
+                self.log("s1", "daemon", stopped, seconds=8)
+                self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=8)
+                with self.library_cut("2026-01-01T00:00:08.010Z"):
+                    evidence = run.users_library_restore_evidence(before, replayed_at, views)
+                self.assertIn("One UsersLibrary instance in the journals at the common cut 2026-01-01T00:00:08.010Z: "
+                              "s1 worker #2, started at 2026-01-01T00:00:08.000Z", evidence)
+
+    def test_61_limits_missing_start_when_another_journal_is_incomplete(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        with (self.logs["m1"] / "daemon.log").open("a") as stream:
+            stream.write("[2026-01-01T00:00:07.000Z] partial")
+        self.assertRegex(run.users_library_restore_evidence(before, replayed_at, views),
+                         r"^limit: .*incomplete or unstable journal entry")
+
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #3", seconds=8)
+        with self.assertRaisesRegex(AssertionError, "multiple running UsersLibrary instances"):
+            run.users_library_restore_evidence(before, replayed_at, views)
+
+    def test_61_rejects_missing_start_in_complete_journals(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        with (self.library_cut("2026-01-01T00:00:08.000Z"),
+              self.assertRaisesRegex(AssertionError, "no new UsersLibrary start report on s1")):
+            run.users_library_restore_evidence(before, replayed_at, views)
+
+    def test_61_requires_the_new_start_to_match_the_placement(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        self.log("m1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+        with (self.library_cut("2026-01-01T00:00:08.000Z"),
+              self.assertRaisesRegex(AssertionError, "no new UsersLibrary start report on s1")):
+            run.users_library_restore_evidence(before, replayed_at, views)
+
+    def test_61_rejects_a_refusal_when_placement_is_comparable_at_the_cut(self):
+        run, before, replayed_at, views = self.users_library_restore_fixture()
+        self.log("s1", "daemon", f"Agent '{USERS_LIBRARY}' started on worker #2", seconds=7)
+        run.s.inspect.return_value = self.library_placement_view(state="refused")
+        with (self.library_cut("2026-01-01T00:00:08.000Z"),
+              self.assertRaisesRegex(AssertionError, "UsersLibrary has no started placement at 2026-01-01T00:00:08.000Z")):
+            run.users_library_restore_evidence(before, replayed_at, views)
 
     def test_red_merge_cleanup_recovers_a_fixture_with_a_lost_insert_reply(self):
         run = MergeRun(self.run.s)

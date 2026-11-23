@@ -1293,7 +1293,7 @@ final class ClusterProtectedModeTest extends TestCase
         $server = $this->usePlacementPeerMesh();
         $leader = $this->protectedModePeerLink($server, 'leader', NodeRole::Master);
         $other = $this->protectedModePeerLink($server, 'other', NodeRole::Master);
-        socket_write($leader[1], new PeerPlacementQueryDTO()->toJson() . "\n");
+        socket_write($leader[1], new PeerPlacementQueryDTO('query', 0)->toJson() . "\n");
         $leader[0]->read();
         $this->protectedModePeerFrames($leader);
         $this->protectedModePeerFrames($other);
@@ -1354,7 +1354,7 @@ final class ClusterProtectedModeTest extends TestCase
         $server = $this->usePlacementPeerMesh();
         $old = $this->protectedModePeerLink($server, 'old', NodeRole::Master);
         $next = $this->protectedModePeerLink($server, 'next', NodeRole::Master);
-        socket_write($old[1], new PeerPlacementQueryDTO()->toJson() . "\n");
+        socket_write($old[1], new PeerPlacementQueryDTO('query', 0)->toJson() . "\n");
         $old[0]->read();
         $this->assertSame('old', $server->leaderNodeId());
         socket_write($next[1], new PeerPlacementReleaseDTO()->toJson() . "\n");
@@ -1367,7 +1367,7 @@ final class ClusterProtectedModeTest extends TestCase
         $this->coordinator->requestEnable($this->enableDataFrom(self::SELF));
         $this->assertSame(ProtectedModeRefusalCopy::NO_LEADER, $this->relay->refusedCalls[0]['reason']);
 
-        socket_write($next[1], new PeerPlacementQueryDTO()->toJson() . "\n");
+        socket_write($next[1], new PeerPlacementQueryDTO('query', 1)->toJson() . "\n");
         $next[0]->read();
         socket_write($old[1], new PeerPlacementReleaseDTO()->toJson() . "\n");
         $old[0]->read();
@@ -1387,7 +1387,7 @@ final class ClusterProtectedModeTest extends TestCase
         $server = $this->usePlacementPeerMesh();
         $leader = $this->protectedModePeerLink($server, 'leader', NodeRole::Master);
         $other = $this->protectedModePeerLink($server, 'other', NodeRole::Master);
-        socket_write($leader[1], new PeerPlacementQueryDTO()->toJson() . "\n");
+        socket_write($leader[1], new PeerPlacementQueryDTO('query', 0)->toJson() . "\n");
         $leader[0]->read();
         $this->assertSame('leader', $server->leaderNodeId());
         $this->protectedModePeerFrames($leader);
@@ -1409,7 +1409,7 @@ final class ClusterProtectedModeTest extends TestCase
         $server = $this->usePlacementPeerMesh(NodeRole::Master);
         $placing = $this->protectedModePeerLink($server, 'placing', NodeRole::Master);
         $leader = $this->protectedModePeerLink($server, 'leader', NodeRole::Master);
-        socket_write($placing[1], new PeerPlacementQueryDTO()->toJson() . "\n");
+        socket_write($placing[1], new PeerPlacementQueryDTO('query', 0)->toJson() . "\n");
         $placing[0]->read();
         $this->protectedModePeerFrames($placing);
         $this->protectedModePeerFrames($leader);

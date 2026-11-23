@@ -845,7 +845,9 @@ final class ConnectionNativeMesh implements ClientMesh
      * @param SignalDTO $signal Unused addressed signal
      * @return bool This fixture does not send remote client signals
      */
-    public function sendSignalToClientNode(string $nodeId, string $acceptKey, SignalDTO $signal): bool
+    public function sendSignalToClientNode(
+        string $nodeId, string $acceptKey, SignalDTO $signal, ?string $pageRecoveryDeliveryId = null,
+    ): bool
     {
         return true;
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
@@ -56,7 +57,10 @@ final class ClusterPlacementEventLoopTest extends TestCase
     public function testDueAcknowledgementOnlyAsksOnceAndThenSleeps(PlacementState $state): void
     {
         [$placement, $mesh] = $this->leader();
-        $placement->registry()->put(new PlacementRecord('render', '1', 'host', $state));
+        $placement->registry()->put(new PlacementRecord('render', '1', 'host', PlacementState::Placing));
+        if ($state === PlacementState::Stopped) {
+            $placement->stopAgentOnNode('render', '1', 'host');
+        }
         $placement->tick(hrtime(true) / 1e9 - 100.0);
         $placement->attachEventLoop($this->loop);
         $placement->dispatchReady();
@@ -86,7 +90,7 @@ final class ClusterPlacementEventLoopTest extends TestCase
         $old = $this->acknowledgement($placement, 'render:1');
         $mesh->send = static function (string $node, PeerDTO $frame) use ($placement): void {
             if ($frame instanceof PeerPlacementQueryDTO) {
-                $placement->onPlacementReport($node, new PeerPlacementReportDTO([]));
+                FakePlacementMesh::reply($placement, $node, new PeerPlacementReportDTO([]));
             }
         };
         $placement->attachEventLoop($this->loop);
@@ -119,7 +123,7 @@ final class ClusterPlacementEventLoopTest extends TestCase
         $mesh->sent = [];
         $this->loop->tick();
         $placement->dispatchReady();
-        $placement->onPlacementReport('host', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'host', new PeerPlacementReportDTO([]));
         $this->assertSame(PlacementState::Stopped, $placement->registry()->get('render:1')?->state);
         $this->assertNull($placement->registry()->get('render:1')?->nodeId);
         $this->assertNull($this->acknowledgement($placement, 'render:1'));
@@ -165,7 +169,7 @@ final class ClusterPlacementEventLoopTest extends TestCase
         }
         $this->assertSame([], $executor->executed);
         $this->assertFalse($placement->hasReadyWork(), 'A past failover behind a null report wait is dormant');
-        $placement->onPlacementReport('reporter', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'reporter', new PeerPlacementReportDTO([]));
         $this->assertSame([], $executor->executed, 'The last report has not imported the complete original');
         $placement->dispatchReady();
         $this->assertSame([['render', '1']], $executor->executed);
@@ -271,12 +275,12 @@ final class ClusterPlacementEventLoopTest extends TestCase
             $resumed = "Placement resumed: 'render:resumed' on 'host'";
             $this->assertSame(0, substr_count(file_get_contents($log), $resumed));
             if ($status) {
-                $placement->onAgentStatus('host', PeerAgentStatusDTO::started('render', 'resumed', 1));
+                FakePlacementMesh::status($placement, 'host', PeerAgentStatusDTO::started('render', 'resumed', 1));
             } else {
                 $placement->registry()->put(new PlacementRecord('render', 'resumed', 'host', PlacementState::Started));
             }
             $placement->dispatchReady();
-            $placement->onAgentStatus('host', PeerAgentStatusDTO::started('render', 'resumed', 1));
+            FakePlacementMesh::status($placement, 'host', PeerAgentStatusDTO::started('render', 'resumed', 1));
             $this->assertSame(1, substr_count(file_get_contents($log), $resumed), 'Started consumes the original resume fact once');
         } finally {
             Logger::resetLogFile();
@@ -304,13 +308,13 @@ final class ClusterPlacementEventLoopTest extends TestCase
             $placement->onBecameLeader(hrtime(true) / 1e9, 1);
             $placement->placeAgentOnNode('render', '1', 'host');
         } else {
-            $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+            $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
         }
         $executor->waitsForWorker = true;
         if ($master) {
             $placement->placeAgentOnNode('render', '2', 'host');
         } else {
-            $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2'));
+            $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '2', new PlacementId('leader', 0, 2)));
         }
         $past = hrtime(true) / 1e9 - 100.0;
         $placement->noteQuorumLost($past);
@@ -339,13 +343,13 @@ final class ClusterPlacementEventLoopTest extends TestCase
         $mesh = new NativePlacementMesh();
         $executor = new NativePlacementExecutor();
         $placement = $this->owner(new ClusterPlacement('host', $mesh, $executor));
-        $placement->onPlaceAgent('old', new PeerPlaceAgentDTO('render', '1'));
-        $placement->onPlaceAgent('old', new PeerPlaceAgentDTO('render', '2'));
+        $placement->onPlaceAgent('old', new PeerPlaceAgentDTO('render', '1', new PlacementId('old', 0, 1)));
+        $placement->onPlaceAgent('old', new PeerPlaceAgentDTO('render', '2', new PlacementId('old', 0, 2)));
         $placement->noteQuorumLost(hrtime(true) / 1e9 - 100.0);
         $executor->revoking = static function () use ($placement, $executor): void {
             $executor->revoking = null;
-            $placement->onPlaceAgent('new', new PeerPlaceAgentDTO('render', '1'));
-            $placement->onPlaceAgent('new', new PeerPlaceAgentDTO('render', '2'));
+            $placement->onPlaceAgent('new', new PeerPlaceAgentDTO('render', '1', new PlacementId('new', 1, 3)));
+            $placement->onPlaceAgent('new', new PeerPlaceAgentDTO('render', '2', new PlacementId('new', 1, 4)));
         };
         $mesh->broadcast = [];
         $placement->attachEventLoop($this->loop);
@@ -412,7 +416,7 @@ final class ClusterPlacementEventLoopTest extends TestCase
     public function testNativeHandlesDoNotRetainAnAbandonedOwner(): void
     {
         $placement = new ClusterPlacement('host', new NativePlacementMesh(), new NativePlacementExecutor());
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
         $placement->noteNodeOffline('leader', hrtime(true) / 1e9);
         $placement->attachEventLoop($this->loop);
         $weak = WeakReference::create($placement);
@@ -436,12 +440,12 @@ final class ClusterPlacementEventLoopTest extends TestCase
                 $placement->dispatchReady();
             }
         };
-        $placement->onPlacementReport('host', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', 'wrong')]));
+        FakePlacementMesh::reply($placement, 'host', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', 'wrong')]));
         $this->assertTrue($this->acknowledgement($placement, 'render:missing')?->asked);
         $this->assertSame('host', $placement->registry()->get('render:missing')?->nodeId);
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:missing')?->state);
         $mesh->send = null;
-        $placement->onPlacementReport('host', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'host', new PeerPlacementReportDTO([]));
         $this->assertSame('leader', $placement->registry()->get('render:missing')?->nodeId, 'A later report may judge that exact asked wait');
     }
 
@@ -450,7 +454,9 @@ final class ClusterPlacementEventLoopTest extends TestCase
         [$placement, $mesh] = $this->leader();
         $mesh->send = static function (string $node, PeerDTO $frame) use ($placement): void {
             if ($frame instanceof PeerPlaceAgentDTO) {
-                $placement->onAgentStatus($node, PeerAgentStatusDTO::started($frame->agentType, $frame->agentIndex, 1));
+                $placement->onAgentStatus($node, PeerAgentStatusDTO::started(
+                    $frame->agentType, $frame->agentIndex, 1, $frame->placementId, $frame->placementId->term,
+                ));
             }
         };
         $placement->attachEventLoop($this->loop);
@@ -475,7 +481,7 @@ final class ClusterPlacementEventLoopTest extends TestCase
         $this->loop->tick();
         $placement->dispatchReady();
         $donor = new PlacementSnapshot('old', 1, 4, [new PlacementRecord('render', '1', null, PlacementState::Stopped)]);
-        $placement->onPlacementReport('reporter', new PeerPlacementReportDTO([], $donor));
+        FakePlacementMesh::reply($placement, 'reporter', new PeerPlacementReportDTO([], $donor));
         $this->assertSame($donor, $placement->placementSnapshot(), 'The final report still exposes the retained complete donor');
         $this->assertSame([], $executor->executed);
         $placement->dispatchReady();
@@ -570,14 +576,14 @@ final class ClusterPlacementEventLoopTest extends TestCase
         $mesh = new NativePlacementMesh();
         $executor = new NativePlacementExecutor();
         $placement = $this->owner(new ClusterPlacement('host', $mesh, $executor));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
         $placement->noteNodeOffline('leader', hrtime(true) / 1e9 - 100.0);
         $placement->attachEventLoop($this->loop);
         $this->loop->tick();
         if ($fact === 'online') {
             $placement->noteNodeOnline('leader', hrtime(true) / 1e9);
         } elseif ($fact === 'query') {
-            $placement->onPlacementQuery('new');
+            $placement->onPlacementQuery('new', new PeerPlacementQueryDTO('query', 1));
         } else {
             $mesh->online = ['host'];
             $placement->onBecameLeader(hrtime(true) / 1e9, 2);
@@ -590,7 +596,7 @@ final class ClusterPlacementEventLoopTest extends TestCase
     public function testActualNativeArmFailureKeepsItsEventLoopException(): void
     {
         $placement = $this->owner(new ClusterPlacement('host', new NativePlacementMesh(), new NativePlacementExecutor()));
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '1', new PlacementId('leader', 0, 1)));
         $placement->attachEventLoop($this->loop);
         $this->expectException(EventLoopException::class);
         $placement->noteQuorumLost(NAN);
@@ -664,7 +670,7 @@ final class ClusterPlacementEventLoopTest extends TestCase
         $placement->placeAgentOnNode('render', '1', 'leader');
         $mesh->broadcasting = static function (PeerDTO $frame) use ($placement): void {
             if ($frame instanceof PeerPlacementReleaseDTO) {
-                $placement->onPlacementQuery('new');
+                $placement->onPlacementQuery('new', new PeerPlacementQueryDTO('query', 2));
             }
         };
         $placement->attachEventLoop($this->loop);
@@ -765,6 +771,8 @@ final class ClusterPlacementEventLoopTest extends TestCase
 /** Records port effects and optionally returns synchronous mesh facts on the same stack. */
 final class NativePlacementMesh implements PlacementMesh
 {
+    use PlacementQueryFixture;
+
     /** @var array<string, list<string>> Advertised node capabilities */
     public array $capabilities = ['leader' => ['slots=100'], 'host' => ['slots=100']];
 
@@ -786,6 +794,7 @@ final class NativePlacementMesh implements PlacementMesh
     public function sendToNode(string $nodeId, PeerDTO $frame): bool
     {
         $this->sent[] = [$nodeId, $frame];
+        $this->captureFixtureQuery($frame, $nodeId);
         $this->send?->__invoke($nodeId, $frame);
 
         return $this->delivered;
@@ -793,6 +802,7 @@ final class NativePlacementMesh implements PlacementMesh
 
     public function broadcastToNodes(PeerDTO $frame): void
     {
+        $this->captureFixtureQuery($frame);
         $this->broadcast[] = $frame;
         $this->broadcasting?->__invoke($frame);
     }

@@ -126,7 +126,7 @@ final class WorkerServerDeliveryChannelOwnerBootstrapTest extends TestCase
     {
         [$server, $manager, $worker] = $this->buildServer();
         [$placement, $mesh] = $this->buildLeaderPlacement($server);
-        $placement->onPlacementReport('node-a', new PeerPlacementReportDTO([
+        FakePlacementMesh::reply($placement, 'node-a', new PeerPlacementReportDTO([
             new PeerPlacedAgentEntry(DeliveryBootstrapPoolAgent::AGENT_TYPE, '1'),
             new PeerPlacedAgentEntry(DeliveryBootstrapPoolAgent::AGENT_TYPE, '2'),
             new PeerPlacedAgentEntry(DeliveryBootstrapPoolAgent::AGENT_TYPE, '3'),
@@ -165,7 +165,7 @@ final class WorkerServerDeliveryChannelOwnerBootstrapTest extends TestCase
         $this->assertSame([], $worker->frames(), 'Bootstrap must wait until every old host has reported.');
         $this->assertSame([], $manager->getAgents());
         $this->assertSame([], $placement->registry()->all());
-        $placement->onPlacementReport('node-a', new PeerPlacementReportDTO([
+        FakePlacementMesh::reply($placement, 'node-a', new PeerPlacementReportDTO([
             new PeerPlacedAgentEntry(DeliveryBootstrapPoolAgent::AGENT_TYPE, '1'),
         ]));
         $this->assertSame([], $worker->frames(), 'The report alone does not settle snapshot inheritance.');

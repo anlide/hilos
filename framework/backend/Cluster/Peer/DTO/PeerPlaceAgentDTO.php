@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Cluster\Placement\PlacementId;
 
 /**
  * Placement frame a leader sends to ask a node to launch an agent of a given type.
@@ -25,13 +26,17 @@ final class PeerPlaceAgentDTO extends PeerDTO
     /** @var string Payload key: agent index */
     public const string FIELD_AGENT_INDEX = 'agentIndex';
 
+    public const string FIELD_PLACEMENT_ID = 'placementId';
+
     /**
      * @param string $agentType Agent type to launch
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param PlacementId $placementId Order issued by the leader
      */
     public function __construct(
         public readonly string $agentType,
         public readonly ?string $agentIndex,
+        public readonly PlacementId $placementId,
     ) {
     }
 
@@ -56,6 +61,7 @@ final class PeerPlaceAgentDTO extends PeerDTO
             self::TYPE => self::MESSAGE_TYPE,
             self::FIELD_AGENT_TYPE => $this->agentType,
             self::FIELD_AGENT_INDEX => $this->agentIndex,
+            self::FIELD_PLACEMENT_ID => $this->placementId->toArray(),
         ];
     }
 
@@ -64,7 +70,7 @@ final class PeerPlaceAgentDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the agent type is missing
+     * @throws PeerTransportException When the agent type or order identity is invalid
      */
     public static function fromArray(array $data): static
     {
@@ -74,6 +80,10 @@ final class PeerPlaceAgentDTO extends PeerDTO
             throw new PeerTransportException('Peer place-agent frame is missing the agent type');
         }
 
-        return new static($agentType, PeerPlacedAgentEntry::readAgentIndex($data[self::FIELD_AGENT_INDEX] ?? null));
+        return new static(
+            $agentType,
+            PeerPlacedAgentEntry::readAgentIndex($data[self::FIELD_AGENT_INDEX] ?? null),
+            PlacementId::fromWire($data[self::FIELD_PLACEMENT_ID] ?? null),
+        );
     }
 }

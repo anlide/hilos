@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace Hilos\Cluster\Peer\DTO;
 
 use Hilos\Cluster\Exception\PeerTransportException;
+use Hilos\Constants\SignalConstants;
+use Hilos\Constants\SignalTypeConstants;
+use Hilos\Core\Page\DTO\PageResubscribeSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
+use Hilos\Core\Router\SignalSource;
+use Hilos\Core\Router\WebSocketSignalData;
 use Throwable;
 
 /**
@@ -40,18 +45,33 @@ final class PeerClientSignalDTO extends PeerDTO
     /** @var string Payload key: the serialized application signal */
     public const string FIELD_SIGNAL = 'signal';
 
+    /** @var string Optional peer-only delivery id for a terminal page recovery */
+    public const string FIELD_PAGE_RECOVERY_DELIVERY_ID = 'pageRecoveryDeliveryId';
+
     /**
      * @param string $originNodeId Id of the node that resolved and sent the signal (trace only)
      * @param string $targetNodeId Id of the node holding the connection
      * @param string $acceptKey Accept key of the connection to deliver to
      * @param SignalDTO $signal Application signal to deliver on the target node
+     * @param ?string $pageRecoveryDeliveryId Original socket token when recovering a terminal page attempt
+     * @throws PeerTransportException When the delivery id is empty or does not accompany an addressed daemon recovery
      */
     public function __construct(
         public readonly string $originNodeId,
         public readonly string $targetNodeId,
         public readonly string $acceptKey,
         public readonly SignalDTO $signal,
+        public readonly ?string $pageRecoveryDeliveryId = null,
     ) {
+        if ($pageRecoveryDeliveryId !== null && ($pageRecoveryDeliveryId === ''
+            || $signal->signalSource->getSource() !== SignalSource::DAEMON
+            || $signal->signalType->getType() !== SignalTypeConstants::WS_USER
+            || $signal->signalName->getName() !== SignalConstants::PAGE_RESUBSCRIBE
+            || !$signal->data instanceof WebSocketSignalData
+            || !$signal->data->data instanceof PageResubscribeSignalData
+            || $signal->data->targetAcceptKey !== $acceptKey)) {
+            throw new PeerTransportException('Peer client signal has invalid page recovery metadata');
+        }
     }
 
     /**
@@ -71,13 +91,17 @@ final class PeerClientSignalDTO extends PeerDTO
      */
     public function toArray(): array
     {
-        return [
+        $data = [
             self::TYPE => self::MESSAGE_TYPE,
             self::FIELD_ORIGIN_NODE_ID => $this->originNodeId,
             self::FIELD_TARGET_NODE_ID => $this->targetNodeId,
             self::FIELD_ACCEPT_KEY => $this->acceptKey,
             self::FIELD_SIGNAL => $this->signal->toArray(),
         ];
+        if ($this->pageRecoveryDeliveryId !== null) {
+            $data[self::FIELD_PAGE_RECOVERY_DELIVERY_ID] = $this->pageRecoveryDeliveryId;
+        }
+        return $data;
     }
 
     /**
@@ -85,7 +109,7 @@ final class PeerClientSignalDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored forward frame
-     * @throws PeerTransportException When an id is missing or the inner signal is malformed
+     * @throws PeerTransportException When an id, the inner signal or the recovery metadata is invalid
      */
     public static function fromArray(array $data): static
     {
@@ -115,11 +139,20 @@ final class PeerClientSignalDTO extends PeerDTO
             throw new PeerTransportException('Peer client signal carries a malformed inner signal: ' . $e->getMessage());
         }
 
+        $pageRecoveryDeliveryId = null;
+        if (array_key_exists(self::FIELD_PAGE_RECOVERY_DELIVERY_ID, $data)) {
+            $pageRecoveryDeliveryId = $data[self::FIELD_PAGE_RECOVERY_DELIVERY_ID];
+            if (!is_string($pageRecoveryDeliveryId)) {
+                throw new PeerTransportException('Peer client signal page recovery delivery id must be a string');
+            }
+        }
+
         return new static(
             originNodeId: $originNodeId,
             targetNodeId: $targetNodeId,
             acceptKey: $acceptKey,
             signal: $signal,
+            pageRecoveryDeliveryId: $pageRecoveryDeliveryId,
         );
     }
 }

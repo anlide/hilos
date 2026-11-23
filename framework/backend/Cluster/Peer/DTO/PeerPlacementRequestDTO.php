@@ -15,7 +15,7 @@ use Hilos\Cluster\Exception\PeerTransportException;
  * addresses it can land on any node — while only the leader owns the placement view and may
  * decide where it runs.
  *
- * Carries the agent alone and no node id: naming a target would be this sender picking the host,
+ * Carries the agent and ask coordinates, with no node id: naming a target would be this sender picking the host,
  * which is the leader's placement policy to decide. The reply is a {@see PeerPlacementVerdictDTO}
  * on this ask — placed, or not, with the record's state — because a second failure of the same
  * agent does not change the published view, and a waiter would never learn of it from a view
@@ -33,13 +33,21 @@ final class PeerPlacementRequestDTO extends PeerDTO
     /** @var string Payload key: agent index */
     public const string FIELD_AGENT_INDEX = 'agentIndex';
 
+    public const string FIELD_AUTHORITY_TERM = PeerPlacementQueryDTO::FIELD_AUTHORITY_TERM;
+
+    public const string FIELD_REQUEST_ID = 'requestId';
+
     /**
      * @param string $agentType Agent type that wants placing
      * @param ?string $agentIndex Agent index, or null for a singleton agent
+     * @param int $authorityTerm Term when the command was issued
+     * @param string $requestId Incarnation of this node's ask
      */
     public function __construct(
         public readonly string $agentType,
         public readonly ?string $agentIndex,
+        public readonly int $authorityTerm,
+        public readonly string $requestId,
     ) {
     }
 
@@ -64,6 +72,8 @@ final class PeerPlacementRequestDTO extends PeerDTO
             self::TYPE => self::MESSAGE_TYPE,
             self::FIELD_AGENT_TYPE => $this->agentType,
             self::FIELD_AGENT_INDEX => $this->agentIndex,
+            self::FIELD_AUTHORITY_TERM => $this->authorityTerm,
+            self::FIELD_REQUEST_ID => $this->requestId,
         ];
     }
 
@@ -72,7 +82,7 @@ final class PeerPlacementRequestDTO extends PeerDTO
      *
      * @param array<string, mixed> $data Frame payload
      * @return static Restored frame
-     * @throws PeerTransportException When the agent type is missing
+     * @throws PeerTransportException When the agent address, authority or correlation is malformed
      */
     public static function fromArray(array $data): static
     {
@@ -82,6 +92,11 @@ final class PeerPlacementRequestDTO extends PeerDTO
             throw new PeerTransportException('Peer placement-request frame is missing the agent type');
         }
 
-        return new static($agentType, PeerPlacedAgentEntry::readAgentIndex($data[self::FIELD_AGENT_INDEX] ?? null));
+        return new static(
+            $agentType,
+            PeerPlacedAgentEntry::readAgentIndex($data[self::FIELD_AGENT_INDEX] ?? null),
+            self::readAuthorityTerm($data),
+            self::readCorrelationId($data, self::FIELD_REQUEST_ID),
+        );
     }
 }

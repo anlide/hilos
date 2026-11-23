@@ -1008,7 +1008,13 @@ final class DeliveryFairnessPeerSink implements AgentSignalSink
      * @param ?string $agentIndex Peer-decoded instance
      * @param SignalDTO $signal Peer-decoded raw upload
      */
-    public function deliverSignalToAgent(string $agentType, ?string $agentIndex, SignalDTO $signal): void
+    public function deliverSignalToAgent(
+        string $agentType,
+        ?string $agentIndex,
+        SignalDTO $signal,
+        bool $placementRecoveryRelay = false,
+        bool $linkBoundUpload = false,
+    ): void
     {
         TestCase::assertSame(DeliveryFairnessAgentDaemon::AGENT_TYPE, $agentType);
         TestCase::assertNull($agentIndex);

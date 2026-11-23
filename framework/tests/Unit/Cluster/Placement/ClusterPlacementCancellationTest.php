@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Cluster\Placement\PlacementRecovery;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Cluster\ClusterContext;
@@ -19,6 +20,7 @@ use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementExecutor;
 use Hilos\Cluster\Placement\PlacementMesh;
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Cluster\Placement\PlacementRecord;
 use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementRestartSink;
@@ -57,7 +59,7 @@ final class ClusterPlacementCancellationTest extends TestCase
     public function testWaitingCancellationNeedsNoAddresseeAndCannotRetry(PlacementState $state, ?string $previousNode): void
     {
         [$placement, $mesh, $executor] = $this->leader();
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::failed('render', '7', 'no worker'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::failed('render', '7', 'no worker'));
         $placement->registry()->put(new PlacementRecord(
             'render', '7', $previousNode, $state, 'no room', [PlacementRefusal::noOnlineNodes()],
         ));
@@ -97,14 +99,15 @@ final class ClusterPlacementCancellationTest extends TestCase
         [$placement, $mesh, $executor] = $this->leader();
         $executor->waiting = $placing;
         $placement->placeAgentOnNode('render', '7', $node);
+        $order = $placement->registry()->get('render:7')->placementId;
         if (!$placing && $node !== 'leader') {
-            $placement->onAgentStatus($node, PeerAgentStatusDTO::started('render', '7', 1));
+            FakePlacementMesh::status($placement, $node, PeerAgentStatusDTO::started('render', '7', 1));
         }
-        $executor->onRevoke = function () use ($placement): void {
-            $this->assertTombstone($placement, 'leader');
+        $executor->onRevoke = function () use ($placement, $order): void {
+            $this->assertTombstone($placement, 'leader', order: $order);
             $placement->noteAgentStopped('render', '7');
-            $placement->noteAgentStartFailed('render', '7', 'canceled while waiting');
-            $this->assertTombstone($placement, 'leader');
+            $placement->noteAgentStartFailed('render', '7', 'canceled while waiting', placementId: $placement->localPlacementId('render:7'));
+            $this->assertTombstone($placement, 'leader', order: $order);
         };
         $mesh->sent = [];
 
@@ -114,16 +117,16 @@ final class ClusterPlacementCancellationTest extends TestCase
             $this->assertSame([['render', '7']], $executor->revoked);
             $this->assertSame([], $mesh->frames(PeerStopAgentDTO::class));
         } else {
-            $this->assertTombstone($placement, 'old');
+            $this->assertTombstone($placement, 'old', order: $order);
             $this->assertCount(1, $mesh->frames(PeerStopAgentDTO::class));
-            $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '7'));
+            FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '7'));
         }
-        $this->assertTombstone($placement);
-        $placement->onPlacementQuery('asker');
+        $this->assertTombstone($placement, order: $order);
+        $placement->onPlacementQuery('asker', new PeerPlacementQueryDTO('query', 0));
         $reports = $mesh->frames(PeerPlacementReportDTO::class);
         $this->assertSame([], $reports[0]->agents);
         $placement->tick(1100.0);
-        $this->assertTombstone($placement);
+        $this->assertTombstone($placement, order: $order);
     }
 
     public function testCancellationAnswersOldLocalAndRemoteWaitersBeforeRevoke(): void
@@ -131,8 +134,9 @@ final class ClusterPlacementCancellationTest extends TestCase
         [$placement, $mesh, $executor, $sink] = $this->leader();
         $executor->waiting = true;
         $placement->placeAgentOnNode('render', '7', 'leader');
+        $order = $placement->registry()->get('render:7')->placementId;
         $placement->requirePlacement('render', '7');
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7', 0, 'ask'));
         $executor->onRevoke = function () use ($placement, $mesh, $sink): void {
             $this->assertSame([['render', '7', 'failed: placement canceled']], $sink->notPlaced);
             $verdicts = $mesh->frames(PeerPlacementVerdictDTO::class);
@@ -141,13 +145,13 @@ final class ClusterPlacementCancellationTest extends TestCase
             $this->assertSame('placement canceled', $verdicts[0]->reason);
             $this->assertSame([], $verdicts[0]->refusals);
             $this->assertNull($verdicts[0]->nodeId);
-            $placement->noteAgentStartFailed('render', '7', 'old start failed');
+            $placement->noteAgentStartFailed('render', '7', 'old start failed', placementId: $placement->localPlacementId('render:7'));
         };
 
         $placement->stopAgentOnNode('render', '7', 'leader');
-        $placement->noteAgentStartFailed('render', '7', 'late failure');
+        $placement->noteAgentStartFailed('render', '7', 'late failure', placementId: $placement->localPlacementId('render:7'));
 
-        $this->assertTombstone($placement);
+        $this->assertTombstone($placement, order: $order);
         $this->assertCount(1, $sink->notPlaced);
         $this->assertCount(1, $mesh->frames(PeerPlacementVerdictDTO::class));
     }
@@ -156,10 +160,10 @@ final class ClusterPlacementCancellationTest extends TestCase
     {
         [$placement, $mesh, , $sink] = $this->leader(settled: false);
         $placement->requirePlacement('render', '7');
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7', 0, 'ask'));
         $placement->stopAgentOnNode('render', '7', null);
-        $placement->onPlacementReport('old', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('new', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'old', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'new', new PeerPlacementReportDTO([]));
         $placement->tick(1100.0);
 
         $this->assertSame([['render', '7', 'failed: placement canceled']], $sink->notPlaced);
@@ -172,47 +176,48 @@ final class ClusterPlacementCancellationTest extends TestCase
     {
         [$placement, $mesh] = $this->leader();
         $placement->placeAgentOnNode('render', '7', 'old');
-        $placement->onPlacementRequest('old-asker', new PeerPlacementRequestDTO('render', '7'));
+        $order = $placement->registry()->get('render:7')->placementId;
+        $placement->onPlacementRequest('old-asker', new PeerPlacementRequestDTO('render', '7', 0, 'old-ask'));
         $placement->stopAgentOnNode('render', '7', 'old');
         $mesh->capabilities['old'] = [];
         $mesh->sent = [];
 
-        $placement->onPlacementRequest('new-asker', new PeerPlacementRequestDTO('render', '7'));
-        $placement->onAgentStatus('unrelated', PeerAgentStatusDTO::stopped('render', '7'));
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::failed('render', '7', 'late failure'));
+        $placement->onPlacementRequest('new-asker', new PeerPlacementRequestDTO('render', '7', 0, 'new-ask'));
+        FakePlacementMesh::status($placement, 'unrelated', PeerAgentStatusDTO::stopped('render', '7'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::failed('render', '7', 'late failure'));
         $placement->tick(1001.0);
         $this->assertSame([], $mesh->frames(PeerPlaceAgentDTO::class));
         $this->assertSame([], $mesh->frames(PeerPlacementVerdictDTO::class));
-        $this->assertTombstone($placement, 'old');
+        $this->assertTombstone($placement, 'old', order: $order);
 
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '7'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '7'));
         $this->assertCount(1, $mesh->frames(PeerPlaceAgentDTO::class));
         $fresh = $placement->registry()->get('render:7');
         $this->assertSame('new', $fresh?->nodeId);
         $this->assertSame(PlacementState::Placing, $fresh?->state);
 
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '7'));
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::failed('render', '7', 'late failure'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '7'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::failed('render', '7', 'late failure'));
         $this->assertSame($fresh, $placement->registry()->get('render:7'));
-        $placement->onAgentStatus('new', PeerAgentStatusDTO::started('render', '7', 1));
-        $placement->onPlacementRequest('new-asker', new PeerPlacementRequestDTO('render', '7'));
+        FakePlacementMesh::status($placement, 'new', PeerAgentStatusDTO::started('render', '7', 1));
         $verdicts = $mesh->frames(PeerPlacementVerdictDTO::class);
         $this->assertCount(1, $verdicts);
         $this->assertSame(PlacementState::Started, $verdicts[0]->state);
         $this->assertSame('new', $verdicts[0]->nodeId);
+        $this->assertSame('new-ask', $verdicts[0]->requestId);
     }
 
     public function testNewWaitersStillGetAFailedVerdictIfNothingFitsAfterAcknowledgement(): void
     {
         [$placement, $mesh] = $this->leader();
         $placement->placeAgentOnNode('render', '7', 'old');
-        $placement->onPlacementRequest('same-asker', new PeerPlacementRequestDTO('render', '7'));
+        $placement->onPlacementRequest('same-asker', new PeerPlacementRequestDTO('render', '7', 0, 'ask'));
         $placement->stopAgentOnNode('render', '7', 'old');
-        $placement->onPlacementRequest('same-asker', new PeerPlacementRequestDTO('render', '7'));
+        $placement->onPlacementRequest('same-asker', new PeerPlacementRequestDTO('render', '7', 0, 'ask'));
         $mesh->capabilities = ['leader' => [], 'old' => [], 'new' => []];
         $mesh->onSend = static function (string $nodeId, PeerDTO $frame) use ($placement): void {
             if ($frame instanceof PeerPlacementQueryDTO) {
-                $placement->onAgentStatus($nodeId, PeerAgentStatusDTO::stopped('render', '7'));
+                FakePlacementMesh::status($placement, $nodeId, PeerAgentStatusDTO::stopped('render', '7'));
             }
         };
         $placement->tick(1001.0);
@@ -228,7 +233,7 @@ final class ClusterPlacementCancellationTest extends TestCase
         $diagnosis = $placement->placementRefusals();
         $revision = $placement->registry()->revision();
         $placement->tick(1018.0);
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '7'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '7'));
         $this->assertSame($waiting, $placement->registry()->get('render:7'));
         $this->assertSame($diagnosis, $placement->placementRefusals());
         $this->assertSame($revision, $placement->registry()->revision());
@@ -244,14 +249,15 @@ final class ClusterPlacementCancellationTest extends TestCase
     {
         [$placement, $mesh] = $this->leader();
         $placement->placeAgentOnNode('render', '7', 'old');
+        $order = $placement->registry()->get('render:7')->placementId;
         $placement->stopAgentOnNode('render', '7', 'old');
         $mesh->sent = [];
         $placement->placeAgentOnNode('render', '7', 'leader');
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7'));
-        $this->assertTombstone($placement, 'old');
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7', 0, 'ask'));
+        $this->assertTombstone($placement, 'old', order: $order);
         $this->assertSame([], $mesh->sent);
 
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '7'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '7'));
         $this->assertSame('leader', $placement->registry()->get('render:7')?->nodeId);
         $this->assertSame(PlacementState::Started, $placement->registry()->get('render:7')?->state);
     }
@@ -264,7 +270,7 @@ final class ClusterPlacementCancellationTest extends TestCase
         $mesh->sent = [];
         $this->assertNull($placement->placeAgentOnBestNode('render', '7'));
         $this->assertSame([], $mesh->sent);
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '7'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '7'));
         $this->assertCount(1, $mesh->frames(PeerPlaceAgentDTO::class));
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:7')?->state);
     }
@@ -276,7 +282,7 @@ final class ClusterPlacementCancellationTest extends TestCase
         $executor->onRevoke = function () use ($placement, $executor): void {
             $placement->noteAgentStopped('render', '7');
             $placement->requirePlacement('render', '7');
-            $placement->noteAgentStartFailed('render', '7', 'old failure');
+            $placement->noteAgentStartFailed('render', '7', 'old failure', placementId: $placement->localPlacementId('render:7'));
             $this->assertCount(1, $executor->executed, 'New work waits until local revoke returns');
         };
 
@@ -291,10 +297,10 @@ final class ClusterPlacementCancellationTest extends TestCase
         $placement->stopAgentOnNode('render', '7', null);
         $mesh->sent = [];
         foreach (['old', 'new'] as $node) {
-            $placement->onAgentStatus($node, PeerAgentStatusDTO::started('render', '7', 1));
-            $placement->onPlacementReport($node, new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '7')]));
-            $placement->onAgentStatus($node, PeerAgentStatusDTO::stopped('render', '7'));
-            $placement->onAgentStatus($node, PeerAgentStatusDTO::failed('render', '7', 'late failure'));
+            FakePlacementMesh::status($placement, $node, PeerAgentStatusDTO::started('render', '7', 1));
+            FakePlacementMesh::reply($placement, $node, new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '7')]));
+            FakePlacementMesh::status($placement, $node, PeerAgentStatusDTO::stopped('render', '7'));
+            FakePlacementMesh::status($placement, $node, PeerAgentStatusDTO::failed('render', '7', 'late failure'));
         }
         $this->assertCount(4, $mesh->sent);
         $this->assertCount(4, $mesh->frames(PeerStopAgentDTO::class));
@@ -306,7 +312,7 @@ final class ClusterPlacementCancellationTest extends TestCase
     {
         [$placement, , $executor] = $this->leader();
         $placement->stopAgentOnNode('render', '7', null);
-        $placement->noteAgentStarted('render', '7');
+        $placement->noteAgentStarted('render', '7', placementId: $placement->localPlacementId('render:7'));
         $this->assertSame([['render', '7']], $executor->revoked);
         $this->assertTombstone($placement);
     }
@@ -316,27 +322,29 @@ final class ClusterPlacementCancellationTest extends TestCase
         [$placement, , $executor] = $this->leader();
         $executor->waiting = true;
         $placement->placeAgentOnNode('render', '7', 'leader');
+        $order = $placement->registry()->get('render:7')->placementId;
         $executor->onRevoke = static function () use ($placement, $executor): void {
             $executor->onRevoke = null;
-            $placement->noteAgentStarted('render', '7');
+            $placement->noteAgentStarted('render', '7', placementId: $placement->localPlacementId('render:7'));
         };
 
         $placement->stopAgentOnNode('render', '7', 'leader');
 
         $this->assertSame([['render', '7'], ['render', '7']], $executor->revoked);
-        $this->assertTombstone($placement);
+        $this->assertTombstone($placement, order: $order);
     }
 
     public function testLateStartsWhileAwaitingStopCannotAcknowledgeItOrReleaseDemand(): void
     {
         [$placement, $mesh] = $this->leader();
         $placement->placeAgentOnNode('render', '7', 'old');
+        $order = $placement->registry()->get('render:7')->placementId;
         $placement->stopAgentOnNode('render', '7', 'old');
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7', 0, 'ask'));
         $mesh->sent = [];
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::started('render', '7', 1));
-        $placement->onPlacementReport('old', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '7')]));
-        $this->assertTombstone($placement, 'old');
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::started('render', '7', 1));
+        FakePlacementMesh::reply($placement, 'old', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '7')]));
+        $this->assertTombstone($placement, 'old', order: $order);
         $this->assertCount(2, $mesh->frames(PeerStopAgentDTO::class));
         $this->assertSame([], $mesh->frames(PeerPlaceAgentDTO::class));
     }
@@ -346,9 +354,9 @@ final class ClusterPlacementCancellationTest extends TestCase
         [$placement, $mesh] = $this->leader();
         $placement->registry()->put(new PlacementRecord('render', '7', 'old', PlacementState::Refused));
         $placement->stopAgentOnNode('render', '7', 'old');
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '7'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '7'));
         $mesh->sent = [];
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7', 0, 'ask'));
         $this->assertSame(PlacementState::Refused, $placement->registry()->get('render:7')?->state);
         $verdicts = $mesh->frames(PeerPlacementVerdictDTO::class);
         $this->assertCount(1, $verdicts);
@@ -360,34 +368,78 @@ final class ClusterPlacementCancellationTest extends TestCase
     {
         [$placement, $mesh] = $this->leader();
         $placement->placeAgentOnNode('render', '7', 'old');
+        $order = $placement->registry()->get('render:7')->placementId;
         $placement->stopAgentOnNode('render', '7', 'old');
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7'));
-        $placement->onPlacementReport('old', new PeerPlacementReportDTO([]));
-        $this->assertTombstone($placement, 'old');
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7', 0, 'ask'));
+        FakePlacementMesh::reply($placement, 'old', new PeerPlacementReportDTO([]));
+        $this->assertTombstone($placement, 'old', order: $order);
         $mesh->sent = [];
         $placement->tick(1001.0);
         $placement->tick(1017.0);
         $this->assertCount(1, $mesh->frames(PeerPlacementQueryDTO::class));
         $this->assertSame([], $mesh->frames(PeerPlaceAgentDTO::class));
-        $placement->onPlacementReport('new', new PeerPlacementReportDTO([]));
-        $this->assertTombstone($placement, 'old');
-        $placement->onPlacementReport('old', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'new', new PeerPlacementReportDTO([]));
+        $this->assertTombstone($placement, 'old', order: $order);
+        FakePlacementMesh::reply($placement, 'old', new PeerPlacementReportDTO([]));
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:7')?->state);
         $this->assertCount(1, $mesh->frames(PeerPlaceAgentDTO::class));
+    }
+
+    public function testAStoppedHostReleasesOnlyTheLatestDemandAfterItsIsolationGrace(): void
+    {
+        foreach ([true, false] as $lossBeforeCancellation) {
+            [$placement, $mesh] = $this->leader();
+            $placement->placeAgentOnNode('render', '7', 'old');
+            $order = $placement->registry()->get('render:7')->placementId;
+            if ($lossBeforeCancellation) {
+                $placement->noteNodeOffline('old', 1001.0);
+            }
+            $placement->stopAgentOnNode('render', '7', 'old');
+            if (!$lossBeforeCancellation) {
+                $placement->noteNodeOffline('old', 1001.0);
+            }
+            $placement->placeAgentOnNode('render', '7', 'leader');
+            $placement->placeAgentOnNode('render', '7', 'new');
+            $mesh->sent = [];
+
+            $placement->tick(1008.0);
+            $this->assertTombstone($placement, 'old', order: $order);
+            $this->assertSame([], $mesh->frames(PeerPlaceAgentDTO::class));
+            $placement->tick(1009.0);
+            $this->assertSame('new', $placement->registry()->get('render:7')?->nodeId);
+            $this->assertCount(1, $mesh->frames(PeerPlaceAgentDTO::class));
+        }
+    }
+
+    public function testReturningBeforeGraceStillRequiresTheExactCanceledStop(): void
+    {
+        [$placement, $mesh] = $this->leader();
+        $placement->placeAgentOnNode('render', '7', 'old');
+        $order = $placement->registry()->get('render:7')->placementId;
+        $placement->stopAgentOnNode('render', '7', 'old');
+        $stop = $mesh->frames(PeerStopAgentDTO::class)[0];
+        $placement->noteNodeOffline('old', 1001.0);
+        $placement->placeAgentOnNode('render', '7', 'new');
+        $placement->noteNodeOnline('old', 1008.0);
+        $placement->tick(1009.0);
+        $this->assertTombstone($placement, 'old', order: $order);
+        $placement->onAgentStatus('old', $stop->stoppedStatus());
+        $this->assertSame('new', $placement->registry()->get('render:7')?->nodeId);
     }
 
     public function testASecondCancellationDropsNewHeldDemandWithoutAcknowledgingTheOldStop(): void
     {
         [$placement, $mesh] = $this->leader();
         $placement->placeAgentOnNode('render', '7', 'old');
+        $order = $placement->registry()->get('render:7')->placementId;
         $placement->stopAgentOnNode('render', '7', 'old');
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '7', 0, 'ask'));
         $placement->stopAgentOnNode('render', '7', null);
-        $this->assertTombstone($placement, 'old');
+        $this->assertTombstone($placement, 'old', order: $order);
         $mesh->sent = [];
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '7'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '7'));
         $placement->tick(1100.0);
-        $this->assertTombstone($placement);
+        $this->assertTombstone($placement, order: $order);
         $this->assertSame([], $mesh->frames(PeerPlaceAgentDTO::class));
     }
 
@@ -395,11 +447,12 @@ final class ClusterPlacementCancellationTest extends TestCase
     {
         [$placement, $mesh, , $sink] = $this->leader();
         $placement->placeAgentOnNode('render', '7', 'old');
+        $order = $placement->registry()->get('render:7')->placementId;
         $placement->restartElsewhere('render', '7', 'old', 'new');
         $placement->stopAgentOnNode('render', '7', 'old');
         $mesh->sent = [];
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '7'));
-        $this->assertTombstone($placement);
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '7'));
+        $this->assertTombstone($placement, order: $order);
         $this->assertSame([['render', '7', 'placement canceled']], $sink->notPlaced);
         $this->assertSame([], $mesh->sent);
     }
@@ -415,10 +468,10 @@ final class ClusterPlacementCancellationTest extends TestCase
         $placement->placeAgentOnNode('render', '7', 'leader');
         $this->assertCount(2, $executor->executed);
 
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::started('render', '8', 1));
-        $placement->onAgentStatus('old', PeerAgentStatusDTO::stopped('render', '8'));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::started('render', '8', 1));
+        FakePlacementMesh::status($placement, 'old', PeerAgentStatusDTO::stopped('render', '8'));
         $this->assertNull($placement->registry()->get('render:8'));
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '8'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '8', 0, 'ask'));
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:8')?->state);
     }
 
@@ -451,8 +504,8 @@ final class ClusterPlacementCancellationTest extends TestCase
         $placement = new ClusterPlacement('leader', $mesh, $executor, restartSink: $sink);
         $placement->onBecameLeader(1000.0);
         if ($settled) {
-            $placement->onPlacementReport('old', new PeerPlacementReportDTO([]));
-            $placement->onPlacementReport('new', new PeerPlacementReportDTO([]));
+            FakePlacementMesh::reply($placement, 'old', new PeerPlacementReportDTO([]));
+            FakePlacementMesh::reply($placement, 'new', new PeerPlacementReportDTO([]));
             $placement->tick(1000.0);
         }
         $mesh->sent = [];
@@ -462,11 +515,12 @@ final class ClusterPlacementCancellationTest extends TestCase
     /**
      * @param ClusterPlacement $placement Coordinator being checked
      * @param ?string $node Host still owed a stop, or null once acknowledged
+     * @param ?PlacementId $order Exact order canceled, or null when there was none
      */
-    private function assertTombstone(ClusterPlacement $placement, ?string $node = null): void
+    private function assertTombstone(ClusterPlacement $placement, ?string $node = null, ?PlacementId $order = null): void
     {
         $this->assertEquals(
-            new PlacementRecord('render', '7', $node, PlacementState::Stopped),
+            new PlacementRecord('render', '7', $node, PlacementState::Stopped, placementId: $order),
             $placement->registry()->get('render:7'),
         );
     }
@@ -475,6 +529,8 @@ final class ClusterPlacementCancellationTest extends TestCase
 /** Mutable peer ports, with no transport or automatic replies. */
 final class CancellationMesh implements PlacementMesh
 {
+    use PlacementQueryFixture;
+
     /** @var array<string, list<string>> Current advertised capacity */
     public array $capabilities = ['leader' => ['slots=10'], 'old' => ['slots=10'], 'new' => ['slots=10']];
 
@@ -487,6 +543,7 @@ final class CancellationMesh implements PlacementMesh
     public function sendToNode(string $nodeId, PeerDTO $frame): bool
     {
         $this->sent[] = [$nodeId, $frame];
+        $this->captureFixtureQuery($frame, $nodeId);
         if ($this->onSend !== null) {
             ($this->onSend)($nodeId, $frame);
         }
@@ -495,6 +552,7 @@ final class CancellationMesh implements PlacementMesh
 
     public function broadcastToNodes(PeerDTO $frame): void
     {
+        $this->captureFixtureQuery($frame);
     }
 
     public function nodeCapabilities(string $nodeId): ?array
@@ -596,7 +654,13 @@ final class CancellationSink implements PlacementVerdictSink, PlacementRestartSi
     /** @var list<array{string, ?string, string}> Negative results */
     public array $notPlaced = [];
 
-    public function onAgentNotPlaced(string $agentType, ?string $agentIndex, string $reason): void
+    public function onAgentNotPlaced(
+        string $agentType,
+        ?string $agentIndex,
+        string $reason,
+        ?PlacementRecovery $recovery = null,
+        ?Closure $current = null,
+    ): void
     {
         $this->notPlaced[] = [$agentType, $agentIndex, $reason];
     }

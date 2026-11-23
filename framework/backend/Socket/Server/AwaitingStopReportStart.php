@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Socket\Server;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Socket\Client\WorkerClient;
 
 /**
@@ -24,6 +25,7 @@ final readonly class AwaitingStopReportStart
      * @param int $awaitedWorkerId Worker whose earlier stop report is awaited
      * @param WorkerClient $awaitedWorker Exact connection that owes the report
      * @param bool $protectedModeReplay Request replays an agent stopped by the freeze, without proving it started
+     * @param ?PlacementId $placementId Exact managed order, if the start has one
      */
     public function __construct(
         public string $agentId,
@@ -34,6 +36,7 @@ final readonly class AwaitingStopReportStart
         public int $awaitedWorkerId,
         public WorkerClient $awaitedWorker,
         public bool $protectedModeReplay = false,
+        public ?PlacementId $placementId = null,
     ) {
     }
 }

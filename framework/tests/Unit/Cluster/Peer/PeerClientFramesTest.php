@@ -21,6 +21,7 @@ use Hilos\Constants\SignalTypeConstants;
 use Hilos\Core\Exception\InvalidFormatException;
 use Hilos\Core\Group\DTO\GroupLeaveAllSignalData;
 use Hilos\Core\Page\DTO\PageAccessReassessUserSignalData;
+use Hilos\Core\Page\DTO\PageResubscribeSignalData;
 use Hilos\Core\Router\DTO\SignalDTO;
 use Hilos\Core\Router\SignalData;
 use Hilos\Core\Router\SignalName;
@@ -32,6 +33,7 @@ use Hilos\Socket\Http\DTO\HttpRequestDTO;
 use Hilos\Socket\Command\DTO\CommandReplyDTO;
 use Hilos\Socket\Worker\DTO\WorkerGroupLeaveAllDTO;
 use Hilos\Socket\Worker\WorkerDTO;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -184,6 +186,59 @@ final class PeerClientFramesTest extends TestCase
         $this->assertSame('ak-1', $parsed->acceptKey);
         $this->assertSame('room_renamed', $parsed->signal->signalName->getName());
         $this->assertSame(['room' => 'Ada'], $parsed->signal->data->toArray());
+        $this->assertNull($parsed->pageRecoveryDeliveryId);
+        $this->assertArrayNotHasKey(PeerClientSignalDTO::FIELD_PAGE_RECOVERY_DELIVERY_ID, $parsed->toArray());
+    }
+
+    public function testAnAddressedPageRecoveryRoundTripsWithItsExactDeliveryId(): void
+    {
+        $frame = new PeerClientSignalDTO('node-A', 'node-B', 'ak-1', self::pageRecovery(), pageRecoveryDeliveryId: 'ak-1:7');
+        $parsed = PeerDTO::fromWire($frame->toJson());
+
+        $this->assertInstanceOf(PeerClientSignalDTO::class, $parsed);
+        $this->assertEquals($frame->signal, $parsed->signal);
+        $this->assertSame('ak-1:7', $parsed->pageRecoveryDeliveryId);
+        $this->assertSame('ak-1:7', $parsed->toArray()[PeerClientSignalDTO::FIELD_PAGE_RECOVERY_DELIVERY_ID]);
+    }
+
+    /** @return iterable<string, array{mixed, SignalDTO}> Refused field values and signal contexts */
+    public static function invalidPageRecoveries(): iterable
+    {
+        yield 'null' => [null, self::pageRecovery()];
+        yield 'empty string' => ['', self::pageRecovery()];
+        yield 'integer' => [7, self::pageRecovery()];
+        yield 'boolean' => [true, self::pageRecovery()];
+        yield 'array' => [['ak-1:7'], self::pageRecovery()];
+        yield 'wrong accept key' => ['ak-1:7', self::pageRecovery(acceptKey: 'ak-2')];
+        yield 'missing accept key' => ['ak-1:7', self::pageRecovery(acceptKey: null)];
+        yield 'wrong source' => ['ak-1:7', self::pageRecovery(source: SignalSource::AGENT)];
+        yield 'wrong type' => ['ak-1:7', self::pageRecovery(type: SignalTypeConstants::WS_GROUP)];
+        yield 'wrong name' => ['ak-1:7', self::pageRecovery(name: SignalConstants::DELIVERY_COMPLETE)];
+        yield 'wrong payload' => ['ak-1:7', self::pageRecovery(wrongPayload: true)];
+    }
+
+    #[DataProvider('invalidPageRecoveries')]
+    public function testAClientSignalRejectsInvalidPageRecoveryMetadata(mixed $deliveryId, SignalDTO $signal): void
+    {
+        $frame = new PeerClientSignalDTO('node-A', 'node-B', 'ak-1', $signal);
+        $this->expectException(PeerTransportException::class);
+        PeerDTO::fromWire(json_encode([
+            ...$frame->toArray(),
+            PeerClientSignalDTO::FIELD_PAGE_RECOVERY_DELIVERY_ID => $deliveryId,
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    private static function pageRecovery(
+        ?string $acceptKey = 'ak-1',
+        string $source = SignalSource::DAEMON,
+        string $type = SignalTypeConstants::WS_USER,
+        string $name = SignalConstants::PAGE_RESUBSCRIBE,
+        bool $wrongPayload = false,
+    ): SignalDTO {
+        return new SignalDTO(new SignalSource($source), new SignalType($type), new SignalName($name), new WebSocketSignalData(
+            $wrongPayload ? new SignalData() : new PageResubscribeSignalData('delivery', ['id' => 23]),
+            targetAcceptKey: $acceptKey,
+        ));
     }
 
     /**

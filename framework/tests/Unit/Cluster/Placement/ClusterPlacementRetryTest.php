@@ -19,6 +19,7 @@ use Hilos\Cluster\Placement\PlacementState;
 use Hilos\Cluster\Placement\ResourceProfile;
 use Hilos\Utils\Logger;
 use LogicException;
+use ReflectionProperty;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -47,7 +48,7 @@ final class ClusterPlacementRetryTest extends TestCase
 
         $mesh->sent = [];
         foreach (['asker-a', 'asker-b', 'asker-a'] as $asker) {
-            $placement->onPlacementRequest($asker, new PeerPlacementRequestDTO('render', '1'));
+            $placement->onPlacementRequest($asker, new PeerPlacementRequestDTO('render', '1', 0, 'ask'));
         }
         $this->assertSame(1, $policy->attempts, 'Different requesters share the same interval');
         $this->assertSame($record, $placement->registry()->get('render:1'));
@@ -70,7 +71,7 @@ final class ClusterPlacementRetryTest extends TestCase
         );
         $mesh->sent = [];
         foreach (['first', 'second'] as $asker) {
-            $placement->onPlacementRequest($asker, new PeerPlacementRequestDTO('render', '1'));
+            $placement->onPlacementRequest($asker, new PeerPlacementRequestDTO('render', '1', 0, 'ask'));
         }
         $this->assertSame(1, $policy->attempts);
         $this->assertCount(2, $mesh->sent);
@@ -120,7 +121,7 @@ final class ClusterPlacementRetryTest extends TestCase
         $placement = new ClusterPlacement('leader', $mesh, new FakePlacementExecutor(), policy: $policy);
         $before = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
         $placement->onBecameLeader($before);
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', 'clock'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', 'clock', 0, 'ask'));
         $after = hrtime(true) / TimeConstants::NS_PER_MILLISECOND / TimeConstants::MS_PER_SECOND;
 
         $placement->tick($before + 4.999);
@@ -155,8 +156,8 @@ final class ClusterPlacementRetryTest extends TestCase
         $revision = $placement->registry()->revision();
         $placement->tick(1002.0);
 
-        $placement->onAgentStatus('reporter', PeerAgentStatusDTO::stopped('render', '1'));
-        $placement->onAgentStatus('reporter', PeerAgentStatusDTO::stopped('render', '1'));
+        FakePlacementMesh::status($placement, 'reporter', PeerAgentStatusDTO::stopped('render', '1'));
+        FakePlacementMesh::status($placement, 'reporter', PeerAgentStatusDTO::stopped('render', '1'));
 
         $this->assertSame($waiting, $placement->registry()->get('render:1'));
         $this->assertSame($diagnosis, $placement->placementRefusals());
@@ -253,7 +254,7 @@ final class ClusterPlacementRetryTest extends TestCase
     {
         [$placement, $mesh, , $policy] = $this->waiting(['1']);
         $mesh->capabilities['leader'] = ['slots=10'];
-        $placement->onPlacementRequest('another', new PeerPlacementRequestDTO('render', '1'));
+        $placement->onPlacementRequest('another', new PeerPlacementRequestDTO('render', '1', 0, 'ask'));
         $this->assertSame(2, $policy->attempts, 'The local time of this external request is past the supplied deadline');
         $this->assertSame(PlacementState::Started, $placement->registry()->get('render:1')?->state);
         $placement->tick(1100.0);
@@ -281,7 +282,7 @@ final class ClusterPlacementRetryTest extends TestCase
         $placement->onLostLeadership();
         $placement->noteNodeOnline('leader', 1001.0);
         $placement->tick(1100.0);
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '1'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '1', 0, 'ask'));
         $this->assertSame(1, $policy->attempts);
     }
 
@@ -304,7 +305,7 @@ final class ClusterPlacementRetryTest extends TestCase
         $placement->noteNodeOnline('leader', 1000.0);
         $placement->tick(1010.0);
         $this->assertSame(0, $policy->attempts, 'Rebuild must settle before queued placement');
-        $placement->onPlacementReport('unreported', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'unreported', new PeerPlacementReportDTO([]));
         $placement->tick(1010.0);
         $this->assertSame(1, $policy->attempts);
 
@@ -324,9 +325,63 @@ final class ClusterPlacementRetryTest extends TestCase
         $this->assertSame(PlacementState::Placing, $placement->registry()->get('render:1')?->state);
         $placement->tick(1010.0);
         $this->assertSame(2, $policy->attempts);
-        $placement->onAgentStatus('reporter', PeerAgentStatusDTO::started('render', '1', 1));
+        FakePlacementMesh::status($placement, 'reporter', PeerAgentStatusDTO::started('render', '1', 1));
         $placement->tick(1100.0);
         $this->assertSame(2, $policy->attempts);
+    }
+
+    public function testOnePlacementFailureIsConsumedOnceAndCannotFailTheNextOrderToTheSameNode(): void
+    {
+        [$placement, $mesh] = $this->waiting(['1']);
+        $mesh->capabilities['reporter'] = ['slots=1'];
+        $placement->tick(1005.0);
+        $firstId = $placement->registry()->get('render:1')?->placementId;
+        $this->assertNotNull($firstId);
+        $failure = PeerAgentStatusDTO::failed('render', '1', 'worker could not resume', placementId: $firstId, authorityTerm: 0);
+        $placement->onAgentStatus('reporter', $failure);
+        $failed = $placement->registry()->get('render:1');
+        $this->assertSame(PlacementState::Failed, $failed?->state);
+
+        $placement->onAgentStatus('reporter', $failure);
+        $this->assertSame($failed, $placement->registry()->get('render:1'));
+
+        $placement->placeAgentOnNode('render', '1', 'reporter');
+        $replacement = $placement->registry()->get('render:1');
+        $this->assertSame(PlacementState::Placing, $replacement?->state);
+        $this->assertSame('reporter', $replacement->nodeId);
+        $this->assertFalse($firstId->equals($replacement->placementId));
+
+        $sentBeforeLateReports = $mesh->sent;
+        $placement->onAgentStatus('reporter', PeerAgentStatusDTO::started('render', '1', 1, $firstId, 0, true));
+        $placement->onAgentStatus('reporter', $failure);
+        $this->assertSame($replacement, $placement->registry()->get('render:1'));
+        $this->assertSame($sentBeforeLateReports, $mesh->sent, 'An old report does not stop the newer copy');
+    }
+
+    public function testTheCurrentFailureKeepsItsRetryDeadlineAcrossDuplicatesAndChecksTheSendingNode(): void
+    {
+        [$placement, $mesh, , $policy] = $this->waiting(['1']);
+        $mesh->capabilities['reporter'] = ['slots=1'];
+        $placement->tick(1005.0);
+        $order = $placement->registry()->get('render:1');
+        self::assertNotNull($order?->placementId);
+        $failure = PeerAgentStatusDTO::failed('render', '1', 'refused', placementId: $order->placementId, authorityTerm: 0);
+        $placement->onAgentStatus('other', $failure);
+        self::assertSame($order, $placement->registry()->get('render:1'));
+        $placement->onAgentStatus('reporter', $failure);
+
+        $retryAt = new ReflectionProperty(ClusterPlacement::class, 'retryAt');
+        $due = $retryAt->getValue($placement)['render:1'];
+        $placement->tick($due - 0.001);
+        $placement->onAgentStatus('reporter', $failure);
+        self::assertSame($due, $retryAt->getValue($placement)['render:1']);
+        self::assertSame(2, $policy->attempts);
+        $placement->tick($due);
+        self::assertSame(3, $policy->attempts);
+        $replacement = $placement->registry()->get('render:1');
+        self::assertSame('reporter', $replacement?->nodeId);
+        self::assertSame(PlacementState::Placing, $replacement->state);
+        self::assertFalse($order->placementId->equals($replacement->placementId));
     }
 
     public function testChangedDiagnosisDoesNotWakeTheQueueOrDuplicateItsEntryLog(): void
@@ -368,9 +423,9 @@ final class ClusterPlacementRetryTest extends TestCase
         $placement = new ClusterPlacement('leader', $mesh, $executor, policy: $policy);
         $placement->onBecameLeader($now);
         foreach ($indexes as $index) {
-            $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', $index));
+            $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', $index, 0, 'ask'));
         }
-        $placement->onPlacementReport('reporter', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'reporter', new PeerPlacementReportDTO([]));
         $placement->tick($now);
 
         return [$placement, $mesh, $executor, $policy];

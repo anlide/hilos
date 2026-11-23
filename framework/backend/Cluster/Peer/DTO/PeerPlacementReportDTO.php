@@ -36,13 +36,17 @@ final class PeerPlacementReportDTO extends PeerDTO
     /** @var string Payload key: last complete registry received, or null when none was received */
     public const string FIELD_PLACEMENT_SNAPSHOT = 'placementSnapshot';
 
+    public const string FIELD_QUERY_ID = PeerPlacementQueryDTO::FIELD_QUERY_ID;
+
     /**
      * @param list<PeerPlacedAgentEntry> $agents Agents this node currently hosts
      * @param ?PlacementSnapshot $placementSnapshot Retained complete registry, independent of the hosted set
+     * @param ?string $queryId Echo of a live query, or null for a spontaneous report
      */
     public function __construct(
         public readonly array $agents,
         public readonly ?PlacementSnapshot $placementSnapshot = null,
+        public readonly ?string $queryId = null,
     ) {
     }
 
@@ -70,7 +74,7 @@ final class PeerPlacementReportDTO extends PeerDTO
                 $this->agents,
             ),
             self::FIELD_PLACEMENT_SNAPSHOT => $this->placementSnapshot?->toArray(),
-        ];
+        ] + ($this->queryId === null ? [] : [self::FIELD_QUERY_ID => $this->queryId]);
     }
 
     /**
@@ -82,14 +86,16 @@ final class PeerPlacementReportDTO extends PeerDTO
      */
     public static function fromArray(array $data): static
     {
-        $raw = $data[self::FIELD_AGENTS] ?? [];
+        $raw = $data[self::FIELD_AGENTS] ?? null;
+        if (!is_array($raw) || !array_is_list($raw)) {
+            throw new PeerTransportException('Peer placement report agents are not a list');
+        }
         $agents = [];
-        if (is_array($raw)) {
-            foreach ($raw as $entry) {
-                if (is_array($entry)) {
-                    $agents[] = PeerPlacedAgentEntry::fromArray($entry);
-                }
+        foreach ($raw as $entry) {
+            if (!is_array($entry)) {
+                throw new PeerTransportException('Peer placement report carries a hosted entry that is not an object');
             }
+            $agents[] = PeerPlacedAgentEntry::fromArray($entry);
         }
 
         if (!array_key_exists(self::FIELD_PLACEMENT_SNAPSHOT, $data)) {
@@ -100,6 +106,14 @@ final class PeerPlacementReportDTO extends PeerDTO
             throw new PeerTransportException('Peer placement report carries a malformed placement snapshot');
         }
 
-        return new static($agents, $rawSnapshot === null ? null : PlacementSnapshot::fromArray($rawSnapshot));
+        $queryId = null;
+        if (array_key_exists(self::FIELD_QUERY_ID, $data)) {
+            $queryId = $data[self::FIELD_QUERY_ID];
+            if (!is_string($queryId) || trim($queryId) === '') {
+                throw new PeerTransportException('Peer placement report carries a malformed query id');
+            }
+        }
+
+        return new static($agents, $rawSnapshot === null ? null : PlacementSnapshot::fromArray($rawSnapshot), $queryId);
     }
 }

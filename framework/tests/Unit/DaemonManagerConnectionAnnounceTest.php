@@ -248,7 +248,9 @@ final class DaemonManagerConnectionAnnounceTestMesh implements ClientMesh
      * @param SignalDTO $signal Signal to deliver on that node
      * @return bool True always; these cases forward no signal
      */
-    public function sendSignalToClientNode(string $nodeId, string $acceptKey, SignalDTO $signal): bool
+    public function sendSignalToClientNode(
+        string $nodeId, string $acceptKey, SignalDTO $signal, ?string $pageRecoveryDeliveryId = null,
+    ): bool
     {
         return true;
     }

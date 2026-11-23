@@ -431,7 +431,7 @@ final class PeerServerClientDeliveryTest extends TestCase
              * @param string $acceptKey Accept key of the connection to deliver to
              * @param SignalDTO $signal Signal to write to that connection
              */
-            public function deliverSignalToClient(string $acceptKey, SignalDTO $signal): void
+            public function deliverSignalToClient(string $acceptKey, SignalDTO $signal, ?string $pageRecoveryDeliveryId = null): void
             {
                 $this->delivered[] = [$acceptKey, $signal->signalName->getName()];
             }

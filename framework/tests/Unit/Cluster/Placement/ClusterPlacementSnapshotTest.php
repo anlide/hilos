@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Placement;
 
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Cluster\ClusterContext;
 use Hilos\Cluster\Consensus\ConsensusInspection;
 use Hilos\Cluster\Consensus\ConsensusRole;
@@ -18,6 +20,7 @@ use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Placement\ClusterPlacement;
 use Hilos\Cluster\Placement\PlacementRecord;
+use Hilos\Cluster\Placement\PlacementRecovery;
 use Hilos\Cluster\Placement\PlacementRefusal;
 use Hilos\Cluster\Placement\PlacementSnapshot;
 use Hilos\Cluster\Placement\PlacementState;
@@ -104,7 +107,7 @@ final class ClusterPlacementSnapshotTest extends TestCase
         self::assertSame([], $this->views($mesh));
         self::assertNull($placement->placementSnapshot());
         self::assertSame([], array_filter($mesh->sent, static fn(array $sent): bool => $sent[1] instanceof PeerPlacementViewDTO));
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([]));
         self::assertNull($placement->placementSnapshot(), 'The final report is not the settlement barrier');
         $placement->tick(1000.1);
         self::assertSame([], $this->views($mesh)[0]->placementSnapshot->records);
@@ -155,12 +158,12 @@ final class ClusterPlacementSnapshotTest extends TestCase
     {
         $mesh = new FakePlacementMesh(['follower' => ['slots=10']]);
         $placement = new ClusterPlacement('follower', $mesh, new FakePlacementExecutor());
-        $placement->onPlaceAgent('old', new PeerPlaceAgentDTO('render', 'actual'));
+        $placement->onPlaceAgent('old', new PeerPlaceAgentDTO('render', 'actual', new PlacementId('old', 0, 1)));
         if ($led) {
             $placement->onBecameLeader(1000.0, 7);
             $placement->onLostLeadership();
         }
-        $placement->onPlacementQuery('next');
+        $placement->onPlacementQuery('next', new PeerPlacementQueryDTO('query', 8));
         $view = new PeerPlacementViewDTO('next', ['fresh-host' => [new PeerPlacedAgentEntry('render', '9')]], new PlacementSnapshot(
             'next', 8, 1, [new PlacementRecord('render', '9', 'fresh-host', PlacementState::Started)],
         ));
@@ -168,7 +171,7 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $mesh->sent = [];
         $revision = $placement->registry()->revision();
 
-        $placement->onAgentStatus('old', match ($state) {
+        FakePlacementMesh::status($placement, 'old', match ($state) {
             PlacementState::Started => PeerAgentStatusDTO::started('render', '9', 1),
             PlacementState::Failed => PeerAgentStatusDTO::failed('render', '9', 'late failure'),
             default => PeerAgentStatusDTO::stopped('render', '9'),
@@ -184,8 +187,11 @@ final class ClusterPlacementSnapshotTest extends TestCase
         self::assertSame('fresh-host', $placement->locate('render', '9')->nodeId);
         self::assertSame([], $mesh->sent);
         $placement->tick(2000.0);
-        $placement->onPlacementQuery('next');
-        self::assertEquals([new PeerPlacedAgentEntry('render', 'actual')], $mesh->sent[0][1]->agents);
+        $placement->onPlacementQuery('next', new PeerPlacementQueryDTO('query', 8));
+        self::assertEquals(
+            [new PeerPlacedAgentEntry('render', 'actual', new PlacementId('old', 0, 1), PlacementState::Placing)],
+            $mesh->sent[0][1]->agents,
+        );
     }
 
     /** @return iterable<string, array{bool, bool}> Local completion and current-leader knowledge */
@@ -211,10 +217,11 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $placement->onBecameLeader(1000.0, 7);
         $placement->placeAgentOnNode('render', '9', 'follower');
         self::assertSame(PlacementState::Placing, $placement->registry()->get('render:9')?->state);
+        $order = $placement->localPlacementId('render:9');
         $placement->onLostLeadership();
         $retained = $placement->placementSnapshot();
         if ($leaderKnown) {
-            $placement->onPlacementQuery('next');
+            $placement->onPlacementQuery('next', new PeerPlacementQueryDTO('query', 8));
             $view = new PeerPlacementViewDTO('next', ['fresh-host' => [new PeerPlacedAgentEntry('render', '9')]], new PlacementSnapshot(
                 'next', 8, 1, [new PlacementRecord('render', '9', 'fresh-host', PlacementState::Started)],
             ));
@@ -226,9 +233,9 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $executor->seatedWorkerId = -3;
         for ($repeat = 0; $repeat < 2; $repeat++) {
             if ($failed) {
-                $placement->noteAgentStartFailed('render', '9', 'late local failure');
+                $placement->noteAgentStartFailed('render', '9', 'late local failure', placementId: $placement->localPlacementId('render:9'));
             } else {
-                $placement->noteAgentStarted('render', '9');
+                $placement->noteAgentStarted('render', '9', placementId: $placement->localPlacementId('render:9'));
             }
         }
 
@@ -244,7 +251,8 @@ final class ClusterPlacementSnapshotTest extends TestCase
             self::assertCount(1, $mesh->sent);
             self::assertSame('next', $mesh->sent[0][0]);
             self::assertEquals(
-                $failed ? PeerAgentStatusDTO::failed('render', '9', 'late local failure') : PeerAgentStatusDTO::started('render', '9', -3),
+                $failed ? PeerAgentStatusDTO::failed('render', '9', 'late local failure', placementId: $order, authorityTerm: 8)
+                    : PeerAgentStatusDTO::started('render', '9', -3, $order, 8, true),
                 $mesh->sent[0][1],
             );
         } else {
@@ -253,14 +261,18 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $mesh->sent = [];
         $placement->tick(2000.0);
         self::assertCount(1, $executor->executed, 'No follower retry is armed');
-        $placement->onPlacementQuery('next');
-        self::assertEquals($failed ? [] : [new PeerPlacedAgentEntry('render', '9')], $mesh->sent[0][1]->agents);
+        $placement->onPlacementQuery('next', new PeerPlacementQueryDTO('query', 8));
+        $state = $leaderKnown ? PlacementState::Started : PlacementState::Placing;
+        self::assertEquals(
+            $failed ? [] : [new PeerPlacedAgentEntry('render', '9', $order, $state, $leaderKnown)],
+            $mesh->sent[0][1]->agents,
+        );
         self::assertSame($retained, $mesh->sent[0][1]->placementSnapshot);
         $mesh->sent = [];
         $placement->noteAgentStopped('render', '9');
-        self::assertEquals($failed ? [] : [['next', PeerAgentStatusDTO::stopped('render', '9')]], $mesh->sent);
+        self::assertEquals($failed ? [] : [['next', PeerAgentStatusDTO::stopped('render', '9', $order, 8)]], $mesh->sent);
         $mesh->sent = [];
-        $placement->onPlacementQuery('next');
+        $placement->onPlacementQuery('next', new PeerPlacementQueryDTO('query', 8));
         self::assertSame([], $mesh->sent[0][1]->agents);
     }
 
@@ -271,20 +283,23 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $view = $this->view('leader', 7, 5, [new PlacementRecord('render', '9', null, PlacementState::Unplaced, 'no room')]);
         $placement->onPlacementView('leader', $view);
         self::assertNull($placement->placementSnapshot(), 'The frame cannot name its own authority');
-        $placement->onPlacementQuery('leader');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 7));
         $placement->tick(1000.0);
         self::assertSame($view->placementSnapshot, $placement->placementSnapshot(), 'The early view is not lost');
         self::assertSame([], $placement->registry()->all(), 'A mirror never writes the original');
 
-        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', 'actual'));
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', 'actual', new PlacementId('leader', 7, 1)));
         $mesh->sent = [];
-        $placement->onPlacementQuery('leader');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 7));
         $placement->onPeerHandshaked('other');
         self::assertCount(2, $mesh->sent);
         foreach ($mesh->sent as [, $report]) {
             self::assertInstanceOf(PeerPlacementReportDTO::class, $report);
             self::assertSame($view->placementSnapshot, $report->placementSnapshot);
-            self::assertEquals([new PeerPlacedAgentEntry('render', 'actual')], $report->agents);
+            self::assertEquals(
+                [new PeerPlacedAgentEntry('render', 'actual', $placement->localPlacementId('render:actual'), PlacementState::Placing)],
+                $report->agents,
+            );
         }
         $placement->onPlacementRelease('leader', 1000.0);
         self::assertNull($placement->knownLeaderId());
@@ -330,6 +345,58 @@ final class ClusterPlacementSnapshotTest extends TestCase
         self::assertSame($future->placementSnapshot, $placement->placementSnapshot());
     }
 
+    public function testRecoveryReadsOnlyTheCurrentLeadersAcceptedCompleteView(): void
+    {
+        $authority = $this->masterAuthority('leader', 7);
+        $placement = new ClusterPlacement('follower', new FakePlacementMesh([]), new FakePlacementExecutor());
+        $recovery = new PlacementRecovery(new PlacementId('leader', 7, 1));
+        $current = new PlacementRecord('render', '9', 'node-b', PlacementState::Started,
+            placementId: new PlacementId('leader', 7, 2), workerStarted: true);
+        $placement->onPlacementView('leader', $this->view('leader', 7, 1, [$current]));
+        self::assertSame('node-b', $placement->startedPlacementRecovery('render:9', $recovery)?->nodeId);
+
+        $next = new PlacementRecord('render', '9', 'node-c', PlacementState::Started,
+            placementId: new PlacementId('next', 8, 1), workerStarted: true);
+        $candidate = $this->view('next', 8, 1, [$next]);
+        $placement->onPlacementView('next', $candidate);
+        self::assertSame('node-b', $placement->startedPlacementRecovery('render:9', $recovery)?->nodeId);
+
+        $authority->leader = 'next';
+        $authority->currentTerm = 8;
+        self::assertNull($placement->startedPlacementRecovery('render:9', $recovery));
+        $placement->tick(1000.0);
+        self::assertSame('node-c', $placement->startedPlacementRecovery('render:9', $recovery)?->nodeId);
+    }
+
+    public function testACompleteViewCannotRelayPastAnAlreadyKnownLaterLocalRetry(): void
+    {
+        $this->masterAuthority('leader', 7);
+        $placement = new ClusterPlacement('follower', new FakePlacementMesh(['follower' => ['slots=10']]), new FakePlacementExecutor());
+        $original = new PlacementId('leader', 7, 1);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', $original));
+        $placement->beginLocalPlacementRecovery('render:9', $original);
+        $recovery = $placement->placementRecovery('render:9');
+        self::assertInstanceOf(PlacementRecovery::class, $recovery);
+        $placement->noteAgentStartFailed('render', '9', 'replay failed', placementId: $original);
+
+        $earlierRemote = new PlacementRecord('render', '9', 'node-b', PlacementState::Started,
+            placementId: new PlacementId('leader', 7, 2), workerStarted: true);
+        $placement->onPlacementView('leader', $this->view('leader', 7, 1, [$earlierRemote]));
+        self::assertSame('node-b', $placement->startedPlacementRecovery('render:9', $recovery)?->nodeId);
+
+        $localRetry = new PlacementId('leader', 7, 3);
+        $placement->onPlaceAgent('leader', new PeerPlaceAgentDTO('render', '9', $localRetry));
+        self::assertNull($placement->startedPlacementRecovery('render:9', $recovery));
+        $placement->noteAgentStartFailed('render', '9', 'local retry failed', placementId: $localRetry);
+        self::assertNull($placement->startedPlacementRecovery('render:9', $recovery));
+        self::assertSame($original, $recovery->origin);
+
+        $latest = new PlacementRecord('render', '9', 'node-c', PlacementState::Started,
+            placementId: new PlacementId('leader', 7, 4), workerStarted: true);
+        $placement->onPlacementView('leader', $this->view('leader', 7, 2, [$latest]));
+        self::assertSame('node-c', $placement->startedPlacementRecovery('render:9', $recovery)?->nodeId);
+    }
+
     public function testMasterRejectsWrongSourceAndStaleTermsAndNeverRollsBackRevisions(): void
     {
         $this->masterAuthority('leader', 8);
@@ -354,11 +421,11 @@ final class ClusterPlacementSnapshotTest extends TestCase
     public function testSlaveRequiresItsKnownLeaderAndFencesTermsAcrossLeaderChanges(): void
     {
         $placement = new ClusterPlacement('follower', new FakePlacementMesh([]), new FakePlacementExecutor());
-        $placement->onPlacementQuery('leader');
+        $placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 7));
         $accepted = $this->view('leader', 7, 10);
         $placement->onPlacementView('leader', $accepted);
         $placement->onPlacementView('leader', $this->view('leader', 7, 9));
-        $placement->onPlacementQuery('new-leader');
+        $placement->onPlacementQuery('new-leader', new PeerPlacementQueryDTO('query', 8));
         $placement->onPlacementView('new-leader', $this->view('new-leader', 6, 999));
         $placement->onPlacementView('new-leader', $this->view('new-leader', 7, 999));
         self::assertSame($accepted->placementSnapshot, $placement->placementSnapshot());
@@ -377,7 +444,7 @@ final class ClusterPlacementSnapshotTest extends TestCase
             new PlacementRecord('render', 'old', 'old-host', PlacementState::Started),
             new PlacementRecord('render', 'waiting', null, PlacementState::Failed, 'no room'),
         ]);
-        $placement->onPlacementReport('node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', 'actual')], $snapshot));
+        FakePlacementMesh::reply($placement, 'node-b', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', 'actual')], $snapshot));
         self::assertCount(1, $placement->registry()->all());
         self::assertSame('node-b', $placement->registry()->get('render:actual')?->nodeId);
         self::assertNull($placement->registry()->get('render:old'));
@@ -413,7 +480,7 @@ final class ClusterPlacementSnapshotTest extends TestCase
             $record,
         ]);
         $placement->onBecameLeader(1000.0, 8);
-        $placement->onPlacementReport('donor', new PeerPlacementReportDTO([], $snapshot));
+        FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([], $snapshot));
         self::assertSame([], $placement->registry()->all());
         $placement->tick(1000.0);
         self::assertSame($record, $placement->registry()->get('render:subject'));
@@ -453,7 +520,7 @@ final class ClusterPlacementSnapshotTest extends TestCase
         self::assertSame([], $executor->executed);
         self::assertSame($retained, $placement->placementSnapshot());
         $newer = new PlacementSnapshot('leader', 7, 100, [$record]);
-        $placement->onPlacementReport('donor', new PeerPlacementReportDTO([], $newer));
+        FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([], $newer));
         $placement->onLostLeadership();
         self::assertSame($newer, $placement->placementSnapshot(), 'An unfinished rebuild retains its freshest complete donor');
         $mesh->online = ['leader'];
@@ -480,8 +547,8 @@ final class ClusterPlacementSnapshotTest extends TestCase
             new PlacementRecord('render', 'started', 'absent', PlacementState::Started),
             new PlacementRecord('render', 'refused', 'absent', PlacementState::Refused),
         ]);
-        $placement->onPlacementReport('donor', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', 'live')], $snapshot));
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', 'live'));
+        FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', 'live')], $snapshot));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', 'live', 8, 'ask'));
         self::assertSame([], $mesh->sent, 'Even an old live record cannot answer before inheritance');
         self::assertNull($placement->placeAgentOnBestNode('render', 'live'));
         $placement->placeAgentOnNode('render', 'live', 'leader');
@@ -517,8 +584,8 @@ final class ClusterPlacementSnapshotTest extends TestCase
         ]);
         $empty = new PlacementSnapshot('previous', 7, 101, []);
         $placement->onBecameLeader(1000.0, 8);
-        $placement->onPlacementReport('first', new PeerPlacementReportDTO([], $newFirst ? $empty : $old));
-        $placement->onPlacementReport('last', new PeerPlacementReportDTO(
+        FakePlacementMesh::reply($placement, 'first', new PeerPlacementReportDTO([], $newFirst ? $empty : $old));
+        FakePlacementMesh::reply($placement, 'last', new PeerPlacementReportDTO(
             [new PeerPlacedAgentEntry('render', 'actual')], $newFirst ? $old : $empty,
         ));
         $placement->tick(1000.0);
@@ -527,7 +594,7 @@ final class ClusterPlacementSnapshotTest extends TestCase
             array_map(static fn(PlacementRecord $record): string => $record->agentId(), $placement->registry()->all()),
         );
         self::assertSame([], $executor->executed, 'No union with older waiting intent');
-        $placement->onPlacementReport('late', new PeerPlacementReportDTO([], $old));
+        FakePlacementMesh::reply($placement, 'late', new PeerPlacementReportDTO([], $old));
         $placement->tick(1100.0);
         self::assertNull($placement->registry()->get('render:waiting'));
         self::assertNull($placement->registry()->get('render:canceled'));
@@ -544,28 +611,28 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $old = new PlacementSnapshot('previous', 7, 10, [new PlacementRecord('render', '9', 'host', PlacementState::Started)]);
         $placement->onBecameLeader(1000.0, 8);
         if ($newFirst) {
-            $placement->onPlacementReport('donor', new PeerPlacementReportDTO([], $canceled));
+            FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([], $canceled));
         }
-        $placement->onPlacementReport('host', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')], $old));
+        FakePlacementMesh::reply($placement, 'host', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')], $old));
         if (!$newFirst) {
-            $placement->onPlacementReport('donor', new PeerPlacementReportDTO([], $canceled));
+            FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([], $canceled));
         }
-        $placement->onPlacementRequest('new-asker', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('new-asker', new PeerPlacementRequestDTO('render', '9', 8, 'ask'));
         self::assertSame([], $executor->executed);
         $placement->tick(1000.0);
         self::assertSame(PlacementState::Stopped, $placement->registry()->get('render:9')?->state);
         self::assertSame('host', $placement->registry()->get('render:9')?->nodeId);
         self::assertCount(1, array_filter($mesh->sent, static fn(array $sent): bool => $sent[1] instanceof PeerStopAgentDTO));
         self::assertSame([], $executor->executed);
-        $placement->onAgentStatus('other', PeerAgentStatusDTO::stopped('render', '9'));
-        $placement->onAgentStatus('host', PeerAgentStatusDTO::failed('render', '9', 'late failure'));
-        $placement->onAgentStatus('host', PeerAgentStatusDTO::started('render', '9', 1));
+        FakePlacementMesh::status($placement, 'other', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'host', PeerAgentStatusDTO::failed('render', '9', 'late failure'));
+        FakePlacementMesh::status($placement, 'host', PeerAgentStatusDTO::started('render', '9', 1));
         self::assertSame([], $executor->executed);
-        $placement->onAgentStatus('host', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'host', PeerAgentStatusDTO::stopped('render', '9'));
         self::assertSame([['render', '9']], $executor->executed);
-        $placement->onAgentStatus('host', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'host', PeerAgentStatusDTO::stopped('render', '9'));
         self::assertSame('leader', $placement->registry()->get('render:9')?->nodeId);
-        $placement->onAgentStatus('leader', PeerAgentStatusDTO::stopped('render', '9'));
+        FakePlacementMesh::status($placement, 'leader', PeerAgentStatusDTO::stopped('render', '9'));
         self::assertNull($placement->registry()->get('render:9'), 'Normal idle stop still forgets the inherited replacement');
     }
 
@@ -576,15 +643,15 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $placement = new ClusterPlacement('leader', $mesh, $executor);
         $tombstone = new PlacementRecord('render', '9', null, PlacementState::Stopped);
         $placement->onBecameLeader(1000.0, 8);
-        $placement->onPlacementReport('donor', new PeerPlacementReportDTO([], new PlacementSnapshot('previous', 7, 11, [$tombstone])));
+        FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([], new PlacementSnapshot('previous', 7, 11, [$tombstone])));
         $placement->tick(1000.0);
         $placement->tick(1100.0);
         self::assertEquals($tombstone, $placement->registry()->get('render:9'));
         self::assertSame([], $executor->executed);
-        $placement->onAgentStatus('host', PeerAgentStatusDTO::started('render', '9', 1));
+        FakePlacementMesh::status($placement, 'host', PeerAgentStatusDTO::started('render', '9', 1));
         self::assertEquals($tombstone, $placement->registry()->get('render:9'));
         self::assertInstanceOf(PeerStopAgentDTO::class, $mesh->sent[0][1]);
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '9', 8, 'ask'));
         self::assertSame([['render', '9']], $executor->executed);
     }
 
@@ -595,12 +662,12 @@ final class ClusterPlacementSnapshotTest extends TestCase
         try {
             $placement = new ClusterPlacement('leader', new FakePlacementMesh([], online: ['last']), new FakePlacementExecutor());
             $placement->onBecameLeader(1000.0, 9);
-            $placement->onPlacementReport('donor', new PeerPlacementReportDTO([], new PlacementSnapshot('ancient', 6, 999, [])));
+            FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([], new PlacementSnapshot('ancient', 6, 999, [])));
             $chosen = new PlacementSnapshot('previous', 7, 10, [new PlacementRecord('render', '9', null, PlacementState::Failed, 'chosen')]);
-            $placement->onPlacementReport('relay', new PeerPlacementReportDTO([], $chosen));
-            $placement->onPlacementReport('other', new PeerPlacementReportDTO([], new PlacementSnapshot('conflict', 7, 999, [])));
-            $placement->onPlacementReport('other', new PeerPlacementReportDTO([], new PlacementSnapshot('previous', 7, 9, [])));
-            $placement->onPlacementReport('last', new PeerPlacementReportDTO([], new PlacementSnapshot('future', 10, 999, [])));
+            FakePlacementMesh::reply($placement, 'relay', new PeerPlacementReportDTO([], $chosen));
+            FakePlacementMesh::reply($placement, 'other', new PeerPlacementReportDTO([], new PlacementSnapshot('conflict', 7, 999, [])));
+            FakePlacementMesh::reply($placement, 'other', new PeerPlacementReportDTO([], new PlacementSnapshot('previous', 7, 9, [])));
+            FakePlacementMesh::reply($placement, 'last', new PeerPlacementReportDTO([], new PlacementSnapshot('future', 10, 999, [])));
             self::assertSame($chosen, $placement->placementSnapshot());
             $placement->tick(1000.0);
             self::assertSame($chosen->records, $placement->registry()->all());
@@ -614,13 +681,115 @@ final class ClusterPlacementSnapshotTest extends TestCase
         }
     }
 
+    public function testOnlyTheLiveQueryCanAdoptAnOrderAndOnlyItsCurrentTermCanFailIt(): void
+    {
+        $mesh = new FakePlacementMesh(['host' => ['slots=10']], linked: ['host'], online: ['leader', 'host']);
+        $placement = new ClusterPlacement('leader', $mesh, new FakePlacementExecutor());
+        $id = new PlacementId('old-leader', 7, 11);
+        $placement->onBecameLeader(1000.0, 8);
+        $query = $mesh->broadcast[0];
+        self::assertInstanceOf(PeerPlacementQueryDTO::class, $query);
+        $pending = new PeerPlacedAgentEntry('render', '9', $id, PlacementState::Placing);
+        $started = new PeerPlacedAgentEntry('render', '9', $id, PlacementState::Started, true);
+
+        $placement->onPlacementRequest('caller', new PeerPlacementRequestDTO('render', '9', 8, 'ask'));
+        $placement->onAgentStatus('host', PeerAgentStatusDTO::failed('render', '9', 'old refusal', placementId: $id, authorityTerm: 7));
+        $placement->onPlacementReport('host', new PeerPlacementReportDTO([$started], queryId: 'old-query'));
+        $placement->onPlacementReport('other', new PeerPlacementReportDTO([$started], queryId: $query->queryId));
+        $placement->onPlacementReport('host', new PeerPlacementReportDTO([]));
+        $placement->tick(1000.1);
+        self::assertNull($placement->registry()->get('render:9'));
+        self::assertSame([], $mesh->sent, 'Old reports cannot release held placement demand');
+
+        $placement->onPlacementReport('host', new PeerPlacementReportDTO([$pending], queryId: $query->queryId));
+        $placement->tick(1000.2);
+        $record = $placement->registry()->get('render:9');
+        self::assertSame(PlacementState::Placing, $record?->state);
+        self::assertTrue($id->equals($record->placementId));
+        self::assertFalse($record->workerStarted);
+        self::assertSame([], $mesh->sent, 'The accepted pending order survives without a second Place');
+
+        $placement->onAgentStatus('host', PeerAgentStatusDTO::started('render', '9', 3, $id, 8));
+        self::assertFalse($placement->registry()->get('render:9')?->workerStarted);
+        $placement->onAgentStatus('host', PeerAgentStatusDTO::started('render', '9', 3, $id, 7, true));
+        self::assertFalse($placement->registry()->get('render:9')?->workerStarted);
+        $placement->onAgentStatus('host', PeerAgentStatusDTO::started('render', '9', 3, $id, 8, true));
+        self::assertTrue($placement->placementSnapshot()?->records[0]->workerStarted);
+
+        $placement->onAgentStatus('host', PeerAgentStatusDTO::failed('render', '9', 'old refusal', placementId: $id, authorityTerm: 7));
+        self::assertSame(PlacementState::Started, $placement->registry()->get('render:9')?->state);
+        $placement->onAgentStatus('host', PeerAgentStatusDTO::failed('render', '9', 'current refusal', placementId: $id, authorityTerm: 8));
+        self::assertSame(PlacementState::Failed, $placement->registry()->get('render:9')?->state);
+        self::assertSame('current refusal', $placement->registry()->get('render:9')?->reason);
+    }
+
+    public function testSameTermRestartIssuesAboveAnOrderThatSurvivedOnAnotherNode(): void
+    {
+        $mesh = new FakePlacementMesh(['host' => ['slots=10']], linked: ['host'], online: ['host']);
+        $placement = new ClusterPlacement('leader', $mesh, new FakePlacementExecutor());
+        $surviving = new PlacementId('leader', 7, PHP_INT_MAX - 10);
+        $placement->onBecameLeader(1000.0, 7);
+        $query = $mesh->broadcast[0];
+        self::assertInstanceOf(PeerPlacementQueryDTO::class, $query);
+        $placement->onPlacementReport('host', new PeerPlacementReportDTO(
+            [new PeerPlacedAgentEntry('render', '9', $surviving, PlacementState::Started, true)],
+            queryId: $query->queryId,
+        ));
+        $placement->tick(1000.0);
+        $live = $placement->placementSnapshot()?->records[0];
+        self::assertTrue($surviving->equals($live?->placementId));
+        self::assertTrue($live->workerStarted);
+        $placement->placeAgentOnNode('render', '9', 'host');
+        $next = $placement->registry()->get('render:9');
+        self::assertGreaterThan($surviving->sequence, $next?->placementId?->sequence);
+        self::assertFalse($next->workerStarted);
+    }
+
+    public function testUnplacedDonorKeepsTheFloorForAReplayHeldOnItsFormerHost(): void
+    {
+        $mesh = new FakePlacementMesh(['host' => ['slots=10']], linked: ['host'], online: ['host']);
+        $leader = new ClusterPlacement('leader', $mesh, new FakePlacementExecutor());
+        $leader->onBecameLeader(1000.0, 7);
+        FakePlacementMesh::reply($leader, 'host', new PeerPlacementReportDTO([]));
+        $leader->tick(1000.0);
+        new ReflectionProperty(ClusterPlacement::class, 'placementSequence')->setValue($leader, PHP_INT_MAX - 20);
+        $leader->placeAgentOnNode('render', '9', 'host');
+        $order = $leader->registry()->get('render:9')->placementId;
+        $recovery = new PlacementRecovery($order);
+        $leader->onAgentStatus('host', PeerAgentStatusDTO::failed('render', '9', 'failed replay', placementId: $order, authorityTerm: 7));
+        $mesh->online = [];
+        $due = new ReflectionProperty(ClusterPlacement::class, 'retryAt')->getValue($leader)['render:9'];
+        $leader->tick($due);
+        $donor = $leader->placementSnapshot();
+        self::assertSame(PlacementState::Unplaced, $donor?->records[0]->state);
+
+        $newMesh = new FakePlacementMesh(['leader' => ['slots=10']], linked: ['host'], online: ['leader', 'host']);
+        $restarted = new ClusterPlacement('leader', $newMesh, new FakePlacementExecutor());
+        $restarted->onBecameLeader(1020.0, 7);
+        FakePlacementMesh::reply($restarted, 'host', new PeerPlacementReportDTO([], $donor));
+        $restarted->tick(1020.0);
+        $provisional = $restarted->registry()->get('render:9');
+        self::assertFalse($provisional->workerStarted);
+        $restarted->noteAgentStarted('render', '9', placementId: $provisional->placementId);
+        $restarted->tick(1020.1);
+        $view = array_last($this->views($newMesh));
+        $started = $view->placementSnapshot->records[0];
+        self::assertTrue($started->workerStarted);
+        self::assertTrue($recovery->precedesRemoteOrder($started->placementId), 'The real new start advances the order known to the source');
+
+        $follower = new ClusterPlacement('host', new FakePlacementMesh([], linked: ['leader']), new FakePlacementExecutor());
+        $follower->onPlacementQuery('leader', new PeerPlacementQueryDTO('rebuild', 7));
+        $follower->onPlacementView('leader', $view);
+        self::assertSame('leader', $follower->startedPlacementRecovery('render:9', $recovery)?->nodeId);
+    }
+
     public function testRestartedSoleMasterPublishesAboveItsOldSameTermRevisionIncludingEmptyState(): void
     {
         $mesh = new FakePlacementMesh([], online: ['slave']);
         $placement = new ClusterPlacement('leader', $mesh, new FakePlacementExecutor());
         $old = new PlacementSnapshot('leader', 7, 900, []);
         $placement->onBecameLeader(1000.0, 7);
-        $placement->onPlacementReport('slave', new PeerPlacementReportDTO([], $old));
+        FakePlacementMesh::reply($placement, 'slave', new PeerPlacementReportDTO([], $old));
         $placement->tick(1000.0);
         $first = $placement->placementSnapshot();
         self::assertGreaterThan(900, $first?->revision);
@@ -650,8 +819,8 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $snapshot = new PlacementSnapshot('previous', 7, 10, [new PlacementRecord('render', '9', 'host', PlacementState::Stopped)]);
         $placement->onBecameLeader(1000.0, 8);
         $placement->placeAgentOnNode('render', '9', 'leader');
-        $placement->onPlacementReport('host', new PeerPlacementReportDTO([]));
-        $placement->onPlacementReport('donor', new PeerPlacementReportDTO([], $snapshot));
+        FakePlacementMesh::reply($placement, 'host', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([], $snapshot));
         self::assertSame([], $executor->executed, 'The named door also waits after the final report');
         $placement->tick(1000.0);
         self::assertSame([['render', '9']], $executor->executed);
@@ -666,15 +835,15 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $placement = new ClusterPlacement('leader', $mesh, $executor, placementAckTimeoutMs: 500);
         $snapshot = new PlacementSnapshot('previous', 7, 10, [new PlacementRecord('render', '9', null, PlacementState::Stopped)]);
         $placement->onBecameLeader(1000.0, 8);
-        $placement->onPlacementReport('host', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')], $snapshot));
+        FakePlacementMesh::reply($placement, 'host', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', '9')], $snapshot));
         $placement->tick(1000.0);
         $placement->tick(1000.5);
-        $placement->onPlacementReport('host', new PeerPlacementReportDTO([], $snapshot));
+        FakePlacementMesh::reply($placement, 'host', new PeerPlacementReportDTO([], $snapshot));
         self::assertSame(PlacementState::Stopped, $placement->registry()->get('render:9')?->state);
         self::assertNull($placement->registry()->get('render:9')?->nodeId);
         $placement->tick(1100.0);
         self::assertSame([], $executor->executed);
-        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '9'));
+        $placement->onPlacementRequest('asker', new PeerPlacementRequestDTO('render', '9', 8, 'ask'));
         self::assertSame([['render', '9']], $executor->executed);
     }
 
@@ -683,15 +852,65 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $mesh = new FakePlacementMesh(['leader' => ['slots=10']], online: ['leader', 'donor']);
         $executor = new FakePlacementExecutor();
         $placement = new ClusterPlacement('leader', $mesh, $executor);
-        $placement->onPlaceAgent('previous', new PeerPlaceAgentDTO('render', '9'));
-        $snapshot = new PlacementSnapshot('previous', 7, 10, [new PlacementRecord('render', '9', 'leader', PlacementState::Stopped)]);
+        $order = new PlacementId('previous', 7, 1);
+        $placement->onPlaceAgent('previous', new PeerPlaceAgentDTO('render', '9', $order));
+        $snapshot = new PlacementSnapshot('previous', 7, 10, [
+            new PlacementRecord('render', '9', 'leader', PlacementState::Stopped, placementId: $order),
+        ]);
+        $executor->holdStopped = true;
+        $mesh->holdRtWritesAnswered = true;
         $placement->onBecameLeader(1000.0, 8);
-        $placement->onPlacementReport('donor', new PeerPlacementReportDTO([], $snapshot));
+        FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([], $snapshot));
         $placement->tick(1000.0);
         self::assertSame([['render', '9']], $executor->revoked);
         self::assertSame(PlacementState::Stopped, $placement->registry()->get('render:9')?->state);
+        self::assertSame('leader', $placement->registry()->get('render:9')?->nodeId);
+        $executor->releaseStopped();
+        self::assertSame('leader', $placement->registry()->get('render:9')?->nodeId);
+        $mesh->releaseRtWritesAnswered();
         self::assertNull($placement->registry()->get('render:9')?->nodeId);
         self::assertSame([], $placement->placementRefusals());
+    }
+
+    /**
+     * @param PlacementState $terminal Prior authority's terminal decision
+     * @param PlacementState $reported Host's accepted state under the new query
+     * @param bool $sameOrder Whether the host still has the canceled assignment
+     * @param bool $idlessDonor Whether the donor's terminal predates any assignment
+     */
+    #[DataProvider('terminalDonorOrders')]
+    public function testTerminalDonorOnlyRevokesTheAssignmentItNames(
+        PlacementState $terminal, PlacementState $reported, bool $sameOrder, bool $idlessDonor = false,
+    ): void {
+        $mesh = new FakePlacementMesh(['leader' => ['slots=10'], 'host' => ['slots=10']], linked: ['host'], online: ['host']);
+        $placement = new ClusterPlacement('leader', $mesh, new FakePlacementExecutor());
+        $old = $idlessDonor ? null : new PlacementId('leader', 7, 1);
+        $order = $sameOrder ? $old : new PlacementId('leader', 7, 2);
+        $donor = new PlacementSnapshot('leader', 7, 10, [
+            new PlacementRecord('render', '9', 'host', $terminal, placementId: $old),
+        ]);
+        $placement->onBecameLeader(1000.0, 7);
+        FakePlacementMesh::reply($placement, 'host', new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('render', '9', $order, $reported, $reported === PlacementState::Started),
+        ], $donor));
+        $placement->tick(1000.0);
+        $record = $placement->registry()->get('render:9');
+        self::assertSame($order, $record->placementId);
+        self::assertSame($sameOrder ? $terminal : $reported, $record->state);
+        self::assertSame($sameOrder ? 1 : 0, count(array_filter(array_column($mesh->sent, 1),
+            static fn(PeerDTO $frame): bool => $frame instanceof PeerStopAgentDTO)));
+    }
+
+    public static function terminalDonorOrders(): iterable
+    {
+        foreach ([PlacementState::Stopped, PlacementState::Refused] as $terminal) {
+            foreach ([PlacementState::Placing, PlacementState::Started] as $reported) {
+                yield "{$terminal->value} versus {$reported->value}, older order" => [$terminal, $reported, false];
+                yield "{$terminal->value} versus {$reported->value}, same order" => [$terminal, $reported, true];
+                yield "{$terminal->value} versus {$reported->value}, no donor order" => [$terminal, $reported, false, true];
+            }
+        }
+        yield 'unmanaged cancellation' => [PlacementState::Stopped, PlacementState::Started, true, true];
     }
 
     public function testHeldNamedDemandCannotLiftANewTruthSourceRefusal(): void
@@ -702,7 +921,7 @@ final class ClusterPlacementSnapshotTest extends TestCase
         $placement->onBecameLeader(1000.0, 8);
         $placement->placeAgentOnNode('render', '9', 'leader');
         $placement->refusePlacement('render', '9', 'leader');
-        $placement->onPlacementReport('donor', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'donor', new PeerPlacementReportDTO([]));
         $placement->tick(1000.0);
         self::assertSame([], $executor->executed);
         self::assertSame(PlacementState::Refused, $placement->registry()->get('render:9')?->state);
@@ -718,16 +937,21 @@ final class ClusterPlacementSnapshotTest extends TestCase
             new PlacementRecord('render', 'refused', 'leader', PlacementState::Refused),
         ]);
         $placement->onBecameLeader(1000.0, 7);
-        $placement->onPlacementReport('slave', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', 'refused')], $snapshot));
+        FakePlacementMesh::reply($placement, 'slave', new PeerPlacementReportDTO([new PeerPlacedAgentEntry('render', 'refused')], $snapshot));
         $placement->tick(1000.0);
         self::assertSame([$snapshot->records[1], $snapshot->records[0]], $placement->registry()->all());
         self::assertGreaterThan(900, $placement->placementSnapshot()?->revision);
-        self::assertEquals(['slave', new PeerStopAgentDTO('render', 'refused')], $mesh->sent[0]);
+        [$nodeId, $stop] = $mesh->sent[0];
+        self::assertSame('slave', $nodeId);
+        self::assertInstanceOf(PeerStopAgentDTO::class, $stop);
+        self::assertSame('render', $stop->agentType);
+        self::assertSame('refused', $stop->agentIndex);
+        self::assertSame(7, $stop->authorityTerm);
         $placement->tick(1005.0);
         self::assertSame([['render', '9']], $executor->executed, 'Refused never enters automatic retry, including after restart');
         $placement->onLostLeadership();
         $placement->onBecameLeader(1010.0, 8);
-        $placement->onPlacementReport('slave', new PeerPlacementReportDTO([]));
+        FakePlacementMesh::reply($placement, 'slave', new PeerPlacementReportDTO([]));
         $placement->tick(1010.0);
         self::assertNull($placement->registry()->get('render:refused'), 'Only the new term releases the old refusal');
     }

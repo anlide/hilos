@@ -23,7 +23,7 @@ final class PeerPlacementRequestFrameTest extends TestCase
 {
     public function testAPlacementRequestRoundTrips(): void
     {
-        $parsed = PeerDTO::fromWire(new PeerPlacementRequestDTO('chat', '42')->toJson());
+        $parsed = PeerDTO::fromWire(new PeerPlacementRequestDTO('chat', '42', 7, 'ask')->toJson());
 
         $this->assertInstanceOf(PeerPlacementRequestDTO::class, $parsed);
         $this->assertSame('chat', $parsed->agentType);
@@ -41,8 +41,10 @@ final class PeerPlacementRequestFrameTest extends TestCase
                 PeerPlacementRequestDTO::TYPE,
                 PeerPlacementRequestDTO::FIELD_AGENT_TYPE,
                 PeerPlacementRequestDTO::FIELD_AGENT_INDEX,
+                PeerPlacementRequestDTO::FIELD_AUTHORITY_TERM,
+                PeerPlacementRequestDTO::FIELD_REQUEST_ID,
             ],
-            array_keys(new PeerPlacementRequestDTO('chat', '42')->toArray()),
+            array_keys(new PeerPlacementRequestDTO('chat', '42', 7, 'ask')->toArray()),
         );
     }
 
@@ -52,7 +54,7 @@ final class PeerPlacementRequestFrameTest extends TestCase
      */
     public function testANullIndexSurvivesTheTrip(): void
     {
-        $parsed = PeerDTO::fromWire(new PeerPlacementRequestDTO('moderator', null)->toJson());
+        $parsed = PeerDTO::fromWire(new PeerPlacementRequestDTO('moderator', null, 7, 'ask')->toJson());
 
         $this->assertInstanceOf(PeerPlacementRequestDTO::class, $parsed);
         $this->assertNull($parsed->agentIndex);
@@ -64,6 +66,8 @@ final class PeerPlacementRequestFrameTest extends TestCase
             PeerPlacementRequestDTO::TYPE => PeerPlacementRequestDTO::MESSAGE_TYPE,
             PeerPlacementRequestDTO::FIELD_AGENT_TYPE => 'chat',
             PeerPlacementRequestDTO::FIELD_AGENT_INDEX => '  ',
+            PeerPlacementRequestDTO::FIELD_AUTHORITY_TERM => 7,
+            PeerPlacementRequestDTO::FIELD_REQUEST_ID => 'ask',
         ]);
 
         $this->assertNull($parsed->agentIndex);

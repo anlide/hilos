@@ -3732,5 +3732,6 @@ describe('HilosUserPage merge observation, draft and cancellation', () => {
         requestId: expect.any(String),
       },
     ])
+    await act(async () => world.answerMergeCancel())
   })
 })

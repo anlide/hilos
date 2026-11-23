@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Core\Daemon\SignalDispatcher;
 use Hilos\Tests\Fixtures\SignalDispatcherFixture;
 use Hilos\Constants\TimeConstants;
@@ -78,7 +79,7 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
 
     public function testIdleHoldHasNoReadyWorkAndTheNativeRetryUsesTheAskOwnersWindow(): void
     {
-        $this->placement->onPlacementQuery('leader');
+        $this->placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
         $this->mesh->sent = [];
         $this->queue();
         $this->settle();
@@ -114,7 +115,7 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
         self::assertNotNull($this->timer()->getDeadline());
         self::assertFalse($this->loop->hasReadyWork());
 
-        $this->placement->onPlacementQuery('leader');
+        $this->placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
         $this->mesh->sent = [];
         $this->settle();
         self::assertCount(1, $this->mesh->sent);
@@ -125,6 +126,7 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
 
     public function testStartedPlacementVerdictReleasesOnlyTheHeldDestinationWithoutAnotherInput(): void
     {
+        $this->placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
         $this->queue(HeldAgentSignalTestRouter::SHARED_PUSH);
         $this->settle();
         self::assertCount(1, $this->manager->heldFrames());
@@ -133,7 +135,7 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
 
         $this->placement->onPlacementVerdict('leader', PeerPlacementVerdictDTO::placed(
             HeldAgentSignalTestRouter::COLD_AGENT, null, 'elsewhere',
-        ));
+        )->forRequest($this->mesh->sent[array_key_last($this->mesh->sent)][1]));
         $this->settle();
         self::assertSame([], $this->manager->heldFrames());
         self::assertSame([HeldAgentSignalTestRouter::SHARED_PUSH . '@' . HeldAgentSignalTestRouter::UP_AGENT],
@@ -144,7 +146,7 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
 
     public function testRebindCancelsOldDueWorkAndKeepsTheOriginalAskDeadline(): void
     {
-        $this->placement->onPlacementQuery('leader');
+        $this->placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
         $this->mesh->sent = [];
         $this->queue();
         $this->settle();
@@ -187,11 +189,12 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
 
     public function testLocalPlacementProgressBecomesARealStartWaitWithoutAnotherPlacementTimer(): void
     {
+        $this->placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
         $this->queue();
         $this->settle();
         $this->placement->onPlacementVerdict('leader', PeerPlacementVerdictDTO::placed(
             HeldAgentSignalTestRouter::COLD_AGENT, null, 'here',
-        ));
+        )->forRequest($this->mesh->sent[array_key_last($this->mesh->sent)][1]));
         $this->settle();
         self::assertCount(1, $this->manager->heldFrames());
         self::assertFalse($this->manager->heldFrames()[0]->awaitingPlacement);
@@ -206,9 +209,11 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
 
     public function testAForwardedHoldChecksAnAlreadyKnownRemoteAddressOnceAtAdmission(): void
     {
+        $this->placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
+        $this->placement->requirePlacement(HeldAgentSignalTestRouter::COLD_AGENT, null);
         $this->placement->onPlacementVerdict('leader', PeerPlacementVerdictDTO::placed(
             HeldAgentSignalTestRouter::COLD_AGENT, null, 'elsewhere',
-        ));
+        )->forRequest($this->mesh->sent[array_key_last($this->mesh->sent)][1]));
         $this->manager->deliverSignalToAgent(HeldAgentSignalTestRouter::COLD_AGENT, null,
             new SignalDTO(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::AGENT_SIGNAL),
                 new SignalName(HeldAgentSignalTestRouter::COLD_PUSH), new SignalData([])));
@@ -221,7 +226,7 @@ final class DaemonManagerParkedReleaseEventLoopTest extends TestCase
 
     public function testAbandoningTheLastPlacementCallerCancelsItsOldNativeRetry(): void
     {
-        $this->placement->onPlacementQuery('leader');
+        $this->placement->onPlacementQuery('leader', new PeerPlacementQueryDTO('query', 0));
         $this->mesh->sent = [];
         Hilos::$sr->queueSignal(new SignalSource(SignalSource::DAEMON), new SignalType(SignalTypeConstants::COMMAND_REQUEST),
             new SignalName(HeldAgentSignalTestRouter::COLD_COMMAND),

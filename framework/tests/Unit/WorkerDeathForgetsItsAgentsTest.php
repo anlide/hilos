@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Core\Agent\Daemon\AgentStartSink;
 use Closure;
 use Hilos\Cluster\ClusterContext;
+use Hilos\Cluster\PendingLeadership;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
 use Hilos\Cluster\Peer\DTO\PeerDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlaceAgentDTO;
@@ -105,14 +107,18 @@ final class WorkerDeathForgetsItsAgentsTest extends TestCase
         $previousCluster = Hilos::$cluster;
         $mesh = new WorkerDeathTestPlacementMesh();
         $placement = new ClusterPlacement(self::THIS_NODE, $mesh, new WorkerDeathTestPlacementExecutor());
-        $placement->onPlaceAgent(self::LEADER_NODE, new PeerPlaceAgentDTO(self::AGENT_TYPE, '1'));
-        $mesh->told = [];
         $manager = new WorkerDeathTestAgentManagerDaemon();
         $manager->addAgent($this->agentId('1'), new WorkerDeathTestAgentDaemon('1'), self::HOST_WORKER, false);
 
         try {
             Hilos::$cluster = new ClusterContext();
+            Hilos::$cluster->registerLeadership(new PendingLeadership());
             Hilos::$cluster->registerPlacement($placement);
+            $placement->onPlaceAgent(
+                self::LEADER_NODE,
+                new PeerPlaceAgentDTO(self::AGENT_TYPE, '1', new PlacementId(self::LEADER_NODE, 0, 1)),
+            );
+            $mesh->told = [];
             Hilos::$sr = new SignalRouter();
             $manager->handleWorkerRtSyncStream(
                 RtSyncStreamOperation::fromSignalData(new RtSyncCreatedSignalData('workerDeathRows', '1', ['name' => 'Ada']), 1),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hilos\Tests\Unit\Cluster\Peer;
 
+use Hilos\Cluster\Placement\PlacementId;
 use Hilos\Cluster\Exception\PeerTransportException;
 use Hilos\Cluster\Peer\DTO\PeerAgentRestartDTO;
 use Hilos\Cluster\Peer\DTO\PeerAgentStatusDTO;
@@ -13,7 +14,9 @@ use Hilos\Cluster\Peer\DTO\PeerPlacedAgentEntry;
 use Hilos\Cluster\Peer\DTO\PeerPlacementQueryDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReleaseDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementReportDTO;
+use Hilos\Cluster\Peer\DTO\PeerPlacementRequestDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementVerdictDTO;
+use Hilos\Cluster\Peer\DTO\PeerRtClaimRefusedDTO;
 use Hilos\Cluster\Peer\DTO\PeerPlacementViewDTO;
 use Hilos\Cluster\Peer\DTO\PeerStopAgentDTO;
 use Hilos\Cluster\Peer\PeerProtocol;
@@ -64,17 +67,18 @@ final class PeerPlacementDTOTest extends TestCase
 
     public function testPlaceAgentFrameRoundTrips(): void
     {
-        $frame = new PeerPlaceAgentDTO('chat', '42');
+        $frame = new PeerPlaceAgentDTO('chat', '42', new PlacementId('leader', 7, 1));
         $parsed = PeerDTO::fromWire($frame->toJson());
 
         $this->assertInstanceOf(PeerPlaceAgentDTO::class, $parsed);
         $this->assertSame('chat', $parsed->agentType);
         $this->assertSame('42', $parsed->agentIndex);
+        $this->assertEquals($frame->placementId, $parsed->placementId);
     }
 
     public function testPlaceAgentFrameKeepsANullIndexForSingletons(): void
     {
-        $parsed = PeerDTO::fromWire(new PeerPlaceAgentDTO('moderator', null)->toJson());
+        $parsed = PeerDTO::fromWire(new PeerPlaceAgentDTO('moderator', null, new PlacementId('leader', 7, 1))->toJson());
 
         $this->assertInstanceOf(PeerPlaceAgentDTO::class, $parsed);
         $this->assertNull($parsed->agentIndex);
@@ -88,7 +92,7 @@ final class PeerPlacementDTOTest extends TestCase
 
     public function testStopAgentFrameRoundTrips(): void
     {
-        $parsed = PeerDTO::fromWire(new PeerStopAgentDTO('bot', 'b1')->toJson());
+        $parsed = PeerDTO::fromWire(new PeerStopAgentDTO('bot', 'b1', 8, 'stop', new PlacementId('leader', 7, 1))->toJson());
 
         $this->assertInstanceOf(PeerStopAgentDTO::class, $parsed);
         $this->assertSame('bot', $parsed->agentType);
@@ -127,7 +131,9 @@ final class PeerPlacementDTOTest extends TestCase
 
     public function testAPlacedVerdictRoundTripsWithTheNodeId(): void
     {
-        $parsed = PeerDTO::fromWire(PeerPlacementVerdictDTO::placed('chat', '7', 'node-b')->toJson());
+        $verdict = PeerPlacementVerdictDTO::placed('chat', '7', 'node-b')
+            ->forRequest(new PeerPlacementRequestDTO('chat', '7', 8, 'ask'));
+        $parsed = PeerDTO::fromWire($verdict->toJson());
 
         $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $parsed);
         $this->assertSame(PlacementState::Started, $parsed->state);
@@ -140,7 +146,8 @@ final class PeerPlacementDTOTest extends TestCase
     public function testANotPlacedVerdictRoundTripsWithTheReason(): void
     {
         $parsed = PeerDTO::fromWire(
-            PeerPlacementVerdictDTO::notPlaced('chat', null, PlacementState::Unplaced, 'no capable node')->toJson(),
+            PeerPlacementVerdictDTO::notPlaced('chat', null, PlacementState::Unplaced, 'no capable node')
+                ->forRequest(new PeerPlacementRequestDTO('chat', null, 8, 'ask'))->toJson(),
         );
 
         $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $parsed);
@@ -156,6 +163,8 @@ final class PeerPlacementDTOTest extends TestCase
         PeerPlacementVerdictDTO::fromArray([
             PeerPlacementVerdictDTO::TYPE => PeerPlacementVerdictDTO::MESSAGE_TYPE,
             PeerPlacementVerdictDTO::FIELD_AGENT_TYPE => 'chat',
+            PeerPlacementVerdictDTO::FIELD_AUTHORITY_TERM => 8,
+            PeerPlacementVerdictDTO::FIELD_REQUEST_ID => 'ask',
             PeerPlacementVerdictDTO::FIELD_STATE => 'placing',
         ]);
     }
@@ -166,6 +175,8 @@ final class PeerPlacementDTOTest extends TestCase
         PeerPlacementVerdictDTO::fromArray([
             PeerPlacementVerdictDTO::TYPE => PeerPlacementVerdictDTO::MESSAGE_TYPE,
             PeerPlacementVerdictDTO::FIELD_AGENT_TYPE => 'chat',
+            PeerPlacementVerdictDTO::FIELD_AUTHORITY_TERM => 8,
+            PeerPlacementVerdictDTO::FIELD_REQUEST_ID => 'ask',
             PeerPlacementVerdictDTO::FIELD_STATE => PlacementState::Started->value,
             PeerPlacementVerdictDTO::FIELD_REFUSALS => [],
         ]);
@@ -177,6 +188,8 @@ final class PeerPlacementDTOTest extends TestCase
         PeerPlacementVerdictDTO::fromArray([
             PeerPlacementVerdictDTO::TYPE => PeerPlacementVerdictDTO::MESSAGE_TYPE,
             PeerPlacementVerdictDTO::FIELD_AGENT_TYPE => 'chat',
+            PeerPlacementVerdictDTO::FIELD_AUTHORITY_TERM => 8,
+            PeerPlacementVerdictDTO::FIELD_REQUEST_ID => 'ask',
             PeerPlacementVerdictDTO::FIELD_STATE => PlacementState::Failed->value,
             PeerPlacementVerdictDTO::FIELD_REFUSALS => [],
         ]);
@@ -217,7 +230,8 @@ final class PeerPlacementDTOTest extends TestCase
     public function testANotPlacedVerdictCarriesEachRefusalAcrossTheWire(PlacementRefusal $refusal): void
     {
         $other = PlacementRefusal::noDeclaredCapacity('a0');
-        $frame = PeerPlacementVerdictDTO::notPlaced('worker', null, PlacementState::Unplaced, 'no node', [$other, $refusal]);
+        $frame = PeerPlacementVerdictDTO::notPlaced('worker', null, PlacementState::Unplaced, 'no node', [$other, $refusal])
+            ->forRequest(new PeerPlacementRequestDTO('worker', null, 8, 'ask'));
         $parsed = PeerDTO::fromWire($frame->toJson());
 
         $this->assertInstanceOf(PeerPlacementVerdictDTO::class, $parsed);
@@ -259,7 +273,8 @@ final class PeerPlacementDTOTest extends TestCase
             PeerAgentStatusDTO::started('worker', '7', 3),
             PeerAgentStatusDTO::stopped('worker', '7'),
             PeerAgentStatusDTO::failed('worker', '7', 'no worker'),
-            PeerPlacementVerdictDTO::placed('worker', '7', 's1'),
+            PeerPlacementVerdictDTO::placed('worker', '7', 's1')
+                ->forRequest(new PeerPlacementRequestDTO('worker', '7', 8, 'ask')),
         ] as $frame) {
             $wire = json_decode($frame->toJson(), true);
             $this->assertArrayHasKey('refusals', $wire, 'The key is always written');
@@ -280,7 +295,8 @@ final class PeerPlacementDTOTest extends TestCase
 
     public function testAVerdictWithoutTheRefusalsKeyIsRefused(): void
     {
-        $wire = PeerPlacementVerdictDTO::notPlaced('worker', '7', PlacementState::Failed, 'no worker')->toArray();
+        $wire = PeerPlacementVerdictDTO::notPlaced('worker', '7', PlacementState::Failed, 'no worker')
+            ->forRequest(new PeerPlacementRequestDTO('worker', '7', 8, 'ask'))->toArray();
         unset($wire[PeerPlacementVerdictDTO::FIELD_REFUSALS]);
 
         $this->expectException(PeerTransportException::class);
@@ -310,7 +326,8 @@ final class PeerPlacementDTOTest extends TestCase
 
     public function testAPlacedVerdictWithRefusalsIsRefused(): void
     {
-        $wire = PeerPlacementVerdictDTO::placed('worker', '7', 's1')->toArray();
+        $wire = PeerPlacementVerdictDTO::placed('worker', '7', 's1')
+            ->forRequest(new PeerPlacementRequestDTO('worker', '7', 8, 'ask'))->toArray();
         $wire[PeerPlacementVerdictDTO::FIELD_REFUSALS] = [$this->wireRefusal(PlacementRefusal::noOnlineNodes())];
 
         $this->expectException(PeerTransportException::class);
@@ -389,12 +406,58 @@ final class PeerPlacementDTOTest extends TestCase
     #[DataProvider('malformedRefusals')]
     public function testANotPlacedVerdictRefusesMalformedRefusals(mixed $refusals, string $message): void
     {
-        $wire = PeerPlacementVerdictDTO::notPlaced('worker', '7', PlacementState::Unplaced, 'no node')->toArray();
+        $wire = PeerPlacementVerdictDTO::notPlaced('worker', '7', PlacementState::Unplaced, 'no node')
+            ->forRequest(new PeerPlacementRequestDTO('worker', '7', 8, 'ask'))->toArray();
         $wire[PeerPlacementVerdictDTO::FIELD_REFUSALS] = $refusals;
 
         $this->expectException(PeerTransportException::class);
         $this->expectExceptionMessage($message);
         PeerDTO::fromWire(json_encode($wire));
+    }
+
+    public function testExplicitAndSpontaneousStopsRoundTripTheirOwnCoordinates(): void
+    {
+        $id = new PlacementId('old-leader', 7, 1);
+        $stop = new PeerStopAgentDTO('render', '9', 8, 'stop', $id);
+        $ordinary = new PeerStopAgentDTO('per_node', null, 8, 'ordinary-stop');
+        foreach ([$stop, $ordinary, $stop->stoppedStatus(), $ordinary->stoppedStatus(),
+            PeerAgentStatusDTO::stopped('render', '9', $id, 8), PeerAgentStatusDTO::stopped('per_node', null),
+            new PeerRtClaimRefusedDTO('render', [], 'render', '9', 'render:9', 'host', 'holder', 8)] as $frame) {
+            self::assertSame($frame->toArray(), PeerDTO::fromWire($frame->toJson())->toArray());
+        }
+        self::assertArrayNotHasKey(PeerStopAgentDTO::FIELD_PLACEMENT_ID, $ordinary->toArray());
+        self::assertArrayNotHasKey(PeerAgentStatusDTO::FIELD_PLACEMENT_ID, $ordinary->stoppedStatus()->toArray());
+    }
+
+    /** @return iterable<string, array{PeerDTO, string, mixed}> Invalid new coordinates and incompatible combinations */
+    public static function invalidPlacementCoordinates(): iterable
+    {
+        $id = new PlacementId('leader', 7, 1);
+        $stop = new PeerStopAgentDTO('render', '9', 8, 'stop', $id);
+        $request = new PeerPlacementRequestDTO('render', '9', 8, 'ask');
+        $verdict = PeerPlacementVerdictDTO::placed('render', '9', 'host')->forRequest($request);
+        $refusal = new PeerRtClaimRefusedDTO('render', [], 'render', '9', 'render:9', 'host', 'holder', 8);
+        yield 'stop with string term' => [$stop, PeerStopAgentDTO::FIELD_AUTHORITY_TERM, '8'];
+        yield 'stop with negative term' => [$stop, PeerStopAgentDTO::FIELD_AUTHORITY_TERM, -1];
+        yield 'stop with empty correlation' => [$stop, PeerStopAgentDTO::FIELD_STOP_ID, ''];
+        yield 'stop with null order' => [$stop, PeerStopAgentDTO::FIELD_PLACEMENT_ID, null];
+        yield 'receipt with null stop id' => [$stop->stoppedStatus(), PeerAgentStatusDTO::FIELD_STOP_ID, null];
+        yield 'receipt with null term' => [$stop->stoppedStatus(), PeerAgentStatusDTO::FIELD_AUTHORITY_TERM, null];
+        yield 'receipt with worker proof' => [$stop->stoppedStatus(), PeerAgentStatusDTO::FIELD_WORKER_STARTED, false];
+        yield 'spontaneous stop carrying only term' => [PeerAgentStatusDTO::stopped('render', '9'), PeerAgentStatusDTO::FIELD_AUTHORITY_TERM, 8];
+        yield 'started with stop id' => [PeerAgentStatusDTO::started('render', '9', 2, $id, 8), PeerAgentStatusDTO::FIELD_STOP_ID, 'stop'];
+        yield 'refusal with float term' => [$refusal, PeerRtClaimRefusedDTO::FIELD_AUTHORITY_TERM, 8.0];
+        yield 'request with null id' => [$request, PeerPlacementRequestDTO::FIELD_REQUEST_ID, null];
+        yield 'verdict with integer id' => [$verdict, PeerPlacementVerdictDTO::FIELD_REQUEST_ID, 8];
+    }
+
+    #[DataProvider('invalidPlacementCoordinates')]
+    public function testPlacementFramesRejectInvalidCoordinates(PeerDTO $frame, string $field, mixed $value): void
+    {
+        $wire = $frame->toArray();
+        $wire[$field] = $value;
+        $this->expectException(PeerTransportException::class);
+        $frame::fromArray($wire);
     }
 
     public function testPlacementReportRoundTripsEveryHostedAgent(): void
@@ -414,9 +477,11 @@ final class PeerPlacementDTOTest extends TestCase
 
     public function testPlacementQueryRoundTrips(): void
     {
-        $parsed = PeerDTO::fromWire(new PeerPlacementQueryDTO()->toJson());
+        $parsed = PeerDTO::fromWire(new PeerPlacementQueryDTO('query', 8)->toJson());
 
         $this->assertInstanceOf(PeerPlacementQueryDTO::class, $parsed);
+        self::assertSame('query', $parsed->queryId);
+        self::assertSame(8, $parsed->authorityTerm);
     }
 
     /** The release carries nothing but its type: the link it arrives on names the sender (HIL-1287). */
@@ -538,6 +603,70 @@ final class PeerPlacementDTOTest extends TestCase
         $parsed = PeerDTO::fromWire(new PeerPlacementReportDTO([], $empty)->toJson());
         self::assertEquals($empty, $parsed->placementSnapshot);
         self::assertSame([], $parsed->placementSnapshot->records);
+    }
+
+    public function testManagedStatusAndReportRetainOrderAndSeparateStartProofFromTheAddress(): void
+    {
+        $id = new PlacementId('original', 4, 2);
+        $snapshot = new PlacementSnapshot('leader', 5, 1, [
+            new PlacementRecord('render', '4', 'host', PlacementState::Started, placementId: $id, workerStarted: true),
+        ]);
+        $report = new PeerPlacementReportDTO([
+            new PeerPlacedAgentEntry('render', '4', $id, PlacementState::Started, true),
+            new PeerPlacedAgentEntry('render', '5', new PlacementId('leader', 5, 4), PlacementState::Placing),
+        ], $snapshot, 'query');
+        $parsed = PeerDTO::fromWire($report->toJson());
+        self::assertEquals($report, $parsed);
+        self::assertTrue($parsed->agents[0]->workerStarted);
+        self::assertFalse($parsed->agents[1]->workerStarted);
+        self::assertTrue($parsed->placementSnapshot->records[0]->workerStarted);
+        self::assertArrayNotHasKey(PeerPlacementReportDTO::FIELD_QUERY_ID, new PeerPlacementReportDTO([])->toArray());
+
+        $early = PeerAgentStatusDTO::started('render', '4', 8, $id, 5);
+        $started = PeerAgentStatusDTO::started('render', '4', 8, $id, 5, true);
+        $failed = PeerAgentStatusDTO::failed('render', '4', 'could not resume', placementId: $id, authorityTerm: 5);
+        foreach ([$early, $started, $failed] as $status) {
+            self::assertEquals($status, PeerDTO::fromWire($status->toJson()));
+        }
+    }
+
+    #[DataProvider('malformedPlacementAuthority')]
+    public function testMalformedPlacementAuthorityIsRejected(string $dto, array $wire): void
+    {
+        $this->expectException(PeerTransportException::class);
+        $dto::fromArray($wire);
+    }
+
+    /** @return iterable<string, array{class-string, array<string, mixed>}> Invalid placement fields */
+    public static function malformedPlacementAuthority(): iterable
+    {
+        $id = new PlacementId('leader', 4, 2);
+        $order = new PeerPlaceAgentDTO('render', '4', $id)->toArray();
+        yield 'missing order' => [PeerPlaceAgentDTO::class, array_diff_key($order, [PeerPlaceAgentDTO::FIELD_PLACEMENT_ID => true])];
+        foreach ([PlacementId::FIELD_LEADER_NODE_ID => '', PlacementId::FIELD_TERM => '4', PlacementId::FIELD_SEQUENCE => 0] as $key => $bad) {
+            $wire = $order;
+            $wire[PeerPlaceAgentDTO::FIELD_PLACEMENT_ID][$key] = $bad;
+            yield $key => [PeerPlaceAgentDTO::class, $wire];
+        }
+        yield 'empty query' => [PeerPlacementQueryDTO::class, new PeerPlacementQueryDTO('', 4)->toArray()];
+        yield 'negative query term' => [PeerPlacementQueryDTO::class, new PeerPlacementQueryDTO('query', -1)->toArray()];
+        $started = PeerAgentStatusDTO::started('render', '4', 8, $id, 4)->toArray();
+        unset($started[PeerAgentStatusDTO::FIELD_AUTHORITY_TERM]);
+        yield 'unpaired status identity' => [PeerAgentStatusDTO::class, $started];
+        yield 'worker flag on failure' => [PeerAgentStatusDTO::class,
+            PeerAgentStatusDTO::failed('render', '4', 'refused', placementId: $id, authorityTerm: 4)->toArray()
+                + [PeerAgentStatusDTO::FIELD_WORKER_STARTED => false]];
+        yield 'explicit null echo' => [PeerPlacementReportDTO::class,
+            new PeerPlacementReportDTO([])->toArray() + [PeerPlacementReportDTO::FIELD_QUERY_ID => null]];
+        yield 'invalid hosted state' => [
+            PeerPlacedAgentEntry::class, new PeerPlacedAgentEntry('render', '4', $id, PlacementState::Failed)->toArray(),
+        ];
+        yield 'proof for a pending record' => [PlacementRecord::class,
+            new PlacementRecord('render', '4', 'host', PlacementState::Placing, placementId: $id)->toArray()
+                + [PlacementRecord::FIELD_WORKER_STARTED => true]];
+        yield 'invalid proof type' => [PlacementRecord::class,
+            new PlacementRecord('render', '4', 'host', PlacementState::Started, placementId: $id)->toArray()
+                + [PlacementRecord::FIELD_WORKER_STARTED => 'true']];
     }
 
     #[DataProvider('placementFrameKinds')]

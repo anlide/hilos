@@ -203,7 +203,9 @@ final class SessionConnectionDropTestMesh implements ClientMesh
      * @param SignalDTO $signal Signal to send
      * @return bool Always true in this fake
      */
-    public function sendSignalToClientNode(string $nodeId, string $acceptKey, SignalDTO $signal): bool
+    public function sendSignalToClientNode(
+        string $nodeId, string $acceptKey, SignalDTO $signal, ?string $pageRecoveryDeliveryId = null,
+    ): bool
     {
         return true;
     }
