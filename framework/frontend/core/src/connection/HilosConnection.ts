@@ -24,6 +24,7 @@ import {
   SIGNAL_TYPE_ACTION,
   SIGNAL_TYPE_GROUP_SUBSCRIBE,
   SIGNAL_TYPE_GROUP_UNSUBSCRIBE,
+  SIGNAL_TYPE_PAGE_MOVED,
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
   SIGNAL_TYPE_TABLE_FACETS,
@@ -60,6 +61,9 @@ import {
   type UnknownSignal,
 } from '../protocol/parseSignal.js'
 import { unpackSignalFrames } from '../protocol/delivery.js'
+import { type PageMoved } from '../protocol/pageMoved.js'
+import { type PageSubscriptionError } from '../protocol/pageError.js'
+import { type PageResponseWire } from '../protocol/scopePayload.js'
 import {
   isSameProtectedModeStatus,
   PROTECTED_MODE_INACTIVE,
@@ -86,6 +90,7 @@ import { isReconnectDragging } from './reconnectDragging.js'
 import { Emitter } from './events.js'
 import { type TablePresentationChange } from '../table/tableViewportGeometry.js'
 import { readBrowserTimeZone } from '../timeZone/timeZoneBrowser.js'
+import { SIGNAL_HANDSHAKE_RESPONSE } from '../session/sessionScope.js'
 
 export type ConnectionState =
   'connecting' | 'connected' | 'reconnecting' | 'disconnected'
@@ -403,6 +408,116 @@ function hasNamedSection(section: unknown): boolean {
   )
 }
 
+/** The socket that was carrying an effect before it could call user code. */
+export const captureCurrentSocket = Symbol('captureCurrentSocket')
+
+/** The scope owner consulted before a page delivery reaches any listener. */
+export const pageDeliveryAdmissions = new WeakMap<
+  HilosConnection,
+  {
+    response(
+      data: PageResponseWire,
+    ): { isCurrent: () => boolean; matched: boolean } | false
+    refusal(error: PageSubscriptionError): (() => boolean) | false
+    address(
+      page: string,
+      params: Record<string, unknown>,
+    ): (() => boolean) | false
+  }
+>()
+
+/** The admission retained by a project frame across live publication and replay. */
+export const admittedPageDeliveries = new WeakMap<
+  ProjectSignal,
+  { isCurrent: () => boolean; isLive: () => boolean }
+>()
+
+const replayedProjectSignals = new WeakSet<ProjectSignal>()
+const projectSignalSockets = new WeakMap<ProjectSignal, () => boolean>()
+const bootSessions = new WeakSet<object>()
+const sessionAnswers = new WeakMap<
+  object,
+  { isCurrent: () => boolean; prepared: boolean }
+>()
+
+/** @param signal The project signal passed to a synchronous listener. */
+export function isReplayedProjectSignal(signal: ProjectSignal): boolean {
+  return replayedProjectSignals.has(signal)
+}
+
+/**
+ * Check transport readiness without changing which frames can replay for display.
+ *
+ * @param signal The project signal passed to a synchronous listener.
+ */
+export function isProjectSignalFromCurrentSocket(
+  signal: ProjectSignal,
+): boolean {
+  return (
+    projectSignalSockets.get(signal)?.() ?? !isReplayedProjectSignal(signal)
+  )
+}
+
+/** @param connection The connection whose session prerequisites boot applies. */
+export function holdForSessionPreparation(connection: HilosConnection): void {
+  bootSessions.add(connection)
+}
+
+/** @param connection The connection whose current session can release a bound page. */
+export function hasCurrentSessionAnswer(connection: HilosConnection): boolean {
+  const answer = sessionAnswers.get(connection)
+
+  return (
+    !!answer?.isCurrent() && (!bootSessions.has(connection) || answer.prepared)
+  )
+}
+
+/**
+ * Capture the prepared response a page send depends on, including across
+ * synchronous calls into a window descriptor.
+ *
+ * @param connection The transport the page subscription sends on.
+ */
+export function capturePreparedSession(
+  connection: object,
+): (() => boolean) | undefined {
+  if (!bootSessions.has(connection)) return
+  const answer = sessionAnswers.get(connection)
+
+  return () => answer?.prepared === true && answer.isCurrent()
+}
+
+/**
+ * Allow pages to use the session state boot has just applied.
+ *
+ * @param connection The application's connection.
+ * @param signal The session response whose prerequisites have landed.
+ */
+export function finishSessionPreparation(
+  connection: HilosConnection,
+  signal: ProjectSignal,
+): boolean {
+  if (!isProjectSignalFromCurrentSocket(signal)) return false
+  const answer = sessionAnswers.get(connection)
+  if (answer) {
+    answer.prepared = true
+  } else {
+    sessionAnswers.set(connection, { isCurrent: () => true, prepared: true })
+  }
+
+  return true
+}
+
+/** @param signal The project signal whose consumer may call user code before applying it. */
+export function isCurrentProjectSignal(signal: ProjectSignal): boolean {
+  const admission = admittedPageDeliveries.get(signal)
+  if (!admission) return true
+
+  return isReplayedProjectSignal(signal)
+    ? admission.isCurrent()
+    : admission.isLive()
+}
+
 /**
  * One Hilos WebSocket connection.
  *
@@ -692,7 +807,15 @@ export class HilosConnection {
     if (event === 'projectSignal') {
       const replay = listener as (payload: ProjectSignal) => void
       for (const frame of this.pageFrames.values()) {
-        replay(frame)
+        if (admittedPageDeliveries.get(frame)?.isCurrent() === false) continue
+
+        const nested = isReplayedProjectSignal(frame)
+        replayedProjectSignals.add(frame)
+        try {
+          replay(frame)
+        } finally {
+          if (!nested) replayedProjectSignals.delete(frame)
+        }
       }
     }
     return unsubscribe
@@ -705,16 +828,41 @@ export class HilosConnection {
    * Navigation and refusal discard that continuation along with the page frames.
    *
    * @param retainTableWindows Whether the same live subscription is being re-answered.
+   * @param isCurrent Whether the access wait still owns the opening.
    */
-  forgetPageFrames(retainTableWindows = false): void {
+  forgetPageFrames(
+    retainTableWindows = false,
+    isCurrent?: () => boolean,
+  ): void {
+    if (isCurrent?.() === false) return
     this.pageFrames.clear()
-    for (const [key, registration] of this.tableWindowSources) {
-      registration.continuation = retainTableWindows
-        ? registration.source
-          ? (registration.source.retainWindow?.() ?? undefined)
+    const captured: Array<{
+      key: string
+      registration: TableWindowRegistration
+      continuation: TableWindowContinuation | undefined
+    }> = []
+    for (const [key, registration] of [...this.tableWindowSources]) {
+      if (this.tableWindowSources.get(key) !== registration) continue
+
+      const { source } = registration
+      const continuation = retainTableWindows
+        ? source
+          ? (source.retainWindow?.() ?? undefined)
           : registration.continuation
         : undefined
-      if (!registration.source && !registration.continuation) {
+
+      // The source can synchronously publish a new refusal or remount tables.
+      if (isCurrent?.() === false) return
+      captured.push({ key, registration, continuation })
+    }
+
+    // A later source can deliver the answer while earlier controls are held.
+    // Publish the captured controls only after every callback has returned.
+    for (const { key, registration, continuation } of captured) {
+      if (this.tableWindowSources.get(key) !== registration) continue
+
+      registration.continuation = continuation
+      if (!registration.source && !continuation) {
         this.tableWindowSources.delete(key)
       }
     }
@@ -1188,6 +1336,7 @@ export class HilosConnection {
           break
         }
         const result = parseSignalValue(frame, this.projectSchemas)
+        if (generation !== this.generation) break
         if (result.ok) {
           this.dispatchSignal(result.signal)
         } else {
@@ -1202,12 +1351,19 @@ export class HilosConnection {
     }
   }
 
+  [captureCurrentSocket](): () => boolean {
+    const generation = this.generation
+
+    return () => generation === this.generation
+  }
+
   /** Deliver each inner signal through the existing per-signal lifecycle. */
   private dispatchSignal(signal: ParsedSignal): void {
     const generation = this.generation
+    const isCurrentSocket = this[captureCurrentSocket]()
     switch (signal.kind) {
       case 'handshake':
-        this.handleHandshake(signal)
+        this.handleHandshake(signal, isCurrentSocket)
         break
       case 'protectedMode':
         this.handleProtectedMode(signal)
@@ -1219,9 +1375,20 @@ export class HilosConnection {
       case 'sessionRotate':
         this.handleSessionRotate(signal)
         break
-      case 'pageResubscribe':
-        this.emitter.emit('pageResubscribe', signal)
+      case 'pageResubscribe': {
+        const binding = pageDeliveryAdmissions.get(this)
+        const owner = binding?.address(signal.data.page, signal.data.params)
+        if (owner === false) break
+        this.emitter.emit(
+          'pageResubscribe',
+          signal,
+          () =>
+            isCurrentSocket() &&
+            pageDeliveryAdmissions.get(this) === binding &&
+            (owner?.() ?? true),
+        )
         break
+      }
       case 'actionSuccess':
         // Delivered first, noted second: noting it can be the arrival a held
         // rotation was waiting for, and that reconnect fails every action still
@@ -1238,15 +1405,7 @@ export class HilosConnection {
         }
         break
       case 'project':
-        if (signal.type === SIGNAL_TYPE_PAGE_RESPONSE) {
-          this.withTablePresentationUpdate({ kind: 'window' }, () => {
-            this.rememberPageFrame(signal)
-            this.emitter.emit('projectSignal', signal)
-          })
-        } else {
-          this.rememberPageFrame(signal)
-          this.emitter.emit('projectSignal', signal)
-        }
+        this.dispatchProjectSignal(signal, isCurrentSocket)
         break
       case 'tableWindow':
         this.emitter.emit('tableWindow', signal)
@@ -1295,6 +1454,66 @@ export class HilosConnection {
     }
   }
 
+  private dispatchProjectSignal(
+    signal: ProjectSignal,
+    isCurrentSocket: () => boolean,
+  ): void {
+    const isReadySocket = () =>
+      isCurrentSocket() && this.currentState === 'connected'
+    projectSignalSockets.set(signal, isReadySocket)
+    if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) {
+      const answer = {
+        isCurrent: () => isReadySocket() && sessionAnswers.get(this) === answer,
+        prepared: false,
+      }
+      sessionAnswers.set(this, answer)
+      projectSignalSockets.set(signal, answer.isCurrent)
+      this.emitter.emit('projectSignal', signal, answer.isCurrent)
+      return
+    }
+
+    const binding = pageDeliveryAdmissions.get(this)
+    if (signal.type === SIGNAL_TYPE_PAGE_RESPONSE) {
+      const admission = binding?.response(signal.data as PageResponseWire)
+      if (admission === false) return
+
+      const isCurrent = () =>
+        pageDeliveryAdmissions.get(this) === binding &&
+        (admission?.isCurrent() ?? true)
+      const isLive = () => isCurrentSocket() && isCurrent()
+      admittedPageDeliveries.set(signal, { isCurrent, isLive })
+      this.withTablePresentationUpdate({ kind: 'window' }, () => {
+        if (!isLive()) return
+
+        this.rememberPageFrame(signal, admission?.matched)
+        this.emitter.emit('projectSignal', signal, isLive)
+      })
+      return
+    }
+
+    if (
+      signal.type === SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR ||
+      signal.type === SIGNAL_TYPE_PAGE_MOVED
+    ) {
+      const data = signal.data as PageSubscriptionError | PageMoved
+      const owner =
+        signal.type === SIGNAL_TYPE_PAGE_MOVED
+          ? binding?.address(data.page, (data as PageMoved).params)
+          : binding?.refusal(data as PageSubscriptionError)
+      if (owner === false) return
+
+      const isCurrent = () =>
+        pageDeliveryAdmissions.get(this) === binding && (owner?.() ?? true)
+      const isLive = () => isCurrentSocket() && isCurrent()
+      admittedPageDeliveries.set(signal, { isCurrent, isLive })
+      this.emitter.emit('projectSignal', signal, isLive)
+      return
+    }
+
+    this.rememberPageFrame(signal)
+    this.emitter.emit('projectSignal', signal)
+  }
+
   /**
    * Keep a page's state frame for a listener that is not there yet.
    *
@@ -1303,11 +1522,14 @@ export class HilosConnection {
    * would draw a ban the server has since lifted.
    *
    * @param signal The project signal just parsed off the wire.
+   * @param matched Whether a matcher identified this as the opening's complete answer.
    */
-  private rememberPageFrame(signal: ProjectSignal): void {
+  private rememberPageFrame(signal: ProjectSignal, matched = false): void {
     if (signal.type === SIGNAL_TYPE_PAGE_RESPONSE) {
       if (opensTableWindows(signal.data)) {
         this.pageFrames.set(signal.type, signal)
+      } else if (matched) {
+        this.pageFrames.delete(signal.type)
       }
 
       return
@@ -1321,14 +1543,22 @@ export class HilosConnection {
     }
   }
 
-  private handleHandshake(signal: HandshakeSignal): void {
+  private handleHandshake(
+    signal: HandshakeSignal,
+    isCurrent: () => boolean,
+  ): void {
     this.buildValue = signal.build
     const expected = this.expectedBuild ?? this.latchedBuild
     if (expected === undefined) {
       this.latchedBuild = signal.build
     } else if (signal.build !== expected) {
-      this.emitter.emit('buildMismatch', { expected, received: signal.build })
+      this.emitter.emit(
+        'buildMismatch',
+        { expected, received: signal.build },
+        isCurrent,
+      )
     }
+    if (!isCurrent()) return
     if (signal.sessionCookieName !== undefined) {
       this.sessionCookieNameValue = signal.sessionCookieName
     }
@@ -1337,13 +1567,15 @@ export class HilosConnection {
     this.projectTimeZoneValue = signal.projectTimeZone
     // A reconnect lands here: the welcome is how a connection that came back
     // learns the freeze it slept through, or that it is over.
-    this.syncProtectedMode(signal.protectedMode)
+    this.syncProtectedMode(signal.protectedMode, isCurrent)
+    if (!isCurrent()) return
     this.rememberMaintenance(signal.protectedMode)
-    this.emitter.emit('handshake', signal)
+    this.emitter.emit('handshake', signal, isCurrent)
+    if (!isCurrent()) return
     // Last, so that a shell woken by this release reads a connection that has
     // already taken the welcome in: the freeze it is about to draw is the one
     // stored two lines above, not the one from before the frame.
-    this.releaseFirstFrame()
+    this.releaseFirstFrame(isCurrent)
   }
 
   /**
@@ -1473,7 +1705,10 @@ export class HilosConnection {
    * back still locking this connection out — and that silence is what becomes
    * `passRejected`, rather than being left to look like nothing happened.
    */
-  private syncProtectedMode(status: ProtectedModeStatus): void {
+  private syncProtectedMode(
+    status: ProtectedModeStatus,
+    isCurrent: () => boolean,
+  ): void {
     const answered: ProtectedModeStatus =
       status.active && this.presentedPass !== undefined
         ? { ...status, passRejected: true }
@@ -1483,11 +1718,14 @@ export class HilosConnection {
     // welcome that still locks this connection out, and that welcome describes a
     // window which is very much open.
     this.keepPassWhileTheWindowIsOpen(answered)
-    if (isSameProtectedModeStatus(this.protectedModeStatus, answered)) {
+    if (
+      !isCurrent() ||
+      isSameProtectedModeStatus(this.protectedModeStatus, answered)
+    ) {
       return
     }
     this.protectedModeStatus = answered
-    this.emitter.emit('protectedMode', answered)
+    this.emitter.emit('protectedMode', answered, isCurrent)
   }
 
   /**
@@ -1660,7 +1898,7 @@ export class HilosConnection {
    * dropped socket and the deadline are alternatives, not a sequence — and
    * whichever gets there first is the one whose verdict the shell already drew.
    */
-  private releaseFirstFrame(): void {
+  private releaseFirstFrame(isCurrent?: () => boolean): void {
     if (this.firstFrameHoldTimer !== null) {
       clearTimeout(this.firstFrameHoldTimer)
       this.firstFrameHoldTimer = null
@@ -1669,7 +1907,7 @@ export class HilosConnection {
       return
     }
     this.firstFrameHeldFlag = false
-    this.emitter.emit('firstFrameHold', false)
+    this.emitter.emit('firstFrameHold', false, isCurrent)
   }
 
   /**

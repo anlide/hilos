@@ -36,6 +36,20 @@ final class ProductWarehouseStocks extends DbCollection
     public const string OBJECT_COLLECTION_CLASS = ObjectProductWarehouseStocks::class;
 
     /**
+     * Resolves the product of a stock fact without adding a cold stock row to the worker's ORM.
+     *
+     * @param int $stockId Primary key of the changed warehouse stock row
+     * @return ?int Product key, or null when no row holds the stock key
+     * @throws LogicException When the Object collection is misconfigured
+     * @throws InvalidArgumentException When the Entity lookup rejects the query
+     * @throws DatabaseException When the lookup or the held object read fails
+     */
+    public function productIdAtStockKey(int $stockId): ?int
+    {
+        return $this->getObjectCollection()?->productIdAtStockKey($stockId);
+    }
+
+    /**
      * Counts the products one warehouse keeps and sums their units.
      *
      * The stock library holds the whole set and answers from memory; any other process finds the

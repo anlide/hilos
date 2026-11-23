@@ -1,0 +1,242 @@
+import {
+  HilosConnection,
+  PAGE_SIGNAL_SCHEMAS,
+  SIGNAL_TYPE_PAGE_RESPONSE,
+  SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
+  ScopeManager,
+  bindPageScope,
+  createHilosRouter,
+  createSignal,
+  ingest,
+  type WebSocketLike,
+} from '@hilos/core/base'
+import { describe, expect, it } from 'vitest'
+
+import { PAGE_CATEGORY, PAGE_PRODUCT } from '../../../src/pages/keys.js'
+import { router } from '../../../src/pages/routes.js'
+import {
+  createProductDetailsSignal,
+  matchesProductPageResponse,
+} from '../../../src/views/Product/productPage.js'
+import { type ProductDetails } from '../../../src/views/Product/types/ProductDetails.js'
+
+const product: ProductDetails = {
+  id: 8,
+  slug: 'керамічний-горщик',
+  name: 'Ceramic pot',
+  kind: 'stock',
+  price: 41000,
+  description: 'Glazed ceramic with a drainage hole.',
+  pictureUrl: '/pictures/pot.webp',
+  units: 42,
+  availability: 'in_stock',
+  categoryName: 'Pots & planters',
+  categorySlug: 'pots',
+}
+
+describe('product page payload', () => {
+  it('reads a complete snapshot at the public route with a decoded slug', () => {
+    const route = router.match(`/product/${encodeURIComponent(product.slug)}`)
+    expect(route).toEqual({
+      page: PAGE_PRODUCT,
+      admin: false,
+      params: { slug: product.slug },
+    })
+
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage(PAGE_PRODUCT)
+    const details = createProductDetailsSignal(scopes, createSignal(route))
+
+    expect(details.get()).toBeNull()
+    ingest(scope, { data: { product } })
+    expect(details.get()).toEqual(product)
+  })
+
+  it('requires the complete snapshot and the wire field types', () => {
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage(PAGE_PRODUCT)
+    const route = createSignal({
+      page: PAGE_PRODUCT,
+      admin: false,
+      params: { slug: product.slug },
+    })
+    const details = createProductDetailsSignal(scopes, route)
+
+    const { price, ...withoutPrice } = product
+    const invalidSnapshots = [
+      withoutPrice,
+      { ...product, id: 0 },
+      { ...product, price: price + 0.5 },
+      { ...product, units: -1 },
+      { ...product, kind: 'unknown' },
+      { ...product, availability: 'sold' },
+      { ...product, pictureUrl: null },
+      { ...product, categorySlug: undefined },
+    ]
+    for (const snapshot of invalidSnapshots) {
+      ingest(scope, { data: { product: snapshot } })
+      expect(details.get()).toBeNull()
+    }
+  })
+})
+
+describe('product page navigation', () => {
+  it('ignores the product data on a different page with the same slug', () => {
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage(PAGE_CATEGORY)
+    const route = createSignal({
+      page: PAGE_CATEGORY,
+      admin: false,
+      params: { slug: product.slug },
+    })
+    const details = createProductDetailsSignal(scopes, route)
+
+    ingest(scope, { data: { product } })
+    expect(details.get()).toBeNull()
+  })
+
+  it('hides the previous snapshot on navigation and ignores a late reply', () => {
+    const next = { ...product, id: 9, slug: 'clay-pot', name: 'Clay pot' }
+    const route = createSignal(
+      router.match(`/product/${encodeURIComponent(product.slug)}`),
+    )
+    const scopes = new ScopeManager()
+    const firstScope = scopes.openPage(PAGE_PRODUCT)
+    const details = createProductDetailsSignal(scopes, route)
+    ingest(firstScope, { data: { product } })
+    expect(details.get()).toEqual(product)
+
+    route.set(router.match(`/product/${next.slug}`))
+    expect(details.get()).toBeNull()
+
+    const nextScope = scopes.openPage(PAGE_PRODUCT)
+    ingest(nextScope, { data: { product } })
+    expect(details.get()).toBeNull()
+    ingest(nextScope, { data: { product: next } })
+    expect(details.get()).toEqual(next)
+  })
+
+  function openProduct() {
+    const listeners = new Map<
+      string,
+      Parameters<WebSocketLike['addEventListener']>[1]
+    >()
+    const connection = new HilosConnection({
+      url: 'ws://test/ws',
+      projectSchemas: PAGE_SIGNAL_SCHEMAS,
+      webSocketFactory: () => ({
+        send: () => {},
+        close: () => {},
+        addEventListener: (type, listener) => {
+          listeners.set(type, listener)
+        },
+      }),
+    })
+    const scopes = new ScopeManager()
+    const pages = bindPageScope(connection, scopes, {
+      pageResponseMatchers: new Map([
+        [PAGE_PRODUCT, matchesProductPageResponse],
+      ]),
+    })
+    const navigator = createHilosRouter(router, pages, {
+      pathname: () => `/product/${encodeURIComponent(product.slug)}`,
+      pushState: () => {},
+      replaceState: () => {},
+      onPopState: () => () => {},
+    })
+    const details = createProductDetailsSignal(scopes, navigator.currentRoute)
+    const receive = (type: string, data: Record<string, unknown>) =>
+      listeners.get('message')!({ data: JSON.stringify({ type, data }) })
+    const answer = (snapshot: Partial<ProductDetails>) =>
+      receive(SIGNAL_TYPE_PAGE_RESPONSE, {
+        page: PAGE_PRODUCT,
+        payload: { data: { product: snapshot } },
+      })
+
+    connection.connect()
+    navigator.start()
+    answer(product)
+    expect(details.get()).toEqual(product)
+
+    return { navigator, details, receive, answer }
+  }
+
+  it('keeps the current answer and its readiness when a previous slug answers late', () => {
+    const { navigator, details, answer } = openProduct()
+    const next = {
+      ...product,
+      id: 9,
+      slug: 'глиняний-горщик',
+      name: 'Clay pot',
+    }
+    navigator.navigate(`/product/${encodeURIComponent(next.slug)}`)
+    expect(navigator.pageLoading.get()).toBe(true)
+
+    answer(product)
+    expect(details.get()).toBeNull()
+    expect(navigator.pageLoading.get()).toBe(true)
+
+    answer(next)
+    expect(details.get()).toEqual(next)
+    expect(navigator.pageLoading.get()).toBe(false)
+
+    answer(product)
+    expect(details.get()).toEqual(next)
+    expect(navigator.pageLoading.get()).toBe(false)
+
+    const updated = { ...next, price: 42000 }
+    answer(updated)
+    expect(details.get()).toEqual(updated)
+  })
+
+  it('keeps the current 404 after a previous slug answers until the current slug is served', () => {
+    const { navigator, details, receive, answer } = openProduct()
+    const next = { ...product, id: 9, slug: 'clay-pot', name: 'Clay pot' }
+    navigator.navigate(`/product/${next.slug}`)
+    const refusal = {
+      page: PAGE_PRODUCT,
+      httpCode: 404,
+      errorCode: 'not_found',
+      title: 'Page Not Found',
+      message: 'The page you are looking for does not exist.',
+    }
+    receive(SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR, refusal)
+    expect(navigator.pageError.get()).toEqual(refusal)
+
+    answer(product)
+    expect(navigator.pageError.get()).toEqual(refusal)
+    expect(navigator.pageLoading.get()).toBe(false)
+    expect(details.get()).toBeNull()
+
+    answer({ slug: next.slug })
+    expect(navigator.pageError.get()).toEqual(refusal)
+
+    answer(next)
+    expect(navigator.pageError.get()).toBeNull()
+    expect(details.get()).toEqual(next)
+  })
+})
+
+describe('live product snapshots', () => {
+  it('updates price, stock, and category from one page-data slot', () => {
+    const route = createSignal(
+      router.match(`/product/${encodeURIComponent(product.slug)}`),
+    )
+    const scopes = new ScopeManager()
+    const scope = scopes.openPage(PAGE_PRODUCT)
+    const details = createProductDetailsSignal(scopes, route)
+    ingest(scope, { data: { product } })
+    expect(details.get()).toEqual(product)
+
+    const updated: ProductDetails = {
+      ...product,
+      price: 39000,
+      units: 0,
+      availability: 'out_of_stock',
+      categoryName: 'Indoor pots',
+      categorySlug: 'indoor-pots',
+    }
+    ingest(scope, { data: { product: updated } })
+    expect(details.get()).toEqual(updated)
+  })
+})

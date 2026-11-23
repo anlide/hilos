@@ -457,7 +457,8 @@ abstract class AbstractPage implements ActionHostInterface
      */
     final public function onSubscribe(string $acceptKey, PageRouteParams $params): void
     {
-        $pageResource = $this->resolvePageResource($acceptKey, $params);
+        $answer = $this->prepareResourceAnswer($acceptKey, $params);
+        $pageResource = $answer?->resource ?? $this->resolvePageResource($acceptKey, $params);
         $addressParam = $pageResource?->addressParam;
         if ($addressParam !== null && !$params->has($addressParam)) {
             throw new PageInternalErrorException(
@@ -465,7 +466,7 @@ abstract class AbstractPage implements ActionHostInterface
             );
         }
         $this->onSubscribeBeforeResponse($acceptKey, $params);
-        $own = $this->withPageIdentity($this->buildPagePayload($acceptKey, $params), $acceptKey, $params);
+        $own = $this->withPageIdentity($answer?->payload ?? $this->buildPagePayload($acceptKey, $params), $acceptKey, $params);
         $snapshot = Hilos::$browser?->buildSubscribeSnapshot(static::PAGE, $acceptKey, $params) ?? new PagePayload();
         $this->sendToUser(
             SignalTypeConstants::PAGE_RESPONSE,
@@ -474,8 +475,29 @@ abstract class AbstractPage implements ActionHostInterface
         );
         Hilos::$sr?->bindPageResource($acceptKey, $pageResource);
         Hilos::$sr?->clearPageDeliveryFailure($acceptKey);
+        if ($answer?->onQueued !== null) {
+            ($answer->onQueued)();
+        }
         Hilos::$browser?->sendSnapshotFacetCounts(static::PAGE, $acceptKey, $snapshot);
         $this->onSubscribeAfterResponse($acceptKey, $params);
+    }
+
+    /**
+     * Prepares a resource and its payload together when both need the same reading.
+     *
+     * Returning an answer supplies both values in place of the separate resource and
+     * payload hooks. The default leaves those hooks in their usual order around the
+     * before-response hook. The answer and its callback live only in this call.
+     *
+     * @param string $acceptKey WebSocket accept key of the subscribing connection
+     * @param PageRouteParams $params Route params from page subscription
+     * @return ?PageResourceAnswer Prepared values, or null to use the separate hooks
+     * @throws PageSubscriptionException When preparing the answer refuses the subscription
+     * @throws HilosException Whatever else preparing the answer raises
+     */
+    protected function prepareResourceAnswer(string $acceptKey, PageRouteParams $params): ?PageResourceAnswer
+    {
+        return null;
     }
 
     /**

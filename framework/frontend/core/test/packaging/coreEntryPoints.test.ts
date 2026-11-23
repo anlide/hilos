@@ -820,6 +820,19 @@ const profileRenameValues = [
 ]
 
 describe('core public entries', () => {
+  it('returns a structural navigator from the public router factory', () => {
+    const factory: typeof import('@hilos/core/base').createHilosRouter = (
+      router,
+      pages,
+      env,
+    ): base.HilosRouter => base.createHilosRouter(router, pages, env)
+
+    expectTypeOf<
+      ReturnType<typeof import('@hilos/core/base').createHilosRouter>
+    >().toEqualTypeOf<base.HilosRouter>()
+    expect(factory).toBeTypeOf('function')
+  })
+
   it('keeps merge cancellation values and types in the lazy users entry', () => {
     expect(users.createHilosAccountMergeCancel).toBe(
       mergeCancel.createHilosAccountMergeCancel,

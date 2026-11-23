@@ -1048,6 +1048,8 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
     {
         $routes = Hilos::getPageAgentIndexRoutes();
         $this->assertSame([ProductPage::PAGE, DaemonEnvPage::PAGE, DaemonEnvOrphansPage::PAGE], array_keys($routes));
+        $this->assertSame(AgentType::PRODUCT, Hilos::getPageRoutes()[ProductPage::PAGE]);
+        $this->assertSame(PageAccessLevel::PUBLIC, ProductPage::ACCESS_LEVEL);
         $this->assertSame('param', $routes[ProductPage::PAGE]->source->value);
         $this->assertSame('slug', $routes[ProductPage::PAGE]->param);
         $this->assertSame(AgentType::ECOMMERCE_SHOP, $routes[ProductPage::PAGE]->fallbackAgentType);
@@ -1110,7 +1112,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
         );
     }
 
-    /** The agent of a product page address is addressed by it, reads its three collections, owns nothing. */
+    /** The agent of a product page address reads its catalog sources and owns nothing. */
     public function testProductAgentHasTheIndexedPolicyRegistryEntryAndOwnsNothing(): void
     {
         $entry = Hilos::AGENTS[AgentType::PRODUCT];
@@ -1128,6 +1130,7 @@ final class EcommerceShopTopologyRegistryTest extends TestCase
             EcommerceShopDbContext::products,
             EcommerceShopDbContext::productSlugs,
             EcommerceShopDbContext::productWarehouseStocks,
+            EcommerceShopDbContext::categories,
         ], ProductAgent::READS_DB);
         $this->assertSame([], ProductAgent::OWNS_DB);
         $this->assertSame([], ProductAgent::OWNS_DB_ROWS);

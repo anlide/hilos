@@ -31,6 +31,7 @@ import {
   type ReadonlySignal,
   type Unsubscribe,
 } from '../state/signal.js'
+import { reactToPageRefusal } from './PageSubscription.js'
 
 /** The HTTP status a refused page carries; the one this reaction draws and undoes. */
 const FORBIDDEN = 403
@@ -96,12 +97,11 @@ export function bindAccessReaction(
 
       return
     }
-    if (pageError?.httpCode === FORBIDDEN) {
-      router.awaitPageAnswer()
-    } else if (
-      viewMode.get() &&
-      router.currentRoute.get().admin &&
-      pageError === null
+    const waited = router[reactToPageRefusal]?.(FORBIDDEN, 'await')
+    if (waited) return
+    if (
+      (waited === undefined && pageError?.httpCode === FORBIDDEN) ||
+      (viewMode.get() && router.currentRoute.get().admin && pageError === null)
     ) {
       router.awaitPageAnswer()
     }

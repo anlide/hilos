@@ -7,35 +7,43 @@ namespace Demo\EcommerceShop\Tests\Integration;
 use Demo\EcommerceShop\Agents\ProductAgent;
 use Demo\EcommerceShop\Agents\ProductsLibraryAgent;
 use Demo\EcommerceShop\Constants\ProductKind;
+use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\ShopFront\ProductReading;
 use Hilos\Core\Execution\ExecutionContext;
 use Hilos\Core\Execution\ExecutionFrame;
 use Hilos\Core\Source\Interest\SourceConsumer;
 use Hilos\Core\Source\Interest\SourceInterestRegistry;
+use Hilos\Core\Source\SourceChange;
 use Hilos\Core\TruthSource\OwnershipDeclaration;
 use Hilos\Core\TruthSource\TruthSourceRegistry;
 use Hilos\Testing\IntegrationTest;
 use Hilos\Utils\Helpers\RandomHelper;
+use ReflectionProperty;
 
 /**
  * Starts the stock library as its environment does, then the products library beside it, each under its claim and frame.
  *
- * The stock library's environment forgets the loaded memory before its start; the products library
- * starts after that, so the products and their addresses it declares whole are read in once and
- * every product a case adds goes through the library's own actions. The stock library's frame
- * stays current between the cases' writes, and a product write runs under the products library's.
+ * The libraries write in the context where they hold their sets. The product agent reads through
+ * a separate configured context on the same test database connection.
  */
 abstract class ProductAgentEnvironment extends StockLibraryEnvironment
 {
     private ?ProductsLibraryAgent $products = null;
+    private ?EcommerceShopDbContext $reader = null;
 
-    /** Claims the products for their library beside the stock library. */
+    /** Claims the writers' sets and prepares the reader before the rollback scope. */
     protected function prepareIntegrationEnvironment(): void
     {
         parent::prepareIntegrationEnvironment();
         $this->products = new ProductsLibraryAgent();
         OwnershipDeclaration::claimAll($this->products);
+        $this->reader = self::readingContext();
+        $this->reader->forgetHoldingForTest(
+            EcommerceShopDbContext::products,
+            EcommerceShopDbContext::productSlugs,
+            EcommerceShopDbContext::productWarehouseStocks,
+        );
     }
 
     /** Starts the stock library on an empty catalog, then the products library under its own frame. */
@@ -48,6 +56,7 @@ abstract class ProductAgentEnvironment extends StockLibraryEnvironment
     /** Releases the products library's claim, then the stock library's environment. */
     protected function releaseIntegrationEnvironment(): void
     {
+        $this->reader = null;
         if ($this->products !== null) {
             TruthSourceRegistry::unregisterAgent($this->products->getId());
             SourceInterestRegistry::releaseConsumer(SourceConsumer::agent($this->products->getId()));
@@ -68,6 +77,52 @@ abstract class ProductAgentEnvironment extends StockLibraryEnvironment
         self::assertNotNull($this->products);
 
         return ExecutionContext::run(new ExecutionFrame(agentId: $this->products->getId()), $write);
+    }
+
+    /**
+     * A fresh reader each time leaves only the agent itself in place across a write.
+     *
+     * @template T
+     * @param ProductAgent $agent Address agent whose read interests are ready
+     * @param callable(): T $read Read under the agent's own interests
+     * @return T What the read returns
+     */
+    protected function asReader(ProductAgent $agent, callable $read): mixed
+    {
+        $writer = Hilos::$db;
+        $reader = $this->reader ?? self::readingContext();
+        $this->reader = null;
+        $states = new ReflectionProperty(SourceInterestRegistry::class, 'states');
+        $consumers = new ReflectionProperty(SourceInterestRegistry::class, 'byConsumer');
+        $previousStates = $states->getValue();
+        $previousConsumers = $consumers->getValue();
+
+        try {
+            $states->setValue(null, []);
+            $consumers->setValue(null, []);
+            SourceInterestRegistry::readsWhatIsDelivered();
+            foreach (ProductAgent::READS_DB as $collection) {
+                SourceInterestRegistry::register(SourceChange::KIND_DB, $collection, SourceConsumer::agent($agent->getId()));
+                SourceInterestRegistry::markReady(SourceChange::KIND_DB, $collection);
+            }
+            Hilos::$db = $reader;
+
+            return ExecutionContext::run(new ExecutionFrame(agentId: $agent->getId()), $read);
+        } finally {
+            Hilos::$db = $writer;
+            $states->setValue(null, $previousStates);
+            $consumers->setValue(null, $previousConsumers);
+            SourceInterestRegistry::readsWhatItMounts();
+        }
+    }
+
+    /** @return EcommerceShopDbContext Fresh reader mounted on the test database */
+    private static function readingContext(): EcommerceShopDbContext
+    {
+        $reader = new EcommerceShopDbContext();
+        $reader->configure();
+
+        return $reader;
     }
 }
 
@@ -92,7 +147,7 @@ final class ProductAgentReadingTest extends ProductAgentEnvironment
         Hilos::$db->productWarehouseStocks->actions->setUnits($id, $lviv, 5);
         $slug = Hilos::$db->products[$id]->slug;
 
-        $reading = self::readingOf($slug);
+        $reading = $this->read(new ProductAgent($slug));
 
         self::assertSame($id, $reading->product->id);
         self::assertSame($slug, $reading->product->slug);
@@ -107,7 +162,7 @@ final class ProductAgentReadingTest extends ProductAgentEnvironment
         $id = $this->createProduct($name, ProductKind::STOCK);
         Hilos::$db->productWarehouseStocks->actions->setUnits($id, $kyiv, 12);
         $agent = new ProductAgent(Hilos::$db->products[$id]->slug);
-        self::assertSame(12_000, self::read($agent)->product->price);
+        self::assertSame(12_000, $this->read($agent)->product->price);
 
         $picture = self::pictureFile();
         $category = Hilos::$db->products[$id]->categoryId;
@@ -116,7 +171,7 @@ final class ProductAgentReadingTest extends ProductAgentEnvironment
         );
         Hilos::$db->productWarehouseStocks->actions->setUnits($id, $kyiv, 30);
 
-        $reading = self::read($agent);
+        $reading = $this->read($agent);
         self::assertSame(15_500, $reading->product->price);
         self::assertSame('Twelve bulbs', $reading->product->description);
         self::assertSame($picture, $reading->product->pictureFileId);
@@ -135,17 +190,37 @@ final class ProductAgentReadingTest extends ProductAgentEnvironment
         self::assertNotSame($former, $current);
         $formerAgent = new ProductAgent($former);
         $currentAgent = new ProductAgent($current);
+        $category = Hilos::$db->categories[Hilos::$db->products[$id]->categoryId];
 
-        $formerReading = self::read($formerAgent);
+        $formerReading = $this->asReader($formerAgent, static function () use ($formerAgent): ?ProductReading {
+            $collections = [
+                Hilos::$db->products->getObjectCollection(),
+                Hilos::$db->productSlugs->getObjectCollection(),
+                Hilos::$db->productWarehouseStocks->getObjectCollection(),
+            ];
+            foreach ($collections as $collection) {
+                self::assertFalse($collection?->isAllLoaded());
+            }
+            $reading = $formerAgent->reading();
+            foreach ($collections as $collection) {
+                self::assertFalse($collection?->isAllLoaded());
+            }
+
+            return $reading;
+        });
+        self::assertNotNull($formerReading);
         self::assertSame($id, $formerReading->product->id);
         self::assertSame($current, $formerReading->product->slug);
-        $currentReading = self::read($currentAgent);
+        self::assertSame($category->id, $formerReading->category->id);
+        self::assertSame($category->name, $formerReading->category->name);
+        self::assertSame($category->slug, $formerReading->category->slug);
+        $currentReading = $this->read($currentAgent);
         self::assertSame($id, $currentReading->product->id);
         self::assertSame($current, $currentReading->product->slug);
 
         $this->rename($id, 'Clay pot ' . $tail);
-        self::assertSame($former, self::read($formerAgent)->product->slug);
-        self::assertSame($former, self::read($currentAgent)->product->slug);
+        self::assertSame($former, $this->read($formerAgent)->product->slug);
+        self::assertSame($former, $this->read($currentAgent)->product->slug);
     }
 
     /** An address no product has had reads nothing, and a product created under it is read by the same agent. */
@@ -153,12 +228,12 @@ final class ProductAgentReadingTest extends ProductAgentEnvironment
     {
         $tail = RandomHelper::hex(8);
         $agent = new ProductAgent('morning-meadow-' . $tail);
-        self::assertNull($agent->reading());
+        self::assertNull($this->asReader($agent, $agent->reading(...)));
 
         $id = $this->createProduct('Morning meadow ' . $tail, ProductKind::UNIQUE);
 
         self::assertSame($agent->address(), Hilos::$db->products[$id]->slug);
-        self::assertSame($id, self::read($agent)->product->id);
+        self::assertSame($id, $this->read($agent)->product->id);
     }
 
     /** A unique piece kept in no warehouse has no units, and placing it gives it one. */
@@ -167,11 +242,11 @@ final class ProductAgentReadingTest extends ProductAgentEnvironment
         $kyiv = self::warehouse();
         $id = $this->createProduct('Blue vase ' . RandomHelper::hex(8), ProductKind::UNIQUE);
         $agent = new ProductAgent(Hilos::$db->products[$id]->slug);
-        self::assertSame(0, self::read($agent)->units);
+        self::assertSame(0, $this->read($agent)->units);
 
         Hilos::$db->productWarehouseStocks->actions->place($id, $kyiv);
 
-        self::assertSame(1, self::read($agent)->units);
+        self::assertSame(1, $this->read($agent)->units);
     }
 
     /**
@@ -203,21 +278,12 @@ final class ProductAgentReadingTest extends ProductAgentEnvironment
     }
 
     /**
-     * @param string $slug Page address
-     * @return ProductReading What the agent of that address reads
-     */
-    private static function readingOf(string $slug): ProductReading
-    {
-        return self::read(new ProductAgent($slug));
-    }
-
-    /**
      * @param ProductAgent $agent Agent of a page address that names a product
      * @return ProductReading What it reads
      */
-    private static function read(ProductAgent $agent): ProductReading
+    private function read(ProductAgent $agent): ProductReading
     {
-        $reading = $agent->reading();
+        $reading = $this->asReader($agent, $agent->reading(...));
         self::assertNotNull($reading, "The address {$agent->address()} names no product");
 
         return $reading;

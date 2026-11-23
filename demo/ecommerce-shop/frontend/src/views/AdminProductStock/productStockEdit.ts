@@ -6,6 +6,7 @@ import {
   type TableViewportController,
 } from '@hilos/core/base'
 
+import { actions } from '../../bootstrap/connection.js'
 import { sendProductStockSetUnits } from './adminProductStockActions.js'
 import { type ProductStockRow } from './types/tables/ProductStockRow.js'
 
@@ -74,6 +75,7 @@ export function createProductStockEdit(
 
         return run(
           sendProductStockSetUnits(
+            actions,
             productId,
             live.warehouseId,
             edit.form.get().units,

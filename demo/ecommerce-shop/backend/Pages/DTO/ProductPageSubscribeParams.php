@@ -12,9 +12,8 @@ use Hilos\Core\Page\PageRouteParams;
 /**
  * ProductPageSubscribeParams - Typed subscribe params for the storefront's product page.
  *
- * Parsed from the raw route params by {@see ProductPage::onSubscribeBeforeResponse()}. Guarantees
- * a non-empty `slug` read from the `slug` route segment (`/product/{slug}`). Whether the address
- * names a product is not this DTO's question.
+ * Parsed from the raw route params by {@see ProductPage}. Guarantees a non-empty `slug`
+ * read from the `slug` route segment (`/product/{slug}`).
  */
 final class ProductPageSubscribeParams extends AbstractPageSubscribeParamsDTO
 {

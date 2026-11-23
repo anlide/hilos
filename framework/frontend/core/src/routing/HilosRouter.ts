@@ -20,12 +20,26 @@ import {
   type ReadonlySignal,
   type Unsubscribe,
 } from '../state/signal.js'
+import {
+  reactToPageRefusal,
+  type PageRefusalReaction,
+} from '../subscription/PageSubscription.js'
 import { HilosPages } from './hilosPages.js'
 import { type PageError, ROUTE_NOT_FOUND_ERROR } from './pageError.js'
 import { type PageRouteMatch, type PageRouter } from './PageRouter.js'
 
+/** Internal guarded rewrite that returns the match for an in-place move. */
+export const replaceMovedPath = Symbol('replaceMovedPath')
+
+export type PageMoveRouter = HilosRouter & {
+  [replaceMovedPath]?(
+    pathname: string,
+    isCurrent: () => boolean,
+  ): PageRouteMatch | undefined
+}
+
 /** The page-subscription slice the navigator drives. */
-export interface NavigablePages {
+export interface NavigablePages extends PageRefusalReaction {
   /**
    * Subscribe the page, atomically replacing the previous subscription.
    *
@@ -83,7 +97,7 @@ export interface NavigationEnvironment {
 }
 
 /** A no-refresh client-side navigator. */
-export interface HilosRouter {
+export interface HilosRouter extends PageRefusalReaction {
   /** The matched route; updates on every navigation, including back/forward. */
   readonly currentRoute: ReadonlySignal<PageRouteMatch>
   /** The current location pathname; updates with the route on every navigation. */
@@ -188,10 +202,13 @@ export interface HilosRouter {
    * of a miss, runs the ordinary leave and subscribe cycle so the old
    * subscription does not stay under the new address. Use
    * {@link HilosRouter.navigate} when the new address should be a history entry.
+   * When a guarded rewrite loses its owner before the subscription changes,
+   * the navigator restores the previous address if the rewrite still owns it.
    *
    * @param pathname The address to rewrite the current one to.
+   * @param isCurrent Whether the delivery that requested the rewrite still owns it.
    */
-  replacePath(pathname: string): void
+  replacePath(pathname: string, isCurrent?: () => boolean): void
   /**
    * Listen for the moment navigation leaves the current page. Called
    * synchronously at the start of navigate, start, and back/forward, before
@@ -209,6 +226,42 @@ export interface HilosRouter {
   start(): void
   /** Stop tracking history. */
   stop(): void
+}
+
+/**
+ * Compare two matched addresses by page and decoded route params.
+ *
+ * @param left The match of one address.
+ * @param right The match of the other address.
+ */
+function sameRouteAddress(
+  left: PageRouteMatch,
+  right: PageRouteMatch,
+): boolean {
+  const params = Object.entries(left.params)
+  return (
+    left.page === right.page &&
+    params.length === Object.keys(right.params).length &&
+    params.every(
+      ([key, value]) =>
+        Object.hasOwn(right.params, key) && right.params[key] === value,
+    )
+  )
+}
+
+type RouterLocation = {
+  pathname: string
+  route: PageRouteMatch
+  /** An equivalent local rewrite carries the current publication's owner. */
+  addressOwner: symbol
+  pendingSubscription: symbol | null
+}
+
+type MoveWrite = {
+  source: RouterLocation
+  target: RouterLocation
+  parent: MoveWrite | undefined
+  targetRewrittenAfterSource: boolean
 }
 
 /**
@@ -234,10 +287,15 @@ export function createHilosRouter(
     pageKey === null ? ROUTE_NOT_FOUND_ERROR.title : '',
   unbuilt: ReadonlySet<string> = new Set(),
 ): HilosRouter {
-  const currentRoute = createSignal<PageRouteMatch>(
-    router.match(env.pathname()),
-  )
-  const currentPath = createSignal<string>(env.pathname())
+  const initialPath = env.pathname()
+  const location = createSignal<RouterLocation>({
+    pathname: initialPath,
+    route: router.match(initialPath),
+    addressOwner: Symbol(),
+    pendingSubscription: null,
+  })
+  const currentRoute = computedSignal(() => location.get().route)
+  const currentPath = computedSignal(() => location.get().pathname)
   // The title is derived, not set in apply(): it recomputes from the route on
   // every navigation, so a single source feeds both document.title and the
   // page-change live region in the shell.
@@ -253,24 +311,73 @@ export function createHilosRouter(
   )
   let detachPopState: Unsubscribe | null = null
   const leaveListeners = new Set<() => void>()
+  let moveWrite: MoveWrite | undefined
 
-  // Resolve a pathname and publish it as the current route and path, leaving the
-  // page subscription alone — shared by apply and replacePath.
-  const publish = (pathname: string): PageRouteMatch => {
-    const match = router.match(pathname)
-    currentRoute.set(match)
-    currentPath.set(pathname)
-    return match
+  const moveSourceOwner = (
+    owner: symbol,
+    write: MoveWrite | undefined,
+    stopAt?: symbol,
+  ): symbol => {
+    for (; write !== undefined && owner !== stopAt; write = write.parent) {
+      if (write.target.addressOwner === owner) owner = write.source.addressOwner
+    }
+    return owner
   }
 
-  // First tell listeners we are leaving, then publish and re-subscribe — shared
-  // by start, navigate, and the popstate listener. A miss drops the real
-  // subscription and never subscribes a stand-in page.
-  const apply = (pathname: string): void => {
+  const isMoveSource = (write: MoveWrite, owner: symbol): boolean =>
+    moveSourceOwner(write.source.addressOwner, write.parent, owner) === owner
+
+  // Active writes with a common source can reach each other's addresses.
+  // An opening with a fresh owner starts its own chain.
+  const boundMoveWrite = (
+    route: PageRouteMatch,
+    owner: symbol,
+  ): MoveWrite | undefined => {
+    const sourceOwner = moveSourceOwner(owner, moveWrite)
+    for (let write = moveWrite; write !== undefined; write = write.parent) {
+      if (
+        (sameRouteAddress(write.source.route, route) ||
+          sameRouteAddress(write.target.route, route)) &&
+        moveSourceOwner(write.source.addressOwner, write.parent) === sourceOwner
+      ) {
+        return write
+      }
+    }
+    return undefined
+  }
+
+  const rememberMoveAddress = (next: RouterLocation): void => {
+    for (let write = moveWrite; write !== undefined; write = write.parent) {
+      if (isMoveSource(write, next.addressOwner)) {
+        write.targetRewrittenAfterSource = false
+      }
+      if (write.source.addressOwner === next.addressOwner) write.source = next
+      if (write.target.addressOwner === next.addressOwner) write.target = next
+    }
+  }
+
+  // A synchronous history adapter may finish its write after a nested
+  // navigation. Re-read the winner after each correction too.
+  const reconcileHistory = (ownsMove?: () => boolean): void => {
+    let winner = location.get()
+    while (env.pathname() !== winner.pathname) {
+      env.replaceState(winner.pathname)
+      if (ownsMove?.() === false) return
+      const current = location.get()
+      if (current === winner) return
+      winner = current
+    }
+  }
+
+  const announceLeave = (isCurrent?: () => boolean): void => {
     for (const listener of [...leaveListeners]) {
+      if (isCurrent?.() === false) return
       listener()
     }
-    const match = publish(pathname)
+  }
+
+  // A miss drops the real subscription and never subscribes a stand-in page.
+  const subscribeRoute = (match: PageRouteMatch): void => {
     if (match.page === null) {
       pages.unsubscribe()
     } else if (unbuilt.has(match.page)) {
@@ -284,6 +391,178 @@ export function createHilosRouter(
     }
   }
 
+  // Address-only rewrites keep the pending subscription. A newer navigation
+  // owns its own subscription and supersedes this one.
+  const subscribeLocation = (pendingSubscription: symbol): void => {
+    const current = location.get()
+    if (current.pendingSubscription !== pendingSubscription) return
+    try {
+      subscribeRoute(current.route)
+    } finally {
+      const latest = location.get()
+      if (latest.pendingSubscription === pendingSubscription) {
+        location.set({ ...latest, pendingSubscription: null })
+      }
+    }
+  }
+
+  // First tell listeners we are leaving, then publish and re-subscribe — shared
+  // by start, navigate, and the popstate listener.
+  const apply = (pathname: string): void => {
+    announceLeave()
+    const pendingSubscription = Symbol()
+    location.set({
+      pathname,
+      route: router.match(pathname),
+      addressOwner: Symbol(),
+      pendingSubscription,
+    })
+    subscribeLocation(pendingSubscription)
+  }
+
+  const rewritePath = (
+    pathname: string,
+    isCurrent?: () => boolean,
+  ): PageRouteMatch | undefined => {
+    const source = location.get()
+    const route = router.match(pathname)
+    const localWrite =
+      isCurrent === undefined && route.page === source.route.page
+        ? boundMoveWrite(route, source.addressOwner)
+        : undefined
+    const rewritesTarget =
+      localWrite !== undefined &&
+      sameRouteAddress(localWrite.target.route, route)
+    if (
+      rewritesTarget &&
+      source.addressOwner !== localWrite.target.addressOwner
+    ) {
+      // A spelling of a target on hold belongs to its move. Its publication
+      // follows that move's admission, including during rollback.
+      localWrite.target = { ...localWrite.target, pathname, route }
+      localWrite.targetRewrittenAfterSource = true
+      return undefined
+    }
+
+    // Rewriting within a page or within a miss only publishes the address.
+    const pendingSubscription =
+      route.page !== source.route.page ? Symbol() : null
+    const ownsSource = () => {
+      const current = location.get()
+      return isCurrent === undefined
+        ? current === source
+        : current.addressOwner === source.addressOwner && isCurrent()
+    }
+    if (pendingSubscription !== null) announceLeave(ownsSource)
+    if (!ownsSource()) return undefined
+
+    // A leave listener may have canonicalized the source before publication.
+    const before = location.get()
+    const localAddress = rewritesTarget ? localWrite.target : localWrite?.source
+    const next: RouterLocation = {
+      pathname,
+      route,
+      addressOwner:
+        localAddress?.addressOwner ??
+        (isCurrent === undefined && sameRouteAddress(before.route, route)
+          ? before.addressOwner
+          : Symbol()),
+      pendingSubscription: pendingSubscription ?? before.pendingSubscription,
+    }
+    const ownsPublishedLocation = (current: RouterLocation) => {
+      if (pendingSubscription !== null) {
+        return current.pendingSubscription === pendingSubscription
+      }
+      return isCurrent === undefined
+        ? current === next
+        : current.addressOwner === next.addressOwner
+    }
+
+    const previousWrite = moveWrite
+    const write: MoveWrite | undefined =
+      isCurrent !== undefined && pendingSubscription === null
+        ? {
+            source: before,
+            target: next,
+            parent: previousWrite,
+            targetRewrittenAfterSource: false,
+          }
+        : undefined
+    if (write !== undefined) moveWrite = write
+
+    // Source-only publication ends the move. A target rewrite that follows
+    // it can still take effect while acceptance is live.
+    const keepPublication = (): boolean => {
+      while (isCurrent?.() !== false) {
+        const current = location.get()
+        if (ownsPublishedLocation(current)) return true
+        if (
+          write === undefined ||
+          !write.targetRewrittenAfterSource ||
+          !isMoveSource(write, current.addressOwner)
+        ) {
+          return false
+        }
+        write.targetRewrittenAfterSource = false
+        location.set(write.target)
+      }
+      return false
+    }
+
+    try {
+      // Record the address before the adapter can rewrite either endpoint.
+      // A nested publication can win while this spelling still owns rollback.
+      if (localWrite !== undefined) rememberMoveAddress(next)
+      env.replaceState(pathname)
+
+      const restore = location.get()
+      // A source-only rewrite wins as before. If the same owner also rewrote
+      // the move's target, that target can still be published on live delivery.
+      const rewroteTargetFromSource =
+        write !== undefined &&
+        write.targetRewrittenAfterSource &&
+        isMoveSource(write, restore.addressOwner)
+      if (restore !== before && !rewroteTargetFromSource) {
+        if (isCurrent !== undefined) reconcileHistory()
+        return undefined
+      }
+      const canPublish = rewroteTargetFromSource ? isCurrent?.() : ownsSource()
+      if (canPublish && location.get() === restore) {
+        location.set(write?.target ?? next)
+        if (isCurrent !== undefined && keepPublication()) {
+          reconcileHistory(keepPublication)
+        }
+      }
+
+      const canCommit =
+        ownsPublishedLocation(location.get()) && isCurrent?.() !== false
+      const published = location.get()
+      if (canCommit && ownsPublishedLocation(published)) {
+        if (pendingSubscription === null) return published.route
+
+        subscribeLocation(pendingSubscription)
+        return undefined
+      }
+
+      // Keep the target binding through the correction of the restored source.
+      if (
+        ownsPublishedLocation(published) ||
+        (published === restore &&
+          (write === undefined ||
+            restore.addressOwner === write.source.addressOwner))
+      ) {
+        env.replaceState((write?.source ?? restore).pathname)
+        if (ownsPublishedLocation(location.get())) {
+          location.set(write?.source ?? restore)
+        }
+      }
+      if (isCurrent !== undefined) reconcileHistory()
+    } finally {
+      if (write !== undefined) moveWrite = previousWrite
+    }
+    return undefined
+  }
+
   // Neither a miss nor the built file reader has a server subscription for
   // generic access reactions to clear, deny or await. Unbuilt keeps its refusal.
   const onPublicStatus = (): boolean =>
@@ -292,19 +571,24 @@ export function createHilosRouter(
   const withoutSubscription = (): boolean =>
     currentRoute.get().page === null || onPublicStatus()
 
-  return {
+  const navigator: PageMoveRouter = {
+    [replaceMovedPath]: rewritePath,
+    [reactToPageRefusal]: pages[reactToPageRefusal]?.bind(pages),
     currentRoute,
     currentPath,
     currentTitle,
     pageError: computedSignal<PageError | null>(() =>
       currentRoute.get().page === null
         ? ROUTE_NOT_FOUND_ERROR
-        : onPublicStatus()
+        : onPublicStatus() || location.get().pendingSubscription !== null
           ? null
           : pages.pageError.get(),
     ),
-    pageLoading: computedSignal<boolean>(() =>
-      withoutSubscription() ? false : pages.pageLoading.get(),
+    pageLoading: computedSignal<boolean>(
+      () =>
+        !withoutSubscription() &&
+        (location.get().pendingSubscription !== null ||
+          pages.pageLoading.get()),
     ),
     pageIdentity: computedSignal(() => {
       const identity = pages.pageIdentity.get()
@@ -361,16 +645,8 @@ export function createHilosRouter(
       env.pushState(pathname)
       apply(pathname)
     },
-    replacePath: (pathname) => {
-      const next = router.match(pathname)
-      env.replaceState(pathname)
-      // Staying on the same found page, including staying on a miss, only
-      // publishes. Entering or leaving a miss is a different page key.
-      if (next.page === currentRoute.get().page) {
-        publish(pathname)
-        return
-      }
-      apply(pathname)
+    replacePath: (pathname, isCurrent) => {
+      rewritePath(pathname, isCurrent)
     },
     onLeave: (listener) => {
       leaveListeners.add(listener)
@@ -391,6 +667,7 @@ export function createHilosRouter(
       detachPopState = null
     },
   }
+  return navigator
 }
 
 /**

@@ -25,7 +25,10 @@ import {
   stepUpConfirmedSchema,
 } from '../auth/stepUpConfirmed.js'
 import { z } from 'zod'
-import { type HilosConnection } from '../connection/HilosConnection.js'
+import {
+  isProjectSignalFromCurrentSocket,
+  type HilosConnection,
+} from '../connection/HilosConnection.js'
 import {
   legalDocumentSchema,
   type HilosLegalDocumentKey,
@@ -39,7 +42,7 @@ import { type EntityRef } from '../state/EntityStore.js'
 import { readString, readStringOrNull } from '../state/fieldReaders.js'
 import { hideable } from '../state/hideableSchema.js'
 import { type Hideable } from '../state/hiddenValue.js'
-import { ingest } from '../state/normalizer.js'
+import { ingest, ingestWhileCurrent } from '../state/normalizer.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { computedSignal, type ReadonlySignal } from '../state/signal.js'
 import { type AccessLossReason } from './accessLoss.js'
@@ -616,6 +619,9 @@ export function bindSessionScope(
     options.currentUserEntityType ?? DEFAULT_CURRENT_USER_ENTITY_TYPE
   connection.on('projectSignal', (signal) => {
     if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) {
+      const isCurrent = () => isProjectSignalFromCurrentSocket(signal)
+      if (!isCurrent()) return
+
       // Validated against handshakeResponseSchema at the parse boundary; this cast is
       // the declared typed selector for that schema's output. The impersonating
       // admin shares the current-user entity type so it dedupes against the same
@@ -651,13 +657,15 @@ export function bindSessionScope(
           delete plainData[IMPERSONATION_POLICY_KEY]
         }
       }
-      ingest(scopes.session, { data: plainData })
-      ingest(
+      ingestWhileCurrent(scopes.session, { data: plainData }, {}, isCurrent)
+      if (!isCurrent()) return
+      ingestWhileCurrent(
         scopes.session,
         { ...payload, data: plainData },
         {
           entityTypes: { [slot]: entityType, [impersonatedBySlot]: entityType },
         },
+        isCurrent,
       )
     }
     if (signal.type === SIGNAL_AUTH_METHODS) {

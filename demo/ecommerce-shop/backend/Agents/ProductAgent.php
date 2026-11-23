@@ -8,7 +8,6 @@ use Demo\EcommerceShop\Constants\AgentType;
 use Demo\EcommerceShop\Database\EcommerceShopDbContext;
 use Demo\EcommerceShop\Database\Entity\Item\Product as EntityProduct;
 use Demo\EcommerceShop\Database\Entity\Item\ProductSlug as EntityProductSlug;
-use Demo\EcommerceShop\Database\Entity\Item\ProductWarehouseStock as EntityProductWarehouseStock;
 use Demo\EcommerceShop\Hilos;
 use Demo\EcommerceShop\ShopFront\ProductReading;
 use Hilos\Core\Agent\AbstractAgent;
@@ -27,20 +26,19 @@ use Hilos\HilosException;
  * Indexed by the address: it comes up with the first visitor of that address and goes to sleep
  * after the last one has left and the idle window has passed. Any non-empty address is one - an
  * address may name no product at all, and the agent of an address a product had before a rename
- * reads that product under its new name. The agent reads the product and its stock, which the
- * products and stock libraries own, and writes nothing; it holds nothing between calls but its
- * address, so every reading asks the collections anew.
+ * reads that product under its new name. The agent reads the product, its category and stock
+ * from their libraries' collections. Every reading asks the collections anew.
  */
 final class ProductAgent extends AbstractAgent
 {
     /**
-     * @var list<string> The products and their addresses (the products library owns them) and the
-     *     stock (the stock library owns it): read by the address, never written
+     * @var list<string> The catalog rows read for the product page
      */
     public const array READS_DB = [
         EcommerceShopDbContext::products,
         EcommerceShopDbContext::productSlugs,
         EcommerceShopDbContext::productWarehouseStocks,
+        EcommerceShopDbContext::categories,
     ];
 
     public const string AGENT_TYPE = AgentType::PRODUCT;
@@ -73,16 +71,16 @@ final class ProductAgent extends AbstractAgent
     }
 
     /**
-     * Reads the product the address names and its stock, anew on every call.
+     * Reads the product the address names, its category and stock, anew on every call.
      *
      * The product whose current address it is comes first; otherwise the product that had it
      * before a rename. The returned product's slug tells the two apart ({@see ProductReading}).
      *
-     * @return ?ProductReading The product and its units over every warehouse, or null when the address names no product
+     * @return ?ProductReading The catalog reading, or null when the address names no product
      * @throws LogicException When a collection's class constants are not configured
      * @throws InvalidArgumentException When a column names no field of its entity, or a loaded object does not match
      * @throws DatabaseException When the rows cannot be read
-     * @throws ItemNotFoundException When a former address leads to a product that no longer exists
+     * @throws ItemNotFoundException When a required product or category is missing
      * @throws ObjectGetIdStringNotImplementedException If a matched item's Object does not implement getIdString()
      * @throws CollectionNotManualException When a matched item is rejected by a non-manual collection
      * @throws HilosException When the database context or an item getter refuses the read
@@ -98,12 +96,9 @@ final class ProductAgent extends AbstractAgent
             $product = Hilos::$db->products[$formerAddress->productId];
         }
 
-        $units = 0;
-        foreach (Hilos::$db->productWarehouseStocks->whereColumnIs(EntityProductWarehouseStock::product_id, $product->id) as $stock) {
-            $units += $stock->units;
-        }
+        $units = Hilos::$db->productWarehouseStocks->totalsOfProducts($product->id)->of($product->id)->unitCount;
 
-        return new ProductReading($product, $units);
+        return new ProductReading($product, Hilos::$db->categories[$product->categoryId], $units);
     }
 
     /**

@@ -5,7 +5,8 @@ import { hilosTimeZone } from '../timeZone/timeZoneState.js'
 
 /**
  * Prepare framework page context after the session's zone and clock have landed.
- * The subscription owns this opening's context; no observer refreshes it.
+ * The subscription releases the opening after preparation and keeps its sent
+ * context for subsequent sends.
  *
  * @param pageKey The page being opened.
  * @param params The navigation's original params.

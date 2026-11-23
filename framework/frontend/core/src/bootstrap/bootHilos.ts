@@ -5,7 +5,12 @@
 // created by the project (so its modules import them as singletons); bootHilos
 // wires and starts them.
 import { type ActionLifecycle } from '../connection/actionLifecycle.js'
-import { type HilosConnection } from '../connection/HilosConnection.js'
+import {
+  finishSessionPreparation,
+  holdForSessionPreparation,
+  isProjectSignalFromCurrentSocket,
+  type HilosConnection,
+} from '../connection/HilosConnection.js'
 import {
   bindNotificationsScope,
   hilosNotifications,
@@ -52,7 +57,12 @@ import { hilosToasts } from '../state/toasts.js'
 import { type ScopeManager } from '../state/ScopeManager.js'
 import { bindAccessReaction } from '../subscription/bindAccessReaction.js'
 import { bindPageMove } from '../subscription/bindPageMove.js'
-import { bindPageScope } from '../subscription/bindPageScope.js'
+import {
+  bindPageScope,
+  pageSubscriptionFor,
+  type BindPageScopeOptions,
+} from '../subscription/bindPageScope.js'
+import { releasePreparedSession } from '../subscription/PageSubscription.js'
 import { bindPageReady, openPageReady } from '../subscription/pageReadyGate.js'
 import { bindUploads } from '../uploads/hilosUploads.js'
 
@@ -81,6 +91,8 @@ export interface BootHilosConfig {
   projectViews?: readonly string[]
   /** Per-slot canonical entity types for the page payloads. */
   pageEntityTypes?: Record<string, string>
+  /** Per-page checks run before publishing or buffering the page response. */
+  pageResponseMatchers?: BindPageScopeOptions['pageResponseMatchers']
   /**
    * Project page key → document title, for the project's own pages. The
    * framework's admin and footer pages are titled from their own catalogs, so a
@@ -116,12 +128,14 @@ export interface BootHilosConfig {
  * page-ready gate to the connection, create the navigator over the page
  * subscription, open the socket, and apply the current URL. The session-token
  * cookie must already be minted (the project's session module does this at
- * import) so it rides the handshake.
+ * import) so it rides the handshake. Boot once per connection. Starting or
+ * stopping the returned router only changes URL handling.
  *
  * @param config The connection, action lifecycle, scopes, router, and optional overrides.
  * @returns The navigator the app provides to `HilosView` / `HilosLink`.
  */
 export function bootHilos(config: BootHilosConfig): HilosRouter {
+  holdForSessionPreparation(config.connection)
   bindSessionScope(config.connection, config.scopes, config.session)
   // The reader's zone reads the browser and the connection's project zone now,
   // then follows every welcome and session response from the first one.
@@ -206,6 +220,7 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   }
   const pages = bindPageScope(config.connection, config.scopes, {
     entityTypes: config.pageEntityTypes,
+    pageResponseMatchers: config.pageResponseMatchers,
   })
   // The page-ready gate (HIL-607): latch the first page answer so a relay route
   // that loads cold — /auth/magic, /auth/callback — can hold its dispatch until
@@ -267,13 +282,19 @@ export function bootHilos(config: BootHilosConfig): HilosRouter {
   // wild long enough to trust alone - revisit after 2027-12-28, and only on the
   // owner's word, as a leaf of its own.
   config.connection.on('projectSignal', (signal) => {
-    if (signal.type === SIGNAL_HANDSHAKE_RESPONSE) {
-      pages.releaseOnSession()
+    if (
+      signal.type === SIGNAL_HANDSHAKE_RESPONSE &&
+      finishSessionPreparation(config.connection, signal)
+    ) {
+      pageSubscriptionFor(config.connection)[releasePreparedSession]()
       // A return path subscribed nobody, so the page answer the gate waits on
       // will never arrive. The session this frame carries is what the relay's
       // agent action binds to; opening the latch here is that moment, and not
       // the welcome that precedes it. A plain miss stays shut.
-      if (isAuthReturnPath(hilosRouter.currentPath.get())) {
+      if (
+        isAuthReturnPath(hilosRouter.currentPath.get()) &&
+        isProjectSignalFromCurrentSocket(signal)
+      ) {
         openPageReady()
       }
     }

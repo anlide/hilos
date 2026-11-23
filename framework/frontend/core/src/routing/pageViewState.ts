@@ -9,7 +9,6 @@ import {
   subscribeSignal,
   type Unsubscribe,
 } from '../state/signal.js'
-import { HilosPages } from './hilosPages.js'
 import { type HilosRouter } from './HilosRouter.js'
 import { PAGE_LOAD_FAILED_ERROR, type PageError } from './pageError.js'
 import { type LazyPageView, type PageView } from './pageView.js'
@@ -103,8 +102,7 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
   let selected: PageView<T> | undefined
   let generation = 0
   let disposed = false
-  let departing = false
-  let awaitingSubscription = false
+  let selectedRoute = router.currentRoute.get()
   let retention: Retention<T> | null = null
 
   const view = computedSignal(() => snapshot.get().view)
@@ -139,9 +137,7 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
     const waiting =
       failure === null &&
       router.currentRoute.get().page !== null &&
-      (awaitingSubscription ||
-        router.pageLoading.get() ||
-        load.status === 'pending')
+      (router.pageLoading.get() || load.status === 'pending')
     const retained = load.status === 'ready' && retains(serverError, load.view)
     snapshot.set({
       view:
@@ -236,37 +232,23 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
     follow(next, { status: 'pending', promise })
   }
 
-  // Only remember departure here: the old view must stay settled until every
-  // onLeave listener has copied it. Route publication then bridges the moment
-  // before subscribe raises pageLoading, even for an already cached component.
-  const offLeave = router.onLeave(() => {
-    departing = true
-  })
-  const offRoute = subscribeSignal(router.currentRoute, (route) => {
-    if (departing) {
-      awaitingSubscription =
-        route.page !== null &&
-        // Only the public nginx reader has no first server answer to await.
-        route.page !== HilosPages.PUBLIC_STATUS &&
-        router.resolvePath(route.page, route.params) !== undefined
-      departing = false
-    }
-    select(true)
-  })
-  const offError = subscribeSignal(router.pageError, (serverError) => {
-    if (serverError !== null) {
-      awaitingSubscription = false
-    }
-    if (serverError === null && load.status === 'idle') {
+  // Select the current route before applying its verdict, even if the
+  // loading or error notification arrives before the route notification.
+  function refresh(retryIdle = false): void {
+    const route = router.currentRoute.get()
+    if (route !== selectedRoute || (retryIdle && load.status === 'idle')) {
+      selectedRoute = route
       select(true)
     } else {
       publish()
     }
-  })
-  const offLoading = subscribeSignal(router.pageLoading, () => {
-    awaitingSubscription = false
-    publish()
-  })
+  }
+
+  const offRoute = subscribeSignal(router.currentRoute, () => refresh())
+  const offError = subscribeSignal(router.pageError, (error) =>
+    refresh(error === null),
+  )
+  const offLoading = subscribeSignal(router.pageLoading, () => refresh())
 
   return {
     view,
@@ -301,7 +283,6 @@ export function createPageViewState<T>(router: HilosRouter): PageViewState<T> {
       }
       disposed = true
       generation += 1
-      offLeave()
       offRoute()
       offError()
       offLoading()

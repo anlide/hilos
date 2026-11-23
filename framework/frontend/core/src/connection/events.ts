@@ -24,12 +24,18 @@ export class Emitter<TEventMap extends Record<string, unknown>> {
     }
   }
 
-  emit<K extends keyof TEventMap>(event: K, payload: TEventMap[K]): void {
+  emit<K extends keyof TEventMap>(
+    event: K,
+    payload: TEventMap[K],
+    isCurrent?: () => boolean,
+  ): void {
     const set = this.listeners.get(event)
     if (set === undefined) {
       return
     }
     for (const listener of set) {
+      if (isCurrent && !isCurrent()) return
+
       ;(listener as (value: TEventMap[K]) => void)(payload)
     }
   }

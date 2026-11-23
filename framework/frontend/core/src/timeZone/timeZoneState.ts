@@ -6,7 +6,10 @@
 // nothing here is replicated back to the server (Hilos::$rt was weighed and not
 // chosen; docs/agents/framework-first.md, runtime/rt-context.md, truth-source.md).
 import { z } from 'zod'
-import { type HilosConnection } from '../connection/HilosConnection.js'
+import {
+  isProjectSignalFromCurrentSocket,
+  type HilosConnection,
+} from '../connection/HilosConnection.js'
 import { entityFragmentSchema } from '../protocol/scopePayload.js'
 import {
   SIGNAL_HANDSHAKE_RESPONSE,
@@ -170,7 +173,10 @@ export function bindTimeZoneState(
     update({ projectTimeZone: usableTimeZone(connection.projectTimeZone) })
   })
   const stopSession = connection.on('projectSignal', (signal) => {
-    if (signal.type !== SIGNAL_HANDSHAKE_RESPONSE) {
+    if (
+      signal.type !== SIGNAL_HANDSHAKE_RESPONSE ||
+      !isProjectSignalFromCurrentSocket(signal)
+    ) {
       return
     }
     const own = ownFromResponse(signal.data, slot)

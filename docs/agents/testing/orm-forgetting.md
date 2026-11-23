@@ -114,14 +114,18 @@ and clears every View item cache. An unmounted key refuses with
 transactions refuse exactly as for the cold reset. Truth-source claims are
 untouched: a library that keeps its claim still writes through its actions.
 
-**Choose by the process the surface lives in.** A test of a table or a page
-that production serves from a process not holding another library's set calls
-it in `prepareIntegrationEnvironment()`, after the last start that preloads
-that set and before the rollback scope, naming that set; its cases then run the
-production read, and one case asserts `isAllLoaded()` is false before and after
-the read. A holder's own test does not call it and does not clean up after
-itself: a test that needs a non-holder asks for it in its own preparation. A
-test that only needs fresh reads uses the cold reset.
+**Choose by the process the surface lives in.** A test of a table, a page, or
+an agent that reads another library's set calls it in
+`prepareIntegrationEnvironment()`, after any preload of that set in the
+reading context and before the rollback scope. Name the set, run the production
+read, and assert in one case that `isAllLoaded()` is false before and after it.
+When the test also runs a writer that needs the complete set, configure a
+separate reading context on the same test database connection and forget the
+holding there before the rollback scope. Keep the writer's context for writes
+and restore it in `finally` after each read. To observe subsequent writes,
+apply the facts to the reading context or read in a fresh configured context.
+A holder's own test leaves holding alone. A test that only needs fresh reads
+uses the cold reset.
 
 ```php
 protected function prepareIntegrationEnvironment(): void

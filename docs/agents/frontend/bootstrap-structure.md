@@ -23,7 +23,7 @@ configures rather than re-implements:
   cookie on the WebSocket handshake, and the frontend never mints it.
 - `bindSessionScope` / `sessionUserName` — route the handshake response into the
   session scope and expose the current user.
-- `bootHilos({ connection, actions, scopes, router, viewLayer, projectViews?, pageEntityTypes?, pageTitles?, appName? })`
+- `bootHilos({ connection, actions, scopes, router, viewLayer, projectViews?, pageEntityTypes?, pageResponseMatchers?, pageTitles?, appName? })`
   — bind the session scope, the page scope, and the page-ready gate, build the
   navigator, open the socket, apply the URL, and return the navigator to provide
   to the view. `actions` is the application's one action reply lifecycle (the
@@ -34,6 +34,13 @@ configures rather than re-implements:
   `document.title` and a page-change live region (WCAG 2.4.2); framework admin
   and footer pages are titled from their own catalogs, so a project lists only
   its own pages. `viewLayer` is the kit's `HILOS_VIEW_LAYER`, selecting the unbuilt-page registry slice; `projectViews` names pages (and their sections) the project implements itself.
+- `pageResponseMatchers` maps a page key to an optional address check for
+  replies that carry their subscribed identity in the payload, such as a slug.
+  For a configured key, the current subscription must have that key and the
+  matcher must accept its active params and the response payload. The connection
+  applies this check before publishing the response or buffering it for replay,
+  so only accepted replies reach the scope, the ready latch and table windows.
+  Other keys and subscription errors follow the usual delivery path.
 
 The page-ready gate is the part of that sequence a project never sees but a
 return route depends on. `bindPageReady` latches the first page answer — a
@@ -70,7 +77,7 @@ backstop, since it is the only layer that can say what to do next.
    daemon issues the session cookie on the WebSocket handshake.
 4. **`bootstrap/main`** (`main.ts` / `main.tsx`) calls `bootHilos(...)` with the
    project's `connection`, `actions`, `scopes`, page `router`, and optional
-   `pageEntityTypes`, `pageTitles`, and `appName` (the latter two from
+   `pageEntityTypes`, `pageResponseMatchers`, `pageTitles`, and `appName` (the latter two from
    `pages/pageTitles.ts`), then mounts the view and provides the returned
    navigator (Vue `hilosRouterKey`, React `HilosRouterContext`, Angular
    `HILOS_ROUTER`).

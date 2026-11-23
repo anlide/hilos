@@ -819,6 +819,71 @@ describe('table viewport send', () => {
     },
   )
 
+  it('retains controls only from registrations that survive their callback', () => {
+    const { connection } = createConnection()
+    const pages = bindPageScope(connection, new ScopeManager())
+    pages.subscribe('p')
+    const window = {
+      limit: 20,
+      filter: {},
+      sort: null,
+      anchor: null,
+      anchorDirection: 'after',
+      pageIndex: null,
+    } as const
+    const continuation = { current: window, opening: window }
+    const replacement = {
+      descriptor: () => null,
+      retainWindow: vi.fn(() => continuation),
+    }
+    const departing = {
+      descriptor: () => null,
+      retainWindow: vi.fn(() => continuation),
+    }
+    const staying = {
+      descriptor: () => null,
+      retainWindow: vi.fn(() => continuation),
+    }
+    const captured = {
+      descriptor: () => null,
+      retainWindow: vi.fn(() => continuation),
+    }
+    const remounted = { descriptor: () => null, restoreWindow: vi.fn() }
+    const source = {
+      descriptor: () => null,
+      retainWindow: vi.fn(() => {
+        connection.registerTableWindow('captured', remounted)
+        connection.unregisterTableWindow('departing', departing)
+        connection.registerTableWindow('inventory', replacement)
+        return continuation
+      }),
+    }
+    connection.registerTableWindow('captured', captured)
+    connection.registerTableWindow('inventory', source)
+    connection.registerTableWindow('departing', departing)
+    connection.registerTableWindow('staying', staying)
+
+    pages.awaitPageAnswer()
+
+    expect(captured.retainWindow).toHaveBeenCalledOnce()
+    expect(remounted.restoreWindow).not.toHaveBeenCalled()
+    connection.unregisterTableWindow('captured', remounted)
+    expect(source.retainWindow).toHaveBeenCalledTimes(1)
+    expect(departing.retainWindow).not.toHaveBeenCalled()
+    expect(staying.retainWindow).toHaveBeenCalledTimes(1)
+    expect(replacement.retainWindow).not.toHaveBeenCalled()
+    connection.unregisterTableWindow('staying', staying)
+    expect(connection.tableWindowDescriptors()).toEqual({ staying: window })
+
+    pages.awaitPageAnswer()
+    connection.unregisterTableWindow('inventory', replacement)
+    expect(replacement.retainWindow).toHaveBeenCalledTimes(1)
+    expect(connection.tableWindowDescriptors()).toEqual({
+      inventory: window,
+      staying: window,
+    })
+  })
+
   it('retains known controls without a route preset and clears them on navigation', () => {
     const { connection } = createConnection()
     const scopes = new ScopeManager()

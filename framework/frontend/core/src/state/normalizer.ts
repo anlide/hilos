@@ -141,6 +141,23 @@ export function ingest(
   payload: ScopePayload,
   options: NormalizerOptions = {},
 ): void {
+  ingestWhileCurrent(scope, payload, options)
+}
+
+/**
+ * Keep normalizing only while the delivery owns the destination.
+ *
+ * @param scope The scope receiving the payload.
+ * @param payload The raw scope-shaped payload.
+ * @param options Binding-local entity-type overrides for the payload's slots.
+ * @param isCurrent Whether the delivery can still write to the scope after each reactive write.
+ */
+export function ingestWhileCurrent(
+  scope: Scope,
+  payload: ScopePayload,
+  options: NormalizerOptions,
+  isCurrent?: () => boolean,
+): void {
   const slots = payload.entities ?? {}
   const data = payload.data ?? {}
   const lists = payload.lists ?? {}
@@ -173,6 +190,7 @@ export function ingest(
   }
 
   for (const [sourceKey, fragments] of Object.entries(slots)) {
+    if (isCurrent && !isCurrent()) return
     if (fragments === null) {
       // A null slot is the downgrade signal: the entity left the slot (the
       // session user on logout). Clear the reference so the slot's selectors
@@ -182,23 +200,25 @@ export function ingest(
       continue
     }
     const type = entityTypeFor(sourceKey, options)
-    scope.data.set(
-      sourceKey,
-      Array.isArray(fragments)
-        ? fragments.map((fragment) =>
-            ingestFragment(scope, type, sourceKey, fragment),
-          )
-        : ingestFragment(scope, type, sourceKey, fragments),
-    )
+    const value = Array.isArray(fragments)
+      ? fragments.map((fragment) =>
+          ingestFragment(scope, type, sourceKey, fragment, isCurrent),
+        )
+      : ingestFragment(scope, type, sourceKey, fragments, isCurrent)
+    if (isCurrent && !isCurrent()) return
+    scope.data.set(sourceKey, value)
   }
   for (const [key, value] of Object.entries(data)) {
+    if (isCurrent && !isCurrent()) return
     scope.data.set(key, value)
   }
   for (const [listKey, section] of Object.entries(lists)) {
-    ingestList(scope, listKey, section, options)
+    if (isCurrent && !isCurrent()) return
+    ingestList(scope, listKey, section, options, isCurrent)
   }
   for (const [tableKey, section] of Object.entries(tables)) {
-    ingestTable(scope, tableKey, section, options)
+    if (isCurrent && !isCurrent()) return
+    ingestTable(scope, tableKey, section, options, isCurrent)
   }
 }
 
@@ -207,6 +227,7 @@ function ingestList(
   listKey: string,
   section: ListSection,
   options: NormalizerOptions,
+  isCurrent?: () => boolean,
 ): void {
   if (section.cleared) {
     scope.lists.clear(listKey)
@@ -214,11 +235,19 @@ function ingestList(
   for (const item of section.items ?? []) {
     const slots: Record<string, unknown> = {}
     for (const [sourceKey, value] of Object.entries(item.slots)) {
-      slots[sourceKey] = normalizeSlot(scope, sourceKey, value, options)
+      slots[sourceKey] = normalizeSlot(
+        scope,
+        sourceKey,
+        value,
+        options,
+        isCurrent,
+      )
     }
+    if (isCurrent && !isCurrent()) return
     scope.lists.upsert(listKey, item.itemKey, slots)
   }
   for (const itemKey of section.deleted ?? []) {
+    if (isCurrent && !isCurrent()) return
     scope.lists.delete(listKey, itemKey)
   }
 }
@@ -233,6 +262,7 @@ function ingestTable(
   tableKey: string,
   section: TableSection,
   options: NormalizerOptions,
+  isCurrent?: () => boolean,
 ): void {
   if (section.cleared) {
     scope.tables.clear(tableKey)
@@ -240,11 +270,19 @@ function ingestTable(
   for (const row of section.rows ?? []) {
     const slots: Record<string, unknown> = {}
     for (const [sourceKey, value] of Object.entries(row.slots)) {
-      slots[sourceKey] = normalizeSlot(scope, sourceKey, value, options)
+      slots[sourceKey] = normalizeSlot(
+        scope,
+        sourceKey,
+        value,
+        options,
+        isCurrent,
+      )
     }
+    if (isCurrent && !isCurrent()) return
     scope.tables.upsert(tableKey, row.rowKey, slots, row.staleSources)
   }
   for (const rowKey of section.deleted ?? []) {
+    if (isCurrent && !isCurrent()) return
     scope.tables.delete(tableKey, rowKey)
   }
 }
@@ -266,9 +304,30 @@ export function normalizeTableRow(
   fragment: TableRowFragment,
   options: NormalizerOptions = {},
 ): TableRow {
+  return normalizeTableRowWhileCurrent(scope, fragment, options)
+}
+
+/**
+ * @param scope The scope receiving the row's entity fragments.
+ * @param fragment The raw table row fragment.
+ * @param options Binding-local entity-type overrides for the row's slots.
+ * @param isCurrent Whether the page response still owns the scope.
+ */
+export function normalizeTableRowWhileCurrent(
+  scope: Scope,
+  fragment: TableRowFragment,
+  options: NormalizerOptions,
+  isCurrent?: () => boolean,
+): TableRow {
   const slots: Record<string, unknown> = {}
   for (const [sourceKey, value] of Object.entries(fragment.slots)) {
-    slots[sourceKey] = normalizeSlot(scope, sourceKey, value, options)
+    slots[sourceKey] = normalizeSlot(
+      scope,
+      sourceKey,
+      value,
+      options,
+      isCurrent,
+    )
   }
 
   return fragment.staleSources
@@ -292,17 +351,18 @@ function normalizeSlot(
   sourceKey: string,
   value: unknown,
   options: NormalizerOptions,
+  isCurrent?: () => boolean,
 ): unknown {
   const type = entityTypeFor(sourceKey, options)
   if (Array.isArray(value)) {
     return value.map((element) =>
       isEntityFragment(element)
-        ? ingestFragment(scope, type, sourceKey, element)
+        ? ingestFragment(scope, type, sourceKey, element, isCurrent)
         : element,
     )
   }
   if (isEntityFragment(value)) {
-    return ingestFragment(scope, type, sourceKey, value)
+    return ingestFragment(scope, type, sourceKey, value, isCurrent)
   }
 
   return value
@@ -327,6 +387,7 @@ function ingestFragment(
   type: string,
   sourceKey: string,
   fragment: EntityFragment,
+  isCurrent?: () => boolean,
 ): EntityRef {
   // Runtime guard for payloads that reach the boundary untyped.
   const { id } = fragment as { id?: EntityId | null }
@@ -334,7 +395,7 @@ function ingestFragment(
     throw new Error(`Entity fragment in slot '${sourceKey}' has no stable id`)
   }
   const ref: EntityRef = { type, id }
-  scope.entities.upsert(ref, fragment)
+  if (!isCurrent || isCurrent()) scope.entities.upsert(ref, fragment)
 
   return ref
 }

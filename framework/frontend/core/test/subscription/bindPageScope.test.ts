@@ -233,7 +233,7 @@ describe('bindPageScope', () => {
     pages.subscribe('product', { slug: 'morning-meadow' })
     connection.emitPageMoved(frame)
 
-    expect(handled).toHaveBeenCalledWith(frame)
+    expect(handled).toHaveBeenCalledWith(frame, undefined)
     expect(moved).toHaveBeenCalledWith({
       page: 'product',
       params: { slug: 'summer-meadow' },

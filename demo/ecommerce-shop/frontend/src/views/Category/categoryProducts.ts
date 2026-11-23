@@ -72,45 +72,6 @@ export function resolveCategoryProductRow(
   }
 }
 
-/**
- * Describe a storefront product's availability, with a count where relevant.
- *
- * @param row The product displayed in the availability cell.
- */
-export function availabilityText(row: CategoryProductRow): string {
-  switch (row.availability) {
-    case 'free':
-      return 'One of a kind'
-    case 'in_stock':
-      return `In stock: ${row.units}`
-    case 'low':
-      return `Only ${row.units} left`
-    case 'out_of_stock':
-      return 'Out of stock'
-    default:
-      return ''
-  }
-}
-
-/**
- * Choose the semantic tone of the availability badge.
- *
- * @param row The product displayed in the availability cell.
- */
-export function availabilityTone(
-  row: CategoryProductRow,
-): 'success' | 'warning' | 'secondary' {
-  switch (row.availability) {
-    case 'free':
-    case 'in_stock':
-      return 'success'
-    case 'low':
-      return 'warning'
-    default:
-      return 'secondary'
-  }
-}
-
 /** Columns and the additional fields their cells read from the product slot. */
 export const CATEGORY_PRODUCTS_COLUMNS: HilosTableColumnOf<CategoryProductRow>[] =
   [

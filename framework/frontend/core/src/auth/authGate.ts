@@ -28,6 +28,10 @@ import {
   type ReadonlySignal,
   type Unsubscribe,
 } from '../state/signal.js'
+import {
+  reactToPageRefusal,
+  type PageRefusalReaction,
+} from '../subscription/PageSubscription.js'
 
 /** The machine-readable action-error code an anonymous write action raises. */
 const UNAUTHORIZED_ERROR_CODE = 'unauthorized'
@@ -126,12 +130,11 @@ export interface AuthGate {
 export function createAuthGate(options: AuthGateOptions): AuthGate {
   const { router, currentUserId, actionErrors, pendingAck } = options
   const modalOpen = createSignal(false)
+  const accessRouter: AuthGateRouter & PageRefusalReaction = router
 
   const resume = (): void => {
-    // Other error codes (403/404/500) are left to their ErrorPage — only a 401
-    // is auth-fixable.
-    const pageError = router.pageError.get()
-    if (pageError?.httpCode === 401) {
+    const resumed = accessRouter[reactToPageRefusal]?.(401, 'clear')
+    if (resumed === undefined && router.pageError.get()?.httpCode === 401) {
       router.clearPageError()
     }
     modalOpen.set(false)

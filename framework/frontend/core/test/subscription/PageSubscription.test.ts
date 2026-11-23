@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PageSubscription } from '../../src/subscription/PageSubscription.js'
+import {
+  PageSubscription,
+  type PageMoveTarget,
+} from '../../src/subscription/PageSubscription.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { subscribeSignal } from '../../src/state/signal.js'
 import { type EntityRef } from '../../src/state/EntityStore.js'
@@ -771,6 +774,37 @@ describe('PageSubscription page moves', () => {
     expect(pages.pageLoading.get()).toBe(true)
     expect(pages.pageError.get()).toBeNull()
     expect(connection.forgotPageFrames).toBe(1)
+  })
+
+  it('notifies every move listener when the first one follows the target', () => {
+    const connection = fakeConnection()
+    const pages = new PageSubscription(connection, new ScopeManager())
+    pages.releaseOnSession()
+    pages.subscribe('product', { slug: 'morning-meadow' })
+    const follow = vi.fn(({ params }: PageMoveTarget) =>
+      pages.followMove(params),
+    )
+    const observe = vi.fn()
+    pages.onPageMoved(follow)
+    pages.onPageMoved(observe)
+    const target = { page: 'product', params: { slug: 'summer-meadow' } }
+
+    expect(
+      pages.handlePageMoved(
+        move('product', { slug: 'morning-meadow' }, target.params),
+      ),
+    ).toBe(true)
+
+    expect(follow).toHaveBeenCalledExactlyOnceWith(target)
+    expect(observe).toHaveBeenCalledExactlyOnceWith(target)
+    expect(connection.sent).toEqual([
+      {
+        type: 'page_subscribe',
+        page: 'product',
+        params: { slug: 'morning-meadow' },
+      },
+      { type: 'page_subscribe', ...target },
+    ])
   })
 
   it('drops a move of another page, other params, or no subscription, and a removed listener hears nothing', () => {

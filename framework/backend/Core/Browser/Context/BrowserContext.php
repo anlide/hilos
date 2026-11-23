@@ -1683,6 +1683,7 @@ abstract class BrowserContext
         try {
             $contained = $this->refuseDeletedPageResources();
             $contained = [...$contained, ...$this->moveRenamedPageResources()];
+            $this->publishLocalPageFacts($this->databaseBack);
             $this->groupSourceChanges();
 
             return [...$contained, ...$this->emitBrowserSignals()];
@@ -1699,6 +1700,15 @@ abstract class BrowserContext
             $this->skippedForPageResource = [];
             $this->publishedWholeThisFlush = [];
         }
+    }
+
+    /**
+     * Publishes project page facts after resource transitions and before regular source fan-out.
+     *
+     * @param bool $databaseBack Whether this flush carries a successful query after connection loss
+     */
+    protected function publishLocalPageFacts(bool $databaseBack): void
+    {
     }
 
     /**
@@ -2547,6 +2557,7 @@ abstract class BrowserContext
 
     /**
      * Re-sends the whole page one agent owns after its node-local source changes.
+     * A resource transition that already moved or refused the page takes priority.
      * A contained failure is logged; the private delivery path already tells the
      * subscriber and records the failure for recovery.
      *
@@ -2555,6 +2566,12 @@ abstract class BrowserContext
      */
     public function resendPageWhole(string $page, string $acceptKey): void
     {
+        $subscription = Hilos::$sr?->pageSubscription($acceptKey);
+        if ($subscription === null || $subscription->page !== $page || $this->isSkippedForPageResource($acceptKey)
+            || ($this->publishedWholeThisFlush[$acceptKey] ?? null) === $subscription
+        ) {
+            return;
+        }
         foreach ($this->resendWholePage($page, $acceptKey) as $contained) {
             Logger::error(
                 "Browser could not re-send page {$page} to {$acceptKey}: {$contained->failure->getMessage()}",
@@ -2601,14 +2618,18 @@ abstract class BrowserContext
     }
 
     /**
+     * Records an addressed failure once, respecting any resource transition or earlier attempt in this flush.
+     *
      * @param string $page Failed page
      * @param string $acceptKey Failed subscription
      * @param Throwable $failure Contained publisher failure; diagnostics stay in the journal
      */
-    private function failPublication(string $page, string $acceptKey, Throwable $failure): void
+    final protected function failPublication(string $page, string $acceptKey, Throwable $failure): void
     {
         $subscription = Hilos::$sr?->pageSubscription($acceptKey);
-        if ($subscription === null || $subscription->page !== $page) {
+        if ($subscription === null || $subscription->page !== $page || $this->isSkippedForPageResource($acceptKey)
+            || ($this->publishedWholeThisFlush[$acceptKey] ?? null) === $subscription
+        ) {
             return;
         }
         if (!Hilos::$sr->hasPageDeliveryFailure($acceptKey)) {
@@ -2653,12 +2674,11 @@ abstract class BrowserContext
         if ($current !== null && $current->page === $page) {
             $this->publishedWholeThisFlush[$acceptKey] = $current;
         }
-        $subscription = Hilos::$sr?->getPageSubscriptions()[$acceptKey] ?? [];
-        $params = $subscription[SignalPayloadConstants::SUBSCRIPTION_PARAMS_KEY] ?? [];
+        $params = $current?->stringParams() ?? [];
         $owed = Hilos::$sr?->hasPageDeliveryFailure($acceptKey) === true;
 
         try {
-            $outcome = $this->pageResender?->resendPage($page, $acceptKey, is_array($params) ? $params : [], $reportRefusal)
+            $outcome = $this->pageResender?->resendPage($page, $acceptKey, $params, $reportRefusal)
                 ?? PageResendOutcome::Unserved;
         } catch (Throwable $failure) {
             if ($owed) {
@@ -5194,6 +5214,7 @@ abstract class BrowserContext
         foreach (Hilos::$sr->getPageSubscriptions() as $acceptKey => $subscription) {
             if (
                 isset($failedSubscriptions[$acceptKey])
+                || isset($this->publishedWholeThisFlush[$acceptKey])
                 || $this->isSkippedForPageResource((string) $acceptKey)
                 || ($guardAllows[$acceptKey] ?? null) === false
             ) {

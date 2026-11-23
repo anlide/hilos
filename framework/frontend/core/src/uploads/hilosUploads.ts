@@ -2,7 +2,11 @@ import {
   ActionError,
   type ActionLifecycle,
 } from '../connection/actionLifecycle.js'
-import { type HilosConnection } from '../connection/HilosConnection.js'
+import {
+  isCurrentProjectSignal,
+  isProjectSignalFromCurrentSocket,
+  type HilosConnection,
+} from '../connection/HilosConnection.js'
 import {
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
@@ -448,7 +452,12 @@ export function bindUploads(
       signal.type === SIGNAL_TYPE_PAGE_RESPONSE ||
       signal.type === SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR
     ) {
-      onConnectionReady()
+      if (
+        isCurrentProjectSignal(signal) &&
+        isProjectSignalFromCurrentSocket(signal)
+      ) {
+        onConnectionReady()
+      }
     } else if (signal.type === SIGNAL_UPLOAD_STATE) {
       onUploadState(signal)
     } else if (signal.type === SIGNAL_UPLOAD_CREDIT) {

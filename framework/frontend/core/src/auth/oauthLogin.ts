@@ -53,6 +53,11 @@ import {
   type ReadonlySignal,
 } from '../state/signal.js'
 import { whenPageReady } from '../subscription/pageReadyGate.js'
+import {
+  isCurrentProjectSignal,
+  isProjectSignalFromCurrentSocket,
+  isReplayedProjectSignal,
+} from '../connection/HilosConnection.js'
 import { type HilosAuthContext } from './authContext.js'
 import {
   AUTH_ACTION_LINK_OAUTH_AFTER_REAUTH,
@@ -1017,6 +1022,13 @@ function armTripKeyPresentation(
       if (
         signal.type !== SIGNAL_TYPE_PAGE_RESPONSE &&
         signal.type !== SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR
+      ) {
+        return
+      }
+      if (
+        isReplayedProjectSignal(signal) ||
+        !isProjectSignalFromCurrentSocket(signal) ||
+        !isCurrentProjectSignal(signal)
       ) {
         return
       }

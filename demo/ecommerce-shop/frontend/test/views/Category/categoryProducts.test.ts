@@ -11,11 +11,13 @@ import {
 import { scopes } from '../../../src/bootstrap/session.js'
 import { kindText } from '../../../src/catalog/catalog.js'
 import {
+  availabilityText,
+  availabilityTone,
+} from '../../../src/catalog/productAvailability.js'
+import {
   CATEGORY_PRODUCTS_COLUMNS,
   CATEGORY_PRODUCTS_FRAME,
   CATEGORY_PRODUCTS_TABLE,
-  availabilityText,
-  availabilityTone,
   resolveCategoryProductRow,
 } from '../../../src/views/Category/categoryProducts.js'
 import {
@@ -165,9 +167,8 @@ describe('category products declaration', () => {
     ['low', 3, 'Only 3 left', 'warning'],
     ['out_of_stock', 0, 'Out of stock', 'secondary'],
   ])('describes %s availability', (availability, units, label, tone) => {
-    const row = { ...stock, availability, units }
-    expect(availabilityText(row)).toBe(label)
-    expect(availabilityTone(row)).toBe(tone)
+    expect(availabilityText(availability, units)).toBe(label)
+    expect(availabilityTone(availability)).toBe(tone)
   })
 
   it('opens in Tiles and offers Table with the same product fields', () => {

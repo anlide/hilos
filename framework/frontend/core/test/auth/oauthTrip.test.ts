@@ -10,7 +10,13 @@
 // posted before closing later still (HIL-926).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { type ZodType } from 'zod'
-import { type HilosConnection } from '../../src/connection/HilosConnection.js'
+import {
+  type HilosConnection,
+  type WebSocketLike,
+} from '../../src/connection/HilosConnection.js'
+import { createHilosConnection } from '../../src/connection/createHilosConnection.js'
+import { DEFAULT_RECONNECT_OPTIONS } from '../../src/connection/backoff.js'
+import { bindPageScope } from '../../src/subscription/bindPageScope.js'
 import {
   ActionError,
   type ActionHandle,
@@ -39,7 +45,10 @@ import {
   OAUTH_RESULT_SIGNAL,
   oauthResultSignalSchema,
 } from '../../src/auth/oauthSignals.js'
-import { SIGNAL_TYPE_PAGE_RESPONSE } from '../../src/protocol/constants.js'
+import {
+  SIGNAL_TYPE_PAGE_RESPONSE,
+  SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
+} from '../../src/protocol/constants.js'
 import { type ProjectSignal } from '../../src/protocol/parseSignal.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { createSignal } from '../../src/state/signal.js'
@@ -139,13 +148,17 @@ let active: TripWorld | null = null
  *
  * @returns The world, already bound.
  */
-function tripWorld(): TripWorld {
+function tripWorld(transport?: {
+  connection: HilosConnection
+  scopes: ScopeManager
+  receive: (type: string, data: Record<string, unknown>) => void
+}): TripWorld {
   const listeners: Array<(signal: ProjectSignal) => void> = []
   const stateListeners: Array<(state: string) => void> = []
   const draggingListeners: Array<(dragging: boolean) => void> = []
   const messageListeners: Array<(event: MessageEvent) => void> = []
   const held: Array<(reason: unknown) => void> = []
-  const scopes = new ScopeManager()
+  const scopes = transport?.scopes ?? new ScopeManager()
   // The providers' names arrive with the enabled set, the way a handshake puts
   // them in the session scope (HIL-427); the waiting copy reads them there.
   scopes.session.data.set('authMethods', [
@@ -153,44 +166,46 @@ function tripWorld(): TripWorld {
     { key: GOOGLE, name: 'Google' },
   ])
 
-  const connection = {
-    on(event: string, listener: (payload: never) => void): () => void {
-      if (event === 'reconnectDragging') {
-        const onDragging = listener as unknown as (dragging: boolean) => void
-        draggingListeners.push(onDragging)
+  const connection =
+    transport?.connection ??
+    ({
+      on(event: string, listener: (payload: never) => void): () => void {
+        if (event === 'reconnectDragging') {
+          const onDragging = listener as unknown as (dragging: boolean) => void
+          draggingListeners.push(onDragging)
 
-        return () => {
-          const at = draggingListeners.indexOf(onDragging)
-          if (at >= 0) {
-            draggingListeners.splice(at, 1)
+          return () => {
+            const at = draggingListeners.indexOf(onDragging)
+            if (at >= 0) {
+              draggingListeners.splice(at, 1)
+            }
           }
         }
-      }
-      if (event === 'state') {
-        const onState = listener as unknown as (state: string) => void
-        stateListeners.push(onState)
+        if (event === 'state') {
+          const onState = listener as unknown as (state: string) => void
+          stateListeners.push(onState)
 
-        return () => {
-          const at = stateListeners.indexOf(onState)
-          if (at >= 0) {
-            stateListeners.splice(at, 1)
+          return () => {
+            const at = stateListeners.indexOf(onState)
+            if (at >= 0) {
+              stateListeners.splice(at, 1)
+            }
           }
         }
-      }
-      const typed = listener as unknown as (signal: ProjectSignal) => void
-      if (event !== 'projectSignal') {
-        return () => undefined
-      }
-      listeners.push(typed)
-
-      return () => {
-        const at = listeners.indexOf(typed)
-        if (at >= 0) {
-          listeners.splice(at, 1)
+        const typed = listener as unknown as (signal: ProjectSignal) => void
+        if (event !== 'projectSignal') {
+          return () => undefined
         }
-      }
-    },
-  } as unknown as HilosConnection
+        listeners.push(typed)
+
+        return () => {
+          const at = listeners.indexOf(typed)
+          if (at >= 0) {
+            listeners.splice(at, 1)
+          }
+        }
+      },
+    } as unknown as HilosConnection)
 
   const actions = {
     dispatch: (
@@ -320,6 +335,10 @@ function tripWorld(): TripWorld {
       held.shift()?.(new Error(message))
     },
     emit(type, data) {
+      if (transport) {
+        transport.receive(type, data)
+        return
+      }
       const signal = {
         kind: 'project',
         type,
@@ -809,6 +828,118 @@ describe('the OAuth trip machine', () => {
     world.signIn(7)
     expect(world.outcomes).toEqual([{ kind: 'signed_in', message: '' }])
   })
+
+  it.each([false, true])(
+    'waits for a live page answer after reconnect (socket lost during refusal: %s)',
+    async (loseRefusal) => {
+      function socketDriver() {
+        const listeners = new Map<string, (event: { data?: string }) => void>()
+        const socket: WebSocketLike = {
+          send: () => {},
+          close: () => {},
+          addEventListener: (name, listener) => listeners.set(name, listener),
+        }
+        return {
+          socket,
+          open: () => listeners.get('open')?.({}),
+          drop: () => listeners.get('close')?.({}),
+          receive: (type: string, data: Record<string, unknown>) =>
+            listeners.get('message')?.({
+              data: JSON.stringify({ type, data }),
+            }),
+        }
+      }
+      vi.useFakeTimers()
+      const first = socketDriver()
+      const second = socketDriver()
+      const third = socketDriver()
+      const { connection } = createHilosConnection({
+        url: 'ws://test/ws',
+        webSocketFactory: vi
+          .fn()
+          .mockReturnValueOnce(first.socket)
+          .mockReturnValueOnce(second.socket)
+          .mockReturnValueOnce(third.socket),
+      })
+      const stopEarly = connection.on('projectSignal', (signal) => {
+        if (loseRefusal && signal.type === SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR)
+          second.drop()
+      })
+      const scopes = new ScopeManager()
+      const pages = bindPageScope(connection, scopes, {
+        pageResponseMatchers: new Map([['main', () => true]]),
+      })
+      pages.subscribe('main')
+      connection.connect()
+      first.open()
+      pages.releaseOnSession()
+      const world = tripWorld({ connection, scopes, receive: first.receive })
+      const answer = {
+        page: 'main',
+        payload: {
+          windows: {
+            products: {
+              rows: [],
+              sort: [],
+              filter: {},
+              limit: 20,
+              totalCount: 0,
+              totalExact: true,
+              firstAnchor: null,
+              lastAnchor: null,
+            },
+          },
+        },
+      }
+
+      try {
+        first.receive(SIGNAL_TYPE_PAGE_RESPONSE, answer)
+        await reachExchange(world)
+        const tripKey = world.dispatched[1].payload.tripKey
+        first.drop()
+        expect(connection.state).toBe('reconnecting')
+        await vi.advanceTimersByTimeAsync(DEFAULT_RECONNECT_OPTIONS.baseDelayMs)
+        second.open()
+        expect(connection.state).toBe('connected')
+        // The same opening keeps its display replay through reconnect. It cannot
+        // start a command that needs the replacement socket's own answer.
+        const display = vi.fn()
+        connection.on('projectSignal', display)()
+        expect(display).toHaveBeenCalledOnce()
+        expect(world.dispatched).toHaveLength(2)
+        first.receive(SIGNAL_TYPE_PAGE_RESPONSE, answer)
+        expect(world.dispatched).toHaveLength(2)
+
+        pages.releaseOnSession()
+        if (loseRefusal) {
+          second.receive(SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR, {
+            page: 'main',
+            httpCode: 404,
+            errorCode: 'not_found',
+            title: 'Page Not Found',
+            message: 'Missing',
+          })
+          expect(connection.state).toBe('reconnecting')
+          expect(world.dispatched).toHaveLength(2)
+          await vi.advanceTimersByTimeAsync(
+            DEFAULT_RECONNECT_OPTIONS.baseDelayMs,
+          )
+          third.open()
+          pages.releaseOnSession()
+          expect(world.dispatched).toHaveLength(2)
+        }
+        const current = loseRefusal ? third : second
+        current.receive(SIGNAL_TYPE_PAGE_RESPONSE, answer)
+        current.receive(SIGNAL_TYPE_PAGE_RESPONSE, answer)
+        expect(world.dispatched.slice(2)).toEqual([
+          { action: 'hilos_oauth_resume', payload: { tripKey } },
+        ])
+      } finally {
+        stopEarly()
+        connection.close()
+      }
+    },
+  )
 
   it('ends the trip when the server does not know the presented key', async () => {
     const world = tripWorld()

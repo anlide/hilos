@@ -449,6 +449,7 @@ final class LegalAdminAudienceTest extends LegalAdminTestCase
         self::assertSame([SignalTypeConstants::PAGE_RESPONSE], array_column($frames, 0));
         self::assertSame(['hilosLegalChecks'], array_keys($frames[0][1]->payload->windows));
         self::assertSame(3, $frames[0][1]->payload->data['legalOverview']['documents'][0]['lapsed']);
+        Hilos::$browser->flushToSignalRouter();
 
         $this->documentsWindow('documents', new TableViewportSubscription(
             HilosLegalDocumentsTable::TABLE,

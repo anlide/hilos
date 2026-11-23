@@ -11,7 +11,10 @@
 // current, normalizes the rows into the page scope, and feeds the sink. The
 // returned unbind drops every subscription on the view's unmount.
 
-import { type HilosConnection } from '../connection/HilosConnection.js'
+import {
+  isCurrentProjectSignal,
+  type HilosConnection,
+} from '../connection/HilosConnection.js'
 import { SIGNAL_TYPE_PAGE_RESPONSE } from '../protocol/constants.js'
 import { type TableViewportDeltaSignalData } from '../protocol/envelope.js'
 import {
@@ -20,6 +23,7 @@ import {
 } from '../protocol/scopePayload.js'
 import {
   normalizeTableRow,
+  normalizeTableRowWhileCurrent,
   type NormalizerOptions,
 } from '../state/normalizer.js'
 import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
@@ -149,7 +153,8 @@ export function bindTableViewport(
     // Validated against pageResponseSchema at the parse boundary; this cast is the
     // declared typed selector for that schema's output, as in bindPageScope.
     const data = signal.data as PageResponseWire
-    if (data.page !== address.page) {
+    const isCurrent = () => isCurrentProjectSignal(signal)
+    if (data.page !== address.page || !isCurrent()) {
       return
     }
     const window = data.payload?.windows?.[address.tableKey]
@@ -159,8 +164,17 @@ export function bindTableViewport(
         return
       }
       withPresentationUpdate({ kind: 'window' }, () => {
+        const rows = []
+        for (const row of window.rows) {
+          if (!isCurrent()) return
+          rows.push(
+            normalizeTableRowWhileCurrent(scope, row, options, isCurrent),
+          )
+        }
+        if (!isCurrent()) return
+
         sink.ingestSubscriptionWindow(
-          window.rows.map((row) => normalizeTableRow(scope, row, options)),
+          rows,
           window.totalCount,
           window.totalExact,
           window.firstAnchor,
@@ -172,7 +186,9 @@ export function bindTableViewport(
           window.rowsBefore ?? null,
         )
       })
-      connection.clearTableWindowContinuation?.(address.tableKey, sink)
+      if (isCurrentProjectSignal(signal)) {
+        connection.clearTableWindowContinuation?.(address.tableKey, sink)
+      }
 
       return
     }
@@ -184,8 +200,11 @@ export function bindTableViewport(
     if (!scope) {
       return
     }
+    if (!isCurrent()) return
     sink.ingestRefusal(refusal.errorCode)
-    connection.clearTableWindowContinuation?.(address.tableKey, sink)
+    if (isCurrentProjectSignal(signal)) {
+      connection.clearTableWindowContinuation?.(address.tableKey, sink)
+    }
   })
 
   const unsubscribeDelta = connection.on('tableViewportDelta', (signal) => {

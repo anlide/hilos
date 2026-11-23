@@ -20,7 +20,7 @@ import {
   type HilosDashboardSection,
   type HilosPageIdentity,
 } from '../../src/routing/hilosPageIdentity.js'
-import { createSignal } from '../../src/state/signal.js'
+import { createSignal, subscribeSignal } from '../../src/state/signal.js'
 import { ScopeManager } from '../../src/state/ScopeManager.js'
 import { PageSubscription } from '../../src/subscription/PageSubscription.js'
 
@@ -1188,6 +1188,122 @@ describe('createHilosRouter', () => {
     expect(clearedCount()).toBe(0)
     expect(calledOnPages).toEqual([])
     expect(pageError.get()?.errorCode).toBe('forbidden')
+  })
+
+  it.each(['navigate', 'replacePath'] as const)(
+    'subscribes once when a route observer canonicalizes %s',
+    (method) => {
+      const { env } = fakeEnvironment('/')
+      const { pages, calls } = fakePages()
+      const navigator = createHilosRouter(router, pages, env)
+      navigator.start()
+      const off = subscribeSignal(navigator.currentRoute, (route) => {
+        if (route.page !== 'user') return
+        off()
+        navigator.replacePath('/user/42')
+      })
+
+      navigator[method]('/user/%34%32')
+
+      expect(env.pathname()).toBe('/user/42')
+      expect(navigator.currentPath.get()).toBe('/user/42')
+      expect(navigator.currentRoute.get()).toEqual({
+        page: 'user',
+        params: { id: '42' },
+        admin: false,
+      })
+      expect(calls).toEqual([
+        { page: 'main', params: {} },
+        { page: 'user', params: { id: '42' } },
+      ])
+    },
+  )
+
+  it('commits a guarded replacement when a leave listener canonicalizes its source', () => {
+    const { env, pushCount } = fakeEnvironment('/user/42')
+    const { pages, calls } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+    const stopLeave = navigator.onLeave(() => {
+      stopLeave()
+      navigator.replacePath('/user/%34%32')
+    })
+
+    navigator.replacePath('/hilos', () => true)
+
+    expect(env.pathname()).toBe('/hilos')
+    expect(navigator.currentPath.get()).toBe('/hilos')
+    expect(navigator.currentRoute.get().page).toBe('dash')
+    expect(calls).toEqual([
+      { page: 'user', params: { id: '42' } },
+      { page: 'dash', params: {} },
+    ])
+    expect(pushCount()).toBe(0)
+  })
+
+  it('keeps the navigation started by a corrective history write', () => {
+    const { env, pushCount } = fakeEnvironment('/user/42')
+    const { pages, calls } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+    const replace = env.replaceState
+    let correctionObserved = false
+    env.replaceState = (path) => {
+      if (path === '/user/43') navigator.navigate('/hilos')
+      if (path === '/hilos' && !correctionObserved) {
+        correctionObserved = true
+        navigator.navigate('/')
+      }
+      replace(path)
+    }
+
+    navigator.replacePath('/user/43', () => true)
+
+    expect(env.pathname()).toBe('/')
+    expect(navigator.currentPath.get()).toBe('/')
+    expect(navigator.currentRoute.get().page).toBe('main')
+    expect(calls).toEqual([
+      { page: 'user', params: { id: '42' } },
+      { page: 'dash', params: {} },
+      { page: 'main', params: {} },
+    ])
+    expect(pushCount()).toBe(2)
+  })
+
+  it('restores the outer target binding after a nested guarded rollback', () => {
+    const { env, pushCount } = fakeEnvironment('/user/42')
+    const { pages, calls } = fakePages()
+    const navigator = createHilosRouter(router, pages, env)
+    navigator.start()
+    const replace = env.replaceState
+    const observedLocations: string[][] = []
+    let innerCurrent = true
+    env.replaceState = (path) => {
+      replace(path)
+      if (path === '/user/44') {
+        navigator.replacePath('/user/%34%34')
+        innerCurrent = false
+      }
+      if (path === '/user/43') {
+        navigator.replacePath('/user/44', () => innerCurrent)
+        observedLocations.push([env.pathname(), navigator.currentPath.get()])
+        navigator.replacePath('/user/%34%32')
+        navigator.replacePath('/user/%34%33')
+        observedLocations.push([env.pathname(), navigator.currentPath.get()])
+      }
+    }
+
+    navigator.replacePath('/user/43', () => true)
+
+    expect(observedLocations).toEqual([
+      ['/user/42', '/user/42'],
+      ['/user/%34%32', '/user/%34%32'],
+    ])
+    expect(env.pathname()).toBe('/user/%34%33')
+    expect(navigator.currentPath.get()).toBe('/user/%34%33')
+    expect(navigator.currentRoute.get().params).toEqual({ id: '43' })
+    expect(calls).toEqual([{ page: 'user', params: { id: '42' } }])
+    expect(pushCount()).toBe(0)
   })
 
   it('applies replacePath across pages and misses without pushing history', () => {

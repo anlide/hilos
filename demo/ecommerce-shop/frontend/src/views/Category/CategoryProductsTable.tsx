@@ -3,6 +3,10 @@ import { useLayoutEffect, useState } from 'react'
 import { HilosLink, HilosViewportTable } from '@hilos/react/base'
 
 import { kindText } from '../../catalog/catalog.js'
+import {
+  availabilityText,
+  availabilityTone,
+} from '../../catalog/productAvailability.js'
 import { formatMoney } from '../../money/money.js'
 import {
   PRODUCT_AVAILABILITY_FIELD,
@@ -10,8 +14,6 @@ import {
   PRODUCT_NAME_FIELD,
   PRODUCT_PICTURE_URL_FIELD,
   PRODUCT_PRICE_FIELD,
-  availabilityText,
-  availabilityTone,
 } from './categoryProducts.js'
 import {
   createCategoryProductsTable,
@@ -73,7 +75,7 @@ export default function CategoryProductsTable({
             <span className="text-nowrap">{formatMoney(row.price)}</span>
           ),
           [PRODUCT_AVAILABILITY_FIELD]: (row) => {
-            const tone = availabilityTone(row)
+            const tone = availabilityTone(row.availability)
             return (
               <span
                 className={`badge rounded-pill bg-${tone}-subtle text-${tone}-emphasis border border-${tone}-subtle`}
@@ -81,7 +83,7 @@ export default function CategoryProductsTable({
                 {row.availability === 'free' && (
                   <i className="bi bi-gem me-1" aria-hidden="true" />
                 )}
-                {availabilityText(row)}
+                {availabilityText(row.availability, row.units)}
               </span>
             )
           },

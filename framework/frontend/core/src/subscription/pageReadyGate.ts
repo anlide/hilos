@@ -30,7 +30,11 @@
 // send that frame into a socket the server has not been told about. A plain
 // miss is not opened: nothing there is waiting to dispatch.
 
-import { type HilosConnection } from '../connection/HilosConnection.js'
+import {
+  isCurrentProjectSignal,
+  isProjectSignalFromCurrentSocket,
+  type HilosConnection,
+} from '../connection/HilosConnection.js'
 import {
   SIGNAL_TYPE_PAGE_RESPONSE,
   SIGNAL_TYPE_PAGE_SUBSCRIPTION_ERROR,
@@ -91,7 +95,12 @@ export function bindPageReady(connection: HilosConnection): () => void {
     ) {
       return
     }
-    openLatch()
+    if (
+      isCurrentProjectSignal(signal) &&
+      isProjectSignalFromCurrentSocket(signal)
+    ) {
+      openLatch()
+    }
   })
 }
 

@@ -14,9 +14,15 @@
 // — no route, an uncovered slot, a page its view layer has not built — is
 // refused the way an unbuilt page is, and the address the tab stands on stays.
 
-import { type HilosRouter } from '../routing/HilosRouter.js'
+import {
+  type PageMoveRouter,
+  replaceMovedPath,
+} from '../routing/HilosRouter.js'
 import { type Unsubscribe } from '../state/signal.js'
-import { type PageSubscription } from './PageSubscription.js'
+import {
+  followCurrentPageMove,
+  type PageSubscription,
+} from './PageSubscription.js'
 
 /**
  * Follow every accepted page_moved to the address it names, without a history
@@ -29,21 +35,19 @@ import { type PageSubscription } from './PageSubscription.js'
  */
 export function bindPageMove(
   pages: PageSubscription,
-  router: HilosRouter,
+  router: PageMoveRouter,
 ): Unsubscribe {
-  return pages.onPageMoved((target) => {
+  return pages[followCurrentPageMove]((target, isCurrent) => {
+    if (!isCurrent()) return
     const path = router.resolvePath(target.page, target.params)
+    if (!isCurrent()) return
     if (path === undefined) {
       pages.refuseUnbuilt(target.page)
       return
     }
-    const before = router.currentRoute.get().page
-    // Rewriting to the same found page only publishes the new address; another
-    // page leaves and subscribes on its own.
-    router.replacePath(path)
-    const after = router.currentRoute.get()
-    if (after.page === before) {
-      pages.followMove(after.params)
+    const inPlace = router[replaceMovedPath]?.(path, isCurrent)
+    if (inPlace?.page === target.page && isCurrent()) {
+      pages.followMove(inPlace.params)
     }
   })
 }

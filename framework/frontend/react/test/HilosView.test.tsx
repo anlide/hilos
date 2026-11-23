@@ -295,7 +295,7 @@ describe('HilosView local lazy lifecycle', () => {
       </StrictMode>,
     )
     expect(loader).toHaveBeenCalledTimes(1)
-    expect(leaveListeners.size).toBe(2)
+    expect(leaveListeners.size).toBe(1)
     pending.resolve(KnownPage)
     await settleCode()
     expect(container.querySelector('[data-id="known-page"]')).toBeNull()

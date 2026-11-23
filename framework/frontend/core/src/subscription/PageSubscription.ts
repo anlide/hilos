@@ -26,15 +26,17 @@ import {
   type HilosConnectionEventMap,
   type ConnectionState,
   type TableViewportDescriptor,
+  captureCurrentSocket,
+  capturePreparedSession,
 } from '../connection/HilosConnection.js'
 import {
   PAGE_ERROR_NOT_SERVED,
   type PageSubscriptionError,
 } from '../protocol/pageError.js'
 import { type PageMoved } from '../protocol/pageMoved.js'
-import { type Scope, type ScopeManager } from '../state/ScopeManager.js'
+import { Scope, type ScopeManager } from '../state/ScopeManager.js'
 import {
-  ingest,
+  ingestWhileCurrent,
   type NormalizerOptions,
   type ScopePayload,
 } from '../state/normalizer.js'
@@ -59,12 +61,16 @@ type PageSubscriptionEventMap = Pick<
 export interface PageSubscriptionConnection {
   readonly state: ConnectionState
   readonly reconnectDragging: boolean
+  [captureCurrentSocket]?: HilosConnection[typeof captureCurrentSocket]
   send(text: string): boolean
   on<K extends keyof PageSubscriptionEventMap>(
     event: K,
     listener: (payload: PageSubscriptionEventMap[K]) => void,
   ): () => void
-  forgetPageFrames(retainTableWindows?: boolean): void
+  forgetPageFrames(
+    retainTableWindows?: boolean,
+    isCurrent?: () => boolean,
+  ): void
   tableWindowDescriptors(
     opening?: boolean,
   ): Record<string, TableViewportDescriptor>
@@ -80,19 +86,81 @@ export type PageSubscribeParamsPreparer = (
   params: Readonly<Record<string, unknown>>,
 ) => Record<string, unknown>
 
+/** Decide whether a page payload answers the active params for its page key. */
+export type PageResponseMatcher = (
+  params: Readonly<Record<string, unknown>>,
+  payload: Readonly<ScopePayload>,
+) => boolean
+
+/** Internal access to the active opening before connection listeners run. */
+export const capturePageDelivery = Symbol('capturePageDelivery')
+
+/** Internal response admission with the optional payload matcher. */
+export const admitPageResponse = Symbol('admitPageResponse')
+
+/** Internal listener that follows a move while the originating delivery is live. */
+export const followCurrentPageMove = Symbol('followCurrentPageMove')
+
+/** Internal access reactions against the refusal of the active opening. */
+export const reactToPageRefusal = Symbol('reactToPageRefusal')
+
+type PageRefusalEffect = 'clear' | 'await'
+
+export interface PageRefusalReaction {
+  [reactToPageRefusal]?(httpCode: number, effect: PageRefusalEffect): boolean
+}
+
+/** Internal ingest of a response that has already passed admission. */
+export const ingestAdmittedPageResponse = Symbol('ingestAdmittedPageResponse')
+
+/** Internal release after boot has prepared a new or repeated session response. */
+export const releasePreparedSession = Symbol('releasePreparedSession')
+
+/** Internal release of the callbacks owned by a replaced binding. */
+export const detachPageSubscription = Symbol('detachPageSubscription')
+
+type PageMoveListener = (
+  target: PageMoveTarget,
+  isCurrent: () => boolean,
+) => void
+
 /** The address a page_moved names: the page and route params it lives at now. */
 export interface PageMoveTarget {
   readonly page: string
   readonly params: Readonly<Record<string, string>>
 }
 
+type PageDelivery =
+  | { kind: 'response' }
+  | { kind: 'refusal'; error: PageSubscriptionError }
+  | { kind: 'address'; params: Record<string, unknown> }
+
 export class PageSubscription {
   private current: {
     pageKey: string
     params: Record<string, unknown>
+    scope?: Scope
+    /** The refusal that advanced this opening's delivery ownership. */
+    refusal?: {
+      error: PageSubscriptionError
+      revision: number
+      scope: Scope | undefined
+    }
     /** Survives reconnects; only a new opening or departure discards this context. */
     prepared: boolean
+    /** An in-place move uses the current window controls even before preparation. */
+    followingMove?: boolean
   } | null = null
+
+  private detached = false
+
+  /** The scope can be re-answered in place under a new address or access verdict. */
+  private responseRevision = 0
+
+  /** An applied answer completes a wait without invalidating its delivery. */
+  private answeredRevision: number | undefined
+
+  private readonly stopTransportListeners: ReadonlyArray<() => void>
 
   /** The current page's subscription error; null while the page loads cleanly. */
   private readonly pageErrorSignal = createSignal<PageSubscriptionError | null>(
@@ -140,7 +208,7 @@ export class PageSubscription {
   private readonly subscriptionWaiters = new Set<() => void>()
 
   /** Who turns an accepted page_moved into an address; bootHilos binds one. */
-  private readonly moveListeners = new Set<(target: PageMoveTarget) => void>()
+  private readonly moveListeners = new Map<PageMoveListener, PageMoveListener>()
 
   /** The current page's catalog identity, read off the page scope it arrives in. */
   private readonly pageIdentitySignal: ReadonlySignal<
@@ -159,33 +227,50 @@ export class PageSubscription {
       _pageKey,
       params,
     ) => params,
+    private readonly pageResponseMatchers?: ReadonlyMap<
+      string,
+      PageResponseMatcher
+    >,
   ) {
     // Both selectors are derived once and held, not rebuilt per read: they are
     // computed over the page-scope signal, so one instance already answers for
     // every page this subscription will ever open.
     this.pageIdentitySignal = pageIdentity(scopes)
     this.dashboardSectionsSignal = dashboardSections(scopes)
-    connection.on('state', (state) => {
-      if (state !== 'connected') {
-        this.sessionAnswered = false
+    this.stopTransportListeners = [
+      connection.on('state', (state) => {
+        if (state !== 'connected') {
+          this.sessionAnswered = false
+          this.subscribeDelivered = false
+        }
+      }),
+      connection.on('protectedMode', (status) => {
+        if (!status.active && !this.subscribeDelivered) {
+          this.sendSubscribe()
+        }
+      }),
+      connection.on('pageResubscribe', ({ data }) => {
+        if (
+          this.current?.pageKey !== data.page ||
+          !sameParams(this.current.params, data.params)
+        ) {
+          return
+        }
         this.subscribeDelivered = false
-      }
-    })
-    connection.on('protectedMode', (status) => {
-      if (!status.active && !this.subscribeDelivered) {
         this.sendSubscribe()
-      }
-    })
-    connection.on('pageResubscribe', ({ data }) => {
-      if (
-        this.current?.pageKey !== data.page ||
-        !sameParams(this.current.params, data.params)
-      ) {
-        return
-      }
-      this.subscribeDelivered = false
-      this.sendSubscribe()
-    })
+      }),
+    ]
+  }
+
+  [detachPageSubscription](): void {
+    const scope = this.current?.scope
+    this.detached = true
+    this.current = null
+    this.subscribeDelivered = false
+    for (const stop of this.stopTransportListeners) stop()
+    this.notifySubscriptionWaiters()
+    this.moveListeners.clear()
+    if (scope && this.scopes.page() === scope) this.scopes.dropPage()
   }
 
   /** The currently subscribed page key; `undefined` between subscriptions. */
@@ -251,14 +336,26 @@ export class PageSubscription {
    * @param params Route params for the subscription.
    */
   subscribe(pageKey: string, params: Record<string, unknown> = {}): Scope {
+    if (this.detached) return new Scope('page', pageKey)
+
     this.subscribeDelivered = false
-    this.current = { pageKey, params, prepared: false }
+    const current = (this.current = {
+      pageKey,
+      params: { ...params },
+      prepared: false,
+    })
     this.notifySubscriptionWaiters()
     this.pageErrorSignal.set(null)
+    if (this.current !== current) return new Scope('page', pageKey)
+
     this.pageLoadingSignal.set(true)
-    const scope = this.scopes.openPage(pageKey)
-    this.connection.forgetPageFrames()
-    this.sendSubscribe()
+    if (this.current !== current) return new Scope('page', pageKey)
+
+    const scope = this.openCurrentScope(pageKey)
+    if (this.current === current && this.scopes.page() === scope) {
+      this.connection.forgetPageFrames()
+      this.sendSubscribe()
+    }
 
     return scope
   }
@@ -352,6 +449,31 @@ export class PageSubscription {
   }
 
   /**
+   * Apply an access reaction to the refusal still held by this opening.
+   *
+   * @param httpCode The refusal status the access event resolves.
+   * @param effect Whether to clear the refusal or wait for a new verdict.
+   * @returns Whether the refusal matched and the reaction ran.
+   */
+  [reactToPageRefusal](httpCode: number, effect: PageRefusalEffect): boolean {
+    const error = this.current?.refusal?.error
+    if (
+      this.detached ||
+      error?.httpCode !== httpCode ||
+      this.pageErrorSignal.get() !== error ||
+      (effect === 'await' && error.errorCode === PAGE_ERROR_NOT_SERVED)
+    ) {
+      return false
+    }
+    if (effect === 'clear') {
+      this.clearPageError()
+    } else {
+      this.awaitPageAnswer()
+    }
+    return true
+  }
+
+  /**
    * Draw a 403 on the current page and drop what it was showing, without asking
    * the server anything (HIL-621). The client has just learned it lost the admin
    * marker while standing on an administrative surface, and privileged rows must
@@ -405,12 +527,23 @@ export class PageSubscription {
    * the verdict.
    */
   awaitPageAnswer(): void {
-    this.connection.forgetPageFrames(true)
+    if (this.detached) return
+
+    const current = this.current
+    const revision = ++this.responseRevision
+    const isCurrent = () =>
+      !this.detached &&
+      this.current === current &&
+      this.responseRevision === revision &&
+      this.answeredRevision !== revision
+    this.connection.forgetPageFrames(true, isCurrent)
+    if (!isCurrent()) return
+
     this.pageErrorSignal.set(null)
+    if (!isCurrent()) return
     this.pageLoadingSignal.set(true)
-    const pageKey = this.current?.pageKey
-    if (pageKey !== undefined) {
-      this.scopes.openPage(pageKey)
+    if (current && isCurrent()) {
+      this.openCurrentScope(current.pageKey)
     }
   }
 
@@ -459,9 +592,59 @@ export class PageSubscription {
   }
 
   /**
-   * Ingest a page's scope payload into the current page scope. A payload for
-   * any other page is dropped — the late-signal guard of wire-protocol.md —
-   * and the return value reports which happened.
+   * Capture the opening and address before any delivery listener is called.
+   *
+   * @param pageKey The page key the frame carried.
+   * @param delivery The effect the frame may apply at the captured address.
+   */
+  [capturePageDelivery](
+    pageKey: string,
+    delivery: PageDelivery,
+  ): (() => boolean) | false {
+    const current = this.current
+    if (current?.pageKey !== pageKey) return false
+
+    const params = current.params
+    const revision = this.responseRevision
+    const scope = this.scopes.page()
+    if (delivery.kind === 'response' && !scope) return false
+    if (delivery.kind === 'address' && !sameParams(params, delivery.params))
+      return false
+
+    return () =>
+      this.current === current &&
+      current.params === params &&
+      ((this.responseRevision === revision && this.scopes.page() === scope) ||
+        (delivery.kind === 'refusal' &&
+          current.refusal?.error === delivery.error &&
+          current.refusal.revision === revision + 1 &&
+          current.refusal.revision === this.responseRevision &&
+          current.refusal.scope === this.scopes.page()))
+  }
+
+  [admitPageResponse](
+    pageKey: string,
+    payload: ScopePayload,
+    matcher?: PageResponseMatcher,
+  ): (() => boolean) | false {
+    const current = this.current
+    const isCurrent = this[capturePageDelivery](pageKey, { kind: 'response' })
+    if (!current || isCurrent === false) return false
+    if (
+      matcher &&
+      (current.scope !== this.scopes.page() ||
+        !matcher(current.params, payload))
+    ) {
+      return false
+    }
+
+    return isCurrent() ? isCurrent : false
+  }
+
+  /**
+   * Ingest a page's scope payload into the current page scope. Drop payloads
+   * for another page key or rejected by the current page's response matcher.
+   * The return value reports whether the payload was ingested.
    *
    * Data for the current page clears its standing error — with one exception,
    * the 401. This is the visible half of live-promotion
@@ -490,15 +673,46 @@ export class PageSubscription {
     payload: ScopePayload,
     options: NormalizerOptions = {},
   ): boolean {
+    const matcher = this.pageResponseMatchers?.get(pageKey)
+    const admission = matcher
+      ? this[admitPageResponse](pageKey, payload, matcher)
+      : undefined
+
+    return (
+      admission !== false &&
+      this[ingestAdmittedPageResponse](pageKey, payload, options, admission)
+    )
+  }
+
+  /**
+   * @param pageKey The page key the signal carried.
+   * @param payload The page's scope-shaped payload.
+   * @param options Binding-local entity-type overrides for this page's slots.
+   * @param isCurrent Whether the admitted opening still owns the delivery.
+   */
+  [ingestAdmittedPageResponse](
+    pageKey: string,
+    payload: ScopePayload,
+    options: NormalizerOptions,
+    isCurrent?: () => boolean,
+  ): boolean {
     const scope = this.scopes.page()
-    if (!scope || pageKey !== this.current?.pageKey) {
-      return false
-    }
+    if (!scope || pageKey !== this.current?.pageKey) return false
+
     const update = (): boolean => {
-      ingest(scope, payload, options)
+      if (isCurrent && !isCurrent()) return false
+      const revision = this.responseRevision
+
+      ingestWhileCurrent(scope, payload, options, isCurrent)
+      if (isCurrent && !isCurrent()) return false
+      if (this.responseRevision === revision && this.scopes.page() === scope) {
+        this.answeredRevision = revision
+      }
       if (this.pageErrorSignal.get()?.httpCode !== UNAUTHORIZED) {
         this.pageErrorSignal.set(null)
       }
+      if (isCurrent && !isCurrent()) return false
+
       this.pageLoadingSignal.set(false)
 
       return true
@@ -516,12 +730,16 @@ export class PageSubscription {
    * The subscription stays active; the error is cleared on the next page change.
    *
    * @param error The page, HTTP status, code, and message the server reported.
+   * @param isCurrent Whether the original delivery still owns the refusal.
    */
-  handleSubscriptionError(error: PageSubscriptionError): boolean {
-    if (error.page !== this.current?.pageKey) {
+  handleSubscriptionError(
+    error: PageSubscriptionError,
+    isCurrent?: () => boolean,
+  ): boolean {
+    if (error.page !== this.current?.pageKey || isCurrent?.() === false) {
       return false
     }
-    this.refuse(error)
+    this.refuse(error, isCurrent)
 
     return true
   }
@@ -538,20 +756,25 @@ export class PageSubscription {
    * and its error until the answer for the new address lands.
    *
    * @param move The address subscribed and the address the record lives at now.
+   * @param isLive Whether the original transport still owns the move.
    */
-  handlePageMoved(move: PageMoved): boolean {
-    if (
-      this.current?.pageKey !== move.page ||
-      !sameParams(this.current.params, move.params)
-    ) {
-      return false
-    }
+  handlePageMoved(move: PageMoved, isLive?: () => boolean): boolean {
+    const ownsOpening = this[capturePageDelivery](move.page, {
+      kind: 'address',
+      params: move.params,
+    })
+    if (ownsOpening === false || isLive?.() === false) return false
+
+    const isCurrent = () => ownsOpening() && (isLive?.() ?? true)
     const target: PageMoveTarget = {
       page: move.targetPage,
       params: move.targetParams,
     }
-    for (const listener of [...this.moveListeners]) {
-      listener(target)
+    for (const listener of [...this.moveListeners.values()]) {
+      // Public observers report the accepted move. The navigator still checks
+      // that the original opening owns any rewrite or repeat subscription.
+      if (isLive?.() === false) break
+      listener(target, isCurrent)
     }
 
     return true
@@ -566,7 +789,14 @@ export class PageSubscription {
    * @returns A function that removes this listener.
    */
   onPageMoved(listener: (target: PageMoveTarget) => void): () => void {
-    this.moveListeners.add(listener)
+    return this[followCurrentPageMove](listener, (target) => listener(target))
+  }
+
+  [followCurrentPageMove](
+    listener: PageMoveListener,
+    notify = listener,
+  ): () => void {
+    this.moveListeners.set(listener, notify)
 
     return () => {
       this.moveListeners.delete(listener)
@@ -589,8 +819,10 @@ export class PageSubscription {
     if (!current) {
       return
     }
-    current.params = this.prepareParams(current.pageKey, params)
-    current.prepared = true
+    this.responseRevision += 1
+    current.params = { ...params }
+    current.prepared = false
+    current.followingMove = current.scope !== undefined
     this.subscribeDelivered = false
     this.sendSubscribe()
   }
@@ -615,53 +847,112 @@ export class PageSubscription {
    * the same reason: a held frame is that same content in another pocket.
    *
    * @param error The page, HTTP status, code, and message to show.
+   * @param isLive Whether a transport refusal is still being delivered.
    */
-  private refuse(error: PageSubscriptionError): void {
+  private refuse(error: PageSubscriptionError, isLive?: () => boolean): void {
+    const current = this.current
+    if (!current) return
+    const revision = ++this.responseRevision
+    const before = this.scopes.page()
+    const refusal = (current.refusal = { error, revision, scope: before })
+    const ownsRevision = () =>
+      this.current === current && this.responseRevision === revision
+    const isCurrent = () => ownsRevision() && (isLive?.() ?? true)
     this.pageErrorSignal.set(error)
+    if (!isCurrent() || this.scopes.page() !== before) return
     this.pageLoadingSignal.set(false)
-    this.scopes.openPage(error.page)
-    this.connection.forgetPageFrames()
+    if (!isCurrent() || this.scopes.page() !== before) return
+    const scope = this.openCurrentScope(error.page)
+    if (!ownsRevision() || this.scopes.page() !== scope) return
+
+    refusal.scope = scope
+    if (isCurrent()) this.connection.forgetPageFrames()
+  }
+
+  /**
+   * Publish a fresh scope and attach it only if the same opening is still current.
+   *
+   * @param pageKey The page the scope belongs to.
+   */
+  private openCurrentScope(pageKey: string): Scope {
+    const current = this.current
+    const scope = this.scopes.openPage(pageKey)
+    if (this.scopes.page() === scope) {
+      if (current && this.current === current) {
+        current.scope = scope
+      } else if (this.detached) {
+        this.scopes.dropPage()
+      }
+    }
+
+    return scope
   }
 
   /**
    * Release the held subscription: the session has answered, so the backend
-   * knows who this connection is and a page subscribe can be judged. Called by
-   * the boot sequence on every handshake response, which is once per socket —
-   * the second call for the same socket is a no-op, and the first after a
-   * reconnect is what sends the page's re-subscribe.
+   * knows who this connection is and a page subscribe can be judged. Boot
+   * calls this on a session answer, and a replacement binding can use the
+   * answer already received on the same socket. The first call after a
+   * reconnect sends the page's re-subscribe.
    */
   releaseOnSession(): void {
     if (this.sessionAnswered) {
       return
     }
+    this[releasePreparedSession]()
+  }
+
+  [releasePreparedSession](): void {
     this.sessionAnswered = true
-    this.sendSubscribe()
+    if (!this.subscribeDelivered) this.sendSubscribe()
   }
 
   private sendSubscribe(): void {
-    if (!this.current || !this.sessionAnswered) {
+    const current = this.current
+    const isSessionReady = capturePreparedSession(this.connection)
+    if (
+      !current?.scope ||
+      !this.sessionAnswered ||
+      isSessionReady?.() === false
+    ) {
       return
     }
-    const current = this.current
+    const isCurrentSocket = this.connection[captureCurrentSocket]?.()
+    const revision = this.responseRevision
+    const isCurrent = () =>
+      this.current === current &&
+      this.responseRevision === revision &&
+      (isCurrentSocket?.() ?? true) &&
+      (isSessionReady?.() ?? true)
     const params = current.prepared
       ? current.params
       : this.prepareParams(current.pageKey, current.params)
+    if (!isCurrent()) return
+
     this.connection.resetTableWindowRequests?.()
+    if (!isCurrent()) return
     const frame: Record<string, unknown> = {
       [FIELD_TYPE]: SIGNAL_TYPE_PAGE_SUBSCRIBE,
       [FIELD_PAGE]: current.pageKey,
       [FIELD_PARAMS]: params,
     }
     // A new opening will mount new controllers. Tables report their opening controls
-    // instead of a departing controller's search and address; reconnects keep the live window.
-    // The server checks route scope before accepting a report for a reused table key.
-    const windows = this.connection.tableWindowDescriptors(!current.prepared)
+    // instead of a departing controller's search and address.
+    const windows = this.connection.tableWindowDescriptors(
+      !current.prepared && !current.followingMove,
+    )
     if (Object.keys(windows).length > 0) {
       frame[FIELD_TABLE_WINDOWS] = windows
     }
-    this.subscribeDelivered = this.connection.send(JSON.stringify(frame))
-    if (this.subscribeDelivered) {
-      current.params = params
+    const text = JSON.stringify(frame)
+    if (!isCurrent()) return
+
+    const delivered = this.connection.send(text)
+    if (!isCurrent()) return
+
+    this.subscribeDelivered = delivered
+    if (delivered) {
+      if (current.params !== params) current.params = { ...params }
       current.prepared = true
     }
     this.notifySubscriptionWaiters()
