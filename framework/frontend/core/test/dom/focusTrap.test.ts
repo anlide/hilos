@@ -134,6 +134,25 @@ function openFrom(opener: HTMLElement): {
 }
 
 /**
+ * Open a trap on a panel mounted apart from `opener`, the way a portaled modal
+ * does. The panel itself is not a dialog.
+ *
+ * @param opener The control focused when the panel opens.
+ * @returns The separate panel and its active trap.
+ */
+function openSeparatePanel(opener: HTMLElement): {
+  panel: HTMLElement
+  trap: FocusTrap
+} {
+  const panel = mountRoot('<button type="button">Inside</button>')
+  const trap = createTrap()
+  opener.focus()
+  trap.activate(panel)
+
+  return { panel, trap }
+}
+
+/**
  * A connected, visible button outside every surface: a fallback that hands it
  * out proves only that its own offer is still honored.
  *
@@ -480,6 +499,122 @@ describe('FocusTrap', () => {
     trap.release()
     expect(document.activeElement).toBe(other)
   })
+
+  it('returns focus from a separately mounted panel to the origin dialog mark when the opener is removed', () => {
+    const origin = document.createElement('dialog')
+    origin.setAttribute('open', '')
+    origin.innerHTML =
+      '<button type="button">Open</button><input data-autofocus />'
+    document.body.append(origin)
+    const opener = origin.querySelector('button')!
+    const mark = origin.querySelector('input')!
+    const { panel, trap } = openSeparatePanel(opener)
+    expect(origin.contains(panel)).toBe(false)
+    expect(document.activeElement).toBe(panel)
+    opener.remove()
+    trap.release()
+    expect(document.activeElement).toBe(mark)
+  })
+
+  it('focuses the origin dialog root when a busy fieldset disables its mark', () => {
+    const origin = document.createElement('div')
+    origin.setAttribute('role', 'dialog')
+    origin.tabIndex = -1
+    origin.innerHTML =
+      '<button type="button">Open</button>' +
+      '<fieldset disabled><input data-autofocus /></fieldset>'
+    document.body.append(origin)
+    const opener = origin.querySelector('button')!
+    const { trap } = openSeparatePanel(opener)
+    opener.remove()
+    trap.release()
+    expect(document.activeElement).toBe(origin)
+  })
+
+  it('does not focus a closed origin dialog', () => {
+    const origin = document.createElement('dialog')
+    origin.innerHTML =
+      '<button type="button">Open</button><input data-autofocus />'
+    document.body.append(origin)
+    const opener = origin.querySelector('button')!
+    const { panel, trap } = openSeparatePanel(opener)
+    opener.remove()
+    trap.release()
+    expect(document.activeElement).toBe(panel)
+  })
+
+  it('keeps an outside control when the origin dialog could take the return', () => {
+    const origin = document.createElement('div')
+    origin.setAttribute('role', 'dialog')
+    origin.tabIndex = -1
+    origin.innerHTML =
+      '<button type="button">Open</button><input data-autofocus />'
+    document.body.append(origin)
+    const opener = origin.querySelector('button')!
+    const outside = document.createElement('input')
+    document.body.append(outside)
+    const { trap } = openSeparatePanel(opener)
+    opener.remove()
+    outside.focus()
+    trap.release()
+    expect(document.activeElement).toBe(outside)
+  })
+
+  it('prefers an available registration over the origin dialog when the opener is removed', () => {
+    const origin = document.createElement('div')
+    origin.setAttribute('role', 'alertdialog')
+    origin.tabIndex = -1
+    origin.innerHTML =
+      '<button type="button">Open</button><input data-autofocus />'
+    document.body.append(origin)
+    const opener = origin.querySelector('button')!
+    const fallback = document.createElement('button')
+    fallback.type = 'button'
+    document.body.append(fallback)
+    const dispose = registerFocusReturnFallback(origin, () => fallback)
+    const { trap } = openSeparatePanel(opener)
+    opener.remove()
+    trap.release()
+    expect(document.activeElement).toBe(fallback)
+    dispose()
+  })
+
+  it('does not focus a page control when the removed opener had no dialog', () => {
+    const region = document.createElement('section')
+    region.setAttribute(HILOS_INTERACTION_REGION_ATTR, '')
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    region.append(opener)
+    document.body.append(region)
+    const pageControl = document.createElement('button')
+    pageControl.type = 'button'
+    document.body.append(pageControl)
+    const { panel, trap } = openSeparatePanel(opener)
+    opener.remove()
+    trap.release()
+    expect(document.activeElement).toBe(panel)
+    expect(document.activeElement).not.toBe(pageControl)
+  })
+
+  it.each(['disabled', 'aria-disabled'] as const)(
+    'does not use the origin dialog when the opener stays %s and unregistered',
+    (state) => {
+      const origin = document.createElement('div')
+      origin.setAttribute('role', 'dialog')
+      origin.tabIndex = -1
+      origin.innerHTML =
+        '<button type="button">Open</button><input data-autofocus />'
+      document.body.append(origin)
+      const opener = origin.querySelector('button')!
+      const mark = origin.querySelector('input')!
+      const { panel, trap } = openSeparatePanel(opener)
+      if (state === 'disabled') opener.setAttribute('disabled', '')
+      else opener.setAttribute('aria-disabled', 'true')
+      trap.release()
+      expect(document.activeElement).toBe(panel)
+      expect(document.activeElement).not.toBe(mark)
+    },
+  )
 })
 
 describe('FocusTrap busy focus', () => {

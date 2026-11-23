@@ -16,6 +16,9 @@ const FOCUSABLE_SELECTOR =
 
 const FOCUS_BOUNDARY_SELECTOR = `dialog, [role="dialog"], [role="alertdialog"], [${HILOS_INTERACTION_REGION_ATTR}]`
 
+/** Nearest real dialog of an opener. An interaction region is not one. */
+const ORIGIN_DIALOG_SELECTOR = 'dialog, [role="dialog"], [role="alertdialog"]'
+
 const FOCUS_RETURN_REQUEST = 'hilos-focus-return-request'
 
 interface FocusReturnRequest {
@@ -195,21 +198,24 @@ export function focusInitial(
 }
 
 /**
- * A modal focus trap: remembers the element focused when the dialog opens, moves
- * focus into the dialog, cycles Tab within it, and returns focus on release.
+ * A modal focus trap: remembers the element focused when the dialog opens and
+ * the nearest dialog around it, moves focus into the dialog, cycles Tab within
+ * it, and returns focus on release.
  */
 export class FocusTrap {
   private opener: HTMLElement | null = null
   private root: HTMLElement | null = null
   private fallback: (() => HTMLElement | null) | undefined
+  private originDialog: HTMLElement | null = null
   private wasBusy = false
   private busyTarget: HTMLElement | null = null
   private lastFocused: HTMLElement | null = null
   private stopFocusTracking: (() => void) | undefined
 
   /**
-   * Remember the currently-focused element and move focus into `root`
-   * according to `placement`.
+   * Remember the currently-focused element and the nearest dialog around it,
+   * then move focus into `root` according to `placement`. The remembered
+   * dialog is a different element from `root`.
    */
   activate(root: HTMLElement, placement: FocusPlacement = 'marked'): void {
     const active = root.ownerDocument.activeElement
@@ -224,6 +230,7 @@ export class FocusTrap {
       }),
     )
     this.fallback = request.fallback
+    this.originDialog = this.captureOriginDialog(this.opener, root)
     focusInitial(root, placement)
   }
 
@@ -302,21 +309,36 @@ export class FocusTrap {
   /**
    * Return to the available opener, or, when it disappeared, the current
    * fallback of the nearest mount around it that still gives an available one.
-   * An explicit focus choice outside the dialog is preserved.
-   * Every handle is released even when there is no longer a return target.
+   * When the opener has left the document and no registered target is
+   * available, `focusInitial` runs on the dialog recorded around the opener,
+   * if that dialog is still available in the same document. An explicit focus
+   * choice outside the closing panel is preserved. Every handle is released
+   * even when there is no longer a return target.
    */
   release(): void {
-    const { opener, root, fallback } = this
+    const { opener, root, fallback, originDialog } = this
     this.clearFocusTracking()
     this.opener = null
     this.root = null
     this.fallback = undefined
+    this.originDialog = null
     if (!root) return
     const active = root.ownerDocument.activeElement
     if (active && active !== root.ownerDocument.body && !root.contains(active))
       return
     const target = available(opener) ? opener : (fallback?.() ?? null)
-    if (available(target)) target.focus({ preventScroll: true })
+    if (available(target)) {
+      target.focus({ preventScroll: true })
+      return
+    }
+    if (opener?.isConnected) return
+    if (
+      originDialog &&
+      originDialog !== root &&
+      originDialog.ownerDocument === root.ownerDocument &&
+      available(originDialog)
+    )
+      focusInitial(originDialog)
   }
 
   /**
@@ -392,5 +414,23 @@ export class FocusTrap {
     this.wasBusy = false
     this.busyTarget = null
     this.lastFocused = null
+  }
+
+  /**
+   * The nearest real dialog around `opener`, other than the panel opening now.
+   * Read before focus moves, while the opener is still mounted.
+   */
+  private captureOriginDialog(
+    opener: HTMLElement | null,
+    panel: HTMLElement,
+  ): HTMLElement | null {
+    let node: HTMLElement | null = opener
+    while (node) {
+      const dialog = node.closest(ORIGIN_DIALOG_SELECTOR)
+      if (!(dialog instanceof HTMLElement)) return null
+      if (dialog !== panel) return dialog
+      node = dialog.parentElement
+    }
+    return null
   }
 }

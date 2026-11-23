@@ -80,6 +80,20 @@ ordinary fallback returns its current visible search, or its stable
 the mount is disposed or its controller is replaced. Cleanup removes the offer
 and invalidates callbacks already captured by an open trap.
 
+When the opener has left the document and no registered fallback offers an
+available target, focus returns to the dialog that held the opener at
+activation, if that dialog is still available in the same document. The
+recorded dialog is the nearest `dialog`, `[role="dialog"]`, or
+`[role="alertdialog"]` ancestor of the opener, and it is never the panel
+being opened. `focusInitial` places focus on that dialog's available
+`data-autofocus` mark, or on the dialog root when the mark is missing or a
+busy fieldset has disabled it. A native `dialog` without `open` does not
+qualify, and a closed dialog the view has removed is already gone. A hidden,
+inert, or blocked dialog is declined, and so is an opener that remains in the
+document while disabled or `aria-disabled` with no available registration.
+With no qualifying dialog, focus stays on the path the page already had. Tab,
+Shift+Tab, and Escape keep their ordinary handling.
+
 The shared
 [`captureTableFocusReturnTarget(opener, readRows)`](../../../framework/frontend/core/src/dom/tableFocusReturn.ts)
 path is opt-in: the original opener button must carry a non-empty
